@@ -1,0 +1,32 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+........................................................................ [ 43%]
+........................................................................ [ 86%]
+............F.........                                                   [100%]
+=================================== FAILURES ===================================
+____________ test_round2_failed_judge_import_does_not_fail_requests ____________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-94/test_round2_failed_judge_impor0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c440d70>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10c440860>
+
+    async def test_round2_failed_judge_import_does_not_fail_requests(tmp_path, monkeypatch, caplog):
+        import builtins
+        original = builtins.__import__
+    
+        def failing(name, *args, **kwargs):
+            if name == "approval_judge":
+                raise ImportError("judge unavailable")
+            return original(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", failing)
+        q = queue(tmp_path, SimpleNamespace(status=lambda: aj.JudgeStatus(True)))
+        for _ in range(2):
+            assert q.request(dict(ACTION, tainted=True))["status"] == "pending"
+        assert "tainted" not in q.list()[0]
+>       assert sum("approval judge import unavailable" in r.message for r in caplog.records) == 1
+E       assert 0 == 1
+E        +  where 0 = sum(<generator object test_round2_failed_judge_import_does_not_fail_requests.<locals>.<genexpr> at 0x10c40e8e0>)
+
+tests/test_h277_approval_judge.py:1189: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_round2_failed_judge_import_does_not_fail_requests
+1 failed, 165 passed in 2.52s

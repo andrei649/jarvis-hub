@@ -44,6 +44,7 @@ from agents.core.channels.media_reader import (
     REASON_FAILED,
     REASON_NO_VLM,
     REASON_NOT_LOCAL,
+    REASON_POLICY,
     REASON_TOO_LARGE,
     VLM_ERROR_SENTINEL,
     Description,
@@ -161,7 +162,7 @@ async def test_the_backend_rechecks_locality_against_the_url_it_will_post_to(mon
     reader = InboundImageReader(
         config=_Config(is_local=True, base_url="https://vision.example.com/v1"))
     out = await reader(PNG)
-    assert (out.ok, out.reason) == (False, REASON_FAILED)
+    assert (out.ok, out.reason) == (False, REASON_POLICY)
     assert posted == [], "a remote base URL was posted to anyway"
 
 
@@ -336,7 +337,7 @@ async def test_an_empty_answer_is_a_failure_not_an_empty_description():
 
 def test_every_reason_has_a_sentence_for_the_sender():
     reasons = {REASON_NOT_LOCAL, REASON_NO_VLM, REASON_EMPTY,
-               REASON_TOO_LARGE, REASON_FAILED, REASON_DOWNLOAD}
+               REASON_TOO_LARGE, REASON_FAILED, REASON_DOWNLOAD, REASON_POLICY}
     assert set(NOTES) == reasons
     for reason in reasons:
         clause = note(Description(False, reason=reason))

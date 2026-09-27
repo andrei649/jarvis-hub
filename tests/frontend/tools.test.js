@@ -27,7 +27,7 @@ let env;
 beforeEach(() => {
   env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch: backend(), lang: 'ro' });
 });
-afterEach(() => env.cleanup());
+afterEach(() => { env.cleanup(); vi.useRealTimers(); });
 
 const h = (...a) => env.React.createElement(...a);
 function overlay(props) {
@@ -41,6 +41,98 @@ function typeArea(el, value) {
   Object.getOwnPropertyDescriptor(env.window.HTMLTextAreaElement.prototype, 'value').set.call(el, value);
   env.fire(el, 'input');
 }
+
+it('sends the optional human reason with its action decision', async () => {
+  env.cleanup();
+  const fetcher = vi.fn(url => url === '/api/actions/pending'
+    ? json({ actions: [{ id: 'reason-card', tool: 'write_file', summary: 'Write a file' }] })
+    : json({ proposals: [], cards: [] }));
+  env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch: fetcher, lang: 'ro' });
+  const { container } = overlay();
+  await env.flush(); openTool(container, 'Action Approvals'); await env.flush(); await env.flush();
+  const reason = container.querySelector('[aria-label="Your decision reason for Write a file"]');
+  expect(reason).not.toBeNull();
+  expect(reason.maxLength).toBe(280);
+  typeArea(reason, 'Use the staging address');
+  env.click(toolBtn(container, 'Reject')); await env.flush();
+  const call = fetcher.mock.calls.find(([url]) => url === '/api/actions/reason-card/decide');
+  expect(JSON.parse(call[1].body)).toEqual({ approved: false, reason: 'Use the staging address' });
+});
+
+it('groups owner requests while approving only the leader and promotes the follower', async () => {
+  env.cleanup();
+  let approved = false;
+  const actions = [{ id: 'g1', tool: 'write_file', summary: 'Same write' },
+    { id: 'g2', tool: 'write_file', summary: 'Same write' }];
+  const fetcher = vi.fn(url => {
+    if (url === '/api/actions/g1/decide') { approved = true; return json({ ok: true }); }
+    if (url === '/api/actions/pending') return json({ actions: approved ? actions.slice(1) : actions,
+      groups: approved ? [] : [{ id: 'group1', leader_id: 'g1', count: 2, member_ids: ['g1', 'g2'], snapshot: 'snapshot1' }] });
+    return json({ proposals: [], cards: [] });
+  });
+  env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch: fetcher, lang: 'ro' });
+  const { container } = overlay();
+  await env.flush(); openTool(container, 'Action Approvals'); await env.flush(); await env.flush();
+  expect(container.querySelectorAll('[aria-label="Your decision reason for Same write"]').length).toBe(1);
+  expect(container.textContent).toContain('2 matching requests');
+  env.click(toolBtn(container, 'Approve once')); await env.flush(); await env.flush();
+  const decisions = fetcher.mock.calls.filter(([url]) => url.endsWith('/decide'));
+  expect(decisions.map(([url]) => url)).toEqual(['/api/actions/g1/decide']);
+  expect(JSON.parse(decisions[0][1].body)).toEqual({ approved: true });
+  expect(container.querySelectorAll('[aria-label="Your decision reason for Same write"]').length).toBe(1);
+  expect(container.textContent).not.toContain('2 matching requests');
+  expect(toolBtn(container, 'Approve')).toBeTruthy();
+});
+
+it('rejects the exact displayed group with its human reason', async () => {
+  env.cleanup();
+  const fetcher = vi.fn(url => url === '/api/actions/pending'
+    ? json({ actions: [{ id: 'r1', tool: 'write_file', summary: 'Grouped write' },
+      { id: 'r2', tool: 'write_file', summary: 'Grouped write' }],
+      groups: [{ id: 'reject-group', leader_id: 'r1', count: 2, member_ids: ['r1', 'r2'], snapshot: 'exact-state' }] })
+    : json({ ok: true, proposals: [], cards: [] }));
+  env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch: fetcher, lang: 'ro' });
+  const { container } = overlay();
+  await env.flush(); openTool(container, 'Action Approvals'); await env.flush(); await env.flush();
+  typeArea(container.querySelector('[aria-label="Your decision reason for Grouped write"]'), 'Use staging');
+  env.click(toolBtn(container, 'Reject group')); await env.flush();
+  const request = fetcher.mock.calls.find(([url]) => url === '/api/actions/groups/reject-group/reject');
+  expect(JSON.parse(request[1].body)).toEqual({ snapshot: 'exact-state', member_ids: ['r1', 'r2'], reason: 'Use staging' });
+});
+
+it('keeps group decisions and the draft reason visible after a stale-membership refusal', async () => {
+  env.cleanup();
+  const fetcher = vi.fn(url => {
+    if (url === '/api/actions/groups/stale-group/reject') return json({ error: 'approval group changed' }, { ok: false, status: 409 });
+    if (url === '/api/actions/pending') return json({
+      actions: [{ id: 's1', tool: 'write', summary: 'Still pending' }, { id: 's2', tool: 'write', summary: 'Still pending' }],
+      groups: [{ id: 'stale-group', leader_id: 's1', count: 2, member_ids: ['s1', 's2'], snapshot: 'stale-state' }],
+    });
+    return json({ proposals: [], cards: [] });
+  });
+  env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch: fetcher, lang: 'ro' });
+  env.window.alert = vi.fn();
+  const { container } = overlay();
+  await env.flush(); openTool(container, 'Action Approvals'); await env.flush(); await env.flush();
+  typeArea(container.querySelector('[aria-label="Your decision reason for Still pending"]'), 'Keep this draft');
+  env.click(toolBtn(container, 'Reject group')); await env.flush();
+  expect(env.window.alert).toHaveBeenCalled();
+  expect(container.querySelector('[aria-label="Your decision reason for Still pending"]').value).toBe('Keep this draft');
+  expect(toolBtn(container, 'Approve once')).toBeTruthy();
+});
+
+it('shows independent cards when a grouped projection omits its leader', async () => {
+  env.cleanup();
+  const fetcher = vi.fn(url => url === '/api/actions/pending' ? json({
+    actions: [{ id: 'f1', tool: 'write', summary: 'First visible' }, { id: 'f2', tool: 'write', summary: 'Second visible' }],
+    groups: [{ id: 'incomplete', leader_id: 'missing', count: 3, member_ids: ['missing', 'f1', 'f2'], snapshot: 'state' }],
+  }) : json({ proposals: [], cards: [] }));
+  env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch: fetcher, lang: 'ro' });
+  const { container } = overlay();
+  await env.flush(); openTool(container, 'Action Approvals'); await env.flush(); await env.flush();
+  expect(container.querySelector('[aria-label="Your decision reason for First visible"]')).not.toBeNull();
+  expect(container.querySelector('[aria-label="Your decision reason for Second visible"]')).not.toBeNull();
+});
 
 describe('tool registry', () => {
   it('registers 30 tools with unique ids and render functions', () => {
@@ -461,7 +553,7 @@ describe('Action Approvals — model opinion (H277)', () => {
   });
 
   it('says "not available" / "pending…" only when a judge is configured', async () => {
-    boot({ actions: [{ id: 'c1', tool: 'x', summary: 'old card' }, { id: 'c2', tool: 'x', summary: 'new card' }],
+    boot({ actions: [{ id: 'c1', tool: 'x', summary: 'old card' }, { id: 'c2', tool: 'x', summary: 'new card', judge_pending: true }],
            judge: { ...configured, judging: ['c2'] } });
     let c = await open();
     expect(card(c, 'old card').textContent).toContain('Model opinion: not available');
@@ -477,86 +569,133 @@ describe('Action Approvals — model opinion (H277)', () => {
     expect(card(c, 'skill change').textContent).not.toContain('Model opinion');
   });
 
-  // The panel's 3 s re-poll timers, captured (and cleared) by hand; every other timer is real.
+  // Fake wall time and the page's poll timer queue; harness/React settling stays real.
   function capturePolls() {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
+    env.window.Date = Date;
     const timers = new Map();
     let next = 0;
     const realSet = env.window.setTimeout, realClear = env.window.clearTimeout;
     env.window.setTimeout = function (fn, ms, ...rest) {
-      if (ms === 3000) { next += 1; timers.set('p' + next, fn); return 'p' + next; }
+      if (ms > 0 && ms <= 3000) {
+        const id = 'p' + (++next);
+        timers.set(id, { fn, at: Date.now() + ms });
+        return id;
+      }
       return realSet.call(env.window, fn, ms, ...rest);
     };
     env.window.clearTimeout = function (id) {
-      if (timers.has(id)) { timers.delete(id); return undefined; }
+      if (timers.delete(id)) return undefined;
       return realClear.call(env.window, id);
     };
     return {
       active: () => timers.size,
-      async fire() {
-        const [id, fn] = timers.entries().next().value;
+      async fireDelayed(ms) {
+        vi.setSystemTime(Date.now() + ms);
+        const [id, timer] = timers.entries().next().value;
         timers.delete(id);
-        fn();
+        timer.fn();
         await env.flush();
+      },
+      async advance(ms) {
+        const until = Date.now() + ms;
+        while (timers.size) {
+          const [id, timer] = [...timers.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+          if (timer.at > until) break;
+          vi.setSystemTime(timer.at);
+          timers.delete(id);
+          timer.fn();
+          await env.flush();
+        }
+        vi.setSystemTime(until);
       },
     };
   }
 
-  it('re-polls quietly while an opinion is pending and stops once it lands', async () => {
-    let landed = false;
-    const calls = boot(() => (landed
-      ? { actions: [{ id: 'p1', tool: 'x', summary: 'waiting card', judge: OPINION }], judge: configured }
-      : { actions: [{ id: 'p1', tool: 'x', summary: 'waiting card' }], judge: { ...configured, judging: ['p1'] } }));
+  it('uses per-item pending even when the global judging list disagrees, then shows unavailable', async () => {
+    let pending = true;
+    boot(() => ({ actions: [{ id: 'p1', tool: 'x', summary: 'waiting card', judge_pending: pending }],
+      judge: { ...configured, judging: pending ? [] : ['p1'] } }));
     const polls = capturePolls();
     const c = await open();
     expect(card(c, 'waiting card').textContent).toContain('pending…');
     expect(polls.active()).toBe(1);
+    pending = false;
+    await polls.advance(3000);
+    expect(card(c, 'waiting card').textContent).toContain('not available');
+    expect(polls.active()).toBe(0);
+  });
+
+  it('shows a late queued opinion after the old timeout plus 5 s window', async () => {
+    const calls = boot(() => ({ actions: [{ id: 'p1', tool: 'x', summary: 'waiting card',
+      ...(Date.now() >= 9000 ? { judge: OPINION } : { judge_pending: true }) }],
+      judge: { ...configured, judging: ['p1'], timeout: 1 } }));
+    const polls = capturePolls();
+    const c = await open();
     const before = calls.pending;
-    await polls.fire();
-    expect(calls.pending).toBe(before + 1);
-    expect(card(c, 'waiting card').textContent).toContain('pending…');   // a quiet read: no "Loading…"
-    expect(c.textContent).not.toContain('Loading…');
+    await polls.advance(6000);
+    expect(card(c, 'waiting card').textContent).toContain('pending…');
     expect(polls.active()).toBe(1);
-    landed = true;
-    await polls.fire();
-    expect(card(c, 'waiting card').textContent).toContain('risk 37/100');
-    expect(polls.active()).toBe(0);                                        // nothing is judging: no more polls
-  });
-
-  it('stops re-polling after the judge timeout plus 5 s', async () => {
-    const calls = boot({ actions: [{ id: 'q1', tool: 'x', summary: 'stuck card' }], judge: { ...configured, judging: ['q1'], timeout: 1 } });
-    const polls = capturePolls();
-    await open();
-    const before = calls.pending;
-    let fired = 0;
-    while (polls.active() && fired < 10) {
-      await polls.fire();
-      fired += 1;
-    }
-    // ceil((1 + 5) s / 3 s) = 2 quiet re-reads, then it stops.
-    expect(fired).toBe(2);
-    expect(calls.pending).toBe(before + 2);
-  });
-
-  // review F11: each waiting card has its own timeout + 5 s budget, so a card queued while
-  // another is still being judged is not stranded on "pending…".
-  it('gives a card queued mid-cycle its own re-poll budget', async () => {
-    let second = false;
-    const A = { id: 'r1', tool: 'x', summary: 'first card' }, B = { id: 'r2', tool: 'x', summary: 'second card' };
-    const calls = boot(() => (second
-      ? { actions: [A, B], judge: { ...configured, judging: ['r1', 'r2'], timeout: 1 } }
-      : { actions: [A], judge: { ...configured, judging: ['r1'], timeout: 1 } }));
-    const polls = capturePolls();
-    await open();
-    const before = calls.pending;
-    second = true;                     // B arrives through A's first quiet re-read
-    let fired = 0;
-    while (polls.active() && fired < 10) {
-      await polls.fire();
-      fired += 1;
-    }
-    // A: 2 re-reads (its budget); B, first seen on read 1, gets its own 2 → 3 in all.
-    expect(fired).toBe(3);
+    await polls.advance(3000);
     expect(calls.pending).toBe(before + 3);
+    expect(card(c, 'waiting card').textContent).toContain('risk 37/100');
+    expect(c.textContent).not.toContain('Loading…');
+    expect(polls.active()).toBe(0);
+  });
+
+  it('caps each card at 17 * timeout + 5 wall seconds despite unrelated refreshes', async () => {
+    const calls = boot({ actions: [{ id: 'q1', tool: 'x', summary: 'stuck card', judge_pending: true }],
+      judge: { ...configured, judging: ['q1'], timeout: 1 } });
+    const polls = capturePolls();
+    const c = await open();
+    await polls.advance(21000);
+    const beforeRefresh = calls.pending;
+    env.click(toolBtn(c, '↻'));
+    await env.flush();
+    await polls.advance(1000);             // original 22 s deadline, not refresh + 22 s
+    expect(polls.active()).toBe(0);
+    const capped = calls.pending;
+    expect(capped).toBeGreaterThan(beforeRefresh);
+    await polls.advance(30000);
+    expect(calls.pending).toBe(capped);
+  });
+
+  it('does not poll when a throttled timer wakes after its hard deadline', async () => {
+    const calls = boot({ actions: [{ id: 'late', tool: 'x', summary: 'stuck', judge_pending: true }],
+      judge: { ...configured, timeout: 1 } });
+    const polls = capturePolls();
+    await open();
+    const before = calls.pending;
+    await polls.fireDelayed(30000);
+    expect(calls.pending).toBe(before);
+    expect(polls.active()).toBe(0);
+  });
+
+  it('gives staggered cards independent deadlines and clears removed card state', async () => {
+    let first = true, second = false;
+    const A = { id: 'r1', tool: 'x', summary: 'first card', judge_pending: true };
+    const B = { id: 'r2', tool: 'x', summary: 'second card', judge_pending: true };
+    const calls = boot(() => ({ actions: [...(first ? [A] : []), ...(second ? [B] : [])],
+      judge: { ...configured, judging: ['r1', 'r2'], timeout: 1 } }));
+    const polls = capturePolls();
+    const c = await open();
+    await polls.advance(12000);
+    second = true;
+    await polls.advance(3000);             // B first seen at 15 s: deadline 37 s
+    await polls.advance(9000);             // A expired; B still polls
+    expect(polls.active()).toBe(1);
+    first = false;
+    await polls.advance(3000);             // A removal observed at 27 s
+    await polls.advance(10000);
+    expect(polls.active()).toBe(0);
+    const capped = calls.pending;
+    first = true;                         // same id reappears after removal: fresh budget
+    env.click(toolBtn(c, '↻'));
+    await env.flush();
+    expect(polls.active()).toBe(1);
+    await polls.advance(3000);
+    expect(calls.pending).toBeGreaterThan(capped + 1);
   });
 
   // review F1: the model's words sit in their own element, never inside the HUD's label text.

@@ -15,10 +15,10 @@ data for good, later a session purge or a memory forget):
   accept or edit on it (the ``permission_ledger.apply_grant`` rule): a machine decider
   such as ``policy`` is refused, and so is any other decision.
 
-Not closed here: these kinds are not registered Action Kernel kinds
-(``agents/core/kernel/registry.py`` is protected, P30.1). With ``JARVIS_TASK_MEDIATION``
-at ``enforce`` or ``hold`` the queue refuses them, so the write answers 503 until the owner
-adds the registry entry, and the card has no capability manifest.
+``settings.voice_command`` has an exact kernel registration and can enter the
+``enforce`` queue with signed evidence; its tier-three human floor remains.
+``settings.retention`` is still unregistered and strict intake refuses it.
+``hold`` refuses classified intake too. No settings wildcard is registered.
 """
 
 from __future__ import annotations

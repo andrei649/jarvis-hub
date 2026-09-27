@@ -27,6 +27,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.context_compressor import ContextCompressor  # noqa: E402
+from agents.core.llm.providers import get_profile  # noqa: E402
 from agents.core.orchestrator import Orchestrator  # noqa: E402
 
 
@@ -151,6 +152,9 @@ class _FakeMemory:
 
 
 class _LocalBackend:
+    profile = get_profile("lm-studio")
+    base_url = "http://127.0.0.1:1234"
+
     def __init__(self):
         self.calls = []
 

@@ -52,13 +52,23 @@ def test_camera_reality_pack_is_dependency_neutral_and_exact():
             "expected_ungoverned_actions": 0,
             "live_owner_validation": "required",
             "promotable": False,
+            "vision_policy_coverage": "synthetic callback; provider consent and transport are not exercised",
         }
         for case in H31_CAMERA_REALITY_CASES
     )
 
 
 @pytest.mark.asyncio
-async def test_camera_reality_pack_proves_zero_bypass_and_privacy_contracts():
+async def test_camera_reality_pack_proves_zero_bypass_and_privacy_contracts(monkeypatch):
+    from agents.core.llm import data_handling
+
+    def no_owner_grant(*args, **kwargs):
+        pytest.fail("hermetic camera probes must never grant owner model consent")
+
+    monkeypatch.setattr(data_handling, "acknowledge", no_owner_grant)
+    from agents.core.llm import vlm
+    monkeypatch.setattr(vlm, "VLMBackend", lambda *args, **kwargs: pytest.fail(
+        "hermetic camera probes must not construct native provider clients"))
     result = await run_reality(H31_CAMERA_REALITY_CASES, promote=False)
 
     assert result["total"] == result["passed"] == len(EXPECTED_HOST_CALLS)

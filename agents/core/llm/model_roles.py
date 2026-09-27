@@ -178,6 +178,17 @@ def same_origin(a: str, b: str) -> bool:
     return left is not None and left == right
 
 
+def public_local_origin(url: str) -> str:
+    """Only loopback HTTP origin may be displayed; URL components can be secrets."""
+    origin = _origin(url)
+    if origin is None or origin[0] not in _DEFAULT_PORTS or not _is_loopback_base(url):
+        return ""
+    scheme, host, port = origin
+    host = f"[{host}]" if ":" in host else host
+    suffix = f":{port}" if port != _DEFAULT_PORTS[scheme] else ""
+    return f"{scheme}://{host}{suffix}"
+
+
 def _reader(env: Mapping[str, str] | None):
     if env is not None:
         return lambda name: str(env.get(name, "") or "")
@@ -287,7 +298,7 @@ def _resolve_vision(read, spec: RoleSpec, env: Mapping[str, str] | None) -> Reso
         return ResolvedRole("vision", False, "", "", "", MappingProxyType(source), None, "",
                             exc.reason, tuple(ignored))
     provider = _VISION_PROVIDER_OF[config.backend]
-    policy = get_profile(provider).data_policy_for(config.model)[0]
+    policy = "local" if config.is_local else "unknown"
     return ResolvedRole("vision", True, provider, config.model, config.base_url,
                         MappingProxyType(source), bool(config.is_local), policy, "", tuple(ignored))
 
@@ -352,7 +363,6 @@ def describe(env: Mapping[str, str] | None = None) -> list[dict]:
                        provider=resolved.provider_id, model=resolved.model, local=resolved.local,
                        data_policy=resolved.data_policy, source=dict(resolved.source),
                        ignored=list(resolved.ignored),
-                       base_url=resolved.base_url if resolved.local else "")
+                       base_url=public_local_origin(resolved.base_url) if resolved.local else "")
         rows.append(row)
     return rows
-

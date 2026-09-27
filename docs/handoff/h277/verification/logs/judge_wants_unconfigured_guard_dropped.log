@@ -1,0 +1,43 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+.F...................................................................... [ 43%]
+........................................................................ [ 86%]
+...........F..........                                                   [100%]
+=================================== FAILURES ===================================
+_____________ test_attached_but_unconfigured_judge_is_never_called _____________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-51/test_attached_but_unconfigured0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10baa8800>
+
+    async def test_attached_but_unconfigured_judge_is_never_called(tmp_path, monkeypatch):
+        _pin_id_and_time(monkeypatch)
+        backend = FakeBackend()
+        judge = ApprovalJudge(backend_factory=lambda status: backend, settings=settings_of())
+        q = queue(tmp_path, judge, FakeIntentLog(), loop=asyncio.get_running_loop())
+>       assert judge.wants(dict(ACTION)) is False
+E       AssertionError: assert True is False
+E        +  where True = wants({'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', 'summary': 'write notes/a.md'})
+E        +    where wants = <agents.core.autonomy.approval_judge.ApprovalJudge object at 0x10baa9580>.wants
+E        +    and   {'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', 'summary': 'write notes/a.md'} = dict({'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', 'summary': 'write notes/a.md'})
+
+tests/test_h277_approval_judge.py:169: AssertionError
+______ test_round2_unconfigured_judge_preserves_tainted_head_shape[True] _______
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-51/test_round2_unconfigured_judge1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bcd4c50>
+attached = True
+
+    @pytest.mark.parametrize("attached", [False, True])
+    async def test_round2_unconfigured_judge_preserves_tainted_head_shape(tmp_path, monkeypatch, attached):
+        _pin_id_and_time(monkeypatch)
+        action = dict(ACTION, tainted=True, metadata={"tainted": True})
+        judge = ApprovalJudge(settings=settings_of()) if attached else None
+        q = queue(tmp_path, judge)
+        item = q.request(action)
+>       assert "tainted" not in item and "judge_pending" not in item
+E       AssertionError: assert ('tainted' not in {'id': 'abcdef123456', 'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', ...} and 'judge_pending' not in {'id': 'abcdef123456', 'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', ...})
+
+tests/test_h277_approval_judge.py:1172: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_attached_but_unconfigured_judge_is_never_called
+FAILED tests/test_h277_approval_judge.py::test_round2_unconfigured_judge_preserves_tainted_head_shape[True]
+2 failed, 164 passed in 2.57s

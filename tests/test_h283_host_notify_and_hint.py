@@ -11,12 +11,14 @@ across turns.
 from __future__ import annotations
 
 import asyncio
+import errno
 import os
 import socket
 import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
@@ -30,28 +32,30 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
-def listener(tmp_path, monkeypatch):
+def listener(monkeypatch):
     """A service manager's end: a datagram socket at NOTIFY_SOCKET."""
-    path = tmp_path / "notify.sock"
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-    sock.bind(str(path))
-    sock.setblocking(False)
-    monkeypatch.setenv("NOTIFY_SOCKET", str(path))
-    monkeypatch.delenv("WATCHDOG_USEC", raising=False)
-    monkeypatch.delenv("WATCHDOG_PID", raising=False)
+    # AF_UNIX addresses have a small limit; pytest temp roots can exceed it on macOS.
+    with TemporaryDirectory(prefix="h283-", dir="/tmp" if os.name != "nt" else None) as temporary, socket.socket(
+        socket.AF_UNIX, socket.SOCK_DGRAM
+    ) as sock:
+        path = Path(temporary) / "notify.sock"
+        sock.bind(str(path))
+        sock.setblocking(False)
+        monkeypatch.setenv("NOTIFY_SOCKET", str(path))
+        monkeypatch.delenv("WATCHDOG_USEC", raising=False)
+        monkeypatch.delenv("WATCHDOG_PID", raising=False)
 
-    def drain():
-        out = []
-        while True:
-            try:
-                out.append(sock.recv(4096).decode())
-            except BlockingIOError:
-                return out
+        def drain():
+            out = []
+            while True:
+                try:
+                    out.append(sock.recv(4096).decode())
+                except BlockingIOError:
+                    return out
 
-    from types import SimpleNamespace
+        from types import SimpleNamespace
 
-    yield SimpleNamespace(drain=drain, sock=sock, path=path)
-    sock.close()
+        yield SimpleNamespace(drain=drain, sock=sock, path=path)
 
 
 def _free_port() -> int:
@@ -108,7 +112,10 @@ def test_a_full_queue_is_waited_on_not_dropped(listener):
             while True:
                 filler.sendto(b"queued", str(listener.path))
                 sent += 1
-        except BlockingIOError:
+        except OSError as exc:
+            # Darwin uses ENOBUFS for a saturated datagram receive buffer.
+            if exc.errno not in {errno.EAGAIN, errno.EWOULDBLOCK, errno.ENOBUFS}:
+                raise
             if not sent:
                 break
     got = []
@@ -122,6 +129,37 @@ def test_a_full_queue_is_waited_on_not_dropped(listener):
             filler.close()
     got.extend(listener.drain())
     assert "READY=1\nSTATUS=serving" in got
+
+
+@pytest.mark.parametrize("error, retry", [(errno.ENOBUFS, True), (errno.EAGAIN, True), (errno.ENOENT, False)])
+def test_datagram_retry_is_bounded_and_only_for_full_buffers(monkeypatch, error, retry):
+    clock = [0.0]
+    attempts = []
+
+    class FullSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def setblocking(self, _):
+            pass
+
+        def sendto(self, *_):
+            attempts.append(clock[0])
+            raise OSError(error, "controlled socket error")
+
+    monkeypatch.setenv("NOTIFY_SOCKET", "/notify.sock")
+    monkeypatch.setattr(sd_notify.socket, "socket", lambda *_: FullSocket())
+    monkeypatch.setattr(sd_notify.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(sd_notify.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    assert sd_notify.notify("READY=1") is False
+    if retry:
+        assert len(attempts) > 1
+        assert sd_notify.SEND_TIMEOUT_SECONDS <= clock[0] <= sd_notify.SEND_TIMEOUT_SECONDS + 0.02
+    else:
+        assert len(attempts) == 1 and clock[0] == 0
 
 
 @needs_unix

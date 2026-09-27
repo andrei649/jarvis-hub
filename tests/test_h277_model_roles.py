@@ -328,6 +328,16 @@ def test_describe_never_raises_and_reports_a_bad_role(monkeypatch):
     assert rows["vision"]["error"] is True
 
 
+def test_describe_local_url_carries_only_origin():
+    rows = model_roles.describe({
+        "JARVIS_ROLE_APPROVAL_JUDGE_MODEL": "judge",
+        "JARVIS_ROLE_APPROVAL_JUDGE_BASE_URL": "http://user:secret@localhost:1234/secret?key=secret#secret",
+    })
+    row = next(r for r in rows if r["role"] == "approval_judge")
+    assert row["base_url"] == "http://localhost:1234"
+    assert "secret" not in repr(rows)
+
+
 def test_describe_carries_no_secret(monkeypatch):
     monkeypatch.setenv("JARVIS_VLM_BACKEND", "custom")
     monkeypatch.setenv("JARVIS_VLM_URL", "https://vision.example.test/v1")
@@ -435,6 +445,22 @@ def test_a_loopback_custom_vlm_is_listed_as_local():
 
     check = doctor.check_model_roles({"JARVIS_VLM_URL": "http://localhost:8000/v1"})
     assert "vision: openai-compatible/qwen2-vl (local" in check.detail
+
+
+@pytest.mark.parametrize("base, local, policy", [
+    ("http://192.168.1.20:1234/v1", False, "unknown"),
+    ("http://127.0.0.1:1234/v1", True, "local"),
+])
+def test_lm_studio_vision_policy_follows_host_locality(base, local, policy):
+    from scripts import doctor
+
+    env = {"JARVIS_ROLE_VISION_PROVIDER": "lm-studio",
+           "JARVIS_ROLE_VISION_MODEL": "qwen3-vl", "JARVIS_ROLE_VISION_BASE_URL": base}
+    role = model_roles.resolve("vision", env=env)
+    assert role.local is local
+    assert role.data_policy == policy
+    label = "local" if local else "remote"
+    assert f"vision: lm-studio/qwen3-vl ({label}, {policy})" in doctor.check_model_roles(env).detail
 
 
 # F8 — model and base URL are compared exactly; only the provider selector is case-folded.

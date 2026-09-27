@@ -24,6 +24,7 @@ import time
 import pytest
 
 from agents.core import settings_db
+from agents.core.llm.providers import get_profile
 from agents.core.memory import query_rewrite as qr
 
 
@@ -227,6 +228,8 @@ def test_the_rewriter_refuses_to_run_under_a_job_pin():
     from agents.core.orchestrator import Orchestrator
 
     class _Backend:
+        profile = get_profile("lm-studio")
+        base_url = "http://127.0.0.1:1234"
         calls = 0
 
         async def generate(self, **kw):
@@ -285,6 +288,8 @@ def test_the_strict_local_rewriter_uses_temperature_zero_and_96_tokens():
     seen = {}
 
     class _Backend:
+        profile = get_profile("lm-studio")
+        base_url = "http://127.0.0.1:1234"
         async def generate(self, **kw):
             seen.update(kw)
             return "What did I decide about the trip?"
@@ -308,6 +313,8 @@ def test_a_thinking_qwen3_model_is_told_not_to_think(model, switched):
     seen = {}
 
     class _Backend:
+        profile = get_profile("lm-studio")
+        base_url = "http://127.0.0.1:1234"
         async def generate(self, **kw):
             seen.update(kw)
             return "What did I decide about the trip?"

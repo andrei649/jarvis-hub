@@ -1,6 +1,6 @@
 import {apiFetchOnce} from './api/client';
 import type {VisionDraft} from './composer-images';
-export type VisionMessage={role:'vision';text:string;model:string;backend:string;destination:string;local:boolean;ts:string};
+export type VisionMessage={role:'vision';text:string;model:string;backend:string;destination:string;local:boolean;ts:string;warning?:string};
 export async function describeImages(prompt:string,draft:VisionDraft,signal:AbortSignal):Promise<Omit<VisionMessage,'role'|'ts'>>{
   const {names,...request}=draft;
   const response=await apiFetchOnce('/api/vlm/composer/describe',{method:'POST',body:{prompt,...request},signal});
@@ -9,5 +9,6 @@ export async function describeImages(prompt:string,draft:VisionDraft,signal:Abor
   let data:any;try{data=JSON.parse(text);}catch{throw new Error('Invalid vision response');}
   if(!response.ok)throw new Error(typeof data.error==='string'?data.error.slice(0,240):`Vision analysis failed (HTTP ${response.status})`);
   if(data.ok!==true||typeof data.response!=='string'||!data.response.trim()||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.destination!=='string'||typeof data.local!=='boolean')throw new Error('Invalid vision response');
-  return {text:data.response,model:data.model,backend:data.backend,destination:data.destination,local:data.local};
+  if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision response');
+  return {text:data.response,model:data.model,backend:data.backend,destination:data.destination,local:data.local,...(data.warning?{warning:data.warning}:{})};
 }

@@ -1,0 +1,17 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+.......................F................................................ [ 43%]
+........................................................................ [ 86%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+__________________________ test_parse_verdict_clamps ___________________________
+
+    def test_parse_verdict_clamps():
+>       assert parse_verdict('{"risk": 250, "why": "x"}').score == 100
+E       assert 250 == 100
+E        +  where 250 = Verdict(score=250, rationale='x').score
+E        +    where Verdict(score=250, rationale='x') = parse_verdict('{"risk": 250, "why": "x"}')
+
+tests/test_h277_approval_judge.py:302: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_parse_verdict_clamps - assert ...
+1 failed, 165 passed in 2.53s

@@ -25,7 +25,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard, user_guard
@@ -327,12 +327,15 @@ async def voice_capabilities():
     fish = bool(os.getenv("FISH_AUDIO_API_KEY"))
     local = await asyncio.to_thread(_local_providers_state, bool(has_whisper))     # H613: read per request
     piper, command = local["piper"], local["command"]
-    tts_command, stt_command = command["tts"]["ready"], command["stt"]["ready"]
+    tts_command = command['tts']['ready']
+    stt_command = local['selected_stt_ready']
+    named_tts = [row['selector'] for row in local['named']['tts'] if row['ready']]
+    stt_selector = local['selected_stt_provider'] or 'command'
     local_only = local["local_only"]
     # voice.local_only: only Piper, Kokoro or XTTS speak (never edge, ElevenLabs, Fish or the
     # TTS command, whose locality the hub cannot check).
     tts = (bool(xtts or has_kokoro or piper["available"]) if local_only
-           else bool(has_edge or has_kokoro or xtts or eleven or fish or piper["available"] or tts_command))
+           else bool(has_edge or has_kokoro or xtts or eleven or fish or piper["available"] or tts_command or named_tts))
     return nocache_json({
         "stt": local["stt"],                           # as voice.stt_engine allows: Whisper and/or the command
         "tts": tts,
@@ -346,13 +349,14 @@ async def voice_capabilities():
         ),
         "providers": {
             "stt": ("faster-whisper" if has_whisper and local["stt_mode"] != "command"
-                    else ("command" if stt_command and local["stt_mode"] != "whisper" else None)),
+                    else (stt_selector if stt_command and local["stt_mode"] != "whisper" else None)),
             "xtts": xtts, "elevenlabs": eleven, "fish_audio": fish,
             "edge_tts": has_edge, "kokoro": has_kokoro,
-            "piper": piper, "command": command,
+            "piper": piper, "command": command, "named": local["named"],
+            "named_error": local["provider_store_error"],
         },
         # the voice picker: the Piper models, and the command provider when it is ready
-        "voices": piper["voices"] + (["command"] if tts_command else []),
+        "voices": piper["voices"] + (["command"] if tts_command else []) + named_tts,
     })
 
 
@@ -362,10 +366,28 @@ def _local_providers_state(has_whisper: bool = False) -> dict:
     under them, now."""
     from agents.core.voice import local_providers
 
-    return {"piper": local_providers.piper_status(),
+    selected = local_providers.selected_stt_provider()
+    if selected is None:
+        selected_status = local_providers.command_status('stt')
+    else:
+        # Named metadata readiness catches store failures and avoids content hashing;
+        # actual transcription retains the full-content runtime rechecks.
+        ready = local_providers.command_ready('stt', provider_id=selected, verify_content=False)
+        selected_status = {'ready': ready.ok, 'reason': ready.reason}
+    from agents.core.voice.provider_store import ProviderStoreError
+    try:
+        named = {side: local_providers.named_command_status(side) for side in local_providers.SIDES}
+        store_error = None
+    except ProviderStoreError:
+        named = {side: [] for side in local_providers.SIDES}
+        store_error = 'provider_store_unavailable'
+    mode = local_providers.stt_mode()
+    stt = (local_providers.stt_available(has_whisper) if selected is None else
+           bool((has_whisper and mode != 'command') or (selected_status['ready'] and mode != 'whisper')))
+    return {'provider_store_error': store_error, 'named': named, 'selected_stt_provider': selected, 'selected_stt_ready': selected_status['ready'],
+            "piper": local_providers.piper_status(),
             "command": {side: local_providers.command_status(side) for side in local_providers.SIDES},
-            "local_only": local_providers.local_only(), "stt_mode": local_providers.stt_mode(),
-            "stt": local_providers.stt_available(has_whisper)}
+            "local_only": local_providers.local_only(), "stt_mode": mode, "stt": stt}
 
 
 # ── H613: the TTS / STT command providers (admin-only) ───────────
@@ -382,6 +404,7 @@ class VoiceCommandBody(BaseModel):
 
     side: str = Field(..., max_length=8)                   # "tts" or "stt"
     argv: Optional[list[str]] = Field(None, max_length=64)
+    provider_id: Optional[StrictStr] = None
     clear: bool = False                                    # the only way to clear a side
     dry_run: bool = False                                  # validate / preview; never writes
 
@@ -417,18 +440,22 @@ async def voice_commands_write(request: Request):
                                       "{side: tts|stt, clear: true, dry_run?}"}, status_code=422)
     if body.side not in command_settings.KEYS:
         return nocache_json({"error": "side: tts or stt"}, status_code=422)
+    from agents.core.voice.provider_store import valid_provider_id
+    if body.provider_id is not None and not valid_provider_id(body.provider_id):
+        return nocache_json({'error': 'invalid_provider_id'}, status_code=422)
     orch = get_orch()
+    named_kwargs = {} if body.provider_id is None else {'provider_id': body.provider_id}
     if body.clear:
         if body.argv:
             return nocache_json({"error": "clear takes no argv: send {side, clear: true}"}, status_code=422)
         if body.dry_run:                                   # a dry run never writes
-            return nocache_json({"ok": True, "dry_run": True, "side": body.side, "would_clear": True})
-        status, answer = await command_settings.clear(orch, body.side)
+            return nocache_json({"ok": True, "dry_run": True, "side": body.side, "would_clear": True, **named_kwargs})
+        status, answer = await command_settings.clear(orch, body.side, **named_kwargs)
     elif not body.argv:
         return nocache_json({"error": "argv: a list of strings, the program first — to clear the command, "
                                       "send {side, clear: true}"}, status_code=422)
     else:
-        status, answer = await command_settings.request(orch, body.side, list(body.argv), dry_run=body.dry_run)
+        status, answer = await command_settings.request(orch, body.side, list(body.argv), dry_run=body.dry_run, **named_kwargs)
     return nocache_json(answer, status_code=status)
 
 

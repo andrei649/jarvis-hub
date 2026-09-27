@@ -61,7 +61,7 @@ def local_voice_kind(voice: object) -> str | None:
     if not isinstance(voice, str):
         return None
     lowered = voice.strip().lower()
-    for kind in ("piper", "command"):
+    for kind in ("piper", "command", "provider"):
         if lowered == kind or lowered.startswith(kind + ":"):
             return kind
     return None
@@ -79,7 +79,11 @@ def tts_available() -> bool:
         return True
     if any(env_str(name) for name in ("XTTS_SERVER_URL", "ELEVENLABS_API_KEY", "FISH_AUDIO_API_KEY")):
         return True
-    return bool(local_providers.piper_status()["available"] or local_providers.command_ready("tts").ok)
+    try:
+        named = any(row["ready"] for row in local_providers.named_command_status("tts"))
+    except Exception:
+        named = False
+    return bool(local_providers.piper_status()["available"] or local_providers.command_ready("tts").ok or named)
 
 # Fish Audio S-series models understand inline square-bracket emotion tags
 # ([calm], [amused], …). Every other backend would read them aloud, so the
@@ -216,6 +220,15 @@ class TTSEngine:
         no reasoning, code, markup, emoji or unread symbols); nothing left to say is no
         synthesis at all."""
         v = self._voice_for(voice, lang)
+        named = None
+        if local_voice_kind(v) == "provider":
+            from .provider_registry import speech_registry
+            try:
+                named = speech_registry("tts").get("tts", v[len("provider:"):])
+            except Exception:
+                return None
+            if named is None:
+                return None
         text = for_speech(text, lang=speech_lang(lang, v, default=self.default_lang))
         if not text:
             logger.info("TTS: nothing to say after normalising the reply")
@@ -237,7 +250,7 @@ class TTSEngine:
         tried_piper = None
         # H613 — Piper and command voices, after the consent gate and before Fish.
         kind = local_voice_kind(v)
-        if kind == "command" and local_only:
+        if kind in {"command", "provider"} and local_only:
             # The hub cannot check where a command sends the text: local_only never runs it.
             logger.info("voice.local_only: the TTS command is not used; speaking with a local engine")
             kind, v = None, self._safe_default_voice(lang)
@@ -245,7 +258,10 @@ class TTSEngine:
             spoken = strip_emotion_tags(text)
             if not spoken:
                 return None
-            res = await (self._speak_piper(spoken, v, lang) if kind == "piper" else self._speak_command(spoken, lang))
+            if kind == "provider":
+                res = await named.synthesize(spoken, lang, temp_dir=TEMP_DIR, default_lang=self.default_lang)
+            else:
+                res = await (self._speak_piper(spoken, v, lang) if kind == "piper" else self._speak_command(spoken, lang))
             if res:
                 return res
             tried_piper = v if kind == "piper" else None

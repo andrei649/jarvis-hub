@@ -1,0 +1,214 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T15:37:19.738588+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "H517 declarative local image providers with approved production dispatch, per-provider HUD controls and directory-durable attempt records; H518/H523 reviewed against current shared source",
+  "plan": "docs/hermes/h517-local-provider-plan.md",
+  "review": "docs/hermes/h517-local-provider-review.md",
+  "coordination": {
+    "implementers": 2,
+    "model": "gpt-6-sol",
+    "reasoning": "high",
+    "ownership": "backend/runtime and independent integration tests; coordinator HUD/integration/records",
+    "additional_review": "Luna Medium bounded authority review and scoped directory-durability re-review; Sol High read-only H518/H523 reassessment"
+  },
+  "verification": [
+    {
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-local-provider-red.xml",
+      "passed": 0,
+      "seconds": 0.905,
+      "sha256": "e76644ace877ab837ba158b678b69708f5c2ccf47c63ec47a9eb3f695854eeb6"
+    },
+    {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-integration-red.xml",
+      "passed": 0,
+      "seconds": 0.848,
+      "sha256": "84e8fbee0a5902ed0d156b31a23fab764dfe37622e44c86645914f549eb9b561"
+    },
+    {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-gallery-red.xml",
+      "passed": 0,
+      "seconds": 0.891,
+      "sha256": "3869cb28202d65308a4991f73840770912bca68c7beaca5f9a15cea4ebc18bcc"
+    },
+    {
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-durability-red.xml",
+      "passed": 0,
+      "seconds": 0.692,
+      "sha256": "b4939453840220f9a146747bbed89dffc77dea04269c2cb965ef6a174cb2d93a"
+    },
+    {
+      "tests": 28,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-catalog-isolation-red.xml",
+      "passed": 27,
+      "seconds": 0.952,
+      "sha256": "3bbb4e63fc37eb27674a5f1991d8b0341563a08edb37324130fab75d1fd59e53"
+    },
+    {
+      "tests": 221,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-task-1-focus.xml",
+      "passed": 221,
+      "seconds": 2.712,
+      "sha256": "44d70b6f61473b75d7707949d81bcbfbd4b50629baa1099dd4987336b6c08836"
+    },
+    {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-integration-final.xml",
+      "passed": 16,
+      "seconds": 1.006,
+      "sha256": "8b9a8073fecdcc34661b74a9a3fa3a27bfe014923b7031bd7e899cd77a46a533"
+    },
+    {
+      "tests": 43,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-catalog-isolation-final.xml",
+      "passed": 43,
+      "seconds": 1.12,
+      "sha256": "3896607b9b1b111d594acfad14cfb02c771b211f6b0f967dde35a36247991ea0"
+    },
+    {
+      "tests": 19394,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 35,
+      "path": "/tmp/nerva-h517-backend.xml",
+      "passed": 19357,
+      "seconds": 249.855,
+      "sha256": "da918b48621cbbf80f21b1a072bbeb22a8b4c7effbfedddf4b0cf24758cc754d"
+    },
+    {
+      "tests": 19398,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "path": "/tmp/nerva-h517-backend-final.xml",
+      "passed": 19363,
+      "seconds": 249.993,
+      "sha256": "8c4cb47b4c2b78fcd90de425d52a3aa61ebc53a55e60376170c4fd04222256a4"
+    },
+    {
+      "tests": 92,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/nerva-h517-docs.xml",
+      "passed": 92,
+      "sha256": "f47aee5a3fe7f838e0df2105df0445c4660d9eb9976a70bb7960ba8e3e82cbc3"
+    }
+  ],
+  "frontend": [
+    {
+      "path": "/tmp/nerva-h517-ui-red.json",
+      "passed": 74,
+      "failed": 4,
+      "pending": 0,
+      "sha256": "32d7f38000642509bc289355f75e4d3f68feace68340c17fea4697d16b2ceb00"
+    },
+    {
+      "path": "/tmp/nerva-h517-ui-green.json",
+      "passed": 78,
+      "failed": 0,
+      "pending": 0,
+      "sha256": "6b74b3e71750fe1b5ad34ba3aae5f9e217428b29dc7d745348a9ee1efd82ce24"
+    },
+    {
+      "path": "/tmp/nerva-h517-frontend.json",
+      "passed": 1829,
+      "failed": 0,
+      "pending": 0,
+      "sha256": "37f222e95a93842a88cb22e4dfd93341c0f8794cd5722a6f5b9229adbdb8c3a3"
+    }
+  ],
+  "typecheck": {
+    "exit_code": 0,
+    "log": "/tmp/nerva-h517-typecheck.log"
+  },
+  "build": {
+    "exit_code": 0,
+    "log": "/tmp/nerva-h517-build.log",
+    "note": "Existing >500 kB chunk warning; no build error"
+  },
+  "full_backend_command": ".venv/bin/python -m pytest tests/ -n 3 --dist loadfile --timeout=90 -q --tb=short --junitxml=/tmp/nerva-h517-backend-final.xml",
+  "source_sha256": {
+    "agents/core/media_backends/comfyui.py": "8e7c9038cf464e026dedc0cf4e2965162a2f33f3226988fffc52744ad975b179",
+    "agents/core/media_backends/registry.py": "48ef72c67ea4e52dec9b507b17dfa5fc37fbf2fbadb549f433c1ebe46c475270",
+    "agents/core/media_backends/local_openai_image.py": "bbc4e3b03a5ac6f983d8b68cea498c791522a71320876bf3445cf53f80ae0a65",
+    "agents/core/image_generation_runtime.py": "b7563014e23cdf86f5b618d0c3cae4d97a3dc8c496ec9a96fc6196c7d796d2f4",
+    "tests/test_h517_local_provider.py": "b1faa1d82a1bddf5523acfd56e72bc058d69a8632661678845de0c78abe1ebbc",
+    "tests/test_h517_provider_integration.py": "b7974174361e3bc6cd2ddd54d3ce84a816ce50662004e203df450e1adbe37323",
+    "frontend/src/api/images.ts": "89b0993e9167b5a0457777fe2f2e416f0ea3697ccc804c75ea02d29fdd7c6a11",
+    "frontend/src/panels/images.tsx": "51b24bbc62edb9a4aedd089a00ab51f970de5e2aa1518ef74f766d308f4b102b",
+    "frontend/src/test/images-api.test.ts": "9788ae4e3e159704ce25d14ed9ac6a6dd0e1b6e7035f80c930ff1f9cec7a8301",
+    "frontend/src/test/images-panel.test.tsx": "1962fbfa7b85ed2c601930617d88e7890571e6f0bc34834f3a4b4106a7ad7eca",
+    "docs/hermes/h517-local-provider-plan.md": "f5d95a1a1916e111bb781d461c36ca6d46038e9a8ecd50b8a4a604e51f151568",
+    "docs/hermes/local-image-providers.md": "2bd2363cbfb8d35df364dd99e168bf9131a108f9817e5429a90f15f9c482ec1c"
+  },
+  "security": {
+    "bandit": {
+      "exit_code": 0,
+      "log": "/tmp/nerva-h517-bandit-final.log",
+      "scope": "agents/scripts against existing baseline"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "log": "/tmp/nerva-h517-gitleaks-final.log",
+      "files": 12
+    }
+  },
+  "graft": {
+    "check": "passed",
+    "log": "/tmp/nerva-h517-graft-check-final.log",
+    "scope": "existing selected core directories plus media_backends; no deep index or auto-refresh"
+  },
+  "corrections": [
+    "Gallery producer label originally inherited the ComfyUI closure name; now records selected backend.",
+    "Raw environment read used existing env_config helper without raising inventory cap.",
+    "Import-time catalog default and per-test home diverged in full suite; reproduced with catalog tests and fixed only fixture bootstrap path.",
+    "File fsync alone did not durably persist the attempt directory entry; strict ancestor directory synchronization now fails closed and retains markers."
+  ],
+  "limitations": [
+    "H517 remains partial: this is a finite local images wire protocol, not arbitrary executable adapters or all media subsystems.",
+    "New protocol is generation-only; edit/upscale/seed/steps are explicitly refused, ComfyUI options retained.",
+    "Windows and filesystems without directory synchronization refuse local image generation pending a verified equivalent; tests exercise OS call ordering, not physical power-loss hardware guarantees.",
+    "H518/H523 equivalence covers their frozen retained-gallery/authenticated-delivery contracts, not universal producer provenance, deleted history recovery or native codec support.",
+    "No live provider/GPU/native-device acceptance, new mutation campaign, commit, push, merge, deployment or paid calls.",
+    "No new Python/React coverage percentage measured or claimed."
+  ],
+  "hermes_status": {
+    "equivalent": 125,
+    "accepted": 697,
+    "percent": 17.9,
+    "partial": 252,
+    "missing": 64,
+    "needs_review": 256,
+    "current_reviews": 76,
+    "inherited_equivalent": 108
+  }
+}

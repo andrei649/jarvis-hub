@@ -4,6 +4,12 @@
 [Reguli, livrări reunite și următorii pași](HERMES_SPRINT.md). Cifrele de inventar
 de mai jos sunt auditul din 7 septembrie; progresul curent se citește în pagina de status.
 
+**Actualizare de obiectiv, 2026-09-27:** cele 107 excluderi istorice de mai jos
+au fost readmise explicit pentru paritate completă. Nu mai sunt scutiri de
+implementare și nu sunt numărate ca funcții terminate. Inventarul istoric este
+păstrat; [migrarea evaluării](hermes/scope-reopening-plan-2026-09-27.md) le pune
+în starea «de evaluat», cu aceleași ID-uri.
+
 > **Directiva owner-ului, 2026-09-07:** *„vreau ca tot să fie în nerva — ce avem superior, păstrăm;
 > ce nu avem, copiem; ce e sub hermes, facem update."*
 >

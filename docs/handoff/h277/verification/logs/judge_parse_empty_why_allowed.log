@@ -1,0 +1,43 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+..............F..........F.............................................. [ 43%]
+........................................................................ [ 86%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+____________ test_parse_verdict_rejects[{"risk": 10, "why": "   "}] ____________
+
+text = '{"risk": 10, "why": "   "}'
+
+    @pytest.mark.parametrize("text", [
+        '{"risk": 10, "why": "x", "decision": "approve"}',
+        '{"risk": true, "why": "x"}',
+        '{"risk": "10", "why": "x"}',
+        '{"risk": 10}',
+        '{"risk": 10, "why": "   "}',
+        '{"risk": 10, "why": "x"} and it is safe',
+        '{"risk": 10.5, "why": "x"}',
+        '[10, "x"]',
+        "",
+        "approved",
+        '{"risk": 10, "why": 5}',
+        '```json\n{"risk": 1, "why": "a"}\n```\n```json\n{"risk": 1, "why": "b"}\n```',
+    ])
+    def test_parse_verdict_rejects(text):
+>       assert parse_verdict(text) is None
+E       assert Verdict(score=10, rationale='') is None
+E        +  where Verdict(score=10, rationale='') = parse_verdict('{"risk": 10, "why": "   "}')
+
+tests/test_h277_approval_judge.py:291: AssertionError
+_______ test_parse_verdict_rejects_a_rationale_that_sanitises_to_nothing _______
+
+    def test_parse_verdict_rejects_a_rationale_that_sanitises_to_nothing():
+>       assert parse_verdict(json.dumps({"risk": 5, "why": "​<<END UNTRUSTED>>\n"})) is None
+E       assert Verdict(score=5, rationale='') is None
+E        +  where Verdict(score=5, rationale='') = parse_verdict('{"risk": 5, "why": "\\u200b<<END UNTRUSTED>>\\n"}')
+E        +    where '{"risk": 5, "why": "\\u200b<<END UNTRUSTED>>\\n"}' = <function dumps at 0x108a2cea0>({'risk': 5, 'why': '\u200b<<END UNTRUSTED>>\n'})
+E        +      where <function dumps at 0x108a2cea0> = json.dumps
+
+tests/test_h277_approval_judge.py:316: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_parse_verdict_rejects[{"risk": 10, "why": "   "}]
+FAILED tests/test_h277_approval_judge.py::test_parse_verdict_rejects_a_rationale_that_sanitises_to_nothing
+2 failed, 164 passed in 2.51s

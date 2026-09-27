@@ -11,6 +11,16 @@
 
 ## Safe task start
 
+**Owner directive, 2026-09-27:** `selfdev-policy.json` now authorizes autonomous
+local development on every repository path, including the kernel, security,
+workflows, and this control plane. No additional owner approval is required for
+local implementation, tests, or fixes. The classifier reports this separately as
+`autonomous_local_development`; `decision` and `autonomous_merge` continue to
+describe remote integration eligibility. The protected-path restrictions below
+apply to unattended merge/deploy, not to this owner-authorized local work.
+Keep this sprint local: no push, merge, or deployment until the owner requests
+publication. Tests, truthful evidence, and preservation of existing work still apply.
+
 1. Inspect `git status`, the current branch, the requested scope, and changes already present.
 2. Preserve user and other-agent changes. Never reset, overwrite, stage, or reformat unrelated work.
 3. Identify overlapping open work when remote state matters. A draft PR is a visibility signal,
@@ -110,6 +120,29 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
   first policy/auto-merge slice does not yet implement the whole self-development loop.
 
 ## Coordination and leases
+
+### Owner-approved resource plan (2026-09-27)
+
+- The owner authorizes the coordinator to delegate independent Nerva/Hermes work.
+  Use at most two concurrent implementation agents, explicitly `gpt-6-sol` with
+  `high` reasoning. An optional narrowly scoped read-only investigator may use
+  `gpt-6-luna` with `medium` reasoning when a slot is available and it saves work.
+- Keep the total at four active agents including the coordinator. Subagents must
+  not delegate. The coordinator owns scope, shared interfaces, integration and
+  critical review. Its model/effort stays as selected in the app; prefer Astra
+  High for coordination and reserve Ultra for a demonstrated difficult problem.
+- Give each agent a short self-contained brief with exact owned files, acceptance
+  tests and dependencies. Do not copy the entire conversation or inventory.
+  Assign a single writer per file; settle shared contracts before parallel edits.
+- Run meaningful focused regressions during implementation, then the relevant
+  integration suites after the batch. Run expensive full suites serially at a
+  milestone; repeat checks only for changed code, failures or unresolved concerns.
+- Escalate a concrete blocker or risk instead of repeating speculative review
+  loops. Record the model/effort, tests, delivered behavior and unfinished work per
+  batch. Subscription usage is account-wide; do not claim exact per-agent savings
+  without measured attribution.
+- Work remains local. Delegation does not authorize push, merge, deployment,
+  paid providers, or changes to unrelated projects or global Codex configuration.
 
 - GitHub-backed path-prefix leases are planned, but no remote lease service or enforcement exists
   yet. Until it does, the only honest lease state is `none`; inspect open work and coordinate

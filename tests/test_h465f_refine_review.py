@@ -21,6 +21,7 @@ import pytest
 from agents.core import settings_db
 from agents.core.commands import _REFINE_REFUSALS
 from agents.core.learning import background_review as br
+from agents.core.llm.providers import get_profile
 from tests.test_h465c_refine_review import _LLM, _reviewer
 from tests.test_h465d_refine_review import CUT_AFTER_INNER
 
@@ -102,6 +103,9 @@ def test_the_orchestrators_review_call_reads_the_cap_within_its_bounds(stored, s
     calls = []
 
     class Backend:
+        profile = get_profile("lm-studio")
+        base_url = "http://127.0.0.1:1234"
+
         async def generate(self, **kwargs):
             calls.append(kwargs)
             return GOOD

@@ -131,12 +131,16 @@ def _files(session_id: str, archive_root: Path | None) -> dict[str, Path]:
 
 
 def collect(session_id: str, *, checkpoints: Any, todos: Any, notes: Any = None,
-            archive_root: Path | None = None) -> dict:
+            archive_root: Path | None = None, outcomes_queue: Any = None,
+            session_instance: str | None = None) -> dict:
     """Everything the hub keeps under one session's id, as one JSON-able record. A file
     that is not UTF-8, or a snapshot that does not parse (a torn write), is kept byte for
     byte, base64, and named in ``unreadable``."""
     record: dict[str, Any] = {"session_id": session_id, "taken_at": _now().isoformat(), "unreadable": []}
     record.update(checkpoints.session_rows_for_backup(session_id) if checkpoints is not None else {})
+    if outcomes_queue is not None and session_instance is not None:
+        record["chat_approval_outcomes"] = outcomes_queue.chat_outcomes_for_backup(
+            session_id, session_instance=session_instance)
     for name, path in _files(session_id, archive_root).items():
         if not path.is_file():
             record[name] = None if name == "snapshot" else []
@@ -264,7 +268,7 @@ def _memory_locks(memory: Any) -> list[asyncio.Lock]:
 async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = None, todos: Any = None,
                          notes: Any = None, active: str | None = None, backup_root: Path | None = None,
                          archive_root: Path | None = None, prune: bool = True,
-                         expired: tuple[str, str] | None = None) -> dict:
+                         expired: tuple[str, str] | None = None, outcomes_queue: Any = None) -> dict:
     """Back the session up, then delete it. Raises :class:`SessionDeleteError`
     (``active_session``, ``not_found``, ``has_continuations``, ``backup_failed``,
     ``recall_unavailable``) before anything is deleted. ``prune=False`` leaves the older
@@ -287,9 +291,13 @@ async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = Non
         for lock in _memory_locks(memory):
             await held.enter_async_context(lock)
         try:
+            snapshot = (await asyncio.to_thread(checkpoints.clock_snapshot, session_id)
+                        if outcomes_queue is not None else None)
+            instance = snapshot.instance_id if snapshot is not None else None
             record = await asyncio.to_thread(collect, session_id, checkpoints=checkpoints, todos=todos,
-                                             notes=notes, archive_root=archive_root)
-        except OSError as exc:
+                                             notes=notes, archive_root=archive_root,
+                                             outcomes_queue=outcomes_queue, session_instance=instance)
+        except Exception as exc:
             logger.warning("session delete refused: the session could not be read (%s)", type(exc).__name__)
             raise SessionDeleteError("backup_failed") from exc
         if not _is_session(session_id, record):
@@ -315,6 +323,15 @@ async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = Non
             raise SessionDeleteError("recall_unavailable") from exc
         removed = await asyncio.to_thread(_delete_traces, session_id, checkpoints, _files(session_id, archive_root),
                                           expired)
+        outcome_cleanup_error = None
+        if outcomes_queue is not None and instance is not None:
+            try:
+                removed["chat_approval_outcomes"] = await asyncio.to_thread(
+                    outcomes_queue.purge_chat_outcomes, session_id, session_instance=instance)
+            except Exception as exc:
+                # Identity was removed first: a recreated session cannot see these rows.
+                # delete_leased retries orphan cleanup only while no identity exists.
+                outcome_cleanup_error = exc
         removed["embeddings"] = embeddings
         conversation = getattr(memory, "conversation", memory)
         for live in (getattr(conversation, "sessions", None), getattr(conversation, "instances", None)):
@@ -322,6 +339,8 @@ async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = Non
                 live.pop(session_id, None)
         removed["todo"] = bool(todos.forget(session_id)) if todos is not None else False
         removed["note"] = bool(notes.clear(session_id)) if notes is not None else False
+    if outcome_cleanup_error is not None:
+        raise SessionDeleteError("approval_outcomes_unavailable") from outcome_cleanup_error
     pruned = await asyncio.to_thread(prune_backups, root) if prune else []
     logger.info("session %s deleted; backup at %s", session_id, backup)
     return {"ok": True, "session": session_id, "backup": str(backup), "removed": removed, "pruned": pruned}
@@ -357,9 +376,30 @@ async def delete_leased(orch: Any, session_id: str, *, live: Iterable[str] | Non
             raise SessionDeleteError("session_busy")
         if still_eligible is not None and not await asyncio.to_thread(still_eligible):
             raise SessionDeleteError("no_longer_expired")
-        result = await delete_session(
-            session_id, checkpoints=orch.checkpoints, memory=getattr(orch, "memory", None), todos=todo_tool.TODOS,
-            notes=getattr(orch, "notes", None), active=active, prune=prune, expired=expired)
+        queue = getattr(orch, "autonomy_queue", None)
+        try:
+            result = await delete_session(
+                session_id, checkpoints=orch.checkpoints, memory=getattr(orch, "memory", None), todos=todo_tool.TODOS,
+                notes=getattr(orch, "notes", None), active=active, prune=prune, expired=expired,
+                outcomes_queue=queue)
+        except SessionDeleteError as exc:
+            if (exc.reason == "approval_outcomes_unavailable"
+                    and await asyncio.to_thread(orch.checkpoints.clock_snapshot, session_id) is None):
+                forget = getattr(orch, "forget_channel_session", None)
+                if callable(forget):
+                    forget(session_id)
+            if (exc.reason != "not_found" or queue is None
+                    or await asyncio.to_thread(orch.checkpoints.clock_snapshot, session_id) is not None):
+                raise
+            # Same turn lease plus absent identity prevents racing a recreated chat.
+            try:
+                count = await asyncio.to_thread(queue.purge_chat_outcomes, session_id)
+            except Exception as cleanup_exc:
+                raise SessionDeleteError("approval_outcomes_unavailable") from cleanup_exc
+            if not count:
+                raise
+            result = {"ok": True, "session": session_id, "backup": None,
+                      "removed": {"chat_approval_outcomes": count}, "pruned": []}
         forget = getattr(orch, "forget_channel_session", None)
         if callable(forget):
             forget(session_id)

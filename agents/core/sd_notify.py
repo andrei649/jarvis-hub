@@ -23,6 +23,7 @@ protocol is advisory to the process that runs it.
 from __future__ import annotations
 
 import asyncio
+import errno
 import logging
 import os
 import socket
@@ -76,7 +77,11 @@ def notify(message: str) -> bool:
                 try:
                     sock.sendto(data, address)
                     return True
-                except BlockingIOError:            # the manager's queue is full: wait for room
+                except OSError as exc:
+                    # Linux reports EAGAIN; Darwin reports ENOBUFS when the
+                    # service manager's datagram buffer is full. Retry only these.
+                    if exc.errno not in {errno.EAGAIN, errno.EWOULDBLOCK, errno.ENOBUFS}:
+                        raise
                     if time.monotonic() >= deadline:
                         raise
                     time.sleep(0.01)

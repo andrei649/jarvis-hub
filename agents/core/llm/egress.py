@@ -65,6 +65,14 @@ def _recorder(backend: str):
     """
 
     async def _hook(request: httpx.Request) -> None:
+        # H513: context-local guard rechecks each physical send, including retries.
+        # Direct clients without a routed scope retain their existing contract.
+        from .data_handling import check_physical_request
+        try:
+            await check_physical_request(request)
+        except Exception:
+            _record(backend, request, allowed=False, reason="routed data-handling gate refused")
+            raise
         reason = protocol_refusal(backend, request.url)
         if reason:
             _record(backend, request, allowed=False, reason=reason)
@@ -97,3 +105,33 @@ def llm_async_client(backend: str, **kwargs) -> httpx.AsyncClient:
 
         kwargs["verify"] = verify_for(backend, kwargs.get("base_url"))
     return httpx.AsyncClient(event_hooks=event_hooks, **kwargs)
+
+
+def llm_sync_request_hook(backend):
+    """Sync embedding SDK/client hook: policy and host protocol before transport."""
+    def hook(request):
+        from .data_handling import check_physical_request_sync
+
+        try:
+            check_physical_request_sync(request)
+        except Exception:
+            _record(backend, request, allowed=False, reason="routed data-handling gate refused")
+            raise
+        reason = protocol_refusal(backend, request.url)
+        if reason:
+            _record(backend, request, allowed=False, reason=reason)
+            raise HostProtocolRefused(reason)
+        _record(backend, request, allowed=True)
+    hook._nerva_sync_provider = backend
+    return hook
+
+
+def llm_sync_client(backend, **kwargs):
+    """Owned synchronous model client with the same trust anchor and egress ledger."""
+    hooks = dict(kwargs.pop("event_hooks", None) or {})
+    hooks["request"] = [*hooks.get("request", []), llm_sync_request_hook(backend)]
+    if "verify" not in kwargs and kwargs.get("transport") is None:
+        from agents.core.tls_trust import verify_for
+
+        kwargs["verify"] = verify_for(backend, kwargs.get("base_url"))
+    return httpx.Client(event_hooks=hooks, **kwargs)

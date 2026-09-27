@@ -1,0 +1,105 @@
+{
+  "generated_at": "2026-09-27T09:22:14.759938+00:00",
+  "base_sha": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "Local H277 integration milestone and verification portability repairs; not full Hermes parity",
+  "backend": {
+    "initial": {
+      "name": "pytest",
+      "errors": "10",
+      "failures": "14",
+      "skipped": "35",
+      "tests": "18574",
+      "time": "254.818",
+      "timestamp": "2026-09-27T12:02:59.527918+03:00",
+      "hostname": "Macmini"
+    },
+    "final": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "35",
+      "tests": "18583",
+      "time": "235.836",
+      "timestamp": "2026-09-27T12:17:37.587564+03:00",
+      "hostname": "Macmini"
+    }
+  },
+  "backend_command": ".venv/bin/python -m pytest tests/ -n 3 --dist loadfile --timeout=90 -q --tb=short --junitxml=REPORT",
+  "frontend": {
+    "command": "npm test (frontend/)",
+    "passed": 1794,
+    "files": 205,
+    "lockfile_install": "npm ci --ignore-scripts --no-audit --no-fund",
+    "typecheck": "passed",
+    "build": "passed",
+    "vite": "8.3.0",
+    "vitest": "5.0.1"
+  },
+  "legacy_hud": {
+    "command": "npm run test:coverage",
+    "passed": 228,
+    "files": 27,
+    "lines_pct": 69.27,
+    "required_lines_pct": 60
+  },
+  "security": {
+    "bandit": "1.9.4: agents/scripts against existing baseline, exit0",
+    "gitleaks": "8.30.1: release-checksummed darwin_arm64; tracked and nonignored-source snapshot, existing config, redact, exit0"
+  },
+  "mutation_reports": [
+    "docs/handoff/h277/verification/report.md",
+    "docs/handoff/h277/verification/post_refactor/report.md"
+  ],
+  "limitations": [
+    "35 backend skips retained; no new live model/provider/native acceptance",
+    "Existing mobile test count142 reused; native suite not rerun in this milestone",
+    "H277 remains partial for video/provider/native parity",
+    "Existing manual checker flags unrelated worldview paths and security-table formatting"
+  ],
+  "source_sha256": {
+    "agents/cli/nerva.py": "40916cf93d28cf65637109903f74495e585bd1fcdd17939c089cc436ab01589f",
+    "agents/core/autonomy/action_approvals.py": "d02ce37dd651986f1c8d99149cfd081e7256e118e6802b1f34439d568bb074db",
+    "agents/core/autonomy/advisory_judgements.py": "bf661bfa87390acf264a32061e645893adce82161bc1ed6f1cbcfee926fcae69",
+    "agents/core/autonomy/approval_judge.py": "6c5f74d8f1a9ebb11091c6f433a1d09f7d0ba4be2f957130e52b007b52c40237",
+    "agents/core/autonomy/queue.py": "c6bce92091eaab50f90b21da35aa086b5529d8b9ac46db15002348ecf2bf7c27",
+    "agents/core/autonomy/task_approval_judge.py": "c0a071c7ce3aef72f83796973bf9f9f4c41e164dbf2f841cbd87d6f433a90759",
+    "agents/core/autonomy/worker.py": "42195c4257edda3484ec4a44585f51f4f5fc96b2e51dfb651979b92579aa2cf1",
+    "agents/core/llm/model_roles.py": "361ff428dbdbcf3d3741143bcefcb5cd53f5738c77668e5f1491cdb4b7d88e39",
+    "agents/core/orchestrator.py": "63cc92ccd776ec662c9b9fbd034259990f4dde0514d9909d57268b7f25d87e6f",
+    "agents/core/routers/autonomy.py": "81e04ee639a2364160beaca4c99809da410e65bfb0ae651570f784a359c123de",
+    "agents/core/routers/models_llm.py": "82baa672078cdaacd1ae0d73acfa9fa29f3db49923b298e7b406287ce9ec1ead",
+    "agents/core/routers/multimodal.py": "77b97304181930dcd65222f551fb774e20e03d490d91df6b40ee3c89fc0db912",
+    "agents/core/sd_notify.py": "03f3a570660f24f2a09fe0856a807700bd4c9c288c0e5f4d75fd3cac2fa1f8a1",
+    "agents/web/static/tools.js": "9de993de96c7201964786090a9af911cd7efac7b7b4758bd944033ab1e1bd8fd",
+    "agents/web/v2/assets/gap-Dg5vkbNg.js": "a78da767f5fa3c08bb0a44ebd35d045af3ee6caf9b25bde016d6c9c563b437d4",
+    "agents/web/v2/assets/index-D2R1-YtY.js": "f3ae93a249695498d0745bb3fa6138341b5aa2221cde4a86151414257d2a50f1",
+    "agents/web/v2/assets/modes-DdJwakre.js": "ac71b78847cbb439a58d3f97d954edd9df5ab478232de75ed5138c8064ee7b44",
+    "agents/web/v2/assets/modes2-CglTXFUz.js": "966eece6870f191ce08ca9f4db35f3a5f5aefd0bdfefdbbeeed159ed207d977b",
+    "agents/web/v2/assets/modes3-BmIzvZCz.js": "2a0b2c6fd2b611b62f565ecfc563d713e407df3dcd0cd3b51edb6a3d87c26c54",
+    "agents/web/v2/assets/modes4-C0CgrXfr.js": "95f9590f7114ea603aeca7bcc77200a27015c1efce917a7cd2ff69b00b078686",
+    "agents/web/v2/assets/modes_world-pFGwLSQH.js": "c13b5f25c17e8ff6b598bd0caf2ae3958387514634fe091f5e19e912eb86f5b6",
+    "agents/web/v2/index.html": "1b83c4f8e8042258c624eb7590870ab0c984156424c6c91edb40a53e57ac7b5d",
+    "frontend/src/api/schema.gen.ts": "a3bd00777fa7ccc6f50806df01b61c22e2b27ee1dc45a140572b397b51945c28",
+    "frontend/src/gap.tsx": "6696e717080a373ab9d7581a9fce7463125c0ae9682b151ec6d011bdf82906cf",
+    "frontend/src/test/decision-inbox-panel.test.tsx": "c032f418460cbc609969dcdd0ee801d49c5eb3f3fbd2560dc6657d333183f974",
+    "frontend/src/test/model-roles-panel.test.tsx": "f0b2bea79c545b83cb239e703018c247108a66ce8f578fa148513d26a96a17cc",
+    "scripts/selfdev_policy.py": "ac509c53d6ae4075c64ff19df41d7c597a61d0185156616d3c97484f39d6803e",
+    "tests/_nerva_e1_2_checks.py": "80f4d2b837e226ce38a42ac8c1a2adacd52016c69877f27d1b184f98c5bb4c08",
+    "tests/_snapshots/openapi_surface.json": "58bbba232d767f1a00947856ce239a8f5436b8e62cdb280a3d0a7b9ee3307e45",
+    "tests/_snapshots/route_auth.json": "433d68b4ea93675a3ffd9e1703ec600d6820762e4262b90c1be33c69394ddd57",
+    "tests/_snapshots/route_surface.json": "2273eff1805ddbd33ddb4fbf90c326f00d1acaec2b654ccaaabcabe59adba5f3",
+    "tests/frontend/coverage-badge.svg": "c61c9c7cc7311947fb9fefb7d2bd837d441ccacc00f75673b7a98b04f1518961",
+    "tests/frontend/tools.test.js": "c2f8d6343cbd00de6e5cec1902a8195440819537a8d5fccef1d54fa60740b827",
+    "tests/test_h277_approval_judge.py": "0392024f4b47520276b1b314dc117f0b3bcba42aaeb3fd952d94f1f3da8783e7",
+    "tests/test_h277_model_roles.py": "60f141543aebaa6bc4c170e8151ad94446bf78409d5a4a42aa4e40ba852ab4d2",
+    "tests/test_h277_role_routes.py": "9ded5ed305e0f9de43b57f5c1fcfc491a95f3c9ed0e656a893b5735eb48d68ac",
+    "tests/test_h277_task_judge.py": "940ccc33fa947a3546267a8bad8a9a881fe85783ba2de7e497c6013cbc6035f3",
+    "tests/test_h283_host_notify_and_hint.py": "27685ea51e839724362cae7c7853dc9e48f09c13df10078655f5e22a1017eb7d",
+    "tests/test_h464_run_barriers.py": "7494509999590606085de050b5be62abf94baaf085a291d0b7960a1d213fdc2f",
+    "tests/test_h579_context_refs.py": "58a3ea69094b8b7a5a4900ac2f9178404c61e06fc950aca03c4d7ea59dd66471",
+    "tests/test_h667c_exec_cache_review.py": "4822de2acc54ac56a3aedcd86786214cab48b024239592df3144126e4d48ce35",
+    "tests/test_nerva_cli.py": "f213e907348000d353bd25ad88005a48914695a7686ae51e3596998880bdc4df",
+    "tests/test_pr_auto_merge_policy.py": "a596d833391be4e98fedc443f08dbd2a6db910b3d4ba2d8accbbfa05515a6735",
+    "tests/test_workflows_autonomy_api.py": "82e4b554f1ddbae378e683c7bcddf163a77ce9e8d10d297e93fe9109693fbe6d"
+  }
+}

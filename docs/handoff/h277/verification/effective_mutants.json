@@ -1,0 +1,846 @@
+[
+  {
+    "label": "roles_pick_legacy_wins_over_role_name",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "    if new:\n",
+    "b": "    if new and not legacy:\n",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_model_config.py"
+    ],
+    "run": "py",
+    "generation": "prepared",
+    "mapping": "Comment was added before return; mutate the current precedence condition."
+  },
+  {
+    "label": "roles_pick_shadowed_legacy_not_reported",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "([legacy_name] if legacy and legacy != new else [])",
+    "b": "[]",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_doctor.py"
+    ],
+    "run": "py",
+    "generation": "prepared",
+    "mapping": "Round2 now compares case-sensitive values; drop the equivalent ignored-legacy report."
+  },
+  {
+    "label": "roles_pick_legacy_fallback_dropped",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "    if legacy:\n        return legacy, legacy_name, []",
+    "b": "    if False:\n        return legacy, legacy_name, []",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_model_config.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "roles_vision_view_legacy_url_wins",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "url = role_url or legacy_url",
+    "b": "url = legacy_url or role_url",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_vlm_h13_1.py",
+      "tests/test_composer_vision.py",
+      "tests/test_screen_reflex_route.py"
+    ],
+    "run": "py",
+    "generation": "prepared",
+    "mapping": "Round2 extracts URL variables; invert the equivalent precedence."
+  },
+  {
+    "label": "roles_vision_view_provider_not_validated",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "_VISION_BACKEND_OF[_validate(spec, role_provider)] if role_provider",
+    "b": "_VISION_BACKEND_OF.get(role_provider.lower(), \"\") if role_provider",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_vlm_h13_1.py",
+      "tests/test_composer_vision.py",
+      "tests/test_screen_reflex_route.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "roles_validate_supported_set_check_dropped",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "if spec.providers is None or value not in spec.providers:",
+    "b": "if spec.providers is None:",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "roles_main_becomes_env_selectable",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "    if role == \"main\":",
+    "b": "    if role == \"__main__\":",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_doctor.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "roles_env_role_default_provider_ollama",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "provider = _validate(spec, raw_provider) if raw_provider else \"lm-studio\"",
+    "b": "provider = _validate(spec, raw_provider) if raw_provider else \"ollama\"",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "roles_env_role_unset_model_guard_dropped",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "    if not model:\n        return ResolvedRole(spec.name, False,",
+    "b": "    if False:\n        return ResolvedRole(spec.name, False,",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "roles_locality_or_instead_of_and",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "(policy == \"local\" and _is_loopback_base(base_url))",
+    "b": "(policy == \"local\" or _is_loopback_base(base_url))",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "roles_vision_lmstudio_default_url_dropped",
+    "file": "agents/core/llm/vlm.py",
+    "a": "base = url or LMSTUDIO_VLM_BASE",
+    "b": "base = url",
+    "tests": [
+      "tests/test_h277_model_roles.py"
+    ],
+    "run": "py",
+    "generation": "prepared",
+    "mapping": "Default URL now belongs to resolve_vlm_config in vlm.py; remove that default at the current consumer."
+  },
+  {
+    "label": "roles_describe_catches_wrong_error",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "        except RoleConfigError as exc:\n            row.update(",
+    "b": "        except KeyError as exc:\n            row.update(",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_doctor.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "vlm_role_error_reason_masked",
+    "file": "agents/core/llm/vlm.py",
+    "a": "raise VLMNotConfigured(exc.reason) from exc",
+    "b": "raise VLMNotConfigured(\"vlm_disabled\") from exc",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_vlm_h13_1.py",
+      "tests/test_composer_vision.py",
+      "tests/test_screen_reflex_route.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "model_config_override_flag_inverted",
+    "file": "agents/core/llm/model_config.py",
+    "a": ".source[\"model\"] != \"default\"",
+    "b": ".source[\"model\"] == \"default\"",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_model_config.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_safe_mode_check_dropped",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    if safe_mode.enabled():\n        return _off(\"safe_mode\", **ident)",
+    "b": "    if False:\n        return _off(\"safe_mode\", **ident)",
+    "tests": [
+      "tests/test_h277_approval_judge.py",
+      "tests/test_h275_safe_mode.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_protocol_refusal_dropped",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    if host_protocol.protocol_refusal(provider, base_url):",
+    "b": "    if False:",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_h378_findings_ignored",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    if findings:\n",
+    "b": "    if False:\n",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_remote_gate_applies_to_local",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    if not local:\n        if not env_flag(ENV_ALLOW_REMOTE):",
+    "b": "    if local:\n        if not env_flag(ENV_ALLOW_REMOTE):",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_allow_remote_inverted",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if not env_flag(ENV_ALLOW_REMOTE):",
+    "b": "        if env_flag(ENV_ALLOW_REMOTE):",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_strict_local_ignored",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if env_flag(\"JARVIS_STRICT_LOCAL\"):",
+    "b": "        if False:",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_cloud_fallback_never_ignored",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if fallback == \"never\":",
+    "b": "        if fallback == \"off\":",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_timeout_floor_dropped",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "env_float(ENV_TIMEOUT, DEFAULT_TIMEOUT, minimum=MIN_TIMEOUT)",
+    "b": "env_float(ENV_TIMEOUT, DEFAULT_TIMEOUT)",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_public_leaks_remote_base_url",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if self.configured and self.local:",
+    "b": "        if self.configured:",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_prompt_not_fenced",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "fenced, flags = quarantine.fence_tool_result(encoded, source=FENCE_SOURCE)",
+    "b": "fenced, flags = encoded, []",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_parse_extra_keys_allowed",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "set(data) != {\"risk\", \"why\"}",
+    "b": "not {\"risk\", \"why\"} <= set(data)",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_parse_fractional_risk_allowed",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "(risk != risk or not risk.is_integer())",
+    "b": "(risk != risk)",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_parse_empty_why_allowed",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    if not why:\n        return None",
+    "b": "    if False:\n        return None",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_parse_code_fence_unanchored",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "\\n?```\\Z\"",
+    "b": "\\n?```\"",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_clamp_upper_bound_raised",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "max(0, min(100, int(risk)))",
+    "b": "max(0, min(1000, int(risk)))",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_rationale_fence_markers_kept",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    out = _MARKER_RE.sub(\" \", out)\n",
+    "b": "",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_wants_unconfigured_guard_dropped",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if not status.configured:\n            return False",
+    "b": "        if False:\n            return False",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_wants_skill_card_judged",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if snapshot.get(\"tool\") == CARD_TOOL:",
+    "b": "        if False:",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_wants_local_agent_sent_remote",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "            if self._agent_is_local(str(snapshot.get(\"agent\") or \"\")):",
+    "b": "            if False:",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "judge_wants_tainted_sent_remote",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "            if taint.is_tainted(dict(snapshot)) or _deep_tainted(snapshot.get(\"args\")):",
+    "b": "            if False:",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared",
+    "mapping": "Round2 replaced shallow args taint with deep args taint; remove current equivalent gate."
+  },
+  {
+    "label": "judge_selection_pin_check_inverted",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if current_selection() is not None:",
+    "b": "        if current_selection() is None:",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "queue_annotate_after_decision",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "if item is None or item.get(\"status\") != \"pending\" or \"judge\" in item:",
+    "b": "if item is None or \"judge\" in item:",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "queue_annotate_second_answer_overwrites",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "if item is None or item.get(\"status\") != \"pending\" or \"judge\" in item:",
+    "b": "if item is None or item.get(\"status\") != \"pending\":",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "queue_annotate_low_score_auto_approves",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "            item[\"judge\"] = dict(annotation)\n",
+    "b": "            item[\"judge\"] = dict(annotation)\n            if int(annotation.get(\"score\", 100)) < 30:\n                item[\"status\"] = \"approved\"\n",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "queue_snapshot_is_stored_item",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "snapshot = normalise_snapshot(item)",
+    "b": "snapshot = item",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared",
+    "mapping": "Round2 replaced JSON round-trip with normalization; retain alias-to-live-item mutant."
+  },
+  {
+    "label": "queue_judge_inherits_caller_context",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "            self._spawn(running, snapshot, status, fresh)\n",
+    "b": "            self._spawn(running, snapshot, status, contextvars.copy_context())\n",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "queue_short_lived_loop_not_judged_on_hub",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "if running is not None and (running is loop or not hub_up):",
+    "b": "if running is not None:",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "queue_decided_audit_drops_judge_identity",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "\"judge\": (decided.get(\"judge\") or {}).get(\"judge\")})",
+    "b": "\"judge\": None})",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "queue_judged_audit_drops_judge_identity",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "\"judge\": stored.get(\"judge\"), \"rationale_sha256\"",
+    "b": "\"judge\": None, \"rationale_sha256\"",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "route_pending_drops_judge_key",
+    "file": "agents/core/routers/actions.py",
+    "a": "nocache_json({\"actions\": q.list(\"pending\"), \"judge\": _judge_status(q)})",
+    "b": "nocache_json({\"actions\": q.list(\"pending\")})",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "doctor_model_roles_attention_ignored",
+    "file": "scripts/doctor.py",
+    "a": "    if attention:\n        return _result(\"model_roles\", False,",
+    "b": "    if False:\n        return _result(\"model_roles\", False,",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_doctor.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "doctor_model_roles_ignored_not_flagged",
+    "file": "scripts/doctor.py",
+    "a": "            attention.append(f\"{name}:ignored\")\n",
+    "b": "",
+    "tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_doctor.py"
+    ],
+    "run": "py",
+    "generation": "prepared"
+  },
+  {
+    "label": "hud_opinion_shown_on_skill_card",
+    "file": "agents/web/static/tools.js",
+    "a": "if (!status || !status.configured || a.tool === 'skill.patch_proposal') return null;",
+    "b": "if (!status || !status.configured) return null;",
+    "tests": [
+      "tests/frontend/tools.test.js"
+    ],
+    "run": "js",
+    "generation": "prepared"
+  },
+  {
+    "label": "hud_repoll_never_stops",
+    "file": "agents/web/static/tools.js",
+    "a": "return polls.current[id] > Date.now();",
+    "b": "return true;",
+    "tests": [
+      "tests/frontend/tools.test.js"
+    ],
+    "run": "js",
+    "generation": "prepared",
+    "mapping": "Round2 replaced poll-count cap with wall-clock deadlines; bypass final timer deadline guard."
+  },
+  {
+    "label": "hud_opinion_advisory_label_dropped",
+    "file": "agents/web/static/tools.js",
+    "a": "'\u201d \u00b7 advisory only, it decides nothing'",
+    "b": "'\u201d'",
+    "tests": [
+      "tests/frontend/tools.test.js"
+    ],
+    "run": "js",
+    "generation": "prepared",
+    "mapping": "HUD now uses typographic closing quote; remove the same advisory label."
+  },
+  {
+    "label": "N1_post_slot_status_stale",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "current = judge.status() if judge is not None else None",
+    "b": "current = status",
+    "generation": "N1",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N1_post_slot_wants_dropped",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "or not judge.wants(live, current) or not judge.wants(snapshot, current)",
+    "b": "or False",
+    "generation": "N1",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N1_disk_pending_recheck_dropped",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "persisted.get(\"status\") != \"pending\"",
+    "b": "False",
+    "generation": "N1",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N1_memory_pending_recheck_dropped",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "if not item or item.get(\"status\") != \"pending\" or \"judge\" in item:",
+    "b": "if not item or \"judge\" in item:",
+    "generation": "N1",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N1_skip_revoked_counter_dropped",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "self._skipped_revoked += 1",
+    "b": "self._skipped_revoked += 0",
+    "generation": "N1",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N2_public_pending_hidden",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "out[\"judge_pending\"] = True",
+    "b": "out[\"judge_pending\"] = False",
+    "generation": "N2",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N2_finish_pending_not_cleared",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "            self._judge_pending.discard(action_id)\n",
+    "b": "            pass\n",
+    "generation": "N2",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N2_decide_pending_not_cleared",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "        self._clear_judge_pending(action_id)\n",
+    "b": "",
+    "generation": "N2",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N2_hud_early_timeout",
+    "file": "agents/web/static/tools.js",
+    "a": "(17 * (timeout > 0 && Number.isFinite(timeout) ? timeout : 20) + 5)",
+    "b": "((timeout > 0 && Number.isFinite(timeout) ? timeout : 20) + 5)",
+    "generation": "N2",
+    "run": "js",
+    "tests": [
+      "tests/frontend/tools.test.js"
+    ]
+  },
+  {
+    "label": "N2_hud_deadline_refreshes",
+    "file": "agents/web/static/tools.js",
+    "a": "if (!Object.prototype.hasOwnProperty.call(next, a.id)) next[a.id] = now + budget;",
+    "b": "next[a.id] = now + budget;",
+    "generation": "N2",
+    "run": "js",
+    "tests": [
+      "tests/frontend/tools.test.js"
+    ]
+  },
+  {
+    "label": "N2_capacity_released_on_decide",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "        self._clear_judge_pending(action_id)\n",
+    "b": "        self._clear_judge_pending(action_id)\n        self._judging.discard(action_id)\n",
+    "generation": "N2",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N3_within_budget_values_cut",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    if len(encoded) <= ARGS_CAP:\n        return encoded, False",
+    "b": "    if len(encoded) <= 1500:\n        return encoded, False",
+    "generation": "N3",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N3_small_values_inflated",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "if len(_encoded(shortened)) < sizes[(kind, key)]:",
+    "b": "if len(text) > cap:",
+    "generation": "N3",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N3_args_cap_raised",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "ARGS_CAP = 4000",
+    "b": "ARGS_CAP = 8000",
+    "generation": "N3",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N4_deep_truncated_flag_dropped",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "return fenced, names, truncated or too_deep",
+    "b": "return fenced, names, truncated",
+    "generation": "N4",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N4_deep_flag_dropped",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "names = sorted(set(names) | {\"nesting_too_deep\"})",
+    "b": "names = sorted(set(names))",
+    "generation": "N4",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N4_remote_depth_refusal_dropped",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "if not status.local and \"nesting_too_deep\" in flags:",
+    "b": "if False:",
+    "generation": "N4",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N4_normalised_marker_not_tainted",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "if depth > _TAINT_DEPTH or (isinstance(obj, str) and obj == _NESTING_MARKER):",
+    "b": "if depth > _TAINT_DEPTH:",
+    "generation": "N4",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N5_nfkc_dropped",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "unicodedata.normalize(\"NFKC\", text)",
+    "b": "text",
+    "generation": "N5",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N5_unicode_quote_categories_dropped",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "or unicodedata.category(ch) in {\"Pi\", \"Pf\"}",
+    "b": "or False",
+    "generation": "N5",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N5_dot_separator_kept",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "out = _SEPARATOR_RE.sub(\"-\", out)",
+    "b": "out = out",
+    "generation": "N5",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N6_bytes_repr_instead_of_decode",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "return obj.decode(\"utf-8\", errors=\"replace\")",
+    "b": "return str(obj)",
+    "generation": "N6",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N6_set_repr_instead_of_list",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "if isinstance(obj, (list, tuple, set, frozenset)):",
+    "b": "if isinstance(obj, (list, tuple)):",
+    "generation": "N6",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N7_import_guard_wrong_exception",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "        except ImportError:\n",
+    "b": "        except KeyError:\n",
+    "generation": "N7",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  },
+  {
+    "label": "N7_unconfigured_judge_taints_item",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "if self._judge is not None and self._judge.status().configured:",
+    "b": "if True:",
+    "generation": "N7",
+    "run": "py",
+    "tests": [
+      "tests/test_h277_approval_judge.py"
+    ]
+  }
+]

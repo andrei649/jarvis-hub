@@ -1,0 +1,103 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_model_roles.py", "tests/test_h277_approval_judge.py"]
+....................................................F........F.......... [ 26%]
+................................F.F..................................... [ 53%]
+..................F..................................................... [ 80%]
+....................................................                     [100%]
+=================================== FAILURES ===================================
+______________ test_judge_role_uses_the_provider_profile_base_url ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11006d6d0>
+
+    def test_judge_role_uses_the_provider_profile_base_url(monkeypatch):
+        monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_MODEL", "judge-m")
+        role = model_roles.resolve("approval_judge")
+>       assert role.provider_id == "lm-studio" and role.source["provider"] == "default"
+E       AssertionError: assert ('ollama' == 'lm-studio'
+E         
+E         - lm-studio
+E         + ollama)
+
+tests/test_h277_model_roles.py:308: AssertionError
+__________ test_doctor_model_roles_row_notes_a_second_lm_studio_model __________
+
+    def test_doctor_model_roles_row_notes_a_second_lm_studio_model():
+        from scripts import doctor
+    
+        check = doctor.check_model_roles({"JARVIS_ROLE_APPROVAL_JUDGE_MODEL": "qwen3-4b"})
+>       assert "may load a second model" in check.detail
+E       AssertionError: assert 'may load a second model' in 'main: settings llm.* (not env-selectable); deep: router/deepseek-r1-distill-qwen-32b (local backend) [default]; visio...y; /api/media reports video: false); approval_judge: ollama/qwen3-4b (local, local) [JARVIS_ROLE_APPROVAL_JUDGE_MODEL]'
+E        +  where 'main: settings llm.* (not env-selectable); deep: router/deepseek-r1-distill-qwen-32b (local backend) [default]; visio...y; /api/media reports video: false); approval_judge: ollama/qwen3-4b (local, local) [JARVIS_ROLE_APPROVAL_JUDGE_MODEL]' = Check(name='model_roles', status='ok', reason='roles_ok', detail='main: settings llm.* (not env-selectable); deep: rou...dia reports video: false); approval_judge: ollama/qwen3-4b (local, local) [JARVIS_ROLE_APPROVAL_JUDGE_MODEL]', data={}).detail
+
+tests/test_h277_model_roles.py:380: AssertionError
+______ test_configured_judge_annotates_the_item_and_changes_nothing_else _______
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-29/test_configured_judge_annotate0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110121b80>
+
+    async def test_configured_judge_annotates_the_item_and_changes_nothing_else(tmp_path, monkeypatch):
+        backend = FakeBackend()
+        q = queue(tmp_path, local_judge(monkeypatch, backend), FakeIntentLog())
+        item = q.request(ACTION)
+        await drain(q)
+        got = q.get(item["id"])
+        judge = got["judge"]
+        assert judge["score"] == 37
+        assert judge["rationale"] == "Writes one file under the workspace; reversible."
+>       assert judge["judge"] == {"provider": "lm-studio", "model": "judge-m", "local": True}
+E       AssertionError: assert {'provider': ...'local': True} == {'provider': ...'local': True}
+E         
+E         Omitting 2 identical items, use -vv to show
+E         Differing items:
+E         {'provider': 'ollama'} != {'provider': 'lm-studio'}
+E         Use -v to get more diff
+
+tests/test_h277_approval_judge.py:190: AssertionError
+___________________ test_audit_rows_carry_the_judge_identity ___________________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-29/test_audit_rows_carry_the_judg0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110123e60>
+
+    async def test_audit_rows_carry_the_judge_identity(tmp_path, monkeypatch):
+        audit = FakeIntentLog()
+        q = queue(tmp_path, local_judge(monkeypatch, FakeBackend()), audit)
+        item = q.request(ACTION)
+        await drain(q)
+        [judged] = audit.of("action_approval.judged")
+        assert judged["actor"] == "approval_judge"
+        assert judged["cause"] == f"action_approval:{item['id']}"
+        meta = judged["metadata"]
+>       assert meta["judge"] == {"provider": "lm-studio", "model": "judge-m", "local": True}
+E       AssertionError: assert {'provider': ...'local': True} == {'provider': ...'local': True}
+E         
+E         Omitting 2 identical items, use -vv to show
+E         Differing items:
+E         {'provider': 'ollama'} != {'provider': 'lm-studio'}
+E         Use -v to get more diff
+
+tests/test_h277_approval_judge.py:222: AssertionError
+_____________ test_local_judge_status_shows_its_loopback_base_url ______________
+
+rig = namespace(app=<fastapi.applications.FastAPI object at 0x110194fe0>, state=namespace(orch=namespace(action_approvals=<agents.core.autonomy.action_approvals.ActionApprovalQueue object at 0x11019eab0>)))
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-29/test_local_judge_status_shows_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110197b90>
+
+    async def test_local_judge_status_shows_its_loopback_base_url(rig, tmp_path, monkeypatch):
+        rig.state.orch.action_approvals = queue(tmp_path, local_judge(monkeypatch, FakeBackend()))
+        async with http(rig) as client:
+            body = (await client.get("/api/actions/pending")).json()
+>       assert body["judge"]["base_url"] == "http://localhost:1234" and body["judge"]["local"] is True
+E       AssertionError: assert ('http://localhost:11434' == 'http://localhost:1234'
+E         
+E         - http://localhost:1234
+E         ?                   ^
+E         + http://localhost:11434
+E         ?                   ^^)
+
+tests/test_h277_approval_judge.py:719: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_judge_role_uses_the_provider_profile_base_url
+FAILED tests/test_h277_model_roles.py::test_doctor_model_roles_row_notes_a_second_lm_studio_model
+FAILED tests/test_h277_approval_judge.py::test_configured_judge_annotates_the_item_and_changes_nothing_else
+FAILED tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity
+FAILED tests/test_h277_approval_judge.py::test_local_judge_status_shows_its_loopback_base_url
+5 failed, 263 passed in 3.09s

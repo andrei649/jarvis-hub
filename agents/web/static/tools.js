@@ -92,7 +92,7 @@
     const j = a.judge;
     if (!j) {
       if (!status || !status.configured || a.tool === 'skill.patch_proposal') return null;
-      const waiting = (status.judging || []).indexOf(a.id) >= 0;
+      const waiting = a.judge_pending === true;
       return h('div', { className: 'tool-card-text judge-opinion', style: muted }, waiting ? 'Model opinion: pending…' : 'Model opinion: not available');
     }
     const who = j.judge || {};
@@ -108,24 +108,33 @@
 
   function ActionsPanel() {
     const _ = useApi('/api/actions/pending', true), s = _[0], reload = _[1];
-    // H277: while a pending card waits for the judge, re-read quietly every 3 s; each waiting
-    // card has its own budget of the judge's timeout + 5 s from when it was first seen
-    // waiting (review F11), so a card queued mid-cycle is not stranded; nothing is pushed.
-    const polls = useRef({});   // card id -> quiet re-reads since it was first seen waiting
+    const _r = useState({}), reasons = _r[0], setReasons = _r[1];
+    // The per-item runtime flag covers both queued and running judgements. Give each card
+    // the full 32-item/two-slot queue budget, measured from its first pending observation.
+    // Retain deadlines through refresh/loading and pending-state changes; only removal resets.
+    const polls = useRef({});   // card id -> wall-clock deadline
     useEffect(function () {
-      const d = s.data, js = d && d.judge;
-      if (!js || !js.configured) { polls.current = {}; return undefined; }
-      const ids = (d.actions || []).map(function (a) { return a.id; });
-      const waiting = (js.judging || []).filter(function (id) { return ids.indexOf(id) >= 0; });
-      const max = Math.ceil(((Number(js.timeout) || 20) + 5) * 1000 / JUDGE_POLL_MS);
-      const seen = polls.current, next = {};
-      waiting.forEach(function (id) { next[id] = seen[id] || 0; });
-      polls.current = next;       // a card no longer waiting drops out
-      if (!waiting.some(function (id) { return next[id] < max; })) return undefined;
+      const d = s.data;
+      if (!d) return undefined; // an unrelated non-quiet refresh must not restart budgets
+      const js = d.judge, seen = polls.current, next = {};
+      const timeout = Number(js && js.timeout);
+      const budget = (17 * (timeout > 0 && Number.isFinite(timeout) ? timeout : 20) + 5) * 1000;
+      const now = Date.now();
+      const waiting = [];
+      (d.actions || []).forEach(function (a) {
+        if (Object.prototype.hasOwnProperty.call(seen, a.id)) next[a.id] = seen[a.id];
+        if (a.judge_pending === true && !a.judge && a.tool !== 'skill.patch_proposal') {
+          if (!Object.prototype.hasOwnProperty.call(next, a.id)) next[a.id] = now + budget;
+          if (next[a.id] > now) waiting.push(a.id);
+        }
+      });
+      polls.current = next;
+      if (!js || !js.configured || !waiting.length) return undefined;
+      const remaining = Math.max.apply(null, waiting.map(function (id) { return next[id] - now; }));
       const t = setTimeout(function () {
-        waiting.forEach(function (id) { polls.current[id] = (polls.current[id] || 0) + 1; });
-        reload(true);
-      }, JUDGE_POLL_MS);
+        // A timer delayed by browser throttling must not send a read past the hard cap.
+        if (waiting.some(function (id) { return polls.current[id] > Date.now(); })) reload(true);
+      }, Math.min(JUDGE_POLL_MS, remaining));
       return function () { clearTimeout(t); };
     }, [s.data]);
     // H318 (review-H318b M-2): a skill change is shown with its whole diff, built by the hub
@@ -136,7 +145,27 @@
     // Every pending proposal's card, the page's and beyond it (review-H318d m-4).
     ((changes.data && changes.data.cards) || []).forEach(function (c) { owned[c] = true; });
     function decide(id, ok) {
-      adminFetch('/api/actions/' + id + '/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved: ok }) }).then(function () { reload(); reloadChanges(); }).catch(function (e) { alert(e.message); });
+      const body = { approved: ok }, reason = (reasons[id] || '').trim();
+      if (reason) body.reason = reason;
+      adminFetch('/api/actions/' + id + '/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function () {
+        setReasons(function (previous) { const next = Object.assign({}, previous); delete next[id]; return next; });
+        reload(); reloadChanges();
+      }).catch(function (e) { alert(e.message); });
+    }
+    function rejectGroup(group) {
+      const body = { snapshot: group.snapshot, member_ids: group.member_ids };
+      const reason = (reasons[group.leader_id] || '').trim();
+      if (reason) body.reason = reason;
+      adminFetch('/api/actions/groups/' + encodeURIComponent(group.id) + '/reject', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      }).then(function () {
+        setReasons(function (previous) {
+          const next = Object.assign({}, previous);
+          group.member_ids.forEach(function (id) { delete next[id]; });
+          return next;
+        });
+        reload(); reloadChanges();
+      }).catch(function (e) { alert(e.message); });
     }
     // Only once the proposals answered can a card be said not to be one's own: while they
     // load, or when the fetch failed, the panel says so and Approve waits (review-H318c m-2).
@@ -159,16 +188,35 @@
     }
     let body;
     if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
-    else { const acts = (s.data.actions || []); body = acts.length ? acts.map(function (a) {
+    else {
+      const acts = (s.data.actions || []), leaders = {}, followers = {}, ids = new Set(acts.map(function (a) { return a.id; }));
+      (s.data.groups || []).forEach(function (group) {
+        const members = group.member_ids;
+        // An incomplete projection must never hide a card the owner can still decide.
+        if (!Array.isArray(members) || members.length < 2 || members.length !== group.count
+            || new Set(members).size !== members.length || !members.includes(group.leader_id)
+            || !members.every(function (id) { return ids.has(id); })) return;
+        leaders[group.leader_id] = group;
+        members.forEach(function (id) { if (id !== group.leader_id) followers[id] = true; });
+      });
+      body = acts.length ? acts.filter(function (a) { return !followers[a.id]; }).map(function (a) {
+      const group = leaders[a.id];
       return h('div', { key: a.id, className: 'tool-card' },
         h('div', { className: 'tool-card-text' }, (a.summary || a.tool) + (a.preview && a.preview.irreversible ? ' · ⚠ irreversible' : '')),
+        group && h('div', { className: 'tool-card-text' }, group.count + ' matching requests · approval applies only to this request; the next remains pending.'),
         judgeLines(a, s.data.judge),
         skillChange(a),
+        h('textarea', { 'aria-label': 'Your decision reason for ' + (a.summary || a.tool),
+          placeholder: 'Your decision reason (optional)', maxLength: 280, value: reasons[a.id] || '',
+          onChange: function (event) { const value = event.target.value; setReasons(function (previous) {
+            return Object.assign({}, previous, { [a.id]: value });
+          }); } }),
         h('div', { className: 'tool-actions' },
           (a.tool === 'skill.patch_proposal' && (unknownYet() || !byCard[a.id] || refused(byCard[a.id])))
             ? h('button', { className: 'tool-btn ok', disabled: true }, 'Approve')
-            : Btn('Approve', function () { decide(a.id, true); }, 'ok'),
-          Btn('Reject', function () { decide(a.id, false); }, 'bad')));
+            : Btn(group ? 'Approve once' : 'Approve', function () { decide(a.id, true); }, 'ok'),
+          Btn('Reject', function () { decide(a.id, false); }, 'bad'),
+          group && Btn('Reject group', function () { rejectGroup(group); }, 'bad')));
     }) : Empty('No pending tool-calls.'); }
     return Tool('Action Approvals', 'Pending tool-calls (admin)', body, Btn('↻', function () { reload(); reloadChanges(); }));
   }

@@ -87,10 +87,15 @@ def _evidence(root: Path, item: Any) -> tuple[str, bool]:
 
 
 def assess(ledger: dict, data: dict, root: Path = REPO) -> list[dict]:
-    _require(isinstance(data, dict) and set(data) == {
+    _require(isinstance(data, dict), "invalid assessment schema")
+    version = data.get("schema_version")
+    _require(type(version) is int and version in {1, 2}, "unsupported schema")
+    fields = {
         "schema_version", "inventory_count", "inventory_sha256", "base_sha", "assessed_at", "reviews",
-    }, "invalid assessment schema")
-    _require(type(data["schema_version"]) is int and data["schema_version"] == 1, "unsupported schema")
+    }
+    if version == 2:
+        fields.add("scope_reopenings")
+    _require(set(data) == fields, "invalid assessment schema")
     caps = ledger.get("capabilities")
     _require(isinstance(caps, list) and type(data["inventory_count"]) is int
              and len(caps) == data["inventory_count"] and digest(ledger) == data["inventory_sha256"],
@@ -118,6 +123,30 @@ def assess(ledger: dict, data: dict, root: Path = REPO) -> list[dict]:
                           "Reevaluare pe cod; cerințele și lipsurile sunt în rândul original."),
         })
     by_id = {row["id"]: row for row in rows}
+    reopenings = data.get("scope_reopenings", [])
+    _require(isinstance(reopenings, list), "scope reopenings must be a list")
+    reopened = set()
+    for item in reopenings:
+        _require(isinstance(item, dict) and set(item) == {
+            "id", "row_sha256", "decided_at", "reason",
+        }, "invalid scope reopening fields")
+        ident = item["id"]
+        _require(isinstance(ident, str) and ident in by_id, "unknown scope reopening id")
+        _require(ident not in reopened, "duplicate scope reopening")
+        row = by_id[ident]
+        _require(row["decision"] == "skip", "only originally excluded rows can be reopened")
+        _require(item["row_sha256"] == digest(caps[int(ident[1:]) - 1]),
+                 "scope reopening identity mismatch")
+        stamp = item["decided_at"]
+        _require(_text(stamp) and "T" in stamp and stamp.endswith("Z"),
+                 "invalid scope reopening timestamp")
+        datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        _require(_text(item["reason"]), "scope reopening needs a reason")
+        reopened.add(ident)
+        row.update(status="needs_review", basis="scope_reopened",
+                   summary=item["reason"],
+                   remaining="Readmis în obiectivul de paritate completă; necesită evaluare pe cod și teste. "
+                             "Vechiul verdict de excludere nu dovedește implementarea.")
     seen = set()
     fields = {"id", "row_sha256", "status", "summary", "remaining", "evidence"}
     for item in data["reviews"]:
@@ -128,7 +157,8 @@ def assess(ledger: dict, data: dict, root: Path = REPO) -> list[dict]:
         seen.add(ident)
         row = by_id[ident]
         _require(item["row_sha256"] == digest(caps[int(ident[1:]) - 1]), "review identity mismatch")
-        _require(row["decision"] != "skip", "excluded scope cannot be silently changed")
+        _require(row["decision"] != "skip" or ident in reopened,
+                 "excluded scope cannot be silently changed")
         _require(item["status"] in {"equivalent", "partial", "missing"}
                  and _text(item["summary"]) and isinstance(item["remaining"], str), "invalid review status/text")
         _require((item["status"] == "equivalent") == (item["remaining"] == ""),
@@ -197,9 +227,12 @@ def reports(rows: list[dict], data: dict) -> dict[str, str]:
     out.extend([
         "", f"**Ținta acceptată în produs:** {result['accepted']} rânduri; progres "
         f"{done}/{result['accepted']} = **{result['accepted_percent']}%**. "
-        "Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.", "",
+        f"Excluderi active: {result['counts']['excluded']}. "
+        f"Readmise explicit din vechiul audit: {len(data.get('scope_reopenings', []))}; "
+        "readmiterea nu acordă credit de implementare.", "",
         f"**Acoperirea reevaluării curente:** {result['reviewed']}/{result['total']} rânduri. "
-        "Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.", "",
+        "Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. "
+        "Existența unui fișier sau a unui PR nu închide automat un rând.", "",
         "**Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. "
         "Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. "
         "Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. "
@@ -235,7 +268,8 @@ def reports(rows: list[dict], data: dict) -> dict[str, str]:
         detail.extend([f"## {_md(cluster)}", "", "| ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |",
                        "|---|---|---|---|---|---|"])
         for row in (r for r in rows if r["cluster"] == cluster):
-            basis = "Audit 07.09" if row["basis"] == "baseline_2026-09-07" else "Reevaluat" if row["basis"] == "reviewed" else "Dovadă schimbată"
+            basis = {"baseline_2026-09-07": "Audit 07.09", "reviewed": "Reevaluat",
+                     "scope_reopened": "Readmis; neevaluat"}.get(row["basis"], "Dovadă schimbată")
             note = row["remaining"] or row["summary"]
             links = " ".join(f"[d{i + 1}](../{e['path']})" for i, e in enumerate(row["evidence"][:3]))
             detail.append(f"| <a id=\"{row['id'].lower()}\"></a>{row['id']} | {_md(row['name'])} | {row['decision']} | "

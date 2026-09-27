@@ -1,5 +1,67 @@
 # Handoff — H277 in progress on PR #1207 (2026-09-27)
 
+## Local Codex continuation (2026-09-27)
+
+The original Claude handoff below is preserved as dated history. Round2 is now
+fixed locally. Its 74 mutation cases produced 73 kills and one documented
+observational equivalence; the shared-runner follow-up killed all14 mutations.
+See [round2 verification](verification/report.md) and
+[post-refactor verification](verification/post_refactor/report.md).
+Decision Inbox tasks now use the advisory judge alongside action cards, with
+separate annotation storage and shared capacity. The HUD shows opinions and a
+read-only role list. VLM describe checks locality/model policy before dispatch.
+H277 records are refreshed as **partial**, not equivalent: video/provider depth,
+native opinions and live acceptance remain open. Full-suite results and portability
+repairs are tracked in `docs/hermes/h277-completion-plan.md`. No push or PR edit.
+
+Separate H513 judge consent now covers actual HTTP identity, revocation and
+redirect/reused-request refusal. The next local full milestone passed 18,919
+backend tests/35 skips and 1,804 frontend tests; see
+[the exact evidence](../../hermes/evidence/h513-judge-integration-2026-09-27.json).
+Older mutation evidence above remains bound to its original snapshot.
+
+The later H487 task-expiry milestone adds fresh deadline checks to task judging
+and clears newly expired pending keys even while e-stop holds durable effects.
+It passed 19,054 backend tests/35 skips and 1,809 frontend tests; see
+[the expiry snapshot](../../hermes/evidence/h487-task-expiry-integration-2026-09-27.json).
+This is separate from the older mutation campaign and does not close H277.
+
+The later H513 direct-transport milestone passed 19,088 backend tests/35 skips.
+Owned judge clients ignore environment proxies; actual selected routes are checked
+freshly, and borrowed ACTIVE clients remain unchanged. See
+[transport evidence](../../hermes/evidence/h513-direct-transport-integration-2026-09-27.json).
+
+The following interactive VLM milestone passed 19,122 backend tests/35 skips
+and 1,815 frontend tests. Role/model selection remains enforced while the two
+strict-local HTTP consumers gain scoped dispatch, sanitized status and honest
+failure reporting. See [interactive evidence](../../hermes/evidence/h513-interactive-vision-integration-2026-09-27.json).
+The next Telegram-image milestone passed 19,156 backend tests/35 skips and
+1,819 frontend tests, with typecheck/build/scoped scans green. Its independent
+role consent preserves judge scopes and refuses stale native dispatch. See
+[media-reader evidence](../../hermes/evidence/h513-media-reader-integration-2026-09-27.json).
+The camera milestone passed 19,194 backend tests/35 skips and 1,822 frontend
+tests, with typecheck/build/scoped scans green. H513 is now code-equivalent to
+the frozen inventory contract; H487 remains partial. See
+[camera evidence](../../hermes/evidence/h513-camera-integration-2026-09-27.json) and
+[the acceptance review with separate unfinished follow-ups](../../hermes/h513-code-equivalence-review.md).
+
+The later generic model-grouping milestone passed 19,226 backend tests/35 skips,
+then 101 focused integration tests after the scan correction. Grouping retains
+independent signed receipts and does not fan out approval. H487 remains partial;
+see [model grouping evidence](../../hermes/evidence/h487-model-grouping-2026-09-27.json).
+
+The bounded human-wait milestone passed 19,285 backend tests/35 skips with scoped
+scans/Graft green. Earliest queue decision metadata now prevents defer/accept history
+from inflating Company Mode's capped wait credit. H277 signed authority is unchanged;
+see [human-wait evidence](../../hermes/evidence/h487-human-wait-2026-09-27.json).
+The following H517 local-provider slice passed 19,363 backend tests/35 skips and
+1,829 frontend tests, with typecheck/build/scoped scans green. It adds declarative
+loopback image registration, real approved dispatch and backend-specific HUD
+controls. Directory-durable attempt records now refuse unsupported filesystems.
+H518/H523 shared-source contracts were re-reviewed; H517 remains partial and
+H516 video remains missing. See [provider review](../../hermes/h517-local-provider-review.md)
+and [video checkpoint](../../hermes/h516-video-design-checkpoint.md).
+
 This is the state of the Hermes integration PR #1207 (branch `claude/cto-session-recovery-qinvkg`) at
 handoff. H613 is finished and recorded; **H277 is built and one review round is fixed, but it is not
 finished** — follow the steps below before calling it done.

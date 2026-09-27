@@ -167,3 +167,18 @@ it('never retries an ambiguous cloud proposal',async()=>{
   await expect(proposeCloudImage('prompt',{size:'1024x1024',quality:'low'})).rejects.toMatchObject({code:'uncertain'});
   expect(fetch).toHaveBeenCalledTimes(1);
 });
+it('reads local protocol capabilities and non-checkpoint models without probing',async()=>{
+  const backend={id:'studio',models:['studio/image-v1'],protocol:'openai_images',edit:false,max_references:0,upscale:[]};
+  vi.mocked(fetch).mockResolvedValue(reply({local_image:{configured:true,local:true,approval_required:true,backend:'studio',edit:false,backends:[backend]}}));
+  expect(await imageStatus()).toMatchObject({configured:true,backend:'studio',backends:[backend]});
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+it('proposes a configured local model with its exact backend selector',async()=>{
+  vi.mocked(fetch).mockResolvedValue(reply({reason:'approval_required',task_id:23},202));
+  expect(await proposeImage('tree',{backend:'studio',model:'studio/image-v1'})).toBe(23);
+  expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1].body as string)).toEqual({kind:'image',cloud:false,prompt:'tree',backend:'studio',model:'studio/image-v1'});
+});
+it.each(['bad model','a\nmodel','a'.repeat(174)])('refuses malformed local model %s before submission',async model=>{
+  await expect(proposeImage('tree',{backend:'studio',model})).rejects.toMatchObject({code:'refused'});
+  expect(fetch).not.toHaveBeenCalled();
+});

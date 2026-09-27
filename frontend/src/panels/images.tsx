@@ -89,8 +89,12 @@ export function ImagesPanel() {
   }, [taskId, watching, readVersion]);
 
   const extras = additionalReferences.split(/[\s,]+/).filter(Boolean);
-  const selection = { ...(backend ? {backend} : {}), ...(model ? {model} : {}), ...(upscale ? {upscale:2} : {}) };
-  const edit = mode === 'edit' ? { ...(extras.length ? {references:[reference.trim(), ...extras]} : {reference:reference.trim()}), strength, ...selection }
+  const selectedBackend = configuration?.backends?.find(b => b.id === (backend || configuration.backend || 'comfyui'));
+  const canEdit = selectedBackend?.edit ?? configuration?.edit ?? false;
+  const canUpscale = (selectedBackend?.upscale ?? configuration?.upscale)?.includes(2) ?? false;
+  const editing = mode === 'edit' && canEdit;
+  const selection = { ...(backend ? {backend} : {}), ...(model ? {model} : {}), ...(upscale && canUpscale ? {upscale:2} : {}) };
+  const edit = editing ? { ...(extras.length ? {references:[reference.trim(), ...extras]} : {reference:reference.trim()}), strength, ...selection }
     : Object.keys(selection).length ? selection : null;
   const configured = provider === "cloud" ? configuration?.cloud?.configured : configuration?.configured;
   const submittable = !!configured && !!prompt.trim() && (provider === "cloud" || edit === null || editValid(edit));
@@ -128,14 +132,14 @@ export function ImagesPanel() {
     <button className="tool-btn" onClick={() => setConfigVersion(value => value + 1)}>Check configuration</button>
     {submitted === null ? <><form onSubmit={submit}>
       <label>Image provider <select aria-label="Image provider" value={provider} onChange={e=>setProvider(e.target.value as 'local'|'cloud')}>
-        <option value="local">Local ComfyUI</option>{configuration?.cloud && <option value="cloud">OpenAI cloud</option>}
+        <option value="local">Local image service</option>{configuration?.cloud && <option value="cloud">OpenAI cloud</option>}
       </select></label>
       {provider === 'cloud' && <div>
         <p>OpenAI · gpt-image-1.5 · potentially paid after approval. One new PNG; no edits or upscale.</p>
         <label>Cloud image size <select aria-label="Cloud image size" value={size} onChange={e=>setSize(e.target.value as CloudImageOptions['size'])}>{['1024x1024','1536x1024','1024x1536'].map(v=><option key={v}>{v}</option>)}</select></label>
         <label>Cloud image quality <select aria-label="Cloud image quality" value={quality} onChange={e=>setQuality(e.target.value as CloudImageOptions['quality'])}>{['low','medium','high'].map(v=><option key={v}>{v}</option>)}</select></label>
       </div>}
-      {provider === "local" && configuration?.edit && <div role="radiogroup" aria-label="Generation mode" style={{ marginTop: 10, fontSize: 12 }}>
+      {provider === "local" && canEdit && <div role="radiogroup" aria-label="Generation mode" style={{ marginTop: 10, fontSize: 12 }}>
         <label style={{ marginRight: 12 }}>
           <input type="radio" name="image-mode" checked={mode === 'create'} onChange={() => setMode('create')} /> New image
         </label>
@@ -144,24 +148,24 @@ export function ImagesPanel() {
         </label>
       </div>}
       {provider === "local" && !!configuration?.backends?.length && <div>
-        <label>Image backend <select aria-label="Image backend" value={backend} onChange={e => {setBackend(e.target.value); setModel('');}}>
-          <option value="">Hub default</option>{configuration.backends.map(b => <option key={b.id} value={b.id}>{b.id} · local ComfyUI</option>)}
+        <label>Image backend <select aria-label="Image backend" value={backend} onChange={e => {setBackend(e.target.value); setModel(''); setMode('create'); setUpscale(false); setReference(''); setAdditionalReferences('');}}>
+          <option value="">Hub default</option>{configuration.backends.map(b => <option key={b.id} value={b.id}>{b.id} · {b.protocol === 'openai_images' ? 'local images API' : 'local ComfyUI'}</option>)}
         </select></label>
         <label>Image model <select aria-label="Image model" value={model} onChange={e => setModel(e.target.value)}>
-          <option value="">Backend default</option>{configuration.backends.find(b => b.id === (backend || 'comfyui'))?.models.map(m => <option key={m} value={m}>{m}</option>)}
+          <option value="">Backend default</option>{selectedBackend?.models.map(m => <option key={m} value={m}>{m}</option>)}
         </select></label>
       </div>}
-      {provider === "local" && configuration?.upscale?.includes(2) && <label><input aria-label="2× bicubic upscale" type="checkbox" checked={upscale} onChange={e => setUpscale(e.target.checked)} />2× bicubic upscale</label>}
+      {provider === "local" && canUpscale && <label><input aria-label="2× bicubic upscale" type="checkbox" checked={upscale} onChange={e => setUpscale(e.target.checked)} />2× bicubic upscale</label>}
       <label style={{ display: 'block', marginTop: 10 }}>Image prompt
         <textarea aria-label="Image prompt" value={prompt} maxLength={4000} required style={{ ...taS, minHeight: 100 }}
           onChange={event => setPrompt(event.target.value)} />
       </label>
-      {provider === 'local' && mode === 'edit' ? <>
+      {provider === 'local' && editing ? <>
         <label style={{ display: 'block', fontSize: 12 }}>Reference artifact ID
           <input aria-label="Reference artifact ID" value={reference} required pattern="[a-f0-9]{32}"
             onChange={event => setReference(event.target.value.trim())} style={{ width: '100%' }} />
         </label>
-        {(configuration?.max_references || 1) > 1 && <label>Additional reference IDs (up to three, comma separated)
+        {(selectedBackend?.max_references ?? configuration?.max_references ?? 1) > 1 && <label>Additional reference IDs (up to three, comma separated)
           <input aria-label="Additional reference IDs" value={additionalReferences} maxLength={100} onChange={e => setAdditionalReferences(e.target.value)} />
           <small>References are resized to the first image and blended equally before editing.</small>
         </label>}
@@ -170,8 +174,8 @@ export function ImagesPanel() {
             onChange={event => setStrength(Number(event.target.value))} style={{ width: '100%' }} />
         </label>
         <div style={{ fontSize: 11, margin: '5px 0' }}>Keeps the reference's own size · 20 steps · random seed · local service only</div>
-      </> : provider === 'local' ? <div style={{ fontSize: 11, margin: '5px 0' }}>512 × 512 · 20 steps · random seed · local service only</div> : null}
-      <button className="tool-btn" type="submit" disabled={!submittable}>{provider === 'local' && mode === 'edit' ? 'Propose edit' : 'Propose image'}</button>
+      </> : provider === 'local' ? <div style={{ fontSize: 11, margin: '5px 0' }}>{selectedBackend?.protocol === 'openai_images' ? '512 × 512 · local service only' : '512 × 512 · 20 steps · random seed · local service only'}</div> : null}
+      <button className="tool-btn" type="submit" disabled={!submittable}>{provider === 'local' && editing ? 'Propose edit' : 'Propose image'}</button>
     </form>
       <form style={{ marginTop: 12 }} onSubmit={event => {
         event.preventDefault();
@@ -202,7 +206,7 @@ export function ImagesPanel() {
           <a href={imageUrl} download={'nerva-image-' + task.artifact.id + '.png'} style={{ color: 'var(--accent-light)' }}>Download PNG</a>
           <span style={{ overflowWrap: 'anywhere' }}> · {task.artifact.id}</span>
         </figcaption>
-        {provider === "local" && configuration?.edit && <button className="tool-btn" onClick={() => {
+        {provider === "local" && canEdit && <button className="tool-btn" onClick={() => {
           const id = task.artifact!.id;
           reset(); setMode('edit'); setReference(id);
         }}>Edit this image</button>}

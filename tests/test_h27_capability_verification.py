@@ -120,6 +120,10 @@ def test_every_action_and_live_tool_verification_ref_matches_a_real_case():
         assert manifest.verification in cases
         assert cases[manifest.verification].capability_id == manifest.id
 
+    voice = ACTION_CAPABILITY_MANIFESTS["settings.voice_command"]
+    assert voice.verification == "reality-v1:action-settings-voice_command-kernel-halt"
+    assert cases[voice.verification].capability_id == "action:settings.voice_command"
+
     tools = [record for record in cr.build_records(_tool_orch()) if record.kind == "tool"]
     assert {record.id for record in tools} == {"tool:echo", "tool:time"}
     for record in tools:
@@ -138,8 +142,8 @@ async def test_all_executable_capability_cases_pass_hermetically_without_flag_le
         now="2026-07-12T00:00:00+00:00",
     )
 
-    assert result["total"] == 30
-    assert result["passed"] == 30
+    assert result["total"] == 31
+    assert result["passed"] == 31
     assert result["skipped"] == 0
     assert result["promoted"] == []
     assert all(item["passed"] for item in result["results"])
@@ -197,7 +201,7 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     verification_pairs = [
         (manifest.verification, manifest.id) for manifest in ACTION_CAPABILITY_MANIFESTS.values()
     ] + [(record.verification, record.id) for record in [*tool_records, *records]]
-    assert len(verification_pairs) == 107
+    assert len(verification_pairs) == 108
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1

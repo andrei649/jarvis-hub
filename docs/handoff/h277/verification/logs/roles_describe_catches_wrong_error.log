@@ -1,0 +1,92 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_model_roles.py", "tests/test_doctor.py"]
+......................................................F....F............ [ 45%]
+............FF.......................................................... [ 90%]
+................                                                         [100%]
+=================================== FAILURES ===================================
+______________ test_describe_never_raises_and_reports_a_bad_role _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110296e10>
+
+    def test_describe_never_raises_and_reports_a_bad_role(monkeypatch):
+        monkeypatch.setenv("JARVIS_ROLE_VISION_PROVIDER", "nope")
+>       rows = {r["role"]: r for r in model_roles.describe()}
+                                      ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_h277_model_roles.py:325: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+agents/core/llm/model_roles.py:346: in describe
+    resolved = resolve(name, env)
+               ^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:335: in resolve
+    return _resolve_vision(read, spec, env)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:274: in _resolve_vision
+    provider = _validate(spec, role_provider)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+spec = RoleSpec(name='vision', purpose='reads screenshots, documents and images', env_prefix='JARVIS_ROLE_VISION', legacy=map...zenset({'lm-studio', 'openai-compatible'}), consumers=('agents/core/llm/vlm.py resolve_vlm_config',), default_model='')
+raw = 'nope'
+
+    def _validate(spec: RoleSpec, raw: str) -> str:
+        value = raw.strip().lower()
+        try:
+            get_profile(value)
+        except KeyError:
+>           raise RoleConfigError("role_provider_unknown",
+                                  f"{spec.env_name('provider')}={value!r}; provider ids: {', '.join(BUILTIN_PROVIDER_IDS)}"
+                                  ) from None
+E           agents.core.llm.model_roles.RoleConfigError: role_provider_unknown: JARVIS_ROLE_VISION_PROVIDER='nope'; provider ids: lm-studio, ollama, gemini, anthropic, openrouter, xai, openai-responses, openai-compatible
+
+agents/core/llm/model_roles.py:192: RoleConfigError
+_____________ test_doctor_model_roles_row_warns_on_a_bad_provider ______________
+
+    def test_doctor_model_roles_row_warns_on_a_bad_provider():
+        from scripts import doctor
+    
+        check = doctor.check_model_roles({"JARVIS_ROLE_VISION_PROVIDER": "lmstudio"})
+>       assert check.status == doctor.WARN
+E       AssertionError: assert 'skip' == 'warn'
+E         
+E         - warn
+E         + skip
+
+tests/test_h277_model_roles.py:365: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[22] ____________
+
+env = {'JARVIS_ROLE_VISION_PROVIDER': 'nope'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+>       vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       StopIteration
+
+tests/test_h277_model_roles.py:416: StopIteration
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[23] ____________
+
+env = {'JARVIS_ROLE_VISION_PROVIDER': 'anthropic'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+>       vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       StopIteration
+
+tests/test_h277_model_roles.py:416: StopIteration
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_describe_never_raises_and_reports_a_bad_role
+FAILED tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_a_bad_provider
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[22]
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[23]
+4 failed, 156 passed in 10.88s

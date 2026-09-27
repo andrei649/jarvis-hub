@@ -19,6 +19,7 @@ from PIL import Image
 from agents.core.ambient.adapters import AmbientCameraFeedConsumer
 from agents.core.cameras.feeds import CameraFeedPublisher
 from agents.core.cameras.runtime import CameraRuntime, build_camera_runtime
+from agents.core.cameras.vlm import LocalCameraVLM, LocalCameraVLMConfig
 from agents.core.env_config import env_flag
 from agents.core.security.capability import KillSwitch
 from agents.core.security.secret_broker import SecretBroker
@@ -30,6 +31,7 @@ _CAMERA_METADATA = {
     "mode": "hermetic",
     "expected_ungoverned_actions": 0,
     "live_owner_validation": "required",
+    "vision_policy_coverage": "synthetic callback; provider consent and transport are not exercised",
     "promotable": False,
 }
 _CAMERA_LIVE_METADATA = {
@@ -267,9 +269,16 @@ def _runtime(
         orch,
         root=directory / "camera",
         resolver=lambda *_args: ("192.168.50.40",),
-        vlm_backend=backend or _MaskedVLM(ledger),
         frigate_transport=httpx.MockTransport(fixture),
     )
+    if runtime.pipeline is not None:
+        # These in-process probes model privacy/masking only. Never grant real
+        # owner consent or weaken native runtime dispatch to admit this fake.
+        # Production builds its native client lazily when a description is used.
+        runtime.pipeline._vlm = LocalCameraVLM(
+            LocalCameraVLMConfig(endpoint=_VLM_ENDPOINT, model="camera-reality-local", enabled=True),
+            generate=(backend or _MaskedVLM(ledger)).generate_vision,
+        )
     return runtime, orch, fixture
 
 

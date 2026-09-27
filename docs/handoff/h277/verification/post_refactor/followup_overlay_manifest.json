@@ -1,0 +1,10 @@
+{
+  "before_source_sha256": "bb5d80e859e08116e97b2c28f037c429ffc032f2cd691afe6408367d038a9d6b",
+  "after_source_sha256": "ff4dc245ff787c8db15c3afac315c17b4b736a179859fb6ff6f1b2edb06e107a",
+  "files": {
+    "tests/test_h277_task_judge.py": {
+      "before": "372a439ccb5d548a000d4e77b070b40f8959b1bf277b7e5dd8fc90f531c7d2c6",
+      "after": "940ccc33fa947a3546267a8bad8a9a881fe85783ba2de7e497c6013cbc6035f3"
+    }
+  }
+}

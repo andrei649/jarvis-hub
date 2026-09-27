@@ -1,0 +1,1588 @@
+{
+  "source": {
+    "head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+    "tracked_source_sha256": "8f150f22e951b6d872355dd8fe9bd3553a9c3655d4563146a9c8abee7c4f856f",
+    "dirty_overlay": [
+      "AGENTS.md",
+      "agents/core/autonomy/action_approvals.py",
+      "agents/core/autonomy/approval_judge.py",
+      "agents/core/llm/model_roles.py",
+      "agents/web/static/tools.js",
+      "docs/FLAGS.md",
+      "scripts/selfdev_policy.py",
+      "selfdev-policy.json",
+      "tests/frontend/tools.test.js",
+      "tests/test_h277_approval_judge.py",
+      "tests/test_h277_model_roles.py",
+      "tests/test_pr_auto_merge_policy.py"
+    ],
+    "snapshot": "/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/h277-mutation-rvs2us1l"
+  },
+  "baseline": [
+    {
+      "returncode": 0,
+      "elapsed_seconds": 15.03,
+      "log": "docs/handoff/h277/verification/logs/baseline_py.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_composer_vision.py",
+        "tests/test_doctor.py",
+        "tests/test_h275_safe_mode.py",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_model_config.py",
+        "tests/test_screen_reflex_route.py",
+        "tests/test_vlm_h13_1.py"
+      ]
+    },
+    {
+      "returncode": 0,
+      "elapsed_seconds": 2.19,
+      "log": "docs/handoff/h277/verification/logs/baseline_js.log",
+      "command": [
+        "/Users/andrei649/.local/bin/node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/frontend/tools.test.js"
+      ]
+    }
+  ],
+  "counts": {
+    "killed": 69,
+    "survived": 5,
+    "superseded": 0,
+    "invalid": 0
+  },
+  "results": [
+    {
+      "label": "roles_pick_legacy_fallback_dropped",
+      "file": "agents/core/llm/model_roles.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_model_config.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.14,
+      "log": "docs/handoff/h277/verification/logs/roles_pick_legacy_fallback_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_model_config.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "roles_vision_view_provider_not_validated",
+      "file": "agents/core/llm/model_roles.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_vlm_h13_1.py",
+        "tests/test_composer_vision.py",
+        "tests/test_screen_reflex_route.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.01,
+      "log": "docs/handoff/h277/verification/logs/roles_vision_view_provider_not_validated.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_vlm_h13_1.py",
+        "tests/test_composer_vision.py",
+        "tests/test_screen_reflex_route.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "roles_validate_supported_set_check_dropped",
+      "file": "agents/core/llm/model_roles.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.41,
+      "log": "docs/handoff/h277/verification/logs/roles_validate_supported_set_check_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "roles_main_becomes_env_selectable",
+      "file": "agents/core/llm/model_roles.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_doctor.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 11.3,
+      "log": "docs/handoff/h277/verification/logs/roles_main_becomes_env_selectable.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_doctor.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "roles_env_role_default_provider_ollama",
+      "file": "agents/core/llm/model_roles.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.55,
+      "log": "docs/handoff/h277/verification/logs/roles_env_role_default_provider_ollama.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "roles_env_role_unset_model_guard_dropped",
+      "file": "agents/core/llm/model_roles.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.43,
+      "log": "docs/handoff/h277/verification/logs/roles_env_role_unset_model_guard_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "roles_locality_or_instead_of_and",
+      "file": "agents/core/llm/model_roles.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.45,
+      "log": "docs/handoff/h277/verification/logs/roles_locality_or_instead_of_and.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "roles_describe_catches_wrong_error",
+      "file": "agents/core/llm/model_roles.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_doctor.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 11.33,
+      "log": "docs/handoff/h277/verification/logs/roles_describe_catches_wrong_error.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_doctor.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "vlm_role_error_reason_masked",
+      "file": "agents/core/llm/vlm.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_vlm_h13_1.py",
+        "tests/test_composer_vision.py",
+        "tests/test_screen_reflex_route.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.95,
+      "log": "docs/handoff/h277/verification/logs/vlm_role_error_reason_masked.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_vlm_h13_1.py",
+        "tests/test_composer_vision.py",
+        "tests/test_screen_reflex_route.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "model_config_override_flag_inverted",
+      "file": "agents/core/llm/model_config.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_model_config.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.02,
+      "log": "docs/handoff/h277/verification/logs/model_config_override_flag_inverted.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_model_config.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_safe_mode_check_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h275_safe_mode.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.6,
+      "log": "docs/handoff/h277/verification/logs/judge_safe_mode_check_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h275_safe_mode.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_protocol_refusal_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.92,
+      "log": "docs/handoff/h277/verification/logs/judge_protocol_refusal_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_h378_findings_ignored",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.03,
+      "log": "docs/handoff/h277/verification/logs/judge_h378_findings_ignored.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_remote_gate_applies_to_local",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 7.2,
+      "log": "docs/handoff/h277/verification/logs/judge_remote_gate_applies_to_local.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_allow_remote_inverted",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 21.57,
+      "log": "docs/handoff/h277/verification/logs/judge_allow_remote_inverted.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_strict_local_ignored",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.23,
+      "log": "docs/handoff/h277/verification/logs/judge_strict_local_ignored.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_cloud_fallback_never_ignored",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.94,
+      "log": "docs/handoff/h277/verification/logs/judge_cloud_fallback_never_ignored.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_timeout_floor_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.0,
+      "log": "docs/handoff/h277/verification/logs/judge_timeout_floor_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_public_leaks_remote_base_url",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.94,
+      "log": "docs/handoff/h277/verification/logs/judge_public_leaks_remote_base_url.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_prompt_not_fenced",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.97,
+      "log": "docs/handoff/h277/verification/logs/judge_prompt_not_fenced.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_parse_extra_keys_allowed",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.95,
+      "log": "docs/handoff/h277/verification/logs/judge_parse_extra_keys_allowed.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_parse_fractional_risk_allowed",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.97,
+      "log": "docs/handoff/h277/verification/logs/judge_parse_fractional_risk_allowed.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_parse_empty_why_allowed",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.97,
+      "log": "docs/handoff/h277/verification/logs/judge_parse_empty_why_allowed.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_parse_code_fence_unanchored",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.98,
+      "log": "docs/handoff/h277/verification/logs/judge_parse_code_fence_unanchored.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_clamp_upper_bound_raised",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.98,
+      "log": "docs/handoff/h277/verification/logs/judge_clamp_upper_bound_raised.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_rationale_fence_markers_kept",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.06,
+      "log": "docs/handoff/h277/verification/logs/judge_rationale_fence_markers_kept.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_wants_unconfigured_guard_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.05,
+      "log": "docs/handoff/h277/verification/logs/judge_wants_unconfigured_guard_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_wants_skill_card_judged",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.08,
+      "log": "docs/handoff/h277/verification/logs/judge_wants_skill_card_judged.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_wants_local_agent_sent_remote",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.96,
+      "log": "docs/handoff/h277/verification/logs/judge_wants_local_agent_sent_remote.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_wants_tainted_sent_remote",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "mapping": "Round2 replaced shallow args taint with deep args taint; remove current equivalent gate.",
+      "returncode": 1,
+      "elapsed_seconds": 3.08,
+      "log": "docs/handoff/h277/verification/logs/judge_wants_tainted_sent_remote.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "judge_selection_pin_check_inverted",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 25.72,
+      "log": "docs/handoff/h277/verification/logs/judge_selection_pin_check_inverted.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "queue_annotate_after_decision",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.18,
+      "log": "docs/handoff/h277/verification/logs/queue_annotate_after_decision.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "queue_annotate_second_answer_overwrites",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.93,
+      "log": "docs/handoff/h277/verification/logs/queue_annotate_second_answer_overwrites.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "queue_annotate_low_score_auto_approves",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.89,
+      "log": "docs/handoff/h277/verification/logs/queue_annotate_low_score_auto_approves.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "queue_snapshot_is_stored_item",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "mapping": "Round2 replaced JSON round-trip with normalization; retain alias-to-live-item mutant.",
+      "returncode": 1,
+      "elapsed_seconds": 2.95,
+      "log": "docs/handoff/h277/verification/logs/queue_snapshot_is_stored_item.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "queue_judge_inherits_caller_context",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.94,
+      "log": "docs/handoff/h277/verification/logs/queue_judge_inherits_caller_context.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "queue_short_lived_loop_not_judged_on_hub",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 0,
+      "elapsed_seconds": 2.9,
+      "log": "docs/handoff/h277/verification/logs/queue_short_lived_loop_not_judged_on_hub.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "survived"
+    },
+    {
+      "label": "queue_decided_audit_drops_judge_identity",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.98,
+      "log": "docs/handoff/h277/verification/logs/queue_decided_audit_drops_judge_identity.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "queue_judged_audit_drops_judge_identity",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.11,
+      "log": "docs/handoff/h277/verification/logs/queue_judged_audit_drops_judge_identity.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "route_pending_drops_judge_key",
+      "file": "agents/core/routers/actions.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 3.03,
+      "log": "docs/handoff/h277/verification/logs/route_pending_drops_judge_key.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "doctor_model_roles_attention_ignored",
+      "file": "scripts/doctor.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_doctor.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 11.79,
+      "log": "docs/handoff/h277/verification/logs/doctor_model_roles_attention_ignored.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_doctor.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "doctor_model_roles_ignored_not_flagged",
+      "file": "scripts/doctor.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_doctor.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 11.38,
+      "log": "docs/handoff/h277/verification/logs/doctor_model_roles_ignored_not_flagged.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_doctor.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "hud_opinion_shown_on_skill_card",
+      "file": "agents/web/static/tools.js",
+      "tests": [
+        "tests/frontend/tools.test.js"
+      ],
+      "run": "js",
+      "generation": "prepared",
+      "returncode": 1,
+      "elapsed_seconds": 2.08,
+      "log": "docs/handoff/h277/verification/logs/hud_opinion_shown_on_skill_card.log",
+      "command": [
+        "/Users/andrei649/.local/bin/node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/frontend/tools.test.js"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "hud_repoll_never_stops",
+      "file": "agents/web/static/tools.js",
+      "tests": [
+        "tests/frontend/tools.test.js"
+      ],
+      "run": "js",
+      "generation": "prepared",
+      "mapping": "Round2 replaced poll-count cap with wall-clock deadlines; bypass final timer deadline guard.",
+      "returncode": 0,
+      "elapsed_seconds": 1.78,
+      "log": "docs/handoff/h277/verification/logs/hud_repoll_never_stops.log",
+      "command": [
+        "/Users/andrei649/.local/bin/node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/frontend/tools.test.js"
+      ],
+      "result": "survived"
+    },
+    {
+      "label": "N1_post_slot_status_stale",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 3.06,
+      "log": "docs/handoff/h277/verification/logs/N1_post_slot_status_stale.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N1_post_slot_wants_dropped",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 2.95,
+      "log": "docs/handoff/h277/verification/logs/N1_post_slot_wants_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N1_disk_pending_recheck_dropped",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 3.11,
+      "log": "docs/handoff/h277/verification/logs/N1_disk_pending_recheck_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N1_memory_pending_recheck_dropped",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 2.9,
+      "log": "docs/handoff/h277/verification/logs/N1_memory_pending_recheck_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "survived"
+    },
+    {
+      "label": "N1_skip_revoked_counter_dropped",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 3.0,
+      "log": "docs/handoff/h277/verification/logs/N1_skip_revoked_counter_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N2_public_pending_hidden",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N2",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 2.98,
+      "log": "docs/handoff/h277/verification/logs/N2_public_pending_hidden.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N2_finish_pending_not_cleared",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N2",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 2.96,
+      "log": "docs/handoff/h277/verification/logs/N2_finish_pending_not_cleared.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N2_decide_pending_not_cleared",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N2",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 2.9,
+      "log": "docs/handoff/h277/verification/logs/N2_decide_pending_not_cleared.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "survived"
+    },
+    {
+      "label": "N2_hud_early_timeout",
+      "file": "agents/web/static/tools.js",
+      "generation": "N2",
+      "run": "js",
+      "tests": [
+        "tests/frontend/tools.test.js"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 1.98,
+      "log": "docs/handoff/h277/verification/logs/N2_hud_early_timeout.log",
+      "command": [
+        "/Users/andrei649/.local/bin/node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/frontend/tools.test.js"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N2_hud_deadline_refreshes",
+      "file": "agents/web/static/tools.js",
+      "generation": "N2",
+      "run": "js",
+      "tests": [
+        "tests/frontend/tools.test.js"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 1.79,
+      "log": "docs/handoff/h277/verification/logs/N2_hud_deadline_refreshes.log",
+      "command": [
+        "/Users/andrei649/.local/bin/node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/frontend/tools.test.js"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N2_capacity_released_on_decide",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N2",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 2.95,
+      "log": "docs/handoff/h277/verification/logs/N2_capacity_released_on_decide.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N3_within_budget_values_cut",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "generation": "N3",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 3.22,
+      "log": "docs/handoff/h277/verification/logs/N3_within_budget_values_cut.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N3_small_values_inflated",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "generation": "N3",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 3.07,
+      "log": "docs/handoff/h277/verification/logs/N3_small_values_inflated.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N3_args_cap_raised",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "generation": "N3",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 3.09,
+      "log": "docs/handoff/h277/verification/logs/N3_args_cap_raised.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N4_deep_truncated_flag_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "generation": "N4",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 2.89,
+      "log": "docs/handoff/h277/verification/logs/N4_deep_truncated_flag_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N4_deep_flag_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "generation": "N4",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 2.9,
+      "log": "docs/handoff/h277/verification/logs/N4_deep_flag_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N4_remote_depth_refusal_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "generation": "N4",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 0,
+      "elapsed_seconds": 2.89,
+      "log": "docs/handoff/h277/verification/logs/N4_remote_depth_refusal_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "survived"
+    },
+    {
+      "label": "N4_normalised_marker_not_tainted",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "generation": "N4",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 2.89,
+      "log": "docs/handoff/h277/verification/logs/N4_normalised_marker_not_tainted.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N5_nfkc_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "generation": "N5",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 2.89,
+      "log": "docs/handoff/h277/verification/logs/N5_nfkc_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N5_unicode_quote_categories_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "generation": "N5",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 3.06,
+      "log": "docs/handoff/h277/verification/logs/N5_unicode_quote_categories_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N5_dot_separator_kept",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "generation": "N5",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 3.05,
+      "log": "docs/handoff/h277/verification/logs/N5_dot_separator_kept.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N6_bytes_repr_instead_of_decode",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "generation": "N6",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 2.93,
+      "log": "docs/handoff/h277/verification/logs/N6_bytes_repr_instead_of_decode.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N6_set_repr_instead_of_list",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "generation": "N6",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 2.95,
+      "log": "docs/handoff/h277/verification/logs/N6_set_repr_instead_of_list.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N7_import_guard_wrong_exception",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N7",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 2.98,
+      "log": "docs/handoff/h277/verification/logs/N7_import_guard_wrong_exception.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "N7_unconfigured_judge_taints_item",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N7",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py"
+      ],
+      "returncode": 1,
+      "elapsed_seconds": 2.87,
+      "log": "docs/handoff/h277/verification/logs/N7_unconfigured_judge_taints_item.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "roles_pick_legacy_wins_over_role_name",
+      "file": "agents/core/llm/model_roles.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_model_config.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "mapping": "Comment was added before return; mutate the current precedence condition.",
+      "returncode": 1,
+      "elapsed_seconds": 2.05,
+      "log": "docs/handoff/h277/verification/logs/roles_pick_legacy_wins_over_role_name.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_model_config.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "roles_pick_shadowed_legacy_not_reported",
+      "file": "agents/core/llm/model_roles.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_doctor.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "mapping": "Round2 now compares case-sensitive values; drop the equivalent ignored-legacy report.",
+      "returncode": 1,
+      "elapsed_seconds": 11.34,
+      "log": "docs/handoff/h277/verification/logs/roles_pick_shadowed_legacy_not_reported.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_doctor.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "roles_vision_view_legacy_url_wins",
+      "file": "agents/core/llm/model_roles.py",
+      "tests": [
+        "tests/test_h277_model_roles.py",
+        "tests/test_vlm_h13_1.py",
+        "tests/test_composer_vision.py",
+        "tests/test_screen_reflex_route.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "mapping": "Round2 extracts URL variables; invert the equivalent precedence.",
+      "returncode": 1,
+      "elapsed_seconds": 2.9,
+      "log": "docs/handoff/h277/verification/logs/roles_vision_view_legacy_url_wins.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py",
+        "tests/test_vlm_h13_1.py",
+        "tests/test_composer_vision.py",
+        "tests/test_screen_reflex_route.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "roles_vision_lmstudio_default_url_dropped",
+      "file": "agents/core/llm/vlm.py",
+      "tests": [
+        "tests/test_h277_model_roles.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "mapping": "Default URL now belongs to resolve_vlm_config in vlm.py; remove that default at the current consumer.",
+      "returncode": 1,
+      "elapsed_seconds": 1.81,
+      "log": "docs/handoff/h277/verification/logs/roles_vision_lmstudio_default_url_dropped.log",
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_model_roles.py"
+      ],
+      "result": "killed"
+    },
+    {
+      "label": "hud_opinion_advisory_label_dropped",
+      "file": "agents/web/static/tools.js",
+      "tests": [
+        "tests/frontend/tools.test.js"
+      ],
+      "run": "js",
+      "generation": "prepared",
+      "mapping": "HUD now uses typographic closing quote; remove the same advisory label.",
+      "returncode": 1,
+      "elapsed_seconds": 2.04,
+      "log": "docs/handoff/h277/verification/logs/hud_opinion_advisory_label_dropped.log",
+      "command": [
+        "/Users/andrei649/.local/bin/node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/frontend/tools.test.js"
+      ],
+      "result": "killed"
+    }
+  ]
+}

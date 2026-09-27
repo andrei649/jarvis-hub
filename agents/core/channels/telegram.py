@@ -207,6 +207,7 @@ class TelegramChannel(ChannelAdapter):
         self._lanes = None
         # Decision-inbox callback: on_callback(task_id, action, chat_id=..., user_id=...)
         self.on_callback: Optional[Callable] = None
+        self.on_decision_reason: Optional[Callable] = None
         # The process's ONE `SenderPairing` — the object the gateway gates on and
         # the pairing router mints and revokes deeplinks from; `web.py` hands it
         # in. It is never built here: a second store over the same file is not a
@@ -405,6 +406,16 @@ class TelegramChannel(ChannelAdapter):
             logger.error(f"Telegram send_card error: {e}")
             return False
 
+    async def request_decision_reason(self, task_id: int, *, chat_id: int) -> int:
+        """Offer an optional reply bound to one rejected decision, not a chat turn."""
+        response = await self.client.post(f"{self.api_base}/sendMessage", json={
+            "chat_id": chat_id,
+            "text": f"Task #{task_id} rejected. Reply to this message within 2 minutes with an optional reason (maximum 280 characters).",
+            "reply_markup": {"force_reply": True, "selective": True},
+        })
+        response.raise_for_status()
+        return _message_id_of(response)
+
     async def _answer_callback(self, callback_id: str, text: str = ""):
         try:
             await self.client.post(
@@ -486,6 +497,35 @@ class TelegramChannel(ChannelAdapter):
         # the orchestrator, echoed, or logged as message text.
         if await self._maybe_pair_deeplink(text, uid, chat_id):
             return
+        # Only a fresh, directly authored reply can explain a decision. Edited,
+        # forwarded, attachment and command messages retain their existing paths.
+        if (self.on_decision_reason and up.get("message") is not None and text
+                and attachment is None and not is_command(text)
+                and not any(msg.get(key) for key in ("forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))):
+            reply_id = (msg.get("reply_to_message") or {}).get("message_id")
+            if reply_id is not None:
+                # The callback's ForceReply request may still be awaiting its HTTP
+                # response. Classify behind it in this chat, without blocking polling
+                # or other chats. Flush earlier prose before this standalone reply.
+                await self._flush_turn((chat_id, str(uid)))
+
+                async def handle_reply():
+                    if await self.on_decision_reason(
+                        text, chat_id=chat_id, user_id=uid, reply_to_message_id=reply_id,
+                    ):
+                        return
+                    await self._handle_message_content(
+                        msg, uid, chat_id, text, attachment, inline=True,
+                    )
+
+                await self._in_chat(chat_id, handle_reply)
+                return
+        await self._handle_message_content(msg, uid, chat_id, text, attachment)
+
+    async def _handle_message_content(
+        self, msg, uid, chat_id, text, attachment, *, inline=False,
+    ) -> None:
+        """Apply the message gate; an already queued reply stays in its lane."""
         chat = msg.get("chat") or {}
         # A caption is the sender's own words about what they sent,
         # so it is what the group gate must judge and what the turn
@@ -507,11 +547,16 @@ class TelegramChannel(ChannelAdapter):
         )
         if decision.action == OBSERVE:
             if decision.text:
-                await self._flush_all_turns()
                 observed = decision.text
-                await self._in_chat(chat_id, lambda: self.receive(
-                    observed, chat_id=chat_id, sender=str(uid), observe_only=True,
-                ))
+                if inline:
+                    await self.receive(
+                        observed, chat_id=chat_id, sender=str(uid), observe_only=True,
+                    )
+                else:
+                    await self._flush_all_turns()
+                    await self._in_chat(chat_id, lambda: self.receive(
+                        observed, chat_id=chat_id, sender=str(uid), observe_only=True,
+                    ))
             return
         if decision.action != ANSWER:
             logger.debug("Ignored group message (%s)", decision.reason)
@@ -533,7 +578,10 @@ class TelegramChannel(ChannelAdapter):
         # hold unknown senders for approval (no-op unless enabled). H117: the
         # piece is held so a burst from this sender becomes one turn.
         if turn:
-            await self._queue_turn(chat_id, uid, turn)
+            if inline:
+                await self._run_turn(chat_id, uid, turn)
+            else:
+                await self._queue_turn(chat_id, uid, turn)
 
     async def _queue_turn(self, chat_id, uid, turn: str) -> None:
         if not self._batch.enabled:

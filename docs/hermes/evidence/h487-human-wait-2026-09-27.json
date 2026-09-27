@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T15:04:04.227087+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "H487 persisted bounded Company Mode human-wait accounting with earliest decision cutoff and transactional budget updates",
+  "plan": "docs/hermes/h487-human-wait-budget-plan.md",
+  "review": "docs/hermes/h487-human-wait-review.md",
+  "coordination": {
+    "implementers": 2,
+    "model": "gpt-6-sol",
+    "reasoning": "high",
+    "ownership": "one ledger/runtime implementer, one independent integration-test writer; coordinator owns queue earliest-decision prerequisite, review and integration",
+    "additional_review": "bounded read-only Luna Medium review; no further actionable findings, no tests run by reviewer"
+  },
+  "verification": [
+    {
+      "path": "/tmp/h487-human-wait-red.xml",
+      "tests": 3,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "seconds": 1.106,
+      "sha256": "596b0615625024bc3fefa86ece56135fdc2ad92a1855fc6136e6b3f8777d02bb"
+    },
+    {
+      "path": "/tmp/nerva-h487-decision-clock-red.xml",
+      "tests": 8,
+      "failures": 8,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "seconds": 0.711,
+      "sha256": "ed7f73726ada4d40d4d2db3bcf1851d50dc4077c8fb29042009543fdb5dc9ff5"
+    },
+    {
+      "path": "/tmp/h487-human-wait-transaction-red.xml",
+      "tests": 5,
+      "failures": 5,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "seconds": 1.054,
+      "sha256": "ec580cffbd7e463003d21f80232a7fadde56aa0f8f6be6118ab87b391cc90b97"
+    },
+    {
+      "path": "/tmp/h487-human-wait-focus.xml",
+      "tests": 248,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 248,
+      "seconds": 2.487,
+      "sha256": "cead3acda03a29f8f3d809694ef6d8d3e978198d2334fbda7f59a26a8745fca7"
+    },
+    {
+      "path": "/tmp/nerva-h487-decision-clock-green.xml",
+      "tests": 140,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 140,
+      "seconds": 2.048,
+      "sha256": "f13fe5500a173fe007d5256a408a61c0e2c6ca5318d4bfdadd72637edeca40ca"
+    },
+    {
+      "path": "/tmp/nerva-h487-human-wait-integration.xml",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 13,
+      "seconds": 0.742,
+      "sha256": "033a1b64bb2fc94e1d049207007e294cecf4eade3a233abb842ba69ce93d4d4f"
+    },
+    {
+      "path": "/tmp/nerva-h487-wait-backend.xml",
+      "tests": 19320,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 19285,
+      "seconds": 246.76,
+      "sha256": "bc36d0f173b7a616470617832243477937c5fccfc41f92e01565b9d04db07735"
+    },
+    {
+      "tests": 92,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/nerva-h487-wait-docs.xml",
+      "passed": 92,
+      "sha256": "afd01f243e5e96c7e96483d5d4e7dc1347431b6d93a19dd53d6f6aea6fd1b0b5"
+    }
+  ],
+  "full_backend_command": ".venv/bin/python -m pytest tests/ -n 3 --dist loadfile --timeout=90 -q --tb=short --junitxml=/tmp/nerva-h487-wait-backend.xml",
+  "source_sha256": {
+    "agents/core/autonomy/work_runs.py": "9df2f82251cc3191c51c985c7a2f89d7c55ad2a083d80f4b300091dcf3647484",
+    "agents/core/autonomy/company_runtime.py": "143925c1e79260b885a8fa302689743a6493a3cb9cb0a0daac64c1b486607f6b",
+    "agents/core/autonomy/pending_requests.py": "979bf2ad69e4f67504d15f5750f244f607fccb52c7af87ffc5cc2093bdd5e73b",
+    "agents/core/autonomy/queue.py": "092d8a28628dc05b7e24b9ea2721998a0978d13a520b10aff607a311511d1860",
+    "tests/test_h487_human_wait_budget.py": "baaa4d31c6c4385f1a0b6548cd93ef59969388be5f78eba940fe217c87fc0960",
+    "tests/test_h487_human_wait_integration.py": "424b39b3968f2c9957332f2171fed5303b28cad89ad36b92a702be967881699b",
+    "tests/test_h487_decision_clock.py": "6c36ddf000cbed59bf8cd99e0a62b73cb0818845c3cc17bb7b422627ab50dc4c"
+  },
+  "frontend": {
+    "changed": false,
+    "passed": 1822,
+    "reused_evidence": "docs/hermes/evidence/h513-camera-integration-2026-09-27.json"
+  },
+  "security": {
+    "bandit": {
+      "exit_code": 0,
+      "log": "/tmp/nerva-h487-wait-bandit.log",
+      "scope": "agents/scripts against existing baseline"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "files": 7,
+      "log": "/tmp/nerva-h487-wait-gitleaks.log"
+    }
+  },
+  "graft": {
+    "check": "passed",
+    "deep_index": false,
+    "log": "/tmp/nerva-h487-wait-graft-check.log"
+  },
+  "review_corrections": [
+    "First queue-authored decision timestamp survives defer/edit followed by replacement decisions; legacy/corrupt history cannot invent an earliest timestamp.",
+    "Per-task read timestamps bound stale-observation credit; persisted clock high-water prevents rollback from renewing the budget.",
+    "Budget refresh, step admission and barrier creation now use SQLite write transactions before their snapshots, rolling back failed metadata updates.",
+    "Independent auto-approved fixture explicitly requests ACT/risk tier 1; barrier fixture uses valid public lifecycle ordering. Neither correction weakened production contracts."
+  ],
+  "limitations": [
+    "H487 remains partial: reusable session/always/deny consent and additional proven producers are not implemented.",
+    "Initial union credit is capped at 360 seconds; longer explicit-deadline-derived credit remains separate work. No default approval expiry is introduced.",
+    "Raw WorkRun.seconds_used remains wall time; manual resume retains its preexisting semantics. The new automatic reconciliation resume is guarded.",
+    "Private accounting checksums detect accidental corruption; they are not cryptographic execution authority.",
+    "No live provider/device/native acceptance, new H277 mutation campaign, commit, push, merge, deployment or paid calls.",
+    "Frontend unchanged; preceding verified 1,822-test snapshot reused. No React/Python coverage percentage measured or claimed."
+  ]
+}

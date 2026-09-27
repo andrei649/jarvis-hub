@@ -58,6 +58,7 @@ import { CompanyRoomPanel } from './panels/company-room';
 import { QuickbarPanel } from './panels/quickbar';
 import { MemoryConsolidatePanel } from './panels/memory-consolidate';
 import { PermissionsPanel } from './panels/permissions';
+import { DataHandling } from './panels/data-handling';
 
 import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, refusalReason, inpS, taS, Json } from './panel-kit';
 
@@ -1025,6 +1026,7 @@ export function PosturePanel() {
               {sb.docker_available && <Tag>docker</Tag>}
             </span>
           </Row>
+          <DataHandling value={d.data_handling} reload={reload} />
         </>
       )}
       {/* H165 — each switch above has a price; the flags doc names it. */}
@@ -2346,6 +2348,9 @@ export function ScreenReflexPanel() {
   const canCapture = typeof navigator !== 'undefined' && !!(navigator as any).mediaDevices?.getDisplayMedia;
   const configured = !!vlm.d && vlm.d.configured === true;
   const isLocal = configured && vlm.d.local === true;
+  const policyMessages = [...new Set([vlm.d?.data_policy_note, vlm.d?.warning, out?.data_policy_note, out?.warning]
+    .filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim().slice(0, 500)))];
+  const generated = out?.ok === true && out?.generated === true;
 
   const readBlob = (blob, label) => {
     const reader = new FileReader();
@@ -2381,7 +2386,7 @@ export function ScreenReflexPanel() {
     }
   };
   const observe = () => {
-    if (!img) return;
+    if (!configured || !isLocal || !img) return;
     setOut(null);
     setNote('observing…');
     // apiPost THROWS on the route's 503s (no VLM / non-loopback VLM) — without
@@ -2405,9 +2410,10 @@ export function ScreenReflexPanel() {
     )}
     {configured && !isLocal && (
       <div role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginBottom: 6 }}>
-        {vlm.d.base_url} is not loopback — the route refuses it (screen bytes must never leave the host)
+        {vlm.d.base_url} is not loopback — the route refuses it (a local VLM on the Nerva server is required)
       </div>
     )}
+    {policyMessages.map((message) => <div key={message} role="status" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginBottom: 6 }}>{message}</div>)}
     <div onPaste={onPaste}>
       <input
         aria-label="screenshot image file"
@@ -2426,7 +2432,7 @@ export function ScreenReflexPanel() {
         <option value="answer">answer</option>
         <option value="ground">ground</option>
       </select>
-      <button className="tool-btn" type="button" disabled={!img} onClick={observe} aria-label="observe screen">observe screen</button>
+      <button className="tool-btn" type="button" disabled={!configured || !isLocal || !img} onClick={observe} aria-label="observe screen">observe screen</button>
     </div>
     <input
       aria-label="reflex question"
@@ -2435,21 +2441,21 @@ export function ScreenReflexPanel() {
       placeholder="question (optional) — e.g. what is this error asking me to do?"
       style={{ ...inpS, width: '100%', marginTop: 6 }}
     />
-    {out && out.ok && out.generated && (
+    {generated && (
       <div style={{ ...mono, fontSize: 11, color: 'var(--ink)', marginTop: 8, whiteSpace: 'pre-wrap' }}>{out.answer}</div>
     )}
-    {out && out.ok && out.generated && out.mode === 'ground' && elements.map((el, i) => (
+    {generated && out.mode === 'ground' && elements.map((el, i) => (
       <Row key={`${el.label}:${i}`}>
         <span style={{ ...mono, color: 'var(--accent-light)' }}>{`${el.label} · (${el.x}, ${el.y})`}</span>
         <span style={{ marginLeft: 'auto' }}><Tag>{el.source || 'vlm'}</Tag></span>
       </Row>
     ))}
-    {out && out.ok !== true && (
-      <div role="alert" style={{ ...mono, fontSize: 11, color: 'var(--ink-3)', marginTop: 8 }}>{out.reason || 'no answer'}</div>
+    {out && !generated && (
+      <div role="alert" style={{ ...mono, fontSize: 11, color: 'var(--ink-3)', marginTop: 8 }}>{typeof out.reason === 'string' && out.reason.trim() ? out.reason.slice(0, 500) : 'no answer'}</div>
     )}
     {note && <div role="status" style={{ ...mono, fontSize: 10, color: note.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 6 }}>{note}</div>}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
-      screen bytes are held in memory and sent only to the loopback VLM · the global hotkey + OS-level grab stay host-gated
+      screen bytes are held in memory and sent to the local VLM on the Nerva server · the global hotkey + OS-level grab stay host-gated
     </div>
   </Card>;
 }
@@ -2559,26 +2565,9 @@ export function LMStudioPanel() {
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>configured routing is independent from provider-reported residency · lifecycle actions follow backend capabilities</div>
   </Card>;
 }
-/* DRA-29 — the VLM *input* leg. The multimodal surface was output-only: the HUD
-   read `GET /api/vlm/status` (the LOCAL MODELS config line) but nothing in the
-   product ever called `POST /api/vlm/describe`. Images are read in the browser
-   into `data:` URIs; `encode_image_block` rejects filesystem paths by design, so
-   this control cannot smuggle a host file to the model.
-
-   EGRESS DISCLOSURE — why this panel is not a bare form. Unlike
-   `POST /api/screen/reflex`, `/api/vlm/describe` carries NO `is_local` gate, and
-   that is deliberate on the backend: `resolve_vlm_config` supports a `custom`
-   backend at an arbitrary URL and computes `is_local` as a *label*, and
-   `_is_loopback_base` counts a LAN address as non-local — so a hard route-level
-   gate would also refuse the owner's own second box, and would break an existing
-   documented, snapshot-frozen contract for every caller. What must not happen is
-   the HUD silently shipping owner-picked images off-host: so when the resolved
-   VLM is not loopback this panel names the exact destination and refuses to
-   upload until the owner ticks an explicit acknowledgement. This is a CONSENT
-   gate on files the owner chose one by one, not a security boundary — the route
-   is unchanged and behaves for curl exactly as it always has. A screen grab (which
-   the owner cannot review before it is sent) keeps its hard route-level refusal;
-   the asymmetry is the point. */
+/* DRA-29 — browser-picked images are sent as data: URIs to the strict-loopback
+   describe route. The destination and optional policy warnings are visible
+   before submission; non-loopback configuration is refused by both UI and route. */
 export const VLM_MAX_IMAGES = 8;
 const VLM_MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 export function VlmDescribePanel() {
@@ -2587,11 +2576,12 @@ export function VlmDescribePanel() {
   const [images, setImages] = useState<Array<{ name: string; data: string }>>([]);
   const [out, setOut] = useState(null);
   const [note, setNote] = useState('');
-  const [ack, setAck] = useState(false);
   const configured = !!vlmD && vlmD.configured === true;
   const isLocal = configured && vlmD.local === true;
   const destination = configured ? String(vlmD.base_url || 'an unnamed endpoint') : '';
-  const needsAck = configured && !isLocal;
+  const policyMessages = [...new Set([vlmD?.data_policy_note, vlmD?.warning, out?.data_policy_note, out?.warning]
+    .filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim().slice(0, 500)))];
+  const described = out?.ok === true && typeof out?.response === 'string' && !!out.response.trim();
 
   const addFiles = (files) => {
     const picked = Array.from(files || []);
@@ -2616,16 +2606,16 @@ export function VlmDescribePanel() {
   };
 
   const describe = () => {
-    if (!configured || !prompt.trim() || !images.length) return;
-    if (needsAck && !ack) {
-      // Not a network call: nothing leaves the host until the destination is acknowledged.
-      setNote(`refused · ${destination} is not loopback — acknowledge the destination before any image is uploaded`);
-      return;
-    }
+    if (!configured || !isLocal || !prompt.trim() || !images.length) return;
     setOut(null);
     setNote('describing…');
     apiPost('/api/vlm/describe', { prompt, images: images.map((i) => i.data), model: '' })
-      .then((r) => { setOut(r); setNote(''); })
+      .then((r: any) => {
+        setOut(r);
+        const success = r?.ok === true && typeof r?.response === 'string' && !!r.response.trim();
+        const reason = typeof r?.error === 'string' ? r.error : typeof r?.reason === 'string' ? r.reason : '';
+        setNote(success ? '' : `describe failed${reason.trim() ? ` · ${reason.trim().slice(0, 500)}` : ' · no answer'}`);
+      })
       .catch((err) => {
         const status = Number(err?.status);
         setOut(null);
@@ -2635,7 +2625,7 @@ export function VlmDescribePanel() {
 
   return <Card
     title="VLM · DESCRIBE"
-    live={asLive(vlmD, configured)}
+    live={asLive(vlmD, configured && isLocal)}
     sub={vlmD ? (configured ? `${vlmD.backend} · ${vlmD.default_model || 'model unset'}` : 'no VLM') : null}
     onReload={reload}
   >
@@ -2650,20 +2640,12 @@ export function VlmDescribePanel() {
         {destination} · loopback · reachable not probed
       </div>
     )}
-    {needsAck && (
+    {configured && !isLocal && (
       <div role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginBottom: 6 }}>
-        <div>{destination} is NOT loopback — every image you pick would be uploaded to that host.</div>
-        <label style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, color: 'var(--amber)' }}>
-          <input
-            type="checkbox"
-            aria-label={`acknowledge that images are uploaded to ${destination}`}
-            checked={ack}
-            onChange={(ev) => setAck(ev.target.checked)}
-          />
-          <span>I acknowledge these images leave this host</span>
-        </label>
+        refused · {destination} is not loopback — a local VLM on the Nerva server is required
       </div>
     )}
+    {policyMessages.map((message) => <div key={message} role="status" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginBottom: 6 }}>{message}</div>)}
     <input
       aria-label="image files to describe"
       type="file"
@@ -2690,13 +2672,13 @@ export function VlmDescribePanel() {
       <button
         className="tool-btn"
         type="button"
-        disabled={!configured || !prompt.trim() || !images.length}
+        disabled={!configured || !isLocal || !prompt.trim() || !images.length}
         onClick={describe}
-        title={needsAck && !ack ? `acknowledge the ${destination} destination first` : 'describe the picked image(s)'}
+        title={configured && !isLocal ? 'refused · destination must be loopback' : 'describe the picked image(s)'}
       >describe</button>
       <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>{images.length}/{VLM_MAX_IMAGES} image(s)</span>
     </div>
-    {out && out.ok === true && (
+    {described && (
       <>
         <div style={{ ...mono, fontSize: 11, color: 'var(--ink)', marginTop: 8, whiteSpace: 'pre-wrap' }}>{out.response}</div>
         <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>model · {out.model || 'unnamed'}</div>
@@ -3196,6 +3178,53 @@ export function DecisionInboxPanel() {
     return () => window.removeEventListener('nerva:image-proposed', reload);
   }, [reload]);
   const pending = arr(d, 'tasks');
+  const taskIds = new Set(pending.map(t => t.id));
+  const groupLeaders = new Map();
+  const groupFollowers = new Set();
+  arr(d, 'groups').forEach(group => {
+    const members = group.member_ids;
+    if (!Array.isArray(members) || members.length < 2 || members.length !== group.count
+        || new Set(members).size !== members.length || !members.includes(group.leader_id)
+        || !members.every(id => taskIds.has(id))) return;
+    groupLeaders.set(group.leader_id, group);
+    members.forEach(id => { if (id !== group.leader_id) groupFollowers.add(id); });
+  });
+  const cards = pending.filter(t => !groupFollowers.has(t.id));
+  // H277: an opinion is advisory. Poll only queued/running judgments, with a
+  // separate wall-clock budget per card (32 queued items / two judge slots).
+  // Loading, failed reads and unrelated refreshes never extend that budget.
+  const judgeDeadlines = useRef(new Map());
+  const [judgeExpired, setJudgeExpired] = useState(new Set());
+  useEffect(() => {
+    if (!d) return;
+    const timeout = Number(d.judge?.timeout);
+    const budget = (17 * (Number.isFinite(timeout) && timeout > 0 ? timeout : 20) + 5) * 1000;
+    const now = Date.now();
+    const deadlines = new Map();
+    const waiting = [];
+    arr(d, 'tasks').forEach(t => {
+      if (judgeDeadlines.current.has(t.id)) deadlines.set(t.id, judgeDeadlines.current.get(t.id));
+      if (t.judge_pending === true && !t.judge) {
+        if (!deadlines.has(t.id)) deadlines.set(t.id, now + budget);
+        waiting.push(t.id);
+      }
+    });
+    judgeDeadlines.current = deadlines;
+    let timer;
+    const schedule = () => {
+      const current = Date.now();
+      setJudgeExpired(new Set(waiting.filter(id => deadlines.get(id) <= current)));
+      const remaining = waiting.map(id => deadlines.get(id) - current).filter(ms => ms > 0);
+      if (!remaining.length) return;
+      timer = window.setTimeout(() => {
+        // Re-check real time after browser throttling before issuing a read.
+        if (waiting.some(id => deadlines.get(id) > Date.now())) reload();
+        schedule();
+      }, Math.min(3000, ...remaining));
+    };
+    schedule();
+    return () => window.clearTimeout(timer);
+  }, [d, reload]);
   const interrupts = useApi('/autonomy/interrupts', true, true);   // admin — the calm-by-the-numbers budget
   const ib = interrupts.d;
   const plans = useApi(PLANS_PATH, true, true);   // H315 — the agent's checklists, intent before the card
@@ -3203,11 +3232,28 @@ export function DecisionInboxPanel() {
   const [imageReturn,setImageReturn] = useState<number | null>(null);
   const [editing, setEditing] = useState(null);   // task id whose payload is being edited
   const [draft, setDraft] = useState('');
+  const [decisionReasons, setDecisionReasons] = useState<Record<string, string>>({});
+  const [groupError, setGroupError] = useState('');
+  const rejectGroup = (group) => {
+    setGroupError('');
+    const reason = (decisionReasons[group.leader_id] || '').trim();
+    return actA('/autonomy/tasks/groups/' + encodeURIComponent(group.id) + '/reject', {
+      snapshot: group.snapshot, member_ids: group.member_ids, ...(reason ? { reason } : {}),
+    }, () => {
+      setDecisionReasons(previous => {
+        const next = { ...previous }; group.member_ids.forEach(id => { delete next[id]; }); return next;
+      });
+      if (group.member_ids.includes(editing)) setEditing(null);
+      reload();
+    }, err => setGroupError(err?.body?.error || err?.message || 'Group decision refused; reload and review.'));
+  };
   const decide = (id, action, payload?) => {
     const image = pending.some(t=>t.id===id && isImageProposal(t));
+    const reason = (decisionReasons[id] || '').trim();
     return actA('/autonomy/tasks/' + id + '/decision',
-      payload !== undefined ? { action, payload } : { action }, () => {
+      { action, ...(payload !== undefined ? { payload } : {}), ...(reason ? { reason } : {}) }, () => {
         if(image && Number.isSafeInteger(id) && id>0) setImageReturn(id);
+        setDecisionReasons(previous => { const next = { ...previous }; delete next[id]; return next; });
         setEditing(null); reload();
       });
   };
@@ -3234,20 +3280,51 @@ export function DecisionInboxPanel() {
       sub={d ? `${pending.length} awaiting you` + (ib && ib.per_day != null ? ` · ${ib.used ?? 0}/${ib.per_day} interrupts today` : '') : null}
       onReload={() => { reload(); interrupts.reload(); plans.reload(); changes.reload(); }}>
       <State e={e} loading={loading} n={pending.length} />
+      {groupError && <div role="alert" style={{ color: 'var(--red)' }}>{groupError}</div>}
       {imageReturn && <p><a href={internalLink("/v2/console/images?image_task="+imageReturn)}>Watch decided image task</a></p>}
-      {pending.slice(0, 10).map((t, i) => (
+      {cards.slice(0, 10).map((t, i) => (
         <div key={t.id ?? i}>
           <Row>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
               {!isImageProposal(t) && <button className="tool-btn" title="dry-run preview" onClick={() => loadPreview(t.id)}>preview</button>}
-              <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>✓</button>
+              <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>{groupLeaders.has(t.id) ? 'approve once' : '✓'}</button>
               {!isImageProposal(t) && t.kind !== VOICE_COMMAND_KIND && <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>}
               <button className="tool-btn" title="reject" onClick={() => decide(t.id, 'reject')}>✕</button>
               <button className="tool-btn" title="defer" onClick={() => decide(t.id, 'defer')}>defer</button>
+              {groupLeaders.has(t.id) && <button className="tool-btn" onClick={() => rejectGroup(groupLeaders.get(t.id))}>reject group</button>}
             </span>
           </Row>
+          {typeof t.approval_deadline_at === 'string' && Number.isFinite(Date.parse(t.approval_deadline_at)) &&
+            <div aria-label={`Approval deadline for ${t.title || t.kind || ('task ' + t.id)}`}
+              style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 4 }}>
+              Expires without a response: <time dateTime={t.approval_deadline_at}>
+                {new Date(t.approval_deadline_at).toLocaleString()}
+              </time>
+            </div>}
+          {groupLeaders.has(t.id) && <div style={{ ...mono, fontSize: 11, marginBottom: 4 }}>
+            {groupLeaders.get(t.id).count} matching requests · approval applies only to this task; the next remains pending.
+          </div>}
+          <textarea aria-label={`Your decision reason for ${t.title || t.kind || ('task ' + t.id)}`}
+            placeholder="Your decision reason (optional)" maxLength={280}
+            value={decisionReasons[t.id] || ''} style={taS}
+            onChange={event => setDecisionReasons(previous => ({ ...previous, [t.id]: event.target.value }))} />
+          {t.judge && <div aria-label="Advisory model opinion" style={{ margin: '4px 0 8px 12px', fontSize: 11, overflowWrap: 'anywhere' }}>
+            <div style={{ color: 'var(--ink-2)' }}>Model opinion · advisory only · you decide</div>
+            <div style={{ color: Number(t.judge.score) >= 70 ? 'var(--amber)' : 'var(--ink-2)' }}>
+              Risk score {t.judge.score}/100 · {t.judge.judge?.provider || 'unknown provider'} · {t.judge.judge?.model || 'unknown model'} · {t.judge.judge?.local ? 'local' : 'remote'}
+            </div>
+            {t.judge.truncated && <div style={{ color: 'var(--amber)' }}>Judged on a shortened copy of the task.</div>}
+            {Array.isArray(t.judge.flags) && t.judge.flags.length > 0 && <div style={{ color: 'var(--amber)' }}>
+              <div>Flagged arguments may have manipulated this model opinion.</div>
+              {t.judge.flags.map((flag, k) => <Tag key={k} c="var(--amber)">{String(flag)}</Tag>)}
+            </div>}
+            <blockquote style={{ margin: '4px 0', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>{t.judge.rationale || 'No rationale supplied.'}</blockquote>
+          </div>}
+          {!t.judge && t.judge_pending === true && <div style={{ margin: '4px 0 8px 12px', fontSize: 11, color: 'var(--ink-2)' }}>
+            {judgeExpired.has(t.id) ? 'Advisory model opinion is taking longer · refresh to check again; you can decide now.' : 'Advisory model opinion pending · you can decide now.'}
+          </div>}
           {isImageProposal(t) && <div style={{ fontSize: 12, margin: '6px 0' }}>
             <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{typeof (isCloudImageProposal(t) ? t.payload?.image?.body?.prompt : t.payload?.args?.prompt) === 'string' ? (isCloudImageProposal(t) ? t.payload.image.body.prompt : t.payload.args.prompt).slice(0,4000) : 'Image prompt unavailable.'}</p>
             {isCloudImageProposal(t) ? <p>OpenAI · {String(t.payload?.image?.body?.model || 'unavailable')} · {String(t.payload?.image?.body?.size || 'unavailable')} · {String(t.payload?.image?.body?.quality || 'unavailable')} · potentially paid after approval.</p> : <p>Local image · {Number.isInteger(t.payload?.args?.width) ? t.payload.args.width : 512} × {Number.isInteger(t.payload?.args?.height) ? t.payload.args.height : 512}
@@ -4436,9 +4513,10 @@ export function SafeCommsDraftPanel() {
    the panel says so (nothing is recorded by default). */
 export function ModelInfoPanel() {
   const { d, e, loading, reload } = useApi('/api/models/info', true, true);
+  const roles = useApi('/api/llm/roles');
   const enabled = !!(d && d.enabled);
   const models = arr(d && d.models);
-  return (
+  return (<>
     <Card title="MODEL FINGERPRINTS" live={asLive(d, enabled)} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} models` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={models.length} />
       {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_MODEL_INFO is on</div>}
@@ -4449,6 +4527,21 @@ export function ModelInfoPanel() {
         </Row>
       ))}
     </Card>
+    <Card title="MODEL ROLES" live={asLive(roles.d)} sub="Configuration only" onReload={roles.reload}>
+      <State e={roles.e} loading={roles.loading} n={arr(roles.d, 'roles').length} />
+      {roles.d && <p>Connectivity has not been checked.</p>}
+      {arr(roles.d, 'roles').map(role => <div key={role.role} style={{ marginBottom: 8 }}>
+        <Row>
+          <span style={mono}>{role.role}</span>
+          <span>{role.configured
+            ? `${role.provider || 'router'} · ${role.model || 'router selected'} · ${role.local === true ? 'local' : role.local === false ? 'remote' : 'locality unknown'}`
+            : `Not configured: ${role.reason || 'unset'}`}</span>
+        </Row>
+        {role.note && <div>{role.note}</div>}
+        {role.error && <div>{role.detail || role.reason}</div>}
+      </div>)}
+    </Card>
+  </>
   );
 }
 

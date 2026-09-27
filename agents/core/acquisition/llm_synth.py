@@ -22,6 +22,8 @@ import logging
 import re
 from typing import Any
 
+from agents.core.llm.data_handling import auxiliary_request_scope
+
 logger = logging.getLogger("jarvis.acquisition.llm_synth")
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
@@ -78,10 +80,11 @@ async def generate_capability(prompt: dict, *, router) -> dict:
 
     last_error: Exception | None = None
     for attempt in range(_MAX_ATTEMPTS):
-        raw = await backend.generate(
-            model, user, system=system, max_tokens=2048,
-            temperature=0.2 if attempt == 0 else 0.0,
-        )
+        with auxiliary_request_scope(router, backend, model, role="acquisition_capability"):
+            raw = await backend.generate(
+                model, user, system=system, max_tokens=2048,
+                temperature=0.2 if attempt == 0 else 0.0,
+            )
         try:
             parsed = _extract_json(raw)
         except ValueError as exc:
@@ -122,10 +125,11 @@ async def draft_plan(goal: str, references: list[dict], *, router) -> list[dict]
 
     last_error: Exception | None = None
     for attempt in range(_MAX_ATTEMPTS):
-        raw = await backend.generate(
-            model, user, system=system, max_tokens=1024,
-            temperature=0.2 if attempt == 0 else 0.0,
-        )
+        with auxiliary_request_scope(router, backend, model, role="acquisition_draft"):
+            raw = await backend.generate(
+                model, user, system=system, max_tokens=1024,
+                temperature=0.2 if attempt == 0 else 0.0,
+            )
         try:
             parsed = _extract_json(raw)
         except ValueError as exc:

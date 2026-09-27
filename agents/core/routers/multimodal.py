@@ -41,63 +41,105 @@ class VLMDescribeBody(BaseModel):
 
 @router.get("/api/vlm/status", dependencies=[Depends(user_guard)])
 async def vlm_status():
-    """H13.1 / GAP-9 — resolved VLM deployment truth, never a guess.
-
-    ``configured`` is config truth only; ``reachable`` is deliberately null
-    because this route does no network probe — claiming reachability without
-    measuring it is exactly the overclaim this surface used to make.
-    """
+    """Pure resolved configuration and public policy; never a reachability probe."""
+    from agents.core.llm import vision_policy
     from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
 
     try:
         config = resolve_vlm_config()
     except VLMNotConfigured as exc:
-        return nocache_json(
-            {
-                "configured": False,
-                "backend": "off",
-                "reason": exc.reason,
-                "default_model": None,
-                "reachable": None,
-            }
-        )
-    return nocache_json(
-        {
-            "configured": True,
-            "backend": config.backend,
-            "base_url": config.base_url,
-            "default_model": config.model,
-            "local": config.is_local,
-            "reachable": None,
-        }
-    )
+        return nocache_json({"configured": False, "backend": "off", "reason": exc.reason,
+                             "default_model": None, "reachable": None})
+    except Exception:
+        return nocache_json({"configured": False, "backend": "off", "reason": "vision_policy_unavailable",
+                             "default_model": None, "reachable": None})
+    try:
+        identity = vision_policy.describe(config)
+        origin = vision_policy.public_origin(config.base_url)
+    except Exception:
+        return nocache_json({"configured": False, "backend": "off", "reason": "vision_policy_unavailable",
+                             "default_model": None, "reachable": None})
+    return nocache_json({"configured": True, "backend": config.backend, "base_url": origin,
+                         "default_model": config.model, "local": config.is_local, "reachable": None,
+                         **identity.public()})
+
+
+async def _run_interactive_local_vision(config, invoke, *, resolve_config):
+    """One owned native client, with frozen policy spanning generation and cleanup."""
+    from agents.core.commands import Principal
+    from agents.core.llm import selection_guards as sg
+    from agents.core.llm import vision_policy
+    from agents.core.llm.vlm import VLMBackend
+
+    frozen = vision_policy.interactive_local_identity(config)
+    findings = sg.evaluate([sg.Choice("vision.model", frozen.provider, config.model)])
+    if findings:
+        raise sg.SelectionRefused(findings, sorted({finding.needs for finding in findings}))
+    backend = VLMBackend(base_url=config.base_url, api_key=config.api_key, composer_auth=True)
+    closed = False
+    try:
+        with vision_policy.interactive_local_request_scope(
+                config, backend, resolve_config=resolve_config, frozen=frozen,
+                principal=Principal(channel="web", admin=False)):
+            try:
+                result = await invoke(backend)
+            finally:
+                closed = True
+                await backend.aclose()
+        return result, frozen.public()
+    finally:
+        if not closed:
+            await backend.aclose()
+
+
+def _interactive_vision_failure(exc, *, screen=False):
+    from agents.core.llm.data_handling import DataHandlingRefused
+    from agents.core.llm.selection_guards import SelectionRefused
+    from agents.core.llm.vision_policy import VisionPolicyUnavailable
+
+    flags = {"ok": False, **({"generated": False} if screen else {})}
+    if isinstance(exc, SelectionRefused):
+        return JSONResponse({**exc.payload(), **flags}, status_code=409)
+    if isinstance(exc, VisionPolicyUnavailable):
+        return JSONResponse({**flags, "error": "VLM policy unavailable", "reason": "vision_policy_unavailable"}, status_code=503)
+    if isinstance(exc, DataHandlingRefused):
+        return JSONResponse({**flags, "error": "VLM configuration changed", "reason": "vision_destination_changed"}, status_code=409)
+    return JSONResponse({**flags, "error": "VLM inference failed", "reason": "vision_inference_failed"}, status_code=502)
 
 
 @router.post("/api/vlm/describe", dependencies=[Depends(user_guard)])
 async def vlm_describe(body: VLMDescribeBody):
-    """H13.1 — send image(s) + a prompt to the configured VLM.
+    """One explicit local image request; failure never becomes a model answer."""
+    from dataclasses import replace
 
-    LM Studio (`JARVIS_VLM_BACKEND=lmstudio` + `JARVIS_VLM_MODEL`), vLLM and
-    llama.cpp (`JARVIS_VLM_BACKEND=custom` + `JARVIS_VLM_URL`) all serve the
-    same OpenAI-vision contract; the model + weights + GPU stay the host
-    deployment seam."""
-    from agents.core.llm.vlm import VLMBackend, VLMNotConfigured, resolve_vlm_config
+    from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
 
     try:
         config = resolve_vlm_config()
     except VLMNotConfigured as exc:
-        return JSONResponse(
-            {"error": "VLM not configured", "reason": exc.reason}, status_code=503
-        )
-    vlm = VLMBackend(base_url=config.base_url, api_key=config.api_key)
+        return JSONResponse({"ok": False, "error": "VLM not configured", "reason": exc.reason}, status_code=503)
+    except Exception:
+        return JSONResponse({"ok": False, "error": "VLM policy unavailable", "reason": "vision_policy_unavailable"}, status_code=503)
+    if not config.is_local:
+        return JSONResponse({"ok": False, "error": "VLM must be local", "reason": "non_loopback_vlm"}, status_code=503)
+    effective = replace(config, model=body.model) if body.model else config
+
+    def live_config():
+        current = resolve_vlm_config()
+        return replace(current, model=body.model) if body.model else current
+
+    async def generate(backend):
+        # The native encoder still accepts only bytes/data/http images, never file paths.
+        text = await backend.generate_vision_checked(effective.model, body.prompt, images=body.images)
+        if not isinstance(text, str) or not text.strip() or text.strip() == "[VLM error]":
+            raise ValueError('VLM produced no answer')
+        return text
+
     try:
-        model = body.model or config.model
-        # encode_image_block accepts only data:/http(s) image sources, never file
-        # paths — request-supplied images can't read host files.
-        out = await vlm.generate_vision(model, body.prompt, images=body.images)
-        return nocache_json({"ok": True, "model": model, "response": out})
-    finally:
-        await vlm.aclose()
+        out, policy = await _run_interactive_local_vision(effective, generate, resolve_config=live_config)
+    except Exception as exc:
+        return _interactive_vision_failure(exc)
+    return nocache_json({"ok": True, "model": effective.model, "response": out, **policy})
 
 
 class ScreenReflexBody(BaseModel):
@@ -125,7 +167,7 @@ async def screen_reflex(body: ScreenReflexBody):
     """
     import base64
 
-    from agents.core.llm.vlm import VLMBackend, VLMNotConfigured, resolve_vlm_config
+    from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
     from agents.core.screen_reflex import ScreenReflex
 
     try:
@@ -143,6 +185,8 @@ async def screen_reflex(body: ScreenReflexBody):
             },
             status_code=503,
         )
+    except Exception:
+        return JSONResponse({"ok": False, "generated": False, "reason": "vision_policy_unavailable"}, status_code=503)
     if not config.is_local:
         return JSONResponse(
             {
@@ -155,14 +199,15 @@ async def screen_reflex(body: ScreenReflexBody):
             },
             status_code=503,
         )
-    vlm = VLMBackend(base_url=config.base_url, api_key=config.api_key)
+    async def observe(backend):
+        reflex = ScreenReflex.from_backend(backend, model=config.model)
+        return await reflex.observe(image, body.question, mode=body.mode)
+
     try:
-        reflex = ScreenReflex.from_backend(vlm, model=config.model)
-        # observe() is already honest (ok/generated/reason, elements only in
-        # ground mode) — returned verbatim, with no fallback description path.
-        return nocache_json(await reflex.observe(image, body.question, mode=body.mode))
-    finally:
-        await vlm.aclose()
+        result, policy = await _run_interactive_local_vision(config, observe, resolve_config=resolve_vlm_config)
+    except Exception as exc:
+        return _interactive_vision_failure(exc, screen=True)
+    return nocache_json({**result, **policy})
 
 
 class DesktopStepsBody(BaseModel):

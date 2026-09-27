@@ -191,3 +191,39 @@ it('task return query watches existing cloud task without submitting',async()=>{
   expect(api.proposeImage).not.toHaveBeenCalled();expect(api.proposeCloudImage).not.toHaveBeenCalled();
   expect(screen.getByRole('link',{name:'Open Decision Inbox'}).getAttribute('href')).toBe('/nerva/v2/console/decision-inbox');
 });
+
+const providerCapabilities: api.ImageCapability = {
+  configured:true, backend:'comfyui', edit:true, max_references:4, upscale:[2],
+  backends:[
+    {id:'comfyui', models:['a.safetensors'], protocol:'comfyui', edit:true, max_references:4, upscale:[2]},
+    {id:'studio', models:['studio/image-v1'], protocol:'openai_images', edit:false, max_references:0, upscale:[]},
+  ],
+};
+it('switching to a generate-only service clears incompatible edit and upscale state', async()=>{
+  vi.mocked(api.imageStatus).mockResolvedValue(providerCapabilities);
+  render(<ImagesPanel/>);
+  fireEvent.click(await screen.findByLabelText('Edit an image'));
+  fireEvent.change(screen.getByLabelText('Reference artifact ID'),{target:{value:artifact.id}});
+  fireEvent.click(screen.getByLabelText('2× bicubic upscale'));
+  fireEvent.change(screen.getByLabelText('Image backend'),{target:{value:'studio'}});
+  expect(screen.queryByLabelText('Edit an image')).toBeNull();
+  expect(screen.queryByLabelText('Reference artifact ID')).toBeNull();
+  expect(screen.queryByLabelText('2× bicubic upscale')).toBeNull();
+  expect(screen.queryByText(/20 steps · random seed/)).toBeNull();
+  fireEvent.change(screen.getByLabelText('Image model'),{target:{value:'studio/image-v1'}});
+  fireEvent.change(screen.getByLabelText('Image prompt'),{target:{value:'mountains'}});
+  fireEvent.click(screen.getByRole('button',{name:'Propose image'}));
+  await waitFor(()=>expect(api.proposeImage).toHaveBeenCalledWith('mountains',{backend:'studio',model:'studio/image-v1'},expect.any(AbortSignal)));
+});
+it('uses the configured default service model and capabilities', async()=>{
+  vi.mocked(api.imageStatus).mockResolvedValue({...providerCapabilities,backend:'studio',edit:false,upscale:[]});
+  render(<ImagesPanel/>);
+  await screen.findByLabelText('Image model');
+  expect(screen.getByRole('option',{name:'studio/image-v1'})).toBeTruthy();
+  expect(screen.queryByRole('option',{name:'a.safetensors'})).toBeNull();
+  expect(screen.queryByLabelText('Edit an image')).toBeNull();
+  expect(screen.queryByText(/20 steps · random seed/)).toBeNull();
+  fireEvent.change(screen.getByLabelText('Image backend'),{target:{value:'comfyui'}});
+  expect(screen.getByLabelText('Edit an image')).toBeTruthy();
+  expect(screen.getByLabelText('2× bicubic upscale')).toBeTruthy();
+});

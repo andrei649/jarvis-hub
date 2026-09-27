@@ -299,14 +299,21 @@ class VLMBackend(LLMBackend):
     supports_tools = False
 
     def __init__(self, base_url: str = DEFAULT_VLM_BASE, api_key: str = "",
-                 client=None, max_image_dim: int = 1024) -> None:
+                 client=None, max_image_dim: int = 1024, *, composer_auth: bool = False) -> None:
         self.base_url = base_url
         self.api_key = api_key
         self.max_image_dim = max_image_dim
+        self._composer_auth = composer_auth
         # Provenance label consumed by proven-local gates (e.g. the H28
         # desktop fallback); a remote base is honestly not local.
         self.is_local = _is_loopback_base(base_url)
-        self.client = client or llm_async_client("vlm", base_url=base_url, timeout=180.0)
+        options = {}
+        if composer_auth:
+            import httpx
+            # Suppress URL Basic overriding explicit Bearer; _headers resolves both.
+            options["auth"] = httpx.Auth()
+            options["trust_env"] = False
+        self.client = client or llm_async_client("vlm", base_url=base_url, timeout=180.0, **options)
 
     @classmethod
     def from_env(cls, *, client=None, max_image_dim: int = 1024) -> "VLMBackend":
@@ -331,6 +338,11 @@ class VLMBackend(LLMBackend):
         h = {"Content-Type": "application/json"}
         if self.api_key:
             h["Authorization"] = f"Bearer {self.api_key}"
+        elif self._composer_auth:
+            from .vision_policy import authorization
+            auth = authorization(self.base_url, self.api_key)
+            if auth:
+                h["Authorization"] = auth
         return h
 
     async def generate_vision_checked(self, model: str, prompt: str, images=None, system: str = "",

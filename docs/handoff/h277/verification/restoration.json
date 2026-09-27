@@ -1,0 +1,10 @@
+{
+  "tracked_files_checked": 3724,
+  "restoration": "passed",
+  "base_tracked_source_sha256": "8f150f22e951b6d872355dd8fe9bd3553a9c3655d4563146a9c8abee7c4f856f",
+  "test_overlay_sha256": {
+    "tests/test_h277_approval_judge.py": "5d93ae75533e99f7b0ad7476f1ce17201fc32e9b6f0c7e4042a93585b70691c7",
+    "tests/frontend/tools.test.js": "c2f8d6343cbd00de6e5cec1902a8195440819537a8d5fccef1d54fa60740b827"
+  },
+  "source_with_test_overlay_sha256": "40d4d4b7e9634bb64e06893e1d43d718b08c75f49e2f6b266e7b6ad2decb6d5c"
+}

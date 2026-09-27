@@ -1,0 +1,106 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_model_roles.py"]
+..........F...F...........F...F.F...F................................... [ 70%]
+..............................                                           [100%]
+=================================== FAILURES ===================================
+___ test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping[10] ___
+
+env = {'JARVIS_VLM_BACKEND': 'lmstudio', 'JARVIS_VLM_MODEL': 'qwen3-vl-8b'}
+
+    @pytest.mark.parametrize("env", LEGACY_MATRIX, ids=[str(i) for i in range(len(LEGACY_MATRIX))])
+    def test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping(env):
+>       assert _outcome(lambda e: resolve_vlm_config(env=e), env) == _outcome(_old_resolve_vlm_config, env)
+E       AssertionError: assert ('ok', VLMCon...n='absolute')) == ('ok', VLMCon...n='absolute'))
+E         
+E         At index 1 diff: VLMConfig(backend='lmstudio', base_url='', model='qwen3-vl-8b', api_key='', is_local=False, preset='', convention='absolute') != VLMConfig(backend='lmstudio', base_url='http://localhost:1234/v1', model='qwen3-vl-8b', api_key='', is_local=True, preset='', convention='absolute')
+E         Use -v to get more diff
+
+tests/test_h277_model_roles.py:102: AssertionError
+___ test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping[14] ___
+
+env = {'JARVIS_VLM_BACKEND': 'lmstudio', 'JARVIS_VLM_PRESET': 'qwen3-vl-8b', 'JARVIS_VLM_MODEL': 'qwen/qwen3-vl-8b'}
+
+    @pytest.mark.parametrize("env", LEGACY_MATRIX, ids=[str(i) for i in range(len(LEGACY_MATRIX))])
+    def test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping(env):
+>       assert _outcome(lambda e: resolve_vlm_config(env=e), env) == _outcome(_old_resolve_vlm_config, env)
+E       AssertionError: assert ('ok', VLMCon...lative_1000')) == ('ok', VLMCon...lative_1000'))
+E         
+E         At index 1 diff: VLMConfig(backend='lmstudio', base_url='', model='qwen/qwen3-vl-8b', api_key='', is_local=False, preset='qwen3-vl-8b', convention='relative_1000') != VLMConfig(backend='lmstudio', base_url='http://localhost:1234/v1', model='qwen/qwen3-vl-8b', api_key='', is_local=True, preset='qwen3-vl-8b', convention='relative_1000')
+E         Use -v to get more diff
+
+tests/test_h277_model_roles.py:102: AssertionError
+____ test_legacy_vlm_env_resolves_byte_identically_from_the_process_env[10] ____
+
+env = {'JARVIS_VLM_BACKEND': 'lmstudio', 'JARVIS_VLM_MODEL': 'qwen3-vl-8b'}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fa6c560>
+
+    @pytest.mark.parametrize("env", LEGACY_MATRIX, ids=[str(i) for i in range(len(LEGACY_MATRIX))])
+    def test_legacy_vlm_env_resolves_byte_identically_from_the_process_env(env, monkeypatch):
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+>       assert _outcome(lambda _e: resolve_vlm_config(), env) == _outcome(_old_resolve_vlm_config, env)
+E       AssertionError: assert ('ok', VLMCon...n='absolute')) == ('ok', VLMCon...n='absolute'))
+E         
+E         At index 1 diff: VLMConfig(backend='lmstudio', base_url='', model='qwen3-vl-8b', api_key='', is_local=False, preset='', convention='absolute') != VLMConfig(backend='lmstudio', base_url='http://localhost:1234/v1', model='qwen3-vl-8b', api_key='', is_local=True, preset='', convention='absolute')
+E         Use -v to get more diff
+
+tests/test_h277_model_roles.py:109: AssertionError
+____ test_legacy_vlm_env_resolves_byte_identically_from_the_process_env[14] ____
+
+env = {'JARVIS_VLM_BACKEND': 'lmstudio', 'JARVIS_VLM_PRESET': 'qwen3-vl-8b', 'JARVIS_VLM_MODEL': 'qwen/qwen3-vl-8b'}
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fa6e0f0>
+
+    @pytest.mark.parametrize("env", LEGACY_MATRIX, ids=[str(i) for i in range(len(LEGACY_MATRIX))])
+    def test_legacy_vlm_env_resolves_byte_identically_from_the_process_env(env, monkeypatch):
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+>       assert _outcome(lambda _e: resolve_vlm_config(), env) == _outcome(_old_resolve_vlm_config, env)
+E       AssertionError: assert ('ok', VLMCon...lative_1000')) == ('ok', VLMCon...lative_1000'))
+E         
+E         At index 1 diff: VLMConfig(backend='lmstudio', base_url='', model='qwen/qwen3-vl-8b', api_key='', is_local=False, preset='qwen3-vl-8b', convention='relative_1000') != VLMConfig(backend='lmstudio', base_url='http://localhost:1234/v1', model='qwen/qwen3-vl-8b', api_key='', is_local=True, preset='qwen3-vl-8b', convention='relative_1000')
+E         Use -v to get more diff
+
+tests/test_h277_model_roles.py:109: AssertionError
+_______________ test_vision_role_falls_back_to_jarvis_vlm_model ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fab0dd0>
+
+    def test_vision_role_falls_back_to_jarvis_vlm_model(monkeypatch):
+        monkeypatch.setenv("JARVIS_VLM_BACKEND", "lmstudio")
+        monkeypatch.setenv("JARVIS_VLM_MODEL", "qwen3-vl-8b")
+        role = model_roles.resolve("vision")
+        assert role.configured is True
+        assert role.provider_id == "lm-studio"
+        assert role.model == "qwen3-vl-8b"
+        assert role.source["model"] == "JARVIS_VLM_MODEL"
+        assert role.source["provider"] == "JARVIS_VLM_BACKEND"
+>       assert role.base_url == LMSTUDIO_VLM_BASE
+E       AssertionError: assert '' == 'http://localhost:1234/v1'
+E         
+E         - http://localhost:1234/v1
+
+tests/test_h277_model_roles.py:123: AssertionError
+__________ test_role_provider_lm_studio_maps_to_the_lmstudio_backend ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fab0e90>
+
+    def test_role_provider_lm_studio_maps_to_the_lmstudio_backend(monkeypatch):
+        monkeypatch.setenv("JARVIS_ROLE_VISION_PROVIDER", "LM-Studio")
+        monkeypatch.setenv("JARVIS_ROLE_VISION_MODEL", "qwen3-vl-4b")
+        monkeypatch.setenv("JARVIS_VLM_BACKEND", "off")   # the new name wins over a legacy off
+        config = resolve_vlm_config()
+>       assert config.backend == "lmstudio" and config.base_url == LMSTUDIO_VLM_BASE
+E       AssertionError: assert ('lmstudio' == 'lmstudio'
+E         
+E           lmstudio and '' == 'http://localhost:1234/v1'
+E         
+E         - http://localhost:1234/v1)
+
+tests/test_h277_model_roles.py:165: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping[10]
+FAILED tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping[14]
+FAILED tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_from_the_process_env[10]
+FAILED tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_from_the_process_env[14]
+FAILED tests/test_h277_model_roles.py::test_vision_role_falls_back_to_jarvis_vlm_model
+FAILED tests/test_h277_model_roles.py::test_role_provider_lm_studio_maps_to_the_lmstudio_backend
+6 failed, 96 passed in 1.37s

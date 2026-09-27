@@ -197,6 +197,7 @@ def build_company_runtime(
 
     queue = getattr(orch, "task_queue", None) or getattr(orch, "queue", None)
     reader = read_task or (getattr(queue, "get", None) if queue is not None else None)
+    ledger.bind_approval_task_reader(reader)
     reasons: list[str] = []
     if reader is None:
         # Without a queue reader an approved task can never unblock its run, so the

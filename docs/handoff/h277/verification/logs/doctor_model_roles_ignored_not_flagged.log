@@ -1,0 +1,21 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_model_roles.py", "tests/test_doctor.py"]
+............................................................F........... [ 45%]
+........................................................................ [ 90%]
+................                                                         [100%]
+=================================== FAILURES ===================================
+________ test_doctor_model_roles_row_warns_on_an_ignored_main_variable _________
+
+    def test_doctor_model_roles_row_warns_on_an_ignored_main_variable():
+        from scripts import doctor
+    
+        check = doctor.check_model_roles({"JARVIS_ROLE_MAIN_MODEL": "x"})
+>       assert check.status == doctor.WARN and "JARVIS_ROLE_MAIN_MODEL" in check.detail
+E       AssertionError: assert ('ok' == 'warn'
+E         
+E         - warn
+E         + ok)
+
+tests/test_h277_model_roles.py:373: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_an_ignored_main_variable
+1 failed, 159 passed in 10.92s

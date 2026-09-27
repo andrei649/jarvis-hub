@@ -2366,6 +2366,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/actions/groups/{group_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Actions Reject Group
+         * @description Reject only an exact still-current registration group, never approve it.
+         */
+        post: operations["actions_reject_group_api_actions_groups__group_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/actions/{action_id}/decide": {
         parameters: {
             query?: never;
@@ -2609,6 +2629,23 @@ export interface paths {
          * @description Set the alert threshold (admin).
          */
         post: operations["quality_set_threshold_api_quality_threshold_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/security/data-handling/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Data Handling Ack */
+        post: operations["data_handling_ack_api_security_data_handling_ack_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4432,6 +4469,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/autonomy/tasks/groups/{group_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Autonomy Reject Group */
+        post: operations["autonomy_reject_group_autonomy_tasks_groups__group_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/autonomy/tasks/{task_id}/decision": {
         parameters: {
             query?: never;
@@ -4733,6 +4787,26 @@ export interface paths {
          *     Charges the step budget; exhausting it auto-fails the mission (409).
          */
         post: operations["mission_finish_step_api_missions__mission_id__steps__idx__finish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Llm Roles
+         * @description Inspect configured model roles without probing providers or exposing keys.
+         */
+        get: operations["llm_roles_api_llm_roles_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7942,11 +8016,7 @@ export interface paths {
         };
         /**
          * Vlm Status
-         * @description H13.1 / GAP-9 — resolved VLM deployment truth, never a guess.
-         *
-         *     ``configured`` is config truth only; ``reachable`` is deliberately null
-         *     because this route does no network probe — claiming reachability without
-         *     measuring it is exactly the overclaim this surface used to make.
+         * @description Pure resolved configuration and public policy; never a reachability probe.
          */
         get: operations["vlm_status_api_vlm_status_get"];
         put?: never;
@@ -7968,12 +8038,7 @@ export interface paths {
         put?: never;
         /**
          * Vlm Describe
-         * @description H13.1 — send image(s) + a prompt to the configured VLM.
-         *
-         *     LM Studio (`JARVIS_VLM_BACKEND=lmstudio` + `JARVIS_VLM_MODEL`), vLLM and
-         *     llama.cpp (`JARVIS_VLM_BACKEND=custom` + `JARVIS_VLM_URL`) all serve the
-         *     same OpenAI-vision contract; the model + weights + GPU stay the host
-         *     deployment seam.
+         * @description One explicit local image request; failure never becomes a model answer.
          */
         post: operations["vlm_describe_api_vlm_describe_post"];
         delete?: never;
@@ -10386,6 +10451,17 @@ export interface components {
             payload?: {
                 [key: string]: unknown;
             } | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** AutonomyGroupRejectBody */
+        AutonomyGroupRejectBody: {
+            /** Snapshot */
+            snapshot: string;
+            /** Member Ids */
+            member_ids: number[];
+            /** Reason */
+            reason?: string | null;
         };
         /** AutonomyModeBody */
         AutonomyModeBody: {
@@ -10416,6 +10492,8 @@ export interface components {
              * @default generated
              */
             origin: string;
+            /** Approval Deadline At */
+            approval_deadline_at?: string | null;
         };
         /** BrowserCheckBody */
         BrowserCheckBody: {
@@ -10752,6 +10830,17 @@ export interface components {
              * @default 3
              */
             per_session: number;
+        };
+        /** DataHandlingAck */
+        DataHandlingAck: {
+            /** Provider */
+            provider: string;
+            /** Acknowledged */
+            acknowledged: boolean;
+            /** Scope */
+            scope: string;
+            /** Target */
+            target?: ("role:approval_judge" | "role:telegram_media_reader" | "role:camera_descriptions") | null;
         };
         /** DatasetRunBody */
         DatasetRunBody: {
@@ -15886,6 +15975,37 @@ export interface operations {
             };
         };
     };
+    actions_reject_group_api_actions_groups__group_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     actions_decide_api_actions__action_id__decide_post: {
         parameters: {
             query?: never;
@@ -16208,6 +16328,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    data_handling_ack_api_security_data_handling_ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataHandlingAck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -18722,6 +18875,41 @@ export interface operations {
             };
         };
     };
+    autonomy_reject_group_autonomy_tasks_groups__group_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutonomyGroupRejectBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     autonomy_decide_autonomy_tasks__task_id__decision_post: {
         parameters: {
             query?: never;
@@ -19220,6 +19408,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    llm_roles_api_llm_roles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

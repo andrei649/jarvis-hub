@@ -1,0 +1,61 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_model_roles.py", "tests/test_model_config.py"]
+.........................................FFFF........................... [ 63%]
+.........................................                                [100%]
+=================================== FAILURES ===================================
+__________________ test_deep_role_defaults_and_is_not_pinned ___________________
+
+    def test_deep_role_defaults_and_is_not_pinned():
+        assert model_config.deep_model_name() == model_config.DEFAULT_DEEP_MODEL
+>       assert model_config.deep_model_override_configured() is False
+E       assert True is False
+E        +  where True = <function deep_model_override_configured at 0x10a6e7e20>()
+E        +    where <function deep_model_override_configured at 0x10a6e7e20> = model_config.deep_model_override_configured
+
+tests/test_h277_model_roles.py:211: AssertionError
+__________________________ test_deep_role_legacy_pin ___________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10dc90080>
+
+    def test_deep_role_legacy_pin(monkeypatch):
+        monkeypatch.setenv("JARVIS_DEEP_MODEL", "local/deep-custom")
+        assert model_config.deep_model_name() == "local/deep-custom"
+>       assert model_config.deep_model_override_configured() is True
+E       assert False is True
+E        +  where False = <function deep_model_override_configured at 0x10a6e7e20>()
+E        +    where <function deep_model_override_configured at 0x10a6e7e20> = model_config.deep_model_override_configured
+
+tests/test_h277_model_roles.py:218: AssertionError
+_________________________ test_deep_role_new_name_wins _________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10dc931d0>
+
+    def test_deep_role_new_name_wins(monkeypatch):
+        monkeypatch.setenv("JARVIS_DEEP_MODEL", "local/old")
+        monkeypatch.setenv("JARVIS_ROLE_DEEP_MODEL", "local/new")
+        assert model_config.deep_model_name() == "local/new"
+>       assert model_config.deep_model_override_configured() is True
+E       assert False is True
+E        +  where False = <function deep_model_override_configured at 0x10a6e7e20>()
+E        +    where <function deep_model_override_configured at 0x10a6e7e20> = model_config.deep_model_override_configured
+
+tests/test_h277_model_roles.py:225: AssertionError
+____________________ test_deep_role_whitespace_is_not_a_pin ____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10dc94140>
+
+    def test_deep_role_whitespace_is_not_a_pin(monkeypatch):
+        monkeypatch.setenv("JARVIS_ROLE_DEEP_MODEL", "   ")
+        monkeypatch.setenv("JARVIS_DEEP_MODEL", "  ")
+        assert model_config.deep_model_name() == model_config.DEFAULT_DEEP_MODEL
+>       assert model_config.deep_model_override_configured() is False
+E       assert True is False
+E        +  where True = <function deep_model_override_configured at 0x10a6e7e20>()
+E        +    where <function deep_model_override_configured at 0x10a6e7e20> = model_config.deep_model_override_configured
+
+tests/test_h277_model_roles.py:233: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_deep_role_defaults_and_is_not_pinned
+FAILED tests/test_h277_model_roles.py::test_deep_role_legacy_pin - assert Fal...
+FAILED tests/test_h277_model_roles.py::test_deep_role_new_name_wins - assert ...
+FAILED tests/test_h277_model_roles.py::test_deep_role_whitespace_is_not_a_pin
+4 failed, 109 passed in 1.58s

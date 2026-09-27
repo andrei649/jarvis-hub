@@ -21,7 +21,7 @@ Governance (MOONSHOT §5):
   what came back; whether the run actually achieved its goal is a *verdict*,
   written only by the verifier/judge through :meth:`WorkRunLedger.record_verdict`.
   Nothing in this module can mark a run ``succeeded`` on its own say-so.
-* **Budgets are hard.** Steps, wall-clock seconds and owner-visible interrupts
+* **Budgets are hard.** Steps, seconds (minus bounded proven approval waits) and owner-visible interrupts
   are capped by the goal's budget; the ledger refuses the step that would exceed
   one and marks the run ``exhausted`` rather than quietly continuing.
 * **A stop is honoured immediately.** ``request_stop`` is a one-way door: a
@@ -52,12 +52,14 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import sqlite3
 import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -147,14 +149,14 @@ BARRIER_CLEAR_REASONS = (
 BARRIER_CLEARED_BY = ("check", "owner", "ledger", "scheduler")
 
 
-def _exceeded(run: WorkRun, moment: float) -> str | None:
+def _exceeded(run: WorkRun, moment: float, *, credit: float = 0.0) -> str | None:
     """The FIRST spent limit — steps, then seconds, then deadline, then interrupts.
 
     A free function so a caller already holding the lock can ask without
     re-entering ``get`` (the lock is not re-entrant)."""
     if run.steps_used >= run.budget.max_steps:
         return "steps"
-    if run.seconds_used(moment) >= run.budget.max_seconds:
+    if max(0.0, run.seconds_used(moment) - credit) >= run.budget.max_seconds:
         return "seconds"
     if run.deadline_at and moment >= run.deadline_at:
         return "deadline"
@@ -318,6 +320,14 @@ class Step:
 
 
 @dataclass(frozen=True)
+class ExpiryAskSettlement:
+    settled: bool
+    first_settlement: bool
+    resumed: bool
+    note: str
+
+
+@dataclass(frozen=True)
 class Verdict:
     """A graded judgement about a run, written by the verifier or the judge."""
 
@@ -426,7 +436,19 @@ def _v2(conn: sqlite3.Connection) -> None:
     )
 
 
-MIGRATIONS = [_v1, _v2]
+def _v3(conn: sqlite3.Connection) -> None:
+    # Private causal marker, outside owner authority/fingerprint bytes.
+    column_adder("runs", "approval_block_seq", "INTEGER")(conn)
+    conn.execute("CREATE INDEX IF NOT EXISTS steps_task_ask ON steps (task_id, outcome, seq)")
+
+
+def _v4(conn: sqlite3.Connection) -> None:
+    conn.execute("""CREATE TABLE IF NOT EXISTS approval_wait_epochs (
+        run_id TEXT NOT NULL, marker INTEGER NOT NULL, metadata TEXT NOT NULL,
+        PRIMARY KEY(run_id, marker))""")
+
+
+MIGRATIONS = [_v1, _v2, _v3, _v4]
 
 
 # ── the ledger ───────────────────────────────────────────────────────────────
@@ -446,6 +468,7 @@ class WorkRunLedger:
     ) -> None:
         self.path = Path(path) if path is not None else data_path(_DEFAULT_DB)
         self._clock = clock
+        self._approval_task_reader = None
         self._lock = threading.Lock()
         if str(self.path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -461,6 +484,240 @@ class WorkRunLedger:
 
     def _now(self) -> float:
         return float(self._clock())
+
+    def bind_approval_task_reader(self, reader: Callable[[int], Any] | None) -> None:
+        """Internal runtime seam; absent proof retains wall-time budgeting."""
+        if reader is not None and not callable(reader):
+            raise TypeError("approval task reader must be callable")
+        self._approval_task_reader = reader
+
+    def _approval_tasks(self, run_id: str, *, extra: int | None = None) -> dict:
+        # Never hold the ledger lock while entering another SQLite store.
+        reader = self._approval_task_reader
+        if reader is None:
+            return {}
+        with self._lock:
+            ids = {r[0] for r in self._conn.execute(
+                "SELECT task_id FROM steps WHERE run_id=? AND task_id IS NOT NULL LIMIT 1000",
+                (run_id,)).fetchall()}
+        if extra is not None:
+            ids.add(extra)
+        tasks = {'_observed': {}}
+        for tid in ids:
+            observed = self._now()
+            try:
+                tasks[tid] = reader(tid)
+                tasks['_observed'][tid] = observed
+            except Exception:
+                tasks[tid] = None
+        return tasks
+
+    @staticmethod
+    def _wait_identity(task: Any) -> tuple[str, str] | None:
+        from .queue import Task
+        if type(task) is not Task:
+            return None
+        try:
+            # Decision and execution bookkeeping change after the original intent.
+            fields = ('id', 'agent', 'kind', 'title', 'payload', 'risk_tier',
+                      'autonomy_level', 'attention_mode', 'origin', 'created_at',
+                      'mediation_enqueue_id', 'mediation_enqueue_revision',
+                      'mediation_scope', 'mediation_policy_revision', 'mediation_receipt',
+                      'mediation_task_sha256', 'kernel_intake_id', 'kernel_intake_evidence',
+                      'approval_deadline_at')
+            intent = json.dumps({k: getattr(task, k) for k in fields}, sort_keys=True,
+                                separators=(',', ':'), allow_nan=False)
+            birth = json.dumps([task.id, task.created_at, task.mediation_enqueue_id,
+                                task.mediation_receipt], sort_keys=True, allow_nan=False)
+            return hashlib.sha256(birth.encode()).hexdigest(), hashlib.sha256(intent.encode()).hexdigest()
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _wait_timestamp(stamp: Any) -> float | None:
+        from .queue import normalize_approval_deadline
+        try:
+            normalized = normalize_approval_deadline(stamp)
+            return datetime.fromisoformat(normalized).timestamp() if normalized else None
+        except (ValueError, TypeError, OverflowError):
+            return None
+
+    @staticmethod
+    def _wait_encode(meta: dict) -> str:
+        payload = dict(meta)
+        payload.pop('checksum', None)
+        payload['checksum'] = _fingerprint(payload)
+        return _canonical(payload)
+
+    @staticmethod
+    def _wait_decode(blob: str) -> dict:
+        meta = json.loads(blob)
+        if not isinstance(meta, dict):
+            raise ValueError('invalid wait metadata')
+        checksum = meta.pop('checksum', None)
+        if checksum != _fingerprint(meta):
+            raise ValueError('corrupt wait metadata')
+        return meta
+
+    def _wait_credit_locked(self, run: WorkRun, now: float, tasks: dict) -> float:
+        """Refresh bounded union windows in the caller's settlement transaction."""
+        if self._approval_task_reader is None or not math.isfinite(now) or now < run.started_at:
+            return 0.0
+        run_row = self._conn.execute('SELECT approval_block_seq FROM runs WHERE id=?', (run.id,)).fetchone()
+        marker = run_row[0]
+        rows = self._conn.execute('SELECT * FROM approval_wait_epochs WHERE run_id=? ORDER BY marker',
+                                  (run.id,)).fetchall()
+        windows = []
+        seen = set()
+        for row in rows:
+            seen.add(row['marker'])
+            try:
+                meta = self._wait_decode(row['metadata'])
+                start, last = meta['start'], meta['last']
+                if (type(start) not in (int, float) or type(last) not in (int, float)
+                        or not math.isfinite(start) or not math.isfinite(last)
+                        or not run.started_at <= start <= last <= start + 360
+                        or type(meta['closed']) is not bool or not isinstance(meta['sources'], list)
+                        or not 1 <= len(meta['sources']) <= 1000):
+                    raise ValueError('invalid wait metadata')
+                intervals = []
+                active = False
+                for source in meta['sources']:
+                    step = self._conn.execute('SELECT * FROM steps WHERE run_id=? AND seq=?',
+                                              (run.id, source['seq'])).fetchone()
+                    if (type(source['seq']) is not int or type(source['task']) is not int
+                            or step is None or step['seq'] < row['marker'] or step['task_id'] != source['task']
+                            or not start <= source['start'] <= source['last'] <= last
+                            or not all(isinstance(source[k], str) and len(source[k]) == 64
+                                       for k in ('birth', 'intent'))
+                            or (source.get('deadline') is not None and
+                                (type(source['deadline']) not in (int, float)
+                                 or not math.isfinite(source['deadline'])
+                                 or source['deadline'] < source['start']))):
+                        raise ValueError('invalid wait source')
+                    end = source['end']
+                    if end is not None and (type(end) not in (int, float) or not math.isfinite(end)
+                                            or not source['start'] <= end <= start + 360):
+                        raise ValueError('invalid wait end')
+                    if end is None:
+                        task = tasks.get(source['task'])
+                        identity = self._wait_identity(task)
+                        metadata = getattr(task, 'human_decision', None)
+                        stamp = None
+                        if identity and identity[0] == source['birth']:
+                            if getattr(task, 'status', '') == 'expired':
+                                stamp = self._wait_timestamp(task.expired_at)
+                            elif isinstance(metadata, dict) and metadata.get('action') in {'accept', 'reject', 'edit', 'defer'}:
+                                stamp = self._wait_timestamp(metadata.get('first_at'))
+                        if stamp is not None and identity == (source['birth'], source['intent']):
+                            end = max(source['start'], min(stamp, now, start + 360,
+                                                          source.get('deadline') or start + 360))
+                        elif (not meta['closed'] and marker == row['marker'] and run.status == 'blocked'
+                              and not run.stop_reason and not run.barrier and now >= last
+                              and identity == (source['birth'], source['intent'])
+                              and getattr(task, 'status', '') == 'blocked'
+                              and getattr(task, 'autonomy_level', '') == 'ask'
+                              and step['outcome'] == 'queued'):
+                            deadline = self._wait_timestamp(task.approval_deadline_at)
+                            observed = tasks.get('_observed', {}).get(source['task'], source['last'])
+                            end_at = min(now, observed, start + 360, deadline if deadline is not None else now)
+                            source['last'] = max(source['start'], end_at)
+                            if (deadline is not None and now >= deadline) or now >= start + 360:
+                                end = source['last']
+                            else:
+                                active = True
+                        else:
+                            end = source['last']
+                        source['end'] = end
+                    intervals.append((source['start'], min(now, end if end is not None else source['last'])))
+                meta['last'] = max(last, max(s['last'] for s in meta['sources']))
+                meta['observed'] = max(meta.get('observed', last), now)
+                meta['closed'] = meta['closed'] or not active
+                self._conn.execute('UPDATE approval_wait_epochs SET metadata=? WHERE run_id=? AND marker=?',
+                                   (self._wait_encode(meta), run.id, row['marker']))
+                windows.extend(intervals)
+            except (ValueError, TypeError, KeyError, OverflowError):
+                # Persistently disable corrupt epochs: later reads cannot reopen them.
+                continue
+        if (marker is not None and run.status == 'blocked' and not run.stop_reason and not run.barrier):
+            if marker not in seen:
+                sources = []
+                for step in self._conn.execute("SELECT * FROM steps WHERE run_id=? AND seq>=? AND outcome='queued' LIMIT 1000",
+                                               (run.id, marker)).fetchall():
+                    task = tasks.get(step['task_id'])
+                    identity = self._wait_identity(task)
+                    if (identity and task.status == 'blocked' and task.autonomy_level == 'ask'
+                            and math.isfinite(step['at']) and run.started_at <= step['at'] <= now
+                            and not task.human_decision
+                            and (task.approval_deadline_at is None or
+                                 (self._wait_timestamp(task.approval_deadline_at) is not None
+                                  and self._wait_timestamp(task.approval_deadline_at) > now))):
+                        # New windows begin only at actual enqueue, not retrospective reads.
+                        if step['at'] != now:
+                            continue
+                        sources.append({"seq": step['seq'], "task": step['task_id'], "birth": identity[0],
+                                            "intent": identity[1], "start": now, "last": now, "end": None,
+                                            "deadline": self._wait_timestamp(task.approval_deadline_at)})
+                if sources:
+                    meta = {"start": now, "last": now, "observed": now, "closed": False, "sources": sources}
+                    self._conn.execute('INSERT INTO approval_wait_epochs VALUES(?,?,?)',
+                                       (run.id, marker, self._wait_encode(meta)))
+            else:
+                # Attach newly queued sources to an existing open union without renewing its cap.
+                existing = self._conn.execute('SELECT metadata FROM approval_wait_epochs WHERE run_id=? AND marker=?',
+                                              (run.id, marker)).fetchone()
+                try:
+                    meta = self._wait_decode(existing[0])
+                    if not meta['closed'] and meta['start'] <= now < meta['start'] + 360:
+                        known = {s['seq'] for s in meta['sources']}
+                        for step in self._conn.execute("SELECT * FROM steps WHERE run_id=? AND seq>=? AND outcome='queued' AND at=? LIMIT 1000",
+                                                       (run.id, marker, now)).fetchall():
+                            task = tasks.get(step['task_id'])
+                            identity = self._wait_identity(task)
+                            if (step['seq'] not in known and identity and task.status == 'blocked'
+                                    and task.autonomy_level == 'ask' and not task.human_decision
+                            and (task.approval_deadline_at is None or
+                                 (self._wait_timestamp(task.approval_deadline_at) is not None
+                                  and self._wait_timestamp(task.approval_deadline_at) > now))):
+                                meta['sources'].append({"seq": step['seq'], "task": step['task_id'], "birth": identity[0],
+                                                           "intent": identity[1], "start": now, "last": now, "end": None,
+                                            "deadline": self._wait_timestamp(task.approval_deadline_at)})
+                        self._conn.execute('UPDATE approval_wait_epochs SET metadata=? WHERE run_id=? AND marker=?',
+                                           (self._wait_encode(meta), run.id, marker))
+                except (ValueError, KeyError, TypeError):
+                    logger.debug("invalid approval wait epoch; no source attached")
+        total = 0.0
+        end = run.started_at
+        for left, right in sorted(windows):
+            if right > max(left, end):
+                total += right - max(left, end)
+            end = max(end, right)
+        return min(run.seconds_used(now), total)
+
+    def _budget_moment_locked(self, run: WorkRun, now: float) -> float:
+        # Clock rollback never turns previously observed elapsed time into fresh budget.
+        moment = max(now, run.updated_at) if math.isfinite(now) else float('inf')
+        for row in self._conn.execute('SELECT metadata FROM approval_wait_epochs WHERE run_id=?', (run.id,)):
+            try:
+                observed = self._wait_decode(row[0]).get('observed')
+                if type(observed) in (int, float) and math.isfinite(observed):
+                    moment = max(moment, observed)
+            except (ValueError, AttributeError):
+                continue
+        return moment
+
+    def _close_waits_locked(self, run_id: str, now: float) -> None:
+        for row in self._conn.execute('SELECT marker,metadata FROM approval_wait_epochs WHERE run_id=?', (run_id,)).fetchall():
+            try:
+                meta = self._wait_decode(row['metadata'])
+                for source in meta['sources']:
+                    if source['end'] is None:
+                        source['end'] = max(source['start'], min(source['last'], now))
+                meta['closed'] = True
+                self._conn.execute('UPDATE approval_wait_epochs SET metadata=? WHERE run_id=? AND marker=?',
+                                   (self._wait_encode(meta), run_id, row['marker']))
+            except (ValueError, KeyError, TypeError):
+                continue
 
     # ── opening a run ────────────────────────────────────────────────────
 
@@ -606,17 +863,28 @@ class WorkRunLedger:
         deadline, then interrupts — so a caller reports one honest reason rather
         than a list.
         """
-        run = self.get(run_id)
-        if run is None:
-            raise WorkRunError("unknown_run")
+        tasks = self._approval_tasks(run_id)
         moment = self._now() if now is None else float(now)
-        used_seconds = run.seconds_used(moment)
-        exceeded = _exceeded(run, moment)
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                moment = self._now() if now is None else float(now)
+                run = self._run_locked(run_id)
+                credit = self._wait_credit_locked(run, moment, tasks)
+                budget_moment = self._budget_moment_locked(run, moment)
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
+        used_seconds = max(0.0, run.seconds_used(budget_moment) - credit)
+        exceeded = _exceeded(run, budget_moment, credit=credit)
         return {
             "run_id": run.id,
             "steps_used": run.steps_used,
             "steps_left": max(0, run.budget.max_steps - run.steps_used),
             "seconds_used": used_seconds,
+            "wall_seconds_used": run.seconds_used(moment),
+            "human_wait_seconds": credit,
             "seconds_left": max(0.0, run.budget.max_seconds - used_seconds),
             "interrupts_used": run.interrupts_used,
             "interrupts_left": max(0, run.budget.max_interrupts - run.interrupts_used),
@@ -650,48 +918,70 @@ class WorkRunLedger:
             raise WorkRunError("invalid_outcome")
         kind = _text(kind, "kind", max_chars=64)
         summary = _text(summary, "summary", max_chars=_MAX_SUMMARY)
+        tasks = self._approval_tasks(run_id, extra=task_id)
         now = self._now()
         with self._lock:
-            row = self._conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
-            if row is None:
-                raise WorkRunError("unknown_run")
-            run = self._row_to_run(row)
-            if run.terminal:
-                raise WorkRunError(f"run_{run.status}")
-            if run.status == "stopping":
-                raise WorkRunError("run_stopping")
-            used_seconds = run.seconds_used(now)
-            if run.steps_used >= run.budget.max_steps:
-                self._transition_locked(run, "exhausted", now, stop_reason="budget:steps")
-                raise WorkRunError("budget_exhausted:steps")
-            if used_seconds >= run.budget.max_seconds:
-                self._transition_locked(run, "exhausted", now, stop_reason="budget:seconds")
-                raise WorkRunError("budget_exhausted:seconds")
-            if run.deadline_at and now >= run.deadline_at:
-                self._transition_locked(run, "exhausted", now, stop_reason="budget:deadline")
-                raise WorkRunError("budget_exhausted:deadline")
-            interrupts = run.interrupts_used + (1 if interrupted else 0)
-            if interrupts > run.budget.max_interrupts:
-                self._transition_locked(run, "blocked", now, stop_reason="budget:interrupts")
-                raise WorkRunError("budget_exhausted:interrupts")
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                now = self._now()
+                row = self._conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+                if row is None:
+                    raise WorkRunError("unknown_run")
+                run = self._row_to_run(row)
+                if run.terminal:
+                    raise WorkRunError(f"run_{run.status}")
+                if run.status == "stopping":
+                    raise WorkRunError("run_stopping")
+                credit = self._wait_credit_locked(run, now, tasks)
+                budget_moment = self._budget_moment_locked(run, now)
+                used_seconds = max(0.0, run.seconds_used(budget_moment) - credit)
+                if run.steps_used >= run.budget.max_steps:
+                    self._transition_locked(run, "exhausted", now, stop_reason="budget:steps")
+                    raise WorkRunError("budget_exhausted:steps")
+                if used_seconds >= run.budget.max_seconds:
+                    self._transition_locked(run, "exhausted", now, stop_reason="budget:seconds")
+                    raise WorkRunError("budget_exhausted:seconds")
+                if run.deadline_at and budget_moment >= run.deadline_at:
+                    self._transition_locked(run, "exhausted", now, stop_reason="budget:deadline")
+                    raise WorkRunError("budget_exhausted:deadline")
+                interrupts = run.interrupts_used + (1 if interrupted else 0)
+                if interrupts > run.budget.max_interrupts:
+                    if run.status == "blocked":
+                        self._close_waits_locked(run_id, now)
+                        # This is a negative authority hold in the same state, not
+                        # a new approval epoch or a widened transition table.
+                        self._conn.execute(
+                            "UPDATE runs SET stop_reason='budget:interrupts', approval_block_seq=NULL, "
+                            "updated_at=? WHERE id=?", (now, run_id),
+                        )
+                        self._conn.commit()
+                    else:
+                        self._transition_locked(run, "blocked", now, stop_reason="budget:interrupts")
+                    raise WorkRunError("budget_exhausted:interrupts")
 
-            cur = self._conn.execute(
-                """INSERT INTO steps (run_id, kind, summary, outcome, task_id, interrupted,
-                       at, detail)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    run_id, kind, summary, outcome, task_id, 1 if interrupted else 0, now,
-                    _canonical(dict(detail or {})),
-                ),
-            )
-            next_status = "blocked" if outcome == "queued" else "working"
-            self._conn.execute(
-                """UPDATE runs SET steps_used = steps_used + 1, interrupts_used = ?,
-                       status = ?, updated_at = ? WHERE id = ?""",
-                (interrupts, next_status, now, run_id),
-            )
-            self._conn.commit()
-            seq = cur.lastrowid
+                cur = self._conn.execute(
+                    """INSERT INTO steps (run_id, kind, summary, outcome, task_id, interrupted,
+                           at, detail)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        run_id, kind, summary, outcome, task_id, 1 if interrupted else 0, now,
+                        _canonical(dict(detail or {})),
+                    ),
+                )
+                next_status = "blocked" if outcome == "queued" else "working"
+                self._conn.execute(
+                    """UPDATE runs SET steps_used = steps_used + 1, interrupts_used = ?,
+                           status = ?, updated_at = ?, approval_block_seq = CASE
+                               WHEN ? != 'blocked' THEN NULL
+                               WHEN status != 'blocked' THEN ? ELSE approval_block_seq END WHERE id = ?""",
+                    (interrupts, next_status, now, next_status, cur.lastrowid, run_id),
+                )
+                self._wait_credit_locked(self._run_locked(run_id), now, tasks)
+                self._conn.commit()
+                seq = cur.lastrowid
+            except BaseException:
+                self._conn.rollback()
+                raise
         return Step(
             seq=seq, run_id=run_id, kind=kind, summary=summary, outcome=outcome,
             task_id=task_id, interrupted=interrupted, at=now, detail=dict(detail or {}),
@@ -731,6 +1021,80 @@ class WorkRunLedger:
             ).fetchone()
         return row["run_id"] if row is not None else None
 
+    def pending_asks_for_task(self, task_id: int, *, limit: int = 100) -> list[Step]:
+        if not isinstance(task_id, int) or isinstance(task_id, bool) or task_id <= 0:
+            return []
+        limit = max(1, min(int(limit), 100))
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steps WHERE task_id = ? AND outcome = 'queued' ORDER BY seq LIMIT ?",
+                (task_id, limit),
+            ).fetchall()
+        return [self._row_to_step(row) for row in rows]
+
+    def settle_expired_ask(self, run_id: str, seq: int, *, task_id: int,
+                           expired_at: str) -> ExpiryAskSettlement:
+        """Close one exact source and conditionally resume its approval epoch atomically.
+
+        Replaying a settled receipt never spends a second resume. Unmarked legacy
+        blocks stay held; the marker is causal evidence, not an inferred approval.
+        """
+        from .queue import normalize_approval_deadline
+
+        if (not isinstance(seq, int) or isinstance(seq, bool) or seq <= 0
+                or not isinstance(task_id, int) or isinstance(task_id, bool) or task_id <= 0):
+            raise WorkRunError("expiry_source_mismatch")
+        try:
+            stamp = normalize_approval_deadline(expired_at)
+        except ValueError as exc:
+            raise WorkRunError("invalid_expiry_receipt") from exc
+        if stamp is None or stamp != expired_at:
+            raise WorkRunError("invalid_expiry_receipt")
+        receipt = {"task_id": task_id, "expired_at": stamp}
+        tasks = self._approval_tasks(run_id)
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._conn.execute(
+                    "SELECT * FROM steps WHERE run_id = ? AND seq = ?", (run_id, seq)
+                ).fetchone()
+                run_row = self._conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+                if row is None or run_row is None or row["task_id"] != task_id:
+                    raise WorkRunError("expiry_source_mismatch")
+                detail = dict(_load(row["detail"]))
+                if row["outcome"] != "queued":
+                    if (row["outcome"] == "failed" and detail.get("resolution") == "expired_unanswered"
+                            and detail.get("approval_expiry") == receipt):
+                        self._conn.commit()
+                        return ExpiryAskSettlement(True, False, False, "already settled")
+                    raise WorkRunError("expiry_receipt_mismatch")
+                detail.update(resolution="expired_unanswered", reason="approval deadline elapsed unanswered",
+                              decided_by="system", by_machine=True, approval_expiry=receipt)
+                detail.pop("human_reason", None)
+                now = self._now()
+                credit = self._wait_credit_locked(self._row_to_run(run_row), now, tasks)
+                self._conn.execute(
+                    "UPDATE steps SET outcome='failed', detail=?, at=? WHERE run_id=? AND seq=?",
+                    (_canonical(detail), now, run_id, seq),
+                )
+                run = self._row_to_run(run_row)
+                marker = run_row["approval_block_seq"]
+                outstanding = self._conn.execute(
+                    "SELECT 1 FROM steps WHERE run_id=? AND outcome='queued' LIMIT 1", (run_id,)
+                ).fetchone()
+                resume = (run.status == "blocked" and marker is not None and seq >= marker
+                          and not outstanding and not run.barrier and not run.stop_reason
+                          and _exceeded(run, self._budget_moment_locked(run, now), credit=credit) is None)
+                if resume:
+                    self._transition_locked(run, "working", now, commit=False)
+                else:
+                    self._conn.execute("UPDATE runs SET updated_at=? WHERE id=?", (now, run_id))
+                self._conn.commit()
+                return ExpiryAskSettlement(True, True, bool(resume), "every ask answered" if resume else "run held")
+            except BaseException:
+                self._conn.rollback()
+                raise
+
     def resolve_step(
         self,
         run_id: str,
@@ -753,30 +1117,36 @@ class WorkRunLedger:
         """
         if outcome not in STEP_OUTCOMES or outcome == "queued":
             raise WorkRunError("bad_resolution")
+        tasks = self._approval_tasks(run_id)
         with self._lock:
-            row = self._conn.execute(
-                "SELECT * FROM steps WHERE run_id = ? AND seq = ?", (run_id, int(seq))
-            ).fetchone()
-            if row is None:
-                raise WorkRunError("unknown_step")
-            if row["outcome"] != "queued":
-                # Already answered. Re-applying would let one decision spend a
-                # second resume, which is exactly the double-unblock this guards.
-                raise WorkRunError("step_not_outstanding")
-            merged = dict(_load(row["detail"]))
-            merged.update(dict(detail or {}))
-            now = self._now()
-            self._conn.execute(
-                "UPDATE steps SET outcome = ?, detail = ?, at = ? WHERE run_id = ? AND seq = ?",
-                (outcome, _canonical(merged), now, run_id, int(seq)),
-            )
-            self._conn.execute(
-                "UPDATE runs SET updated_at = ? WHERE id = ?", (now, run_id)
-            )
-            self._conn.commit()
-            row = self._conn.execute(
-                "SELECT * FROM steps WHERE run_id = ? AND seq = ?", (run_id, int(seq))
-            ).fetchone()
+            try:
+                row = self._conn.execute(
+                    "SELECT * FROM steps WHERE run_id = ? AND seq = ?", (run_id, int(seq))
+                ).fetchone()
+                if row is None:
+                    raise WorkRunError("unknown_step")
+                if row["outcome"] != "queued":
+                    # Already answered. Re-applying would let one decision spend a
+                    # second resume, which is exactly the double-unblock this guards.
+                    raise WorkRunError("step_not_outstanding")
+                self._wait_credit_locked(self._run_locked(run_id), self._now(), tasks)
+                merged = dict(_load(row["detail"]))
+                merged.update(dict(detail or {}))
+                now = self._now()
+                self._conn.execute(
+                    "UPDATE steps SET outcome = ?, detail = ?, at = ? WHERE run_id = ? AND seq = ?",
+                    (outcome, _canonical(merged), now, run_id, int(seq)),
+                )
+                self._conn.execute(
+                    "UPDATE runs SET updated_at = ? WHERE id = ?", (now, run_id)
+                )
+                self._conn.commit()
+                row = self._conn.execute(
+                    "SELECT * FROM steps WHERE run_id = ? AND seq = ?", (run_id, int(seq))
+                ).fetchone()
+            except BaseException:
+                self._conn.rollback()
+                raise
         return self._row_to_step(row)
 
     def resume(self, run_id: str) -> WorkRun:
@@ -789,6 +1159,33 @@ class WorkRunLedger:
             if run.status != "blocked":
                 raise WorkRunError("run_not_blocked")
             return self._transition_locked(run, "working", self._now())
+
+    def resume_after_asks(self, run_id: str, *, answered_seqs: list[int]) -> WorkRun:
+        """Reconciler-only resume; manual resume retains its original contract."""
+        tasks = self._approval_tasks(run_id)
+        with self._lock:
+            self._conn.execute('BEGIN IMMEDIATE')
+            try:
+                run = self._run_locked(run_id)
+                marker = self._conn.execute('SELECT approval_block_seq FROM runs WHERE id=?', (run_id,)).fetchone()[0]
+                now = self._now()
+                credit = self._wait_credit_locked(run, now, tasks)
+                eligible = False
+                if marker is not None and len(answered_seqs) <= 1000:
+                    eligible = any(type(seq) is int and self._conn.execute(
+                        "SELECT 1 FROM steps WHERE run_id=? AND seq=? AND seq>=? AND outcome!='queued'",
+                        (run_id, seq, marker)).fetchone() for seq in answered_seqs)
+                if (run.status != 'blocked' or marker is None or not eligible
+                        or run.stop_reason or run.barrier
+                        or self._conn.execute("SELECT 1 FROM steps WHERE run_id=? AND outcome='queued' LIMIT 1", (run_id,)).fetchone()
+                        or _exceeded(run, self._budget_moment_locked(run, now), credit=credit)):
+                    raise WorkRunError('approval_resume_held')
+                result = self._transition_locked(run, 'working', now, commit=False)
+                self._conn.commit()
+                return result
+            except BaseException:
+                self._conn.rollback()
+                raise
 
     # ── stopping and finishing ───────────────────────────────────────────
 
@@ -901,36 +1298,43 @@ class WorkRunLedger:
             raise WorkRunError("malformed_barrier")
         if payload.get("kind") not in BARRIER_KINDS:
             raise WorkRunError("unknown_kind")
+        tasks = self._approval_tasks(run_id)
         now = self._now()
         try:
             cap_at = float(payload.get("cap_at"))
         except (TypeError, ValueError):
             raise WorkRunError("malformed_barrier") from None
         with self._lock:
-            run = self._run_locked(run_id)
-            if run.status not in _PARKABLE:
-                raise WorkRunError("run_not_parkable")
-            if _exceeded(run, now):
-                raise WorkRunError("budget_spent")
-            if not cap_at > now:
-                raise WorkRunError("no_time_left")
-            if self._set_count_locked(run_id) >= MAX_BARRIERS_PER_RUN:
-                raise WorkRunError("barrier_limit")
-            if run.barrier:
-                self._event_locked(run_id, "barrier.cleared", now, {
-                    "id": run.barrier.get("id"), "why": "replaced", "by": "ledger",
-                })
-            self._conn.execute("UPDATE runs SET barrier = ? WHERE id = ?", (encoded, run_id))
-            event = {
-                key: payload.get(key)
-                for key in ("id", "kind", "target", "cap_at", "source", "reason")
-            }
-            if payload.get("kind") == "pid":
-                # Which process, not just which number: an owner's clear binds this
-                # process, never a later one on a reused pid (H464 review N5).
-                event["start"] = str(payload.get("start") or "")
-            self._event_locked(run_id, "barrier.set", now, event)
-            self._conn.commit()
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                now = self._now()
+                run = self._run_locked(run_id)
+                if run.status not in _PARKABLE:
+                    raise WorkRunError("run_not_parkable")
+                if _exceeded(run, self._budget_moment_locked(run, now), credit=self._wait_credit_locked(run, now, tasks)):
+                    raise WorkRunError("budget_spent")
+                if not cap_at > now:
+                    raise WorkRunError("no_time_left")
+                if self._set_count_locked(run_id) >= MAX_BARRIERS_PER_RUN:
+                    raise WorkRunError("barrier_limit")
+                if run.barrier:
+                    self._event_locked(run_id, "barrier.cleared", now, {
+                        "id": run.barrier.get("id"), "why": "replaced", "by": "ledger",
+                    })
+                self._conn.execute("UPDATE runs SET barrier = ? WHERE id = ?", (encoded, run_id))
+                event = {
+                    key: payload.get(key)
+                    for key in ("id", "kind", "target", "cap_at", "source", "reason")
+                }
+                if payload.get("kind") == "pid":
+                    # Which process, not just which number: an owner's clear binds this
+                    # process, never a later one on a reused pid (H464 review N5).
+                    event["start"] = str(payload.get("start") or "")
+                self._event_locked(run_id, "barrier.set", now, event)
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
         logger.info("run %s parked on %s (%s) by %s", run_id, payload.get("kind"),
                     payload.get("target"), payload.get("source"))
         return WorkRun(**{**run.__dict__, "barrier": payload})
@@ -1122,6 +1526,8 @@ class WorkRunLedger:
                 "UPDATE runs SET status = ?, updated_at = ?, stop_reason = ? WHERE id = ?",
                 (new_status, now, reason, run.id),
             )
+        self._close_waits_locked(run.id, now)
+        self._conn.execute("UPDATE runs SET approval_block_seq=NULL WHERE id=?", (run.id,))
         if commit:
             self._conn.commit()
         return WorkRun(
@@ -1162,6 +1568,7 @@ __all__ = [
     "MIGRATIONS",
     "RUN_STATUSES",
     "STEP_OUTCOMES",
+    "ExpiryAskSettlement",
     "TERMINAL_STATUSES",
     "VERDICT_ROLES",
     "Budget",

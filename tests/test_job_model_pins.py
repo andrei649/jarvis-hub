@@ -12,6 +12,7 @@ from agents.core.llm.job_selection import (
     scoped_backend,
     selection_scope,
 )
+from agents.core.llm.providers import get_profile
 
 
 def test_pins_are_validated_and_only_apply_to_model_jobs():
@@ -106,7 +107,8 @@ def test_approved_models_still_enforced():
 async def test_auxiliary_compression_cannot_escape_pin():
     from agents.core.orchestrator import Orchestrator
     orch = Orchestrator.__new__(Orchestrator)
-    backend = SimpleNamespace(generate=AsyncMock(return_value='summary'))
+    backend = SimpleNamespace(generate=AsyncMock(return_value='summary'),
+                              profile=get_profile('lm-studio'), base_url='http://127.0.0.1:1234')
     orch.llm_router = SimpleNamespace(local_backend=backend, active_model='default')
     orch.get_setting = lambda key, default: default
     summarize = orch._compression_summarizer()

@@ -1,0 +1,97 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_model_roles.py", "tests/test_vlm_h13_1.py", "tests/test_composer_vision.py", "tests/test_screen_reflex_route.py"]
+......................................FF................................ [ 45%]
+............FF.......................................................... [ 90%]
+...............                                                          [100%]
+=================================== FAILURES ===================================
+___________________ test_unknown_vision_provider_is_rejected ___________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c3dac00>
+
+    def test_unknown_vision_provider_is_rejected(monkeypatch):
+        monkeypatch.setenv("JARVIS_ROLE_VISION_PROVIDER", "lmstudio")   # a typo for lm-studio
+        monkeypatch.setenv("JARVIS_ROLE_VISION_MODEL", "m")
+        with pytest.raises(RoleConfigError) as exc:
+            model_roles.resolve("vision")
+        assert exc.value.reason == "role_provider_unknown"
+        assert "lm-studio" in exc.value.detail
+        with pytest.raises(VLMNotConfigured) as refused:
+            resolve_vlm_config()
+>       assert refused.value.reason == "role_provider_unknown"
+E       AssertionError: assert 'vlm_disabled' == 'role_provider_unknown'
+E         
+E         - role_provider_unknown
+E         + vlm_disabled
+
+tests/test_h277_model_roles.py:186: AssertionError
+_______ test_a_real_provider_the_vision_path_cannot_speak_is_unsupported _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c3db7d0>
+
+    def test_a_real_provider_the_vision_path_cannot_speak_is_unsupported(monkeypatch):
+        monkeypatch.setenv("JARVIS_ROLE_VISION_PROVIDER", "anthropic")
+        with pytest.raises(RoleConfigError) as exc:
+            model_roles.resolve("vision")
+        assert exc.value.reason == "role_provider_unsupported"
+        with pytest.raises(VLMNotConfigured) as refused:
+            resolve_vlm_config()
+>       assert refused.value.reason == "role_provider_unsupported"
+E       AssertionError: assert 'vlm_disabled' == 'role_provider_unsupported'
+E         
+E         - role_provider_unsupported
+E         + vlm_disabled
+
+tests/test_h277_model_roles.py:196: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[22] ____________
+
+env = {'JARVIS_ROLE_VISION_PROVIDER': 'nope'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+        vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+        if runtime[0] == "refused":
+            reason = runtime[1]
+>           assert (role if isinstance(role, str) else role.reason) == reason
+E           AssertionError: assert 'role_provider_unknown' == 'vlm_disabled'
+E             
+E             - vlm_disabled
+E             + role_provider_unknown
+
+tests/test_h277_model_roles.py:419: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[23] ____________
+
+env = {'JARVIS_ROLE_VISION_PROVIDER': 'anthropic'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+        vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+        if runtime[0] == "refused":
+            reason = runtime[1]
+>           assert (role if isinstance(role, str) else role.reason) == reason
+E           AssertionError: assert 'role_provider_unsupported' == 'vlm_disabled'
+E             
+E             - vlm_disabled
+E             + role_provider_unsupported
+
+tests/test_h277_model_roles.py:419: AssertionError
+=============================== warnings summary ===============================
+../../../../../../../Users/andrei649/Projects/nerva-hub/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/andrei649/Projects/nerva-hub/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_unknown_vision_provider_is_rejected
+FAILED tests/test_h277_model_roles.py::test_a_real_provider_the_vision_path_cannot_speak_is_unsupported
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[22]
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[23]
+4 failed, 155 passed, 1 warning in 2.49s

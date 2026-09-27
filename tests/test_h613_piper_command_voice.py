@@ -265,6 +265,17 @@ async def test_piper_timeout_kills_reaps_and_falls_back(env, monkeypatch):
     _piper(env, "en_US-amy-low")
     _mode(env.tmp, "sleep")
     monkeypatch.setattr(lp, "TTS_TIMEOUT_S", 0.5)
+    # Timeout may precede the child's first Python statement under parallel load.
+    # Observe the actual spawned process rather than its optional fixture log.
+    spawned = []
+    real_spawn = lp._spawn
+
+    async def record_spawn(*args, **kwargs):
+        process = await real_spawn(*args, **kwargs)
+        spawned.append(process)
+        return process
+
+    monkeypatch.setattr(lp, "_spawn", record_spawn)
     engine = _engine()
     monkeypatch.setattr(tts_module, "HAS_EDGE", True)
     monkeypatch.setattr(engine, "_speak_edge", _edge_stub)
@@ -272,9 +283,10 @@ async def test_piper_timeout_kills_reaps_and_falls_back(env, monkeypatch):
     res = await engine.speak("hi", voice="piper:en_US-amy-low", lang="en")
     assert res == f"edge:{engine._safe_default_voice('en')}"
     assert time.monotonic() - start < 10
-    [rec] = _records(env.tmp)
+    [process] = spawned
+    assert process.returncode is not None
     with pytest.raises(ProcessLookupError):
-        os.kill(rec["pid"], 0)
+        os.kill(process.pid, 0)
     assert _run_dirs(env) == []
 
 
@@ -561,15 +573,28 @@ async def test_command_bad_run_or_output_falls_back(armed, monkeypatch, mode):
     exe = _fake(env.tmp / "opt" / "say-wav", env.tmp)
     await _approve(env, "tts", _tts_argv(exe))
     _mode(env.tmp, mode)
-    monkeypatch.setattr(lp, "TTS_TIMEOUT_S", 0.5)
+    # Only the sleeping command tests the deadline. Output-validation cases must
+    # reach their fixture body even when parallel suites delay interpreter startup.
+    monkeypatch.setattr(lp, "TTS_TIMEOUT_S", 0.5 if mode == "sleep" else 5)
+    spawned = []
+    real_spawn = lp._spawn
+
+    async def record_spawn(*args, **kwargs):
+        process = await real_spawn(*args, **kwargs)
+        spawned.append(process.pid)
+        return process
+
+    monkeypatch.setattr(lp, "_spawn", record_spawn)
     engine = _engine()
     monkeypatch.setattr(tts_module, "HAS_EDGE", True)
     monkeypatch.setattr(engine, "_speak_edge", _edge_stub)
     assert (await engine.speak("hello", voice="command", lang="en")).startswith("edge:")
-    [rec] = _records(env.tmp)
     if mode == "sleep":
+        [pid] = spawned
         with pytest.raises(ProcessLookupError):
-            os.kill(rec["pid"], 0)
+            os.kill(pid, 0)
+    else:
+        assert len(_records(env.tmp)) == 1
     assert list(env.temp.glob("response_*")) == []
     assert _run_dirs(env) == []
 

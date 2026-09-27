@@ -514,10 +514,11 @@ class LMStudioBackend(LLMBackend):
 
     supports_tools = True
 
-    def __init__(self, base_url: str = "http://localhost:1234"):
+    def __init__(self, base_url: str = "http://localhost:1234", *, trust_env: bool = True):
         self.base_url = base_url
         # H23.12: short connect / long read so a down server fails fast (no hang).
-        self.client = llm_async_client("lm-studio", base_url=base_url, timeout=local_read_timeout(300.0))
+        self.client = llm_async_client("lm-studio", base_url=base_url, timeout=local_read_timeout(300.0),
+                                       trust_env=trust_env)
 
     async def aclose(self):
         """Close the HTTP client's connection pool (BUG-7)."""
@@ -727,12 +728,14 @@ class OllamaBackend(LLMBackend):
     # translation lives in tool_dialects (Hermes absorption, wave 0.1).
     supports_tools = True
 
-    def __init__(self, base_url: str = "http://localhost:11434", num_ctx: int = 0):
+    def __init__(self, base_url: str = "http://localhost:11434", num_ctx: int = 0, *,
+                 trust_env: bool = True):
         self.num_ctx = max(0, int(num_ctx or 0))
         self._context_windows: dict[str, int] = {}
         self.base_url = base_url
         # H23.12: short connect / long read so a down server fails fast (no hang).
-        self.client = llm_async_client("ollama", base_url=base_url, timeout=local_read_timeout(120.0))
+        self.client = llm_async_client("ollama", base_url=base_url, timeout=local_read_timeout(120.0),
+                                       trust_env=trust_env)
 
     def context_window(self, model: str) -> int | None:
         return self.num_ctx or self._context_windows.get(model)

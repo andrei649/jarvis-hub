@@ -1,0 +1,28 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_model_roles.py", "tests/test_h277_approval_judge.py"]
+....................................................F................... [ 26%]
+........................................................................ [ 53%]
+........................................................................ [ 80%]
+....................................................                     [100%]
+=================================== FAILURES ===================================
+______________ test_judge_role_uses_the_provider_profile_base_url ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ba21490>
+
+    def test_judge_role_uses_the_provider_profile_base_url(monkeypatch):
+        monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_MODEL", "judge-m")
+        role = model_roles.resolve("approval_judge")
+        assert role.provider_id == "lm-studio" and role.source["provider"] == "default"
+        assert role.base_url == "http://localhost:1234" and role.local is True
+        monkeypatch.setenv("JARVIS_LM_STUDIO_URL", "http://192.168.1.20:1234")
+        lan = model_roles.resolve("approval_judge")
+>       assert lan.base_url == "http://192.168.1.20:1234" and lan.local is False   # LAN is not local
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ('http://192.168.1.20:1234' == 'http://192.168.1.20:1234'
+E         
+E           http://192.168.1.20:1234 and True is False)
+E        +  where True = ResolvedRole(role='approval_judge', configured=True, provider_id='lm-studio', model='judge-m', base_url='http://192.16...', 'provider': 'default', 'base_url': 'JARVIS_LM_STUDIO_URL'}), local=True, data_policy='local', reason='', ignored=()).local
+
+tests/test_h277_model_roles.py:312: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_judge_role_uses_the_provider_profile_base_url
+1 failed, 267 passed in 2.98s

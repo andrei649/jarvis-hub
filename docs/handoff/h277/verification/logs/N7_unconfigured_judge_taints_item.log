@@ -1,0 +1,43 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+........................................................................ [ 43%]
+........................................................................ [ 86%]
+..........FF..........                                                   [100%]
+=================================== FAILURES ===================================
+______ test_round2_unconfigured_judge_preserves_tainted_head_shape[False] ______
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-95/test_round2_unconfigured_judge0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f84c9b0>
+attached = False
+
+    @pytest.mark.parametrize("attached", [False, True])
+    async def test_round2_unconfigured_judge_preserves_tainted_head_shape(tmp_path, monkeypatch, attached):
+        _pin_id_and_time(monkeypatch)
+        action = dict(ACTION, tainted=True, metadata={"tainted": True})
+        judge = ApprovalJudge(settings=settings_of()) if attached else None
+        q = queue(tmp_path, judge)
+        item = q.request(action)
+>       assert "tainted" not in item and "judge_pending" not in item
+E       AssertionError: assert ('tainted' not in {'id': 'abcdef123456', 'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', ...})
+
+tests/test_h277_approval_judge.py:1172: AssertionError
+______ test_round2_unconfigured_judge_preserves_tainted_head_shape[True] _______
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-95/test_round2_unconfigured_judge1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f84f3e0>
+attached = True
+
+    @pytest.mark.parametrize("attached", [False, True])
+    async def test_round2_unconfigured_judge_preserves_tainted_head_shape(tmp_path, monkeypatch, attached):
+        _pin_id_and_time(monkeypatch)
+        action = dict(ACTION, tainted=True, metadata={"tainted": True})
+        judge = ApprovalJudge(settings=settings_of()) if attached else None
+        q = queue(tmp_path, judge)
+        item = q.request(action)
+>       assert "tainted" not in item and "judge_pending" not in item
+E       AssertionError: assert ('tainted' not in {'id': 'abcdef123456', 'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', ...})
+
+tests/test_h277_approval_judge.py:1172: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_round2_unconfigured_judge_preserves_tainted_head_shape[False]
+FAILED tests/test_h277_approval_judge.py::test_round2_unconfigured_judge_preserves_tainted_head_shape[True]
+2 failed, 164 passed in 2.40s

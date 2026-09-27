@@ -1,0 +1,35 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+........................................................F............... [ 41%]
+........................................................................ [ 83%]
+.............................                                            [100%]
+=================================== FAILURES ===================================
+_______ test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop _______
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-102/test_a_request_from_a_short_li0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b8d60c0>
+
+    async def test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop(tmp_path, monkeypatch):
+        """A tool that runs ``asyncio.run`` in a thread must not strand the judgement on a loop
+        that is about to close: it runs on the hub's loop."""
+        hub_loop = asyncio.get_running_loop()
+        seen = {}
+        backend = FakeBackend(probe=lambda: seen.setdefault("loop", asyncio.get_running_loop()))
+        q = queue(tmp_path, local_judge(monkeypatch, backend), loop=hub_loop)
+    
+        async def queue_it():
+            return q.request(ACTION)
+    
+        item = await asyncio.to_thread(asyncio.run, queue_it())
+        for _ in range(20):
+            await asyncio.sleep(0)
+            if q._judge_tasks:
+                break
+        await drain(q)
+        assert q.get(item["id"])["judge"]["score"] == 37
+>       assert seen["loop"] is hub_loop
+E       assert <_UnixSelectorEventLoop running=False closed=True debug=False> is <_UnixSelectorEventLoop running=True closed=False debug=False>
+
+tests/test_h277_approval_judge.py:647: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop
+1 failed, 172 passed in 2.59s

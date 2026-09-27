@@ -212,18 +212,22 @@ def test_completion_never_leaves_the_roots(root, tmp_path):
     assert cr.complete("x\x00") == [] and cr.complete("a" * 2000) == []
 
 
-def test_a_very_long_prefix_is_not_listed(root):
+def test_a_very_long_prefix_is_not_listed(root, monkeypatch):
     deep = root
     parts = []
     for i in range(6):
         name = chr(ord("a") + i) * 200
-        deep = deep / name
+        # The short completion needs three real levels; the >1024-character
+        # input must be refused before filesystem access (macOS PATH_MAX=1024).
+        if i < 3:
+            deep = deep / name
         parts.append(name)
     deep.mkdir(parents=True)
     (deep / "x.txt").write_text("", encoding="utf-8")
     short = "/".join(parts[:2]) + "/"
     assert cr.complete(short) == [{"ref": f"@file:{short}{parts[2]}/", "kind": "dir"}]
     long_prefix = "/".join(parts) + "/"
+    monkeypatch.setattr(cr, "_scope", lambda: pytest.fail("long prefix reached filesystem scope"))
     assert len(long_prefix) > 1024 and cr.complete(long_prefix) == []
 
 

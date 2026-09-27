@@ -1,0 +1,71 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+........................................................................ [ 43%]
+...F..F...........................................F..................... [ 86%]
+..............F...F...                                                   [100%]
+=================================== FAILURES ===================================
+______________ test_every_argument_key_stays_visible_past_the_cap ______________
+
+    def test_every_argument_key_stays_visible_past_the_cap():
+        prompt, _flags, truncated = aj.build_prompt({"tool": "shell", "agent": "pepper", "args": _PADDED})
+        assert "id_rsa" in prompt and '"cmd"' in prompt
+>       assert truncated is True
+E       assert False is True
+
+tests/test_h277_approval_judge.py:828: AssertionError
+________ test_a_truncated_view_is_recorded_on_the_item_and_in_the_audit ________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-84/test_a_truncated_view_is_recor0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f984500>
+
+    async def test_a_truncated_view_is_recorded_on_the_item_and_in_the_audit(tmp_path, monkeypatch):
+        audit = FakeIntentLog()
+        q = queue(tmp_path, local_judge(monkeypatch, FakeBackend()), audit)
+        item = q.request({"tool": "shell", "agent": "pepper", "args": _PADDED})
+        small = q.request(ACTION)
+        await drain(q)
+>       assert q.get(item["id"])["judge"]["truncated"] is True
+E       assert False is True
+
+tests/test_h277_approval_judge.py:846: AssertionError
+_____ test_round2_large_values_share_budget_and_keep_small_values_and_keys _____
+
+    def test_round2_large_values_share_budget_and_keep_small_values_and_keys():
+        args = {"large": "x" * 6000, "medium": "y" * 800, "cmd": "dangerous-command"}
+        prompt, _, truncated = aj.build_prompt(dict(ACTION, args=args))
+        assert all(json.dumps(k) in prompt for k in args)
+        assert "y" * 800 in prompt and "dangerous-command" in prompt
+>       assert truncated is True
+E       assert False is True
+
+tests/test_h277_approval_judge.py:1126: AssertionError
+____________ test_round2_unrepresentable_keys_are_never_dispatched _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fd5e0c0>
+
+    async def test_round2_unrepresentable_keys_are_never_dispatched(monkeypatch):
+        backend = FakeBackend()
+        judge = local_judge(monkeypatch, backend)
+        args = {"key" + str(i) + "x" * 100: "v" for i in range(50)}
+        original = dict(args)
+>       assert await judge.score(dict(ACTION, args=args), judge.status()) is None
+E       AssertionError: assert {'score': 37, 'rationale': 'Writes one file under the workspace; reversible.', 'flags': [], 'truncated': False, ...} is None
+
+tests/test_h277_approval_judge.py:1203: AssertionError
+___________ test_round2_many_small_values_survive_budget_allocation ____________
+
+    def test_round2_many_small_values_survive_budget_allocation():
+        args = {f"key{i}": "v" for i in range(180)}
+        args["large"] = "x" * 5000
+        prompt, _, truncated = aj.build_prompt(dict(ACTION, args=args))
+        body = json.loads(prompt[prompt.index('{"tool"'):prompt.rindex('}') + 1])
+>       assert truncated is True
+E       assert False is True
+
+tests/test_h277_approval_judge.py:1236: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_every_argument_key_stays_visible_past_the_cap
+FAILED tests/test_h277_approval_judge.py::test_a_truncated_view_is_recorded_on_the_item_and_in_the_audit
+FAILED tests/test_h277_approval_judge.py::test_round2_large_values_share_budget_and_keep_small_values_and_keys
+FAILED tests/test_h277_approval_judge.py::test_round2_unrepresentable_keys_are_never_dispatched
+FAILED tests/test_h277_approval_judge.py::test_round2_many_small_values_survive_budget_allocation
+5 failed, 161 passed in 2.61s

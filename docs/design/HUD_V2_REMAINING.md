@@ -15,6 +15,15 @@ pass, including reset/cancellation and context/proxy isolation; SSH/Modal/TLS
 provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containment.json.
 
 ## 0. Do this first
+
+H277 (2026-09-27): Decision Inbox renders advisory risk scores, escaped rationale,
+judge identity/locality and truncation/flag warnings. Pending opinions poll with
+an independent wall-clock limit per task; decision controls remain available.
+Role configuration is shown beside Model Fingerprints through authenticated
+`/api/llm/roles`; a role settings editor and video consumer remain open. Offline component tests cover
+late results, refreshes, failed reads and browser-throttled timers; this is not a
+claim of a live model or native mobile acceptance run.
+
 - **Runtime verification.** Nothing was verified against a *running* backend (the build sandbox has
   no `fastapi`). Run `python serve.py` → open `/v2`, click **every mode + every Console (▦) panel**,
   and compare against `/` (v1) / known values. The **mock‑fallback** design hides wrong‑but‑not‑
@@ -312,6 +321,67 @@ audio, video and PDF only; active formats and office documents remain refused.
 
 2026-09-15 — H515/H518: Images exposes configured local backend/checkpoint selection, up to four blended references and explicit 2× bicubic upscale. Media Gallery searches and downloads supported catalog/cache/attached files through authenticated object URLs and exports visible supported rows to ZIP. Runtime ComfyUI proof remains unperformed.
 
+2026-09-27 — H517 local provider slice: Images reads per-backend protocol/model
+and edit/upscale capabilities. A configured `openai_images` service can generate
+through the same Inbox/worker/artifact path; switching from ComfyUI clears
+incompatible edit/upscale fields. Default-backend models no longer assume ComfyUI.
+See [configuration and limits](../hermes/local-image-providers.md). Arbitrary
+adapters, other media registries, live service proof and native controls remain open.
+
 2026-09-15 — H684: Jobs doctor displays the additive structured health report through the existing diagnostic control. Backend and CLI detect scheduler stalls and stored failures. Script/no_agent/workdir options and production-host proof remain open.
 
 H129 (2026-09-15): all 18 existing HUD modes and 113 console panels have explicit URLs, history, titles and lazy loading, with selected-panel focus and mobile navigation. Profile/plugin routing remains outside the implemented single-owner route registry. Browser smoke is local and backend-stubbed.
+
+### 2026-09-27 — H487/H513 integration
+
+Decision Inbox supports bounded human reasons, verified owner-submission group cards,
+one-use approval with follower promotion, and atomic group rejection. Legacy Actions
+provides the same grouping controls for action requests. Model-originated and browser
+requests without a trusted grouping context remain separate; full H487 is partial.
+
+Security Posture shows declared provider policy, warnings that persist after consent,
+and allow/revoke controls bound to the configuration displayed. Unavailable or
+ambiguous consent cannot be granted. Routed agent/tool-loop/cache dispatch rechecks
+consent; independent direct provider clients are outside this increment.
+
+The approval judge now has its own consent row and allow/revoke controls. Provider
+and role setting failures disable their respective controls independently. The role
+acknowledgment never enables remote judging and never inherits a provider grant.
+
+Composer image status and successful results now retain a visible data-policy
+warning. The existing per-destination remote checkbox remains request-scoped;
+provider/judge consent cannot replace it. No unattended vision grant was added.
+
+Decision Inbox displays an explicit approval deadline when the owner task API
+supplies one. A missing or unreadable field preserves legacy cards. Approval stays
+single-use, with the backend deciding whether the deadline has passed; the UI adds
+no client-side authority or automatic approval. There is no general task creation
+form in this panel, so deadline authoring remains the existing owner task API.
+
+The independent VLM Describe and Screen Reflex panels show declared policy notes
+and retain response warnings. Both align with strict loopback inference on the
+Nerva server; the legacy describe remote checkbox is removed. Failed or empty
+inference does not render as a successful description. These interactive routes
+now have scoped dispatch checks; the standalone screen-locator has no verified production caller.
+
+Trust now includes a separate Telegram image-description role, with local-server
+requirements and independent configuration-bound acknowledgment/revocation. Unknown
+role IDs have no controls. Judge/provider compatibility and unavailable-store
+feedback are retained.
+
+Trust now includes independent camera-description model-data controls as well.
+The UI separates them from household camera consent, capture enablement and remote
+access. Camera provisioning is still a separate H31 integration requirement.
+
+2026-09-27 — Voice → Command providers now works with task mediation set to
+`enforce`, using the existing Decision Inbox card and human approval. `hold`
+continues to refuse registration. No new provider picker is delivered by this
+backend prerequisite: multiple named speech providers and the shared media
+registry remain open under H517/H613.
+
+2026-09-27 — The subsequent named-provider slice adds independent TTS/STT rows,
+registration/update requests, per-name clear (including pending-only requests),
+explicit STT selection and exact name/revision on Inbox cards. Missing saved
+selections remain visible as unavailable. Image and speech dispatch now use the
+common registry. Full vendor/plugin/setup breadth remains open under H517/H613;
+native mobile provider configuration is still a gap.

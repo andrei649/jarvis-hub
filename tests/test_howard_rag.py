@@ -23,6 +23,7 @@ from agents.core.ingestion.normalizer import NormalizedMessage
 from agents.core.agent import Agent
 from agents.core.llm.hybrid_router import HybridRouter
 from agents.core.llm.base import LLMBackend
+from agents.core.llm.providers import get_profile
 
 
 # ── Ingestion & SQLite Loading Tests ──────────────────────────────────────────
@@ -54,6 +55,7 @@ def test_pipeline_load_from_sqlite(tmp_path):
     conn.close()
 
     pipeline = IngestionPipeline(data_root=str(tmp_path / "data"), output_root=str(tmp_path))
+    pipeline.embedder.backend = "hash"  # SQLite loading test is intentionally offline.
     pipeline.load_from_sqlite(db_path)
 
     assert len(pipeline.messages) == 2
@@ -123,6 +125,8 @@ def test_ingestion_watcher_creates_folders_and_detects_changes(tmp_path):
 
 class MockBackend(LLMBackend):
     def __init__(self):
+        self.profile = get_profile("lm-studio")
+        self.base_url = "http://127.0.0.1:1234/v1"
         self.last_prompt = ""
 
     async def generate(self, model, prompt, system="", max_tokens=1024, temperature=0.7):

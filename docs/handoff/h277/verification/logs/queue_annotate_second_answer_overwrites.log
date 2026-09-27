@@ -1,0 +1,24 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+.....................................F.................................. [ 43%]
+........................................................................ [ 86%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+________________________ test_the_first_annotation_wins ________________________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-59/test_the_first_annotation_wins0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f917200>
+
+    async def test_the_first_annotation_wins(tmp_path, monkeypatch):
+        q = queue(tmp_path, local_judge(monkeypatch, FakeBackend()))
+        item = q.request(ACTION)
+        await drain(q)
+        first = q.get(item["id"])["judge"]
+>       assert q.annotate(item["id"], {**first, "score": 99}) is None
+E       AssertionError: assert {'score': 99, 'rationale': 'Writes one file under the workspace; reversible.', 'flags': [], 'truncated': False, ...} is None
+E        +  where {'score': 99, 'rationale': 'Writes one file under the workspace; reversible.', 'flags': [], 'truncated': False, ...} = annotate('32847c624be1', {'score': 99, 'rationale': 'Writes one file under the workspace; reversible.', 'flags': [], 'truncated': False, ...})
+E        +    where annotate = <agents.core.autonomy.action_approvals.ActionApprovalQueue object at 0x10f917d40>.annotate
+
+tests/test_h277_approval_judge.py:451: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_the_first_annotation_wins - As...
+1 failed, 165 passed in 2.47s

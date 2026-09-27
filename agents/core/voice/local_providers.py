@@ -50,6 +50,7 @@ import asyncio
 import contextlib
 import hashlib
 import importlib.util
+import json
 import logging
 import os
 import re
@@ -919,14 +920,21 @@ class Ready:
     problems: tuple[str, ...] = field(default_factory=tuple)
     #: Every bound file, resolved: the program, then an interpreter's script.
     files: tuple[Path, ...] = ()
+    #: Detached original approval and file identities, never borrowed from a
+    #: freshly approved value after a concurrency-slot wait. Legacy absent
+    #: approval metadata remains stable as None without migrating stored values.
+    approval_binding: str | None = field(default=None, repr=False)
 
 
-def stored_command(side: str) -> dict[str, Any]:
+def stored_command(side: str, *, provider_id: str | None = None) -> dict[str, Any]:
+    if provider_id is not None:
+        from . import provider_store
+        return provider_store.load(side, provider_id)
     value = _setting(f"{side}_command", {})
     return value if isinstance(value, dict) else {}
 
 
-def command_ready(side: str, *, verify_content: bool = True) -> Ready:
+def command_ready(side: str, *, verify_content: bool = True, provider_id: str | None = None) -> Ready:
     """Whether the approved *side* command may run now (read fresh, every spawn): the argv
     still valid, its fingerprint the approved one, and every bound file — the program and
     an interpreter's script — the file approved, down to the sha256 of its content.
@@ -935,7 +943,14 @@ def command_ready(side: str, *, verify_content: bool = True) -> Ready:
     cheap probe an availability report uses on the event loop. A spawn never uses it."""
     from agents.core.environments.terminal_contract import argv_fingerprint
 
-    value = stored_command(side)
+    if provider_id is None:
+        value = stored_command(side)
+    else:
+        from . import provider_store
+        try:
+            value = stored_command(side, provider_id=provider_id)
+        except provider_store.ProviderStoreError:
+            return _not_ready(side, "provider_store_unavailable")
     argv = value.get("argv")
     if not value or not argv:
         return Ready(False, NOT_CONFIGURED)
@@ -957,7 +972,16 @@ def command_ready(side: str, *, verify_content: bool = True) -> Ready:
     for path, then in zip(files, recorded, strict=True):
         if not _same_identity(then, file_identity(path, content=verify_content)):
             return _not_ready(side, CHANGED_SINCE_APPROVAL)
-    return Ready(True, None, tuple(argv), exe, files=tuple(files))
+    try:
+        binding = json.dumps(
+            {key: value.get(key) for key in (
+                "argv", "fingerprint", "exe", "bound", "approved_task", "approved_at",
+                "provider_id", "provider_revision",
+            )}, sort_keys=True, separators=(",", ":"), allow_nan=False,
+        )
+    except (TypeError, ValueError):
+        return _not_ready(side, CHANGED_SINCE_APPROVAL)
+    return Ready(True, None, tuple(argv), exe, files=tuple(files), approval_binding=binding)
 
 
 def _not_ready(side: str, reason: str, problems: list[str] | None = None) -> Ready:
@@ -965,9 +989,10 @@ def _not_ready(side: str, reason: str, problems: list[str] | None = None) -> Rea
     return Ready(False, reason, problems=tuple(problems or ()))
 
 
-def command_status(side: str) -> dict[str, Any]:
-    value = stored_command(side)
-    ready = command_ready(side)
+def command_status(side: str, *, provider_id: str | None = None) -> dict[str, Any]:
+    kwargs = {} if provider_id is None else {"provider_id": provider_id}
+    value = stored_command(side, **kwargs)
+    ready = command_ready(side, **kwargs)
     return {"configured": bool(value.get("argv")), "ready": ready.ok, "reason": ready.reason}
 
 
@@ -979,12 +1004,14 @@ def _substitute(ready: Ready, values: dict[str, str]) -> list[str]:
     return head + [values.get(item, item) if item in PLACEHOLDERS else item for item in rest]
 
 
-def _recheck(side: str, ready: Ready, values: dict[str, str]):
+def _recheck(side: str, ready: Ready, values: dict[str, str], *, provider_id: str | None = None):
     """The ``prepare`` of :func:`run_bounded`: the command checked again once the slot is
     held (every bound file, digest included), and the argv of *that* check, or None."""
     async def prepare() -> list[str] | None:
-        fresh = await asyncio.to_thread(command_ready, side)
-        if not fresh.ok or fresh.argv != ready.argv:
+        kwargs = {} if provider_id is None else {"provider_id": provider_id}
+        fresh = await asyncio.to_thread(command_ready, side, **kwargs)
+        if (not fresh.ok or fresh.argv != ready.argv
+                or fresh.approval_binding != ready.approval_binding):
             logger.warning("voice: the %s command changed while it waited to run (%s); not run",
                            side, fresh.reason or "argv")
             return None
@@ -992,9 +1019,11 @@ def _recheck(side: str, ready: Ready, values: dict[str, str]):
     return prepare
 
 
-async def speak_command(text: str, lang: Any, *, temp_dir: Path, default_lang: str = "en") -> str | None:
+async def speak_command(text: str, lang: Any, *, temp_dir: Path, default_lang: str = "en",
+                        provider_id: str | None = None) -> str | None:
     """Synthesize *text* with the approved TTS command; the audio's path, or None."""
-    ready = await asyncio.to_thread(command_ready, "tts")
+    kwargs = {} if provider_id is None else {"provider_id": provider_id}
+    ready = await asyncio.to_thread(command_ready, "tts", **kwargs)
     if not ready.ok:
         return None
     data = str(text).encode("utf-8")
@@ -1012,7 +1041,7 @@ async def speak_command(text: str, lang: Any, *, temp_dir: Path, default_lang: s
             values["{text_file}"] = str(text_file)
             stdin = None
         run = await run_bounded(_substitute(ready, values), cwd=workdir, stdin_bytes=stdin,
-                                timeout=timeout_for(TTS_TIMEOUT_S), prepare=_recheck("tts", ready, values))
+                                timeout=timeout_for(TTS_TIMEOUT_S), prepare=_recheck("tts", ready, values, **kwargs))
         if not run["ok"]:
             logger.warning("voice: the TTS command failed (%s); falling back", run["reason"])
             return None
@@ -1070,11 +1099,13 @@ def _transcript(stdout: bytes) -> str:
     return " ".join(text.split())[:MAX_TRANSCRIPT_CHARS]
 
 
-async def transcribe_command(audio: Any, language: Any, *, temp_dir: Path, default_lang: str = "en") -> str:
+async def transcribe_command(audio: Any, language: Any, *, temp_dir: Path, default_lang: str = "en",
+                             provider_id: str | None = None) -> str:
     """Transcribe with the approved STT command: the text, or one of the STT sentinels."""
     from agents.core.voice.hallucination import is_hallucination
 
-    ready = await asyncio.to_thread(command_ready, "stt")
+    kwargs = {} if provider_id is None else {"provider_id": provider_id}
+    ready = await asyncio.to_thread(command_ready, "stt", **kwargs)
     if not ready.ok:
         return "[STT unavailable]"
     data = _read_audio(audio)
@@ -1087,7 +1118,7 @@ async def transcribe_command(audio: Any, language: Any, *, temp_dir: Path, defau
         _write_private(audio_path, data)
         values = {"{audio}": str(audio_path), "{lang}": safe_lang(language, default_lang)}
         run = await run_bounded(_substitute(ready, values), cwd=workdir, stdin_bytes=None,
-                                timeout=timeout_for(STT_TIMEOUT_S), prepare=_recheck("stt", ready, values))
+                                timeout=timeout_for(STT_TIMEOUT_S), prepare=_recheck("stt", ready, values, **kwargs))
     if run["timed_out"]:
         return "[STT error: command timed out]"
     if not run["ok"]:
@@ -1105,6 +1136,28 @@ def stt_mode() -> str:
     return value if value in ("auto", "whisper", "command") else "auto"
 
 
+def selected_stt_provider() -> str | None:
+    """Pin the exact selected name; invalid/unreadable values never select legacy."""
+    from agents.core.settings_db import get_value
+    try:
+        value = get_value("voice", "stt_command_provider", "")
+    except Exception:
+        return "__unavailable_provider__"
+    return None if value == "" else value if isinstance(value, str) else "__invalid_provider__"
+
+
+def named_command_status(side: str) -> list[dict]:
+    from . import provider_store
+    result = []
+    for value in provider_store.list_records(side):
+        provider_id = value["provider_id"]
+        ready = command_ready(side, provider_id=provider_id, verify_content=False)
+        result.append({"provider_id": provider_id, "provider_revision": value["provider_revision"],
+                       "selector": "provider:" + provider_id if side == "tts" else provider_id,
+                       "configured": bool(value.get("argv")), "ready": ready.ok, "reason": ready.reason})
+    return result
+
+
 def stt_available(has_whisper: bool) -> bool:
     """Whether speech can be transcribed as ``voice.stt_engine`` asks: ``whisper`` only
     Whisper, ``command`` only the approved command, ``auto`` either (a cheap probe: the
@@ -1112,7 +1165,9 @@ def stt_available(has_whisper: bool) -> bool:
     mode = stt_mode()
     if mode == "whisper":
         return bool(has_whisper)
-    command = command_ready("stt", verify_content=False).ok
+    provider_id = selected_stt_provider()
+    kwargs = {} if provider_id is None else {"provider_id": provider_id}
+    command = command_ready("stt", verify_content=False, **kwargs).ok
     return command if mode == "command" else bool(has_whisper or command)
 
 
@@ -1130,4 +1185,5 @@ __all__ = [
     "resolve_piper_model", "run_bounded", "safe_lang", "shown_file", "sniff_audio", "speak_command",
     "speak_piper", "stored_command", "stt_available", "stt_mode", "transcribe_command", "trusted_program",
     "validate_command",
+    "named_command_status", "selected_stt_provider",
 ]

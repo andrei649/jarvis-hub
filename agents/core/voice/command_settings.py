@@ -23,10 +23,10 @@ host-exec capability and is written only here:
 * every spawn re-checks it all (``local_providers.command_ready``), once more after the
   concurrency slot is held.
 
-Not closed here: ``settings.voice_command`` is not a registered Action Kernel kind
-(``agents/core/kernel/registry.py`` is protected). With ``JARVIS_TASK_MEDIATION`` at
-``enforce`` or ``hold`` the queue refuses it, so setting a command answers 503 until the
-owner adds the registry entry; clearing still works.
+``settings.voice_command`` is registered for kernel mediation. In ``enforce`` mode
+its signed kernel decision still requires tier-three human approval; execution
+validates that receipt and the current policy, scope and halt state. ``hold`` mode
+refuses intake. Unavailable approval authority answers 503; clearing still works.
 """
 
 from __future__ import annotations
@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from . import local_providers as lp
+from . import provider_store as providers
 
 logger = logging.getLogger("jarvis.voice.commands")
 
@@ -59,6 +60,7 @@ PLAIN_ACCEPT = frozenset({"accept", "approve"})
 #: The payload keys a card's record pins: everything the card shows or the write uses.
 RECORDED_KEYS = ("side", "argv", "fingerprint", "exe_identity", "bound", "before_fingerprint", "preview")
 #: The most requests kept on record (the oldest go first).
+NAMED_RECORDED_KEYS = RECORDED_KEYS + ("provider_id", "provider_revision")
 MAX_RECORDS = 64
 _records_lock = threading.Lock()
 
@@ -92,7 +94,7 @@ def _record_request(task_id: int, payload: dict) -> bool:
     try:
         with _records_lock:
             records = _load_records()
-            records[str(int(task_id))] = {**{key: payload.get(key) for key in RECORDED_KEYS}, "at": time.time()}
+            records[str(int(task_id))] = {**{key: payload.get(key) for key in NAMED_RECORDED_KEYS}, "at": time.time()}
             for old in sorted(records, key=lambda k: records[k].get("at") or 0)[:-MAX_RECORDS]:
                 records.pop(old, None)
             _save_records(records)
@@ -145,11 +147,25 @@ def _shown(exe: Any, fingerprint: str) -> str:
     return f"program {name} (exe={exe}) · argv sha256 {str(fingerprint)[:16]}"
 
 
-def _pending_for(orch: Any, side: str) -> list[Any]:
+def _pending_for(orch: Any, side: str, provider_id=None) -> list[Any]:
     from agents.core.autonomy import irreversible
 
     return [task for task in irreversible.pending(orch, APPROVAL_KIND)
-            if isinstance(getattr(task, "payload", None), dict) and task.payload.get("side") == side]
+            if isinstance(getattr(task, "payload", None), dict) and task.payload.get("side") == side
+            and task.payload.get("provider_id") == provider_id]
+
+
+def irreversible_pending(orch):
+    from agents.core.autonomy import irreversible
+    return [t for t in irreversible.pending(orch, APPROVAL_KIND) if isinstance(t.payload, dict)]
+
+
+def _provider_error(exc):
+    if isinstance(exc, providers.ProviderConflict):
+        return 409, {'error': 'provider_revision_conflict'}
+    if isinstance(exc, providers.ProviderLimit):
+        return 409, {'error': 'provider_capacity_full'}
+    return 503, {'error': 'provider_store_unavailable'}
 
 
 def status(orch: Any) -> dict[str, Any]:
@@ -171,7 +187,31 @@ def status(orch: Any) -> dict[str, Any]:
             "approved_task": value.get("approved_task"),
             "pending_task": int(waiting[0].id) if waiting else None,
         }
-    return {"sides": sides, "arm_env": lp.ARM_ENV, "kind": APPROVAL_KIND}
+    catalog = {side: [] for side in lp.SIDES}
+    try:
+        for side in lp.SIDES:
+            values = {r['provider_id']: r for r in providers.list_records(side)}
+            for task in irreversible_pending(orch):
+                if task.payload.get('side') == side and providers.valid_provider_id(task.payload.get('provider_id')):
+                    name = task.payload['provider_id']
+                    values.setdefault(name, providers.load(side, name))
+            for name, value in sorted(values.items()):
+                ready = lp.command_ready(side, provider_id=name, verify_content=False)
+                waiting = _pending_for(orch, side, name)
+                exe = value.get('exe') if isinstance(value.get('exe'), dict) else {}
+                catalog[side].append({
+                    'provider_id': name, 'provider_revision': value['provider_revision'],
+                    'configured': bool(value.get('argv')), 'armed': lp.armed(), 'safe_mode': safe_mode.enabled(),
+                    'ready': ready.ok, 'reason': ready.reason, 'problems': list(ready.problems),
+                    'argv': value.get('argv') or None, 'exe': exe.get('path'), 'fingerprint': value.get('fingerprint'),
+                    'files': [lp.shown_file(b) for b in value.get('bound', []) if isinstance(b, dict)],
+                    'approved_task': value.get('approved_task'), 'pending_task': int(waiting[0].id) if waiting else None,
+                })
+    except providers.ProviderStoreError:
+        return {'sides': sides, 'arm_env': lp.ARM_ENV, 'kind': APPROVAL_KIND,
+                'selected_stt_provider': lp.selected_stt_provider(),
+                'providers': {side: [] for side in lp.SIDES}, 'error': 'provider_store_unavailable'}
+    return {"sides": sides, "arm_env": lp.ARM_ENV, "kind": APPROVAL_KIND, 'providers': catalog, 'selected_stt_provider': lp.selected_stt_provider()}
 
 
 async def _audit(orch: Any, preview: str, action: str) -> None:
@@ -198,17 +238,26 @@ def _intent(orch: Any, action: str, why: str, metadata: dict) -> None:
         logger.warning("voice command change not recorded in the intent log", exc_info=True)
 
 
-async def clear(orch: Any, side: str) -> tuple[int, dict]:
+async def clear(orch: Any, side: str, *, provider_id=None) -> tuple[int, dict]:
     """Forget the *side* command now (narrowing never waits); audited."""
     from agents.core.settings_db import put_category
 
-    before = lp.stored_command(side)
-    await asyncio.to_thread(put_category, "voice", {KEYS[side]: {}})
+    if provider_id is not None and not providers.valid_provider_id(provider_id):
+        return 422, {'error': 'invalid_provider_id'}
+    try:
+        before = providers.load(side, provider_id) if provider_id is not None else lp.stored_command(side)
+        if provider_id is not None:
+            revision = await asyncio.to_thread(providers.clear, side, provider_id)
+        else:
+            await asyncio.to_thread(put_category, "voice", {KEYS[side]: {}})
+    except providers.ProviderStoreError as exc:
+        return _provider_error(exc)
     await _audit(orch, f"voice.{KEYS[side]} cleared (was argv sha256 {str(before.get('fingerprint') or 'none')[:16]})",
                  "voice_command_cleared")
     _intent(orch, "voice.command.clear", f"the owner cleared the {side} command provider",
             {"side": side, "fingerprint": before.get("fingerprint")})
-    return 200, {"ok": True, "side": side, "cleared": True}
+    return 200, {"ok": True, "side": side, "cleared": True,
+                 **({'provider_id': provider_id, 'provider_revision': revision} if provider_id is not None else {})}
 
 
 def _marked_argv(argv: list[str]) -> list[dict]:
@@ -216,13 +265,25 @@ def _marked_argv(argv: list[str]) -> list[dict]:
     return [{"value": item, "placeholder": item in lp.PLACEHOLDERS} for item in argv]
 
 
-async def request(orch: Any, side: str, argv: list[str], *, dry_run: bool = False) -> tuple[int, dict]:
+async def request(orch: Any, side: str, argv: list[str], *, dry_run: bool = False, provider_id=None) -> tuple[int, dict]:
     """Ask for *argv* as the *side* command: 422 invalid, 409 unarmed / safe mode / another
     request waiting, 200 on a dry run, 202 with the waiting task, 503 when the approval
     queue cannot take it. Nothing is written here."""
     from agents.core import safe_mode
     from agents.core.autonomy import irreversible
 
+    if provider_id is not None and not providers.valid_provider_id(provider_id):
+        return 422, {'error': 'invalid_provider_id'}
+    try:
+        current = providers.load(side, provider_id) if provider_id is not None else lp.stored_command(side)
+        named = {'provider_id': provider_id, 'provider_revision': current['provider_revision']} if provider_id is not None else {}
+        if provider_id is not None and not current.get('argv'):
+            if len(providers.list_records(side)) >= providers.MAX_ACTIVE:
+                raise providers.ProviderLimit('provider_capacity_full')
+            if current['provider_revision'] == 0 and len(providers._read(side)) >= providers.MAX_NAMES:
+                raise providers.ProviderLimit('provider_history_full')
+    except providers.ProviderStoreError as exc:
+        return _provider_error(exc)
     problems, exe = lp.validate_command(argv, side)
     files = lp.bound_files(argv, side) if not problems else None
     if problems or exe is None or not files:
@@ -241,38 +302,39 @@ async def request(orch: Any, side: str, argv: list[str], *, dry_run: bool = Fals
     timeout = lp.timeout_for(lp.TTS_TIMEOUT_S if side == "tts" else lp.STT_TIMEOUT_S)
     if dry_run:
         return 200, {"ok": True, "dry_run": True, "side": side, "exe": str(exe), "fingerprint": fingerprint,
-                     "files": [lp.shown_file(b) for b in bound], "timeout_s": timeout}
-    for task in await asyncio.to_thread(_pending_for, orch, side):
+                     "files": [lp.shown_file(b) for b in bound], "timeout_s": timeout, **named}
+    for task in await asyncio.to_thread(_pending_for, orch, side, provider_id):
         if task.payload.get("fingerprint") == fingerprint:
-            if task.payload.get("bound") != bound:     # verify round, N2: that card cannot apply
+            if task.payload.get("bound") != bound or any(task.payload.get(k) != v for k, v in named.items()):     # verify round, N2: that card cannot apply
                 return 409, {"error": "request_stale", "pending": int(task.id),
                              "detail": "the waiting request was made before the program or its script "
                                        "changed: decline it in the Decision Inbox, then ask again"}
-            return 202, {"pending": int(task.id), "existing": True, "side": side}
+            return 202, {"pending": int(task.id), "existing": True, "side": side, **named}
         return 409, {"error": "request_waiting", "pending": int(task.id),
                      "detail": "another request for this command is waiting in the Decision Inbox: "
                                "decide it first"}
-    before = lp.stored_command(side).get("fingerprint")
+    before = current.get("fingerprint")
     preview = {"kind": side, "program": str(exe), "files": [lp.shown_file(b) for b in bound],
                "argv": list(argv), "argv_marked": _marked_argv(list(argv)), "side": side,
-               "runs_as": _runs_as(), "timeout_s": timeout, "note": NOTE}
+               "runs_as": _runs_as(), "timeout_s": timeout, "note": NOTE, **named}
     payload = {"side": side, "argv": list(argv), "fingerprint": fingerprint, "exe_identity": identity,
-               "bound": bound, "before_fingerprint": before}
+               "bound": bound, "before_fingerprint": before, **named}
     queued = irreversible.enqueue(
         orch, APPROVAL_KIND,
-        title=f"Run {exe} as the {side.upper()} voice provider",
+        title=f"Run {exe} as the {side.upper()} voice provider" + (f" ({provider_id})" if provider_id is not None else ""),
         payload=payload,
         preview=preview,
     )
     if "refused" in queued:
         return 503, {"error": "approval_unavailable", "reason": queued["refused"],
-                     "detail": "setting a command provider needs the approval queue (with "
-                               "JARVIS_TASK_MEDIATION at enforce or hold it refuses this kind until the "
-                               "owner registers it); nothing was written"}
-    await asyncio.to_thread(_record_request, queued["pending"], {**payload, "preview": preview})
+                     "detail": "setting a command provider needs an available approval queue "
+                               "and, in enforce mode, signed kernel authority; hold mode refuses "
+                               "intake; nothing was written"}
+    if not await asyncio.to_thread(_record_request, queued["pending"], {**payload, "preview": preview}):
+        return 503, {'error': 'approval_record_unavailable', 'pending': queued['pending']}
     await _audit(orch, f"voice.{KEYS[side]} change sent to approval (task {queued['pending']}): "
                        f"{_shown(exe, fingerprint)}", "voice_command_requested")
-    return 202, {"pending": queued["pending"], "side": side, "exe": str(exe), "fingerprint": fingerprint}
+    return 202, {"pending": queued["pending"], "side": side, "exe": str(exe), "fingerprint": fingerprint, **named}
 
 
 def _canonical(value: Any) -> str:
@@ -299,9 +361,12 @@ async def apply_approved(task: Any, orch: Any) -> dict:
     record = await asyncio.to_thread(_recorded_request, task_id)
     if record is None:                       # not a card request() queued (POST /autonomy/tasks)
         return _refused("not_requested", detail="request the command from Settings → Voice → Command providers")
-    if any(_canonical(payload.get(key)) != _canonical(record.get(key)) for key in RECORDED_KEYS):
+    if any(_canonical(payload.get(key)) != _canonical(record.get(key)) for key in NAMED_RECORDED_KEYS):
         return _refused("payload_changed", detail="the task no longer matches the card that was requested: ask again")
     side, argv = payload.get("side"), payload.get("argv")
+    provider_id = payload.get('provider_id')
+    if provider_id is not None and not providers.valid_provider_id(provider_id):
+        return _refused('invalid_provider_id')
     if side not in KEYS or not isinstance(argv, list):
         return _refused("payload_invalid")
     problems, exe = lp.validate_command(argv, side)
@@ -318,19 +383,33 @@ async def apply_approved(task: Any, orch: Any) -> dict:
     if (fingerprint != payload.get("fingerprint") or bound is None or bound != payload.get("bound")
             or bound[0] != payload.get("exe_identity")):
         return _refused("changed_since_request", detail="a file the command runs changed since the request: ask again")
-    if lp.stored_command(side).get("fingerprint") != payload.get("before_fingerprint"):
+    try:
+        current = providers.load(side, provider_id) if provider_id is not None else lp.stored_command(side)
+    except providers.ProviderStoreError:
+        return _refused('provider_store_unavailable')
+    if provider_id is not None and current['provider_revision'] != payload.get('provider_revision'):
+        return _refused('provider_revision_conflict')
+    if current.get("fingerprint") != payload.get("before_fingerprint"):
         return _refused("changed_since_request", detail="the command changed since the request: ask again")
     identity = bound[0]
     decided_by = str(getattr(task, "decided_by", "") or "")
-    await asyncio.to_thread(put_category, "voice", {KEYS[side]: {
-        "argv": list(argv), "exe": identity, "bound": bound, "fingerprint": fingerprint,
-        "approved_task": task_id, "approved_at": time.time()}})
+    value = {"argv": list(argv), "exe": identity, "bound": bound, "fingerprint": fingerprint,
+             "approved_task": task_id, "approved_at": time.time()}
+    try:
+        if provider_id is not None:
+            revision = await asyncio.to_thread(providers.save_approved, side, provider_id, value,
+                                               expected_revision=payload.get('provider_revision'))
+        else:
+            await asyncio.to_thread(put_category, "voice", {KEYS[side]: value})
+    except providers.ProviderStoreError as exc:
+        return _refused(_provider_error(exc)[1]['error'])
     await asyncio.to_thread(_forget_request, task_id)
     await _audit(orch, f"voice.{KEYS[side]} approved (task {task_id} by {decided_by}): "
                        f"{_shown(exe, fingerprint)}", "voice_command_approved")
     _intent(orch, "voice.command.set", f"the owner approved {exe} as the {side} command provider",
             {"side": side, "exe": str(exe), "fingerprint": fingerprint, "task": task_id})
-    return {"status": "ok", "kind": APPROVAL_KIND, "side": side, "fingerprint": fingerprint}
+    return {"status": "ok", "kind": APPROVAL_KIND, "side": side, "fingerprint": fingerprint,
+            **({"provider_id": provider_id, "provider_revision": revision} if provider_id is not None else {})}
 
 
 __all__ = ["APPROVAL_KIND", "KEYS", "apply_approved", "clear", "request", "status"]

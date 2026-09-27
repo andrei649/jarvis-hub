@@ -14,6 +14,113 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-27 H487/H513 local continuation: approval reasons, durable action timeout,
+  verified owner-registration grouping and exact group rejection are integrated in
+  HUD/Telegram. Single-use approval keeps per-request authority; notification
+  promotion covers concurrent submissions. Provider posture has persistent warnings
+  and audited configuration-bound consent, rechecked at physical HTTP retries.
+  Originating-chat outcomes now reach the next matching owner-web or authorized
+  Telegram model turn for generic governed ToolRPC, without replaying tools;
+  776 combined focused regressions pass. H487 remains partial for model/browser
+  grouping, specialized producers, task expiry and shared grants. See
+  `docs/hermes/evidence/h487-chat-outcomes-2026-09-27.json`.
+  H513 also covers title/rewrite/review/compression calls with explicit internal
+  consent and fresh physical-request checks. Combined backend milestone: 18,838
+  passed, 35 skipped; exact snapshot in
+  `docs/hermes/evidence/chat-outcomes-auxiliary-integration-2026-09-27.json`.
+  Subsequent acquisition and optional presence explanation policy scopes pass 202
+  focused tests (22 new); presence explanation still has no production caller.
+  See `docs/hermes/evidence/h513-direct-local-2026-09-27.json` for that newer snapshot.
+  Approval judging now has separate audited configuration-bound consent and HUD
+  controls; fresh physical-request checks cover queue/configuration revocation and
+  cleanup races. Full integration passed 18,919 backend tests/35 skips and 1,804
+  frontend tests; typecheck/build and scoped security scans passed. See
+  `docs/hermes/evidence/h513-judge-integration-2026-09-27.json` for exact snapshots.
+  Composer images now retain visible policy warnings and bind each request to its
+  reviewed destination. Local embeddings validate the actual direct transport and
+  use cache identities that cannot confuse hash fallback with semantic results.
+  This milestone passed 18,978 backend tests/35 skips and 1,806 frontend tests;
+  typecheck/build and scoped security scans passed. Initial recall-cache failures
+  and the compatibility fix remain in
+  `docs/hermes/evidence/h513-vision-embedding-integration-2026-09-27.json`.
+  Independent VLM consumers, remote embedding consent and stored-vector migration
+  remain open. Opt-in persisted task approval expiry now rejects late decisions,
+  recovers effects after restart/halt and atomically settles waiting work-run asks
+  without resuming Company Mode while disabled. The owner API authors deadlines;
+  the responsive Decision Inbox displays them. Full milestone: 19,054 backend
+  passed/35 skipped, 1,809 frontend passed, typecheck/build and scoped scans green.
+  Initial binding-position drift and a Piper timeout fixture race are preserved
+  with their corrections in
+  `docs/hermes/evidence/h487-task-expiry-integration-2026-09-27.json`.
+  H487 remains partial: specialized grouping, shared grants and wait accounting
+  remain open. The following H513 direct-transport slice now disables environment
+  proxies for owned composer/judge clients and freshly validates actual HTTPX
+  routes, without mutating borrowed ACTIVE clients or generic backend defaults.
+  It passed 19,088 backend tests/35 skips and scoped scans; unchanged frontend
+  retains its preceding 1,809-test/typecheck/build snapshot. See
+  `docs/hermes/evidence/h513-direct-transport-integration-2026-09-27.json`.
+  Independent interactive describe/screen-reflex routes now freeze local dispatch
+  identity through cleanup, expose sanitized policy metadata and refuse false
+  success. Their HUD panels retain warnings and correctly refuse remote use.
+  This milestone passed 19,122 backend tests/35 skips and 1,815 frontend tests;
+  typecheck/build and scoped scans passed. See
+  `docs/hermes/evidence/h513-interactive-vision-integration-2026-09-27.json`.
+  The subsequent Telegram image-reader slice adds independent audited role consent,
+  fresh pre-download/physical-dispatch checks and responsive Trust controls. It
+  passed 19,156 backend tests/35 skips and 1,819 frontend tests, with typecheck,
+  build and scoped scans green. H513 was still partial at that snapshot.
+  `docs/hermes/evidence/h513-media-reader-integration-2026-09-27.json`.
+  The subsequent camera milestone passed 19,194 backend tests/35 skips and
+  1,822 frontend tests, with typecheck/build/scoped scans green. Separate camera
+  role consent and original household leases now guard native physical dispatch;
+  cached configuration drift refuses and owned/borrowed lifetimes are preserved.
+  H513 is code-equivalent against the unchanged frozen inventory contract. See
+  `docs/hermes/evidence/h513-camera-integration-2026-09-27.json` and
+  `docs/hermes/h513-code-equivalence-review.md`. Remote embeddings/vector migration,
+  native controls, unwired locator/presence and H31 camera provisioning/live
+  acceptance remain separate unfinished project work. H487 remains partial.
+  Generic model ToolRPC requests now group notifications using live server-proven
+  principal/session/registration/argument identity, finalized policy and independent
+  signed receipts. One approval still executes one task. The milestone passed
+  19,226 backend tests/35 skips; 101 focused integration tests passed after the
+  scan correction. Frontend unchanged (preceding 1,822-test snapshot). See
+  `docs/hermes/evidence/h487-model-grouping-2026-09-27.json`. Standing grants,
+  additional producers and human-wait budget accounting remained open at that snapshot.
+  The next milestone implements a persisted 360-second union credit for proven
+  Company Mode approval waits, preserving first-decision cutoff, absolute deadlines
+  and non-approval holds. Transactional budget refreshes survive refusal/failure.
+  Full backend: 19,285 passed/35 skipped; scoped scans/Graft green. Frontend
+  unchanged. See `docs/hermes/evidence/h487-human-wait-2026-09-27.json`.
+  Reusable session/always/deny consent and longer deadline-derived credit remain
+  open. H517 now registers a bounded local images API through the actual approved
+  image workflow and per-backend HUD controls. Full backend: 19,363 passed/35
+  skipped; frontend: 1,829 passed; typecheck/build and scoped scans green. Review
+  corrected attempt directory durability; unsupported filesystems fail closed.
+  H518/H523 were re-reviewed against current shared source and their frozen
+  gallery/delivery contracts. See `docs/hermes/evidence/h517-local-providers-2026-09-27.json`
+  and `docs/hermes/h517-local-provider-review.md`. H517 remains partial for broader
+  provider registries; H516 video is still missing, with next decisions recorded
+  in `docs/hermes/h516-video-design-checkpoint.md`.
+  The speech authority prerequisite now permits exact signed command registration
+  in enforce mode and binds waiting TTS/STT calls to their original approval and
+  files. Manifest/readiness inventories include the real new action. Full backend:
+  19,412 passed/35 skipped; 771 capability/registry checks passed. Frontend unchanged
+  (prior 1,829-test snapshot). H613 is explicitly partial under the full provider
+  matrix scope; H517 named providers remain next. See
+  `docs/hermes/evidence/h517-voice-authority-2026-09-27.json` and
+  `docs/hermes/h517-voice-authority-review.md`.
+  All 107 formerly excluded inventory rows are explicitly reopened for
+  assessment, with no completion credit. See `docs/hermes/h487-implementation-plan.md`
+  and `docs/hermes/h513-implementation-plan.md`. Local only; no publication.
+
+- 2026-09-27 H277 local continuation: round2 fixes and mutation verification,
+  shared advisory judging for action cards and Decision Inbox, authenticated role
+  configuration in HUD, and VLM pre-dispatch guards. H277 remains **partial**:
+  video consumer, broader provider parity and live/native acceptance remain open.
+  See `docs/hermes/h277-completion-plan.md` and `docs/handoff/h277/verification/`.
+  Generated equivalence counts now reflect stale evidence honestly; older headline
+  counts below are dated history, not the current acceptance total. No publication.
+
 - 2026-09-27 H613 ✅ choose how it sounds and how it hears: Piper as a local voice, and the owner's own TTS/STT programs, each run only as a human approved it (equivalent; #1207; headline 190/697).
 
   Nerva spoke through cloud voices or Kokoro and heard only through Whisper. Now:
@@ -8344,6 +8451,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.26 | **Native chat-command discovery** — list the live `GET /api/commands` catalog with usage, owner tier and unavailable state in the native chat UI. Keep execution on the existing guarded chat path. Browser quickbar discovery ships in HA-4i-catalog. | 2 | P3 | H18.1 | PARITY.md |
 | H18.27 | **Native generated images** — add local-generation status, an exact-prompt approval handoff and authenticated artifact previews/downloads to the native client. Distinguish queued, generating, failed and completed; configuration alone never means a working generator. Reuse HA-4i-image and existing approvals, without automatic generation or cloud fallback. | 3 | P3 | H18.11, HA-4i | PARITY.md |
 | H18.28 | **Native memory-neighborhood navigation** — extend the existing H18.17 entity list/detail with connected-entity navigation and bounded cancellable reads that ignore stale selections. Preserve real empty/unavailable states. Browser slice DW-1 uses the same KG reads; no new backend or graph writes. | 2 | P3 | H18.17 | PARITY.md |
+| H18.29 | **Native advisory approval opinions** — render H277 risk/rationale/identity and optional bounded pending polling without changing decision authority; expose read-only model-role configuration. Preserve original cards when no judge is configured and never claim connectivity from configuration. | 2 | P3 | H18.11, H277 | PARITY.md |
 | H18.21 ✅ | **Native Media Director parity** — the metadata-only Media tab reads the owner-curated `/api/media/devices` registry and `/api/media/session` board, then exposes explicit user present/restore controls over the unchanged guarded API. Safe bounded normalization preserves disabled/error states and distinguishes queued, refused, unverified, and verified nested outcomes; a stale/unregistered target cannot be submitted. Device register/remove controls are isolated behind the configured admin token and no remote media is embedded. Red/green: missing client/screen contracts failed first, then mobile Jest passed (65) + `tsc --noEmit` clean. | 3 | ✅ done (2026-07-13) | O29 | PARITY.md |
 | H18.22 ✅ | **Mobile capability registry board** — folded into the existing Status tab (not a new top-level tab: 13 tabs already fill the bar) as a **Capabilities** card alongside Trust, over the same user-guarded `GET /api/capabilities` the browser's `ReadinessPanel` reads: SEAM/WIRED/VERIFIED/GA counts + the honest "harness pending — wired, not yet proven" note (never claims VERIFIED it can't back). Read-only — no action execution or token-management controls; approvals stay on H18.11. `fetchCapabilities`/`normalizeCapability` in `mobile/src/api/client.ts`. Red/green: `capabilities.test.ts` (+3: shape mapping, malformed-entry drop + honest defaults, sparse-payload normalization), mobile Jest passed (93) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-19) | H18.1, H27.8 | mobile parity |
 

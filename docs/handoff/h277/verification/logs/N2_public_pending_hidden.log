@@ -1,0 +1,25 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+........................................................................ [ 43%]
+................................................F....................... [ 86%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+_______________ test_judge_pending_is_public_runtime_state_only ________________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-76/test_judge_pending_is_public_r0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ba44ef0>
+
+    async def test_judge_pending_is_public_runtime_state_only(tmp_path, monkeypatch):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        backend = FakeBackend(gate=release, probe=occupied.set)
+        q = queue(tmp_path, local_judge(monkeypatch, backend))
+        items = [q.request(ACTION) for _ in range(3)]
+        try:
+            await asyncio.wait_for(occupied.wait(), 2)
+>           assert all(item.get("judge_pending") is True for item in items)
+E           assert False
+E            +  where False = all(<generator object test_judge_pending_is_public_runtime_state_only.<locals>.<genexpr> at 0x10ba398a0>)
+
+tests/test_h277_approval_judge.py:1102: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_judge_pending_is_public_runtime_state_only
+1 failed, 165 passed in 2.52s

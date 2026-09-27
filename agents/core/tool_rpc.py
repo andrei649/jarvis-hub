@@ -35,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from collections.abc import Mapping
 from contextvars import ContextVar
 from copy import deepcopy
@@ -349,6 +350,7 @@ class ToolRPCServer:
             raise RuntimeError(f"tool has in-flight calls: {name}")
         self._tools[name] = {
             "handler": handler,
+            "_grouping_epoch": uuid.uuid4().hex,
             "gated": bool(gated),
             "description": description,
             "input_schema": deepcopy(schema),
@@ -489,7 +491,10 @@ class ToolRPCServer:
             intake = spec.get("gated_intake")
             if intake is not None:
                 try:
-                    task_id = intake(effective_actor, args)
+                    from .approval_outcomes import tool_approval_scope
+                    # Specialized intake finalization is not yet proven for this slice.
+                    with tool_approval_scope(None):
+                        task_id = intake(effective_actor, args)
                 except ToolRPCValidationError as exc:
                     return {"ok": False, "reason": exc.reason, "tool": name}
                 except Exception:
@@ -531,10 +536,16 @@ class ToolRPCServer:
             if isinstance(notice, str) and notice:
                 title = f"{title} — {notice}"
             try:
-                task_id = self._enqueue(
-                    effective_actor, f"toolrpc.{name}", title,
-                    payload=payload,
-                    risk_tier=_RISK_TIER, autonomy_level="ask", origin="generated")
+                from .approval_outcomes import tool_approval_scope
+                from .autonomy.approval_grouping import model_request_scope
+                with tool_approval_scope(name), model_request_scope(
+                    actor=effective_actor, tool=name, args=args, epoch=spec.get('_grouping_epoch'),
+                    registration_is_live=lambda: self._tools.get(name) is spec,
+                ):
+                    task_id = self._enqueue(
+                        effective_actor, f"toolrpc.{name}", title,
+                        payload=payload,
+                        risk_tier=_RISK_TIER, autonomy_level="ask", origin="generated")
             except Exception:
                 logger.warning("tool-rpc gated enqueue failed", exc_info=True)
                 return {"ok": False, "reason": "enqueue_failed", "tool": name}

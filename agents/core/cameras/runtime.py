@@ -14,7 +14,6 @@ from urllib.parse import urlsplit
 from agents.core.ambient.adapters import AmbientCameraFeedConsumer
 from agents.core.ambient.runtime import AmbientRuntime, get_ambient_runtime
 from agents.core.house.camera_feed import HouseCameraFeedConsumer
-from agents.core.llm.vlm import VLMBackend
 from agents.core.paths import data_path
 from agents.core.security.secret_broker import SecretBroker
 
@@ -32,7 +31,7 @@ from .privacy import CameraPrivacyPolicy
 from .retrieval import CameraEventRetrieval
 from .rules import CameraRuleEngine, CameraZone, LineRule
 from .vault import CameraEventVault
-from .vlm import LocalCameraVLM, LocalCameraVLMConfig
+from .vlm import LocalCameraVLM, LocalCameraVLMConfig, resolve_camera_vlm_config
 
 
 @dataclass
@@ -361,19 +360,15 @@ def build_camera_runtime(
             resolver=resolver,
         )
         snapshot_source = _FrigateSnapshotSource(http=source._http, privacy_policy=privacy)
-        vlm_config = LocalCameraVLMConfig(
-            endpoint=_setting(orch, "camera.vlm_endpoint", "http://127.0.0.1:8000/v1"),
-            model=_setting(orch, "camera.vlm_model", "qwen3-vl-local"),
-            enabled=_boolean(
-                _setting(orch, "camera.vlm_enabled", False),
-                field_name="camera VLM enabled",
-            ),
-        )
-        if vlm_config.enabled:
-            backend = vlm_backend or VLMBackend(base_url=vlm_config.endpoint, api_key="")
-            vlm = LocalCameraVLM.from_backend(vlm_config, backend)
+        vlm_config = resolve_camera_vlm_config(orch)
+        if vlm_config is not None:
+            vlm = LocalCameraVLM.from_native(vlm_config,
+                resolve_config=lambda: resolve_camera_vlm_config(orch),
+                backend_factory=(lambda: vlm_backend) if vlm_backend is not None else None,
+                owns_backend=vlm_backend is None)
         else:
-            vlm = LocalCameraVLM(vlm_config, generate=_disabled_generate)
+            vlm = LocalCameraVLM(LocalCameraVLMConfig('http://127.0.0.1:8000/v1', 'qwen3-vl-local'),
+                                 generate=_disabled_generate)
         pipeline = CameraPipeline(
             rules=CameraRuleEngine(zones=zones, lines=lines),
             privacy_policy=privacy,

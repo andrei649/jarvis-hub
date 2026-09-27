@@ -35,6 +35,7 @@ sys.path.insert(0, str(ROOT / "agents"))
 from agents.core import compaction_hold as ch  # noqa: E402
 from agents.core.compaction_hold import SummaryHold, stream_summary  # noqa: E402
 from agents.core.context_compressor import CompactionPolicy, ContextCompressor  # noqa: E402
+from agents.core.llm.providers import get_profile  # noqa: E402
 from agents.core.orchestrator import Orchestrator  # noqa: E402
 
 
@@ -376,6 +377,8 @@ class _Local:
 
 
 def _orch(turns, backend, **settings):
+    backend.profile = get_profile("lm-studio")
+    backend.base_url = "http://127.0.0.1:1234"
     o = Orchestrator.__new__(Orchestrator)
     o.memory = _Memory(turns)
     o.session_id = "s"

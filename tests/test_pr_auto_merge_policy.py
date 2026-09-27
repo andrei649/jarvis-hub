@@ -283,6 +283,39 @@ def test_root_of_trust_paths_cannot_self_authorize(path: str) -> None:
     assert result["protected_hits"]
 
 
+def test_owner_authorizes_local_development_on_every_repository_path() -> None:
+    for path in PROTECTED_CASES + AUTONOMOUS_CASES:
+        result = selfdev_policy.classify([path], _policy())
+        assert result["autonomous_local_development"] is True, path
+    assert selfdev_policy.classify([], _policy())["autonomous_local_development"] is False
+
+
+def test_local_authorization_does_not_grant_merge_or_deploy() -> None:
+    result = selfdev_policy.classify(PROTECTED_CASES, _policy())
+    assert result["autonomous_local_development"] is True
+    assert result["autonomous_merge"] is False
+    assert result["autonomous_deploy"] is False
+
+
+def test_local_authorization_can_be_revoked_and_is_not_inferred() -> None:
+    policy = copy.deepcopy(_policy())
+    for field in ("enabled", "allow_protected_changes", "require_owner_approval"):
+        changed = copy.deepcopy(policy)
+        changed["local_development"][field] = field == "require_owner_approval"
+        result = selfdev_policy.classify(PROTECTED_CASES, changed)
+        assert result["autonomous_local_development"] is False
+    policy.pop("local_development")
+    assert not selfdev_policy.classify(PROTECTED_CASES, policy)["autonomous_local_development"]
+
+
+def test_local_authorization_rejects_malformed_configuration() -> None:
+    for invalid in (None, True, {}, {"enabled": "true"}):
+        policy = copy.deepcopy(_policy())
+        policy["local_development"] = invalid
+        with pytest.raises(selfdev_policy.PolicyError):
+            selfdev_policy.validate_policy(policy)
+
+
 @pytest.mark.parametrize("path", AUTONOMOUS_CASES)
 def test_routine_engineering_paths_are_owner_out_of_loop(path: str) -> None:
     result = selfdev_policy.classify([path], _policy())

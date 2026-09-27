@@ -182,7 +182,9 @@ def test_a_free_flock_beats_a_live_pid(root, pid):
 
 
 @posix
-def test_a_renamed_host_on_the_same_kernel_is_this_kernel(root):
+def test_a_renamed_host_on_the_same_kernel_is_this_kernel(root, monkeypatch):
+    # This scenario requires kernel identity, which macOS does not expose via /proc.
+    monkeypatch.setattr(exec_cache, "_boot_id", lambda: "test-kernel-boot")
     old = _run_dir(root)
     _lock(root, old, _record(os.getpid(), host="old-container-id"))
     assert exec_cache.prune(root)["deleted"] == [old.name]
@@ -204,6 +206,7 @@ def test_a_held_flock_still_keeps_the_directory(root):
 
 def test_without_a_flock_the_pid_is_asked(root, monkeypatch):
     monkeypatch.setattr(exec_cache, "_fcntl", None)
+    monkeypatch.setattr(exec_cache, "_start_token", lambda _pid: "current-start")
     old = _run_dir(root)
     lock = _lock(root, old, _record(os.getpid(), flock=0))
     assert exec_cache.prune(root)["deleted"] == []                        # alive: kept
@@ -568,6 +571,7 @@ def test_a_lock_that_is_a_link_to_a_live_record_is_no_lock(root, tmp_path, monke
 
 def test_a_long_host_name_is_read_whole(root, monkeypatch):
     monkeypatch.setattr(exec_cache, "_fcntl", None)
+    monkeypatch.setattr(exec_cache, "_start_token", lambda _pid: "current-start")
     host = "h" * 200
     monkeypatch.setattr(exec_cache.socket, "gethostname", lambda: host)
     old = _run_dir(root)

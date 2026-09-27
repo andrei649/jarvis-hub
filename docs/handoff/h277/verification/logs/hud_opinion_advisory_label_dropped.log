@@ -1,0 +1,52 @@
+COMMAND ["/Users/andrei649/.local/bin/node", "node_modules/vitest/vitest.mjs", "run", "tests/frontend/tools.test.js"]
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.js:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.0 /private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/h277-mutation-rvs2us1l
+
+ ❯ tests/frontend/tools.test.js (34 tests | 2 failed) 1195ms
+   ❯ Action Approvals — model opinion (H277) (13)
+     × shows the score as a labelled, advisory model opinion under the summary 39ms
+     × renders the rationale in its own element, apart from the label 31ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend/tools.test.js > Action Approvals — model opinion (H277) > shows the score as a labelled, advisory model opinion under the summary
+AssertionError: expected 'Model opinion (lm-studio · qwen3-4b, …' to contain 'advisory only, it decides nothing'
+
+Expected: "advisory only, it decides nothing"
+Received: "Model opinion (lm-studio · qwen3-4b, local) — risk 37/100: “Writes one file; reversible.”"
+
+ ❯ tests/frontend/tools.test.js:418:30
+    416|     const line = el.querySelector('.judge-score');
+    417|     expect(line.textContent).toContain('Model opinion (lm-studio · qwe…
+    418|     expect(line.textContent).toContain('advisory only, it decides noth…
+       |                              ^
+    419|     expect(line.closest('.tool-actions')).toBeNull();
+    420|     expect(el.querySelector('.tool-actions').textContent).not.toContai…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/frontend/tools.test.js > Action Approvals — model opinion (H277) > renders the rationale in its own element, apart from the label
+AssertionError: expected 'Model opinion (lm-studio · qwen3-4b, …' to contain 'advisory only, it decides nothing'
+
+Expected: "advisory only, it decides nothing"
+Received: "Model opinion (lm-studio · qwen3-4b, local) — risk 37/100: “”"
+
+ ❯ tests/frontend/tools.test.js:604:17
+    602|     const own = [...line.childNodes].filter((n) => n.nodeType === 3).m…
+    603|     expect(own).not.toContain('verified safe');
+    604|     expect(own).toContain('advisory only, it decides nothing');
+       |                 ^
+    605|     expect(own).not.toContain('"');
+    606|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 32 passed (34)
+   Start at  11:54:40
+   Duration  1.81s (tests 69%, import 30%, transform 2%)
+

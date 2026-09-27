@@ -263,7 +263,16 @@ Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scr
 
 ## H613
 
-Closed in #1207 (equivalent): its plan was built, with the command providers held at the approval queue's irreversible tier (critic note 28's shared helper), bound to every file that runs, and `voice.local_only` made strict. Named limits: the `settings.voice_command` kernel kind (protected registry) and unshipped Piper models. The row's record: `python3 scripts/hermes_status.py show H613`.
+The original #1207 slice delivered Piper and approved command providers. Under the
+owner's full-parity scope H613 is partial: the wider Hermes TTS/STT provider matrix,
+Python provider plugins and remaining voice features still need implementation.
+The local H517 prerequisite now registers the exact `settings.voice_command` kernel
+kind, preserving tier-three human approval and strict-mode signed execution checks.
+Slot-waiting calls remain bound to their original approval, including identical-argv
+reapproval. The subsequent slice adds independently revisioned named TTS/STT
+providers, common-registry dispatch, HUD controls and original selector pinning.
+Piper models are still separately provisioned. The current record is
+`python3 scripts/hermes_status.py show H613`.
 
 ## H681
 
@@ -756,4 +765,3 @@ Rows: [H410](#h410), [H145](#h145).
 H145's log reader re-redacts with 'the same SecretScanner that SecretRedactionFilter uses', but H410 puts the CNP/IBAN pass inside SecretRedactionFilter.redact_text, not in SecretScanner, so tail output would skip it. H410 replaces the coordinator's basicConfig (scripts/coordinator.py:122) with setup_logging(). When system.log_to_file is on, setup_logging also attaches a RotatingFileHandler to data_path('logs','jarvis.log'), so a second process would rotate the hub's file (RotatingFileHandler is not multiprocess-safe), which is also the file H145 reads.
 
 **Fix.** H145 calls SecretRedactionFilter.redact_text. H410's coordinator calls install_log_redaction_everywhere() after basicConfig, or logs to a distinct coordinator file that H145's file filter then lists.
-

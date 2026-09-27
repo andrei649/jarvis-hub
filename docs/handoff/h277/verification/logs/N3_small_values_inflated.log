@@ -1,0 +1,60 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+........................................................................ [ 43%]
+........................................................................ [ 86%]
+..................F...                                                   [100%]
+=================================== FAILURES ===================================
+___________ test_round2_many_small_values_survive_budget_allocation ____________
+
+    def test_round2_many_small_values_survive_budget_allocation():
+        args = {f"key{i}": "v" for i in range(180)}
+        args["large"] = "x" * 5000
+>       prompt, _, truncated = aj.build_prompt(dict(ACTION, args=args))
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_h277_approval_judge.py:1234: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+agents/core/autonomy/approval_judge.py:327: in build_prompt
+    encoded, truncated = _capped_payload(_clean(raw))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+payload = {'tool': 'write_file', 'agent': 'pepper', 'summary': 'write notes/a.md', 'args': {'key0': 'v', 'key1': 'v', 'key2': 'v', 'key3': 'v', ...}}
+
+    def _capped_payload(payload: dict) -> tuple[str, bool]:
+        """Only shorten over-budget calls; share the budget, cutting largest values first.
+    
+        Keys remain whole. If even keys and truncation markers cannot fit, refuse the
+        snapshot instead of producing invalid JSON or silently hiding argument names.
+        """
+        encoded = _encoded(payload)
+        if len(encoded) <= ARGS_CAP:
+            return encoded, False
+        args = payload["args"]
+        values = {("field", k): v for k, v in payload.items() if k != "args"}
+        if isinstance(args, dict):
+            values.update({("arg", k): v for k, v in args.items()})
+        else:
+            values[("field", "args")] = args
+        sizes = {key: len(_encoded(value)) for key, value in values.items()}
+    
+        def candidate(cap):
+            out = dict(payload)
+            if isinstance(args, dict):
+                out["args"] = dict(args)
+            for (kind, key), value in values.items():
+                text = value if isinstance(value, str) else _encoded(value)
+                shortened = text[:cap] + TRUNCATED
+                # Never grow a small value just to attach a marker. Each candidate's
+                # encoded size is monotonic in cap, making the budget search valid.
+                if len(text) > cap:
+                    (out["args"] if kind == "arg" else out)[key] = shortened
+            return _encoded(out)
+    
+        if len(candidate(0)) > ARGS_CAP:
+>           raise ValueError("approval snapshot keys exceed the judgement budget")
+E           ValueError: approval snapshot keys exceed the judgement budget
+
+agents/core/autonomy/approval_judge.py:295: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_round2_many_small_values_survive_budget_allocation
+1 failed, 165 passed in 2.59s

@@ -63,7 +63,8 @@ async def test_await_decision_unblocks_on_approve():
 async def test_await_decision_times_out():
     q = ActionApprovalQueue()
     item = q.request({"tool": "deploy"})
-    assert await q.await_decision(item["id"], timeout=0.02) == "timeout"
+    assert await q.await_decision(item["id"], timeout=0.02) == "expired"
+    assert q.get(item["id"])["status"] == "expired"
 
 
 @pytest.mark.asyncio

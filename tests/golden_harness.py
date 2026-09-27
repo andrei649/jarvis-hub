@@ -27,6 +27,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.config import JarvisConfig  # noqa: E402
 from agents.core.llm.base import LLMBackend  # noqa: E402
+from agents.core.llm.providers import get_profile  # noqa: E402
 from agents.core.orchestrator import Orchestrator  # noqa: E402
 
 FAKE_MODEL = "golden-fake-model"
@@ -45,6 +46,8 @@ class FakeBackend(LLMBackend):
     """
 
     def __init__(self, reply: str = DEFAULT_REPLY):
+        self.profile = get_profile("lm-studio")
+        self.base_url = "http://127.0.0.1:1234/v1"
         self.reply = reply
         self.calls: list[dict] = []
 

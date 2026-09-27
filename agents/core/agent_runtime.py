@@ -345,6 +345,7 @@ class AgentToolRuntime:
         wall_seconds: float | None = None,
         usage_sink: Callable[[TokenUsage], None] | None = None,
         effective_window: EffectiveWindow | None = None,
+        before_model_call: Callable[[], Any] | None = None,
     ) -> str:
         """Run one bounded tool-enabled model turn to a final answer.
 
@@ -371,6 +372,7 @@ class AgentToolRuntime:
                 agent_id=agent_id, backend=backend, model=model, prompt=prompt, system=system,
                 max_tokens=max_tokens, temperature=temperature, event_sink=event_sink,
                 wall_seconds=wall_seconds, usage_sink=usage_sink, effective_window=effective_window,
+                before_model_call=before_model_call,
             )
         finally:
             reset_tool_turn(turn)
@@ -389,6 +391,7 @@ class AgentToolRuntime:
         wall_seconds: float | None = None,
         usage_sink: Callable[[TokenUsage], None] | None = None,
         effective_window: EffectiveWindow | None = None,
+        before_model_call: Callable[[], Any] | None = None,
     ) -> str:
         # None, a bool, a non-number, a non-finite or a non-positive value all keep
         # the constructor's own deadline; only a real value is clamped into the range.
@@ -418,6 +421,7 @@ class AgentToolRuntime:
             event_sink=event_sink,
             usage_sink=usage_sink,
             effective_window=effective_window,
+            before_model_call=before_model_call,
         )
         # The loop runs in a child task under the deadline, in this explicit copy of the
         # turn's context; whatever recall taint the loop raised there is carried back into
@@ -486,6 +490,7 @@ class AgentToolRuntime:
         event_sink: ToolEventSink | None,
         usage_sink: Callable[[TokenUsage], None] | None = None,
         effective_window: EffectiveWindow | None = None,
+        before_model_call: Callable[[], Any] | None = None,
     ) -> str:
         from .conversation_clock import active_clock
         inherited_clock = active_clock()
@@ -608,13 +613,22 @@ class AgentToolRuntime:
                         estimate_tokens(json.dumps([tool.as_openai() for tool in tools]))
                         if known_window else 0
                     )
-            turn = await backend.generate_tool_turn(
-                model=model,
-                messages=messages,
-                tools=tools,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
+            # H513: every round rechecks revocation after tool/profile awaits.
+            # Errors propagate before provider I/O; an unreadable gate never widens.
+            if before_model_call is not None:
+                checked = before_model_call()
+                if inspect.isawaitable(checked):
+                    await checked
+            from .llm.data_handling import physical_request_scope
+            # Scope only generation/retries, never ToolRPC or spawned judge work.
+            with physical_request_scope(before_model_call):
+                turn = await backend.generate_tool_turn(
+                    model=model,
+                    messages=messages,
+                    tools=tools,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
             self._report_usage(usage_sink, turn)
             if not turn.tool_calls:
                 return turn.content

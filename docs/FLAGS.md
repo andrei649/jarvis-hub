@@ -222,6 +222,20 @@ bound file may not sit under a directory another user can write (group- or
 world-writable without the sticky bit). A timeout ends the command's whole process group.
 For whisper.cpp, its `[00:00:00.000 --> …]` timestamps are stripped (or pass `-nt`). Off
 in safe mode.
+In task-mediation `enforce` mode, command registration requires signed kernel
+authority and still waits for a human; `hold` refuses registration. The worker
+validates the recorded decision, current policy/scope and halt state at execution.
+A speech call waiting for a process slot keeps its original approval and bound
+file identities: reapproving even identical argv does not authorize that old call.
+Named commands use the same gate: the admin route accepts an optional `provider_id`,
+and Settings → Voice lists independent TTS/STT providers. Choose `provider:<id>` as
+the TTS voice or set `voice.stt_command_provider` for command STT (empty keeps the
+legacy slot). Invalid or absent named selections never select the legacy command.
+Names are lowercase, at most 32 characters, and cannot replace built-in providers.
+The separate settings-database table retains revisions and cleared-name tombstones:
+16 active and 128 historical names per side. Clear invalidates pending approvals
+and waiting calls for that name; it does not terminate a program already running.
+Generic settings reset/import/undo cannot install or erase named command authority.
 **Cost:** an approved program runs as the hub's user, with that user's permissions.
 **Revert:** unset + restart, or clear the command in Console → Admin → Settings → Voice → Command providers.
 **`voice.local_only`:** keeps speech on this machine — only Piper, Kokoro or XTTS speak. It never
@@ -282,8 +296,15 @@ with no plan, so nothing happened" is a better outcome than a model improvising 
 night's work from a one-line title. A goal that cannot be read yields an *empty*
 plan, never an unrestricted one.
 
-**Cost:** an active run consumes its own budget — steps, wall-clock, deadline and
-a hard cap on how many times it may interrupt you. Running out of interrupts
+**Cost:** an active run consumes its own budget — steps, elapsed seconds, deadline and
+a hard cap on how many times it may interrupt you. With the runtime's authoritative
+task reader, a proven pending human approval excludes up to 360 seconds per
+approval-block interval from elapsed-seconds accounting. Overlapping asks share
+that cap; a task deadline can shorten it. Auto-approved tasks and unproven waits
+receive no credit. The first durable human decision ends the interval, including
+defer followed by a later approval. This does not create an approval timeout or
+extend the absolute goal deadline. Budget diagnostics separately report raw wall
+time and excluded human-wait time. Running out of interrupts
 blocks the run rather than ending it, so the work waits instead of nagging.
 **Revert:** unset; the next sweep answers `company mode is off`, every tick answers
 `disabled` and no run is opened. Existing run rows stay in `work_runs.db` as a
@@ -420,6 +441,56 @@ Still requires `JARVIS_VLM_MODEL` (refuses `vlm_model_unset`); an unknown id ref
 the **wrong** preset mis-clicks — which is exactly why it is explicit rather than
 guessed.
 
+### `security.data_training_ack` (H513 unattended provider consent)
+
+**Default: empty.** This route-only setting is changed through Security Posture
+or admin `POST /api/security/data-handling/ack`, using the current opaque `scope`
+returned by posture. Generic settings writes, imports and reset undo cannot grant
+this permission. A successful consent audit precedes a durable grant.
+
+**What acknowledgment changes:** routed internal work may use a configured provider
+whose effective policy is `unknown` or `trains-on-inputs`. Owner-started builder
+and workflow work still count as internal. Interactive use continues to warn;
+acknowledged unattended use also continues to warn. Consent is scoped to the actual
+provider configuration, credentials and effective policy. A changed configuration
+requires a fresh acknowledgment; an ambiguous provider/account cannot be granted
+from a stale or incomplete posture row.
+
+**Cost:** prompts can leave the machine under the provider's terms and may be used
+for training. Existing profile policy labels are declarations, not a verification
+of the owner's account contract. No provider calls are made by inspecting posture.
+Local routes do not acquire a cloud fallback through this setting.
+
+**Rollback:** revoke in Security Posture. Fresh dispatch checks block unacknowledged
+internal requests, including subsequent tool-loop requests. Revocation cannot
+recall bytes already sent. Independent direct backend clients are outside this
+router boundary and retain their own controls; this is not universal cloud egress
+protection. See `agents/core/llm/data_handling.py` and the reported posture coverage.
+
+### `security.data_training_role_ack` (H513 independent role consent)
+
+**Default: empty.** Admin Security Posture controls acknowledge one exact configured
+role: approval judge, Telegram image descriptions or camera descriptions. The
+finite `target` is added to the same audited acknowledgment API; provider grants
+and grants for another role never substitute for it. Generic settings/import/reset
+cannot create this permission. Unknown or training policies require acknowledgment;
+known-local policies do not. Warnings remain visible after a grant.
+
+**Risk and scope:** granting does not enable remote judging, remote image delivery,
+camera capture, event descriptions or household consent. Telegram and camera native
+VLM requests stay strictly on loopback. Custom camera endpoints remain unknown;
+locality does not establish the server's data practices. Posture is pure metadata,
+not a probe or verification of provider terms. Unconfigured/disabled camera targets
+are omitted; camera provisioning remains separate H31 work.
+
+**Revocation:** the role is checked before actual sends/retries and through awaited
+cleanup. The original household camera privacy lease is checked independently.
+Camera configuration uses the effective orchestrator settings view; changes become
+visible after its settings refresh, and an old cached runtime refuses changed
+configuration until rebuilt. Role revocation reads its durable store at dispatch.
+Neither mechanism recalls data already sent. Pure injected library adapters are
+not claimed to be universally mediated. See posture's current coverage statement.
+
 ### `JARVIS_ROLE_<NAME>_PROVIDER` · `_MODEL` · `_BASE_URL` (H277 model roles)
 
 **Default: unset** — every role behaves exactly as before. `agents/core/llm/model_roles.py`
@@ -454,6 +525,8 @@ case) or an ignored variable. Its vision line is `resolve_vlm_config`'s own verd
 setup every vision consumer refuses (`vlm_model_unset`, `vlm_url_unset`,
 `vlm_preset_unknown`, …) shows `off (<reason>)` and warns, and its local/remote label is
 `VLMConfig.is_local` (a loopback custom VLM is local).
+Local addresses in doctor/judge status expose only the loopback HTTP origin;
+userinfo, path, query and fragment are never displayed. The roles API omits URLs entirely.
 
 **The approval judge** (`JARVIS_ROLE_APPROVAL_JUDGE_MODEL` set): each tool call queued on
 the action-approval queue is shown to that model **after** the card exists; its risk
@@ -465,11 +538,27 @@ judged. `JARVIS_ROLE_APPROVAL_JUDGE_MODEL=active` reuses the model LM Studio / O
 already has loaded (no second model on the GPU; any other LM Studio model may load one
 next to the main one).
 
+Blocked Decision Inbox tasks use the same optional judge and shared capacity
+(two concurrent calls, at most 32 queued/running opinions). Task annotations live
+in separate SQLite tables, outside signed payloads and receipts; edits invalidate
+the previous opinion. Notification delivery does not. The HUD keeps decisions
+available while waiting and stops polling each card after `17 * timeout + 5`
+seconds. An opinion is never an approval or an execution receipt.
+
+`GET /api/llm/roles` requires user authentication and returns configuration only:
+all base URLs are omitted and `reachable` is null. `/api/vlm/describe` refuses
+non-loopback endpoints and selection-guard findings before creating a client,
+including when its request selects a model override.
+
 **Where the text goes.** For each queued approval, its tool name, agent, summary and
-arguments (fenced as untrusted data, invisible characters stripped, each argument value
-capped so every key stays visible, 4000 characters in all) are sent to the judge model.
+arguments (fenced as untrusted data, invisible characters stripped, capped only when the
+whole snapshot exceeds 4000 characters, cutting the largest values first so every key
+stays visible) are sent to the judge model.
 When anything was cut the judge is told to score the call as high risk, the item and the
-audit row carry `truncated: true`, and the card says "judged on a shortened copy". By default there is no judge. A local judge
+audit row carry `truncated: true`, and the card says "judged on a shortened copy".
+Snapshots beyond the scan depth fail closed with `nesting_too_deep` and `truncated: true`;
+a remote judge refuses them. If keys alone cannot fit the budget, no judgement is
+dispatched. By default there is no judge. A local judge
 (`lm-studio` / `ollama` on a loopback address) keeps the text on this machine (still an
 `llm:<provider>` row in the egress ledger). Any other judge — a LAN LM Studio, or any
 `openai-compatible` endpoint, even on loopback — sends that text to its base URL and runs
@@ -477,7 +566,11 @@ only with `JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE=1`; it is off under
 `JARVIS_STRICT_LOCAL=1`, `llm.cloud_fallback=never`, and safe mode (safe mode turns off
 even a local judge), and never sees an item from a local-policy agent or a tainted one: a
 `tainted` mark on the action, its metadata or anywhere in its arguments, or a queue from a
-turn with an untrusted origin (the item is stored with `tainted: true`). A model the H378 guards flag (trains on inputs, or over the cost line) keeps
+turn with an untrusted origin (with a configured judge, the item is stored with
+`tainted: true`). Queued and running cards expose runtime-only `judge_pending: true`;
+dispatch re-checks live privacy policy and pending state after its slot wait, counting
+revocations as `skipped_revoked`. A model the H378 guards flag (trains on inputs, or over
+the cost line) keeps
 the judge off (`judge_trains_on_inputs` / `judge_over_cost_line`): an env choice cannot
 carry the acknowledgement the settings surfaces ask for. The judge's state and reason are
 on `GET /api/actions/pending` as `judge`.

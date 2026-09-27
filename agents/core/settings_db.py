@@ -226,10 +226,13 @@ DEFAULTS: list[dict[str, Any]] = [
     # only their own route writes them (ROUTE_ONLY) and a set waits for a human's approval.
     dict(category="voice",   key="local_only",       value=False,                 label="Keep speech on this machine: only Piper, Kokoro or XTTS speak; never a cloud voice, and never the TTS command (the hub cannot check where a command sends the text) (H613)", kind="toggle"),
     dict(category="voice",   key="piper_model_dir",  value="",                    label="Piper voice models directory (absolute path holding <name>.onnx + <name>.onnx.json; empty = <data>/voice/piper)", kind="text"),
+    dict(category="voice",   key="stt_command_provider", value="", label="Named STT command provider (empty selects the legacy command)", kind="text"),
     dict(category="voice",   key="stt_engine",       value="auto",                label="Speech-to-text engine (auto: faster-whisper, else the approved STT command)", kind="select", opts=["auto", "whisper", "command"]),
     dict(category="voice",   key="tts_command",      value={},                    label="TTS command provider (an approved program; Console → Admin → Settings → Voice → Command providers)", kind="json"),
     dict(category="voice",   key="stt_command",      value={},                    label="STT command provider (an approved program; Console → Admin → Settings → Voice → Command providers)", kind="json"),
     # security
+    dict(category="security",key="data_training_ack", value={}, label="Audited unattended provider acknowledgments", kind="json"),
+    dict(category="security",key="data_training_role_ack", value={}, label="Audited model role acknowledgments", kind="json"),
     dict(category="security",key="guardrails_mode",  value="WARN",                label="Guardrails mode",    kind="select",  opts=["WARN","REDACT","BLOCK"]),
     dict(category="security",key="scan_input",       value=True,                  label="Scan user input",    kind="toggle"),
     dict(category="security",key="scan_output",      value=True,                  label="Scan LLM output",    kind="toggle"),
@@ -783,6 +786,10 @@ def bounded_learning_int(key: str, raw: Any, default: int) -> int:
 
 def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     """Return an error string if *value* violates the *kind*'s schema, else None."""
+    if key == "stt_command_provider":
+        from .voice.provider_store import valid_provider_id
+        if value != "" and not valid_provider_id(value):
+            return f"{key}: expected an approved provider name or empty for the legacy command"
     if key == "media_send_timeout_seconds" and (type(value) is not int or not 1 <= value <= 300):
         return f"{key}: expected an integer between 1 and 300 seconds"
     if key == "sandbox_temp_dir":
@@ -844,6 +851,8 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
 #: route, which records it in the intent log and refuses when it cannot. A settings write,
 #: an import and ``nerva config set`` refuse them; an export and a reset leave them out.
 ROUTE_ONLY: dict[tuple[str, str], str] = {
+    ("security", "data_training_ack"): "Console → Trust → Data handling (POST /api/security/data-handling/ack)",
+    ("security", "data_training_role_ack"): "Console → Trust → Data handling (POST /api/security/data-handling/ack)",
     ("skills", "disabled"): "Console → Trust → Skill Switches (POST /api/skills/switch)",
     ("skills", "channel_disabled"): "Console → Trust → Skill Switches (POST /api/skills/switch)",
     # H613 — a command provider makes the hub run a program: set only through its route, which

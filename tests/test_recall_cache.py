@@ -14,6 +14,7 @@ All offline — uses injected fake LM Studio client (no network).
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 repo_root = Path(__file__).resolve().parent.parent
@@ -29,27 +30,18 @@ from agents.core.ingestion.embedder import (
 
 # ── Fake LM Studio client (mirrors FakeLMStudioClient in test_memory_embeddings) ──
 
-class _Resp:
-    def __init__(self, payload):
-        self._payload = payload
-
-    def raise_for_status(self):
-        return None
-
-    def json(self):
-        return self._payload
-
-
-class FakeLMStudioClient:
-    """Mimics httpx.Client.post for /v1/embeddings; counts calls."""
+class FakeLMStudioClient(httpx.Client):
+    """Real loopback HTTPX wire identity with an offline counting transport."""
 
     def __init__(self, vector):
         self._vector = vector
         self.calls = 0
+        super().__init__(base_url="http://127.0.0.1:1234",
+                         transport=httpx.MockTransport(self._respond))
 
-    def post(self, url, json=None):
+    def _respond(self, request):
         self.calls += 1
-        return _Resp({"data": [{"embedding": list(self._vector)}]})
+        return httpx.Response(200, json={"data": [{"embedding": list(self._vector)}]})
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

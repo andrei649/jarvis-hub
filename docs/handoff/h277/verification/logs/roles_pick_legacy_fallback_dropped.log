@@ -1,0 +1,39 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_model_roles.py", "tests/test_model_config.py"]
+................................F.........F............................. [ 63%]
+.........................................                                [100%]
+=================================== FAILURES ===================================
+_______________ test_vision_role_falls_back_to_jarvis_vlm_model ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bce7950>
+
+    def test_vision_role_falls_back_to_jarvis_vlm_model(monkeypatch):
+        monkeypatch.setenv("JARVIS_VLM_BACKEND", "lmstudio")
+        monkeypatch.setenv("JARVIS_VLM_MODEL", "qwen3-vl-8b")
+        role = model_roles.resolve("vision")
+        assert role.configured is True
+        assert role.provider_id == "lm-studio"
+        assert role.model == "qwen3-vl-8b"
+>       assert role.source["model"] == "JARVIS_VLM_MODEL"
+E       AssertionError: assert 'default' == 'JARVIS_VLM_MODEL'
+E         
+E         - JARVIS_VLM_MODEL
+E         + default
+
+tests/test_h277_model_roles.py:121: AssertionError
+__________________________ test_deep_role_legacy_pin ___________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bd29e80>
+
+    def test_deep_role_legacy_pin(monkeypatch):
+        monkeypatch.setenv("JARVIS_DEEP_MODEL", "local/deep-custom")
+>       assert model_config.deep_model_name() == "local/deep-custom"
+E       AssertionError: assert 'deepseek-r1-distill-qwen-32b' == 'local/deep-custom'
+E         
+E         - local/deep-custom
+E         + deepseek-r1-distill-qwen-32b
+
+tests/test_h277_model_roles.py:217: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_vision_role_falls_back_to_jarvis_vlm_model
+FAILED tests/test_h277_model_roles.py::test_deep_role_legacy_pin - AssertionE...
+2 failed, 111 passed in 1.68s

@@ -175,6 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
         decide = approvals_verbs.add_parser(decision, help=f"{decision} one pending task")
         decide.add_argument("task_id", type=int)
         decide.add_argument("--payload", help="JSON object attached to the decision")
+        decide.add_argument("--reason", help="optional human decision reason (at most 280 characters)")
         decide.add_argument("--json", action="store_true")
 
     kernel = verbs.add_parser("kernel", help="the Action Kernel")
@@ -1132,7 +1133,16 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
     except ValueError as exc:
         ctx.err.write(f"{exc}\n")
         return EXIT_USAGE
+    from agents.core.autonomy.decision_reasons import normalize_reason
+
+    try:
+        reason = normalize_reason(ns.reason)
+    except ValueError as exc:
+        ctx.err.write(f"{exc}\n")
+        return EXIT_USAGE
     body: dict[str, Any] = {"action": ns.action}
+    if reason is not None:
+        body["reason"] = reason
     if payload:
         body["payload"] = payload
     reply = client.post(f"/autonomy/tasks/{ns.task_id}/decision", body)
@@ -2505,10 +2515,12 @@ _NO_BODY = "no message provided. Pass text as an argument, use --file PATH, or p
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
-def _plain(text: Any, width: int = 200) -> str:
+def _plain(text: Any, width: int = 200, *, keep_tail: bool = False) -> str:
     """A string from the hub or the shell, safe to put on a terminal: no control characters."""
     out = _CONTROL_CHARS.sub(" ", "" if text is None else str(text))
-    return out if len(out) <= width else out[: width - 1] + "…"
+    if len(out) <= width:
+        return out
+    return "…" + out[-(width - 1):] if keep_tail else out[: width - 1] + "…"
 
 
 def _is_tty(stream: Any) -> bool:
@@ -2550,11 +2562,11 @@ def _send_body(ns: argparse.Namespace, ctx: Context, *, verb: str = "nerva send"
                     # hang by another spelling: `-f /dev/tty` (or /dev/stdin from an
                     # interactive shell) blocked forever, which is exactly what the "a
                     # terminal is never read" rule exists to prevent.
-                    return None, (f"{_plain(ns.file, 120)} is a terminal, and {verb} never "
+                    return None, (f"{_plain(ns.file, 120, keep_tail=True)} is a terminal, and {verb} never "
                                   "reads one; pipe the body or point --file at a file")
-                return _read_body(handle, _plain(ns.file, 120), verb=verb, bound=bound)
+                return _read_body(handle, _plain(ns.file, 120, keep_tail=True), verb=verb, bound=bound)
         except OSError as exc:
-            return None, f"cannot read {_plain(ns.file, 120)}: {exc.strerror or type(exc).__name__}"
+            return None, f"cannot read {_plain(ns.file, 120, keep_tail=True)}: {exc.strerror or type(exc).__name__}"
     if ctx.inp is not None and hasattr(ctx.inp, "read") and not _is_tty(ctx.inp):
         return _read_body(ctx.inp, "stdin", verb=verb, bound=bound)
     return None, _NO_BODY

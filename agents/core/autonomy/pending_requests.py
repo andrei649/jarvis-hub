@@ -66,7 +66,7 @@ FLAG = _FLAG
 # How a queued step ended up. Each maps to one sentence in the brief; "waiting"
 # is a first-class outcome rather than the absence of one, because "still waiting
 # on you, since 11pm" is the most useful thing a morning report can say.
-RESOLUTIONS = ("approved", "rejected", "waiting", "lost")
+RESOLUTIONS = ("approved", "rejected", "waiting", "lost", "expired_unanswered")
 
 # Task statuses that mean the owner (or policy) said yes. ``running`` and ``done``
 # are included because a task can be decided and executed between two sweeps —
@@ -95,6 +95,7 @@ class AskOutcome:
     detail: str
     decided_by: str = ""
     by_machine: bool = False
+    human_reason: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -105,6 +106,7 @@ class AskOutcome:
             "detail": self.detail,
             "decided_by": self.decided_by,
             "by_machine": self.by_machine,
+            **({"human_reason": self.human_reason} if self.human_reason else {}),
         }
 
 
@@ -183,6 +185,8 @@ def classify(task: Any) -> tuple[str, str]:
     if task is None:
         return "lost", "the durable task is gone — it was never an approval"
     status = _status_of(task)
+    if status == "expired":
+        return "expired_unanswered", "approval deadline elapsed unanswered"
     if status in _APPROVED_STATUSES:
         decision = _decision_of(task) or "approved"
         return "approved", f"the task was {status} ({decision})"
@@ -194,6 +198,22 @@ def classify(task: Any) -> tuple[str, str]:
         # nobody gave.
         return "waiting", "the task has no readable status"
     return "waiting", f"the task is still {status}"
+
+
+def _human_reason_of(task: Any) -> str | None:
+    """Read only durable human metadata; executor result dictionaries never count."""
+    from .decision_reasons import normalize_reason
+
+    metadata = getattr(task, "human_decision", None)
+    if not isinstance(metadata, dict):
+        return None
+    by = str(metadata.get("by") or "").strip().lower()
+    if by in MACHINE_DECIDERS or metadata.get("action") not in {"accept", "edit", "reject", "defer"}:
+        return None
+    try:
+        return normalize_reason(metadata.get("reason"))
+    except ValueError:
+        return None
 
 
 class PendingRequests:
@@ -220,16 +240,18 @@ class PendingRequests:
         run = self._ledger.get(run_id)
         if run is None:
             return ReconcileResult(run_id, note="unknown run")
+        outcomes, expiry_resumed, has_expiry = self._close_asks_with_expiry(run_id)
+        if has_expiry:
+            return ReconcileResult(run_id, outcomes, resumed=expiry_resumed,
+                                   note="expiry settled atomically" if expiry_resumed else "expiry settled; run held")
         if run.terminal:
             # The asks are still worth closing — the record should say what the
             # answer was — but a finished run is a record, never a resource to
             # reopen.
-            outcomes = self._close_asks(run_id)
             return ReconcileResult(
                 run_id, outcomes, note=f"run is already {run.status}"
             )
 
-        outcomes = self._close_asks(run_id)
         if run.status == "stopping":
             return ReconcileResult(
                 run_id, outcomes, note="the run is stopping; an answer does not restart it"
@@ -252,10 +274,41 @@ class PendingRequests:
                 note="blocked with no outstanding ask — nothing here can unblock it",
             )
         try:
-            self._ledger.resume(run_id)
+            self._ledger.resume_after_asks(run_id, answered_seqs=[o.step_seq for o in outcomes])
         except WorkRunError as exc:
             return ReconcileResult(run_id, outcomes, note=f"resume refused: {exc.reason}")
         return ReconcileResult(run_id, outcomes, resumed=True, note="every ask is answered")
+
+    def _close_asks_with_expiry(self, run_id: str) -> tuple[tuple[AskOutcome, ...], bool, bool]:
+        steps = self._ledger.outstanding_asks(run_id)
+        # One authoritative read per source; expiry is terminal. Settle normal
+        # answers first so the final expiry transaction can close the epoch.
+        prepared = []
+        for step in steps:
+            try:
+                task = self._read_task(step.task_id) if step.task_id is not None else None
+            except Exception:
+                # Preserve per-source ordinary reconciliation on read failures.
+                # The failed source remains queued and prevents atomic resume.
+                task = ...
+            prepared.append((step, task))
+        has_expiry = any(_status_of(task) == "expired" for _, task in prepared)
+        if not has_expiry:
+            return tuple(self._close_one(run_id, step, task=task) for step, task in prepared), False, False
+        prepared.sort(key=lambda item: _status_of(item[1]) == "expired")
+        outcomes = []
+        resumed = False
+        for step, task in prepared:
+            if _status_of(task) != "expired":
+                outcomes.append(self._close_one(run_id, step, task=task))
+                continue
+            result = self._ledger.settle_expired_ask(
+                run_id, step.seq, task_id=step.task_id, expired_at=task.expired_at,
+            )
+            resumed = resumed or result.resumed
+            outcomes.append(AskOutcome(run_id, step.seq, step.task_id, "expired_unanswered",
+                                       "approval deadline elapsed unanswered", "system", True))
+        return tuple(outcomes), resumed, True
 
     def _close_asks(self, run_id: str) -> tuple[AskOutcome, ...]:
         outcomes: list[AskOutcome] = []
@@ -263,7 +316,7 @@ class PendingRequests:
             outcomes.append(self._close_one(run_id, step))
         return tuple(outcomes)
 
-    def _close_one(self, run_id: str, step: Any) -> AskOutcome:
+    def _close_one(self, run_id: str, step: Any, *, task: Any = ...) -> AskOutcome:
         task_id = getattr(step, "task_id", None)
         seq = int(getattr(step, "seq", 0))
         if not isinstance(task_id, int) or isinstance(task_id, bool) or task_id <= 0:
@@ -272,7 +325,8 @@ class PendingRequests:
             # streak rule can end the run instead of the run hanging until dawn.
             return self._apply(run_id, seq, None, "lost", "the step carries no durable task")
         try:
-            task = self._read_task(task_id)
+            if task is ...:
+                task = self._read_task(task_id)
         except Exception:
             # A queue that cannot be read is not a queue that said yes.
             logger.warning("could not read task %s while reconciling %s", task_id, run_id)
@@ -280,9 +334,13 @@ class PendingRequests:
                 run_id, seq, task_id, "waiting", "the task could not be read"
             )
         resolution, detail = classify(task)
+        if resolution == "expired_unanswered":
+            self._ledger.settle_expired_ask(run_id, seq, task_id=task_id, expired_at=task.expired_at)
+            return AskOutcome(run_id, seq, task_id, resolution, detail, "system", True)
         decided_by = _decider_of(task) if task is not None else ""
         return self._apply(
-            run_id, seq, task_id, resolution, detail, decided_by=decided_by
+            run_id, seq, task_id, resolution, detail, decided_by=decided_by,
+            human_reason=_human_reason_of(task),
         )
 
     def _apply(
@@ -294,11 +352,12 @@ class PendingRequests:
         detail: str,
         *,
         decided_by: str = "",
+        human_reason: str | None = None,
     ) -> AskOutcome:
         by_machine = decided_by in MACHINE_DECIDERS
         outcome = AskOutcome(
             run_id, seq, task_id, resolution, detail,
-            decided_by=decided_by, by_machine=by_machine,
+            decided_by=decided_by, by_machine=by_machine, human_reason=human_reason,
         )
         if resolution == "waiting":
             return outcome
@@ -312,6 +371,7 @@ class PendingRequests:
                     "reason": detail,
                     "decided_by": decided_by,
                     "by_machine": by_machine,
+                    **({"human_reason": human_reason} if human_reason else {}),
                 },
             )
         except WorkRunError as exc:

@@ -24,6 +24,7 @@ import io
 import logging
 import os
 import tempfile
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Optional
 
@@ -43,6 +44,8 @@ except ImportError:
 DEFAULT_BEAM_SIZE = 1
 #: Where an STT command's private run directories live (the TTS temp dir, H613).
 TEMP_DIR = Path(tempfile.gettempdir()) / "cabinet_tts"
+_UNPINNED_PROVIDER = object()
+_COMMAND_PROVIDER = ContextVar("stt_command_provider", default=_UNPINNED_PROVIDER)
 
 
 def _resolve_beam_size(override: Optional[int]) -> int:
@@ -108,12 +111,15 @@ class STTEngine:
         (`routers/voice.py` skips dictation cleanup on them, `frontend/src/voice.ts`
         drops them); other bracketed text is speech (H613 review).
         """
+        provider_id = _COMMAND_PROVIDER.get()
+        if provider_id is _UNPINNED_PROVIDER:
+            provider_id = local_providers.selected_stt_provider()
         choice = self._choice()
         if choice == "command":
             try:
                 asyncio.get_running_loop()
             except RuntimeError:
-                return asyncio.run(self._transcribe_command(audio, language))
+                return asyncio.run(self._transcribe_selected(audio, language, provider_id))
             return "[STT error: command STT needs an async caller]"
         if choice is None or not self._model:
             return "[STT unavailable]"
@@ -157,7 +163,9 @@ class STTEngine:
         mode = local_providers.stt_mode()
         if mode == "whisper" or (mode == "auto" and self._model is not None):
             return "whisper"
-        if local_providers.command_ready("stt", verify_content=False).ok:
+        provider_id = local_providers.selected_stt_provider()
+        kwargs = {} if provider_id is None else {"provider_id": provider_id}
+        if local_providers.command_ready("stt", verify_content=False, **kwargs).ok:
             return "command"
         return None if mode == "command" else "whisper"
 
@@ -173,10 +181,33 @@ class STTEngine:
                                                         default_lang=default if isinstance(default, str) else "en")
 
     async def transcribe_async(self, audio, language: str = "ro") -> str:
+        provider_id = local_providers.selected_stt_provider()
         choice = await asyncio.to_thread(self._choice)
         if choice == "command":
-            return await self._transcribe_command(audio, language)
+            return await self._transcribe_selected(audio, language, provider_id)
         if choice is None:
             return "[STT unavailable]"
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.transcribe, audio, language)
+        def transcribe_pinned():
+            token = _COMMAND_PROVIDER.set(provider_id)
+            try:
+                return self.transcribe(audio, language)
+            finally:
+                _COMMAND_PROVIDER.reset(token)
+        return await loop.run_in_executor(None, transcribe_pinned)
+
+    async def _transcribe_selected(self, audio, language, provider_id):
+        if provider_id is None:
+            return await self._transcribe_command(audio, language)
+        from .provider_registry import speech_registry
+        try:
+            registry = await asyncio.to_thread(speech_registry, "stt")
+            provider = registry.get("stt", provider_id)
+        except Exception:
+            return "[STT unavailable]"
+        if provider is None:
+            return "[STT unavailable]"
+        from agents.core.settings_db import get_value
+        default = get_value("voice", "stt_language", "en")
+        return await provider.transcribe(audio, language, temp_dir=TEMP_DIR,
+                                         default_lang=default if isinstance(default, str) else "en")

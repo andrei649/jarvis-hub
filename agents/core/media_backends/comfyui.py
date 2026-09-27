@@ -34,6 +34,16 @@ class ImageGenerationError(ValueError):
         super().__init__(reason)
 
 
+def implementation_fingerprint():
+    """Checked shared PNG/endpoint/artifact implementation identity."""
+    try:
+        if hashlib.sha256(Path(__file__).read_bytes()).hexdigest() != _IMPORTED_SOURCE_SHA256:
+            raise ImageGenerationError("backend_source_changed")
+    except OSError:
+        raise ImageGenerationError("backend_source_changed") from None
+    return _IMPORTED_SOURCE_SHA256
+
+
 @dataclass(frozen=True)
 class ComfyUIConfig:
     base_url: str
@@ -85,10 +95,13 @@ class ComfyUIConfig:
             raise ImageGenerationError("backend_source_changed") from None
         if current_hash != _IMPORTED_SOURCE_SHA256:
             raise ImageGenerationError("backend_source_changed")
+        from .registry import registry_fingerprint
         encoded = json.dumps({
             "url": self.base_url, "checkpoint": self.checkpoint,
             "root": str(self.output_root), "timeout": self.timeout,
-            "backend_sha256": _IMPORTED_SOURCE_SHA256,
+            "backend_sha256": _IMPORTED_SOURCE_SHA256, "protocol": "comfyui",
+            "registry_sha256": registry_fingerprint(), "poll": self.poll_interval,
+            "json_limit": self.max_json_bytes, "image_limit": self.max_image_bytes,
         }, sort_keys=True).encode()
         return hashlib.sha256(encoded).hexdigest()
 
@@ -449,28 +462,35 @@ class ComfyUIBackend:
             raise ImageGenerationError("generation_timeout_submission_may_continue") from None
         except httpx.HTTPError:
             raise ImageGenerationError("backend_unavailable_submission_may_continue") from None
-        # Only validated bytes cross to the filesystem. Backend names never
-        # choose a destination and exclusive creation never overwrites a file.
-        artifact_id = uuid.uuid4().hex
-        destination = self.config.output_root / (artifact_id + ".png")
-        temporary = None
-        try:
-            self.config.output_root.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(mode="wb", dir=self.config.output_root,
-                                             prefix=".nerva-", suffix=".tmp", delete=False) as handle:
-                temporary = Path(handle.name)
-                handle.write(data)
-                handle.flush()
-                os.fsync(handle.fileno())
-            # Both files are on the same filesystem. link is atomic and refuses
-            # an existing destination on Windows and POSIX; replace would erase
-            # an unrelated artifact on a collision. Unsupported filesystems fail.
-            os.link(temporary, destination)
-        except OSError:
-            raise ImageGenerationError("artifact_write_failed") from None
-        finally:
-            if temporary is not None:
-                with contextlib.suppress(OSError):
-                    temporary.unlink(missing_ok=True)
-        return {"path": str(destination), "artifact_id": artifact_id, "prompt_id": prompt_id,
-                "bytes": len(data), "width": width, "height": height}
+        return save_artifact(self.config.output_root, data, width, height, prompt_id=prompt_id)
+
+
+def save_artifact(output_root, data, width, height, *, prompt_id=None, guard=None):
+    """Publish validated bytes atomically under a core-minted opaque name."""
+    # Only validated bytes cross to the filesystem. Backend names never
+    # choose a destination and exclusive creation never overwrites a file.
+    artifact_id = uuid.uuid4().hex
+    destination = output_root / (artifact_id + ".png")
+    temporary = None
+    try:
+        output_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode="wb", dir=output_root,
+                                         prefix=".nerva-", suffix=".tmp", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        # Both files are on the same filesystem. link is atomic and refuses
+        # an existing destination on Windows and POSIX; replace would erase
+        # an unrelated artifact on a collision. Unsupported filesystems fail.
+        if guard is not None:
+            guard()
+        os.link(temporary, destination)
+    except OSError:
+        raise ImageGenerationError("artifact_write_failed") from None
+    finally:
+        if temporary is not None:
+            with contextlib.suppress(OSError):
+                temporary.unlink(missing_ok=True)
+    return {"path": str(destination), "artifact_id": artifact_id, "prompt_id": prompt_id,
+            "bytes": len(data), "width": width, "height": height}

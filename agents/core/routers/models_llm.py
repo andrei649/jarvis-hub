@@ -40,6 +40,18 @@ router = APIRouter(tags=["models"])
 _model_switch_lock = asyncio.Lock()
 
 
+@router.get("/api/llm/roles", dependencies=[Depends(user_guard)])
+async def llm_roles():
+    """Inspect configured model roles without probing providers or exposing keys."""
+    from agents.core.llm.model_roles import describe
+
+    # Even a loopback URL can carry userinfo or a secret query parameter. The
+    # role view needs identity/locality, not connection addresses.
+    roles = [{key: value for key, value in row.items() if key != "base_url"}
+             for row in describe()]
+    return nocache_json({"roles": roles, "reachable": None})
+
+
 def _web():
     # Always present at request time (the app is running). Not an import edge.
     # `_list_local_models` is monkeypatched on `agents.web` by the local-models
@@ -161,7 +173,7 @@ async def _restore_local_provider(
         )
         settings_write_ok = updated == 2 and not skipped
     except Exception:
-        pass
+        logger.warning("model rollback settings write failed")
 
     settings_readback_ok = False
     try:
@@ -172,7 +184,7 @@ async def _restore_local_provider(
             and restored_default_model == default_model
         )
     except Exception:
-        pass
+        logger.warning("model rollback settings readback failed")
 
     provider_restored = False
     try:
@@ -180,7 +192,7 @@ async def _restore_local_provider(
         await router_.detect()
         provider_restored = _local_provider_name(router_) == provider
     except Exception:
-        pass
+        logger.warning("model rollback provider restore failed")
 
     runtime_model_restored = False
     if provider_restored:
@@ -189,7 +201,7 @@ async def _restore_local_provider(
                 router_.set_active_model(runtime_model)
             runtime_model_restored = getattr(router_, "active_model", None) == runtime_model
         except Exception:
-            pass
+            logger.warning("model rollback active model restore failed")
 
     result = {
         "settings_write": settings_write_ok,
@@ -355,7 +367,7 @@ async def _switch_local_model_locked(
         put_category("llm", {"default_model": model_id})
     except Exception:
         # Persistence is best-effort; the live switch already took effect.
-        pass
+        logger.warning("active model switched but settings persistence failed")
 
     return nocache_json({"ok": True, "active": model_id, "provider": target_provider})
 

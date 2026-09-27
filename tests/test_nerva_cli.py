@@ -908,6 +908,19 @@ def test_send_names_an_unreadable_file_and_an_empty_one(tmp_path):
     assert code == EXIT_USAGE and "no message provided" in err and hub.calls == []
 
 
+def test_send_long_path_diagnostics_preserve_filename_and_escape_controls(tmp_path):
+    parent = tmp_path / ("long-" * 32)
+    parent.mkdir()
+    huge = parent / "huge.log"
+    huge.write_text("y" * 5000, encoding="utf-8")
+    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(huge)])
+    assert code == EXIT_USAGE and "huge.log is longer than 4,000" in err
+    assert "\x1b" not in err and hub.calls == []
+    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(parent / "missing\x1b.txt")])
+    assert code == EXIT_USAGE and "cannot read" in err and "missing .txt" in err
+    assert "\x1b" not in err and len(err) < 200 and hub.calls == []
+
+
 def test_send_carries_a_subject_separately_to_a_channel_and_as_a_first_line_to_a_thread():
     code, _out, _err, hub = _run(["send", "--channel", "ntfy", "-s", "[CI]", "build green"], hub=_FakeHub(_SENT))
     assert code == 0

@@ -24,7 +24,7 @@ import threading
 import time
 import uuid
 from contextvars import ContextVar
-from datetime import date
+from datetime import UTC, date
 from typing import Awaitable, Callable, Optional
 
 from ..action_origin import current_action_origin
@@ -199,6 +199,7 @@ class AutonomyWorker:
         # than a constructor argument: the worker predates company mode and must
         # keep working with no ledger at all, which is also the default.
         self.work_run_ledger = None
+        self.approval_judge = None
         self._mediation_kernel = kernel
         self._mediation_signer = mediation_signer or DetachedHMACSigner(None)
         self._mediation_clock_ms = mediation_clock_ms or (lambda: int(time.time() * 1000))
@@ -206,6 +207,20 @@ class AutonomyWorker:
         self._execution_context = ContextVar(
             f"autonomy_mediated_execution_{id(self)}", default=None
         )
+
+    def attach_approval_judge(self, judge, *, loop=None, capacity=None, audit=None) -> None:
+        """Bind an optional advisory adapter, independent of all task authority."""
+        from .task_approval_judge import TaskApprovalJudge
+
+        adapter = TaskApprovalJudge(self.queue)
+        adapter.attach_judge(judge, loop=loop, capacity=capacity)
+        adapter.attach_audit(audit)
+        self.approval_judge = adapter
+
+    def _schedule_approval_judge(self, task: Task) -> None:
+        adapter = self.approval_judge
+        if adapter is not None:
+            adapter.schedule(task.id)
 
     def bind_mediation(self, kernel, signer: DetachedHMACSigner | None) -> None:
         """Bind the existing Action Kernel and detached owner signer to this worker."""
@@ -392,6 +407,7 @@ class AutonomyWorker:
         risk_tier: int,
         autonomy_level: str,
         attention_mode: str,
+        approval_deadline_at: str | None = None,
     ) -> int:
         from ..kernel import Verdict
 
@@ -434,6 +450,7 @@ class AutonomyWorker:
             action.title,
             payload,
             receipt=receipt,
+            approval_deadline_at=approval_deadline_at,
             scope=action.scope,
             autonomy_level=autonomy_level,
             origin=action.origin,
@@ -730,7 +747,22 @@ class AutonomyWorker:
             TaskStatus.BLOCKED,
             decided_by="policy",
             decision="needs-approval",
+            expected_status=TaskStatus.PROPOSED,
         )
+        # Metadata cannot turn a successfully persisted ask into enqueue_failed.
+        try:
+            from .approval_grouping import current_model_producer
+            context = current_model_producer()
+            if context is not None and type(self.policy) is AutonomyPolicy:
+                policy = {key: getattr(self.policy, key) for key in (
+                    'mode', 'agent_modes', 'cap_per_action', 'daily_ceiling',
+                    'earned_autonomy_enabled', 'tier_outcomes', '_spent_today',
+                )}
+                policy['decision'] = decision.to_dict()
+                self.queue.register_pending_group(task.id, context=context, policy=policy)
+        except Exception:
+            logger.warning('model approval grouping unavailable; independent task retained')
+        self._schedule_approval_judge(task)
         try:
             import asyncio
 
@@ -763,6 +795,7 @@ class AutonomyWorker:
         origin: str = "generated",
         attention_mode: str = "interrupt",
         risk_tier: int | None = None,
+        *, grouping_context=None, approval_deadline_at: str | None = None,
     ) -> Task:
         """Propose a task, gate it through the policy, and route it."""
         origin = self._effective_origin(origin)
@@ -819,6 +852,7 @@ class AutonomyWorker:
                 risk_tier=tier,
                 autonomy_level=effective,
                 attention_mode=attention_mode,
+                approval_deadline_at=approval_deadline_at if effective == ASK else None,
             )
         else:
             task_id = self.queue.enqueue(
@@ -830,6 +864,7 @@ class AutonomyWorker:
                 autonomy_level=effective,
                 origin=origin,
                 attention_mode=attention_mode,
+                approval_deadline_at=approval_deadline_at if effective == ASK else None,
             )
             self._persist_intake_evidence(task_id, action, kernel_decision, payload, tier)
 
@@ -850,12 +885,24 @@ class AutonomyWorker:
             decided_by="policy",
             decision="needs-approval",
         )
+        if grouping_context is not None and type(self.policy) is AutonomyPolicy:
+            policy = {key: getattr(self.policy, key) for key in (
+                'mode', 'agent_modes', 'cap_per_action', 'daily_ceiling',
+                'earned_autonomy_enabled', 'tier_outcomes', '_spent_today',
+            )}
+            policy['decision'] = decision.to_dict()
+            self.queue.register_pending_group(task.id, context=grouping_context, policy=policy)
+        self._schedule_approval_judge(task)
         if attention_mode == "interrupt":
             await self._maybe_push(task)
         return task
 
     async def _maybe_push(self, task: Task, *, delivery_id: str | None = None) -> bool:
         if not self.notifier:
+            return False
+        from .inbox import is_decision_notification_leader
+
+        if not is_decision_notification_leader(self.queue, task):
             return False
         if self.delivery_broker is None:
             logger.warning(
@@ -879,6 +926,105 @@ class AutonomyWorker:
         return ok
 
     # ── execution ─────────────────────────────────────────────────
+    def _current_expiry_task(self, effect):
+        task = self.queue.get(effect.task_id)
+        return task if (task is not None and task.status == TaskStatus.EXPIRED.value
+                        and task.expired_at == effect.expired_at) else None
+
+    def _clear_expiry_judges(self, batch) -> set[int]:
+        cleared = set()
+        if self.approval_judge is not None:
+            for effect in batch.effects:
+                try:
+                    if self._current_expiry_task(effect) is not None:
+                        self.approval_judge.clear_pending(effect.task_id)
+                        cleared.add(effect.task_id)
+                except Exception:
+                    logger.warning("Expired judge pending cleanup held for #%s", effect.task_id, exc_info=True)
+        return cleared
+
+    async def _drain_approval_expiry(self, batch, *, limit=100, notify_promotions=True,
+                                    already_cleared=frozenset()) -> int:
+        from agents.core.env_config import env_flag
+
+        from .pending_requests import FLAG, PendingRequests
+        from .queue import ApprovalExpiryBatch, approval_is_pending
+
+        def ack(effect, task=None):
+            one = ApprovalExpiryBatch((task,) if task is not None else (),
+                                      (effect.group_id,) if effect.group_id else (), effects=(effect,))
+            return self.queue.ack_approval_expiry_effects(one)
+
+        acknowledged = 0
+        for effect in batch.effects:
+            if self._halted():
+                break
+            try:
+                # Batch rows are detached evidence, never fresh authorization.
+                task = self._current_expiry_task(effect)
+                if task is None:
+                    acknowledged += ack(effect)
+                    continue
+                if self.approval_judge is not None and task.id not in already_cleared:
+                    self.approval_judge.clear_pending(task.id)
+                if self.audit is not None:
+                    self.audit.log("autonomy.approval.expired", {
+                        "task_id": task.id, "agent": task.agent, "kind": task.kind,
+                        "expired_at": effect.expired_at, "resolution": "expired_unanswered",
+                    })
+                if self._current_expiry_task(effect) is None:
+                    acknowledged += ack(effect)
+                    continue
+                ledger = self.work_run_ledger
+                if ledger is not None:
+                    # This ledger can be attached for read-only past-run access
+                    # even while company mode is disabled. Keep relevant effects.
+                    sources = ledger.pending_asks_for_task(task.id, limit=limit)
+                    if sources and not env_flag(FLAG):
+                        continue
+                    reconciler = PendingRequests(ledger, read_task=self.queue.get)
+                    for source in sources:
+                        if not env_flag(FLAG):
+                            break
+                        reconciler.reconcile(source.run_id)
+                    if ledger.pending_asks_for_task(task.id, limit=1):
+                        continue
+                if self._current_expiry_task(effect) is None:
+                    acknowledged += ack(effect)
+                    continue
+                if notify_promotions and effect.group_id is not None:
+                    candidate = self.queue.pending_group_leader(effect.group_id)
+                    if (self.notifier is not None and candidate
+                            and candidate.attention_mode == "interrupt" and not candidate.pushed
+                            and (not approval_is_pending(candidate) or not await self._maybe_push(candidate))):
+                        continue
+                acknowledged += ack(effect, task)
+            except Exception:
+                logger.warning("Approval expiry effects held for #%s", effect.task_id, exc_info=True)
+        return acknowledged
+
+    async def approval_housekeeping(self, *, limit: int = 100, now=None,
+                                    reconcile: bool = True, notify_promotions: bool = True) -> dict:
+        """Sweep metadata and clear judges; other effects stay held under e-stop."""
+        from datetime import datetime
+
+        now = now or datetime.fromtimestamp(self._clock(), UTC)
+        changed = self.queue.expire_pending_approvals(now=now, limit=limit)
+        cleared = self._clear_expiry_judges(changed)
+        result = {"expired": len(changed.tasks), "expiry_effects_acked": 0}
+        if not reconcile or self._halted():
+            return result
+        batch = self.queue.pending_approval_expiry_effects(limit=limit)
+        result["expiry_effects_acked"] = await self._drain_approval_expiry(
+            batch, limit=limit, notify_promotions=notify_promotions, already_cleared=cleared,
+        )
+        return result
+
+    async def _consume_committed_expiry(self, batch) -> None:
+        cleared = self._clear_expiry_judges(batch)
+        if not self._halted():
+            await self._drain_approval_expiry(batch, already_cleared=cleared)
+
     async def tick(self, limit: int = 10, max_tier: Optional[int] = None) -> dict:
         """Run approved tasks. Returns a small summary dict.
 
@@ -886,6 +1032,7 @@ class AutonomyWorker:
         to batch only reversible/read-only work (max_tier=1).
         """
         ran = done = failed = held = 0
+        await self.approval_housekeeping(limit=limit, reconcile=not self._halted())
         # Q6: reap crash-stranded RUNNING tasks first — bookkeeping, not an
         # action, so it runs even under a halt (the stuck state is honest).
         reaped = 0 if self.queue.mediation_mode == "hold" else self._reap_stuck()
@@ -1048,11 +1195,77 @@ class AutonomyWorker:
             logger.warning("capability outcome record failed", exc_info=True)
 
     # ── human decisions ───────────────────────────────────────────
+    async def _push_promoted_group(self, group_id: str | None) -> None:
+        if group_id is None:
+            return
+        try:
+            candidate = self.queue.pending_group_leader(group_id)
+            if candidate and candidate.attention_mode == 'interrupt' and not candidate.pushed:
+                await self._maybe_push(candidate)
+        except Exception:
+            logger.warning('Promoted decision notification failed for group %s',
+                           group_id, exc_info=True)
+
+    async def reject_group(self, group_id: str, *, snapshot: str, member_ids: list[int],
+                           decided_by: str = 'admin', reason: str | None = None) -> list[Task] | None:
+        from .queue import TaskApprovalExpired
+
+        try:
+            return await self._reject_group(group_id, snapshot=snapshot, member_ids=member_ids,
+                                            decided_by=decided_by, reason=reason)
+        except TaskApprovalExpired as exc:
+            await self._consume_committed_expiry(exc.batch)
+            return None
+
+    async def _reject_group(self, group_id: str, *, snapshot: str, member_ids: list[int],
+                           decided_by: str = 'admin', reason: str | None = None) -> list[Task] | None:
+        """Commit an exact group rejection before any per-task observations."""
+        rejected = self.queue.reject_pending_group(group_id, snapshot=snapshot, member_ids=member_ids,
+                                                   decided_by=decided_by, reason=reason)
+        if rejected is None:
+            return None
+        for task in rejected:
+            if self.approval_judge is not None:
+                self.approval_judge.clear_pending(task.id)
+            self._audit('autonomy.decision.reject', task, f'by {decided_by} (group {group_id})')
+            if self.prefs:
+                try:
+                    self.prefs.record(task, 'reject', decided_by=decided_by)
+                except Exception:
+                    logger.warning('Preference record failed for #%s', task.id, exc_info=True)
+            self._reconcile_waiting_run(task)
+        return rejected
+
     async def apply_decision(
-        self, task_id: int, action: str, decided_by: str = "user", payload: dict = None
+        self, task_id: int, action: str, decided_by: str = "user", payload: dict = None,
+        *, reason: str | None = None,
     ) -> Task:
-        """Resolve a blocked task from an inbox tap (accept/edit/reject/defer)."""
+        from .queue import TaskApprovalExpired, approval_is_pending
+
+        try:
+            current = self.queue.get(task_id)
+            if (action in {"accept", "edit", "reject", "defer"} and current is not None
+                    and current.status in {"proposed", "blocked"}
+                    and getattr(current, "approval_deadline_at", None) is not None and not approval_is_pending(current)):
+                # Also fence paths which refuse mediated edits before reaching
+                # their ordinary queue mutation. The queue fresh due CAS wins.
+                self.queue.transition_with_group(task_id, TaskStatus(current.status),
+                                                 expected_status=TaskStatus(current.status))
+            return await self._apply_decision(task_id, action, decided_by, payload, reason=reason)
+        except TaskApprovalExpired as exc:
+            await self._consume_committed_expiry(exc.batch)
+            raise
+
+    async def _apply_decision(
+        self, task_id: int, action: str, decided_by: str = "user", payload: dict = None,
+        *, reason: str | None = None,
+    ) -> Task:
+        """Resolve a task; an optional human explanation is separate metadata."""
+        from .decision_reasons import normalize_reason
+
+        reason = normalize_reason(reason)
         current = self.queue.get(task_id)
+        promotion_group_id = None
         if (
             action == "edit"
             and payload is not None
@@ -1062,8 +1275,9 @@ class AutonomyWorker:
         ):
             raise TaskQueueError("mediated edit requires a new enqueue revision")
         if action == "accept":
-            task = self.queue.transition(
-                task_id, TaskStatus.APPROVED, decided_by=decided_by, decision="accept"
+            task, promotion_group_id = self.queue.transition_with_group(
+                task_id, TaskStatus.APPROVED, decided_by=decided_by, decision="accept",
+                human_reason=reason
             )
         elif action == "edit":
             if payload is not None:
@@ -1092,13 +1306,19 @@ class AutonomyWorker:
                 effective = self._strictest_level(edited.autonomy_level, effective)
                 if must_ask:
                     effective = ASK
-                edited = self.queue.update_payload_policy(
+                edited, promotion_group_id = self.queue.update_payload_policy_with_group(
                     task_id,
                     marked_payload,
                     risk_tier=tier,
                     autonomy_level=effective,
+                    decided_by=decided_by,
+                    human_reason=reason,
+                    approve=effective != ASK,
                 )
                 if effective == ASK:
+                    if self.approval_judge is not None:
+                        self.approval_judge.clear_pending(task_id)
+                    self._schedule_approval_judge(edited)
                     # Edited payload still needs explicit approval — keep the task
                     # in its current BLOCKED state (no transition: BLOCKED→BLOCKED
                     # is illegal) and re-push a fresh decision card to the inbox.
@@ -1120,20 +1340,28 @@ class AutonomyWorker:
                             self.prefs.record(edited, action, decided_by=decided_by)
                         except Exception as e:
                             logger.warning(f"Preference record failed for #{task_id}: {e}")
+                    await self._push_promoted_group(promotion_group_id)
                     return edited
-            task = self.queue.transition(
-                task_id, TaskStatus.APPROVED, decided_by=decided_by, decision="edit"
-            )
+                task = edited
+            else:
+                task, promotion_group_id = self.queue.transition_with_group(
+                    task_id, TaskStatus.APPROVED, decided_by=decided_by, decision="edit",
+                    human_reason=reason,
+                )
         elif action == "reject":
-            task = self.queue.transition(
-                task_id, TaskStatus.REJECTED, decided_by=decided_by, decision="reject"
+            task, promotion_group_id = self.queue.transition_with_group(
+                task_id, TaskStatus.REJECTED, decided_by=decided_by, decision="reject",
+                human_reason=reason
             )
         elif action == "defer":
-            task = self.queue.transition(
-                task_id, TaskStatus.DEFERRED, decided_by=decided_by, decision="defer"
+            task, promotion_group_id = self.queue.transition_with_group(
+                task_id, TaskStatus.DEFERRED, decided_by=decided_by, decision="defer",
+                human_reason=reason
             )
         else:
             raise TaskQueueError(f"unknown decision action: {action}")
+        if self.approval_judge is not None:
+            self.approval_judge.clear_pending(task_id)
         self._audit(f"autonomy.decision.{action}", task, f"by {decided_by}")
         if self.prefs:
             try:
@@ -1156,6 +1384,7 @@ class AutonomyWorker:
         # make; and like the metric above, it can never fail a decision that has
         # already landed.
         self._reconcile_waiting_run(task)
+        await self._push_promoted_group(promotion_group_id)
         return task
 
     def _reconcile_waiting_run(self, task: Task) -> None:
@@ -1184,7 +1413,10 @@ class AutonomyWorker:
         try:
             self.audit.log(
                 event,
-                {"task_id": task.id, "agent": task.agent, "kind": task.kind, "detail": detail},
+                {"task_id": task.id, "agent": task.agent, "kind": task.kind, "detail": detail,
+                 **({"human_decision": dict(task.human_decision)}
+                    if event.startswith("autonomy.decision.") and task.human_decision
+                    and task.human_decision.get("reason") else {})},
             )
         except Exception:
             logger.warning(

@@ -508,6 +508,15 @@ class HybridRouter(LLMRouter):
         self._enforce_approved_models(agent_id, model, route)
         return backend, model, route
 
+    def check_data_handling(self, backend, model, route="", *, actual_use=True):
+        """Fresh H513 dispatch check; never wrap or replace the selected backend."""
+        from .data_handling import authorize
+        return authorize(self, backend, model, route, actual_use=actual_use)
+
+    def data_handling_posture(self):
+        from .data_handling import posture
+        return posture(self)
+
     def _select_backend_inner(self, agent_id: str, prompt: str) -> tuple[LLMBackend, str, str]:
         """Core multi-factor routing; wrapped by select_backend for pin enforcement.
 

@@ -1,0 +1,18 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+........................................................................ [ 43%]
+........................................................................ [ 86%]
+...................F..                                                   [100%]
+=================================== FAILURES ===================================
+____________ test_round2_nfkc_keeps_legacy_double_prime_neutralised ____________
+
+    def test_round2_nfkc_keeps_legacy_double_prime_neutralised():
+>       assert aj._sanitise_why("a\u2033b") == "a''b"
+E       assert 'a″b' == "a''b"
+E         
+E         - a''b
+E         + a″b
+
+tests/test_h277_approval_judge.py:1242: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_round2_nfkc_keeps_legacy_double_prime_neutralised
+1 failed, 165 passed in 2.45s

@@ -184,7 +184,7 @@ async def test_vlm_routes_resolve_config_and_refuse_honestly(monkeypatch):
     payload = _json.loads((await multimodal.vlm_status()).body)
     assert payload["configured"] is True
     assert payload["backend"] == "lmstudio"
-    assert payload["base_url"] == "http://localhost:1234/v1"
+    assert payload["base_url"] == "http://localhost:1234"
     assert payload["default_model"] == "qwen2.5-vl-7b"
     assert payload["local"] is True
     # reachable stays null: the route does no network probe, and says so.

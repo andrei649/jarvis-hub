@@ -70,7 +70,7 @@ class _FakeLMStudioTransport:
 def _fake_lmstudio(*responses):
     transport = _FakeLMStudioTransport(responses)
     backend = LMStudioBackend.__new__(LMStudioBackend)
-    backend.base_url = "http://lm-studio.test"
+    backend.base_url = "http://127.0.0.1:1234"
     backend.client = httpx.AsyncClient(
         base_url=backend.base_url,
         transport=httpx.MockTransport(transport),
@@ -1554,6 +1554,10 @@ def _streamed_orchestrator_for(agent, backend=None):
 
     if backend is None:
         backend = _Backend()
+    # This harness models local dispatch through the real H513 router boundary.
+    from agents.core.llm.providers import get_profile
+    backend.profile = get_profile("lm-studio")
+    backend.base_url = "http://127.0.0.1:1234"
 
     class _Intent:
         target_agents = ["jarvis"]

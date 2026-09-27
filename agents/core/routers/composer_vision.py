@@ -85,16 +85,17 @@ def validate_raster(raw, mime):
         raise ValueError("invalid, animated or excessive raster image") from error
 
 
-def destination_revision(config):
+def destination_revision(config, *, identity=None):
     """Public nonce independent of credential entropy, stable across workers.
 
     Only a private fingerprint and random revision are stored, never image bytes
     or raw endpoint credentials. This fixed metadata key grants no new authority.
     """
     from agents.core import settings_db
+    from agents.core.llm.vision_policy import describe
 
     fingerprint = hashlib.sha256(
-        json.dumps([config.backend, config.base_url, config.model, config.is_local]).encode()
+        json.dumps((identity if identity is not None else describe(config)).binding).encode()
     ).hexdigest()
     settings_db.ensure_initialized()
     conn = settings_db.get_conn()
@@ -128,7 +129,9 @@ def destination_revision(config):
         conn.close()
 
 
-def public_config(config):
+def public_config(config, *, identity=None):
+    from agents.core.llm.vision_policy import describe
+    identity = identity if identity is not None else describe(config)
     parts = urlsplit(config.base_url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise ValueError("invalid vision destination")
@@ -138,13 +141,14 @@ def public_config(config):
     if parts.port:
         host += f":{parts.port}"
     destination = urlunsplit((parts.scheme, host, parts.path, "", ""))
-    binding = destination_revision(config)
+    binding = destination_revision(config, identity=identity)
     return {
         "destination": destination,
         "binding": binding,
         "model": config.model,
         "backend": config.backend,
         "local": config.is_local,
+        **identity.public(),
     }
 
 
@@ -200,13 +204,14 @@ class ComposerVisionBody(BaseModel):
 
 @router.get("/api/vlm/composer/status")
 async def composer_status():
+    from agents.core.llm.vision_policy import VisionPolicyUnavailable
     from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
 
     try:
         return nocache_json(
             dict(configured=True, reachable=None, **public_config(resolve_vlm_config()))
         )
-    except (VLMNotConfigured, ValueError, sqlite3.Error, OSError):
+    except (VLMNotConfigured, ValueError, VisionPolicyUnavailable, sqlite3.Error, OSError):
         return nocache_json(
             {"configured": False, "reason": "vlm_not_configured", "reachable": None}
         )
@@ -214,12 +219,21 @@ async def composer_status():
 
 @router.post("/api/vlm/composer/describe")
 async def composer_describe(body: ComposerVisionBody):
+    from agents.core.commands import Principal
+    from agents.core.llm import selection_guards as sg
+    from agents.core.llm.vision_policy import (
+        VisionDestinationChanged,
+        VisionPolicyUnavailable,
+        composer_request_scope,
+        describe,
+    )
     from agents.core.llm.vlm import VLMBackend, VLMNotConfigured, resolve_vlm_config
 
     try:
         config = resolve_vlm_config()
-        public = public_config(config)
-    except (VLMNotConfigured, ValueError, sqlite3.Error, OSError):
+        identity = describe(config)
+        public = public_config(config, identity=identity)
+    except (VLMNotConfigured, ValueError, VisionPolicyUnavailable, sqlite3.Error, OSError):
         return nocache_json(
             {"error": "Vision model unavailable", "reason": "vlm_not_configured"}, status_code=503
         )
@@ -244,21 +258,34 @@ async def composer_describe(body: ComposerVisionBody):
         )
     backend = None
     try:
-        backend = VLMBackend(base_url=config.base_url, api_key=config.api_key)
-        answer = await backend.generate_vision_checked(
-            config.model,
-            body.prompt,
-            images=[base64.b64decode(image.partition(",")[2]) for image in body.images],
-        )
+        findings = sg.evaluate([sg.Choice("vision.model", identity.provider, config.model)])
+        if findings:
+            raise sg.SelectionRefused(findings, sorted({finding.needs for finding in findings}))
+        try:
+            backend = VLMBackend(base_url=config.base_url, api_key=config.api_key, composer_auth=True)
+            with composer_request_scope(config, backend, resolve_config=resolve_vlm_config,
+                                        remote_ack=body.remote_ack, principal=Principal(channel="web", admin=False),
+                                        frozen=identity) as recheck:
+                answer = await backend.generate_vision_checked(
+                    config.model,
+                    body.prompt,
+                    images=[base64.b64decode(image.partition(",")[2]) for image in body.images],
+                )
+        finally:
+            if backend is not None:
+                await backend.aclose()
+        recheck()
         if not isinstance(answer, str) or not answer.strip():
             raise ValueError("empty vision answer")
         return nocache_json(
             dict(ok=True, response=answer, **{k: v for k, v in public.items() if k != "binding"})
         )
+    except VisionDestinationChanged:
+        return nocache_json({"error": "Vision destination changed; review it again",
+                             "reason": "vlm_destination_changed"}, status_code=409)
+    except sg.SelectionRefused as exc:
+        return nocache_json(exc.payload(), status_code=409)
     except Exception:
         return nocache_json(
             {"error": "Vision analysis failed", "reason": "vlm_generation_failed"}, status_code=502
         )
-    finally:
-        if backend is not None:
-            await backend.aclose()

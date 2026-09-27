@@ -1,5 +1,64 @@
 # Sprint: echivalarea funcțiilor Hermes
 
+> Local milestone 2026-09-27: H487 reasons/expiry/owner-registration grouping and H513
+> routed provider consent are integrated and verified. Backend 18,765 passed/35 skipped;
+> frontend 1,802 passed; legacy HUD 233 passed. Both rows remain partial. See
+> [exact evidence](hermes/evidence/h487-h513-local-integration-2026-09-27.json) and
+> [chat-outcome slice](hermes/h487-chat-outcomes-plan.md). The subsequent
+> chat-outcome implementation passed 776 combined focused tests; that newer snapshot
+> has [separate evidence](hermes/evidence/h487-chat-outcomes-2026-09-27.json).
+> The following [auxiliary request policy](hermes/h513-auxiliary-policy-plan.md)
+> milestone passed 18,838 backend tests with 35 skips and zero failures; see
+> [its exact snapshot](hermes/evidence/chat-outcomes-auxiliary-integration-2026-09-27.json).
+> The following separate approval-judge consent/wire-identity milestone passed
+> 18,919 backend tests with 35 skips, and 1,804 frontend tests. Typecheck/build
+> and scoped security checks passed. The first full run and test-fixture correction
+> are preserved in [its evidence](hermes/evidence/h513-judge-integration-2026-09-27.json).
+> The following composer-vision/local-embedding milestone passed 18,978 backend
+> tests with 35 skips and 1,806 frontend tests; typecheck/build and scoped security
+> checks passed. Its initial six recall-cache failures and corrections remain in
+> [the exact snapshot](hermes/evidence/h513-vision-embedding-integration-2026-09-27.json).
+> The following persisted task-expiry milestone passed 19,054 backend tests with
+> 35 skips and 1,809 frontend tests; typecheck/build and scoped scans passed.
+> Initial binding-inventory drift and a Piper timeout test readiness race were
+> corrected; both runs remain in [its evidence](hermes/evidence/h487-task-expiry-integration-2026-09-27.json).
+> The following composer/judge direct-transport milestone passed 19,088 backend
+> tests with 35 skips and scoped scans. Its unchanged frontend retains the previous
+> snapshot; see [transport evidence](hermes/evidence/h513-direct-transport-integration-2026-09-27.json).
+> The following independent interactive-vision milestone passed 19,122 backend
+> tests with 35 skips, and 1,815 frontend tests. Typecheck/build and scoped scans
+> passed; the initially stale shared H598 evidence was reviewed and refreshed.
+> See [interactive vision evidence](hermes/evidence/h513-interactive-vision-integration-2026-09-27.json).
+> The following unattended Telegram-image milestone passed 19,156 backend
+> tests with 35 skips and 1,819 frontend tests. Typecheck/build and scoped scans
+> passed; separate role consent and native dispatch are covered by
+> [media-reader evidence](hermes/evidence/h513-media-reader-integration-2026-09-27.json).
+> The camera milestone passed 19,194 backend tests/35 skips and 1,822 frontend
+> tests, with typecheck/build/scoped scans green. H513 is now code-equivalent
+> against its frozen contract; H487 remains partial. See
+> [camera evidence](hermes/evidence/h513-camera-integration-2026-09-27.json) and
+> [acceptance review and separate follow-ups](hermes/h513-code-equivalence-review.md).
+> The generic model-grouping milestone passed 19,226 backend tests/35 skips;
+> 101 integration regressions passed again after an explicit fail-closed metadata
+> fallback replaced a silent exception. Scoped scans passed; unchanged frontend
+> retains the preceding 1,822-test snapshot. See
+> [model grouping evidence](hermes/evidence/h487-model-grouping-2026-09-27.json).
+> H487 remains partial: grouped notifications do not create standing grants.
+> The bounded human-wait milestone passed 19,285 backend tests/35 skips, with
+> scoped scans and Graft green. Company Mode subtracts a proven, capped approval
+> wait, preserves the first decision cutoff and applies atomic budget updates.
+> The unchanged frontend retains its 1,822-test snapshot. See
+> [human-wait evidence](hermes/evidence/h487-human-wait-2026-09-27.json).
+> H487 remains partial for reusable consent and other recorded follow-ups.
+> The H517 local-provider milestone passed 19,363 backend tests/35 skips and
+> 1,829 frontend tests, with typecheck/build/scoped scans green. Configured local
+> images APIs now use the real approved worker/artifact/gallery path; directory
+> durability failures refuse dispatch. H518/H523 current-source reviews restore
+> their frozen gallery/delivery equivalence. H517 remains partial and H516 remains
+> missing; see [exact results and corrections](hermes/evidence/h517-local-providers-2026-09-27.json)
+> and [review](hermes/h517-local-provider-review.md).
+> No publication or live-provider/device acceptance.
+
 **Directiva owner-ului, 9 septembrie 2026:** progresul se raportează la cele
 **697 de capabilități din inventar**, nu la numărul PR-urilor sau al bifelor HA.
 Acesta este sprintul curent. [Deschide statusul și procentele](../HERMES_STATUS.md).
@@ -13,11 +72,15 @@ rândul. Adaptarea la arhitectura Nerva este permisă; eliminarea unei cerințe 
 pentru a crește procentul nu este. Dacă rândul cere și generare și editare de imagini,
 generarea singură îl lasă parțial.
 
-Toate cele 697 de identități rămân fixe. Cele 107 decizii `skip` sunt excluderi de
-produs păstrate explicit, nu funcții terminate. Ținta acceptată este de 590 de
-rânduri; statusul arată atât procentul din 697, cât și cel din 590. O modificare
-a excluderilor cere o decizie de produs documentată și o migrare explicită a
-inventarului de referință. Niciun rând parțial nu primește automat 50% credit.
+Toate cele 697 de identități rămân fixe. **Directiva din 27 septembrie 2026**
+readmite cele 107 decizii istorice `skip`: ținta acceptată cuprinde acum toate
+cele 697 de rânduri. Migrarea explicită este în schema 2 a evaluării, prin
+`scope_reopenings`, cu ID, hash-ul rândului, dată și motiv; inventarul original
+rămâne neschimbat. Readmiterea înseamnă «de evaluat», nu «implementat».
+[Planul și verificarea migrării](hermes/scope-reopening-plan-2026-09-27.md).
+Adăugirile din versiuni Hermes mai noi cer separat o migrare a inventarului.
+Niciun rând parțial nu primește automat 50% credit. Cifrele cu numitorul 590
+din însemnările datate de mai jos descriu obiectivul istoric.
 
 Statusul de pornire combină două clase de dovezi, afișate separat: auditul existent
 din 7 septembrie și reevaluarea actuală a livrărilor recente. Nu pretinde că toate
@@ -482,4 +545,3 @@ Smaller findings fixed on the way: a component too long for the filesystem deep 
 Eleven PRs landed on main in one pass: the stack #1202 → #1203 → #1204, #1190 (H481), #1192 (H506), #1193 (H672), the handoff doc #1200 and three dependency bumps (#1196 needed its hash-pinned locks regenerated; #1198 needed a re-run on current main). Each PR had re-read the rows its own diff drifted, but not the rows another PR's diff drifted: combined, the code of one moved the evidence the rows of another cite, so 51 rows fell to `needs_review`, on top of 13 left from #1179/#1187/#1188.
 
 All 64 were re-read against the diff since each row's hash last matched, on main pinned at 55d625f4 (pinned, not a moving branch, so every citation was checked against the exact commit it is stamped on). 26 kept, 38 rewritten — citations remapped on content, claims the merged work changed corrected; no status moved. **Headline 131/697; 131/590 = 22.2% of the accepted scope; `needs_review` 0.**
-

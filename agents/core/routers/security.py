@@ -7,9 +7,11 @@ attribution, and the packaged security posture.
 
 import asyncio
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
 
 from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.routers._component import component_unavailable, require_component
@@ -21,6 +23,33 @@ logger = logging.getLogger("jarvis.web")
 
 
 router = APIRouter(tags=["security"])
+
+
+class DataHandlingAck(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider: StrictStr = Field(min_length=1, max_length=64)
+    acknowledged: StrictBool
+    scope: StrictStr = Field(pattern=r"^[0-9a-f]{64}$")
+    target: Literal["role:approval_judge", "role:telegram_media_reader", "role:camera_descriptions"] | None = None
+
+
+@router.post("/api/security/data-handling/ack", dependencies=[Depends(admin_guard)])
+async def data_handling_ack(body: DataHandlingAck):
+    from agents.core.llm.data_handling import acknowledge, ConsentUnavailable, StaleAcknowledgment
+    orch, router_, error = require_component("llm_router", "model router unavailable")
+    if error is not None:
+        error.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return error
+    try:
+        result = await asyncio.to_thread(acknowledge, router_, body.provider, body.acknowledged,
+                                        body.scope, getattr(orch, "audit", None), target=body.target, role_context=orch)
+        return nocache_json(result)
+    except StaleAcknowledgment as exc:
+        return nocache_json({"error": str(exc)}, status_code=409)
+    except ValueError as exc:
+        return nocache_json({"error": str(exc)}, status_code=422)
+    except ConsentUnavailable:
+        return nocache_json({"error": "consent audit or settings unavailable; no change granted"}, status_code=503)
 
 
 def _admin_kernel_denial(orch, kind: str, cap_name: str, payload: dict, token_id: str):
@@ -338,6 +367,7 @@ async def security_posture():
 
     return nocache_json({
         "secrets": secrets_posture,
+        "data_handling": _data_handling_posture(getattr(orch, "llm_router", None), role_context=orch),
         "skills": {
             # signing_posture() rather than require_signed(): the latter raises on a
             # misconfigured gate (enforcement on, no key), which is correct for the
@@ -361,6 +391,17 @@ async def security_posture():
         # H501: the host's own posture (root, sshd passwords, container storage), read now.
         "host": await asyncio.to_thread(_host_posture),
     })
+
+
+def _data_handling_posture(router_, *, role_context=None):
+    from agents.core.llm.data_handling import COVERAGE, posture
+    if router_ is None:
+        return {"providers": [], "settings_readable": False, "coverage": COVERAGE}
+    try:
+        return posture(router_, role_context=role_context)
+    except Exception:
+        logger.warning("data-handling posture unavailable", exc_info=True)
+        return {"providers": [], "settings_readable": False, "coverage": COVERAGE}
 
 
 def _host_posture() -> dict:

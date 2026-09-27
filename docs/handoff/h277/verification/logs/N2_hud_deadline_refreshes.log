@@ -1,0 +1,58 @@
+COMMAND ["/Users/andrei649/.local/bin/node", "node_modules/vitest/vitest.mjs", "run", "tests/frontend/tools.test.js"]
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.js:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.0 /private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/h277-mutation-rvs2us1l
+
+ ❯ tests/frontend/tools.test.js (34 tests | 2 failed) 1189ms
+   ❯ Action Approvals — model opinion (H277) (13)
+     × caps each card at 17 * timeout + 5 wall seconds despite unrelated refreshes 65ms
+     × gives staggered cards independent deadlines and clears removed card state 79ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend/tools.test.js > Action Approvals — model opinion (H277) > caps each card at 17 * timeout + 5 wall seconds despite unrelated refreshes
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/frontend/tools.test.js:558:28
+    556|     await env.flush();
+    557|     await polls.advance(1000);             // original 22 s deadline, …
+    558|     expect(polls.active()).toBe(0);
+       |                            ^
+    559|     const capped = calls.pending;
+    560|     expect(capped).toBeGreaterThan(beforeRefresh);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/frontend/tools.test.js > Action Approvals — model opinion (H277) > gives staggered cards independent deadlines and clears removed card state
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/frontend/tools.test.js:581:28
+    579|     await polls.advance(3000);             // A removal observed at 27…
+    580|     await polls.advance(10000);
+    581|     expect(polls.active()).toBe(0);
+       |                            ^
+    582|     const capped = calls.pending;
+    583|     first = true;                         // same id reappears after r…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 32 passed (34)
+   Start at  11:53:31
+   Duration  1.60s (tests 78%, import 21%, transform 2%)
+

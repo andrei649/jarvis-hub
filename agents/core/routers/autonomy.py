@@ -18,11 +18,12 @@ digest builders, …) stay inline at call time as in the originals.
 """
 
 from dataclasses import asdict
-from typing import Optional
+from datetime import datetime, UTC
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agents.core.routers._deps import user_guard, admin_guard
 from agents.core.routers._component import require_component
@@ -138,11 +139,43 @@ class AutonomyTaskBody(BaseModel):
     title: str
     payload: Optional[dict] = None
     origin: str = "generated"
+    approval_deadline_at: Optional[str] = Field(None, max_length=64, strict=True)
+
+    @field_validator("approval_deadline_at")
+    @classmethod
+    def approval_deadline(cls, value):
+        from agents.core.autonomy.queue import normalize_approval_deadline
+
+        stamp = normalize_approval_deadline(value)
+        if stamp is not None and datetime.fromisoformat(stamp) <= datetime.now(UTC):
+            raise ValueError("approval deadline must be in the future")
+        return stamp
 
 
 class AutonomyDecisionBody(BaseModel):
     action: str            # accept / edit / reject / defer
     payload: Optional[dict] = None
+    reason: Optional[str] = Field(None, max_length=280, strict=True)
+
+
+class AutonomyGroupRejectBody(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    snapshot: str = Field(min_length=32, max_length=32, strict=True)
+    member_ids: list[Annotated[int, Field(strict=True, ge=1)]] = Field(min_length=2, max_length=64)
+    reason: Optional[str] = Field(None, max_length=280, strict=True)
+
+
+def _task_judge(orch):
+    return getattr(getattr(orch, "autonomy", None), "approval_judge", None)
+
+
+def _task_judge_status(orch) -> dict:
+    adapter = _task_judge(orch)
+    if adapter is None:
+        return {}
+    status = adapter.judge_status_public()
+    # Preserve the original no-judge response shape.
+    return {"judge": status} if status.get("configured") else {}
 
 
 @router.get("/autonomy/tasks", dependencies=[Depends(admin_guard)])
@@ -152,7 +185,13 @@ async def autonomy_list(status: str = None, origin: str = None, limit: int = Que
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     tasks = orch.autonomy_queue.list(status=status, origin=origin, limit=limit)
-    return nocache_json({"tasks": [_approval_projection(t) for t in tasks], "total": len(tasks)})
+    groups = []
+    if status in (None, 'blocked'):
+        visible = {task.id for task in tasks}
+        groups = [group for group in orch.autonomy_queue.pending_groups()
+                  if set(group['member_ids']) <= visible]
+    return nocache_json({"tasks": [_approval_projection(t, _task_judge(orch)) for t in tasks], "total": len(tasks),
+                         **_task_judge_status(orch), **({'groups': groups} if groups else {})})
 
 
 @router.get("/autonomy/status", dependencies=[Depends(admin_guard)])
@@ -196,16 +235,43 @@ async def autonomy_observer_run():
 
 
 @router.post("/autonomy/tasks", dependencies=[Depends(admin_guard)])
-async def autonomy_submit(body: AutonomyTaskBody):
+async def autonomy_submit(body: AutonomyTaskBody, request: Request):
     """Submit a task to the autonomy worker (gated through the risk policy)."""
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    task = await orch.autonomy.submit(
-        agent=body.agent.strip().lower(), kind=body.kind.strip(),
-        title=body.title, payload=body.payload, origin=body.origin,
-    )
+    from agents.core.autonomy.inbox import OwnerTaskRegistrationContext
+
+    context = OwnerTaskRegistrationContext.from_request(await request.json())
+    from agents.core.autonomy.queue import TaskApprovalExpired
+    try:
+        task = await orch.autonomy.submit(
+            agent=body.agent.strip().lower(), kind=body.kind.strip(),
+            title=body.title, payload=body.payload, origin=body.origin,
+            **({'grouping_context': context} if context is not None else {}),
+            **({'approval_deadline_at': body.approval_deadline_at} if body.approval_deadline_at else {}),
+        )
+    except TaskApprovalExpired as exc:
+        # Return committed durable IDs, never raw exception text or an implied approval.
+        return nocache_json({"error": "approval deadline elapsed",
+                             "expired_task_ids": [task.id for task in exc.batch.tasks]}, status_code=409)
     return nocache_json({"ok": True, "task": task.to_dict()})
+
+
+@router.post('/autonomy/tasks/groups/{group_id}/reject', dependencies=[Depends(admin_guard)])
+async def autonomy_reject_group(group_id: str, body: AutonomyGroupRejectBody):
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({'error': 'not initialized'}, status_code=503)
+    from agents.core.autonomy.queue import TaskQueueError
+    try:
+        rejected = await orch.autonomy.reject_group(group_id, snapshot=body.snapshot,
+                                                   member_ids=body.member_ids, decided_by='admin', reason=body.reason)
+    except TaskQueueError as exc:
+        return error_json(exc, 409, "approval group changed")
+    if rejected is None:
+        return JSONResponse({'error': 'approval group changed'}, status_code=409)
+    return nocache_json({'ok': True, 'tasks': [task.to_dict() for task in rejected]})
 
 
 @router.post("/autonomy/tasks/{task_id}/decision", dependencies=[Depends(admin_guard)])
@@ -218,6 +284,7 @@ async def autonomy_decide(task_id: int, body: AutonomyDecisionBody):
     try:
         task = await orch.autonomy.apply_decision(
             task_id, body.action.strip().lower(), decided_by="admin", payload=body.payload,
+            reason=body.reason,
         )
     except TaskQueueError as e:
         return error_json(e, 409, "decision could not be applied")
@@ -377,7 +444,7 @@ async def autonomy_pref_suggestions():
 # "anti-OpenClaw" reversibility story.
 
 
-def _approval_projection(task) -> dict:
+def _approval_projection(task, judge=None) -> dict:
     """Annotate a queued Task with a human-facing reversibility verdict."""
     from agents.core.autonomy.policy import RiskTier
     from agents.core.capability_manifests import manifest_for_action
@@ -388,7 +455,7 @@ def _approval_projection(task) -> dict:
         tier_name = RiskTier(tier).name
     except ValueError:
         tier_name = "UNKNOWN"
-    d = task.to_dict()
+    d = judge.project(task) if judge is not None else task.to_dict()
     d["reversible"] = reversible
     d["tier_name"] = tier_name
     d["reversibility"] = "reversible" if reversible else "irreversible"
@@ -405,11 +472,12 @@ async def autonomy_approvals():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     pending = orch.autonomy_queue.pending_decisions()
-    annotated = [_approval_projection(t) for t in pending]
+    annotated = [_approval_projection(t, _task_judge(orch)) for t in pending]
     reversible = [t for t in annotated if t["reversible"]]
     irreversible = [t for t in annotated if not t["reversible"]]
     return nocache_json({
         "pending": annotated,
+        **_task_judge_status(orch),
         "reversible": reversible,
         "irreversible": irreversible,
         "counts": {

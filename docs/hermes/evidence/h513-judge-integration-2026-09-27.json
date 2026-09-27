@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T11:57:34.414319+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "H513 separate approval-judge consent, physical wire identity and previous direct local consumer integration; H277/H513 remain partial",
+  "coordination": {
+    "implementers": 2,
+    "model": "gpt-6-sol",
+    "reasoning": "high",
+    "ownership": "single writer per file; coordinator integration and review"
+  },
+  "full_backend_command": ".venv/bin/python -m pytest tests/ -n 3 --dist loadfile --timeout=90 -q --tb=short --junitxml=/tmp/nerva-h513-judge-backend-green.xml",
+  "verification": [
+    {
+      "path": "/tmp/h513-judge-store-final.xml",
+      "tests": 90,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 90,
+      "seconds": 2.034,
+      "sha256": "28e9949f7f5305acd7763194e118956d977773891aba3fd1dd923446fc752d45"
+    },
+    {
+      "path": "/tmp/nerva-h513-judge-integration.xml",
+      "tests": 524,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 524,
+      "seconds": 9.613,
+      "sha256": "a9c0626d1a8c67c7bd9ca74a56dd5ade52c308c0904bfebe66390bf9585e337f"
+    },
+    {
+      "path": "/tmp/nerva-h513-judge-physical-final.xml",
+      "tests": 466,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 466,
+      "seconds": 6.562,
+      "sha256": "fc82290233ee19a36200cf3155fb511ee03af4576b739c1154475243217a8459"
+    },
+    {
+      "path": "/tmp/nerva-h513-judge-backend.xml",
+      "tests": 18954,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 18918,
+      "seconds": 247.184,
+      "sha256": "c5984ccd464d87df7e0fab8beda35afc65ac9c7cf74b417d1c319e2c60849065"
+    },
+    {
+      "path": "/tmp/nerva-h513-judge-voice-regression.xml",
+      "tests": 119,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 119,
+      "seconds": 23.548,
+      "sha256": "66595f01b425846ea29d35f9a6e62a8f8e39d32a043edb780a8a3e89b3207eaf"
+    },
+    {
+      "path": "/tmp/nerva-h513-judge-voice-green.xml",
+      "tests": 119,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 119,
+      "seconds": 23.523,
+      "sha256": "10d45dd6b88b87ba8b4e96f8abea739f6a25135ff79c766d27be6c2fc021cbb1"
+    },
+    {
+      "path": "/tmp/nerva-h513-judge-backend-green.xml",
+      "tests": 18954,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 18919,
+      "seconds": 241.244,
+      "sha256": "581a1b5dce9a7ffdee43dbd7e998daa2eb674b65bab98b6507f7c712a4c7ba89"
+    },
+    {
+      "path": "/tmp/nerva-h513-judge-final-docs.xml",
+      "tests": 54,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "52586024c51f28a3c4a5a76d26de455e702dacc6cb33cd82bc540dbbee2dcd0f"
+    }
+  ],
+  "frontend": {
+    "path": "/tmp/nerva-h513-judge-frontend.json",
+    "sha256": "711fdd5e5ec160ebcf3f5beecccf398c2a84a7533469fb28aa83cd3caff76a03",
+    "total": 1804,
+    "passed": 1804,
+    "failed": 0,
+    "typecheck": "passed",
+    "production_build": "passed; existing chunk-size warning"
+  },
+  "source_sha256": {
+    "agents/core/autonomy/approval_judge.py": "e01d2a9c67bad16ee893b0c0c188dc4e0443ba05cb2fecf3e59763ec7a942c7f",
+    "agents/core/autonomy/advisory_judgements.py": "18dbcdec2ca207d60464f1bdf7a14e08dbb36cfc1c645950a996c0d352898f28",
+    "agents/core/llm/data_handling.py": "90017272e691581d6298558820257cbcd2f41a628f9e9f3dbe04168f8bbcb2eb",
+    "agents/core/settings_db.py": "63985fecd0e984f273e6a11b523df0215edfba75e7ad1c5b0641e86b96add3b4",
+    "agents/core/routers/security.py": "29ee2786ddd33d6ce881579fcf75380b57998ca554b14c52faabc515f92707fe",
+    "frontend/src/panels/data-handling.tsx": "fd0616813c65c0d7f7b35729dfc4533527d762a5de26e195efccfca650bc81bf",
+    "frontend/src/test/governance-posture-panel.test.tsx": "eb39982071bff64a4f99f513bb90c4d0382ba88cca5624212415758eb816c120",
+    "frontend/src/api/schema.gen.ts": "ff22fbaf1d1f020da3bf7fc8cd72637cd2a03e8f59ccbc9c8d3a554d2d5fb802",
+    "tests/test_h513_approval_judge_policy.py": "0c8251503400ad1b3e69cabbd71091afb55b7b12866628e32a4c66ceda90280c",
+    "tests/test_h513_judge_consent.py": "44a8783f6f53c057995e386a88f3fcb621eb380372b0ecf8b8d7d67a0af39c03",
+    "tests/test_h277_approval_judge.py": "10292681ec94b61ee15c28969485b7528a4a75c1e1b54676a5e314cac5a4bff8",
+    "tests/test_h277_task_judge.py": "a9d77afbf335b23e50b14525d998d6095e811751252422bd2a8d617ae5364c5c",
+    "docs/hermes/h513-judge-target-plan.md": "38471bf86a742a66caf9be18e839077b124a9e9315c7d4b4384b01c766db247c",
+    "agents/web/v2/index.html": "c608cc98c1b7b55bcb37ad6fecc685216a8c7fab5f3de65c173aa73b3c084fb5",
+    "agents/web/v2/sw-v2.js": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c",
+    "agents/web/v2/assets/index-DRx6YwBq.js": "1c2a32020dfa82df8c0dc60d18a0543c84db3c63573c1739b59aa06daee328ad",
+    "agents/web/v2/assets/modes2-C6E_5Fgs.js": "e078ab6189fd13301445460d09af5c70a7359bd8058346c5cfc5828436613197",
+    "agents/web/v2/assets/modes_world-COhTBzWd.js": "31d8631225ed545b419e2fbaa777a1e15192f284e0380468999a4533a81e00bf",
+    "agents/web/v2/assets/soul-edit-BVVaOyCV.js": "8221c9fab9d7ec43cba6e0c17868a3ee899eba2abfb2d29b69f85bdf0331ee83",
+    "agents/web/v2/assets/modes3-CAnfofRn.js": "b22634862a4080fe789872ac096ff67808767da5f7b022b7adda974143f75155",
+    "agents/web/v2/assets/gap-Bquqptkk.js": "d7e84a383e3816b2ea0152409e0bd00e33df50da2f3304d21e8a1d49b530afbb",
+    "agents/web/v2/assets/jobs-UvrJfY-6.js": "4668f31d287655bbda0e26b1b0e154e854a2277c1cd6a6b93f414149be7e921c",
+    "agents/web/v2/assets/index-ldxH5Xm9.css": "a4851f9c57ea8630fad9196f3eb2c84181e4286232c396ede73290e4b272bbd1",
+    "agents/web/v2/assets/modes-BesicpBJ.js": "100908dfcc73908e6c53439e2cfd331fa46fdc935913af64cd3549c40ca15702",
+    "agents/web/v2/assets/panel-kit-gf7swuoi.js": "ca4602b0da8dd2cd9c694b306cbffd87257b759a4d8b20772fbdebc25a3e819f",
+    "agents/web/v2/assets/client-C3wAcB0V.js": "40c77894e27ed04d3fb085a9e3840df283c0c404e29ccabfd52f980c67e1cbca",
+    "agents/web/v2/assets/modes4-DaTDGLFq.js": "896749521189d4e7e6ebc1e0fe0e10bb356132245a05f14458337ffd601c82d8",
+    "tests/test_h613_piper_command_voice.py": "908b2bedeb5a7a4992e46ca97fe130d926e9cbfd0f5f2bda85964ac3321ac2fa"
+  },
+  "security": {
+    "bandit": {
+      "exit_code": 0,
+      "scope": "agents/scripts against existing baseline",
+      "log": "/tmp/nerva-h513-judge-bandit.log"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "files": 27,
+      "snapshot": "/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/nerva-h513-judge-scan-ksk54kj_",
+      "log": "/tmp/nerva-h513-judge-gitleaks.log"
+    }
+  },
+  "graft": {
+    "check": "passed",
+    "nodes": 2398,
+    "scope": [
+      "agents/core/autonomy",
+      "agents/core/llm",
+      "agents/core/kernel",
+      "agents/core/acquisition",
+      "agents/core/house"
+    ],
+    "deep_index": false
+  },
+  "corrections": [
+    "Offline tests exposed redirected prompt replay with follow_redirects enabled; actual request validation now blocks foreign/same-URL hops and auth/method/path/cookie mutations.",
+    "The first full run failed one pre-existing H613 fixture timing assertion: 0.5-second timeout preceded its readiness record. All119 voice cases passed in isolation. Output-validation cases now receive5seconds; the deliberate timeout case checks the spawned PID directly. Production voice behavior unchanged."
+  ],
+  "limitations": [
+    "No live provider/native/paid service calls, no commit/push/merge/deploy.",
+    "Old H277 mutation results remain tied to their original snapshot; no new mutation campaign was run.",
+    "Only supported finite Authorization-based judge adapters are accepted; cookies/custom auth fail closed.",
+    "VLM and embedding independent clients remain outside this snapshot; their next plans are not delivered behavior.",
+    "Prior legacy HUD coverage233pass/69.75percent is a separate snapshot; no legacy/mobile suite was rerun for this increment.",
+    "An already sent authorized request cannot be recalled."
+  ]
+}

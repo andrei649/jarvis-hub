@@ -972,6 +972,9 @@ class Agent:
                 budget["usage_sink"] = usage_sink
             if effective_window is not None:
                 budget["effective_window"] = effective_window
+            check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
+            if callable(check):
+                budget["before_model_call"] = lambda: check(backend, model)
             response = await runtime.run(
                 agent_id=self.id,
                 backend=backend,
@@ -989,9 +992,14 @@ class Agent:
                     await emitted
             return response
 
+        from .llm.data_handling import physical_request_scope
         from .llm.usage_context import text_usage_scope
 
-        with text_usage_scope(usage_sink):
+        check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
+        guard = (lambda: check(backend, model)) if callable(check) else None
+        with text_usage_scope(usage_sink), physical_request_scope(guard):
+            if callable(check):
+                check(backend, model)
             if on_token and hasattr(backend, "generate_stream"):
                 return await backend.generate_stream(
                     model=model,
@@ -1241,13 +1249,19 @@ class Agent:
 
             max_tokens, temperature = self._gen_params(route_name)
             async with residency:
-                response = await backend.generate(
-                    model=model,
-                    prompt=prompt,
-                    system=system_prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
+                check = getattr(self.llm_router, "check_data_handling", None)
+                if callable(check):
+                    check(backend, model, route_name)
+                from .llm.data_handling import physical_request_scope
+                guard = (lambda: check(backend, model, route_name)) if callable(check) else None
+                with physical_request_scope(guard):
+                    response = await backend.generate(
+                        model=model,
+                        prompt=prompt,
+                        system=system_prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
             return response
         except (LocalBackendUnavailableError, RuntimeError, AttributeError):
             # The deterministic join: no model call, so nothing can egress. AttributeError

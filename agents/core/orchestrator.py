@@ -27,6 +27,7 @@ from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY, is_degraded_reply
 from .llm.auth_rotation import AuthLease
 from .llm.gemini import GeminiBackend
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
+from .llm.data_handling import DataHandlingRefused
 from .llm.gemini_cache import ContextCache
 from .llm.gemini_context import GeminiRequestBinding
 from .llm.moe_routing import is_reasoning_model
@@ -112,9 +113,14 @@ def is_failed_turn_reply(agent_id: str | None, response: object) -> bool:
     as one of these, never raised, so a caller that must know whether the turn ran asks
     here (H659: a webhook delivery gives its idempotency key back)."""
     from .session_continuation import CONTINUATION_REFUSED_REPLY
+    from .llm.base import is_backend_failure_reply
 
-    return _is_failed_agent_reply(agent_id, response) or response in (
-        NO_MODEL_REPLY, TURN_BUSY_REPLY, CONTEXT_REFUSED_REPLY, CONTINUATION_REFUSED_REPLY)
+    return bool(
+        (isinstance(response, str) and response.startswith("[data handling error:"))
+        or is_backend_failure_reply(response)
+        or (agent_id and re.match(rf"^\[{re.escape(agent_id)} (error|timeout)\b", str(response)))
+        or response in (NO_MODEL_REPLY, TURN_BUSY_REPLY, CONTEXT_REFUSED_REPLY, CONTINUATION_REFUSED_REPLY)
+    )
 
 
 def _log_task_result(task: "asyncio.Task") -> None:
@@ -294,6 +300,7 @@ _TURN_METER_MAPS: contextvars.ContextVar = contextvars.ContextVar(
 #: H413: the turn's deferred session-title upgrade, started once its reply is final
 #: (Hermes titles after the first response, so the title call never competes with it).
 _TURN_TITLE: contextvars.ContextVar = contextvars.ContextVar("jarvis_turn_title", default=None)
+_TURN_CHAT_OUTCOMES: contextvars.ContextVar = contextvars.ContextVar("jarvis_chat_outcomes", default=None)
 
 _active_session: contextvars.ContextVar = contextvars.ContextVar(
     "jarvis_active_session", default=_SESSION_UNSET
@@ -1086,14 +1093,22 @@ class Orchestrator:
         # Off unless JARVIS_ROLE_APPROVAL_JUDGE_MODEL is set; scored off the request path on
         # this loop, it annotates a queued tool call and decides nothing.
         try:
+            from .autonomy.approval_judge import ApprovalJudge
+            from .autonomy.advisory_judgements import JudgementCapacity
+
+            judge = ApprovalJudge(router=self.llm_router,
+                                  agent_policy=getattr(self.llm_router, "get_agent_policy", None))
+            capacity = JudgementCapacity()
+            loop = asyncio.get_running_loop()
             approvals_q = getattr(self, "action_approvals", None)
             if approvals_q is not None:
-                from .autonomy.approval_judge import ApprovalJudge
                 approvals_q.attach_audit(getattr(self, "intent_log", None))
-                approvals_q.attach_judge(
-                    ApprovalJudge(router=self.llm_router,
-                                  agent_policy=getattr(self.llm_router, "get_agent_policy", None)),
-                    loop=asyncio.get_running_loop())
+                approvals_q.attach_judge(judge, loop=loop, capacity=capacity)
+            worker = getattr(self, "autonomy", None)
+            if worker is not None:
+                worker.attach_approval_judge(judge, loop=loop, capacity=capacity,
+                                             audit=getattr(self, "intent_log", None))
+                worker.approval_judge.resume_pending()
         except Exception:
             logger.warning("approval judge wiring failed", exc_info=True)
 
@@ -1818,6 +1833,8 @@ class Orchestrator:
             responses = await self._call_agents_parallel([agent_id], prompt, {}, {})
         except CompactionClockRefused:
             return CONTEXT_REFUSED_REPLY, CONTEXT_REFUSED_REPLY
+        except DataHandlingRefused as exc:
+            return exc.reply(), str(exc)
         except RuntimeError as e:
             # No LLM backend up — degrade quietly (callers swallow errors anyway).
             log_error(logger, E_LLM_BACKEND_MISSING, backend=f"process:{channel}")
@@ -1839,7 +1856,7 @@ class Orchestrator:
         from .llm.base import is_backend_failure_reply
         from .session_continuation import CONTINUATION_REFUSED_REPLY
 
-        if resp in (NO_MODEL_REPLY, TURN_BUSY_REPLY, CONTEXT_REFUSED_REPLY,
+        if is_failed_turn_reply(agent_id, resp) or resp in (NO_MODEL_REPLY, TURN_BUSY_REPLY, CONTEXT_REFUSED_REPLY,
                     CONTINUATION_REFUSED_REPLY) or is_backend_failure_reply(resp):
             return resp, resp
         return resp, None
@@ -1931,7 +1948,10 @@ class Orchestrator:
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                            session_id: str = None) -> str:
         from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
+        from .approval_outcomes import bind_approval_turn, close_approval_turn
 
+        outcome_token = bind_approval_turn(None)
+        snapshot_token = _TURN_CHAT_OUTCOMES.set(None)
         origin_token = bind_turn_action_origin(channel)
         # review-H329 F4: the catalog hides a skill switched off on this channel even when
         # no principal is bound (mcp, webhook, workflow), as its command is refused there.
@@ -1947,12 +1967,20 @@ class Orchestrator:
         project_token = project_context.bind()   # H594: begun once the session is known
         awake = power.hold_for_turn(self)        # H182: off unless JARVIS_KEEP_AWAKE=1
         try:
-            return await self._handle_input(text, channel, agent_override, session_id)
+            reply = await self._handle_input(text, channel, agent_override, session_id)
+            if _TURN_CHAT_OUTCOMES.get() is not None:
+                self._ack_chat_outcomes(reply)
+            return reply
+        except DataHandlingRefused as exc:
+            return exc.reply()
         except CompactionClockRefused:
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
             return CONTINUATION_REFUSED_REPLY
         finally:
+            state = _TURN_CHAT_OUTCOMES.get()
+            close_approval_turn(state["context"] if state else None, outcome_token)
+            _TURN_CHAT_OUTCOMES.reset(snapshot_token)
             power.release_for_turn(awake)
             reset_turn_approvals(approvals_token)
             skill_switches.reset_turn_channel(channel_token)
@@ -1981,6 +2009,7 @@ class Orchestrator:
         await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+        self._begin_chat_outcomes()
         self._title_session(text, channel)   # H413: a first message names the session
         turn_tools.begin()          # H441: the reply records the tools this turn calls
         await _begin_project_context(self)   # H594: the project's convention files
@@ -2128,7 +2157,10 @@ class Orchestrator:
     async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                   agent_override: str = None, session_id: str = None) -> str:
         from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
+        from .approval_outcomes import bind_approval_turn, close_approval_turn
 
+        outcome_token = bind_approval_turn(None)
+        snapshot_token = _TURN_CHAT_OUTCOMES.set(None)
         origin_token = bind_turn_action_origin(channel)
         channel_token = skill_switches.bind_turn_channel(channel)   # see handle_input
         approvals_token = bind_turn_approvals()  # see handle_input
@@ -2138,12 +2170,20 @@ class Orchestrator:
         project_token = project_context.bind()   # H594: begun once the session is known
         awake = power.hold_for_turn(self)        # H182: see handle_input
         try:
-            return await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
+            reply = await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
+            if _TURN_CHAT_OUTCOMES.get() is not None:
+                self._ack_chat_outcomes(reply)
+            return reply
+        except DataHandlingRefused as exc:
+            return exc.reply()
         except CompactionClockRefused:
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
             return CONTINUATION_REFUSED_REPLY
         finally:
+            state = _TURN_CHAT_OUTCOMES.get()
+            close_approval_turn(state["context"] if state else None, outcome_token)
+            _TURN_CHAT_OUTCOMES.reset(snapshot_token)
             power.release_for_turn(awake)
             reset_turn_approvals(approvals_token)
             skill_switches.reset_turn_channel(channel_token)
@@ -2171,6 +2211,7 @@ class Orchestrator:
         await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
         await self.memory.add_turn(self.session_id, "user", text, channel=channel)
+        self._begin_chat_outcomes()
         self._title_session(text, channel)   # H413: a first message names the session
         turn_tools.begin()          # H441: the reply records the tools this turn calls
         await _begin_project_context(self)   # H594: the project's convention files
@@ -2350,6 +2391,12 @@ class Orchestrator:
                     )
 
                     request_scope = nullcontext()
+                    # H513: cache creation can send prompt material before generation.
+                    # Check permission here without recording a metadata probe as use;
+                    # Agent checks again after awaits, immediately before dispatch.
+                    data_check = getattr(self.llm_router, "check_data_handling", None)
+                    if callable(data_check):
+                        data_check(backend, model, route_name, actual_use=False)
                     if isinstance(backend, GeminiBackend):
                         # One immutable lease owns both this generation and any
                         # cache lookup/create decision made for it.
@@ -2431,6 +2478,13 @@ class Orchestrator:
                 except LocalBackendUnavailableError:
                     msg = LOCAL_SELECTION_UNAVAILABLE_REPLY
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream-local")
+                    if on_token:
+                        emitted = on_token(msg)
+                        if inspect.isawaitable(emitted):
+                            await emitted
+                    return msg
+                except DataHandlingRefused as exc:
+                    msg = exc.reply()
                     if on_token:
                         emitted = on_token(msg)
                         if inspect.isawaitable(emitted):
@@ -2901,8 +2955,10 @@ class Orchestrator:
             model = router.active_model or DEFAULT_LOCAL_MODEL
             if "qwen3" in model.lower():
                 prompt = f"{prompt}\n/no_think"
-            return await backend.generate(model=model, prompt=prompt, system=system,
-                                          max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
+            from .llm.data_handling import auxiliary_request_scope
+            with auxiliary_request_scope(router, backend, model, role="session_title"):
+                return await backend.generate(model=model, prompt=prompt, system=system,
+                                              max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
 
         return _generate
 
@@ -2930,8 +2986,10 @@ class Orchestrator:
                 # Qwen3 (the default local model) thinks before it answers and would
                 # spend the 96 tokens on that; its documented switch turns it off.
                 prompt = f"{prompt}\n/no_think"
-            return await backend.generate(model=model, prompt=prompt, system=system,
-                                          max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
+            from .llm.data_handling import auxiliary_request_scope
+            with auxiliary_request_scope(router, backend, model, role="query_rewrite"):
+                return await backend.generate(model=model, prompt=prompt, system=system,
+                                              max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
 
         return _generate
 
@@ -3215,6 +3273,59 @@ class Orchestrator:
             logger.debug("persona prompt block skipped for %s", agent_id, exc_info=True)
             return ""
 
+    def _begin_chat_outcomes(self):
+        """Freeze authoritative observations only after accepting a real user turn."""
+        from .approval_outcomes import bind_approval_turn, open_approval_turn
+
+        queue = getattr(self, "autonomy_queue", None)
+        manager = getattr(self, "checkpoints", None)
+        sid = self.session_id
+        if queue is None or manager is None:
+            return
+        def live(session_id, instance):
+            try:
+                snapshot = manager.clock_snapshot(session_id)
+                return snapshot is not None and snapshot.instance_id == instance
+            except Exception:
+                return False
+        try:
+            snapshot = manager.clock_snapshot(sid)
+            if snapshot is None:
+                return
+            context = open_approval_turn(session_id=sid, session_instance=snapshot.instance_id,
+                                         principal=current_principal(), session_is_live=live)
+            if context is None:
+                return
+            observations = queue.chat_outcome_snapshot(context)
+            bind_approval_turn(context)
+            _TURN_CHAT_OUTCOMES.set({"queue": queue, "context": context, "observations": observations,
+                                     "included": [], "persisted": False})
+        except Exception:
+            logger.warning("chat approval observation binding unavailable", exc_info=True)
+
+    def _chat_outcome_block(self):
+        from .approval_outcomes import current_approval_turn, render_chat_outcomes
+
+        state = _TURN_CHAT_OUTCOMES.get()
+        if state is None or current_approval_turn() is not state["context"]:
+            return ""
+        block, included = render_chat_outcomes(state["observations"])
+        state["included"] = included
+        return block
+
+    def _ack_chat_outcomes(self, reply):
+        from .approval_outcomes import current_approval_turn
+
+        state = _TURN_CHAT_OUTCOMES.get()
+        if (state is None or not state["persisted"] or not state["included"]
+                or current_approval_turn() is not state["context"] or is_failed_turn_reply(None, reply)):
+            return
+        try:
+            state["queue"].ack_chat_outcomes(state["context"], state["included"])
+        except Exception:
+            # A persisted answer may safely repeat the observation on a later turn.
+            logger.warning("chat approval observation acknowledgment unavailable", exc_info=True)
+
     async def _build_agent_turn_text(
         self,
         agent_id: str,
@@ -3263,6 +3374,9 @@ class Orchestrator:
             block = (block or "").strip()
             if block:
                 parts.append(block)
+        outcome_block = self._chat_outcome_block() if freeze_core else ""
+        if outcome_block:
+            parts.append(outcome_block)
         parts.append(base)
         return "\n\n".join(parts)
 
@@ -3419,7 +3533,11 @@ class Orchestrator:
         raw conversation content and must not egress; no local backend up means a
         RuntimeError, and the review pass is skipped."""
         from .settings_db import bounded_learning_int
+        from .llm.job_selection import SelectionError, current_selection
+        from .llm.data_handling import auxiliary_request_scope
 
+        if current_selection() is not None:
+            raise SelectionError("job model pins exclude auxiliary review calls")
         router = self.llm_router
         backend = router.local_backend
         model = router.active_model or "google/gemma-4-31b-a4b"
@@ -3427,10 +3545,11 @@ class Orchestrator:
         # context is full" to a local backend (review-H465d nit 4).
         max_tokens = bounded_learning_int(
             "review_max_tokens", self.get_setting("learning.review_max_tokens", 512), 512)
-        return await backend.generate(
-            model=model, prompt=prompt,
-            system="You are a precise background reviewer. Output only JSON.",
-            max_tokens=max_tokens, temperature=0.2)
+        with auxiliary_request_scope(router, backend, model, role="review"):
+            return await backend.generate(
+                model=model, prompt=prompt,
+                system="You are a precise background reviewer. Output only JSON.",
+                max_tokens=max_tokens, temperature=0.2)
 
     async def _background_review_task(self, text: str, synthesized: str) -> None:
         """Run one review pass in the background and surface its actions."""
@@ -3530,6 +3649,9 @@ class Orchestrator:
                                        tools=called)
         else:
             await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
+        state = _TURN_CHAT_OUTCOMES.get()
+        if state is not None and not is_failed_turn_reply(responder_id, synthesized):
+            state["persisted"] = True
         await self._maybe_checkpoint()
         await asyncio.to_thread(self._log_session, text, intent, responses, synthesized)
         await asyncio.to_thread(
@@ -3673,11 +3795,13 @@ class Orchestrator:
             # received, instead of holding the backend's whole read budget; a
             # degraded reply raises here, so it never becomes the summary.
             from .compaction_hold import IDLE_SETTING, idle_seconds, stream_summary
-            return await stream_summary(
-                backend, idle_seconds(self.get_setting(IDLE_SETTING, 60)),
-                model=model, prompt=prompt,
-                system="You compress conversation context. Output only the summary.",
-                max_tokens=max_tokens, temperature=0.2)
+            from .llm.data_handling import auxiliary_request_scope
+            with auxiliary_request_scope(router, backend, model, role="compression"):
+                return await stream_summary(
+                    backend, idle_seconds(self.get_setting(IDLE_SETTING, 60)),
+                    model=model, prompt=prompt,
+                    system="You compress conversation context. Output only the summary.",
+                    max_tokens=max_tokens, temperature=0.2)
 
         return _summarize
 
@@ -4230,6 +4354,14 @@ class Orchestrator:
         # H21.1: preserve specialist voices when the honesty module is active.
         cog = getattr(self, "cognition", None)
         in_character = bool(cog is not None and cog.sub_enabled("honesty_enabled"))
+        block = self._chat_outcome_block()
+        if block:
+            responses = dict(responses)
+            # Retain actual contributor IDs so SEC-B1's local synthesis floor stands.
+            for aid, response in responses.items():
+                if aid != "jarvis" and response:
+                    responses[aid] = f"{response}\n\n{block}"
+                    break
         return await jarvis.synthesize(responses, intent, in_character=in_character)
 
     async def run_heartbeat(self, agent_id: str) -> Optional[str]:
@@ -4467,6 +4599,14 @@ class Orchestrator:
     ) -> None:
         if not self.context_cache or not history_texts:
             return
+        # H513: the task may start after consent was revoked following selection.
+        # Check again before giving any prompt material to the cache client.
+        backend = getattr(self.llm_router, "_gemini_backend", None)
+        data_check = getattr(self.llm_router, "check_data_handling", None)
+        cache_kwargs = {}
+        if backend is not None and callable(data_check):
+            data_check(backend, model, "cloud-cache", actual_use=False)
+            cache_kwargs["before_request"] = lambda: data_check(backend, model, "cloud-cache")
         await self.context_cache.create_or_extend(
             session_id=session_id,
             system_instruction=system_instruction,
@@ -4474,6 +4614,7 @@ class Orchestrator:
             model=model,
             policy_fingerprint=policy_fingerprint,
             lease=lease,
+            **cache_kwargs,
         )
 
     def _log_session(self, text, intent, responses, synthesized):

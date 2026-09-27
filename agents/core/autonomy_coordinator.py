@@ -19,6 +19,7 @@ import asyncio
 import contextvars
 import logging
 import os
+import time
 from datetime import datetime
 
 from .autonomy import TaskExecutor
@@ -150,6 +151,9 @@ def _desktop_run_overrides() -> dict:
 class AutonomyCoordinator:
     def __init__(self, orchestrator):
         self._orch = orchestrator
+        self._reason_windows = {}
+        self._reason_prompts = {}
+        self._reason_clock = time.monotonic
         # 0.34 (opt-in): lazily-built durable workflow pending-queue, drained each
         # tick only when JARVIS_WORKFLOW_PERSIST is set (else stays None, no drain).
         self._pending_queue = None
@@ -201,10 +205,15 @@ class AutonomyCoordinator:
         if tg and owner and hasattr(tg, "send_card"):
 
             async def base(task):
-                return await tg.send_card(int(owner), build_decision_card(task))
+                queue = getattr(self._orch, 'autonomy_queue', None)
+                pending_group = getattr(queue, 'pending_group', None)
+                group = pending_group(task.id) if callable(pending_group) else None
+                card = build_decision_card(task, group=group) if group is not None else build_decision_card(task)
+                return await tg.send_card(int(owner), card)
 
             self._orch.autonomy.notifier = self._away_notifier(base, exclude={"telegram"})
             tg.on_callback = self._on_callback
+            tg.on_decision_reason = self._on_reason_reply
             logger.info(
                 "Autonomy decision inbox wired to Telegram (H34.2 away-notify via escalation)"
             )
@@ -263,11 +272,76 @@ class AutonomyCoordinator:
             )
             return None
         try:
-            await self._orch.autonomy.apply_decision(task_id, action, decided_by="telegram")
+            task = await self._orch.autonomy.apply_decision(task_id, action, decided_by="telegram")
+            windows = getattr(self, "_reason_windows", {})
+            windows.pop((str(chat_id), str(user_id)), None)
+            if action == "reject" and isinstance(getattr(task, "human_decision", None), dict):
+                await self._offer_reason(task, chat_id, user_id)
             return f"Task #{task_id}: {action}"
         except Exception as e:
             logger.warning(f"Autonomy decision callback failed: {e}")
             return None
+
+    async def _offer_reason(self, task, chat_id, user_id):
+        channel = self._telegram_channel()
+        record = task.human_decision
+        if (record.get("action") != "reject" or record.get("by") != "telegram"
+                or record.get("reason") is not None or not record.get("id")):
+            return
+        try:
+            prompt = await channel.request_decision_reason(task.id, chat_id=chat_id)
+            if type(prompt) is not int or prompt <= 0:
+                return
+        except Exception:
+            logger.warning("Telegram decision reason prompt unavailable")
+            return
+        now = self._reason_clock()
+        self._reason_windows = {key: window for key, window in self._reason_windows.items()
+                                if window["deadline"] > now}
+        if len(self._reason_windows) >= 32:
+            self._reason_windows.pop(next(iter(self._reason_windows)))
+        self._reason_windows[(str(chat_id), str(user_id))] = {
+            "task_id": task.id, "prompt": prompt, "expected": dict(record), "deadline": now + 120,
+        }
+        self._reason_prompts[(str(chat_id), str(user_id), prompt)] = True
+        if len(self._reason_prompts) > 64:
+            self._reason_prompts.pop(next(iter(self._reason_prompts)))
+
+    async def _on_reason_reply(self, text, *, chat_id, user_id, reply_to_message_id):
+        """Consume only the owner's reply to a live prompt for an exact decision."""
+        if type(reply_to_message_id) is not int or reply_to_message_id <= 0:
+            return False
+        if not self._callback_is_owner(chat_id, user_id):
+            return False
+        key = (str(chat_id), str(user_id))
+        window = self._reason_windows.get(key)
+        channel = self._telegram_channel()
+        if window is None or window["prompt"] != reply_to_message_id:
+            if (*key, reply_to_message_id) in self._reason_prompts:
+                await channel.send("That reason prompt is no longer active; no decision changed.", chat_id=chat_id)
+                return True
+            return False
+        if self._reason_clock() >= window["deadline"]:
+            self._reason_windows.pop(key, None)
+            await channel.send("The reason window expired; the rejection is unchanged.", chat_id=chat_id)
+            return True
+        try:
+            task = self._orch.autonomy_queue.attach_human_reason(
+                window["task_id"], text, expected_decision=window["expected"],
+            )
+        except ValueError:
+            await channel.send("Use a nonempty reason of at most 280 characters.", chat_id=chat_id)
+            return True
+        except Exception:
+            logger.warning("Telegram decision reason could not be saved")
+            await channel.send("The reason could not be saved; the rejection is unchanged.", chat_id=chat_id)
+            return True
+        self._reason_windows.pop(key, None)
+        if task is not None:
+            self._orch.autonomy._audit("autonomy.decision.reason", task,
+                                      "by telegram: " + task.human_decision["reason"])
+        await channel.send("Reason saved." if task is not None else "That decision no longer accepts a reason.", chat_id=chat_id)
+        return True
 
     def _callback_is_owner(self, chat_id, user_id) -> bool:
         """Is this button tap the owner's?
@@ -331,6 +405,14 @@ class AutonomyCoordinator:
             # ESTOP sentinel exists (pause-new-work; in-flight work is not killed).
             from agents.core import estop
             if estop.check_paused("autonomy", logger):
+                # Expiry is queue metadata only under e-stop. Ledger resume and
+                # notifications stay in the durable outbox until release.
+                worker = getattr(self._orch, "autonomy", None)
+                if worker is not None:
+                    try:
+                        await worker.approval_housekeeping(reconcile=False, notify_promotions=False)
+                    except Exception:
+                        logger.warning("Approval expiry metadata sweep failed under e-stop", exc_info=True)
                 continue
             amode = "unknown"
             max_tier = None

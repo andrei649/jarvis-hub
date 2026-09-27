@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T11:22:34.735961+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "H513 local acquisition and optional presence explanation seam; partial capability, focused verification only",
+  "verification": [
+    {
+      "path": "/tmp/nerva-h513-acquisition-regression.xml",
+      "tests": 153,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 2.561,
+      "test_files": [
+        "tests/test_h32_acquisition_drive_route.py",
+        "tests/test_h32_generation_sandbox.py",
+        "tests/test_h32_governed_research.py",
+        "tests/test_h32_llm_synth.py",
+        "tests/test_h32_synthesis_pipeline.py",
+        "tests/test_h513_acquisition_policy.py",
+        "tests/test_h513_auxiliary_integration.py",
+        "tests/test_h513_auxiliary_policy.py",
+        "tests/test_h513_data_handling.py"
+      ],
+      "sha256": "6acc42e695e31cf0f7df9144ef449c57f8e08fb548bfc79c3753478c1ee66b9b"
+    },
+    {
+      "path": "/tmp/h513-presence-focused.xml",
+      "tests": 128,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 3.33,
+      "test_files": [
+        "tests/test_h30_house_presence_ingest.py",
+        "tests/test_h30_presence.py",
+        "tests/test_h34_2_presence.py",
+        "tests/test_h513_auxiliary_integration.py",
+        "tests/test_h513_auxiliary_policy.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_h513_presence_policy.py"
+      ],
+      "sha256": "89e49daa1c2ae73d0806afc2b6c4f55119292d32c316ead93e76050a995bee51"
+    },
+    {
+      "path": "/tmp/nerva-h513-direct-local-combined.xml",
+      "tests": 202,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 4.242,
+      "test_files": [
+        "tests/test_h30_house_presence_ingest.py",
+        "tests/test_h30_presence.py",
+        "tests/test_h32_acquisition_drive_route.py",
+        "tests/test_h32_generation_sandbox.py",
+        "tests/test_h32_governed_research.py",
+        "tests/test_h32_llm_synth.py",
+        "tests/test_h32_synthesis_pipeline.py",
+        "tests/test_h34_2_presence.py",
+        "tests/test_h513_acquisition_policy.py",
+        "tests/test_h513_auxiliary_integration.py",
+        "tests/test_h513_auxiliary_policy.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_h513_presence_policy.py"
+      ],
+      "sha256": "216398395d86950fef85d196b64df6f74c6d3f82393990487aa7cbdf630ef620"
+    },
+    {
+      "path": "/tmp/nerva-h513-direct-docs.xml",
+      "tests": 54,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "sha256": "e555683f61df0b92c0d4cc7c351bf8c329bdb64b433d42d3a421c0809f7d4283"
+    }
+  ],
+  "source_sha256": {
+    "agents/core/acquisition/llm_synth.py": "6d77c923d70999836ea75ab5a6d77bdbbdb9844a6b56c000b766efb02f200565",
+    "agents/core/house/presence.py": "c0948190a773116a7ffe3f0b6b5a823e658085c729cfc70dbae11b3510f02fa6",
+    "agents/core/llm/data_handling.py": "8dbf592055d97daa19cff7a3cd0f34bdde0b804dcce99c98666f0581eed61482",
+    "tests/test_h32_llm_synth.py": "279878f7d07607b56c3e1b6aab6d9acbc7595ef2fdf47b0dd6e7381d826c5bc5",
+    "tests/test_h30_presence.py": "8efa464c681b28a2cce6a6b5ed31517966ac8cb3574e38f9eaedf5023b34e4c1",
+    "tests/test_h513_acquisition_policy.py": "37198ffba7b8f099e1fa70ebe58d55cf758a1810a295133f20d18943fd88d891",
+    "tests/test_h513_presence_policy.py": "6b8c1a7f43ff5ddd30f94e26189a6d4d4c78e13c7e8d417e22f9aa03337b75c7"
+  },
+  "limitations": [
+    "No production caller added for presence explanation; deterministic presence unchanged",
+    "Acquisition research may perform separately governed fetches before draft; policy guards model I/O only",
+    "No full backend rerun for this isolated slice; previous 18,838-pass/35-skip milestone is a separate frozen snapshot",
+    "No live provider/native/paid service calls, no commit/push/merge/deploy",
+    "Judge/VLM/embedding and other independent clients remain outside this consent scope"
+  ],
+  "security": {
+    "bandit": {
+      "exit_code": 0,
+      "scope": "agents/core/acquisition agents/core/house agents/core/llm against existing baseline",
+      "log": "/tmp/nerva-h513-direct-bandit.log"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "files": 7,
+      "snapshot": "/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/nerva-h513-direct-scan-lc4jll5y",
+      "log": "/tmp/nerva-h513-direct-gitleaks.log"
+    }
+  },
+  "graft": {
+    "check": "passed",
+    "scope": [
+      "agents/core/autonomy",
+      "agents/core/llm",
+      "agents/core/kernel",
+      "agents/core/acquisition",
+      "agents/core/house"
+    ],
+    "deep_index": false
+  }
+}

@@ -1,0 +1,59 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_model_roles.py", "tests/test_doctor.py"]
+..............................................F.............F........... [ 45%]
+........................................................................ [ 90%]
+................                                                         [100%]
+=================================== FAILURES ===================================
+_____________________ test_main_role_is_not_env_selectable _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10dee84d0>
+
+    def test_main_role_is_not_env_selectable(monkeypatch):
+        monkeypatch.setenv("JARVIS_ROLE_MAIN_MODEL", "x")
+        monkeypatch.setenv("JARVIS_ROLE_MAIN_PROVIDER", "anthropic")
+>       role = model_roles.resolve("main")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_h277_model_roles.py:250: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+agents/core/llm/model_roles.py:336: in resolve
+    return _resolve_env_role(read, spec)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:299: in _resolve_env_role
+    provider = _validate(spec, raw_provider) if raw_provider else "lm-studio"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+spec = RoleSpec(name='main', purpose='the conversation model', env_prefix='JARVIS_ROLE_MAIN', legacy=mappingproxy({}), providers=None, consumers=('agents/core/llm/hybrid_router.py (settings llm.*)',), default_model='')
+raw = 'anthropic'
+
+    def _validate(spec: RoleSpec, raw: str) -> str:
+        value = raw.strip().lower()
+        try:
+            get_profile(value)
+        except KeyError:
+            raise RoleConfigError("role_provider_unknown",
+                                  f"{spec.env_name('provider')}={value!r}; provider ids: {', '.join(BUILTIN_PROVIDER_IDS)}"
+                                  ) from None
+        if spec.providers is None or value not in spec.providers:
+>           raise RoleConfigError("role_provider_unsupported",
+                                  f"{spec.name} can use {', '.join(sorted(spec.providers or ()))}, not {value}")
+E           agents.core.llm.model_roles.RoleConfigError: role_provider_unsupported: main can use , not anthropic
+
+agents/core/llm/model_roles.py:196: RoleConfigError
+________ test_doctor_model_roles_row_warns_on_an_ignored_main_variable _________
+
+    def test_doctor_model_roles_row_warns_on_an_ignored_main_variable():
+        from scripts import doctor
+    
+        check = doctor.check_model_roles({"JARVIS_ROLE_MAIN_MODEL": "x"})
+>       assert check.status == doctor.WARN and "JARVIS_ROLE_MAIN_MODEL" in check.detail
+E       AssertionError: assert ('ok' == 'warn'
+E         
+E         - warn
+E         + ok)
+
+tests/test_h277_model_roles.py:373: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_main_role_is_not_env_selectable
+FAILED tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_an_ignored_main_variable
+2 failed, 158 passed in 10.82s

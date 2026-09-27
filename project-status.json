@@ -4,9 +4,9 @@
     "blocked": 1,
     "delivered": 0,
     "done": 289,
-    "open": 14,
-    "open_or_blocked": 15,
-    "total": 304
+    "open": 15,
+    "open_or_blocked": 16,
+    "total": 305
   },
   "horizons": {
     "H10": {
@@ -69,8 +69,8 @@
       "blocked": 0,
       "delivered": 0,
       "done": 22,
-      "open": 6,
-      "total": 28
+      "open": 7,
+      "total": 29
     },
     "H19": {
       "blocked": 0,
@@ -222,10 +222,10 @@
       "status": "🟡 **partial (owner, 2026-08-28)** — landing half moving; the 60s demo cut is the remaining piece. Not a 1.0 blocker (GTM, not proof)"
     }
   ],
-  "routes": 546,
+  "routes": 550,
   "tests": {
-    "backend": 18269,
-    "frontend": 1783,
+    "backend": 19537,
+    "frontend": 1835,
     "mobile": 142
   },
   "version": "1.0.0"

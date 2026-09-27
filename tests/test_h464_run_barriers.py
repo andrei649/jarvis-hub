@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import types
+from pathlib import Path
 
 import pytest
 
@@ -374,9 +375,14 @@ def test_the_default_pid_probe_reads_real_processes():
     me = os.getpid()
     live = {"target": me, "start": exec_cache._start_token(me),
             "ns": exec_cache._pid_ns(), "boot": exec_cache._boot_id()}
-    assert default_pid_probe(live) == "alive"
+    # Linux and Windows expose real process identity; macOS/BSD do not.
+    if os.name == "nt" or Path("/proc/self/stat").exists():
+        assert live["start"]
     if live["start"]:
+        assert default_pid_probe(live) == "alive"
         assert default_pid_probe({**live, "start": "not-the-same"}) == "reused"
+    else:
+        assert default_pid_probe(live) == "unknown"
     if live["boot"]:
         assert default_pid_probe({**live, "boot": "another-boot"}) == "ns"
     if live["ns"]:

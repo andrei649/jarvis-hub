@@ -20,6 +20,7 @@ import pytest
 from agents.core import session_titles as st
 from agents.core import settings_db
 from agents.core.checkpoint import CheckpointManager
+from agents.core.llm.providers import get_profile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # golden_harness lives beside the tests
 
@@ -604,6 +605,9 @@ def test_the_title_comes_from_the_owners_words_not_the_attached_file(chat_hub, p
 # ── the strict-local titler ──────────────────────────────────────────────────────
 
 class _Backend:
+    profile = get_profile("lm-studio")
+    base_url = "http://127.0.0.1:1234"
+
     def __init__(self):
         self.calls = []
 

@@ -1,0 +1,25 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+........................................................................ [ 43%]
+........................................................................ [ 86%]
+.....................F                                                   [100%]
+=================================== FAILURES ===================================
+_____ test_round2_remote_wants_refuses_an_already_normalised_deep_snapshot _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10dee85c0>
+
+    def test_round2_remote_wants_refuses_an_already_normalised_deep_snapshot(monkeypatch):
+        args = "x"
+        for _ in range(aj._SCAN_DEPTH + 2):
+            args = {"nested": args}
+        snapshot = aj.normalise_snapshot(dict(ACTION, args=args))
+>       assert remote_judge(monkeypatch, FakeBackend()).wants(snapshot) is False
+E       AssertionError: assert True is False
+E        +  where True = wants({'tool': 'write_file', 'args': {'nested': {'nested': {'nested': {'nested': {'nested': {...}}}}}}, 'agent': 'pepper', 'summary': 'write notes/a.md'})
+E        +    where wants = <agents.core.autonomy.approval_judge.ApprovalJudge object at 0x10dee93d0>.wants
+E        +      where <agents.core.autonomy.approval_judge.ApprovalJudge object at 0x10dee93d0> = remote_judge(<_pytest.monkeypatch.MonkeyPatch object at 0x10dee85c0>, <tests.test_h277_approval_judge.FakeBackend object at 0x10deeac60>)
+E        +        where <tests.test_h277_approval_judge.FakeBackend object at 0x10deeac60> = FakeBackend()
+
+tests/test_h277_approval_judge.py:1268: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_round2_remote_wants_refuses_an_already_normalised_deep_snapshot
+1 failed, 165 passed in 2.44s

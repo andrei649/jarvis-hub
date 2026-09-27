@@ -17,31 +17,39 @@ At most :data:`JUDGE_MAX_CONCURRENT` judge calls run at once and at most
 :data:`JUDGE_MAX_PENDING` are in flight or waiting; past that an item is not judged (no
 annotation; ``judge_status_public()["skipped_busy"]`` counts it). An action queued with a
 taint mark (on itself, its metadata, a nested argument, or an untrusted turn origin) is
-stored with ``tainted: True``; a non-local judge never sees it.
+stored with ``tainted: True`` only when a judge is configured; a non-local judge never sees it.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextvars
+import copy
 import json
 import logging
-import threading
 import time
 import uuid
-import weakref
 from pathlib import Path
 from typing import Optional
 
 from ..persistence import JsonStore
+from .advisory_judgements import (
+    JUDGE_MAX_CONCURRENT as JUDGE_MAX_CONCURRENT,
+)
+from .advisory_judgements import (
+    JUDGE_MAX_PENDING as JUDGE_MAX_PENDING,
+)
+from .advisory_judgements import (
+    AdvisoryJudgements,
+)
+from .approval_grouping import OwnerRegistrationContext, member_snapshot, registration_fingerprint
+from .decision_reasons import normalize_reason
 
 logger = logging.getLogger("jarvis.autonomy.action_approvals")
 
-JUDGE_MAX_CONCURRENT = 2     # judge calls generating at once (per event loop)
-JUDGE_MAX_PENDING = 32       # judgements in flight + waiting; past this an item is skipped
 
 
-class ActionApprovalQueue(JsonStore):
+
+class ActionApprovalQueue(AdvisoryJudgements, JsonStore):
     """Pending tool-call approvals. Persists items when given a *path* (A7);
     in-memory (path=None) otherwise. asyncio.Events are runtime-only and are
     re-created lazily for items reloaded from disk."""
@@ -50,15 +58,8 @@ class ActionApprovalQueue(JsonStore):
     _events: dict[str, asyncio.Event]
 
     def __init__(self, path: "str | Path | None" = None) -> None:
-        # H277 runtime state — never serialised, set before the load.
-        self._judge = None
-        self._loop: "asyncio.AbstractEventLoop | None" = None
-        self._judge_tasks: set = set()
-        self._judging: set[str] = set()
-        self._judge_lock = threading.Lock()
-        self._judge_slots: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
-        self._skipped_busy = 0
-        self._audit = None
+        self._init_judgements()
+        self._judge_import_warned = False
         super().__init__(path)
 
     def _serialize(self):
@@ -67,18 +68,36 @@ class ActionApprovalQueue(JsonStore):
     def _deserialize(self, raw) -> None:
         self._items = raw if isinstance(raw, dict) else {}
         self._events = {}                 # events are not persisted
+        self._registration_namespace = next((
+            metadata['namespace'] for item in self._items.values()
+            if isinstance(item, dict)
+            and (metadata := self._group_metadata(item)) is not None
+        ), uuid.uuid4().hex)
 
     # ── request ──────────────────────────────────────────────────────────────
 
-    def request(self, action: dict) -> dict:
+    def request(self, action: dict, *, grouping_context: OwnerRegistrationContext | None = None) -> dict:
         """Register a pending tool-call approval and return the queue item."""
         action = action or {}
+        fingerprint = registration_fingerprint(action, grouping_context, self._registration_namespace)
+        if fingerprint is not None:
+            # Caller-owned argument dictionaries must not mutate grouped snapshots.
+            action = copy.deepcopy(action)
         action_id = uuid.uuid4().hex[:12]
         tool = action.get("tool", "")
         args = action.get("args") or {}
-        from .approval_judge import action_is_tainted
+        tainted = False
+        try:
+            if self._judge is not None and self._judge.status().configured:
+                from .approval_judge import action_is_tainted
 
-        tainted = action_is_tainted(action)
+                tainted = action_is_tainted(action)
+        except ImportError:
+            if not self._judge_import_warned:
+                self._judge_import_warned = True
+                logger.warning("approval judge import unavailable; requests continue without it")
+        except Exception:  # noqa: BLE001 — advisory setup never fails a request
+            logger.debug("approval judge taint check unavailable", exc_info=True)
         try:
             from .dry_run import preview_task
             preview = preview_task({"kind": tool, "title": action.get("summary", tool),
@@ -101,43 +120,66 @@ class ActionApprovalQueue(JsonStore):
         if tainted:
             item["tainted"] = True      # H277 review F4: a non-local judge never sees it
         with self._lock:
+            backups = []
+            if fingerprint is not None:
+                siblings = [entry for entry in self._items.values()
+                            if entry.get('status') == 'pending'
+                            and (metadata := self._group_metadata(entry)) is not None
+                            and metadata['namespace'] == self._registration_namespace
+                            and metadata['fingerprint'] == fingerprint]
+                backups = [(entry, copy.deepcopy(entry)) for entry in siblings]
+                group_id = siblings[0]['_grouping']['id'] if siblings else uuid.uuid4().hex
+                snapshot = uuid.uuid4().hex
+                item['_grouping'] = {'id': group_id, 'snapshot': snapshot,
+                                     'namespace': self._registration_namespace,
+                                     'fingerprint': fingerprint, 'member_snapshot': member_snapshot(item)}
+                for sibling in siblings:
+                    sibling['_grouping']['snapshot'] = snapshot
             self._items[action_id] = item
             self._events[action_id] = asyncio.Event()
-            self._save()
+            self._save_changes_locked(backups, added=action_id)
         try:
             self._schedule_judge(item)
         except Exception:  # noqa: BLE001 — the judge is advisory: it never fails a request
             logger.debug("approval judge not scheduled for %s", action_id, exc_info=True)
-        return dict(item)
+        return self._public_item(item)
 
     # ── decide ───────────────────────────────────────────────────────────────
 
-    def decide(self, action_id: str, approved: bool, by: str = "user") -> Optional[dict]:
+    def decide(self, action_id: str, approved: bool, by: str = "user",
+               reason: str | None = None) -> Optional[dict]:
+        human_reason = normalize_reason(reason)
         changed = False
         with self._lock:
             item = self._items.get(action_id)
             if item is None:
                 return None
             if item["status"] == "pending":
+                backups = self._backup_group_locked(item)
                 item["status"] = "approved" if approved else "rejected"
                 item["decided_by"] = by
                 item["decided_at"] = time.time()
-                self._save()
+                if human_reason is not None:
+                    item["human_reason"] = human_reason
+                self._rotate_group_snapshot_locked(item)
+                self._save_changes_locked(backups)
                 changed = True
             event = self._events.get(action_id)
-            decided = dict(item)
+            decided = self._public_item(item)
+        self._clear_judge_pending(action_id)
         if event is not None:
             event.set()
         if changed:
             self._audit_row(by, "action_approval.decided", "the owner's decision on a queued tool call",
                             action_id, {"tool": decided.get("tool", ""), "agent": decided.get("agent", ""),
                                         "approved": bool(approved), "by": by,
-                                        "judge": (decided.get("judge") or {}).get("judge")})
+                                        "judge": (decided.get("judge") or {}).get("judge"),
+                                        **({"human_reason": human_reason} if human_reason is not None else {})})
         return decided
 
     async def await_decision(self, action_id: str, timeout: Optional[float] = None) -> str:
         """Block until the action is decided; return its final status ('approved'/
-        'rejected'), or 'timeout' if it isn't decided in time."""
+        'rejected'), or persist terminal 'expired' when its wait deadline wins."""
         with self._lock:
             item = self._items.get(action_id)
             if item is None:
@@ -151,21 +193,154 @@ class ActionApprovalQueue(JsonStore):
         try:
             await asyncio.wait_for(event.wait(), timeout=timeout)
         except asyncio.TimeoutError:
-            return "timeout"
+            # The same lock as decide(): only the winner may close a pending card.
+            with self._lock:
+                item = self._items.get(action_id)
+                if item is not None and item.get("status") == "pending":
+                    backups = self._backup_group_locked(item)
+                    item["status"] = "expired"
+                    item["expired_at"] = time.time()
+                    self._rotate_group_snapshot_locked(item)
+                    self._save_changes_locked(backups)
+                status = item.get("status", "unknown") if item is not None else "unknown"
+            self._clear_judge_pending(action_id)
+            event.set()  # every waiter observes the same durable terminal state
+            return status
         # B1: guard against a concurrent clear() between the await and the read.
         with self._lock:
             return self._items.get(action_id, {}).get("status", "unknown")
 
     # ── queries ──────────────────────────────────────────────────────────────
 
+    def _public_item(self, item: dict) -> dict:
+        out = copy.deepcopy(item) if '_grouping' in item else dict(item)
+        out.pop('_grouping', None)
+        with self._judge_lock:
+            if item["id"] in self._judge_pending and item.get("status") == "pending":
+                out["judge_pending"] = True
+        return out
+
+    @staticmethod
+    def _group_metadata(item: dict) -> dict | None:
+        metadata = item.get('_grouping')
+        if not isinstance(metadata, dict):
+            return None
+        for key in ('id', 'snapshot', 'namespace'):
+            value = metadata.get(key)
+            if (not isinstance(value, str) or len(value) != 32
+                    or any(ch not in '0123456789abcdef' for ch in value)):
+                return None
+        value = metadata.get('fingerprint')
+        if (not isinstance(value, str) or len(value) != 64
+                or any(ch not in '0123456789abcdef' for ch in value)):
+            return None
+        if metadata.get('member_snapshot') != member_snapshot(item):
+            return None
+        return metadata
+
+    def _group_members_locked(self, group_id: str) -> list[dict]:
+        members = [item for item in self._items.values()
+                   if item.get('status') == 'pending'
+                   and (metadata := self._group_metadata(item)) is not None
+                   and metadata['id'] == group_id]
+        members.sort(key=lambda item: (item['created_at'], item['id']))
+        if members:
+            first = members[0]['_grouping']
+            if any(any(item['_grouping'][key] != first[key]
+                       for key in ('id', 'snapshot', 'namespace', 'fingerprint')) for item in members):
+                return []  # malformed/mismatched persisted context never forms a group
+        return members
+
+    def _rotate_group_snapshot_locked(self, item: dict) -> None:
+        metadata = self._group_metadata(item)
+        if metadata is None:
+            return
+        snapshot = uuid.uuid4().hex
+        for member in self._group_members_locked(metadata['id']):
+            member['_grouping']['snapshot'] = snapshot
+
+    def _backup_group_locked(self, item: dict) -> list[tuple[dict, dict]]:
+        metadata = self._group_metadata(item)
+        members = self._group_members_locked(metadata['id']) if metadata else []
+        return [(member, copy.deepcopy(member)) for member in members or [item]]
+
+    def _save_changes_locked(self, backups: list[tuple[dict, dict]], *, added: str | None = None) -> None:
+        """Publish in-memory changes only if the durable atomic write succeeds."""
+        try:
+            self._save()
+        except Exception:
+            for item, original in backups:
+                item.clear()
+                item.update(original)
+            if added is not None:
+                self._items.pop(added, None)
+                self._events.pop(added, None)
+            raise
+
+    def pending_groups(self) -> list[dict]:
+        """Optional card projection. Machine lists and per-caller IDs remain complete."""
+        with self._lock:
+            identifiers = {metadata['id'] for item in self._items.values()
+                           if item.get('status') == 'pending'
+                           and (metadata := self._group_metadata(item)) is not None}
+            groups = []
+            for identifier in identifiers:
+                members = self._group_members_locked(identifier)
+                if len(members) > 1:
+                    groups.append({'id': identifier, 'leader_id': members[0]['id'],
+                                   'count': len(members),
+                                   'member_ids': [member['id'] for member in members],
+                                   'snapshot': members[0]['_grouping']['snapshot']})
+            groups.sort(key=lambda group: self._items[group['leader_id']]['created_at'])
+            return groups
+
+    def reject_group(self, group_id: str, *, snapshot: str, member_ids: list[str],
+                     by: str = 'user', reason: str | None = None) -> list[dict] | None:
+        """Reject an exact current group, all or none; never grant any approval."""
+        human_reason = normalize_reason(reason)
+        with self._lock:
+            members = self._group_members_locked(group_id)
+            if (len(members) < 2 or [item['id'] for item in members] != member_ids
+                    or members[0]['_grouping']['snapshot'] != snapshot):
+                return None
+            before = [dict(item) for item in members]
+            events = [self._events.get(item['id']) for item in members]
+            now = time.time()
+            for item in members:
+                item.update(status='rejected', decided_by=by, decided_at=now)
+                if human_reason is not None:
+                    item['human_reason'] = human_reason
+            try:
+                self._save()
+            except Exception:
+                for item, original in zip(members, before, strict=True):
+                    item.clear()
+                    item.update(original)
+                raise
+            decided = [self._public_item(item) for item in members]
+        for item, event in zip(decided, events, strict=True):
+            self._clear_judge_pending(item['id'])
+            if event is not None:
+                event.set()
+            self._audit_row(by, 'action_approval.decided', "the owner's decision on a queued tool call",
+                            item['id'], {'tool': item.get('tool', ''), 'agent': item.get('agent', ''),
+                                         'approved': False, 'by': by, 'group_id': group_id,
+                                         'judge': (item.get('judge') or {}).get('judge'),
+                                         **({'human_reason': human_reason} if human_reason is not None else {})})
+        return decided
+
+    def _clear_judge_pending(self, action_id: str) -> None:
+        with self._judge_lock:
+            self._judge_pending.discard(action_id)
+
     def get(self, action_id: str) -> Optional[dict]:
         with self._lock:
             item = self._items.get(action_id)
-            return dict(item) if item else None
+            return self._public_item(item) if item else None
 
     def list(self, status: Optional[str] = None) -> list[dict]:
         with self._lock:
-            items = [dict(i) for i in self._items.values()]
+            items = [self._public_item(i) for i in self._items.values()]
         if status:
             items = [i for i in items if i["status"] == status]
         items.sort(key=lambda i: i["created_at"], reverse=True)
@@ -179,6 +354,7 @@ class ActionApprovalQueue(JsonStore):
             "pending": sum(1 for i in items if i["status"] == "pending"),
             "approved": sum(1 for i in items if i["status"] == "approved"),
             "rejected": sum(1 for i in items if i["status"] == "rejected"),
+            "expired": sum(1 for i in items if i["status"] == "expired"),
         }
 
     def clear(self) -> None:
@@ -186,38 +362,10 @@ class ActionApprovalQueue(JsonStore):
             self._items.clear()
             self._events.clear()
             self._save()
+        with self._judge_lock:
+            self._judge_pending.clear()
 
     # ── H277: the advisory approval judge ────────────────────────────────────
-
-    def attach_judge(self, judge, *, loop: "asyncio.AbstractEventLoop | None" = None) -> None:
-        """Attach an ``approval_judge.ApprovalJudge``; *loop* serves requests queued from a
-        worker thread (a request on a running loop is judged on that loop)."""
-        self._judge = judge
-        self._loop = loop
-
-    def attach_audit(self, intent_log) -> None:
-        """Attach the signed intent log the judged / decided rows go to."""
-        self._audit = intent_log
-
-    def judge_status_public(self) -> dict:
-        """The judge's state for the HUD: never a key, a base URL only when local."""
-        with self._judge_lock:
-            judging = sorted(self._judging)
-        judge = self._judge
-        if judge is None:
-            from .approval_judge import JudgeStatus
-
-            status = JudgeStatus(False, "judge_unset")
-        else:
-            try:
-                status = judge.status()
-            except Exception:  # noqa: BLE001 — a broken status reads as off, never as a 500
-                from .approval_judge import JudgeStatus
-
-                status = JudgeStatus(False, "judge_status_error")
-        with self._judge_lock:
-            skipped = self._skipped_busy
-        return {**status.public(), "judging": judging, "skipped_busy": skipped}
 
     def annotate(self, action_id: str, annotation: dict) -> Optional[dict]:
         """Store the first judgement on a still-pending item; ``None`` (and nothing written)
@@ -230,96 +378,33 @@ class ActionApprovalQueue(JsonStore):
             self._save()
             return dict(annotation)
 
-    def _schedule_judge(self, item: dict) -> None:
-        judge = self._judge
-        if judge is None:
-            return
-        snapshot = json.loads(json.dumps(item, default=str))   # never the stored args
-        status = judge.status()
-        if not judge.wants(snapshot, status):
-            return
-        # A fresh context: no H681 job selection, no request overrides, no turn variables.
-        fresh = contextvars.Context()
-        try:
-            running = asyncio.get_running_loop()
-        except RuntimeError:
-            running = None
-        action_id = snapshot["id"]
-        loop = self._loop
-        hub_up = loop is not None and not loop.is_closed() and loop.is_running()
-        if running is not None and (running is loop or not hub_up):
-            if self._mark_judging(action_id):
-                self._spawn(running, snapshot, status, fresh)
-            return
-        if not hub_up:
-            return   # an offline CLI / a cold sync caller: no judge, the item stays as it is
-        # A worker thread (asyncio.to_thread) or a short-lived loop of its own: the judgement
-        # runs on the hub's loop, which outlives the caller.
-        if not self._mark_judging(action_id):
-            return
-        try:
-            loop.call_soon_threadsafe(self._spawn, loop, snapshot, status, fresh,
-                                      context=contextvars.Context())
-        except RuntimeError:   # the loop closed in between
-            self._unmark_judging(action_id)
+    def _pending_snapshot(self, action_id: str) -> Optional[dict]:
+        """Re-read persisted and live state at dispatch; unreadable disk fails closed."""
+        from .approval_judge import normalise_snapshot
 
-    def _mark_judging(self, action_id: str) -> bool:
-        """Claim a judging slot; ``False`` (and the item counted as skipped) when
-        :data:`JUDGE_MAX_PENDING` judgements are already in flight or waiting."""
-        with self._judge_lock:
-            if len(self._judging) >= JUDGE_MAX_PENDING:
-                self._skipped_busy += 1
-                logger.debug("approval judge busy: %s is not judged", action_id)
-                return False
-            self._judging.add(action_id)
-            return True
+        with self._lock:
+            item = self._items.get(action_id)
+            if not item or item.get("status") != "pending" or "judge" in item:
+                return None
+            if self.path is not None:
+                try:
+                    persisted = json.loads(self.path.read_text(encoding="utf-8")).get(action_id)
+                except (OSError, ValueError, AttributeError):
+                    return None
+                if (not isinstance(persisted, dict) or persisted.get("status") != "pending"
+                        or "judge" in persisted):
+                    return None
+                # Both views must allow the call; disk edits may add new taint.
+                from .approval_judge import action_is_tainted
 
-    def _slots_for(self, loop) -> asyncio.Semaphore:
-        with self._judge_lock:
-            slots = self._judge_slots.get(loop)
-            if slots is None:
-                slots = self._judge_slots[loop] = asyncio.Semaphore(JUDGE_MAX_CONCURRENT)
-            return slots
+                if action_is_tainted(persisted):
+                    item = {**item, "tainted": True}
+            return normalise_snapshot(item)
 
-    def _unmark_judging(self, action_id: str) -> None:
-        with self._judge_lock:
-            self._judging.discard(action_id)
-
-    def _spawn(self, loop, snapshot: dict, status, ctx: contextvars.Context) -> None:
-        action_id = snapshot["id"]
-        try:
-            task = loop.create_task(self._judge_one(snapshot, status), context=ctx)
-        except Exception:  # noqa: BLE001
-            self._unmark_judging(action_id)
-            logger.debug("approval judge task not started for %s", action_id, exc_info=True)
-            return
-        self._judge_tasks.add(task)
-
-        def _done(t, _id=action_id):
-            self._judge_tasks.discard(t)
-            self._unmark_judging(_id)
-        task.add_done_callback(_done)
-
-    async def _judge_one(self, snapshot: dict, status) -> None:
+    def _record_judgement(self, snapshot: dict, stored: dict) -> None:
         from .approval_judge import rationale_sha256
 
         action_id = snapshot["id"]
-        try:
-            # the timeout bounds one judge call, not the wait for a slot
-            async with self._slots_for(asyncio.get_running_loop()):
-                annotation = await asyncio.wait_for(self._judge.score(snapshot, status),
-                                                    timeout=status.timeout)
-        except Exception:  # noqa: BLE001 — timeout, backend down, refusal: nothing persisted
-            logger.debug("approval judge gave no verdict for %s", action_id, exc_info=True)
-            return
-        finally:
-            self._unmark_judging(action_id)
-        if not annotation:
-            return
-        stored = self.annotate(action_id, annotation)
-        if stored is None:
-            logger.debug("approval judge verdict for %s dropped (decided, cleared or judged)", action_id)
-            return
         self._audit_row("approval_judge", "action_approval.judged", "", action_id, {
             "tool": snapshot.get("tool", ""), "agent": snapshot.get("agent", ""),
             "score": stored.get("score"), "flags": list(stored.get("flags") or []),

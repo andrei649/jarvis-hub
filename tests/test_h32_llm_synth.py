@@ -16,10 +16,13 @@ import json
 import pytest
 
 from agents.core.acquisition.llm_synth import SynthesisError, draft_plan, generate_capability
+from agents.core.llm.providers import get_profile
 
 
 class _FakeBackend:
     def __init__(self, replies: list[str]):
+        self.profile = get_profile("lm-studio")
+        self.base_url = "http://127.0.0.1:1234"
         self._replies = list(replies)
         self.calls: list[dict] = []
 
