@@ -863,3 +863,26 @@ def test_a_pid_whose_signal_is_refused_is_still_checked_against_its_start_token(
     monkeypatch.setattr(run_barriers, "_proc_state", lambda _pid: "")
     assert default_pid_probe(barrier) == "unknown"
     assert "A permission error reads as alive" not in (default_pid_probe.__doc__ or "")
+
+
+# ── the mutation pass ────────────────────────────────────────────────────────
+
+
+def test_a_pid_wait_needs_that_pid_registered_not_just_any(ledger, clock):
+    """Registering one process for a run does not let the run wait on another."""
+    barriers = _barriers(ledger, clock)
+    run = ledger.open_run(_goal())
+    barriers.register_process(run.id, 4242)
+    with pytest.raises(RunBarriersError) as exc:
+        barriers.request(run.id, {"kind": "pid", "target": 4343}, source="planner")
+    assert exc.value.reason == "pid_not_registered"
+
+
+def test_a_clock_wait_days_ahead_is_not_cut_to_the_default_wait(ledger, clock):
+    """A clock wait's own bound is the 7-day ceiling, not the 6-hour default that
+    process and trigger waits get; only the run's budget or deadline cap it sooner."""
+    barriers = _barriers(ledger, clock)
+    run = ledger.open_run(_goal(), budget=Budget(max_seconds=5 * 86_400))
+    target = clock.now + 2 * 86_400
+    barriers.request(run.id, {"kind": "deadline", "target": target}, source="planner")
+    assert ledger.get(run.id).barrier["cap_at"] >= target
