@@ -663,6 +663,20 @@ def test_the_audit_vacuum_fails_closed_without_them():
     assert retention.vacuum_audit(None) == "audit_vacuum_unavailable"
 
 
+def test_the_audit_vacuum_waits_for_the_loggers_own_lock(tmp_path):
+    """The VACUUM takes the logger's ``_lock``, so it never runs across one of this
+    process's writes (it waits for the write, and a write waits for it)."""
+    audit = _seed_audit(tmp_path / "a.db", [400] * 50, blob="y" * 60)
+    done: list = []
+    with audit._lock:
+        worker = threading.Thread(target=lambda: done.append(retention.vacuum_audit(audit)))
+        worker.start()
+        worker.join(0.5)
+        assert worker.is_alive() and done == []          # waiting on the held lock
+    worker.join(30)
+    assert done == [None]
+
+
 def test_a_log_during_the_audit_vacuum_waits_and_lands(tmp_path):
     audit = _seed_audit(tmp_path / "a.db", [400] * 500, blob="y" * 60)
     audit.prune_before(NOW - 30 * _DAY)

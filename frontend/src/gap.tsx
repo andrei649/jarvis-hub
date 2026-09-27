@@ -27,7 +27,7 @@ import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, s
 import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
-import { RETENTION_KIND, RetentionBanner, RetentionCard, approvalNote, refusedWhy, saveOrder } from './panels/retention';
+import { RETENTION_KIND, RetentionBanner, RetentionCard, refusedWhy, saveOrder, sentFor } from './panels/retention';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
@@ -2793,7 +2793,7 @@ export function SettingsPanel() {
     apiPut('/api/admin/settings/' + cat, { values, ...flags }, { admin: true })
       .then((r: any) => {
         setSaved((r && r.updated) || 0); setRefused([]);
-        setSent(r && r.pending != null ? [`${cat}: ${approvalNote(r)}`] : []); setRetentionTick((n) => n + 1);
+        setSent(sentFor(cat, r)); setRetentionTick((n) => n + 1);
         setDirty((p) => {                            // drop what was saved; a later edit stays
           const rest = { ...(p[cat] || {}) };
           for (const k of Object.keys(values)) if (JSON.stringify(rest[k]) === JSON.stringify(values[k])) delete rest[k];
@@ -2817,7 +2817,7 @@ export function SettingsPanel() {
       try {
         const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true });
         n += (r && r.updated) || 0;
-        if (r && r.pending != null) queued.push(`${cat}: ${approvalNote(r)}`);
+        queued.push(...sentFor(cat, r));
       }
       catch (err) {
         kept[cat] = dirty[cat];

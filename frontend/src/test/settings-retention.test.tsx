@@ -11,7 +11,7 @@ import React from 'react';
 import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
 import { SettingsPanel, DecisionInboxPanel } from '../gap';
 import { ResetCategory, SettingsTransfer, UndoReset } from '../panels/settings-tools';
-import { RETENTION_STATE_PATH, refusedWhy, retentionConfirmValues, saveOrder } from '../panels/retention';
+import { RETENTION_STATE_PATH, refusedWhy, retentionConfirmValues, saveOrder, sentFor } from '../panels/retention';
 
 let calls;
 let putReply;
@@ -190,6 +190,7 @@ describe('Decision Inbox — the retention card — H262', () => {
     const card = await screen.findByTestId('retention-card');
     expect(card.textContent).toContain('audit');
     expect(card.textContent).toContain('365 days → 30 days');
+    expect(card.textContent.match(/· deeper/g)).toHaveLength(1);        // only the widened class
     expect(card.textContent).toContain('1234 audit rows');
     expect(card.textContent).toContain('0 archived chats');
     expect(card.textContent).toContain('cannot be undone');
@@ -256,6 +257,12 @@ describe('H262 review — counts, the waiting card, readable refusals', () => {
     expect(alert.textContent).toContain('approval_queue_unavailable');
     expect(refusedWhy({ body: { error: 'e', reason: 'r' } })).toBe('r');
     expect(refusedWhy({ body: { error: 'e' } })).toBe('e');
+  });
+
+  it('sentFor gives a status line only for a queued write', () => {
+    expect(sentFor('retention', { updated: 1 })).toEqual([]);
+    expect(sentFor('retention', null)).toEqual([]);
+    expect(sentFor('retention', { pending: 7, gated: ['retention.enabled'] })[0]).toMatch(/^retention: sent to Approvals · retention.enabled · task 7/);
   });
 
   it('saveOrder sends the ungated one first: retention when it is on, memory when it is off', () => {

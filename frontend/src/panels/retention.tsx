@@ -60,6 +60,12 @@ export function approvalNote(r: any): string {
     + ' — a person accepts it in the Decision Inbox';
 }
 
+/** The Settings status lines for one saved category: its Approvals note when the hub
+    queued it (202 with `pending`), none for a plain write. */
+export function sentFor(cat: string, r: any): string[] {
+  return r && r.pending != null ? [`${cat}: ${approvalNote(r)}`] : [];
+}
+
 /** A refusal as a person reads it: the body's `reason` (why the queue could not take it,
     what a refused undo needs), then its `error`, then the generic fallback. */
 export function refusedWhy(err: any, fallback = 'refused'): string {
