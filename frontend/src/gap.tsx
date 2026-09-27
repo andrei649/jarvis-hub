@@ -2811,8 +2811,9 @@ export function SettingsPanel() {
     const kept: Record<string, any> = {};
     const why: string[] = [];
     const queued: string[] = [];
-    // H262 review round 2: retention before memory, one at a time (saveOrder).
-    for (const cat of saveOrder(Object.keys(dirty))) {
+    // H262: the ungated one of retention / memory first, one at a time (saveOrder).
+    const retentionOn = (cats.retention || []).some((it: any) => it && it.key === 'enabled' && it.value === true);
+    for (const cat of saveOrder(Object.keys(dirty), retentionOn)) {
       try {
         const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true });
         n += (r && r.updated) || 0;

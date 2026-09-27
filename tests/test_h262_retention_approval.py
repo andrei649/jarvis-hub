@@ -702,3 +702,19 @@ def test_n7_a_waiting_card_is_found_behind_150_other_pending_decisions(env, clie
     again = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"enabled": True}})
     assert again.status_code == 202 and again.json()["pending"] == first.json()["pending"]
     assert [t.kind for t in env.queue.list(limit=1000)].count(KIND) == 1
+    # The kind filter is in the query itself: one row of this kind, behind 150 of another.
+    assert [t.id for t in env.queue.pending_decisions(kind=KIND, limit=1)] == [first.json()["pending"]]
+
+
+def test_a_card_asked_before_a_later_change_is_not_reused(env, client):
+    """A waiting card is reused only when it was asked from the same stored state; one
+    asked before a later narrowing is stale (its accept would be refused), so a fresh card
+    is queued (review round 2 verify, n4)."""
+    settings_db.put_category("retention", {"enabled": True})
+    first = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"artifact_ttl_days": 30}})
+    assert first.status_code == 202
+    narrowed = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"audit_ttl_days": 0}})
+    assert narrowed.status_code == 200
+    again = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"artifact_ttl_days": 30}})
+    assert again.status_code == 202 and again.json()["pending"] != first.json()["pending"]
+    assert not again.json().get("existing")

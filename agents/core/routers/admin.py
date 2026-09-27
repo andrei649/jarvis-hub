@@ -275,7 +275,11 @@ async def _request_retention_approval(changes: dict, stored: dict, approved: dic
                                       getattr(orch, "checkpoints", None) if orch else None,
                                       getattr(orch, "audit", None) if orch else None)
     for task in await asyncio.to_thread(irreversible.pending, orch, retention.APPROVAL_KIND):
-        if (getattr(task, "payload", None) or {}).get("values") == request["payload"]["values"]:
+        # The same values asked from the same stored state: that card is still current. One
+        # asked before a later change would be refused on accept, so a fresh card is queued.
+        waiting = getattr(task, "payload", None) or {}
+        if (waiting.get("values") == request["payload"]["values"]
+                and waiting.get("before") == request["payload"]["before"]):
             return {"pending": int(task.id), "existing": True}
     return irreversible.enqueue(orch, retention.APPROVAL_KIND, **request)
 

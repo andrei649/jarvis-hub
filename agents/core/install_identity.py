@@ -224,7 +224,12 @@ def hub_lock_held_elsewhere(root: str | Path | None = None) -> bool:
     of the probe. An empty, missing or unreadable file, or anything but a pid, is no hub;
     this process's pid, or its own hold, is not "elsewhere"; a dead process's stale pid is
     no hub. A hub between truncating the file and writing its pid reads as none (a window
-    of one write). The data root and the file are never created."""
+    of one write). The data root and the file are never created.
+
+    What a pid cannot tell: a crashed hub's pid reused by another process reads as a hub
+    (the coordinator then skips its sweeps until that process exits: nothing is deleted),
+    and a hub in another pid namespace sharing the data root (a separate container) reads
+    as none. The shipped compose file does not share a data root between containers."""
     if _hub_handle is not None:
         return False
     try:

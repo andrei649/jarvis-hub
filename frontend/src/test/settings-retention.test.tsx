@@ -11,7 +11,7 @@ import React from 'react';
 import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
 import { SettingsPanel, DecisionInboxPanel } from '../gap';
 import { ResetCategory, SettingsTransfer, UndoReset } from '../panels/settings-tools';
-import { RETENTION_STATE_PATH, refusedWhy, retentionConfirmValues } from '../panels/retention';
+import { RETENTION_STATE_PATH, refusedWhy, retentionConfirmValues, saveOrder } from '../panels/retention';
 
 let calls;
 let putReply;
@@ -229,7 +229,7 @@ describe('H262 review — counts, the waiting card, readable refusals', () => {
     });
     render(<DecisionInboxPanel />);
     const card = await screen.findByTestId('retention-card');
-    expect(card.textContent).toContain('500+ archived chats deleted by the sweeps of the next 7 days');
+    expect(card.textContent).toContain('500+ archived chats past the horizon now (gone within 7 days)');
     expect(card.textContent).toContain('5 chats archived by the next sweep, deleted 7 days later');
     expect(card.textContent).toContain('1234 audit rows');
     expect(card.textContent).toContain('ingestion: not counted');
@@ -258,7 +258,31 @@ describe('H262 review — counts, the waiting card, readable refusals', () => {
     expect(refusedWhy({ body: { error: 'e' } })).toBe('e');
   });
 
-  it('a save sends retention before memory, so the memory card previews what retention will hold (review round 2)', async () => {
+  it('saveOrder sends the ungated one first: retention when it is on, memory when it is off', () => {
+    expect(saveOrder(['memory', 'system', 'retention'], true)).toEqual(['retention', 'memory', 'system']);
+    expect(saveOrder(['retention', 'system', 'memory'], false)).toEqual(['memory', 'retention', 'system']);
+    expect(saveOrder(['system', 'voice'], false)).toEqual(['system', 'voice']);
+  });
+
+  it('with retention off a save sends memory first, so turning both on at once gives a card that applies', async () => {
+    settings = {
+      memory: [{ key: 'auto_archive_days', value: 0, default: 0, source: 'default', label: 'Archive chats idle for', kind: 'number' }],
+      retention: SETTINGS.retention.map((it) => (it.key === 'enabled' ? { ...it, value: false } : it)),
+      system: SETTINGS.system,
+    };
+    state = { ...state, awaiting_approval: false };
+    render(<SettingsPanel />);
+    await screen.findByText('Archive chats idle for');
+    const boxes = screen.getAllByRole('spinbutton');
+    fireEvent.change(boxes[1], { target: { value: '900' } });      // retention edited first
+    fireEvent.change(boxes[0], { target: { value: '30' } });       // then memory
+    fireEvent.click(screen.getByText(/save 2 changes/));
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PUT').length).toBe(2));
+    const puts = calls.filter((c) => c.method === 'PUT').map((c) => c.url);
+    expect(puts).toEqual(['/api/admin/settings/memory', '/api/admin/settings/retention']);
+  });
+
+  it('with retention on a save sends retention before memory, so the memory card previews what retention will hold (review round 2)', async () => {
     settings = {
       memory: [{ key: 'auto_archive_days', value: 0, default: 0, source: 'default', label: 'Archive chats idle for', kind: 'number' }],
       ...SETTINGS,
