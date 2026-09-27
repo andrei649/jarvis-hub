@@ -45,7 +45,9 @@ rules that keep it from ever wedging a run:
   work it wanted to wait for is simply not pending any more.
 * **``request`` raises only :class:`WorkRunError`.** A task queue, a webhook store
   or a pid probe that fails while a barrier is being set is a refusal
-  (``trigger_unavailable`` / ``probe_failed``), never a raw exception out of a tick.
+  (``trigger_unavailable`` / ``probe_failed``, :data:`WAIT_CHECK_FAILED`), never a
+  raw exception out of a tick. A caller treats those like nothing to wait on: the
+  check may well succeed on the next sweep, so the run is not charged for it.
 """
 
 from __future__ import annotations
@@ -97,6 +99,13 @@ NOTHING_TO_WAIT_ON = frozenset({
     "trigger_already_fired", "pid_not_running", "pid_unprovable", "no_time_left",
     "owner_cleared",
 })
+
+# Refusals that mean "the wait could not be checked just now": a locked or missing
+# task queue or webhook store, a pid probe that raised. Not the request's fault, so
+# a caller does not charge the run for them either (H464 review round 2, N2) — it
+# counts them with the nothing-to-wait-on ones, which bounds a check that never
+# recovers.
+WAIT_CHECK_FAILED = frozenset({"trigger_unavailable", "probe_failed"})
 
 # Who is bound by an owner's clear: the model-driven sources. Hub code that spawned
 # the work itself ("hub") is not a model second-guessing the owner.
@@ -190,18 +199,23 @@ def _proc_state(pid: int) -> str:
 
 
 def default_pid_probe(barrier: Mapping[str, Any]) -> str:
-    """``alive``, ``dead``, ``reused`` or ``ns`` for a pid barrier.
+    """``alive``, ``dead``, ``reused``, ``ns`` or ``unknown`` for a pid barrier.
 
     POSIX-first, with Windows handled through the same exec_cache helpers the
     sandbox lock uses. A pid from another boot or pid namespace means nothing
     here, so it clears; a reused pid (start token changed) clears; a zombie is a
-    process that has already exited. A permission error reads as alive, as in
-    exec_cache — the pid was registered by the hub, and the cap bounds it anyway.
+    process that has already exited.
 
-    ``unknown`` when the identity cannot be proven: no start token was captured, or
-    none can be read now (macOS/BSD, where there is no /proc — ``kill(pid, 0)``
-    alone cannot tell this process from a zombie or a reused pid). Unknown clears
-    (I3: anything the check cannot confirm clears) — H464 review F4.
+    ``alive`` needs proof: the start token captured at registration must still be
+    readable and must match. A permission error from ``kill(pid, 0)`` alone proves
+    nothing — exec_cache reads it as alive without comparing tokens — so the token
+    is compared here too, and a different one is ``reused``. When no token was
+    captured, or none can be read now, the answer is ``unknown``: macOS/BSD, where
+    there is no /proc and ``kill(pid, 0)`` cannot tell this process from a zombie
+    or a reused pid; or a host that hides other users' /proc entries
+    (``hidepid=2``), where a process of another user is invisible. Unknown clears
+    (I3: anything the check cannot confirm clears — H464 review F4), and
+    ``request`` refuses it as ``pid_unprovable``.
     """
     from agents.core import exec_cache
 
@@ -214,9 +228,10 @@ def default_pid_probe(barrier: Mapping[str, Any]) -> str:
         return "reused" if start and exec_cache._pid_alive(pid) else "dead"
     if _proc_state(pid) in {"Z", "X"}:
         return "dead"
-    if not start or not exec_cache._start_token(pid):
+    now = exec_cache._start_token(pid)
+    if not start or not now:
         return "unknown"
-    return "alive"
+    return "alive" if now == start else "reused"
 
 
 def default_proc_identity(pid: int) -> dict[str, str] | None:
@@ -323,24 +338,38 @@ class RunBarriers:
             record.update(self._pid_target(run_id, raw.get("target")))
         else:
             record.update(self._trigger_target(run_id, raw.get("target")))
-        if source in _MODEL_SOURCES and self._owner_let_go(run_id, kind, record["target"]):
+        if source in _MODEL_SOURCES and self._owner_let_go(
+            run_id, kind, record["target"], record.get("start")
+        ):
             raise RunBarriersError("owner_cleared")
         self._ledger.set_barrier(run_id, record)
         return self.state(run_id) or {}
 
-    def _owner_let_go(self, run_id: str, kind: str, target: Any) -> bool:
+    def _owner_let_go(self, run_id: str, kind: str, target: Any, start: Any = "") -> bool:
         """Whether the owner already cleared this same wait on this run.
 
         "The same wait" is the same kind and target — except the clock: a deadline's
         target is recomputed from ``in_seconds`` on every ask, so for the clock any
         deadline is the same wait. Otherwise the judge would re-park a run on a
         fresh six-hour clock the very tick after the owner let it go.
+
+        A pid is a process, not a number: the same pid AND the same start token
+        (N5), so a later process the hub registers on a reused pid is a new wait.
+        When either side has no token, nothing tells the two apart and the pid
+        number alone decides — the owner's clear keeps binding.
         """
         for cleared in self._ledger.owner_cleared(run_id):
             if cleared.get("kind") != kind:
                 continue
-            if kind == "deadline" or cleared.get("target") == target:
+            if kind == "deadline":
                 return True
+            if cleared.get("target") != target:
+                continue
+            if kind == "pid":
+                was, now = str(cleared.get("start") or ""), str(start or "")
+                if was and now and was != now:
+                    continue
+            return True
         return False
 
     @staticmethod
@@ -628,6 +657,7 @@ __all__ = [
     "MAX_JUDGE_WAITS",
     "MAX_PROCS_PER_RUN",
     "NOTHING_TO_WAIT_ON",
+    "WAIT_CHECK_FAILED",
     "RunBarriers",
     "RunBarriersError",
     "default_pid_probe",

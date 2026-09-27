@@ -19,7 +19,9 @@ Waking is not a licence, so the rules are about restraint, not throughput:
   yet?". The check clears a stale barrier as it goes, so the run is due again on
   the first sweep after the process exits, the trigger fires or the time passes.
   A spent budget outranks a barrier: the cap only covers the wall clock, so a
-  steps budget spent while parked must read ``budget_spent``, never ``waiting``.
+  steps budget spent while parked must read ``budget_spent``, never ``waiting`` —
+  and the scheduler clears that run's barrier itself (``why=budget_spent``,
+  ``by=scheduler``), since a spent run is never ticked for the check to clear it.
 * **Night hours are quiet hours for attention, not for work.** During the night
   window a run may still take steps, but a step that would interrupt the owner is
   deferred to the morning. This mirrors `is_night_window` in the existing worker
@@ -183,6 +185,7 @@ class ScheduleRuntime:
             return "blocked"
         try:
             if self._ledger.budget_state(run.id)["exceeded"]:
+                self._clear_spent_barrier(run)
                 return "budget_spent"
         except Exception:
             logger.debug("scheduler could not read a budget", exc_info=True)
@@ -201,6 +204,22 @@ class ScheduleRuntime:
         if last is not None and (now - last) < self.config.interval_seconds:
             return "not_due"
         return ""
+
+    def _clear_spent_barrier(self, run: Any) -> None:
+        """A spent run is never ticked, so the barrier check never runs on it and a
+        barrier it carries would sit in the record — "waiting on …" — with no audit
+        of why it stopped mattering. Clear it here (H464 review round 2, N3): a
+        compare-and-clear on the barrier this sweep read, so a newer one is left
+        alone. Best effort; clearing only ever un-parks."""
+        barrier = getattr(run, "barrier", None)
+        if not barrier:
+            return
+        try:
+            self._ledger.clear_barrier(
+                run.id, why="budget_spent", by="scheduler", expect_id=barrier.get("id")
+            )
+        except Exception:
+            logger.debug("scheduler could not clear a spent run's barrier", exc_info=True)
 
     def quiet_hours(self) -> bool:
         """True when a step that would interrupt the owner should wait.

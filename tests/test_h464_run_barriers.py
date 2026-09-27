@@ -782,3 +782,66 @@ def test_the_ledger_compare_and_clear_says_whether_it_wrote(ledger, clock):
     wrote, after = ledger.clear_barrier_if(run.id, why="owner", by="owner", expect_id=first)
     assert wrote is True and after.barrier is None
     assert ledger.clear_barrier_if(run.id, why="owner", by="owner", expect_id=first)[0] is False
+
+
+# ── H464 review round 2 ──────────────────────────────────────────────────────
+
+def test_an_owner_clear_of_a_pid_wait_does_not_refuse_a_later_process_on_that_pid(
+    ledger, clock,
+):
+    """N5: the owner's clear binds that process — pid AND start token. A later process
+    the hub registers on the reused pid number is a different wait."""
+    identity = {"start": "111", "ns": "ns-1", "boot": "boot-1"}
+    barriers = _barriers(ledger, clock, identity=lambda _pid: dict(identity))
+    run = ledger.open_run(_goal())
+    barriers.register_process(run.id, 4242, label="build")
+    barriers.request(run.id, {"kind": "pid", "target": 4242}, source="planner")
+    assert barriers.clear(run.id)[0] is True
+    with pytest.raises(RunBarriersError) as exc:      # the same process: still refused
+        barriers.request(run.id, {"kind": "pid", "target": 4242}, source="judge")
+    assert exc.value.reason == "owner_cleared"
+
+    identity["start"] = "222"                          # the pid is reused later
+    barriers.register_process(run.id, 4242, label="rebuild")
+    state = barriers.request(run.id, {"kind": "pid", "target": 4242}, source="planner")
+    assert state["target"] == 4242
+    assert ledger.get(run.id).barrier["start"] == "222"
+
+
+def test_a_pid_owner_clear_recorded_without_a_start_token_matches_on_the_pid(ledger, clock):
+    """N5: an audit row with no start token (none was captured) cannot tell two
+    processes apart, so the owner's clear keeps binding the pid number."""
+    barriers = _barriers(ledger, clock, identity=lambda _pid: {"start": "", "ns": "",
+                                                                "boot": ""})
+    run = ledger.open_run(_goal())
+    barriers.register_process(run.id, 4242)
+    barriers.request(run.id, {"kind": "pid", "target": 4242}, source="planner")
+    barriers.clear(run.id)
+    with pytest.raises(RunBarriersError) as exc:
+        barriers.request(run.id, {"kind": "pid", "target": 4242}, source="planner")
+    assert exc.value.reason == "owner_cleared"
+
+
+def test_a_pid_whose_signal_is_refused_is_still_checked_against_its_start_token(
+    monkeypatch,
+):
+    """N4: ``kill(pid, 0)`` answering EPERM makes exec_cache call the pid alive without
+    comparing start tokens. The probe compares them itself, so a reused pid clears;
+    and when /proc is hidden (hidepid=2) there is no token to read — unknown, clears."""
+    from agents.core import exec_cache
+    from agents.core.autonomy import run_barriers
+
+    token = {"now": "999"}
+    monkeypatch.setattr(exec_cache, "_pid_alive", lambda _pid, _start="": True)  # EPERM
+    monkeypatch.setattr(exec_cache, "_start_token", lambda _pid: token["now"])
+    monkeypatch.setattr(exec_cache, "_pid_ns", lambda: "ns-1")
+    monkeypatch.setattr(exec_cache, "_boot_id", lambda: "boot-1")
+    monkeypatch.setattr(run_barriers, "_proc_state", lambda _pid: "S")
+    barrier = {"target": 4242, "start": "111", "ns": "ns-1", "boot": "boot-1"}
+    assert default_pid_probe(barrier) == "reused"
+    token["now"] = "111"
+    assert default_pid_probe(barrier) == "alive"
+    token["now"] = ""                                  # hidepid=2: nothing to read
+    monkeypatch.setattr(run_barriers, "_proc_state", lambda _pid: "")
+    assert default_pid_probe(barrier) == "unknown"
+    assert "A permission error reads as alive" not in (default_pid_probe.__doc__ or "")

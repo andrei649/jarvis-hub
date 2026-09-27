@@ -142,9 +142,9 @@ _PARKABLE = frozenset({"planning", "working"})
 BARRIER_SOURCES = ("planner", "judge", "hub")
 BARRIER_CLEAR_REASONS = (
     "elapsed", "exited", "pid_reused", "ns_mismatch", "fired", "vanished", "cap",
-    "probe_error", "owner", "replaced",
+    "probe_error", "owner", "replaced", "budget_spent",
 )
-BARRIER_CLEARED_BY = ("check", "owner", "ledger")
+BARRIER_CLEARED_BY = ("check", "owner", "ledger", "scheduler")
 
 
 def _exceeded(run: WorkRun, moment: float) -> str | None:
@@ -921,10 +921,15 @@ class WorkRunLedger:
                     "id": run.barrier.get("id"), "why": "replaced", "by": "ledger",
                 })
             self._conn.execute("UPDATE runs SET barrier = ? WHERE id = ?", (encoded, run_id))
-            self._event_locked(run_id, "barrier.set", now, {
+            event = {
                 key: payload.get(key)
                 for key in ("id", "kind", "target", "cap_at", "source", "reason")
-            })
+            }
+            if payload.get("kind") == "pid":
+                # Which process, not just which number: an owner's clear binds this
+                # process, never a later one on a reused pid (H464 review N5).
+                event["start"] = str(payload.get("start") or "")
+            self._event_locked(run_id, "barrier.set", now, event)
             self._conn.commit()
         logger.info("run %s parked on %s (%s) by %s", run_id, payload.get("kind"),
                     payload.get("target"), payload.get("source"))
@@ -980,7 +985,8 @@ class WorkRunLedger:
 
     def owner_cleared(self, run_id: str) -> list[dict[str, Any]]:
         """The waits the owner let this run go from, oldest first: ``{kind, target}``
-        as each one's ``barrier.set`` event recorded it. Read from the append-only
+        (plus a pid's ``start`` token, when recorded) as each one's ``barrier.set``
+        event recorded it. Read from the append-only
         audit, so an owner's "stop waiting" outlives a restart (H464 review F3)."""
         with self._lock:
             rows = self._conn.execute(
@@ -996,7 +1002,10 @@ class WorkRunLedger:
             elif row["kind"] == "barrier.cleared" and detail.get("by") == "owner":
                 origin = sets.get(detail.get("id"))
                 if origin is not None:
-                    out.append({"kind": origin.get("kind"), "target": origin.get("target")})
+                    entry = {"kind": origin.get("kind"), "target": origin.get("target")}
+                    if "start" in origin:
+                        entry["start"] = origin.get("start")
+                    out.append(entry)
         return out
 
     def now(self) -> float:

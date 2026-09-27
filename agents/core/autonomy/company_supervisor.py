@@ -35,9 +35,14 @@ The rules it enforces, none of which the planner or the model can talk it out of
   ask to park (``Action(kind="wait", barrier=…)``) and so can the judge's wait
   probe, before any verdict is spent; either way the barrier only suppresses work.
   A wait with nothing left to wait on (the task already finished, the process
-  already exited, the owner already let the run go from it) costs nothing either:
-  the tick is ``idle`` and the next one plans again. Only a malformed or forbidden
-  wait is a failed ``plan`` step, which the streak rule bounds.
+  already exited, the owner already let the run go from it) costs nothing either,
+  nor does one whose check failed for a moment (a locked queue, a probe that
+  raised): the tick is ``idle`` and the next one plans again, told why its wait
+  was refused (``last_wait_refused``). Free is not unbounded: after
+  ``MAX_FREE_WAIT_REFUSALS`` such refusals in a row — reset by a real step, a park
+  or a grade — the next one is a failed ``plan`` step, so the streak rule stops a
+  planner that keeps asking. A malformed or forbidden wait is a failed ``plan``
+  step at once.
 
 The planner is injected (``plan_next``) and returns either an :class:`Action` or
 ``None`` meaning "nothing left to do" — at which point the run goes to grading.
@@ -51,7 +56,11 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from agents.core.autonomy.run_barriers import MAX_JUDGE_WAITS, NOTHING_TO_WAIT_ON
+from agents.core.autonomy.run_barriers import (
+    MAX_JUDGE_WAITS,
+    NOTHING_TO_WAIT_ON,
+    WAIT_CHECK_FAILED,
+)
 from agents.core.autonomy.work_runs import WorkRunError
 
 logger = logging.getLogger("jarvis.company_supervisor")
@@ -73,6 +82,13 @@ TICK_OUTCOMES = (
 
 # The action kind that parks the run instead of doing anything (H464).
 _WAIT_KIND = "wait"
+
+# Free planner-wait refusals (nothing to wait on, or a check that failed for a
+# moment) allowed in a row before the next one is charged as a failed plan step
+# (H464 review round 2, N1). Free keeps a finished build from costing a step; the
+# bound keeps a planner that asks for it on every sweep from spending the night on
+# model calls with nothing to show — the streak rule then ends the run.
+MAX_FREE_WAIT_REFUSALS = 3
 
 
 @dataclass(frozen=True)
@@ -188,6 +204,10 @@ class CompanySupervisor:
         # deserves a fresh attempt at whatever it was stuck on, and the durable
         # budget still bounds how long that can go on.
         self._streaks: dict[str, tuple[str, int]] = {}
+        # Per-run free wait refusals in a row, and the last refusal's reason (what
+        # the planner is told). In memory for the same reason as the streaks.
+        self._free_refusals: dict[str, int] = {}
+        self._last_refused: dict[str, str] = {}
 
     # ── the loop ─────────────────────────────────────────────────────────
 
@@ -236,10 +256,13 @@ class CompanySupervisor:
             except Exception:
                 logger.debug("barrier check failed; ticking normally", exc_info=True)
 
-        action = await _maybe_await(
-            self._plan_next({"run": run.as_dict(), "budget": budget})
-        )
+        context: dict[str, Any] = {"run": run.as_dict(), "budget": budget}
+        if run_id in self._last_refused:
+            # So a model planner can learn why its last wait was not set.
+            context["last_wait_refused"] = self._last_refused[run_id]
+        action = await _maybe_await(self._plan_next(context))
         if action is None:
+            self._reset_free_refusals(run_id)
             return await self._grade(run_id)
         if not isinstance(action, Action):
             # A planner that returned something unusable is a bug, not a licence
@@ -285,6 +308,7 @@ class CompanySupervisor:
         except WorkRunError as exc:
             return self._settle_from_ledger_refusal(run_id, exc.reason)
         self._streaks.pop(run_id, None)
+        self._reset_free_refusals(run_id)
         return TickResult(
             "stepped", f"queued task {task_id} for approval", run_id, step.seq
         )
@@ -295,31 +319,55 @@ class CompanySupervisor:
         Never enqueues and never records a step. A wait with nothing to wait on
         (:data:`NOTHING_TO_WAIT_ON` — the task finished while the planner thought,
         the process already exited, the owner let the run go from this very wait)
-        is not a failure: no step, no budget, and the next tick plans again. Only a
-        malformed or forbidden wait — or one whose check could not run — goes down
-        the road of any unusable plan, a failed ``plan`` step, so the streak rule
-        ends a planner that keeps asking for it instead of letting it loop for free.
-        Nothing raised here leaves the tick.
+        or whose check failed for a moment (:data:`WAIT_CHECK_FAILED` — a locked
+        queue, a probe that raised) is not a failure: no step, no budget, and the
+        next tick plans again, told why. Only ``MAX_FREE_WAIT_REFUSALS`` of those in
+        a row, though; after that each one is a failed ``plan`` step, so the streak
+        rule ends a planner that keeps asking instead of letting it loop for free
+        until the wall clock runs out (N1). A malformed or forbidden wait goes down
+        the road of any unusable plan at once. Nothing raised here leaves the tick.
         """
         if self._barriers is None:
             return self._record_failure(run_id, "plan", "waits are not wired")
         try:
             state = self._barriers.request(run_id, action.barrier, source="planner")
         except WorkRunError as exc:
-            if exc.reason in NOTHING_TO_WAIT_ON:
-                logger.info("run %s: nothing to wait on (%s); planning again", run_id,
-                            exc.reason)
-                return TickResult("idle", f"nothing to wait on: {exc.reason}", run_id)
+            self._last_refused[run_id] = exc.reason
+            if exc.reason in NOTHING_TO_WAIT_ON or exc.reason in WAIT_CHECK_FAILED:
+                return self._free_refusal(run_id, exc.reason)
             return self._record_failure(run_id, "plan", f"invalid wait: {exc.reason}")
         except Exception as exc:
             # The last resort: RunBarriers converts its readers' failures to
             # refusals, so this is a bug — bounded by the streak, never a tick
             # that raises on every sweep and bounds nothing.
             logger.warning("setting a planner wait failed on run %s", run_id, exc_info=True)
+            self._last_refused[run_id] = exc.__class__.__name__
             return self._record_failure(
                 run_id, "plan", f"invalid wait: {exc.__class__.__name__}"
             )
+        self._reset_free_refusals(run_id)
         return TickResult("waiting", f"parked: {state.get('waiting_on') or 'a barrier'}", run_id)
+
+    def _free_refusal(self, run_id: str, reason: str) -> TickResult:
+        """A planner wait refused for a reason that is not the planner's fault: free,
+        up to ``MAX_FREE_WAIT_REFUSALS`` in a row; after that a failed plan step the
+        streak rule sees. The count is not reset by that failure, so a planner that
+        keeps asking reaches the streak's stop instead of three more free ticks."""
+        count = self._free_refusals.get(run_id, 0) + 1
+        self._free_refusals[run_id] = count
+        transient = reason in WAIT_CHECK_FAILED
+        if count > MAX_FREE_WAIT_REFUSALS:
+            why = ("the planner's wait keeps failing its check" if transient
+                   else "the planner keeps asking to wait on work that is done")
+            return self._record_failure(run_id, "plan", f"{why}: {reason}")
+        logger.info("run %s: planner wait refused (%s), %d in a row; planning again",
+                    run_id, reason, count)
+        what = "the wait could not be checked" if transient else "nothing to wait on"
+        return TickResult("idle", f"{what}: {reason}", run_id)
+
+    def _reset_free_refusals(self, run_id: str) -> None:
+        self._free_refusals.pop(run_id, None)
+        self._last_refused.pop(run_id, None)
 
     def _waiting_on(self, run_id: str) -> str:
         try:
@@ -348,6 +396,7 @@ class CompanySupervisor:
         self._streaks[run_id] = (detail, count)
         if count >= max(1, self.config.max_consecutive_failures):
             self._streaks.pop(run_id, None)
+            self._reset_free_refusals(run_id)
             try:
                 self._ledger.request_stop(run_id, reason=f"stuck: {detail}")
                 self._ledger.settle_stop(run_id)
@@ -439,6 +488,7 @@ class CompanySupervisor:
             logger.warning("setting the judge's wait failed on run %s; grading", run_id,
                            exc_info=True)
             return None
+        self._reset_free_refusals(run_id)
         return TickResult(
             "waiting", f"the judge asked to wait: {state.get('waiting_on') or 'a barrier'}",
             run_id,
@@ -447,6 +497,7 @@ class CompanySupervisor:
 
 __all__ = [
     "FLAG",
+    "MAX_FREE_WAIT_REFUSALS",
     "TICK_OUTCOMES",
     "Action",
     "CompanySupervisor",

@@ -681,7 +681,7 @@ async def test_a_planner_wait_on_a_process_that_already_exited_spends_nothing(le
     wait = Action(kind="wait", summary="wait", barrier={"kind": "pid", "target": 4242})
     sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=lambda _c: wait,
                             barriers=barriers, config=ON)
-    for _ in range(4):                      # never a step, so never the streak's stop
+    for _ in range(3):                      # never a step: free, up to the bound (N1)
         result = await sup.tick(run.id)
         assert (result.outcome, result.detail) == ("idle", "nothing to wait on: pid_not_running")
     assert ledger.steps(run.id) == [] and ledger.get(run.id).status == "planning"
@@ -708,7 +708,11 @@ async def test_a_judge_wait_whose_task_read_raises_is_graded_not_wedged(ledger, 
     assert ledger.get(run.id).status == "succeeded"
 
 
-async def test_a_planner_wait_whose_task_read_raises_is_a_failed_plan_step(ledger, clock):
+async def test_a_planner_wait_whose_task_read_keeps_raising_is_free_then_bounded(
+    ledger, clock,
+):
+    """F1 + round 2 N2: a locked queue is not the planner's fault, so the refusal is
+    free — but counted, so a queue that never recovers still ends in the streak."""
     run = ledger.open_run(_goal())
     ledger.record_step(run.id, kind="research", summary="build", outcome="ok", task_id=7)
 
@@ -718,9 +722,15 @@ async def test_a_planner_wait_whose_task_read_raises_is_a_failed_plan_step(ledge
     wait = Action(kind="wait", summary="wait", barrier={"kind": "trigger", "target": "task:7"})
     sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=lambda _c: wait,
                             barriers=_task_barriers(ledger, clock, _locked), config=ON)
+    for _ in range(3):
+        result = await sup.tick(run.id)
+        assert (result.outcome, result.detail) == (
+            "idle", "the wait could not be checked: trigger_unavailable")
+    assert [s.outcome for s in ledger.steps(run.id)] == ["ok"]
     result = await sup.tick(run.id)
     assert result.outcome == "stepped"
-    assert ledger.steps(run.id)[-1].detail["reason"] == "invalid wait: trigger_unavailable"
+    assert ledger.steps(run.id)[-1].detail["reason"] == (
+        "the planner's wait keeps failing its check: trigger_unavailable")
     await sup.tick(run.id)
     assert (await sup.tick(run.id)).outcome == "stopped"      # the streak bounds it
 
@@ -857,3 +867,182 @@ async def test_a_spent_steps_budget_wins_over_a_barrier_with_a_later_cap(ledger,
     ).tick(run.id)
     assert (result.outcome, result.detail) == ("exhausted", "the steps budget is spent")
     assert ledger.get(run.id).status == "stopped" and ledger.get(run.id).barrier is None
+
+
+# ── H464 review round 2 ──────────────────────────────────────────────────────
+
+_DONE_REASON = "the planner keeps asking to wait on work that is done"
+
+
+@pytest.mark.parametrize("case", ["task_done", "owner_cleared"])
+async def test_a_planner_that_keeps_asking_for_a_free_wait_is_bounded(ledger, clock, case):
+    """N1: the verifier's repro. A planner that always asks to wait on task 7 — which
+    is already done, or which the owner already let the run go from — used to get a
+    free idle tick on every sweep until the wall-clock budget ran out (one model call
+    per sweep, and the run never settled). Three free refusals in a row are allowed;
+    the next is a failed plan step, and the streak rule stops the run."""
+    from collections import Counter
+
+    from agents.core.autonomy.schedule_runtime import ScheduleConfig, ScheduleRuntime
+
+    run = ledger.open_run(_goal(), budget=Budget(max_seconds=3_600))
+    ledger.record_step(run.id, kind="research", summary="build", outcome="ok", task_id=7)
+    status = {"s": "running"}
+    barriers = _task_barriers(ledger, clock,
+                              lambda _i: types.SimpleNamespace(status=status["s"]))
+    calls = []
+
+    def _planner(ctx):
+        calls.append(dict(ctx))
+        return Action(kind="wait", summary="wait for the build",
+                      barrier={"kind": "trigger", "target": "task:7"})
+
+    verify, judge = _graders(ledger)
+    sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=_planner, verify=verify,
+                            judge=judge, barriers=barriers, config=ON)
+    runtime = ScheduleRuntime(ledger, tick=sup.tick,
+                              config=ScheduleConfig(enabled=True, interval_seconds=300.0),
+                              clock=clock, local_hour=lambda: 12,
+                              barrier_active=barriers.active)
+    if case == "owner_cleared":
+        await runtime.sweep()                               # parks on task 7
+        clock.advance(300)
+        assert barriers.clear(run.id)[0] is True
+        reason, parked = "owner_cleared", 1
+    else:
+        status["s"] = "done"
+        reason, parked = "trigger_already_fired", 0
+    outcomes = Counter()
+    for _ in range(30):
+        for entry in (await runtime.sweep()).entries:
+            outcomes[(entry.reason, entry.outcome)] += 1
+        clock.advance(300)
+
+    assert len(calls) == parked + 6                        # 3 free, then 3 failed steps
+    after = ledger.get(run.id)
+    assert after.status == "stopped"
+    assert after.stop_reason == f"stuck: {_DONE_REASON}: {reason}"
+    failed = [s for s in ledger.steps(run.id) if s.outcome == "failed"]
+    assert [(s.kind, s.detail["reason"]) for s in failed] == [
+        ("plan", f"{_DONE_REASON}: {reason}")] * 3
+    assert not any(reason == "budget_spent" for reason, _ in outcomes)
+    # the planner is told why its last wait was refused
+    assert calls[parked].get("last_wait_refused") is None
+    assert calls[parked + 1]["last_wait_refused"] == reason
+
+
+async def test_the_free_wait_count_resets_after_a_real_step(ledger, clock):
+    """N1: the bound is on refusals IN A ROW. A real step in between starts it over,
+    and clears what the planner is told about the last refusal."""
+    run = ledger.open_run(_goal())
+    ledger.record_step(run.id, kind="research", summary="build", outcome="ok", task_id=7)
+    done = types.SimpleNamespace(status="done")
+    wait = Action(kind="wait", summary="wait for the build",
+                  barrier={"kind": "trigger", "target": "task:7"})
+    queue = [wait, wait, wait, _action(), wait, wait, wait, wait]
+    seen = []
+
+    def _planner(ctx):
+        seen.append(ctx.get("last_wait_refused"))
+        return queue.pop(0)
+
+    sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=_planner,
+                            barriers=_task_barriers(ledger, clock, lambda _i: done), config=ON)
+    for _ in range(3):
+        assert (await sup.tick(run.id)).outcome == "idle"
+    assert (await sup.tick(run.id)).outcome == "stepped"   # the real step
+    ledger.resume(run.id)
+    for _ in range(3):
+        result = await sup.tick(run.id)
+        assert (result.outcome, result.step_seq) == ("idle", None)
+    fourth = await sup.tick(run.id)
+    assert fourth.outcome == "stepped"
+    assert ledger.steps(run.id)[-1].detail["reason"] == f"{_DONE_REASON}: trigger_already_fired"
+    assert seen == [None, "trigger_already_fired", "trigger_already_fired",
+                    "trigger_already_fired", None, "trigger_already_fired",
+                    "trigger_already_fired", "trigger_already_fired"]
+
+
+async def test_a_successful_park_resets_the_free_wait_count(ledger, clock):
+    run = ledger.open_run(_goal())
+    ledger.record_step(run.id, kind="research", summary="build", outcome="ok", task_id=7)
+    status = {"s": "done"}
+    barriers = _task_barriers(ledger, clock,
+                              lambda _i: types.SimpleNamespace(status=status["s"]))
+    wait = Action(kind="wait", summary="wait", barrier={"kind": "trigger", "target": "task:7"})
+    sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=lambda _c: wait,
+                            barriers=barriers, config=ON)
+    for _ in range(3):
+        assert (await sup.tick(run.id)).outcome == "idle"
+    status["s"] = "running"
+    assert (await sup.tick(run.id)).outcome == "waiting"   # a real park
+    status["s"] = "done"                                    # the check clears it next tick
+    for _ in range(3):
+        result = await sup.tick(run.id)
+        assert result.outcome == "idle", result
+    assert [s.outcome for s in ledger.steps(run.id)] == ["ok"]
+
+
+async def test_a_transient_task_read_failure_on_a_planner_wait_is_free(ledger, clock):
+    """N2: the verifier's repro. The queue db is locked once while the planner's wait
+    is checked, and the task is done. That is not a failed plan step — which the
+    scope rule would turn into a failed run — so the run still passes."""
+    run = ledger.open_run(_goal())
+    ledger.record_step(run.id, kind="research", summary="build", outcome="ok", task_id=7)
+    reads = {"n": 0}
+
+    def _read(_task_id):
+        reads["n"] += 1
+        if reads["n"] == 1:
+            raise RuntimeError("database is locked")
+        return types.SimpleNamespace(status="done")
+
+    verify, judge = _graders(ledger)
+    plan = [Action(kind="wait", summary="w", barrier={"kind": "trigger", "target": "task:7"})]
+    sup = CompanySupervisor(
+        ledger, enqueue=_Intake(), plan_next=lambda _c: plan.pop(0) if plan else None,
+        verify=verify, judge=judge, barriers=_task_barriers(ledger, clock, _read), config=ON,
+    )
+    first = await sup.tick(run.id)
+    assert (first.outcome, first.step_seq) == ("idle", None)
+    assert first.detail == "the wait could not be checked: trigger_unavailable"
+    graded = await sup.tick(run.id)
+    assert graded.outcome == "graded" and graded.detail.startswith("met:"), graded
+    assert ledger.get(run.id).status == "succeeded"
+    assert [(s.kind, s.outcome) for s in ledger.steps(run.id)] == [("research", "ok")]
+
+
+async def test_a_pid_probe_that_raises_on_a_planner_wait_is_free_then_bounded(ledger, clock):
+    """N2: ``probe_failed`` is free like ``trigger_unavailable`` — and counted, so a
+    probe that always raises still ends in the streak's stop, never a free loop."""
+    run = ledger.open_run(_goal())
+
+    def _raise(_b):
+        raise OSError("proc unreadable")
+
+    barriers = _task_barriers(ledger, clock, None, probe=_raise)
+    barriers.register_process(run.id, 4242)
+    wait = Action(kind="wait", summary="wait", barrier={"kind": "pid", "target": 4242})
+    sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=lambda _c: wait,
+                            barriers=barriers, config=ON)
+    for _ in range(3):
+        result = await sup.tick(run.id)
+        assert (result.outcome, result.detail) == (
+            "idle", "the wait could not be checked: probe_failed")
+    assert ledger.steps(run.id) == []
+    assert (await sup.tick(run.id)).outcome == "stepped"
+    assert ledger.steps(run.id)[-1].detail["reason"] == (
+        "the planner's wait keeps failing its check: probe_failed")
+    await sup.tick(run.id)
+    assert (await sup.tick(run.id)).outcome == "stopped"
+
+
+async def test_a_malformed_planner_wait_is_still_a_failed_step_at_once(ledger, clock):
+    """N2 does not widen the free set to bad requests: an unknown kind fails the step
+    on the first ask."""
+    run = ledger.open_run(_goal())
+    wait = Action(kind="wait", summary="wait", barrier={"kind": "sleep"})
+    sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=lambda _c: wait,
+                            barriers=_barriers(ledger, clock), config=ON)
+    assert (await sup.tick(run.id)).outcome == "stepped"
+    assert ledger.steps(run.id)[-1].detail["reason"] == "invalid wait: unknown_kind"

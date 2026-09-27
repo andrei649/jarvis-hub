@@ -526,9 +526,10 @@ async def test_a_barrier_check_that_raises_does_not_wedge_the_run(ledger, clock)
 
 async def test_a_wall_clock_budget_spent_behind_a_barrier_reads_budget_spent(ledger, clock):
     """Every barrier is capped by the run's own wall-clock budget, so once that is
-    spent the cap has cleared the barrier as well, and the honest reason comes back.
-    (That the budget is checked FIRST is pinned by the steps-budget test below: the
-    cap cannot cover a steps budget.)"""
+    spent the honest reason comes back — and the scheduler, which never ticks a
+    spent run, clears the barrier itself (round 2, N3). (That the budget is checked
+    FIRST is pinned by the steps-budget test below: the cap cannot cover a steps
+    budget.)"""
     run = ledger.open_run(_goal(), budget=Budget(max_seconds=900))
     barriers = _parked(ledger, clock)
     barriers.request(run.id, {"kind": "deadline", "target": clock.now + 86_400},
@@ -537,8 +538,10 @@ async def test_a_wall_clock_budget_spent_behind_a_barrier_reads_budget_spent(led
     assert runtime.due(ledger.get(run.id), now=clock.now) == "waiting"
     clock.advance(900)
     assert runtime.due(ledger.get(run.id), now=clock.now) == "budget_spent"
-    assert barriers.active(run.id) is False                  # and the cap has cleared it
-    assert ledger.events(run.id)[0]["detail"]["why"] == "cap"
+    assert ledger.get(run.id).barrier is None               # cleared by the skip itself
+    assert ledger.events(run.id)[0]["detail"] == {
+        "id": ledger.events(run.id)[1]["detail"]["id"], "why": "budget_spent",
+        "by": "scheduler"}
 
 
 async def test_waiting_is_a_named_skip_reason_and_the_order_is_pinned():
@@ -571,3 +574,39 @@ async def test_a_spent_steps_budget_is_budget_spent_even_behind_a_barrier(ledger
     assert barriers.active(run.id) is True
     runtime = _barrier_runtime(ledger, _Tick(), clock, barriers)
     assert runtime.due(ledger.get(run.id), now=clock.now) == "budget_spent"
+
+
+async def test_a_budget_spent_skip_clears_the_barrier_it_carries(ledger, clock):
+    """H464 review round 2, N3: a spent run is never ticked, so the barrier check never
+    runs on it. The scheduler clears the barrier itself (compare-and-clear), so the
+    record stops saying "waiting" and the audit says why and who."""
+    run = ledger.open_run(_goal(), budget=Budget(max_steps=1))
+    barriers = _parked(ledger, clock)
+    barriers.request(run.id, {"kind": "deadline", "target": clock.now + 3_600},
+                     source="planner")
+    barrier_id = ledger.get(run.id).barrier["id"]
+    ledger.record_step(run.id, kind="research", summary="landed", outcome="ok", task_id=5)
+    tick = _Tick()
+    result = await _barrier_runtime(ledger, tick, clock, barriers).sweep()
+    assert result.skipped == {run.id: "budget_spent"} and tick.calls == []
+    assert ledger.get(run.id).barrier is None
+    latest = ledger.events(run.id)[0]
+    assert (latest["kind"], latest["detail"]) == (
+        "barrier.cleared", {"id": barrier_id, "why": "budget_spent", "by": "scheduler"})
+
+
+async def test_a_budget_spent_skip_leaves_a_newer_barrier_alone(ledger, clock):
+    """N3: compare-and-clear — the scheduler clears the barrier it read, never one set
+    after it (``run`` is the listed snapshot)."""
+    run = ledger.open_run(_goal(), budget=Budget(max_steps=1))
+    barriers = _parked(ledger, clock)
+    barriers.request(run.id, {"kind": "deadline", "target": clock.now + 3_600},
+                     source="planner")
+    stale = ledger.get(run.id)
+    barriers.clear(run.id)
+    barriers.request(run.id, {"kind": "deadline", "target": clock.now + 1_800}, source="hub")
+    newer = ledger.get(run.id).barrier["id"]
+    ledger.record_step(run.id, kind="research", summary="landed", outcome="ok", task_id=5)
+    runtime = _barrier_runtime(ledger, _Tick(), clock, barriers)
+    assert runtime.due(stale, now=clock.now) == "budget_spent"
+    assert ledger.get(run.id).barrier["id"] == newer
