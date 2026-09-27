@@ -309,6 +309,14 @@ class AcquisitionRuntime:
         broker = self.ensure_promotion()
         if broker is None:
             return {"status": "failed", "reason": "acquisition_unavailable"}
+        # Known outcome gap (review round 5, item 10; documented, not changed): the first
+        # install task of a process reconciles the promotion journal before it runs. When
+        # an earlier attempt of THIS proposal began an install and was reaped mid-way,
+        # reconcile commits or rolls that install back here — and ``execute_task`` then
+        # reads the proposal as no longer promotable: ``promotion_refused``, which records
+        # nothing although the capability was attempted (the reaped task itself was
+        # failed by the reaper, recording nothing either). Only reachable after a crash
+        # mid-install; the reconcile's own journal row keeps what happened.
         if not self._reconciled:
             await broker.reconcile()
             self._reconciled = True

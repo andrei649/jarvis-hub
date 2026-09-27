@@ -102,9 +102,11 @@ class LocalOpenAIImageBackend:
                                 raise ImageGenerationError('response_too_large')
                             data.extend(chunk)
                 # Close is awaited before publication. From here the image was generated,
-                # so a config/approval change during the request WITHHOLDS it: the same
-                # gates, reported as withheld_after_generation (round 4, item 3). The
-                # response is validated first, so only an image is ever "withheld".
+                # so a governance change during the request (a kernel denial, a hold, a
+                # changed approval or binding, a gate switched off) WITHHOLDS it:
+                # withheld_after_generation (round 4, item 3). A recheck that BREAKS keeps
+                # its own reason, a failure (round 5, item 1). The response is validated
+                # first, so only an image is ever "withheld".
                 withheld = withheld_after_generation(recheck)
                 try:
                     result = strict_json(data)

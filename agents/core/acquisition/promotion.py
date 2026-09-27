@@ -452,6 +452,8 @@ class PromotionBroker:
             # the receipt tamper check below (round 4, item 2).
             raise PromotionError("quarantined package failed its integrity check") from exc
         except QuarantineError as exc:
+            # Includes a record (any record) failing its check while the store loads:
+            # the store cannot be read (round 5, item 2).
             raise PromotionStoreUnavailable("quarantine cannot be read") from exc
         if record is None or record.status != "verified" or record.receipt is None:
             raise PromotionError("verified quarantine artifact required")

@@ -39,7 +39,9 @@ class QuarantineError(RuntimeError):
 class QuarantinePackageRejected(QuarantineError):
     """A quarantined package failed its own integrity check (a size or hash mismatch):
     the check declined the package — nothing about the store failing to be read
-    (review round 4, item 2)."""
+    (review round 4, item 2). Raised only for the package a caller asked for or put;
+    a record failing while the store loads is a plain :class:`QuarantineError`, the store
+    being unreadable (review round 5, item 2)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,6 +283,12 @@ class QuarantineStore:
             TypeError,
             ValueError,
             KeyError,
+            # A record that fails its integrity check while the store loads makes the
+            # STORE unreadable — whichever record it is: one that fails its hash check
+            # cannot be trusted to name its artifact (the id is inside the hash). Only
+            # ``get_record``'s check of a record the store did load is that package's
+            # rejection (review round 5, item 2).
+            QuarantinePackageRejected,
         ) as exc:
             raise QuarantineError("cannot decrypt or validate quarantine") from exc
         self._records = records

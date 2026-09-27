@@ -305,9 +305,10 @@ class LocalImageRuntime:
                                                backend_factories={"comfyui": ComfyUIBackend,
                                                                   "openai_images": LocalOpenAIImageBackend})
             except ImageGenerationError as exc:
-                # A gate that declined after the request completed withholds a
-                # generated image: ``withheld_after_generation``, its cause in
-                # ``detail`` (round 4, item 3).
+                # A governance gate that declined after the request completed withholds
+                # a generated image: ``withheld_after_generation``, its cause in
+                # ``detail`` (round 4, item 3). A guard that BROKE there keeps its own
+                # reason — a failure, as before the request (round 5, item 1).
                 reason = exc.reason
                 detail = getattr(exc, "cause", None)
                 raise

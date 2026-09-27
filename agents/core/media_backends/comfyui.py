@@ -36,24 +36,41 @@ class ImageGenerationError(ValueError):
 
 class ImageWithheldAfterGeneration(ImageGenerationError):
     """The backend request completed and returned an image; then a gate re-checked
-    after the request (the local runtime's guard) declined, so the image is withheld,
-    never published. Its reason is ``withheld_after_generation`` — the capability ran
-    and worked, governance withheld the result — and ``cause`` is the gate's own reason
-    (review round 4, item 3)."""
+    after the request (the local runtime's guard) declined for a GOVERNANCE cause, so
+    the image is withheld, never published. Its reason is ``withheld_after_generation``
+    — the capability ran and worked, governance withheld the result — and ``cause`` is
+    the gate's own reason (review round 4, item 3)."""
 
     def __init__(self, cause: str):
         super().__init__("withheld_after_generation")
         self.cause = cause
 
 
+def governance_withholds(reason) -> bool:
+    """Whether a post-request decline with *reason* is governance withholding a generated
+    image: a refusal of the image capability's kind (``tool.rpc``), in the worker's one
+    vocabulary — a kernel denial, a mediation hold, a changed approval or backend
+    binding, a runtime gate switched off (review round 5, item 1). Anything else is the
+    guard's machinery breaking (``local_guard_failed``, ``kernel_error``,
+    ``approval_binding_invalid``, ``backend_source_changed``, ...): a failure."""
+    from ..autonomy.worker import is_refusal_reason
+
+    return is_refusal_reason("tool.rpc", reason)
+
+
 def withheld_after_generation(guard):
-    """*guard* as a post-request check: a decline becomes :class:`ImageWithheldAfterGeneration`."""
+    """*guard* as a post-request check: a governance decline becomes
+    :class:`ImageWithheldAfterGeneration`; a guard that broke raises its own error — a
+    failure under its own reason, exactly as before the request (review round 5, item 1).
+    The image is not published either way."""
     def check():
         try:
             guard()
         except ImageWithheldAfterGeneration:
             raise
         except ImageGenerationError as exc:
+            if not governance_withholds(exc.reason):
+                raise
             raise ImageWithheldAfterGeneration(exc.reason) from None
     return check
 

@@ -48,14 +48,26 @@ class TaskExecutor:
         self._handlers[prefix.lower()] = handler
         return self
 
-    def resolve(self, kind: str) -> Optional[Handler]:
+    def _prefix_for(self, kind: str) -> Optional[str]:
         kind = (kind or "").lower()
         best: Optional[str] = None
         for prefix in self._handlers:
             if kind == prefix or kind.startswith(prefix):
                 if best is None or len(prefix) > len(best):
                     best = prefix
+        return best
+
+    def resolve(self, kind: str) -> Optional[Handler]:
+        best = self._prefix_for(kind)
         return self._handlers[best] if best is not None else self.fallback
+
+    def handles(self, kind: str) -> bool:
+        """Whether a handler registered for *kind* (not the generic fallback) runs it.
+
+        The autonomy worker records a capability outcome only for a task a registered
+        handler ran: a kind that falls through to the fallback (the LLM pipeline) did
+        not exercise the capability its manifest names (review round 5, item 9)."""
+        return self._prefix_for(kind) is not None
 
     async def execute(self, task) -> dict:
         # The guard and handler must observe the same detached bytes.  Without

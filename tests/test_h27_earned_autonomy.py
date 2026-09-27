@@ -638,6 +638,9 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
         "kernel_denied": house | {"tool.rpc"},
         "execution_in_progress": house,
         "task_payload_changed": house,
+        # round 5, item 6: the two switches, decided before any driver call.
+        "unified_action_api_disabled": house,
+        "action_kernel_disabled": house,
         "human_decision_required": voice_and_grant,
         "decision_not_approval": voice_and_grant,
         "payload_required": voice_and_grant,
@@ -688,7 +691,10 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
                    "classify_failed", "provider_store_unavailable", "install_failed",
                    "promotion_store_unavailable", "execution_stranded", "validation_failed",
                    "attention_ledger_unavailable", "work_run_ledger_unavailable",
-                   "withheld_after_generation"):
+                   "withheld_after_generation",
+                   # round 5: a broker that failed to start, a kernel that broke
+                   "capability_broker_unavailable", "kernel_error", "kernel_unavailable",
+                   "local_guard_failed", "backend_source_changed"):
         for kind in every_kind:
             assert not is_refusal(kind, {"status": "failed", "reason": reason}), (kind, reason)
     # The one class that is neither: an image generated, then withheld by governance.
@@ -1144,4 +1150,336 @@ async def test_house_two_actuators_on_one_ledger_share_the_in_flight_claim(tmp_p
     release.set()
     assert (await asyncio.wait_for(in_flight, 5))["status"] == "verified"
     assert len(sim.calls) == 1 and sim.state == "on"
+    queue.close()
+
+
+# ── round 5, item 2: a store that cannot load is a store failure ──────────────
+
+
+@pytest.mark.parametrize("corrupt", ["another_record", "this_record"])
+@pytest.mark.asyncio
+async def test_skill_install_a_record_failing_on_a_cold_load_is_a_store_failure(tmp_path, corrupt):
+    """Hunt MINOR 2, through the real cold-load path: the records are committed to disk
+    and the cache is cold (a restart). A record that fails its integrity check while the
+    store loads makes the store unreadable — ``promotion_store_unavailable``, a failure
+    (0,1) — not this package's integrity refusal. That holds for the approved package's
+    own record too: a record that fails its hash check cannot be trusted to name its
+    artifact (the artifact id is inside the hash). Only the package's own check on a
+    record the store did load is ``promotion_refused`` (the in-memory test above)."""
+    from dataclasses import replace
+
+    broker, packages, payload = await _approved_promotion(tmp_path)
+    store = broker.quarantine
+    records = list(store._load())
+    good = records[0]
+    if corrupt == "another_record":
+        other = replace(good.package, artifact_id="f" * len(good.package.artifact_id),
+                        code=good.package.code + "\n# bit rot")
+        on_disk = [*records, replace(good, package=other)]
+    else:
+        on_disk = [replace(good, package=replace(good.package, code=good.package.code + "\n# bit rot")),
+                   *records[1:]]
+    store._commit(on_disk)                # committed to disk
+    store._records = None                 # a restart: the cache is cold
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, broker.execute_task, "skill.install", payload)
+    assert task.result == {"status": "failed", "reason": "promotion_store_unavailable"}
+    assert packages.list_records() == []
+    assert _counts(queue, "skill.install") == (0, 1)
+    queue.close()
+
+
+# ── round 5, item 3: the worker's own bookkeeping is never a failed attempt ────
+
+
+def _flaky_done(queue, monkeypatch):
+    """The worker's ``queue.transition(..., DONE)`` raises once (a disk error, or a busy
+    database past its timeout), then works."""
+    real, raised = queue.transition, []
+
+    def transition(task_id, new_status, **kwargs):
+        if new_status == TaskStatus.DONE and not raised:
+            raised.append(task_id)
+            raise sqlite3.OperationalError("disk I/O error")
+        return real(task_id, new_status, **kwargs)
+
+    monkeypatch.setattr(queue, "transition", transition)
+    return raised
+
+
+@pytest.mark.parametrize("outcomes, expected, status", [
+    # The handler SUCCEEDED (the run was opened), then the worker could not mark the task
+    # DONE. The retry reads the handler's refusal for work it already did: the task's one
+    # outcome is the success, recorded once — never a failure.
+    ([{"status": "ok", "run_id": "r1"},
+      {"status": "refused", "reason": "run_already_open_for_goal"}], (1, 0), "done"),
+    # ... and a retry that then breaks does not undo it.
+    ([{"status": "ok", "run_id": "r1"}, RuntimeError("database is locked"),
+      RuntimeError("database is locked")], (1, 0), "failed"),
+    # The success whose DONE raised is the final attempt: the task cannot settle DONE,
+    # the capability still did the work.
+    ([RuntimeError("carrier timed out"), RuntimeError("carrier timed out"),
+      {"status": "ok"}], (1, 0), "failed"),
+    # A refusal whose DONE raised is not an attempt that broke: the retry's refusal
+    # still records nothing.
+    ([{"status": "refused", "reason": "run_already_open_for_goal"},
+      {"status": "refused", "reason": "run_already_open_for_goal"}], (0, 0), "done"),
+    # Guard: the handler's own returned failure (DONE raised) then a success is the
+    # all-attempts rule unchanged — the one success.
+    ([{"status": "failed", "reason": "client_error"}, {"status": "ok"}], (1, 0), "done"),
+], ids=["success_then_refusal", "success_then_raises", "success_on_the_last_attempt",
+        "refusal_then_refusal", "failure_then_success"])
+@pytest.mark.asyncio
+async def test_a_done_transition_that_raised_is_the_workers_error_not_the_capabilitys(
+        tmp_path, monkeypatch, outcomes, expected, status):
+    """Round 5, item 3 (hunt MINOR 3): only an exception the capability's handler raises
+    (``_execute``) is a failed attempt. The worker's own bookkeeping raising after the
+    handler returned — ``queue.transition(DONE)`` — records that attempt's own outcome
+    (a success once, marked durably so no later attempt records again), never a failure
+    of the capability. Each attempt runs on a fresh worker."""
+    queue = _queue(tmp_path / "autonomy.db")
+    raised = _flaky_done(queue, monkeypatch)
+    task = await _attempts(queue, "goal.approve", outcomes)
+    assert raised, "the DONE transition never raised"
+    assert task.status == status and task.attempts == len(outcomes)
+    assert _counts(queue, "goal.approve") == expected
+    queue.close()
+
+
+# ── round 5, item 6: house — a broken kernel is a failure ─────────────────────
+
+
+@pytest.mark.parametrize("kernel, reason", [
+    ("raises", "kernel_error"),
+    ("not_a_decision", "kernel_error"),
+    ("missing", "kernel_unavailable"),
+])
+@pytest.mark.asyncio
+async def test_house_kernel_that_broke_is_a_failure_not_kernel_denied(
+        tmp_path, monkeypatch, kernel, reason):
+    """Closure NIT: a kernel that raised, returned something that is not a Decision, or
+    is not there is the house machinery failing — its own reason, a failure (0,1) —
+    not the refusal ``kernel_denied``. The device is never commanded. A real Decision
+    that denies stays ``kernel_denied`` and records nothing (the test above)."""
+    from agents.core.autonomy.executor import TaskExecutor
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+    from agents.core.house.actuation import (
+        HOUSE_CONTROL_KIND,
+        HouseActuator,
+        register_house_handlers,
+    )
+    from tests.test_h30_house_actuation import _Simulator
+
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+
+    def raising(_action, capability=None):
+        raise RuntimeError("policy store unreadable")
+
+    def not_a_decision(_action, capability=None):
+        return {"verdict": "grant"}
+
+    sim = _Simulator()
+    actuator = HouseActuator(
+        state_reader=sim, driver=sim,
+        authorizer={"raises": raising, "not_a_decision": not_a_decision, "missing": None}[kernel],
+        outcome_provider=lambda _cap: {"total": 0, "confidence": 0.0},
+        ledger_path=tmp_path / "actuation.db", clock=lambda: sim.now)
+    queue = _queue(tmp_path / "autonomy.db")
+    executor = register_house_handlers(TaskExecutor(), actuator)
+    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
+    assert task.status == TaskStatus.FAILED.value
+    assert task.result == {"error": reason}
+    assert sim.calls == [] and sim.state == "off"
+    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
+    queue.close()
+
+
+@pytest.mark.parametrize("unset, reason", [
+    ("JARVIS_UNIFIED_ACTION_API", "unified_action_api_disabled"),
+    ("JARVIS_ACTION_KERNEL", "action_kernel_disabled"),
+])
+@pytest.mark.asyncio
+async def test_house_switched_off_is_a_refusal_under_its_own_reason(tmp_path, monkeypatch, unset, reason):
+    """The config states that mean "not allowed to run" — the unified action API or the
+    kernel switched off — are decided before any driver call: refusals that record
+    nothing, named for the switch (not ``kernel_denied``: no kernel denied anything)."""
+    from agents.core.autonomy.executor import TaskExecutor
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+    from agents.core.house.actuation import HOUSE_CONTROL_KIND, register_house_handlers
+    from tests.test_h30_house_actuation import _actuator, _Simulator
+
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    monkeypatch.delenv(unset)
+    sim = _Simulator()
+    queue = _queue(tmp_path / "autonomy.db")
+    executor = register_house_handlers(TaskExecutor(), _actuator(tmp_path, sim))
+    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
+    assert task.result == {"error": reason}
+    assert sim.calls == []
+    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 0)
+    queue.close()
+
+
+@pytest.mark.parametrize("returned", ["approval_required", "kernel_denied"])
+@pytest.mark.asyncio
+async def test_house_a_reason_the_driver_returned_after_it_ran_is_never_a_refusal(
+        tmp_path, monkeypatch, returned):
+    """Closure NIT: ``CapabilityActionAPI._invoke`` maps a handler OUTPUT reason
+    (``approval_required``, ``kernel_denied``) to queued/refused — after the handler ran.
+    For the house the driver was called, so the device may have been commanded: the
+    post-actuation verification decides (here the state never changed:
+    ``verification_failed``, a failure), never the refusal ``kernel_denied``. The
+    ledger row is finished, not aborted, so a retry never commands the device again."""
+    from agents.core.autonomy.executor import TaskExecutor
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+    from agents.core.house.actuation import HOUSE_CONTROL_KIND, register_house_handlers
+    from tests.test_h30_house_actuation import _actuator, _Simulator
+
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    sim = _Simulator()
+    sim.apply_updates = False
+
+    async def refusing_apply(command):
+        sim.calls.append(dict(command))
+        return {"ok": False, "reason": returned}
+
+    sim.apply = refusing_apply
+    queue = _queue(tmp_path / "autonomy.db")
+    executor = register_house_handlers(TaskExecutor(), _actuator(tmp_path, sim))
+    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
+    assert task.status == TaskStatus.FAILED.value
+    assert task.result == {"error": "verification_failed"}
+    assert len(sim.calls) == 1
+    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_house_rollback_names_a_broken_kernel_not_kernel_denied(tmp_path, monkeypatch):
+    """The rollback's own perform: a kernel that raised on the recovery is
+    ``kernel_error`` in the rollback record (manual recovery required), not the
+    ``kernel_denied`` a real Decision gives (``test_h30_house_actuation``)."""
+    from types import SimpleNamespace
+
+    from agents.core.house.actuation import HOUSE_CONTROL_KIND
+    from agents.core.kernel import Decision, Verdict
+    from tests.test_h30_house_actuation import _actuator, _Simulator
+
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+
+    def kernel(action, capability=None):
+        if action.kind == HOUSE_CONTROL_KIND:
+            return Decision(Verdict.GRANT, reason="ok", tier=1)
+        raise RuntimeError("policy store unreadable")
+
+    sim = _Simulator(state="on")
+    sim.forced_state_after_apply = "jammed"
+    result = await _actuator(tmp_path, sim, kernel=kernel).execute_task(
+        SimpleNamespace(id=82, kind=HOUSE_CONTROL_KIND, agent="jarvis",
+                        payload={**_HOUSE, "action": "off"}))
+    assert result["reason"] == "verification_failed" and result["manual_recovery_required"] is True
+    assert result["rollback"] == {"status": "failed", "reason": "kernel_error"}
+
+
+# ── round 5, item 7: node.dispatch — a broker that failed to start ────────────
+
+
+@pytest.mark.asyncio
+async def test_node_without_a_capability_broker_is_a_failure(tmp_path):
+    """Closure NIT: ``orch.capabilities`` is None only when its component failed to
+    start, so ``capability_broker_unavailable`` is machinery — a failure (0,1), no
+    longer in the refusal vocabulary. ``unknown_node`` stays a refusal."""
+    from agents.core.autonomy.worker import is_refusal_reason
+    from agents.core.node_mesh import KIND, NodeMesh
+
+    mesh = NodeMesh(capability_broker=None)
+    mesh.register_node("phone", ["notify"])
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, mesh.execute, KIND, {"node": "phone", "capability": "notify"})
+    assert task.result == {"status": "failed", "reason": "capability_broker_unavailable",
+                           "node": "phone"}
+    assert _counts(queue, KIND) == (0, 1)
+    assert not is_refusal_reason(KIND, "capability_broker_unavailable")
+    assert is_refusal_reason(KIND, "unknown_node")
+    queue.close()
+
+
+# ── round 5, item 8: only an explicit success status records a success ────────
+
+
+@pytest.mark.parametrize("result, expected", [
+    # The cloud image runtime's "the submission may have happened, the result is not
+    # known": an attempt that could have touched the world — a failure.
+    ({"status": "unknown", "reason": "cloud image completion unavailable; submission not replayed"},
+     (0, 1)),
+    ({"status": "something_new"}, (0, 1)),
+    ({"reason": "no status at all"}, (0, 1)),
+    # Every success status a real handler returns (see SUCCESS_STATUSES), and the bare
+    # ``{"ok": True}`` a handler returns without a status.
+    ({"status": "ok"}, (1, 0)),
+    ({"status": "redirect", "url": "https://jobs.example/next"}, (1, 0)),
+    ({"status": "verified"}, (1, 0)),
+    ({"status": "installed"}, (1, 0)),
+    ({"ok": True}, (1, 0)),
+], ids=["unknown", "unlisted_status", "no_status", "ok", "redirect", "verified", "installed",
+        "bare_ok"])
+@pytest.mark.asyncio
+async def test_only_an_explicit_success_status_records_a_success(tmp_path, result, expected):
+    """Closure MINOR: ``_attempt_outcome`` counted every status but ``failed`` as a
+    success, so the cloud image runtime's ``unknown`` (a provider error, a response too
+    large, a refusal after the request) read as a success. Now a success needs a status
+    a handler uses for one; any other status is a failure (the conservative direction)."""
+    queue = _queue(tmp_path / "autonomy.db")
+
+    async def executor(_task):
+        return dict(result)
+
+    await _run_real(queue, executor, "plugin.egress", {"plugin": "cloud-image"})
+    assert _counts(queue, "plugin.egress") == expected
+    queue.close()
+
+
+# ── round 5, item 9: the generic LLM fallback never exercises a capability ────
+
+
+@pytest.mark.parametrize("fallback", ["returns", "raises"])
+@pytest.mark.asyncio
+async def test_a_manifest_kind_run_by_the_llm_fallback_records_nothing(tmp_path, fallback):
+    """Closure MINOR: ``oracle_bridge`` enqueues ``repo.sync`` as an ask task; no handler
+    is registered for it, so once approved the coordinator's executor runs its title
+    through the generic ``_llm`` fallback. The repo.sync capability was not exercised:
+    nothing is recorded for it, whether the fallback returns or raises. A manifest kind
+    with a registered handler on the same executor still records its outcome."""
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+    from tests.test_web_tools_wiring import _coordinator
+
+    coordinator = _coordinator({})
+    prompts = []
+
+    async def process(prompt, **_kwargs):
+        prompts.append(prompt)
+        if fallback == "raises":
+            raise RuntimeError("model backend unavailable")
+        return "a review of the sync"
+
+    coordinator._orch.process = process
+    executor = coordinator.build_executor()
+
+    async def graph_write(_task):
+        return {"status": "ok", "kind": "kg.write"}
+
+    executor.register("kg.write", graph_write)
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, executor.execute, "repo.sync",
+                           {"repo": "https://github.com/example/repo"}, ticks=MAX_ATTEMPTS)
+    assert prompts and prompts[0] == "real handler"      # the title, through the LLM
+    assert task.status == (TaskStatus.DONE.value if fallback == "returns"
+                           else TaskStatus.FAILED.value)
+    assert _counts(queue, "repo.sync") == (0, 0)
+    await _run_real(queue, executor.execute, "kg.write", {})
+    assert _counts(queue, "kg.write") == (1, 0)
     queue.close()

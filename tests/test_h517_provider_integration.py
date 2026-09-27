@@ -431,3 +431,83 @@ async def test_a_runtime_gate_before_the_request_is_a_refusal(rig, monkeypatch, 
     assert rig.requests == []
     assert task.result["status"] == "failed" and task.result["reason"] == gate, task.result
     assert _outcomes(rig.queue) == (0, 0)
+
+
+# ── round 5, item 1: only a governance cause withholds a generated image ──────
+
+
+def _break_local_image_kernel(rig, breakage):
+    """The worker's kernel, except that the runtime's own local-image check raises, or
+    answers with something that is not a verdict."""
+    from dataclasses import replace
+
+    real = rig.worker._mediation_kernel
+
+    def kernel(action, **kwargs):
+        if action.kind == "tool.rpc" and (action.payload or {}).get("effect") == "local_image":
+            if breakage == "kernel_raises":
+                raise RuntimeError("kernel store unreadable")
+            return replace(real(action, **kwargs), verdict="not-a-verdict")
+        return real(action, **kwargs)
+
+    rig.worker._mediation_kernel = kernel
+
+
+@pytest.mark.parametrize("breakage, reason", [
+    ("kernel_raises", "local_guard_failed"),
+    ("kernel_unknown_verdict", "kernel_error"),
+    ("proposal_unreadable", "approval_binding_invalid"),
+])
+@pytest.mark.asyncio
+async def test_a_guard_that_breaks_after_the_request_is_a_failure_not_withheld(rig, breakage, reason):
+    """Round 5, item 1 (hunt MINOR 1, closure MINOR): only a governance cause withholds a
+    generated image. The post-request guard BREAKING — the kernel raising, a verdict that
+    is not one, a proposal record the store can no longer read — is the machinery
+    failing: a failure under its own reason (0,1), exactly as before the request. The
+    image is still never published."""
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed(request):
+        entered.set()
+        await release.wait()
+        return httpx.Response(200, json={"data": [{"b64_json": base64.b64encode(PNG).decode()}]})
+
+    def change(task_id):
+        if breakage == "proposal_unreadable":
+            (proposal,) = (rig.root / "media" / "image_approvals").glob(f"{task_id}-*.proposal")
+            proposal.unlink()              # the record is gone: an OSError reading it
+        else:
+            _break_local_image_kernel(rig, breakage)
+
+    rig.hooks.response = delayed
+    async with rig.client() as client:
+        task_id = await propose(rig, client)
+        await accept(client, task_id)
+        running = asyncio.create_task(rig.worker.tick())
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            change(task_id)
+        finally:
+            release.set()
+            await running
+    task = rig.queue.get(task_id)
+    assert len(rig.requests) == 1                       # the image was generated
+    assert task.result["status"] == "failed"
+    assert task.result["reason"] == reason and "detail" not in task.result, task.result
+    assert list(rig.root.rglob("*.png")) == []
+    assert _outcomes(rig.queue) == (0, 1)
+
+
+@pytest.mark.asyncio
+async def test_a_guard_that_breaks_before_the_request_is_the_same_failure(rig):
+    """The contrast: the same broken kernel before any request is ``local_guard_failed``,
+    a failure (0,1), and nothing reaches the backend."""
+    async with rig.client() as client:
+        task_id = await propose(rig, client)
+        await accept(client, task_id)
+        _break_local_image_kernel(rig, "kernel_raises")
+        await rig.worker.tick()
+    task = rig.queue.get(task_id)
+    assert rig.requests == []
+    assert task.result["status"] == "failed" and task.result["reason"] == "local_guard_failed"
+    assert _outcomes(rig.queue) == (0, 1)

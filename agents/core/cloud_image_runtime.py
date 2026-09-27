@@ -33,6 +33,25 @@ _CODE_DIGEST = hashlib.sha256(
 ).hexdigest()
 
 
+class _Declined(ValueError):
+    """A gate that declined — governance or configuration (the feature switched off, the
+    kernel denying, the approval or the configuration changed, the emergency stop) —
+    rather than machinery that broke. ``reason`` names it; the message stays the
+    runtime's own (review round 5, item 8)."""
+
+    def __init__(self, reason, message):
+        super().__init__(message)
+        self.reason = reason
+
+
+class _ProviderFailed(ValueError):
+    """The provider answered, but not with an image this runtime accepts."""
+
+    def __init__(self, reason, message):
+        super().__init__(message)
+        self.reason = reason
+
+
 def matches(task):
     return (
         getattr(task, "kind", None) == "plugin.egress"
@@ -118,7 +137,7 @@ class CloudImageRuntime:
     def _configuration(self):
         key = self.key()
         if not isinstance(key, str) or not key.strip():
-            raise ValueError("OpenAI image credential unavailable")
+            raise _Declined("credential_not_configured", "OpenAI image credential unavailable")
         # Only a random generation is public. The credential hash stays in a
         # private local record, so task/status metadata is not a secret oracle.
         digest = hashlib.sha256((VERSION + _CODE_DIGEST + "\0" + key).encode()).hexdigest()
@@ -158,14 +177,15 @@ class CloudImageRuntime:
 
         manifest = (self.gate.plugins if self.gate is not None else BUILTIN_PLUGINS).get(PLUGIN)
         if manifest is None or not manifest.enabled or not heavy_features_enabled():
-            raise ValueError("cloud image feature unavailable")
+            raise _Declined("cloud_image_unavailable", "cloud image feature unavailable")
         if (
             self.worker.queue.mediation_mode != "enforce"
             or not kernel_enabled()
             or not callable(self.kernel)
             or not callable(self.redact)
         ):
-            raise ValueError("cloud image enforced mediation unavailable")
+            raise _Declined("enforced_mediation_unavailable",
+                            "cloud image enforced mediation unavailable")
         signer = getattr(self.worker, "_mediation_signer", None)
         if not callable(getattr(signer, "sign", None)) or (
             probe_signing and signer.sign(b"cloud-image availability") is None
@@ -204,10 +224,10 @@ class CloudImageRuntime:
         except Exception:
             raise ValueError("cloud image prompt screening unavailable") from None
         if not isinstance(screened, str) or screened != body["prompt"]:
-            raise ValueError("cloud image prompt screening refused")
+            raise _Declined("prompt_screening_refused", "cloud image prompt screening refused")
         key, generation = self._configuration()
         if value["generation"] != generation:
-            raise ValueError("cloud image configuration changed")
+            raise _Declined("configuration_changed", "cloud image configuration changed")
         return key
 
     def submit(self, prompt, options, origin, *, actor="jarvis"):
@@ -248,10 +268,12 @@ class CloudImageRuntime:
         return self.records / f"{nonce}.{suffix}"
 
     def _bound(self, task):
+        # A record that cannot be read raises its own error (machinery); only a record
+        # that no longer binds this exact task is the approval that changed.
         if not matches(task) or _json(self._path(task, "proposal")) != {
             "binding": _task_binding(task)
         }:
-            raise ValueError("cloud image approval changed")
+            raise _Declined("approved_payload_changed", "cloud image approval changed")
 
     def guard(self, task):
         self._claim.set(None)
@@ -334,13 +356,21 @@ class CloudImageRuntime:
         fingerprint = TaskQueue.execution_fingerprint(task)
         if not matches(task) or not isinstance(claim, _Claim) or not claim.consume(fingerprint):
             return {"status": "refused", "reason": "cloud image execution claim required"}
+        # How far this attempt got decides what an error means (review round 5, item 8):
+        # "preflight" — nothing sent; "dialled" — the durable attempt marker is written
+        # and the POST may be on the wire; "generated" — the provider answered with an
+        # image; "published" — the recheck after the answer passed.
+        phase = "preflight"
         try:
             self.validate(task.payload)
             self._bound(task)
             if self._path(task, "complete").exists():
+                phase = "published"
                 return self.recover(task)
             attempted = self._path(task, "attempt")
             if attempted.exists():
+                # A submission an earlier attempt may have made: never replayed, its
+                # result not known — the worker records ``unknown`` as a failure.
                 return {
                     "status": "unknown",
                     "reason": "cloud image submission may have occurred; not replayed",
@@ -350,10 +380,13 @@ class CloudImageRuntime:
             def live_check(method, url):
                 self.validate(task.payload)
                 self._bound(task)
-                if method != "POST" or url != ENDPOINT or estop.is_engaged():
-                    raise ValueError("cloud image dispatch refused")
+                if estop.is_engaged():
+                    raise _Declined("estop_engaged", "cloud image dispatch refused")
+                if method != "POST" or url != ENDPOINT:
+                    raise _Declined("dispatch_changed", "cloud image dispatch refused")
                 if not self.worker.queue.validate_mediated_execution(task, fingerprint):
-                    raise ValueError("cloud image execution receipt invalid")
+                    raise _Declined("mediation_execution_required",
+                                    "cloud image execution receipt invalid")
                 decision = self.kernel(
                     Action(
                         kind="plugin.egress",
@@ -363,14 +396,18 @@ class CloudImageRuntime:
                         origin=task.origin,
                     )
                 )
+                if decision.verdict is Verdict.DENY:
+                    raise _Declined("kernel_denied", "cloud image kernel refused")
                 if decision.verdict not in {Verdict.GRANT, Verdict.QUEUE}:
                     raise ValueError("cloud image kernel refused")
 
             def check(method, url):
+                nonlocal phase
                 live_check(method, url)
                 # A durable exclusive marker immediately before dial. A second
                 # callback/request can never reuse this logical approval.
                 _write(attempted, json.dumps({"binding": _task_binding(task)}).encode())
+                phase = "dialled"
 
             client = _Client(
                 check, resolver=self.resolver, transport_factory=self.transport_factory
@@ -392,18 +429,26 @@ class CloudImageRuntime:
                             response.status_code != 200
                             or response.headers.get("content-encoding", "identity") != "identity"
                         ):
-                            raise ValueError("cloud image provider refused")
+                            raise _ProviderFailed("cloud_image_provider_error",
+                                                  "cloud image provider refused")
                         body = bytearray()
                         async for chunk in response.aiter_bytes():
                             if len(body) + len(chunk) > MAX_RESPONSE:
-                                raise ValueError("cloud image response too large")
+                                raise _ProviderFailed("cloud_image_response_too_large",
+                                                      "cloud image response too large")
                             body.extend(chunk)
-                        data = decode_result(
-                            json.loads(body), task.payload["image"]["body"]["size"]
-                        )
+                        try:
+                            data = decode_result(
+                                json.loads(body), task.payload["image"]["body"]["size"]
+                            )
+                        except (ValueError, TypeError, KeyError, RecursionError):
+                            raise _ProviderFailed("cloud_image_invalid_response",
+                                                  "cloud image response invalid") from None
             finally:
                 await client.close()
+            phase = "generated"
             live_check("POST", ENDPOINT)
+            phase = "published"
             artifact_id = uuid.uuid4().hex
             destination = self.root / "media" / "generated" / (artifact_id + ".png")
             _write(destination, data)
@@ -424,9 +469,44 @@ class CloudImageRuntime:
             return self.recover(task)
         except asyncio.CancelledError:
             raise
-        except Exception:
-            # Provider exceptions/body can contain credentials or prompt content.
-            return {
-                "status": "unknown",
-                "reason": "cloud image completion unavailable; submission not replayed",
-            }
+        except Exception as exc:
+            # Provider exceptions/body can contain credentials or prompt content: only a
+            # fixed reason code ever leaves here.
+            return _attempt_result(phase, exc)
+
+
+def _attempt_result(phase, exc):
+    """The executor's result for an attempt that stopped at *phase* with *exc* (review
+    round 5, item 8). It was ``{"status": "unknown"}`` on every path, which the worker
+    recorded as a SUCCESS."""
+    declined = isinstance(exc, _Declined)
+    if phase == "preflight":
+        # Nothing was sent: a gate that declined is a refusal; anything else (a
+        # malformed request, a record or a screening that failed, the signer, the
+        # kernel raising) is the machinery failing before the dial.
+        if declined:
+            return {"status": "refused", "reason": exc.reason}
+        return {"status": "failed", "reason": "cloud_image_preflight_failed"}
+    if phase == "dialled":
+        if isinstance(exc, _ProviderFailed):
+            return {"status": "failed", "reason": exc.reason}
+        # A transport error after the dial: the POST may have been processed (and
+        # paid). Never replayed; its result is not known.
+        return {
+            "status": "unknown",
+            "reason": "cloud image completion unavailable; submission not replayed",
+        }
+    if phase == "generated":
+        # The recheck after the provider answered: a governance cause withholds the
+        # generated image (records nothing, like tool.rpc's: round 5, item 1); a
+        # recheck that broke is a failure.
+        if declined:
+            return {"status": "failed", "reason": "withheld_after_generation",
+                    "detail": exc.reason}
+        return {"status": "failed", "reason": "cloud_image_recheck_failed"}
+    # Generated and allowed, but the local completion did not finish (a write, the
+    # catalog): ``recover`` can finish it later from the durable bytes.
+    return {
+        "status": "unknown",
+        "reason": "cloud image completion unavailable; submission not replayed",
+    }

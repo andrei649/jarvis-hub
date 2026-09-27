@@ -670,10 +670,11 @@ class ToolRPCServer:
                 "result": self._scrub(result),
             }
             # The specific cause behind a general reason (e.g. the gate that withheld a
-            # generated image: round 4, item 3), beside it like the kernel denial's.
+            # generated image: round 4, item 3), beside it like the kernel denial's —
+            # through the same scrub as the nested copy (round 5, item 4).
             detail = result.get("detail")
             if isinstance(detail, str) and detail:
-                failed["detail"] = detail
+                failed["detail"] = self._scrub(detail)
             return failed
         self._record("toolrpc.execute", name, agent=effective_actor)
         return {"status": "ok", "tool": name, "result": self._scrub(result)}

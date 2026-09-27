@@ -234,8 +234,13 @@ async def test_stop_while_provider_awaited_prevents_artifact_publication(cloud, 
 
     cloud.state.response = stopped
     task = await finish(cloud)
-    assert task.result["status"] == "unknown"
+    # Review round 5, item 8: the stop engaged after the image was generated is a
+    # governance withhold (it was "unknown", recorded as a success): nothing published,
+    # nothing recorded.
+    assert task.result == {"status": "failed", "reason": "withheld_after_generation",
+                           "detail": "estop_engaged"}
     assert not list((cloud.root / "media" / "generated").glob("*.png"))
+    assert _outcomes(cloud) == (0, 0)
 
 
 @pytest.mark.asyncio
@@ -626,3 +631,124 @@ def test_media_status_exposes_independent_cloud_capability(cloud, monkeypatch):
     assert response.json()["cloud_image"]["configured"]
     assert response.json()["local_image"]["configured"] is False
     assert response.json()["kinds"]["image"] is True
+
+
+# ── review round 5, item 8: honest outcomes from the cloud image runtime ──────
+
+
+def _outcomes(cloud):
+    stats = cloud.queue.capability_outcome_stats("action:plugin.egress")
+    return stats["successes"], stats["failures"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response, reason", [
+    ("http_error", "cloud_image_provider_error"),
+    ("redirect", "cloud_image_provider_error"),
+    ("encoded", "cloud_image_provider_error"),
+    ("overlimit", "cloud_image_response_too_large"),
+    ("invalid", "cloud_image_invalid_response"),
+])
+async def test_a_provider_failure_is_a_failure_under_its_own_reason(cloud, response, reason):
+    """Closure MINOR: every failure path returned ``{"status": "unknown"}``, which the
+    worker recorded as a SUCCESS. The request was sent and the provider did not deliver
+    an image: ``failed`` with a reason, recorded as a failure (0,1)."""
+    import httpx
+
+    from agents.core.media_backends.openai_image import MAX_RESPONSE
+
+    bodies = {
+        "http_error": lambda: httpx.Response(500, json={"error": {"message": "server error"}}),
+        "redirect": lambda: httpx.Response(302, headers={"location": "https://other.test/image"}),
+        "encoded": lambda: httpx.Response(
+            200, headers={"content-encoding": "br"}, stream=httpx.ByteStream(b"invalid")
+        ),
+        "overlimit": lambda: httpx.Response(
+            200, stream=httpx.ByteStream(b" " * (MAX_RESPONSE + 1))
+        ),
+        "invalid": lambda: httpx.Response(200, json={"data": [{"b64_json": "invalid"}]}),
+    }
+    cloud.state.response = bodies[response]
+    task = await finish(cloud)
+    assert task.result == {"status": "failed", "reason": reason}
+    assert len(cloud.requests) == 1
+    assert not list((cloud.root / "media" / "generated").glob("*.png"))
+    assert _outcomes(cloud) == (0, 1)
+
+
+@pytest.mark.asyncio
+async def test_an_ambiguous_submission_stays_unknown_and_is_recorded_as_a_failure(cloud):
+    """A transport error after the dial: the POST may have been processed (and paid), so
+    the runtime still says ``unknown`` and never replays it — and the worker records
+    ``unknown`` as a failure, never a success (an attempt that could have touched the
+    world and did not verifiably succeed)."""
+    import httpx
+
+    def lost():
+        raise httpx.ReadError("connection reset")
+
+    cloud.state.response = lost
+    task = await finish(cloud)
+    assert task.result["status"] == "unknown" and len(cloud.requests) == 1
+    assert _outcomes(cloud) == (0, 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change, detail", [("deny", "kernel_denied"), ("raise", None)])
+async def test_a_kernel_change_after_generation_withholds_only_for_a_denial(cloud, change, detail):
+    """Consistent with item 1: the recheck after the provider answered withholds the
+    generated image only for a governance cause (a real kernel DENY): recorded as
+    nothing. A kernel that RAISES there is the machinery failing: a failure (0,1).
+    Neither publishes the image."""
+    from dataclasses import replace
+
+    from agents.core.kernel import Verdict
+
+    original, real_kernel = cloud.state.response, cloud.runtime.kernel
+
+    def broken(action, **kwargs):
+        if change == "raise":
+            raise RuntimeError("policy store unreadable")
+        return replace(real_kernel(action, **kwargs), verdict=Verdict.DENY, reason="changed")
+
+    def answered():
+        cloud.runtime.kernel = broken                  # after the dial, before the recheck
+        return original()
+
+    cloud.state.response = answered
+    task = await finish(cloud)
+    assert len(cloud.requests) == 1
+    assert not list((cloud.root / "media" / "generated").glob("*.png"))
+    if detail is not None:
+        assert task.result == {"status": "failed", "reason": "withheld_after_generation",
+                               "detail": detail}
+        assert _outcomes(cloud) == (0, 0)
+    else:
+        assert task.result == {"status": "failed", "reason": "cloud_image_recheck_failed"}
+        assert _outcomes(cloud) == (0, 1)
+
+
+@pytest.mark.asyncio
+async def test_a_stop_before_the_dial_is_a_refusal(cloud, monkeypatch):
+    """The emergency stop engaged while the host resolves, before the dial: the
+    runtime's own pre-dial check declines — ``refused`` (nothing was sent), recorded as
+    nothing (it was ``unknown``, recorded as a success)."""
+    from agents.core import estop
+
+    def resolve(*a, **kw):
+        monkeypatch.setattr(estop, "is_engaged", lambda: True)
+        return ["93.184.216.34"], None
+
+    cloud.runtime.resolver = resolve
+    task = await finish(cloud)
+    assert task.result == {"status": "refused", "reason": "estop_engaged"}
+    assert not cloud.requests
+    assert _outcomes(cloud) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_a_completed_cloud_image_is_still_a_success(cloud):
+    """Guard: the one explicit success (``ok`` from the local completion) records one."""
+    task = await finish(cloud)
+    assert task.result["status"] == "ok"
+    assert _outcomes(cloud) == (1, 0)

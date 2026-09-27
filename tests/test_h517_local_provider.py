@@ -151,16 +151,26 @@ async def test_invalid_responses_never_publish(tmp_path, kind):
     assert len(calls) == 1 and not list(tmp_path.glob('*.png'))
 
 
-@pytest.mark.parametrize('phase', ['send', 'publication'])
-async def test_fresh_guard_prevents_send_or_publication(tmp_path, phase):
-    from agents.core.media_backends.comfyui import ImageGenerationError
+@pytest.mark.parametrize('phase, cause', [
+    ('send', 'kernel_denied'),
+    ('publication', 'kernel_denied'),
+    ('publication', 'mediation_execution_required'),
+    # The guard BREAKING is not governance (review round 5, item 1).
+    ('publication', 'local_guard_failed'),
+    ('publication', 'approval_binding_invalid'),
+])
+async def test_fresh_guard_prevents_send_or_publication(tmp_path, phase, cause):
+    from agents.core.media_backends.comfyui import (
+        ImageGenerationError,
+        ImageWithheldAfterGeneration,
+    )
     from agents.core.media_backends.local_openai_image import LocalOpenAIImageBackend
     from agents.core.media_backends.registry import resolve_config
     calls, checks = [], []
     def guard():
         checks.append(True)
         if phase == 'send' or len(checks) > 1:
-            raise ImageGenerationError('revoked')
+            raise ImageGenerationError(cause)
     def service(request):
         calls.append(True)
         return httpx.Response(200, json={'data': [{'b64_json': base64.b64encode(png()).decode()}]})
@@ -170,11 +180,16 @@ async def test_fresh_guard_prevents_send_or_publication(tmp_path, phase):
             'boat', {'width': 64, 'height': 64}, guard=guard)
     assert len(calls) == (phase == 'publication') and not list(tmp_path.iterdir())
     if phase == 'send':
-        assert raised.value.reason == 'revoked'          # before the request: the gate itself
+        assert raised.value.reason == cause              # before the request: the gate itself
+    elif cause in {'kernel_denied', 'mediation_execution_required'}:
+        # After the request a governance gate withholds the generated image, the gate as
+        # its cause (review round 4, item 3).
+        assert (raised.value.reason, raised.value.cause) == ('withheld_after_generation', cause)
     else:
-        # After the request the generated image is withheld, the gate as its cause
-        # (review round 4, item 3).
-        assert (raised.value.reason, raised.value.cause) == ('withheld_after_generation', 'revoked')
+        # ... while a guard that broke is a failure under its own reason, never withheld
+        # (review round 5, item 1). Nothing is published either way.
+        assert raised.value.reason == cause
+        assert not isinstance(raised.value, ImageWithheldAfterGeneration)
 
 
 async def test_uncertain_post_is_never_retried(tmp_path):

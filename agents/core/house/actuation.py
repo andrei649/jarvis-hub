@@ -666,7 +666,10 @@ class HouseActuator:
             ),
         )
         if result.status != "completed":
-            return {"status": "failed", "reason": "kernel_denied"}
+            # Name what stopped the recovery (round 5, item 6): a real kernel Decision is
+            # ``kernel_denied``; a broken kernel or a driver error is its own reason.
+            return {"status": "failed", "reason": (
+                "kernel_denied" if result.stage == "decision" else result.reason or "recovery_failed")}
         try:
             verified_snapshot = await self._state_reader.snapshot()
         except Exception:
@@ -761,15 +764,33 @@ class HouseActuator:
                 scope=f"house:{payload['entity_id']}",
             ),
         )
-        if perform.status in {"disabled", "refused", "queued"}:
+        if perform.stage != "handler":
+            # The driver was never called (review round 5, item 6), so the row is aborted
+            # and the reason says why. A refusal only when something decided the device
+            # must not be commanded: a real kernel Decision (``kernel_denied``) or a
+            # switch turned off (``unified_action_api_disabled``,
+            # ``action_kernel_disabled``). Anything else stopped here is the machinery
+            # — a kernel that raised, gave no Decision or is not there (``kernel_error``,
+            # ``kernel_unavailable``), an unbound implementation, inputs the manifest
+            # needs and the canonical payload lacks (a malformed request) — a failure
+            # under its own reason.
+            if perform.stage == "decision":
+                reason = "kernel_denied"
+            else:
+                reason = perform.reason or "perform_failed"
             result = {
                 "status": "failed",
-                "reason": "kernel_denied",
+                "reason": reason,
                 "verified": False,
                 "manual_recovery_required": False,
             }
             await asyncio.to_thread(self._ledger.abort, task_id)
             return result
+        # From here the driver WAS called — even when ``perform`` reports a refused or
+        # queued the driver returned, or the driver raising (``implementation_error``):
+        # the device may have been commanded, so the post-actuation verification decides
+        # (verified, or verification_failed with a rollback), never a refusal, and the
+        # row is finished, never aborted into a second command.
 
         try:
             post = await self._state_reader.snapshot()
