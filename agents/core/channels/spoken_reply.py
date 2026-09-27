@@ -58,6 +58,7 @@ _MIME = {
     ".opus": "audio/ogg",
     ".wav": "audio/wav",
     ".m4a": "audio/mp4",
+    ".flac": "audio/flac",                  # a TTS command may write FLAC (H613)
 }
 
 #: ``(text, lang)`` → path of the synthesized file, or ``None`` when the engine
@@ -150,17 +151,20 @@ class SpokenReply:
 
     @staticmethod
     def _local_engine() -> tuple[str | None, bool]:
-        """H613 — ``(the local program that would speak: "piper", "command" or None,
-        whether voice.local_only keeps speech on this machine)``."""
+        """H613 — ``(the program on this host that would speak: "piper", "command" or
+        None, whether voice.local_only keeps speech on this machine)``. Under local_only
+        the TTS command never counts (its locality is not checked). A cheap probe: the
+        piper package is looked up, not imported, and the command's files are compared by
+        stat (the spawn checks their digests)."""
         try:
             from agents.core.voice import local_providers
         except Exception:  # pragma: no cover - import guard, not a code path
             return None, False
         try:
             local_only = local_providers.local_only()
-            if local_providers.piper_status()["available"]:
+            if local_providers.piper_status(load=False)["available"]:
                 return "piper", local_only
-            if local_providers.command_ready("tts").ok:
+            if not local_only and local_providers.command_ready("tts", verify_content=False).ok:
                 return "command", local_only
             return None, local_only
         except Exception:  # noqa: BLE001 — a probe that fails reports no local engine
@@ -186,13 +190,13 @@ class SpokenReply:
         if has_edge and not local_only:
             return "edge-tts (Microsoft, cloud)"
         if local_only and local:            # voice.local_only: Piper, then Kokoro
-            return "piper (local)" if local == "piper" else "your TTS command (local)"
+            return "piper (local)"
         if has_kokoro:
             return "kokoro (local)"
         if local == "piper":
             return "piper (local)"
-        if local == "command":
-            return "your TTS command (local)"
+        if local == "command":              # the hub cannot check where a command sends the text
+            return "your TTS command (locality not checked)"
         return "none"
 
     def refusal(self) -> Audio | None:

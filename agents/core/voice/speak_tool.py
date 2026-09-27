@@ -138,6 +138,7 @@ _AUDIO_SUFFIX = {
     "audio/ogg": ".ogg",
     "audio/wav": ".wav",
     "audio/mp4": ".m4a",
+    "audio/flac": ".flac",                  # a TTS command may write FLAC (H613)
 }
 _ARG_KEYS = frozenset({"text", "target", "urgency", "lang"})
 #: H296 — the most targets advertised as an enum; past it none is listed, since a cut
@@ -194,26 +195,43 @@ def tts_installed() -> bool:
     import, so an unloaded engine is probed by module lookup only. A backend that
     is present but broken still refuses by name at synthesis (``tts_unavailable``).
     """
+    local_only = _local_only()
     engine = sys.modules.get("agents.core.voice.tts")
     if engine is not None:
-        if getattr(engine, "HAS_EDGE", False) or getattr(engine, "HAS_KOKORO", False):
+        if (getattr(engine, "HAS_EDGE", False) and not local_only) or getattr(engine, "HAS_KOKORO", False):
             return True
     else:
         for name in _TTS_MODULES:
+            if local_only and name == "edge_tts":           # voice.local_only never calls edge
+                continue
             try:
                 if importlib.util.find_spec(name) is not None:
                     return True
             except (ImportError, ValueError):
                 continue
-    return _local_tts_ready()
+    return _local_tts_ready(local_only)
 
 
-def _local_tts_ready() -> bool:
-    """H613 — Piper (the package or the binary, with a model) or a ready TTS command."""
+def _local_only() -> bool:
     try:
         from agents.core.voice import local_providers
 
-        return bool(local_providers.piper_status()["available"] or local_providers.command_ready("tts").ok)
+        return local_providers.local_only()
+    except Exception:  # noqa: BLE001 — no settings: the default (off)
+        return False
+
+
+def _local_tts_ready(local_only: bool = False) -> bool:
+    """H613 — Piper (the package or the binary, with a model) or, unless voice.local_only,
+    a ready TTS command. A cheap probe on the event loop: the piper package is looked up,
+    not imported, and the command's files are compared by stat (the spawn checks the
+    digests)."""
+    try:
+        from agents.core.voice import local_providers
+
+        if local_providers.piper_status(load=False)["available"]:
+            return True
+        return not local_only and local_providers.command_ready("tts", verify_content=False).ok
     except Exception:  # noqa: BLE001 — a probe that fails reports no engine
         return False
 

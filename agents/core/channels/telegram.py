@@ -47,6 +47,9 @@ from ..settings_db import get_value
 logger = logging.getLogger("jarvis.channels.telegram")
 
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+#: The file suffix a spoken reply is posted with, by its audio type ("bin" for any other).
+VOICE_SUFFIX = {"audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/wav": "wav", "audio/mp4": "m4a",
+                "audio/flac": "flac"}
 #: Seconds between two edits of a streaming draft — Telegram's per-message edit budget is
 #: about one a second; going faster earns a 429 and a frozen message.
 STREAM_EDIT_INTERVAL = 1.2
@@ -816,8 +819,7 @@ class TelegramChannel(ChannelAdapter):
         message; anything it refuses with a 400 is sent once more as a plain audio
         file rather than dropped. True only when Telegram acknowledged a message.
         """
-        suffix = {"audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/wav": "wav",
-                  "audio/mp4": "m4a"}.get(audio.mime, "bin")
+        suffix = VOICE_SUFFIX.get(audio.mime, "bin")
         filename = f"reply.{suffix}"
         try:
             resp = await self.client.post(

@@ -59,8 +59,10 @@ MAX_TRANSCRIPT_CHARS = 4000
 
 #: What :meth:`STTEngine.transcribe` returns instead of raising. Each is a
 #: failure, and none of them is ever handed onward as something a person said.
-#: Matching is on the leading bracket because the error variant carries a
-#: message — the same rule `routers/voice.py` and `frontend/src/voice.ts` use.
+#: Only the exact sentinels match (``local_providers.is_stt_sentinel``: ``[silence]``,
+#: ``[STT error…]``, ``[STT unavailable…]``) — the same rule `routers/voice.py` and
+#: `frontend/src/voice.ts` use. Other bracketed text (``[laughs] hi``, a command's
+#: output) is what was said (H613 review).
 SENTINEL_PREFIX = "["
 SENTINEL_SILENCE = "[silence]"
 SENTINEL_UNAVAILABLE = "[STT unavailable]"
@@ -124,12 +126,11 @@ class InboundVoiceReader:
             from agents.core.voice.stt import HAS_WHISPER
         except Exception:  # pragma: no cover - import guard, not a code path
             return False
-        if HAS_WHISPER:
-            return True
-        try:                                # H613: or the owner's approved STT command
+        # H613: Whisper and/or the approved STT command, as voice.stt_engine allows.
+        try:
             from agents.core.voice import local_providers
 
-            return local_providers.command_ready("stt").ok
+            return local_providers.stt_available(bool(HAS_WHISPER))
         except Exception:  # noqa: BLE001 — a probe that fails reports no engine
             return False
 
@@ -165,7 +166,9 @@ class InboundVoiceReader:
         text = (raw if isinstance(raw, str) else "").strip()
         if not text:
             return Transcript(False, sha256=digest, reason=REASON_FAILED)
-        if text.startswith(SENTINEL_PREFIX):
+        from agents.core.voice.local_providers import is_stt_sentinel
+
+        if is_stt_sentinel(text):
             # `[silence]` is the engine saying nothing was said — which is also
             # what it now says for a discarded hallucination, so a recording of
             # silence and an invented sentence reach the sender as the same

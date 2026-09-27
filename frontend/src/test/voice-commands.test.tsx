@@ -10,7 +10,7 @@ import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/re
 import { SettingsPanel } from '../gap';
 import { commandNote, commandRefusal, parseArgv } from '../panels/voice-commands';
 
-const ROUTE = 'Console → Voice → Command providers (POST /api/admin/voice/commands)';
+const ROUTE = 'Console → Admin → Settings → Voice → Command providers (POST /api/admin/voice/commands)';
 let calls;
 let postReply;
 
@@ -100,7 +100,7 @@ describe('Settings → Voice — H613', () => {
     await waitFor(() => expect(row.textContent).toContain('not running: changed_since_approval'));
     fireEvent.click(screen.getByText('Clear'));
     expect(await screen.findByText('Cleared')).toBeTruthy();
-    expect(calls.find((c) => c.method === 'POST').body).toEqual({ side: 'stt', argv: null });
+    expect(calls.find((c) => c.method === 'POST').body).toEqual({ side: 'stt', clear: true });
   });
 
   it('the helpers', () => {
@@ -109,5 +109,74 @@ describe('Settings → Voice — H613', () => {
     expect(parseArgv('[1]').error).toBeTruthy();
     expect(commandNote({ pending: 3 })).toContain('task 3');
     expect(commandRefusal({ body: { detail: 'set JARVIS_VOICE_COMMANDS=1' } })).toBe('set JARVIS_VOICE_COMMANDS=1');
+  });
+});
+
+describe('H613 review — the Decision Inbox card, an explicit clear, sentinels', () => {
+  const PY = '/usr/bin/python3.11';
+  const SCRIPT = '/opt/tts/say.py';
+  const TASK = { id: 77, kind: 'settings.voice_command', risk_tier: 3, status: 'blocked',
+    title: `Run ${PY} as the TTS voice provider`,
+    payload: { side: 'tts', argv: [PY, SCRIPT, '--out', '{output}'], reversible: false,
+      preview: { kind: 'tts', side: 'tts', program: PY, runs_as: 'andrei', timeout_s: 30,
+        argv: [PY, SCRIPT, '--out', '{output}'],
+        files: [{ path: PY, size: 14328, sha256: 'a'.repeat(16) + 'b'.repeat(48) },
+                { path: SCRIPT, size: 212, sha256: 'c'.repeat(16) + 'd'.repeat(48) }] } } };
+
+  function inbox(tasks) {
+    global.fetch = vi.fn(async (url) => {
+      const u = String(url);
+      if (u.includes('/autonomy/tasks')) return reply(200, { tasks });
+      return reply(200, {});
+    });
+  }
+
+  it('shows the kind, every bound file with its size and sha256 prefix, the argv and who it runs as', async () => {
+    const { DecisionInboxPanel } = await import('../gap');
+    inbox([TASK]);
+    render(<DecisionInboxPanel />);
+    const card = await screen.findByTestId('voice-command-card');
+    expect(card.textContent).toContain('TTS');
+    const files = screen.getAllByTestId('voice-command-file').map((f) => f.textContent);
+    expect(files).toEqual([`${PY} · 14328 bytes · sha256 ${'a'.repeat(16)}`,
+                           `${SCRIPT} · 212 bytes · sha256 ${'c'.repeat(16)}`]);
+    const argv = [...screen.getByTestId('voice-command-argv').querySelectorAll('li')].map((li) => li.textContent);
+    expect(argv).toEqual([PY, SCRIPT, '--out', '{output} (filled in by the hub)']);
+    expect(screen.getAllByTestId('voice-command-placeholder')).toHaveLength(1);
+    expect(card.textContent).toContain('runs on this machine as the hub user; cannot be undone by the hub');
+    expect(card.textContent).toContain('andrei');
+  });
+
+  it('offers no edit on a voice command card (other cards keep it)', async () => {
+    const { DecisionInboxPanel } = await import('../gap');
+    inbox([TASK, { id: 78, kind: 'tool.rpc', risk_tier: 2, status: 'blocked', title: 'other', payload: {} }]);
+    render(<DecisionInboxPanel />);
+    await screen.findByTestId('voice-command-card');
+    expect(screen.getAllByTitle('edit')).toHaveLength(1);
+    expect(screen.getAllByTitle('accept')).toHaveLength(2);
+  });
+
+  it('an older card with only the program still names it', async () => {
+    const { DecisionInboxPanel } = await import('../gap');
+    inbox([{ ...TASK, payload: { preview: { side: 'stt', program: '/opt/stt', argv: ['/opt/stt', '{audio}'] } } }]);
+    render(<DecisionInboxPanel />);
+    await screen.findByTestId('voice-command-card');
+    expect(screen.getByTestId('voice-command-file').textContent).toContain('/opt/stt');
+  });
+
+  it('Clear sends an explicit clear, never an empty argv', async () => {
+    postReply = () => reply(200, { ok: true, side: 'stt', cleared: true });
+    render(<SettingsPanel />);
+    await screen.findByTestId('voice-command-stt');
+    await waitFor(() => expect(screen.getByText('Clear')).toBeTruthy());
+    fireEvent.click(screen.getByText('Clear'));
+    await screen.findByText('Cleared');
+    expect(calls.find((c) => c.method === 'POST').body).toEqual({ side: 'stt', clear: true });
+  });
+
+  it('only the exact sentinels are silence; other brackets are speech', async () => {
+    const { isSttSentinel } = await import('../voice');
+    for (const s of ['[silence]', '[STT unavailable]', '[STT error: command exited 3]']) expect(isSttSentinel(s)).toBe(true);
+    for (const s of ['[laughs] hello', '[music]', 'hello', '']) expect(isSttSentinel(s)).toBe(false);
   });
 });

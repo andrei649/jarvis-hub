@@ -82,11 +82,20 @@ WORDS = {
 }
 
 
+def voice_lang(voice: object) -> str | None:
+    """The language a voice's name carries: ``ro`` for an edge voice ``ro-RO-…`` or a Piper
+    voice ``piper:ro_RO-…`` (H613), else None."""
+    if not isinstance(voice, str):
+        return None
+    match = re.match(r"^([a-z]{2})-[A-Z]{2}-", voice) or re.match(r"^piper:([a-z]{2,3})_[A-Za-z]{2}\b", voice,
+                                                                  re.IGNORECASE)
+    return match.group(1).lower() if match else None
+
+
 def speech_lang(lang: object = None, voice: object = None, *, default: str = "en") -> str:
-    """``"ro"`` or ``"en"``: the request's language, else the voice's (``ro-RO-…``),
-    else *default*."""
-    for hint in (lang, voice if isinstance(voice, str) and re.match(r"^[a-z]{2}-[A-Z]{2}-", voice) else None,
-                 default):
+    """``"ro"`` or ``"en"``: the request's language, else the voice's (``ro-RO-…``,
+    ``piper:ro_RO-…``), else *default*."""
+    for hint in (lang, voice_lang(voice), default):
         if isinstance(hint, str) and hint.strip():
             return "ro" if hint.strip().lower().startswith("ro") else "en"
     return "en"

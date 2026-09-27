@@ -442,15 +442,32 @@ def _stt_argv(exe: Path) -> list[str]:
     return [str(exe), "--audio", "{audio}", "--lang", "{lang}"]
 
 
+_TASK_IDS = iter(range(1000, 10**6))
+
+
+def _queue_orch() -> SimpleNamespace:
+    """An approval queue that takes every request (the real one is the ``orch`` fixture)."""
+    tasks: dict[int, dict] = {}
+
+    def govern_enqueue(**kw):
+        task_id = next(_TASK_IDS)
+        tasks[task_id] = kw
+        return task_id
+
+    worker = SimpleNamespace(govern_enqueue=govern_enqueue,
+                             queue=SimpleNamespace(pending_decisions=lambda **kw: []))
+    return SimpleNamespace(autonomy=worker, tasks=tasks)
+
+
 async def _approve(env, side: str, argv: list[str]) -> dict:
-    """Request, then a human accepts: the stored value the route's approval writes."""
+    """Request (the card), then a human accepts it: the stored value the approval writes."""
     problems, exe = lp.validate_command(argv, side)
     assert problems == [], problems
-    task = SimpleNamespace(
-        id=7, kind=command_settings.APPROVAL_KIND, decided_by="owner", decision="accept",
-        payload={"side": side, "argv": argv, "fingerprint": command_settings._fingerprint(argv),
-                 "exe_identity": lp.exe_identity(exe),
-                 "before_fingerprint": lp.stored_command(side).get("fingerprint")})
+    orch = _queue_orch()
+    status, body = await command_settings.request(orch, side, argv)
+    assert status == 202, body
+    task = SimpleNamespace(id=body["pending"], kind=command_settings.APPROVAL_KIND, decided_by="owner",
+                           decision="accept", payload=orch.tasks[body["pending"]]["payload"])
     return await irreversible.execute(task, orch=None)
 
 
@@ -775,7 +792,7 @@ def _pending(orch) -> list:
 def test_generic_writers_refuse_voice_commands(armed, monkeypatch, capsys):
     env = armed
     exe = _fake(env.tmp / "opt" / "say-wav", env.tmp)
-    value = {"argv": _tts_argv(exe), "exe": lp.exe_identity(exe.resolve()),
+    value = {"argv": _tts_argv(exe), "exe": lp.exe_identity(exe.resolve()), "bound": [lp.exe_identity(exe.resolve())],
              "fingerprint": command_settings._fingerprint(_tts_argv(exe))}
     for key in ("tts_command", "stt_command"):
         assert ("voice", key) in settings_db.ROUTE_ONLY
@@ -945,7 +962,7 @@ def test_command_route_clear_is_immediate_and_audited(armed, client, orch, monke
     asyncio.run(_approve(env, "tts", _tts_argv(exe)))
     monkeypatch.delenv("JARVIS_VOICE_COMMANDS")                    # clearing needs nothing armed
     monkeypatch.setattr(orch.autonomy, "govern_enqueue", None)
-    resp = client.post("/api/admin/voice/commands", headers=ADMIN, json={"side": "tts", "argv": None})
+    resp = client.post("/api/admin/voice/commands", headers=ADMIN, json={"side": "tts", "clear": True})
     assert resp.status_code == 200 and resp.json()["cleared"] is True
     assert lp.stored_command("tts") == {}
     assert any("voice.tts_command cleared" in row for row in _audit_rows(orch))
@@ -1078,3 +1095,581 @@ def test_flags_are_documented():
     flags = (root / "docs" / "FLAGS.md").read_text(encoding="utf-8")
     for name in ("JARVIS_VOICE_COMMANDS", "JARVIS_VOICE_COMMAND_TIMEOUT_S"):
         assert name in example and name in flags
+
+
+# ── review round (h613_review F0..F20) ────────────────────────────────────────────────
+
+PY_SAY = "import sys\nopen(sys.argv[1], 'wb').write({wav!r})\nopen({marker!r}, 'a').write({tag!r} + '\\n')\n"
+
+
+def _script(env, body: str, *, parent: Path | None = None, name: str = "say.py") -> Path:
+    folder = parent or (env.tmp / "scripts")
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / name
+    path.write_text(body, encoding="utf-8")
+    path.chmod(0o644)
+    return path
+
+
+def _alive(pid: int) -> bool:
+    """Whether *pid* still runs (a zombie nobody reaps counts as gone)."""
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+    return state not in ("Z", "X")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("how", ["in_place", "replaced"])
+async def test_f0_interpreter_script_is_bound_and_a_rewrite_needs_approving_again(armed, how):
+    env = armed
+    marker = env.tmp / "marker"
+    script = _script(env, PY_SAY.format(wav=WAV, marker=str(marker), tag="good"))
+    argv = [sys.executable, str(script), "{output}"]
+    assert (await _approve(env, "tts", argv))["status"] == "ok"
+    stored = lp.stored_command("tts")
+    assert [b["path"] for b in stored["bound"]] == [str(Path(sys.executable).resolve()), str(script.resolve())]
+    assert all(len(b["sha256"]) == 64 for b in stored["bound"])
+    assert await lp.speak_command("hi", "en", temp_dir=env.temp)
+    assert marker.read_text() == "good\n"
+    evil = PY_SAY.format(wav=WAV, marker=str(marker), tag="EVIL")
+    inode = script.stat().st_ino
+    if how == "in_place":
+        script.write_text(evil, encoding="utf-8")
+        assert script.stat().st_ino == inode
+    else:
+        fresh = script.with_name("new.py")
+        fresh.write_text(evil, encoding="utf-8")
+        os.replace(fresh, script)
+    assert lp.command_ready("tts").reason == lp.CHANGED_SINCE_APPROVAL
+    assert await lp.speak_command("hi", "en", temp_dir=env.temp) is None
+    assert "EVIL" not in marker.read_text()
+
+
+@pytest.mark.asyncio
+async def test_f4_in_place_rewrite_of_the_program_with_the_same_size_and_mtime(armed):
+    env = armed
+    exe = _fake(env.tmp / "opt" / "say-wav", env.tmp)
+    await _approve(env, "tts", _tts_argv(exe))
+    before = exe.stat()
+    body = exe.read_bytes()
+    evil = body.replace(b"salut lume", b"PWNED lume")
+    assert len(evil) == len(body) and evil != body
+    exe.write_bytes(evil)
+    os.utime(exe, ns=(before.st_atime_ns, before.st_mtime_ns))
+    after = exe.stat()
+    assert (after.st_ino, after.st_size, after.st_mtime_ns) == (before.st_ino, before.st_size, before.st_mtime_ns)
+    assert lp.command_ready("tts").reason == lp.CHANGED_SINCE_APPROVAL
+
+
+def test_f0_a_world_writable_script_or_script_dir_is_refused(env):
+    ok = _script(env, "print(1)")
+    assert lp.validate_command([sys.executable, str(ok), "{output}"], "tts")[0] == []
+    loose = _script(env, "print(1)", name="loose.py")
+    loose.chmod(0o666)
+    problems = lp.validate_command([sys.executable, str(loose), "{output}"], "tts")[0]
+    assert any(p.startswith("argv[1]") and "writable" in p for p in problems), problems
+    shared = env.tmp / "shared"
+    shared.mkdir()
+    in_shared = _script(env, "print(1)", parent=shared)
+    shared.chmod(0o777)
+    problems = lp.validate_command([sys.executable, str(in_shared), "{output}"], "tts")[0]
+    assert any(p.startswith("argv[1]") and "writable" in p for p in problems), problems
+    shared.chmod(0o755)
+    big = env.tmp / "scripts" / "big.py"
+    with open(big, "wb") as fh:
+        fh.truncate(64 * 1024 * 1024 + 1)
+    big.chmod(0o644)
+    problems = lp.validate_command([sys.executable, str(big), "{output}"], "tts")[0]
+    assert any(p.startswith("argv[1]") and "64 MiB" in p for p in problems), problems
+    for script in ("-c", "relative.py"):
+        assert lp.validate_command([sys.executable, script, "{output}"], "tts")[0]
+
+
+def test_f0_the_card_names_every_bound_file(armed, client, orch):
+    env = armed
+    script = _script(env, "print(1)")
+    argv = [sys.executable, str(script), "{output}"]
+    resp = client.post("/api/admin/voice/commands", headers=ADMIN, json={"side": "tts", "argv": argv})
+    assert resp.status_code == 202, resp.text
+    [task] = _pending(orch)
+    files = task.payload["preview"]["files"]
+    assert [f["path"] for f in files] == [str(Path(sys.executable).resolve()), str(script.resolve())]
+    assert files[1]["size"] == script.stat().st_size and len(files[1]["sha256"]) == 64
+    assert str(script.resolve()) in task.title or str(Path(sys.executable).resolve()) in task.title
+
+
+def test_f1_an_ancestor_writable_by_others_without_the_sticky_bit_is_refused(env):
+    anc = env.tmp / "anc"
+    exe = _fake(anc / "bin" / "say", env.tmp)
+    argv = [str(exe), "{output}"]
+    assert lp.validate_command(argv, "tts")[0] == []
+    for mode, refused in ((0o777, True), (0o775, True), (0o1777, False), (0o755, False)):
+        anc.chmod(mode)
+        problems = lp.validate_command(argv, "tts")[0]
+        assert bool(problems) is refused, (oct(mode), problems)
+    (anc / "bin").chmod(0o775)
+    assert lp.validate_command(argv, "tts")[0]
+    (anc / "bin").chmod(0o755)
+
+
+@pytest.mark.asyncio
+async def test_f1_a_program_swapped_while_waiting_for_a_slot_never_runs(armed, monkeypatch):
+    env = armed
+    anc = env.tmp / "anc"
+    exe = _fake(anc / "bin" / "say", env.tmp)
+    await _approve(env, "tts", [str(exe), "--out", "{output}"])
+    gate = asyncio.Semaphore(0)
+    monkeypatch.setattr(lp, "_slot", lambda: gate)
+    task = asyncio.create_task(lp.speak_command("hi", "en", temp_dir=env.temp))
+    for _ in range(100):                                   # past the first check, waiting for a slot
+        if _run_dirs(env):
+            break
+        await asyncio.sleep(0.05)
+    assert _run_dirs(env) and not task.done()
+    marker = env.tmp / "evil-ran"
+    os.rename(anc / "bin", anc / "bin_old")
+    (anc / "bin").mkdir()
+    swapped = anc / "bin" / "say"
+    swapped.write_text(f"#!{sys.executable}\nopen({str(marker)!r}, 'w').write('EVIL')\n")
+    swapped.chmod(0o755)
+    gate.release()
+    assert await task is None
+    assert not marker.exists() and _records(env.tmp) == []
+
+
+@pytest.mark.asyncio
+async def test_f2_a_timeout_kills_the_whole_process_group(armed, monkeypatch):
+    env = armed
+    pidfile = env.tmp / "grandchild.pid"
+    wrapper = env.tmp / "opt" / "stt-wrapper"
+    wrapper.parent.mkdir(parents=True, exist_ok=True)
+    wrapper.write_text(f"#!/bin/sh\n/bin/sleep 300 &\necho $! > {pidfile}\nwait\n")
+    wrapper.chmod(0o755)
+    await _approve(env, "stt", [str(wrapper), "{audio}"])
+    monkeypatch.setattr(lp, "STT_TIMEOUT_S", 1)
+    start = time.monotonic()
+    pid = None
+    try:
+        assert await lp.transcribe_command(OGG, "en", temp_dir=env.temp) == "[STT error: command timed out]"
+        elapsed = time.monotonic() - start
+        pid = int(pidfile.read_text().strip())
+        for _ in range(40):
+            if not _alive(pid):
+                break
+            await asyncio.sleep(0.05)
+        assert not _alive(pid)
+        assert elapsed < 5
+    finally:
+        if pid is None and pidfile.exists():
+            pid = int(pidfile.read_text().strip())
+        if pid is not None and _alive(pid):
+            os.kill(pid, 9)
+
+
+def _named(env, name: str) -> Path:
+    return _fake(env.tmp / "named" / name, env.tmp)
+
+
+def test_f3_programs_that_run_other_programs_are_refused(env):
+    demonstrated = [
+        ["/lib64/ld-linux-x86-64.so.2", "/bin/sh", "-s", "{output}"],
+        ["/usr/bin/find", "/", "-maxdepth", "0", "-exec", "/bin/sh", "-c", "id", ";", "{output}"],
+        ["/usr/bin/awk", 'system("id")', "{output}"],
+        ["/usr/bin/git", "-c", "core.pager=sh", "{output}"],
+    ]
+    for argv in demonstrated:
+        if not os.path.exists(argv[0]):
+            continue
+        problems = lp.validate_command(argv, "tts")[0]
+        assert any("launcher" in p for p in problems), (argv[0], problems)
+    for name in ("ld.so", "ld-linux-aarch64.so.1", "ld-musl-x86_64.so.1", "find", "xargs", "gawk", "mawk", "nawk",
+                 "sed", "env", "nohup", "timeout", "nice", "ionice", "setsid", "stdbuf", "script", "expect",
+                 "tclsh8.6", "wish", "R", "Rscript", "osascript", "cmd.exe", "pwsh", "wine", "docker", "podman",
+                 "ssh", "su", "doas", "pkexec", "systemd-run", "flatpak", "busybox", "toybox", "make", "git", "vim",
+                 "vi", "nvim", "emacs", "less", "more", "man", "gdb", "strace", "ltrace"):
+        exe = _named(env, name)
+        problems = lp.validate_command([str(exe), "{output}"], "tts")[0]
+        assert any("launcher" in p for p in problems), (name, problems)
+    script = _script(env, "puts 1", name="say.rb")
+    for name in ("ruby", "php", "lua5.4"):
+        exe = _named(env, name)
+        assert lp.validate_command([str(exe), str(script), "{output}"], "tts")[0] == [], name
+        assert lp.validate_command([str(exe), "-e", "x", "{output}"], "tts")[0], name
+    prog = _named(env, "my-tts")
+    assert any("shell" in p for p in lp.validate_command([str(prog), "/bin/sh", "{output}"], "tts")[0])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("voice,local_only,has_edge", [(None, True, True), ("piper:en_US-xtts-clone", True, True),
+                                                      (None, False, False)])
+async def test_f5_the_auto_pick_never_speaks_a_flagged_model_without_consent(env, monkeypatch, voice, local_only,
+                                                                             has_edge):
+    _piper(env, "en_US-xtts-clone")
+    settings_db.put_category("voice", {"local_only": local_only})
+    monkeypatch.setattr(tts_module, "HAS_EDGE", has_edge)
+    monkeypatch.setattr(tts_module, "HAS_KOKORO", False)
+    blocked = _engine(consent_getter=lambda: False)
+    monkeypatch.setattr(blocked, "_speak_edge", _edge_stub)
+    await blocked.speak("hello", voice=voice, lang="en")
+    assert _records(env.tmp) == []
+    allowed = _engine(consent_getter=lambda: True)
+    monkeypatch.setattr(allowed, "_speak_edge", _edge_stub)
+    if not has_edge or local_only:
+        path = await allowed.speak("hello", voice=voice, lang="en")
+        assert path and path.endswith(".wav") and len(_records(env.tmp)) == 1
+
+
+@pytest.mark.asyncio
+async def test_f6_apply_writes_only_what_the_card_showed(armed, orch):
+    env = armed
+    good = _fake(env.tmp / "opt" / "good-tts", env.tmp)
+    other = _fake(env.tmp / "opt" / "other-tts", env.tmp)
+    status, _ = await command_settings.request(orch, "tts", [str(good), "{output}"])
+    assert status == 202
+    [task] = _pending(orch)
+    argv = [str(other), "{output}"]
+    _, exe = lp.validate_command(argv, "tts")
+    edited = dict(task.payload)
+    edited.update(argv=argv, fingerprint=command_settings._fingerprint(argv), exe_identity=lp.exe_identity(exe),
+                  bound=[lp.exe_identity(exe)])
+    await orch.autonomy.apply_decision(task.id, "edit", decided_by="admin", payload=edited)
+    accepted = await orch.autonomy.apply_decision(task.id, "accept", decided_by="owner")
+    assert accepted.decision == "accept"
+    result = await irreversible.execute(accepted, orch=orch)
+    assert result["status"] == "refused" and result["reason"] == "payload_changed", result
+    assert lp.stored_command("tts") == {}
+    # a task nobody requested through the route (POST /autonomy/tasks) has no record
+    direct = SimpleNamespace(id=4242, kind=command_settings.APPROVAL_KIND, decided_by="owner", decision="accept",
+                             payload=dict(edited))
+    assert (await irreversible.execute(direct, orch=orch))["reason"] == "not_requested"
+    # only a plain accept applies: an edit decision is refused even on the card's own payload
+    status, _ = await command_settings.request(orch, "stt", _stt_argv(good))
+    [stt_task] = [t for t in _pending(orch) if t.payload["side"] == "stt"]
+    for decision in ("edit", "reject", "defer"):
+        again = SimpleNamespace(id=stt_task.id, kind=stt_task.kind, decided_by="owner", decision=decision,
+                                payload=stt_task.payload)
+        assert (await command_settings.apply_approved(again, orch))["status"] == "refused", decision
+    plain = SimpleNamespace(id=stt_task.id, kind=stt_task.kind, decided_by="owner", decision="accept",
+                            payload=stt_task.payload)
+    assert (await irreversible.execute(plain, orch=orch))["status"] == "ok"
+    assert lp.stored_command("stt")["argv"] == _stt_argv(good)
+
+
+@pytest.mark.asyncio
+async def test_f7_local_only_never_runs_the_tts_command(armed, client, monkeypatch):
+    from agents.core.channels.spoken_reply import SpokenReply
+
+    env = armed
+    exe = _fake(env.tmp / "opt" / "say-wav", env.tmp)
+    await _approve(env, "tts", _tts_argv(exe))
+    monkeypatch.setattr(tts_module, "HAS_EDGE", False)
+    monkeypatch.setattr(tts_module, "HAS_KOKORO", False)
+    assert SpokenReply().backend_label() == "your TTS command (locality not checked)"
+    caps = client.get("/api/voice/capabilities").json()
+    assert caps["tts_local"] is False
+    _piper(env, "en_US-amy-low")
+    settings_db.put_category("voice", {"local_only": True})
+    path = await _engine().speak("hello", voice="command", lang="en")
+    assert path and path.endswith(".wav")
+    assert [r["argv"][0] for r in _records(env.tmp)] == [str((env.bin / "piper").resolve())]
+    label = next(row["label"] for row in settings_db.DEFAULTS if row["key"] == "local_only")
+    assert "command" in label.lower() and "xtts" in label.lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lang", [None, "", "fr", "en"])
+async def test_f8_a_failing_local_default_voice_falls_back_to_an_edge_voice(env, monkeypatch, lang):
+    _piper(env)                                               # the binary, no model: Piper fails
+    monkeypatch.setattr(tts_module, "HAS_EDGE", True)
+    for default in ("piper:ro_RO-mihai-medium", "command"):
+        engine = _engine(default_voice=default)
+        edge = []
+
+        async def fake_edge(text, voice, seen=edge):
+            seen.append(voice)
+            return "edge"
+
+        monkeypatch.setattr(engine, "_speak_edge", fake_edge)
+        assert await engine.speak("Salut", lang=lang) == "edge", default
+        assert edge and edge[0] in TTSEngine.VOICE_MAP.values(), (default, edge)
+        assert tts_module.local_voice_kind(engine._safe_default_voice(lang)) is None
+
+
+def test_f9_the_hud_tts_keeps_the_owners_piper_voice_when_a_lang_is_sent(env, client, monkeypatch):
+    import core.voice.local_providers as core_lp
+    import core.voice.tts as core_tts
+
+    _piper(env, "ro_RO-mihai-medium", "en_US-amy-low")
+    monkeypatch.setattr(core_tts, "HAS_EDGE", True)
+    monkeypatch.setattr(core_tts, "TEMP_DIR", env.temp)
+    monkeypatch.setattr(core_lp, "_import_piper", lambda: None)
+    edge = []
+
+    async def fake_edge(self, text, voice):
+        edge.append(voice)
+        return None
+
+    monkeypatch.setattr(core_tts.TTSEngine, "_speak_edge", fake_edge)
+    monkeypatch.setattr("core.settings_db.get_value", settings_db.get_value)   # the route's copy: this DB
+    settings_db.put_category("voice", {"tts_voice": "piper:en_US-amy-low"})
+    resp = client.post("/tts", json={"text": "Salut lume", "lang": "ro"})
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"] == "audio/wav" and edge == []
+    assert _records(env.tmp)[-1]["argv"][2].endswith("en_US-amy-low.onnx")
+    settings_db.put_category("voice", {"tts_voice": "piper"})              # bare: the model for the language
+    resp = client.post("/tts", json={"text": "Salut lume", "lang": "ro"})
+    assert resp.status_code == 200 and edge == []
+    assert _records(env.tmp)[-1]["argv"][2].endswith("ro_RO-mihai-medium.onnx")
+
+
+@pytest.mark.asyncio
+async def test_f9_a_spoken_reply_with_a_lang_keeps_the_owners_piper_voice(env, monkeypatch):
+    from agents.core.channels.spoken_reply import SpokenReply
+
+    _piper(env, "en_US-amy-low")
+    monkeypatch.setattr(tts_module, "HAS_EDGE", True)
+    edge = []
+
+    async def fake_edge(self, text, voice):
+        edge.append(voice)
+        return None
+
+    monkeypatch.setattr(tts_module.TTSEngine, "_speak_edge", fake_edge)
+    settings_db.put_category("voice", {"tts_voice": "piper:en_US-amy-low"})
+    audio = await SpokenReply()("Salut lume, ce faci?", lang="ro")
+    assert audio.ok and audio.mime == "audio/wav" and edge == []
+    assert _records(env.tmp)[-1]["argv"][2].endswith("en_US-amy-low.onnx")
+
+
+class _FakePiperVoice:
+    @classmethod
+    def load(cls, model, config_path=None):
+        return cls()
+
+    def synthesize_wav(self, text, wav_file):
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(16000)
+        wav_file.writeframes(b"\0\0" * 10)
+
+
+@pytest.mark.asyncio
+async def test_f10_a_synthesis_cancelled_while_queued_releases_the_piper_slot(env, monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    _piper(env, "en_US-amy-low")
+    monkeypatch.setattr(lp, "_import_piper", lambda: _FakePiperVoice)
+    monkeypatch.setattr(lp, "TTS_TIMEOUT_S", 0.3)
+    loop = asyncio.get_running_loop()
+    pool = ThreadPoolExecutor(max_workers=1)
+    loop.set_default_executor(pool)
+    release = threading.Event()
+    real_workdir = lp.private_workdir
+    blocked = []
+
+    @__import__("contextlib").asynccontextmanager
+    async def busy_pool_workdir(temp_dir):
+        if not blocked:                           # the pool is busy when the synthesis is queued
+            blocked.append(loop.run_in_executor(None, release.wait, 10))
+        async with real_workdir(temp_dir) as workdir:
+            yield workdir
+
+    monkeypatch.setattr(lp, "private_workdir", busy_pool_workdir)
+    try:
+        assert await lp.speak_piper("hi", "piper:en_US-amy-low", "en", temp_dir=env.temp) is None
+        release.set()
+        await blocked[0]
+        path = await lp.speak_piper("hi", "piper:en_US-amy-low", "en", temp_dir=env.temp)
+        assert path and path.endswith(".wav")
+        assert lp._PKG_SLOT.acquire(blocking=False)
+        lp._PKG_SLOT.release()
+    finally:
+        release.set()
+        pool.shutdown(wait=False)
+
+
+@pytest.mark.asyncio
+async def test_f11_whisper_timestamps_are_stripped_and_other_brackets_are_text(armed, monkeypatch):
+    from agents.core.channels.inbound_voice import InboundVoiceReader
+
+    env = armed
+    out = env.tmp / "stdout.txt"
+    exe = env.tmp / "opt" / "whisper-cli"
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    exe.write_text(f"#!{sys.executable}\nimport sys\nsys.stdout.write(open({str(out)!r}).read())\n")
+    exe.chmod(0o755)
+    await _approve(env, "stt", [str(exe), "-f", "{audio}"])
+    out.write_text("[00:00:00.000 --> 00:00:02.500]   Salut, ce faci?\n[00:00:02.500 --> 00:00:03.000]  Bine.\n")
+    assert await lp.transcribe_command(OGG, "ro", temp_dir=env.temp) == "Salut, ce faci? Bine."
+    out.write_text("[laughs] hello there\n")
+    text = await lp.transcribe_command(OGG, "en", temp_dir=env.temp)
+    assert text == "[laughs] hello there"
+    for sentinel, ok in (("[laughs] hello there", True), ("[silence]", False), ("[STT unavailable]", False),
+                         ("[STT error: command exited 3]", False), ("[music]", True)):
+        assert lp.is_stt_sentinel(sentinel) is (not ok), sentinel
+
+        async def transcribe(audio, language, value=sentinel):
+            return value
+
+        heard = await InboundVoiceReader(transcribe=transcribe, available=True)(OGG, language="en")
+        assert heard.ok is ok, sentinel
+    out.write_text("[BLANK_AUDIO]\n")
+    assert await lp.transcribe_command(OGG, "en", temp_dir=env.temp) == "[silence]"
+
+
+def test_f12_tts_availability_honours_local_only(env, client, monkeypatch):
+    import core.voice.tts as core_tts
+
+    from agents.core.channels.spoken_reply import SpokenReply
+    from agents.core.routers import voice as voice_router
+    from agents.core.voice import speak_tool
+
+    for module in (core_tts, tts_module):
+        monkeypatch.setattr(module, "HAS_EDGE", True)
+        monkeypatch.setattr(module, "HAS_KOKORO", False)
+    monkeypatch.setattr(voice_router, "_caps_cache",
+                        {"has_whisper": False, "has_edge": True, "has_kokoro": False, "consent_fn": None})
+    settings_db.put_category("voice", {"local_only": True})
+    assert tts_module.tts_available() is False
+    resp = client.post("/tts", json={"text": "hello", "lang": "en"})
+    assert resp.status_code == 503, resp.text
+    assert client.get("/api/voice/capabilities").json()["tts"] is False
+    assert speak_tool.tts_installed() is False and SpokenReply().is_available is False
+    settings_db.put_category("voice", {"local_only": False})
+    assert tts_module.tts_available() is True and speak_tool.tts_installed() is True
+
+
+def test_f18_stt_availability_honours_stt_engine(armed, client, monkeypatch):
+    import core.voice.stt as core_stt
+
+    from agents.core.channels.inbound_voice import InboundVoiceReader
+    from agents.core.routers import voice as voice_router
+
+    env = armed
+    exe = _fake(env.tmp / "opt" / "stt", env.tmp, no_stdin=True)
+    asyncio.run(_approve(env, "stt", _stt_argv(exe)))
+    for module in (core_stt, stt_module):
+        monkeypatch.setattr(module, "HAS_WHISPER", False)
+    caps = {"has_whisper": False, "has_edge": False, "has_kokoro": False, "consent_fn": None}
+    monkeypatch.setattr(voice_router, "_caps_cache", caps)
+    settings_db.put_category("voice", {"stt_engine": "whisper"})
+    resp = client.post("/api/voice/stt?lang=en", content=OGG, headers={"content-type": "audio/ogg"})
+    assert resp.status_code == 503, resp.text
+    assert client.get("/api/voice/capabilities").json()["stt"] is False
+    assert InboundVoiceReader().is_available is False
+    settings_db.put_category("voice", {"stt_engine": "command"})
+    assert InboundVoiceReader().is_available is True
+    asyncio.run(command_settings.clear(None, "stt"))
+    for module in (core_stt, stt_module):
+        monkeypatch.setattr(module, "HAS_WHISPER", True)
+    monkeypatch.setitem(caps, "has_whisper", True)
+    resp = client.post("/api/voice/stt?lang=en", content=OGG, headers={"content-type": "audio/ogg"})
+    assert resp.status_code == 503, resp.text
+    assert client.get("/api/voice/capabilities").json()["stt"] is False
+    assert InboundVoiceReader().is_available is False
+
+
+@pytest.mark.asyncio
+async def test_f13_piper_is_imported_off_the_event_loop_and_probes_never_import_it(env, monkeypatch):
+    import threading
+
+    from agents.core.channels.spoken_reply import SpokenReply
+    from agents.core.voice import speak_tool
+
+    _piper(env, "en_US-amy-low")
+    loop_thread = threading.get_ident()
+    seen = []
+
+    def fake_import():
+        seen.append(threading.get_ident())
+        return _FakePiperVoice
+
+    monkeypatch.setattr(lp, "_import_piper", fake_import)
+    path = await lp.speak_piper("hi", "piper:en_US-amy-low", "en", temp_dir=env.temp)
+    assert path and seen and loop_thread not in seen
+    seen.clear()
+    monkeypatch.setattr(tts_module, "HAS_EDGE", False)
+    monkeypatch.setattr(tts_module, "HAS_KOKORO", False)
+    assert speak_tool.tts_installed() is True and SpokenReply().is_available is True
+    assert seen == []
+
+
+def test_f14_a_piper_voice_speaks_the_language_of_its_model_name(env):
+    from agents.core.voice.speech_text import speech_lang
+
+    engine = TTSEngine(default_voice="piper:ro_RO-mihai-medium")
+    assert engine.speech_for("Salut lume, 50% & gata", lang="") == "Salut lume, 50 la sută și gata"
+    assert speech_lang("", "piper:ro_RO-mihai-medium") == "ro"
+    assert speech_lang("", "piper:en_US-amy-low", default="ro") == "en"
+
+
+@pytest.mark.asyncio
+async def test_f14_the_bare_piper_pick_uses_the_default_models_language(env, monkeypatch):
+    _piper(env, "en_US-amy-low", "ro_RO-mihai-medium")
+    settings_db.put_category("voice", {"local_only": True})
+    monkeypatch.setattr(tts_module, "HAS_KOKORO", False)
+    engine = _engine(default_voice="piper:ro_RO-missing-model")
+    path = await engine.speak("Salut", lang=None)
+    assert path and path.endswith(".wav")
+    assert _records(env.tmp)[-1]["argv"][2].endswith("ro_RO-mihai-medium.onnx")
+
+
+@pytest.mark.asyncio
+async def test_f15_a_flac_clip_is_sent_as_flac(tmp_path):
+    from agents.core.channels import telegram
+    from agents.core.channels.spoken_reply import SpokenReply
+    from agents.core.voice import speak_tool
+
+    clip = tmp_path / "reply.flac"
+    clip.write_bytes(b"fLaC" + b"\0" * 60)
+
+    async def synth(text, lang):
+        return str(clip)
+
+    audio = await SpokenReply(synthesize=synth, available=True, backend="command")("Hello there, friend.", lang="en")
+    assert audio.ok and audio.mime == "audio/flac"
+    assert speak_tool._AUDIO_SUFFIX["audio/flac"] == ".flac"
+    assert telegram.VOICE_SUFFIX["audio/flac"] == "flac"
+
+
+def test_f17_a_clear_needs_an_explicit_clear_and_a_dry_run_never_writes(armed, client, orch):
+    env = armed
+    exe = _fake(env.tmp / "opt" / "say-wav", env.tmp)
+    asyncio.run(_approve(env, "tts", _tts_argv(exe)))
+    stored = lp.stored_command("tts")
+    for body in ({"side": "tts"}, {"side": "tts", "dry_run": True}, {"side": "tts", "args": _tts_argv(exe)},
+                 {"side": "tts", "argv": None}, {"side": "tts", "argv": []},
+                 {"side": "tts", "clear": True, "argv": _tts_argv(exe)}):
+        resp = client.post("/api/admin/voice/commands", headers=ADMIN, json=body)
+        assert resp.status_code == 422, (body, resp.status_code, resp.text)
+        assert lp.stored_command("tts") == stored
+    resp = client.post("/api/admin/voice/commands", headers=ADMIN, json={"side": "tts", "clear": True, "dry_run": True})
+    assert resp.status_code == 200 and resp.json()["dry_run"] is True
+    assert lp.stored_command("tts") == stored
+    resp = client.post("/api/admin/voice/commands", headers=ADMIN, json={"side": "tts", "clear": True})
+    assert resp.status_code == 200 and resp.json()["cleared"] is True and lp.stored_command("tts") == {}
+
+
+def test_f19_the_settings_label_and_docs_name_where_the_block_lives():
+    root = Path(__file__).resolve().parents[1]
+    where = "Console → Admin → Settings → Voice → Command providers"
+    texts = [settings_db.ROUTE_ONLY[("voice", "tts_command")], settings_db.ROUTE_ONLY[("voice", "stt_command")]]
+    texts += [row["label"] for row in settings_db.DEFAULTS if row["key"] in ("tts_command", "stt_command")]
+    texts += [(root / "docs" / "FLAGS.md").read_text(encoding="utf-8"), (root / ".env.example").read_text(encoding="utf-8")]
+    for text in texts:
+        text = text.replace("->", "→")
+        assert where in text and "Console → Voice →" not in text
+
+
+def test_f20_the_tts_503_hint_names_the_piper_model():
+    from agents.core.routers import voice as voice_router
+
+    assert "piper-tts" in voice_router.NO_TTS and ".onnx.json" in voice_router.NO_TTS
+    assert "<data>/voice/piper" in voice_router.NO_TTS and "voice.piper_model_dir" in voice_router.NO_TTS

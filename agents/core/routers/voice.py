@@ -25,7 +25,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard, user_guard
@@ -48,7 +48,9 @@ class TTSRequest(BaseModel):
 #: The ``X-Nerva-Speech`` value of a 204 from ``/tts``: the text normalised to nothing.
 NOTHING_TO_SAY = "nothing_to_say"
 #: What ``/tts`` answers when no server-side TTS path exists at all.
-NO_TTS = "no TTS engine: edge-tts not installed. Run: pip install edge-tts (or pip install piper-tts)"
+NO_TTS = ("no TTS engine: edge-tts not installed. Run: pip install edge-tts — or, for Piper, pip install "
+          "piper-tts and put a voice's <name>.onnx with its <name>.onnx.json in <data>/voice/piper (or the "
+          "directory voice.piper_model_dir names). With voice.local_only on, only Piper, Kokoro or XTTS speak.")
 _MEDIA_TYPES = {".wav": "audio/wav", ".ogg": "audio/ogg", ".flac": "audio/flac", ".mp3": "audio/mpeg"}
 
 
@@ -215,9 +217,9 @@ async def stt_endpoint(request: Request, lang: Optional[str] = Query(None)):
     from core.voice.stt import HAS_WHISPER
 
     from agents.core.voice import local_providers
-    # H613: the approved STT command transcribes when Whisper is absent.
-    command = await asyncio.to_thread(local_providers.command_ready, "stt")
-    if not HAS_WHISPER and not command.ok:
+    # H613: the approved STT command transcribes when Whisper is absent — as
+    # voice.stt_engine allows (whisper: only Whisper; command: only the command).
+    if not await asyncio.to_thread(local_providers.stt_available, bool(HAS_WHISPER)):
         return JSONResponse(
             {"error": "faster-whisper not installed. Run: pip install faster-whisper", "stt": False},
             status_code=503,
@@ -242,7 +244,7 @@ async def stt_endpoint(request: Request, lang: Optional[str] = Query(None)):
         # 0.24 — opt-in dictation cleanup: strip fillers/stutters + apply spoken
         # punctuation. Sentinel transcripts ([silence], [STT unavailable]) pass
         # through untouched, and the removal counts stay inspectable.
-        if get_value("voice", "dictation_cleanup", False) and text and not text.startswith("["):
+        if get_value("voice", "dictation_cleanup", False) and text and not local_providers.is_stt_sentinel(text):
             from core.voice.dictation import clean_dictation
             cleaned = clean_dictation(text, lang=lang)
             return nocache_json({"text": cleaned["text"], "lang": lang,
@@ -323,21 +325,28 @@ async def voice_capabilities():
     xtts = bool(os.getenv("XTTS_SERVER_URL"))
     eleven = bool(os.getenv("ELEVENLABS_API_KEY"))
     fish = bool(os.getenv("FISH_AUDIO_API_KEY"))
-    local = await asyncio.to_thread(_local_providers_state)     # H613: read per request
+    local = await asyncio.to_thread(_local_providers_state, bool(has_whisper))     # H613: read per request
     piper, command = local["piper"], local["command"]
     tts_command, stt_command = command["tts"]["ready"], command["stt"]["ready"]
+    local_only = local["local_only"]
+    # voice.local_only: only Piper, Kokoro or XTTS speak (never edge, ElevenLabs, Fish or the
+    # TTS command, whose locality the hub cannot check).
+    tts = (bool(xtts or has_kokoro or piper["available"]) if local_only
+           else bool(has_edge or has_kokoro or xtts or eleven or fish or piper["available"] or tts_command))
     return nocache_json({
-        "stt": bool(has_whisper or stt_command),       # local Whisper or the approved STT command
-        "tts": bool(has_edge or has_kokoro or xtts or eleven or fish or piper["available"] or tts_command),
-        # an on-device TTS path exists
-        "tts_local": bool(xtts or has_kokoro or piper["available"] or tts_command),
+        "stt": local["stt"],                           # as voice.stt_engine allows: Whisper and/or the command
+        "tts": tts,
+        # an on-device TTS path exists (the command is not counted: its locality is not checked)
+        "tts_local": bool(xtts or has_kokoro or piper["available"]),
+        "local_only": local_only,
         "persona_voice": (
             consent_fn()
             if consent_fn else
             {"required": True, "granted": False, "allowed": False, "message": "voice consent status unavailable"}
         ),
         "providers": {
-            "stt": "faster-whisper" if has_whisper else ("command" if stt_command else None),
+            "stt": ("faster-whisper" if has_whisper and local["stt_mode"] != "command"
+                    else ("command" if stt_command and local["stt_mode"] != "whisper" else None)),
             "xtts": xtts, "elevenlabs": eleven, "fish_audio": fish,
             "edge_tts": has_edge, "kokoro": has_kokoro,
             "piper": piper, "command": command,
@@ -347,12 +356,16 @@ async def voice_capabilities():
     })
 
 
-def _local_providers_state() -> dict:
-    """H613 — Piper (package or binary, and its models) and the command providers, now."""
+def _local_providers_state(has_whisper: bool = False) -> dict:
+    """H613 — Piper (package or binary, and its models), the command providers, the
+    owner's selectors (voice.local_only, voice.stt_engine) and whether STT is available
+    under them, now."""
     from agents.core.voice import local_providers
 
     return {"piper": local_providers.piper_status(),
-            "command": {side: local_providers.command_status(side) for side in local_providers.SIDES}}
+            "command": {side: local_providers.command_status(side) for side in local_providers.SIDES},
+            "local_only": local_providers.local_only(), "stt_mode": local_providers.stt_mode(),
+            "stt": local_providers.stt_available(has_whisper)}
 
 
 # ── H613: the TTS / STT command providers (admin-only) ───────────
@@ -362,9 +375,15 @@ VOICE_COMMAND_MAX_BODY = 300_000
 
 
 class VoiceCommandBody(BaseModel):
+    """``{side, argv}`` asks for a command; ``{side, clear: true}`` clears one. Nothing
+    else: a missing or empty argv without ``clear`` (a typo, a bare dry run) is a 422, not
+    a clear, and an unknown key is refused."""
+    model_config = ConfigDict(extra="forbid")
+
     side: str = Field(..., max_length=8)                   # "tts" or "stt"
-    argv: Optional[list[str]] = Field(None, max_length=64)  # null or [] clears the command
-    dry_run: bool = False
+    argv: Optional[list[str]] = Field(None, max_length=64)
+    clear: bool = False                                    # the only way to clear a side
+    dry_run: bool = False                                  # validate / preview; never writes
 
 
 @router.get("/api/admin/voice/commands", dependencies=[Depends(admin_guard)])
@@ -394,13 +413,20 @@ async def voice_commands_write(request: Request):
     try:
         body = VoiceCommandBody.model_validate(json.loads(raw or b"null"))
     except Exception:  # noqa: BLE001 — malformed JSON or a body that is not this shape
-        return nocache_json({"error": "expected {side: tts|stt, argv: [strings] | null, dry_run?}"},
-                            status_code=422)
+        return nocache_json({"error": "expected {side: tts|stt, argv: [strings], dry_run?} or "
+                                      "{side: tts|stt, clear: true, dry_run?}"}, status_code=422)
     if body.side not in command_settings.KEYS:
         return nocache_json({"error": "side: tts or stt"}, status_code=422)
     orch = get_orch()
-    if not body.argv:
+    if body.clear:
+        if body.argv:
+            return nocache_json({"error": "clear takes no argv: send {side, clear: true}"}, status_code=422)
+        if body.dry_run:                                   # a dry run never writes
+            return nocache_json({"ok": True, "dry_run": True, "side": body.side, "would_clear": True})
         status, answer = await command_settings.clear(orch, body.side)
+    elif not body.argv:
+        return nocache_json({"error": "argv: a list of strings, the program first — to clear the command, "
+                                      "send {side, clear: true}"}, status_code=422)
     else:
         status, answer = await command_settings.request(orch, body.side, list(body.argv), dry_run=body.dry_run)
     return nocache_json(answer, status_code=status)

@@ -220,14 +220,15 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="voice",   key="dictation_cleanup", value=False,                label="Dictation cleanup (0.24) — strip fillers/stutters + spoken punctuation from STT transcripts", kind="toggle"),
     dict(category="voice",   key="stt_echo_transcripts", value=False,             label="Echo voice-note transcripts on chat channels (H071) — say back what was heard before answering it", kind="toggle"),
     # H613 — local voices. Piper models live in piper_model_dir (a directory of data files a fixed
-    # program loads; empty = <data>/voice/piper). local_only keeps speech on this machine (Piper, then
+    # program loads; empty = <data>/voice/piper). local_only keeps speech on this machine (Piper, Kokoro
+    # or XTTS; never edge, ElevenLabs, Fish or the TTS command, whose locality the hub cannot check) (then
     # Kokoro; never edge, ElevenLabs or Fish). The command providers make the hub run a program, so
     # only their own route writes them (ROUTE_ONLY) and a set waits for a human's approval.
-    dict(category="voice",   key="local_only",       value=False,                 label="Keep speech on this machine: Piper, then Kokoro; never a cloud voice (H613)", kind="toggle"),
+    dict(category="voice",   key="local_only",       value=False,                 label="Keep speech on this machine: only Piper, Kokoro or XTTS speak; never a cloud voice, and never the TTS command (the hub cannot check where a command sends the text) (H613)", kind="toggle"),
     dict(category="voice",   key="piper_model_dir",  value="",                    label="Piper voice models directory (absolute path holding <name>.onnx + <name>.onnx.json; empty = <data>/voice/piper)", kind="text"),
     dict(category="voice",   key="stt_engine",       value="auto",                label="Speech-to-text engine (auto: faster-whisper, else the approved STT command)", kind="select", opts=["auto", "whisper", "command"]),
-    dict(category="voice",   key="tts_command",      value={},                    label="TTS command provider (an approved program; Console → Voice → Command providers)", kind="json"),
-    dict(category="voice",   key="stt_command",      value={},                    label="STT command provider (an approved program; Console → Voice → Command providers)", kind="json"),
+    dict(category="voice",   key="tts_command",      value={},                    label="TTS command provider (an approved program; Console → Admin → Settings → Voice → Command providers)", kind="json"),
+    dict(category="voice",   key="stt_command",      value={},                    label="STT command provider (an approved program; Console → Admin → Settings → Voice → Command providers)", kind="json"),
     # security
     dict(category="security",key="guardrails_mode",  value="WARN",                label="Guardrails mode",    kind="select",  opts=["WARN","REDACT","BLOCK"]),
     dict(category="security",key="scan_input",       value=True,                  label="Scan user input",    kind="toggle"),
@@ -847,8 +848,8 @@ ROUTE_ONLY: dict[tuple[str, str], str] = {
     ("skills", "channel_disabled"): "Console → Trust → Skill Switches (POST /api/skills/switch)",
     # H613 — a command provider makes the hub run a program: set only through its route, which
     # sends the request to the approval queue's irreversible tier (voice/command_settings.py).
-    ("voice", "tts_command"): "Console → Voice → Command providers (POST /api/admin/voice/commands)",
-    ("voice", "stt_command"): "Console → Voice → Command providers (POST /api/admin/voice/commands)",
+    ("voice", "tts_command"): "Console → Admin → Settings → Voice → Command providers (POST /api/admin/voice/commands)",
+    ("voice", "stt_command"): "Console → Admin → Settings → Voice → Command providers (POST /api/admin/voice/commands)",
 }
 
 
@@ -906,10 +907,15 @@ def _voice_command_shape_problem(key: str, value: Any) -> str | None:
     if not isinstance(value, dict) or not isinstance(value.get("argv"), list) \
             or not all(isinstance(v, str) for v in value["argv"]):
         return f"{key}: expected {{}} or {{\"argv\": [strings], \"exe\": {{...}}, \"fingerprint\": ...}}"
-    exe = value.get("exe")
-    if not isinstance(exe, dict) or not isinstance(exe.get("path"), str) or not all(
-            type(exe.get(k)) is int for k in ("dev", "ino", "size", "mtime_ns")):
+    def identity_ok(ident: Any) -> bool:
+        return isinstance(ident, dict) and isinstance(ident.get("path"), str) and isinstance(
+            ident.get("sha256"), str) and all(type(ident.get(k)) is int for k in ("dev", "ino", "size", "mtime_ns"))
+
+    if not identity_ok(value.get("exe")):
         return f"{key}: the approved program's identity (exe) is missing or malformed"
+    bound = value.get("bound")
+    if not isinstance(bound, list) or not 1 <= len(bound) <= 2 or not all(identity_ok(b) for b in bound):
+        return f"{key}: the approved files' identities (bound: the program, then an interpreter's script) are missing"
     if not isinstance(value.get("fingerprint"), str):
         return f"{key}: the approved argv fingerprint is missing"
     return None

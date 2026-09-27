@@ -28,7 +28,7 @@ import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
 import { RETENTION_KIND, RetentionBanner, RetentionCard, refusedWhy, saveOrder, sentFor } from './panels/retention';
-import { VoiceCommands } from './panels/voice-commands';
+import { VOICE_COMMAND_KIND, VoiceCommandCard, VoiceCommands } from './panels/voice-commands';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
@@ -3243,7 +3243,7 @@ export function DecisionInboxPanel() {
               {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
               {!isImageProposal(t) && <button className="tool-btn" title="dry-run preview" onClick={() => loadPreview(t.id)}>preview</button>}
               <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>✓</button>
-              {!isImageProposal(t) && <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>}
+              {!isImageProposal(t) && t.kind !== VOICE_COMMAND_KIND && <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>}
               <button className="tool-btn" title="reject" onClick={() => decide(t.id, 'reject')}>✕</button>
               <button className="tool-btn" title="defer" onClick={() => decide(t.id, 'defer')}>defer</button>
             </span>
@@ -3256,6 +3256,7 @@ export function DecisionInboxPanel() {
             {Number.isSafeInteger(t.id) && t.id > 0 && <a href={internalLink("/v2/console/images?image_task=" + t.id)}>Watch image task</a>}
           </div>}
           {t.kind === RETENTION_KIND && <RetentionCard task={t} />}
+          {t.kind === VOICE_COMMAND_KIND && <VoiceCommandCard task={t} />}
           {t.rollback && <div style={{ margin: '3px 0 7px 12px', fontSize: 10, color: 'var(--ink-2)' }}>
             <div><span style={{ ...mono, color: 'var(--accent-light)' }}>rollback · </span>{t.rollback.description}</div>
             {t.rollback.limitations && <div style={{ color: 'var(--amber)', marginTop: 2 }}>{t.rollback.limitations}</div>}

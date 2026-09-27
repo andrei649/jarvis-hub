@@ -210,13 +210,23 @@ transcript) it writes inside that directory is read back.
 **What stays gated anyway:** the two settings are ROUTE_ONLY — a generic settings write,
 an import, a reset, an undo and `nerva config set` cannot touch them — and setting one
 waits for a human in the Decision Inbox (irreversible tier, kind
-`settings.voice_command`). Every spawn re-validates the argv (absolute program that
-exists, not a shell or a launcher, no inline-code interpreter, hardline denylist, no
-credential in the line) and checks the program file's identity (device, inode, size,
-mtime) against the approval: a replaced or upgraded program needs approving again. Off
+`settings.voice_command`); the card names every file that runs (the program and, for an
+interpreter, its script, each with its size and sha256), the full argv and who it runs
+as, and only a plain accept of that card writes it. Every spawn re-validates the argv
+(absolute program that exists, not a shell or a launcher — nor a program that runs code
+from its arguments, such as the dynamic loader, `find`, `awk`, `git`, an editor — no
+inline-code interpreter, hardline denylist, no credential in the line) and checks every
+bound file's identity (device, inode, size, mtime, sha256) against the approval, once more
+right before the spawn: a replaced, rewritten or upgraded file needs approving again. A
+bound file may not sit under a directory another user can write (group- or
+world-writable without the sticky bit). A timeout ends the command's whole process group.
+For whisper.cpp, its `[00:00:00.000 --> …]` timestamps are stripped (or pass `-nt`). Off
 in safe mode.
 **Cost:** an approved program runs as the hub's user, with that user's permissions.
-**Revert:** unset + restart, or clear the command in Console → Voice → Command providers.
+**Revert:** unset + restart, or clear the command in Console → Admin → Settings → Voice → Command providers.
+**`voice.local_only`:** keeps speech on this machine — only Piper, Kokoro or XTTS speak. It never
+runs the TTS command: a command is the escape hatch for any provider (a cloud one included), and
+the hub cannot check where it sends the text, so availability reports never count it as local.
 
 ### `JARVIS_BROWSER_ALLOW_PRIVATE_URLS`
 

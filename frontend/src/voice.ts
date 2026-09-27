@@ -30,6 +30,16 @@ const WAIT_SPEECH_MS = 7000; // give up a turn if no speech after listening star
 const BARGE_RMS = 0.045;     // higher bar than SPEECH_RMS — only real speech, not TTS echo, triggers barge-in
 const BARGE_MS = 360;        // sustained over-talk before we cut the reply
 
+/** Whether a transcript is an engine sentinel rather than speech: exactly `[silence]`, or
+    `[STT error…]` / `[STT unavailable…]` (the hub's `local_providers.is_stt_sentinel`). Other
+    bracketed text — `[laughs] hi`, a command provider's output — is what was said (H613). */
+export function isSttSentinel(text: unknown): boolean {
+  if (typeof text !== 'string') return false;
+  const t = text.trim();
+  if (t === '[silence]') return true;
+  return t.endsWith(']') && (t.startsWith('[STT error') || t.startsWith('[STT unavailable'));
+}
+
 function browserSpeak(text, lang, cancelled) {
   return new Promise((resolve) => {
     try {
@@ -189,7 +199,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     if (!res.ok) throw new Error('stt ' + res.status);
     const d = await res.json();
     const t = (d && d.text || '').trim();
-    if (!t || t.charAt(0) === '[') return '';    // [silence] / [STT unavailable] → nothing said
+    if (!t || isSttSentinel(t)) return '';    // [silence] / [STT unavailable] / [STT error…] → nothing said
     return t;
   }
 

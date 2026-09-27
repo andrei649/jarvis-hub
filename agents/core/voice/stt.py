@@ -103,17 +103,19 @@ class STTEngine:
         A transcript that is only Whisper talking to itself comes back as
         ``[silence]`` — see :mod:`agents.core.voice.hallucination`. That is the
         sentinel this method already returned for genuinely empty audio, and
-        every existing caller treats a leading ``[`` as "nothing was said"
-        (`routers/voice.py` skips dictation cleanup on it, `frontend/src/voice.ts`
-        drops it), so the filter needs no new contract to be honoured.
+        every caller treats the exact sentinels (``local_providers.is_stt_sentinel``:
+        ``[silence]``, ``[STT error…]``, ``[STT unavailable…]``) as "nothing was said"
+        (`routers/voice.py` skips dictation cleanup on them, `frontend/src/voice.ts`
+        drops them); other bracketed text is speech (H613 review).
         """
-        if self._use_command():
+        choice = self._choice()
+        if choice == "command":
             try:
                 asyncio.get_running_loop()
             except RuntimeError:
                 return asyncio.run(self._transcribe_command(audio, language))
             return "[STT error: command STT needs an async caller]"
-        if not self._model:
+        if choice is None or not self._model:
             return "[STT unavailable]"
 
         try:
@@ -146,13 +148,22 @@ class STTEngine:
             return io.BytesIO(bytes(audio))
         return audio
 
-    def _use_command(self) -> bool:
-        """Whether the approved STT command transcribes (H613): ``voice.stt_engine`` is
-        ``command``, or ``auto`` with no Whisper model — and the command is ready now."""
+    def _choice(self) -> Optional[str]:
+        """Which engine transcribes now (H613): ``"whisper"``, ``"command"`` or None.
+        ``voice.stt_engine`` ``whisper`` is only Whisper; ``command`` is only the approved
+        command (None when it is not ready — never Whisper instead); ``auto`` is Whisper
+        when its model loaded, else the command when it is ready. The spawn checks the
+        command again, digests included; this is the cheap check."""
         mode = local_providers.stt_mode()
         if mode == "whisper" or (mode == "auto" and self._model is not None):
-            return False
-        return local_providers.command_ready("stt").ok
+            return "whisper"
+        if local_providers.command_ready("stt", verify_content=False).ok:
+            return "command"
+        return None if mode == "command" else "whisper"
+
+    def _use_command(self) -> bool:
+        """Whether the approved STT command transcribes (H613); see :meth:`_choice`."""
+        return self._choice() == "command"
 
     async def _transcribe_command(self, audio, language) -> str:
         from agents.core.settings_db import get_value
@@ -162,7 +173,10 @@ class STTEngine:
                                                         default_lang=default if isinstance(default, str) else "en")
 
     async def transcribe_async(self, audio, language: str = "ro") -> str:
-        if self._use_command():
+        choice = await asyncio.to_thread(self._choice)
+        if choice == "command":
             return await self._transcribe_command(audio, language)
+        if choice is None:
+            return "[STT unavailable]"
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.transcribe, audio, language)

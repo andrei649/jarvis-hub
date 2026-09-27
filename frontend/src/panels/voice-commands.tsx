@@ -9,12 +9,20 @@
    program file is still the one approved. Clear applies at once.
 
    The argv is a JSON list of strings. Placeholders are whole elements: {text_file},
-   {output} and {lang} for TTS, {audio} and {lang} for STT. */
+   {output} and {lang} for TTS, {audio} and {lang} for STT.
+
+   VoiceCommandCard is the Decision Inbox card of a `settings.voice_command` request: the
+   side, every file that runs (the program and an interpreter's script, each with its size
+   and the first 16 hex digits of its sha256), the full argv with the placeholders marked,
+   and that it runs on this machine as the hub's user and cannot be undone by the hub. The
+   card has no edit: an edit could swap the program, so the hub refuses it — ask again. */
 import React, { useState } from 'react';
 import { apiPost } from '../api/client';
 import { mono, useApi } from '../panel-kit';
 
 export const VOICE_COMMANDS_PATH = '/api/admin/voice/commands';
+export const VOICE_COMMAND_KIND = 'settings.voice_command';
+const PLACEHOLDERS = new Set(['{text_file}', '{output}', '{audio}', '{lang}']);
 const SIDES = ['tts', 'stt'] as const;
 const EXAMPLE: Record<string, string> = {
   tts: '["/usr/local/bin/my-tts", "--lang", "{lang}", "--in", "{text_file}", "--out", "{output}"]',
@@ -52,10 +60,12 @@ export function commandRefusal(err: any): string {
 function SideRow({ side, state, onDone }: { side: string; state: any; onDone: () => void }) {
   const [text, setText] = useState('');
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
-  const send = (argv: string[] | null) =>
-    apiPost(VOICE_COMMANDS_PATH, { side, argv }, { admin: true })
+  const post = (body: Record<string, unknown>) =>
+    apiPost(VOICE_COMMANDS_PATH, body, { admin: true })
       .then((r: any) => { setNote({ ok: true, text: commandNote(r) }); onDone(); })
       .catch((err: any) => setNote({ ok: false, text: commandRefusal(err) }));
+  const send = (argv: string[]) => post({ side, argv });
+  const clear = () => post({ side, clear: true });      // a clear is only ever explicit
   const request = () => {
     const parsed = parseArgv(text);
     if (parsed.error) { setNote({ ok: false, text: parsed.error }); return; }
@@ -74,7 +84,7 @@ function SideRow({ side, state, onDone }: { side: string; state: any; onDone: ()
       style={{ width: '100%', background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 10.5 }} />
     <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
       <button className="tool-btn" onClick={request}>Request</button>
-      {s.configured && <button className="tool-btn" onClick={() => send(null)}>Clear</button>}
+      {s.configured && <button className="tool-btn" onClick={clear}>Clear</button>}
     </div>
     {note && <div role={note.ok ? 'status' : 'alert'} style={{ ...mono, fontSize: 10, marginTop: 3, color: note.ok ? 'var(--amber)' : 'var(--red)' }}>{note.text}</div>}
   </div>;
@@ -89,8 +99,38 @@ export function VoiceCommands() {
     <div style={{ fontSize: 10, color: 'var(--ink-3)', margin: '2px 0 4px' }}>
       A program the hub runs to speak or to transcribe. Setting one asks you in the Decision Inbox first;
       it runs only with JARVIS_VOICE_COMMANDS=1{d && !armed ? ' (not set on this hub)' : ''}, never in safe mode,
-      and needs approving again if the program file changes.
+      and needs approving again if any file it runs changes.
     </div>
     {SIDES.map((side) => <SideRow key={side} side={side} state={sides[side]} onDone={reload} />)}
+  </div>;
+}
+
+const short = (sha: unknown) => (typeof sha === 'string' && sha ? sha.slice(0, 16) : 'unknown');
+const bytes = (n: unknown) => (typeof n === 'number' ? `${n} bytes` : 'size unknown');
+
+/** The Decision Inbox card of a `settings.voice_command` task, from the preview it carries. */
+export function VoiceCommandCard({ task }: { task: any }) {
+  const preview = task?.payload?.preview;
+  if (!preview || typeof preview !== 'object') return null;
+  const side = String(preview.kind || preview.side || task?.payload?.side || '?');
+  const files: any[] = Array.isArray(preview.files) ? preview.files
+    : preview.program ? [{ path: preview.program }] : [];
+  const argv: string[] = Array.isArray(preview.argv) ? preview.argv.map(String) : [];
+  return <div data-testid="voice-command-card" style={{ margin: '3px 0 7px 12px', fontSize: 10, color: 'var(--ink-2)' }}>
+    <div>kind: <span style={mono}>{side.toUpperCase()}</span> voice command provider</div>
+    <div style={{ marginTop: 2 }}>runs {files.length === 1 ? 'this file' : 'these files'}:</div>
+    {files.map((f, i) => <div key={i} data-testid="voice-command-file" style={{ ...mono, marginLeft: 8, overflowWrap: 'anywhere' }}>
+      {String(f?.path ?? '?')} · {bytes(f?.size)} · sha256 {short(f?.sha256)}
+    </div>)}
+    <div style={{ marginTop: 2 }}>argv:</div>
+    <ol data-testid="voice-command-argv" start={0} style={{ ...mono, margin: '0 0 0 22px', padding: 0 }}>
+      {argv.map((a, i) => <li key={i} style={{ overflowWrap: 'anywhere' }}>
+        {PLACEHOLDERS.has(a) ? <span data-testid="voice-command-placeholder" style={{ color: 'var(--amber)' }}>{a} (filled in by the hub)</span> : a}
+      </li>)}
+    </ol>
+    {preview.runs_as && <div style={{ marginTop: 2 }}>as user <span style={mono}>{String(preview.runs_as)}</span>
+      {typeof preview.timeout_s === 'number' ? ` · stopped after ${preview.timeout_s}s` : ''}</div>}
+    <div style={{ color: 'var(--red)', marginTop: 2 }}>runs on this machine as the hub user; cannot be undone by the hub</div>
+    <div style={{ color: 'var(--ink-3)', marginTop: 2 }}>changing any of these files needs approving again · no edit here: ask again from Settings → Voice</div>
   </div>;
 }
