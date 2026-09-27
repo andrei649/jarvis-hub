@@ -93,6 +93,18 @@ if audio:
 '''
 
 
+def _py() -> str:
+    """An interpreter the command providers accept (none of it or its directories writable
+    by others): the running one, else the system's. CI's tool-cache Python sits under a
+    world-writable directory, which H613 rightly refuses; skip when no interpreter qualifies."""
+    import shutil
+
+    for candidate in (sys.executable, shutil.which("python3"), "/usr/bin/python3", "/usr/local/bin/python3"):
+        if candidate and os.path.isabs(candidate) and lp.trusted_program(candidate)[0] is not None:
+            return candidate
+    pytest.skip("no Python interpreter here passes the command providers' ownership checks")
+
+
 def _fake(path: Path, tmp: Path, *, no_stdin: bool = False) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(FAKE.format(python=sys.executable, rec=str(tmp / "rec.jsonl"), mode=str(tmp / "mode.txt"),
@@ -721,7 +733,7 @@ def _bad_argvs(env) -> list[tuple[str, list, str]]:
         ("sh", ["/bin/sh", "-c", "id", "{output}"], "launcher"),
         ("bash", [os.path.realpath("/bin/bash"), "{output}"], "launcher"),
         ("env", ["/usr/bin/env", "{output}"], "launcher"),
-        ("python -c", [sys.executable, "-c", "print(1)", "{output}"], "interpreter"),
+        ("python -c", [_py(), "-c", "print(1)", "{output}"], "interpreter"),
         ("NUL", [e, "a\x00b", "{output}"], "NUL"),
         ("65 items", [e, "{output}"] + ["x"] * 63, "1 to 64"),
         ("4001 chars", [e, "{output}", "x" * 4001], "longer than"),
@@ -730,7 +742,7 @@ def _bad_argvs(env) -> list[tuple[str, list, str]]:
         ("tts without output", [e, "{text_file}"], "{output} must appear exactly once"),
         ("duplicate output", [e, "{output}", "{output}"], "{output} must appear exactly once"),
         ("audio on tts", [e, "{output}", "{audio}"], "not a tts placeholder"),
-    ] + [("python script ok", [sys.executable, str(script), "{output}"], "")]
+    ] + [("python script ok", [_py(), str(script), "{output}"], "")]
 
 
 def test_validate_command_refusals(env):
@@ -1134,10 +1146,10 @@ async def test_f0_interpreter_script_is_bound_and_a_rewrite_needs_approving_agai
     env = armed
     marker = env.tmp / "marker"
     script = _script(env, PY_SAY.format(wav=WAV, marker=str(marker), tag="good"))
-    argv = [sys.executable, str(script), "{output}"]
+    argv = [_py(), str(script), "{output}"]
     assert (await _approve(env, "tts", argv))["status"] == "ok"
     stored = lp.stored_command("tts")
-    assert [b["path"] for b in stored["bound"]] == [str(Path(sys.executable).resolve()), str(script.resolve())]
+    assert [b["path"] for b in stored["bound"]] == [str(Path(_py()).resolve()), str(script.resolve())]
     assert all(len(b["sha256"]) == 64 for b in stored["bound"])
     assert await lp.speak_command("hi", "en", temp_dir=env.temp)
     assert marker.read_text() == "good\n"
@@ -1173,39 +1185,39 @@ async def test_f4_in_place_rewrite_of_the_program_with_the_same_size_and_mtime(a
 
 def test_f0_a_world_writable_script_or_script_dir_is_refused(env):
     ok = _script(env, "print(1)")
-    assert lp.validate_command([sys.executable, str(ok), "{output}"], "tts")[0] == []
+    assert lp.validate_command([_py(), str(ok), "{output}"], "tts")[0] == []
     loose = _script(env, "print(1)", name="loose.py")
     loose.chmod(0o666)
-    problems = lp.validate_command([sys.executable, str(loose), "{output}"], "tts")[0]
+    problems = lp.validate_command([_py(), str(loose), "{output}"], "tts")[0]
     assert any(p.startswith("argv[1]") and "writable" in p for p in problems), problems
     shared = env.tmp / "shared"
     shared.mkdir()
     in_shared = _script(env, "print(1)", parent=shared)
     shared.chmod(0o777)
-    problems = lp.validate_command([sys.executable, str(in_shared), "{output}"], "tts")[0]
+    problems = lp.validate_command([_py(), str(in_shared), "{output}"], "tts")[0]
     assert any(p.startswith("argv[1]") and "writable" in p for p in problems), problems
     shared.chmod(0o755)
     big = env.tmp / "scripts" / "big.py"
     with open(big, "wb") as fh:
         fh.truncate(64 * 1024 * 1024 + 1)
     big.chmod(0o644)
-    problems = lp.validate_command([sys.executable, str(big), "{output}"], "tts")[0]
+    problems = lp.validate_command([_py(), str(big), "{output}"], "tts")[0]
     assert any(p.startswith("argv[1]") and "64 MiB" in p for p in problems), problems
     for script in ("-c", "relative.py"):
-        assert lp.validate_command([sys.executable, script, "{output}"], "tts")[0]
+        assert lp.validate_command([_py(), script, "{output}"], "tts")[0]
 
 
 def test_f0_the_card_names_every_bound_file(armed, client, orch):
     env = armed
     script = _script(env, "print(1)")
-    argv = [sys.executable, str(script), "{output}"]
+    argv = [_py(), str(script), "{output}"]
     resp = client.post("/api/admin/voice/commands", headers=ADMIN, json={"side": "tts", "argv": argv})
     assert resp.status_code == 202, resp.text
     [task] = _pending(orch)
     files = task.payload["preview"]["files"]
-    assert [f["path"] for f in files] == [str(Path(sys.executable).resolve()), str(script.resolve())]
+    assert [f["path"] for f in files] == [str(Path(_py()).resolve()), str(script.resolve())]
     assert files[1]["size"] == script.stat().st_size and len(files[1]["sha256"]) == 64
-    assert str(script.resolve()) in task.title or str(Path(sys.executable).resolve()) in task.title
+    assert str(script.resolve()) in task.title or str(Path(_py()).resolve()) in task.title
 
 
 def test_f1_an_ancestor_writable_by_others_without_the_sticky_bit_is_refused(env):
@@ -1692,7 +1704,7 @@ async def test_n1_a_python_script_never_imports_from_its_own_folder_or_user_site
     env = armed
     marker = env.tmp / "marker"
     script = _script(env, PY_SIBLING.format(wav=WAV, marker=str(marker)))
-    assert (await _approve(env, "tts", [sys.executable, str(script), "{output}"]))["status"] == "ok"
+    assert (await _approve(env, "tts", [_py(), str(script), "{output}"]))["status"] == "ok"
     (script.parent / "n1_sidekick.py").write_text(
         f"open({str(marker)!r}, 'a').write('UNAPPROVED\\n')\n", encoding="utf-8")
     assert lp.command_ready("tts").ok                         # no bound file changed
@@ -1866,7 +1878,7 @@ async def test_accept_is_refused_when_the_script_changed_while_the_card_waited(a
     env = armed
     marker = env.tmp / "marker"
     script = _script(env, PY_SAY.format(wav=WAV, marker=str(marker), tag="good"))
-    argv = [sys.executable, str(script), "{output}"]
+    argv = [_py(), str(script), "{output}"]
     done = await _request_then_accept(
         env, "tts", argv,
         between=lambda: script.write_text(PY_SAY.format(wav=WAV, marker=str(marker), tag="EVIL"), encoding="utf-8"))
