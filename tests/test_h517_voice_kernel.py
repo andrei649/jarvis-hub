@@ -236,3 +236,51 @@ def test_voice_manifest_exposes_human_floor_and_truthful_revoke_contract():
     assert manifest.rollback.handler_ref == 'agents.core.voice.command_settings:clear'
     assert 'future' in manifest.rollback.description.lower()
     assert 'not undone' in manifest.rollback.limitations.lower()
+
+
+def _voice_outcomes(rig):
+    return rig.q.capability_outcome_stats('action:settings.voice_command')
+
+
+@pytest.mark.parametrize('refusal', ['human_decision_required', 'changed_since_request'])
+async def test_refused_install_is_never_recorded_as_a_capability_outcome(rig, refusal):
+    """Review F2: a refused card ran nothing, so the capability ledger behind
+    GET /api/capabilities records neither a success nor a failure for it."""
+    code, response = await request(rig)
+    assert code == 202
+    tid = response['pending']
+    if refusal == 'human_decision_required':
+        await rig.worker.apply_decision(tid, 'accept', decided_by='policy')
+    else:
+        await rig.worker.apply_decision(tid, 'accept', decided_by='owner')
+        from pathlib import Path
+        Path(rig.argv[1]).write_text('print("changed")\n')
+    await rig.worker.tick()
+    task = rig.q.get(tid)
+    assert task.result['status'] == 'refused' and task.result['reason'] == refusal
+    assert settings_db.get_value('voice', 'tts_command', {}) == {}
+    stats = _voice_outcomes(rig)
+    assert stats['successes'] == 0 and stats['total'] == 0, stats
+
+
+async def test_failed_install_counts_as_a_failure_and_a_real_install_as_a_success(rig, monkeypatch):
+    async def boom(task, orch):
+        raise RuntimeError('settings store unavailable')
+
+    monkeypatch.setitem(irreversible._APPLY, command_settings.APPROVAL_KIND, boom)
+    code, response = await request(rig)
+    assert code == 202
+    await rig.worker.apply_decision(response['pending'], 'accept', decided_by='owner')
+    await rig.worker.tick()
+    assert rig.q.get(response['pending']).result == {'status': 'failed', 'reason': 'apply_failed'}
+    stats = _voice_outcomes(rig)
+    assert (stats['successes'], stats['failures']) == (0, 1), stats
+
+    monkeypatch.setitem(irreversible._APPLY, command_settings.APPROVAL_KIND, command_settings.apply_approved)
+    code, response = await request(rig)
+    assert code == 202
+    await rig.worker.apply_decision(response['pending'], 'accept', decided_by='owner')
+    await rig.worker.tick()
+    assert rig.q.get(response['pending']).result['status'] == 'ok'
+    stats = _voice_outcomes(rig)
+    assert (stats['successes'], stats['failures']) == (1, 1), stats

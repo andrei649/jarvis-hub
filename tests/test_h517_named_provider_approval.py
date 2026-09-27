@@ -230,3 +230,59 @@ def test_named_capability_metadata_does_not_hash_approved_content(rig, monkeypat
     monkeypatch.setattr(lp, 'command_ready', capture)
     _local_providers_state(False)
     assert calls and not any(calls)
+
+
+class _Rows:
+    """Captures the security audit rows and the intent-log entries a change writes."""
+
+    def __init__(self):
+        self.audit, self.intents = [], []
+
+    def log(self, event):
+        self.audit.append((event.action_taken, event.content_preview))
+
+    def record(self, **entry):
+        self.intents.append(entry)
+
+    def audited(self, action):
+        return [preview for taken, preview in self.audit if taken == action]
+
+    def intended(self, action):
+        return [entry for entry in self.intents if entry['action'] == action]
+
+
+async def test_audit_and_intent_rows_name_the_provider_identity(rig):
+    """Review F3: a named provider's request, approval and clear name the provider and
+    its revision; clearing it never reads as revoking the legacy voice.tts_command."""
+    rows = _Rows()
+    rig.orch.audit = rows
+    rig.orch.intent_log = rows
+    await install(rig, 'studio')
+    await install(rig, None)
+    requested = rows.audited('voice_command_requested')
+    approved = rows.audited('voice_command_approved')
+    assert requested[0].startswith("voice.tts provider 'studio' (revision 0) change sent to approval")
+    assert approved[0].startswith("voice.tts provider 'studio' (revision 1) approved")
+    assert requested[1].startswith('voice.tts_command change sent to approval')
+    assert approved[1].startswith('voice.tts_command approved')
+    named_set, legacy_set = rows.intended('voice.command.set')
+    assert named_set['metadata']['provider_id'] == 'studio'
+    assert named_set['metadata']['provider_revision'] == 1
+    assert "'studio'" in named_set['why'] and 'revision 1' in named_set['why']
+    assert 'provider_id' not in legacy_set['metadata']
+
+    rows.audit.clear()
+    code, named = await command_settings.clear(rig.orch, 'tts', provider_id='studio')
+    assert code == 200
+    code, _ = await command_settings.clear(rig.orch, 'tts')
+    assert code == 200
+    named_row, legacy_row = rows.audited('voice_command_cleared')
+    assert named_row != legacy_row
+    revision = named['provider_revision']
+    assert named_row.startswith(f"voice.tts provider 'studio' (revision {revision}) cleared")
+    assert legacy_row.startswith('voice.tts_command cleared')
+    named_clear, legacy_clear = rows.intended('voice.command.clear')
+    assert named_clear['metadata']['provider_id'] == 'studio'
+    assert named_clear['metadata']['provider_revision'] == revision
+    assert "'studio'" in named_clear['why'] and f'revision {revision}' in named_clear['why']
+    assert 'provider_id' not in legacy_clear['metadata']

@@ -15,6 +15,8 @@ class TaskApprovalJudge(AdvisoryJudgements):
         self._init_judgements()
 
     def _snapshot(self, task) -> dict | None:
+        from ..security import taint
+        from ..signal_governance import TASK_KIND as SIGNAL_RECOMMENDATION
         from .approval_judge import action_is_tainted, normalise_snapshot
 
         digest = self.queue.approval_snapshot_digest(task)
@@ -31,7 +33,11 @@ class TaskApprovalJudge(AdvisoryJudgements):
             "tool": task.payload.get("tool") or task.kind, "agent": task.agent,
             "summary": task.title, "args": description,
         })
-        if action_is_tainted(description):
+        # Review F4, defence in depth: a row queued outside the worker's origin marking
+        # (or before a producer tainted at ingest) is still untrusted by its origin or,
+        # for Signal Layer recommendations, by its kind. A remote judge never sees it.
+        if (action_is_tainted(description) or taint.is_untrusted_source(task.origin)
+                or task.kind == SIGNAL_RECOMMENDATION):
             snapshot["tainted"] = True
         return snapshot
 

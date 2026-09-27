@@ -113,6 +113,66 @@ async def test_worker_ignores_noop_and_unregistered_capabilities(tmp_path):
     queue.close()
 
 
+@pytest.mark.asyncio
+async def test_worker_records_returned_refusals_as_nothing_and_failures_as_failures(tmp_path):
+    """Review F2: a returned ``refused`` ran nothing; a returned ``failed`` is a failure."""
+    queue = _queue(tmp_path / "autonomy.db")
+    results = iter([
+        {"status": "refused", "reason": "not_armed"},
+        {"status": "failed", "reason": "client_error"},
+        {"status": "ok"},
+    ])
+
+    async def executor(_task):
+        return next(results)
+
+    worker = AutonomyWorker(queue, policy=AutonomyPolicy(), executor=executor)
+    expected = [(0, 0), (0, 1), (1, 1)]
+    for successes_failures in expected:
+        task_id = queue.enqueue("jarvis", "kg.write", "Update graph", risk_tier=1,
+                                autonomy_level=ACT)
+        queue.transition(task_id, TaskStatus.APPROVED)
+        await worker.tick()
+        assert queue.get(task_id).status == TaskStatus.DONE.value
+        stats = queue.capability_outcome_stats("action:kg.write")
+        assert (stats["successes"], stats["failures"]) == successes_failures
+    queue.close()
+
+
+class _RecordingQueue:
+    def __init__(self):
+        self.recorded = []
+
+    def record_capability_outcome(self, capability_id, success=True):
+        self.recorded.append((capability_id, success))
+
+
+def test_every_action_manifest_kind_records_outcomes_by_the_same_rule():
+    """Review F2: only the refusal/failure statuses changed; every manifest kind still
+    records a genuine success, and noop/degraded results stay unrecorded."""
+    from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
+
+    worker = AutonomyWorker.__new__(AutonomyWorker)
+    for kind, manifest in sorted(ACTION_CAPABILITY_MANIFESTS.items()):
+        concrete = kind.replace("*", "example")
+        task = type("T", (), {"kind": concrete, "payload": {}})()
+        cases = [
+            ({"status": "ok"}, [(manifest.id, True)]),
+            ({"value": "real"}, [(manifest.id, True)]),
+            ({"status": "noop"}, []),
+            ({"_mock": True}, []),
+            ({"status": "refused", "reason": "human_decision_required"}, []),
+            ({"status": "failed", "reason": "apply_failed"}, [(manifest.id, False)]),
+        ]
+        for result, recorded in cases:
+            worker.queue = _RecordingQueue()
+            worker._record_capability_outcome(task, success=True, result=result)
+            assert worker.queue.recorded == recorded, (kind, result)
+        worker.queue = _RecordingQueue()
+        worker._record_capability_outcome(task, success=False)
+        assert worker.queue.recorded == [(manifest.id, False)], kind
+
+
 def test_registry_projects_action_outcomes_into_confidence(tmp_path):
     queue = _queue(tmp_path / "autonomy.db")
     _seed_successes(queue, "action:call.outbound", 20)

@@ -9,6 +9,7 @@ root-of-trust policy plus a mandatory automated proof floor.
 from __future__ import annotations
 
 import copy
+import json
 import sys
 from pathlib import Path
 
@@ -283,29 +284,71 @@ def test_root_of_trust_paths_cannot_self_authorize(path: str) -> None:
     assert result["protected_hits"]
 
 
+#: The owner's local-development grant as it reads when given in full.
+LOCAL_GRANT = {"enabled": True, "allow_protected_changes": True, "require_owner_approval": False}
+
+#: The ways the owner revokes the local-development grant in selfdev-policy.json;
+#: validate_policy accepts every one of them (the block is optional).
+GRANT_REVOCATIONS = {
+    "enabled-false": lambda local: {**local, "enabled": False},
+    "owner-approval-required": lambda local: {**local, "require_owner_approval": True},
+    "protected-changes-disallowed": lambda local: {**local, "allow_protected_changes": False},
+    "block-removed": lambda local: None,
+}
+
+
+def _with_local_development(local: dict | None) -> dict:
+    """A deep copy of the committed policy with ``local_development`` set explicitly
+    (``None`` removes the block). The grant's semantics are tested on these synthetic
+    copies, so they never depend on whether the owner's file still carries the grant
+    (review F0)."""
+    policy = copy.deepcopy(_policy())
+    if local is None:
+        policy.pop("local_development", None)
+    else:
+        policy["local_development"] = dict(local)
+    selfdev_policy.validate_policy(policy)
+    return policy
+
+
 def test_owner_authorizes_local_development_on_every_repository_path() -> None:
+    policy = _with_local_development(LOCAL_GRANT)
     for path in PROTECTED_CASES + AUTONOMOUS_CASES:
-        result = selfdev_policy.classify([path], _policy())
+        result = selfdev_policy.classify([path], policy)
         assert result["autonomous_local_development"] is True, path
-    assert selfdev_policy.classify([], _policy())["autonomous_local_development"] is False
+    assert selfdev_policy.classify([], policy)["autonomous_local_development"] is False
+    unprotected_only = _with_local_development({**LOCAL_GRANT, "allow_protected_changes": False})
+    for path in AUTONOMOUS_CASES:
+        assert selfdev_policy.classify([path], unprotected_only)["autonomous_local_development"] is True
+    for path in PROTECTED_CASES:
+        assert selfdev_policy.classify([path], unprotected_only)["autonomous_local_development"] is False
 
 
 def test_local_authorization_does_not_grant_merge_or_deploy() -> None:
-    result = selfdev_policy.classify(PROTECTED_CASES, _policy())
-    assert result["autonomous_local_development"] is True
-    assert result["autonomous_merge"] is False
-    assert result["autonomous_deploy"] is False
+    """The structural invariant, and the one test here that reads the committed file:
+    protected paths never merge or deploy autonomously, whatever local_development says."""
+    variants = [_policy(), _with_local_development(LOCAL_GRANT), _with_local_development(None)]
+    variants += [_with_local_development(revoke(LOCAL_GRANT)) for revoke in GRANT_REVOCATIONS.values()
+                 if revoke(LOCAL_GRANT) is not None]
+    for policy in variants:
+        for paths in [PROTECTED_CASES] + [[path] for path in PROTECTED_CASES]:
+            result = selfdev_policy.classify(paths, policy)
+            assert result["autonomous_merge"] is False, paths
+            assert result["autonomous_deploy"] is False, paths
+            assert result["decision"] == "control_plane", paths
 
 
 def test_local_authorization_can_be_revoked_and_is_not_inferred() -> None:
-    policy = copy.deepcopy(_policy())
-    for field in ("enabled", "allow_protected_changes", "require_owner_approval"):
-        changed = copy.deepcopy(policy)
-        changed["local_development"][field] = field == "require_owner_approval"
-        result = selfdev_policy.classify(PROTECTED_CASES, changed)
-        assert result["autonomous_local_development"] is False
-    policy.pop("local_development")
-    assert not selfdev_policy.classify(PROTECTED_CASES, policy)["autonomous_local_development"]
+    for name, revoke in GRANT_REVOCATIONS.items():
+        policy = _with_local_development(revoke(LOCAL_GRANT))
+        result = selfdev_policy.classify(PROTECTED_CASES, policy)
+        assert result["autonomous_local_development"] is False, name
+    for field in LOCAL_GRANT:
+        partial = {key: value for key, value in LOCAL_GRANT.items() if key != field}
+        policy = _with_local_development(None)
+        policy["local_development"] = partial
+        with pytest.raises(selfdev_policy.PolicyError):
+            selfdev_policy.classify(PROTECTED_CASES, policy)
 
 
 def test_local_authorization_rejects_malformed_configuration() -> None:
@@ -314,6 +357,37 @@ def test_local_authorization_rejects_malformed_configuration() -> None:
         policy["local_development"] = invalid
         with pytest.raises(selfdev_policy.PolicyError):
             selfdev_policy.validate_policy(policy)
+
+
+#: Every test in this file that concerns the local-development grant.
+LOCAL_DEVELOPMENT_TESTS = (
+    "test_owner_authorizes_local_development_on_every_repository_path",
+    "test_local_authorization_does_not_grant_merge_or_deploy",
+    "test_local_authorization_can_be_revoked_and_is_not_inferred",
+    "test_local_authorization_rejects_malformed_configuration",
+)
+
+
+@pytest.mark.parametrize("revocation", sorted(GRANT_REVOCATIONS))
+def test_revoking_the_committed_grant_keeps_this_suite_green(
+    revocation: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review F0: the grant is the owner's to revoke in selfdev-policy.json, and a
+    revocation PR must not need these tests edited to go green. Only the structural
+    invariant reads the committed file; the grant's semantics run on synthetic copies."""
+    policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+    local = GRANT_REVOCATIONS[revocation](dict(policy.get("local_development") or LOCAL_GRANT))
+    if local is None:
+        policy.pop("local_development", None)
+    else:
+        policy["local_development"] = local
+    selfdev_policy.validate_policy(policy)
+    revoked = tmp_path / "selfdev-policy.json"
+    revoked.write_text(json.dumps(policy), encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "POLICY_PATH", revoked)
+    assert _policy() == policy
+    for name in LOCAL_DEVELOPMENT_TESTS:
+        globals()[name]()
 
 
 @pytest.mark.parametrize("path", AUTONOMOUS_CASES)

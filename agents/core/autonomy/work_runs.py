@@ -1187,6 +1187,45 @@ class WorkRunLedger:
                 self._conn.rollback()
                 raise
 
+    def approval_block_seq(self, run_id: str) -> int | None:
+        """The private causal marker of a run's current approval block, or ``None``
+        (not blocked on an ask, or blocked before migration v3 recorded markers)."""
+        with self._lock:
+            row = self._conn.execute('SELECT approval_block_seq FROM runs WHERE id=?', (run_id,)).fetchone()
+        if row is None:
+            raise WorkRunError('unknown_run')
+        return row[0]
+
+    def resume_unmarked_after_asks(self, run_id: str) -> WorkRun:
+        """Reconciler-only resume of a block no marker can prove (review F5).
+
+        Migration v3 adds ``approval_block_seq`` without a backfill, so a run blocked
+        before the upgrade has none, and :meth:`resume_after_asks` would strand it
+        after the owner answered. Such a run keeps the pre-v3 contract (``resume``:
+        blocked → working once every ask is answered) plus the holds the marked path
+        has: a stop reason, a barrier, a still-queued step or a spent budget refuse,
+        in one transaction. A marked block never takes this path, and expiry
+        settlement still holds unmarked blocks (:meth:`settle_expired_ask`)."""
+        tasks = self._approval_tasks(run_id)
+        with self._lock:
+            self._conn.execute('BEGIN IMMEDIATE')
+            try:
+                run = self._run_locked(run_id)
+                marker = self._conn.execute('SELECT approval_block_seq FROM runs WHERE id=?', (run_id,)).fetchone()[0]
+                now = self._now()
+                credit = self._wait_credit_locked(run, now, tasks)
+                if (run.status != 'blocked' or marker is not None
+                        or run.stop_reason or run.barrier
+                        or self._conn.execute("SELECT 1 FROM steps WHERE run_id=? AND outcome='queued' LIMIT 1", (run_id,)).fetchone()
+                        or _exceeded(run, self._budget_moment_locked(run, now), credit=credit)):
+                    raise WorkRunError('approval_resume_held')
+                result = self._transition_locked(run, 'working', now, commit=False)
+                self._conn.commit()
+                return result
+            except BaseException:
+                self._conn.rollback()
+                raise
+
     # ── stopping and finishing ───────────────────────────────────────────
 
     def request_stop(self, run_id: str, *, reason: str = "owner") -> WorkRun:

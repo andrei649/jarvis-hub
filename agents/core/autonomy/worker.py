@@ -1175,10 +1175,19 @@ class AutonomyWorker:
         does not occur — every degraded seam hardcodes ``autonomy_level = "ask"`` and
         ``govern_enqueue`` takes the stricter of the two — so a rising score could not
         widen what an agent may do. It could only mislead the human reading the board.
+
+        Review F2 (Codex sprint): handlers report a refusal or an apply error as a
+        returned dict, not an exception, and the worker moves any returned dict to DONE.
+        A ``refused`` result executed nothing (a machine decider, a card changed since
+        the request, a gate that was off), so it records nothing; a ``failed`` result
+        is a failure, never a success.
         """
         if success and isinstance(result, dict):
-            if result.get("status") == "noop":
+            status = result.get("status")
+            if status in ("noop", "refused"):
                 return
+            if status == "failed":
+                success = False
             from agents.core.plugins.degradation import is_degraded
 
             if is_degraded(result):

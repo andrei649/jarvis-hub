@@ -487,3 +487,136 @@ async def test_disabled_company_mode_retains_only_relevant_effect_for_reenable(q
     assert ledger.get(run.id).status == 'working'
     assert queue.pending_approval_expiry_effects().effects == ()
     ledger.close()
+
+
+# ── review F5: runs blocked before migration v3 (no approval_block_seq) ──────
+
+
+def legacy_v2_blocked_run(path, task_id, monkeypatch):
+    """A runs DB as the pre-v3 ledger (bd2bb70e) left a run blocked on one ask:
+    schema v2 (no ``approval_block_seq``), the run opened with the unchanged
+    ``open_run``, and the queued step written with that ledger's own SQL."""
+    import sqlite3
+
+    from agents.core.autonomy import work_runs
+    from agents.core.persistence.migrations import schema_version
+
+    with monkeypatch.context() as m:
+        m.setattr(work_runs, 'MIGRATIONS', work_runs.MIGRATIONS[:2])
+        old = WorkRunLedger(path, clock=lambda: 1000)
+        run = open_run(old)
+        cur = old._conn.execute(
+            """INSERT INTO steps (run_id, kind, summary, outcome, task_id, interrupted, at, detail)
+               VALUES (?, 'ask', 'owner decision', 'queued', ?, 0, 1000, '{}')""", (run.id, task_id))
+        old._conn.execute(
+            """UPDATE runs SET steps_used = steps_used + 1, interrupts_used = 0,
+                   status = 'blocked', updated_at = 1000 WHERE id = ?""", (run.id,))
+        old._conn.commit()
+        seq = cur.lastrowid
+        old.close()
+    conn = sqlite3.connect(str(path))
+    try:
+        assert schema_version(conn) == 2
+        assert 'approval_block_seq' not in {row[1] for row in conn.execute('PRAGMA table_info(runs)')}
+    finally:
+        conn.close()
+    return run, seq
+
+
+def upgraded(path, queue, *, clock=lambda: 1000):
+    ledger = WorkRunLedger(path, clock=clock)
+    ledger.bind_approval_task_reader(queue.get)     # as company_runtime binds it
+    return ledger
+
+
+def test_legacy_block_resumes_once_the_owner_answers(queue, tmp_path, monkeypatch):
+    task_id = queue.enqueue('jarvis', 'delete_file', 'owner decision')
+    queue.transition(task_id, TaskStatus.BLOCKED)
+    path = tmp_path / 'runs.db'
+    run, seq = legacy_v2_blocked_run(path, task_id, monkeypatch)
+    ledger = upgraded(path, queue)
+    try:
+        marker = ledger._conn.execute('SELECT approval_block_seq FROM runs WHERE id=?', (run.id,)).fetchone()[0]
+        assert marker is None
+        reconciler = PendingRequests(ledger, read_task=queue.get)
+        waiting = reconciler.reconcile(run.id)
+        assert not waiting.resumed and ledger.get(run.id).status == 'blocked'
+        queue.transition(task_id, TaskStatus.APPROVED, decided_by='owner', decision='accept')
+        result = reconciler.reconcile(run.id)
+        assert result.resumed, result.note
+        assert [(o.step_seq, o.resolution) for o in result.outcomes] == [(seq, 'approved')]
+        assert ledger.get(run.id).status == 'working'
+        assert not reconciler.reconcile(run.id).resumed
+    finally:
+        ledger.close()
+
+
+@pytest.mark.parametrize('hold', ['stop_reason', 'barrier', 'budget', 'second_ask_waiting'])
+def test_legacy_block_keeps_every_hold_the_marked_resume_has(queue, tmp_path, monkeypatch, hold):
+    task_id = queue.enqueue('jarvis', 'delete_file', 'owner decision')
+    queue.transition(task_id, TaskStatus.BLOCKED)
+    path = tmp_path / 'runs.db'
+    run, _ = legacy_v2_blocked_run(path, task_id, monkeypatch)
+    clock = (lambda: 1000 + 9 * 3600) if hold == 'budget' else (lambda: 1000)
+    ledger = upgraded(path, queue, clock=clock)
+    try:
+        if hold == 'stop_reason':
+            ledger._conn.execute("UPDATE runs SET stop_reason='budget:interrupts' WHERE id=?", (run.id,))
+        elif hold == 'barrier':
+            ledger._conn.execute("""UPDATE runs SET barrier='{"id":"b1","kind":"deadline"}' WHERE id=?""",
+                                 (run.id,))
+        elif hold == 'second_ask_waiting':
+            other = queue.enqueue('jarvis', 'delete_file', 'second decision')
+            queue.transition(other, TaskStatus.BLOCKED)
+            ledger._conn.execute(
+                """INSERT INTO steps (run_id, kind, summary, outcome, task_id, interrupted, at, detail)
+                   VALUES (?, 'ask', 'owner decision', 'queued', ?, 0, 1000, '{}')""", (run.id, other))
+        ledger._conn.commit()
+        queue.transition(task_id, TaskStatus.APPROVED, decided_by='owner', decision='accept')
+        result = PendingRequests(ledger, read_task=queue.get).reconcile(run.id)
+        assert not result.resumed, result.note
+        assert ledger.get(run.id).status == 'blocked'
+    finally:
+        ledger.close()
+
+
+def test_expired_legacy_block_is_still_held(queue, tmp_path, monkeypatch):
+    expired = expired_task(queue)
+    path = tmp_path / 'runs.db'
+    run, seq = legacy_v2_blocked_run(path, expired.id, monkeypatch)
+    ledger = upgraded(path, queue)
+    try:
+        monkeypatch.setattr(ledger, 'resume', lambda *args: pytest.fail('expiry must not resume a legacy block'))
+        result = PendingRequests(ledger, read_task=queue.get).reconcile(run.id)
+        assert not result.resumed and result.note == 'expiry settled; run held'
+        assert [(o.step_seq, o.resolution) for o in result.outcomes] == [(seq, 'expired_unanswered')]
+        assert ledger.get(run.id).status == 'blocked'
+        assert ledger.outstanding_asks(run.id) == []
+    finally:
+        ledger.close()
+
+
+def test_unmarked_resume_refuses_a_marked_block_and_an_open_ask(queue, tmp_path, monkeypatch):
+    marked = WorkRunLedger(':memory:', clock=lambda: 1000)
+    try:
+        run = open_run(marked)
+        step = ask(marked, run)
+        marked.resolve_step(run.id, step.seq, outcome='refused')
+        assert marked.approval_block_seq(run.id) == step.seq
+        with pytest.raises(WorkRunError, match='approval_resume_held'):
+            marked.resume_unmarked_after_asks(run.id)
+        assert marked.get(run.id).status == 'blocked'
+    finally:
+        marked.close()
+    path = tmp_path / 'runs.db'
+    legacy_run, seq = legacy_v2_blocked_run(path, 1, monkeypatch)
+    ledger = upgraded(path, queue)
+    try:
+        ledger.record_step(legacy_run.id, kind='ask', summary='second', outcome='queued', task_id=2)
+        assert ledger.approval_block_seq(legacy_run.id) is None
+        ledger.resolve_step(legacy_run.id, seq, outcome='refused')
+        with pytest.raises(WorkRunError, match='approval_resume_held'):
+            ledger.resume_unmarked_after_asks(legacy_run.id)
+        assert ledger.get(legacy_run.id).status == 'blocked'
+    finally:
+        ledger.close()

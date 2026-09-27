@@ -274,10 +274,25 @@ class PendingRequests:
                 note="blocked with no outstanding ask — nothing here can unblock it",
             )
         try:
-            self._ledger.resume_after_asks(run_id, answered_seqs=[o.step_seq for o in outcomes])
+            if self._unmarked_block(run_id):
+                # Review F5: a run blocked before migration v3 has no causal marker.
+                # An answered ask resumes it on the pre-v3 contract plus the same
+                # stop/barrier/outstanding/budget holds, atomically in the ledger;
+                # expiry settlement (above) still holds such a run.
+                self._ledger.resume_unmarked_after_asks(run_id)
+            else:
+                self._ledger.resume_after_asks(run_id, answered_seqs=[o.step_seq for o in outcomes])
         except WorkRunError as exc:
             return ReconcileResult(run_id, outcomes, note=f"resume refused: {exc.reason}")
         return ReconcileResult(run_id, outcomes, resumed=True, note="every ask is answered")
+
+    def _unmarked_block(self, run_id: str) -> bool:
+        """Whether the run's block carries no ``approval_block_seq`` (a pre-v3 block).
+        A ledger without the marker accessor is treated as marked (the strict path)."""
+        marker_of = getattr(self._ledger, "approval_block_seq", None)
+        if not callable(marker_of) or not callable(getattr(self._ledger, "resume_unmarked_after_asks", None)):
+            return False
+        return marker_of(run_id) is None
 
     def _close_asks_with_expiry(self, run_id: str) -> tuple[tuple[AskOutcome, ...], bool, bool]:
         steps = self._ledger.outstanding_asks(run_id)

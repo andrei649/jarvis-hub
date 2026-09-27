@@ -147,6 +147,25 @@ def _shown(exe: Any, fingerprint: str) -> str:
     return f"program {name} (exe={exe}) · argv sha256 {str(fingerprint)[:16]}"
 
 
+def _target(side: str, provider_id: Any = None, revision: Any = None) -> str:
+    """The identity an audit row names (review F3): the legacy slot as
+    ``voice.<tts|stt>_command``; a named provider as
+    ``voice.<side> provider '<id>' (revision <n>)`` — so revoking a named provider never
+    reads as revoking the legacy command, and two names sharing one program stay apart."""
+    if provider_id is None:
+        return f"voice.{KEYS[side]}"
+    return f"voice.{side} provider '{provider_id}' (revision {revision})"
+
+
+def _named(provider_id: Any, revision: Any) -> tuple[str, dict]:
+    """What a ``why`` adds and the intent metadata that names a provider (review F3);
+    nothing for the legacy slot, whose rows keep their shape."""
+    if provider_id is None:
+        return "", {}
+    return (f" '{provider_id}' (revision {revision})",
+            {"provider_id": provider_id, "provider_revision": revision})
+
+
 def _pending_for(orch: Any, side: str, provider_id=None) -> list[Any]:
     from agents.core.autonomy import irreversible
 
@@ -244,6 +263,7 @@ async def clear(orch: Any, side: str, *, provider_id=None) -> tuple[int, dict]:
 
     if provider_id is not None and not providers.valid_provider_id(provider_id):
         return 422, {'error': 'invalid_provider_id'}
+    revision = None
     try:
         before = providers.load(side, provider_id) if provider_id is not None else lp.stored_command(side)
         if provider_id is not None:
@@ -252,10 +272,12 @@ async def clear(orch: Any, side: str, *, provider_id=None) -> tuple[int, dict]:
             await asyncio.to_thread(put_category, "voice", {KEYS[side]: {}})
     except providers.ProviderStoreError as exc:
         return _provider_error(exc)
-    await _audit(orch, f"voice.{KEYS[side]} cleared (was argv sha256 {str(before.get('fingerprint') or 'none')[:16]})",
+    await _audit(orch, f"{_target(side, provider_id, revision)} cleared "
+                       f"(was argv sha256 {str(before.get('fingerprint') or 'none')[:16]})",
                  "voice_command_cleared")
-    _intent(orch, "voice.command.clear", f"the owner cleared the {side} command provider",
-            {"side": side, "fingerprint": before.get("fingerprint")})
+    suffix, metadata = _named(provider_id, revision)
+    _intent(orch, "voice.command.clear", f"the owner cleared the {side} command provider{suffix}",
+            {"side": side, "fingerprint": before.get("fingerprint"), **metadata})
     return 200, {"ok": True, "side": side, "cleared": True,
                  **({'provider_id': provider_id, 'provider_revision': revision} if provider_id is not None else {})}
 
@@ -332,8 +354,8 @@ async def request(orch: Any, side: str, argv: list[str], *, dry_run: bool = Fals
                                "intake; nothing was written"}
     if not await asyncio.to_thread(_record_request, queued["pending"], {**payload, "preview": preview}):
         return 503, {'error': 'approval_record_unavailable', 'pending': queued['pending']}
-    await _audit(orch, f"voice.{KEYS[side]} change sent to approval (task {queued['pending']}): "
-                       f"{_shown(exe, fingerprint)}", "voice_command_requested")
+    await _audit(orch, f"{_target(side, provider_id, named.get('provider_revision'))} change sent to approval "
+                       f"(task {queued['pending']}): {_shown(exe, fingerprint)}", "voice_command_requested")
     return 202, {"pending": queued["pending"], "side": side, "exe": str(exe), "fingerprint": fingerprint, **named}
 
 
@@ -392,6 +414,7 @@ async def apply_approved(task: Any, orch: Any) -> dict:
     if current.get("fingerprint") != payload.get("before_fingerprint"):
         return _refused("changed_since_request", detail="the command changed since the request: ask again")
     identity = bound[0]
+    revision = None
     decided_by = str(getattr(task, "decided_by", "") or "")
     value = {"argv": list(argv), "exe": identity, "bound": bound, "fingerprint": fingerprint,
              "approved_task": task_id, "approved_at": time.time()}
@@ -404,10 +427,11 @@ async def apply_approved(task: Any, orch: Any) -> dict:
     except providers.ProviderStoreError as exc:
         return _refused(_provider_error(exc)[1]['error'])
     await asyncio.to_thread(_forget_request, task_id)
-    await _audit(orch, f"voice.{KEYS[side]} approved (task {task_id} by {decided_by}): "
+    await _audit(orch, f"{_target(side, provider_id, revision)} approved (task {task_id} by {decided_by}): "
                        f"{_shown(exe, fingerprint)}", "voice_command_approved")
-    _intent(orch, "voice.command.set", f"the owner approved {exe} as the {side} command provider",
-            {"side": side, "exe": str(exe), "fingerprint": fingerprint, "task": task_id})
+    suffix, metadata = _named(provider_id, revision)
+    _intent(orch, "voice.command.set", f"the owner approved {exe} as the {side} command provider{suffix}",
+            {"side": side, "exe": str(exe), "fingerprint": fingerprint, "task": task_id, **metadata})
     return {"status": "ok", "kind": APPROVAL_KIND, "side": side, "fingerprint": fingerprint,
             **({"provider_id": provider_id, "provider_revision": revision} if provider_id is not None else {})}
 
