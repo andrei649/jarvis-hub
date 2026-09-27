@@ -208,6 +208,12 @@ class TelegramChannel(ChannelAdapter):
         # Decision-inbox callback: on_callback(task_id, action, chat_id=..., user_id=...)
         self.on_callback: Optional[Callable] = None
         self.on_decision_reason: Optional[Callable] = None
+        # H487 x H117: decision_reason_pending(chat_id=, user_id=, reply_to_message_id=) says,
+        # without side effects, whether on_decision_reason would consume a reply right now
+        # (AutonomyCoordinator.would_consume_reason_reply). The poll loop decides with it,
+        # never with the hook; with none wired it claims nothing, and the hook then sees
+        # only replies read while a reason prompt is still being posted to their chat.
+        self.decision_reason_pending: Optional[Callable] = None
         # H487 x H117: chats a decision-reason prompt is being posted to, with how many.
         # Until Telegram answers, the prompt's message id is unknown, so a reply in that
         # chat may be answering it and is classified behind it (see _handle_update).
@@ -517,11 +523,14 @@ class TelegramChannel(ChannelAdapter):
                 and attachment is None and not is_command(text)
                 and not any(msg.get(key) for key in ("forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))):
             reply_id = (msg.get("reply_to_message") or {}).get("message_id")
-            if reply_id is not None and self._reason_prompts_posting.get(chat_id):
-                # A reason prompt's ForceReply request to this chat is still awaiting
-                # its HTTP response, so its id is unknown and this reply may answer it.
-                # Classify behind it in this chat, without blocking polling or other
-                # chats; what this chat said before the reply goes first.
+            if reply_id is not None and (self._reason_prompts_posting.get(chat_id)
+                                         or self._claims_reason(chat_id, uid, reply_id)):
+                # A reply the inbox claims (decided here, without side effects), or any reply
+                # in a chat a reason prompt is still being posted to (its id is unknown until
+                # Telegram answers, so this reply may answer it), is handled in the chat's
+                # lane: what the chat said before it goes first, a tap read before it runs
+                # before it (so a superseded prompt is refused), its acknowledgement keeps the
+                # chat's order and voice marks, and polling and other chats never wait on it.
                 await self._flush_chat_turns(chat_id)
 
                 async def handle_reply():
@@ -533,18 +542,28 @@ class TelegramChannel(ChannelAdapter):
 
                 await self._in_chat(chat_id, handle_reply)
                 return
-            # H117: only a reply the hook consumes (the owner answering a live reason
-            # prompt in the owner chat) leaves the batching path; its acknowledgement goes
-            # out from here, as a deeplink pairing's does. The inbox declines without side
-            # effects, so any other reply is queued, merged and flushed as if the hook
-            # were not wired.
-            if reply_id is not None and await self._consumed_as_reason(text, chat_id, uid, reply_id):
-                return
+            # H117: any other reply is queued, merged and flushed as if the hook were not wired.
         await self._handle_message_content(msg, uid, chat_id, text, attachment)
 
+    def _claims_reason(self, chat_id, uid, reply_id) -> bool:
+        """Would the decision inbox take this reply as a rejection's reason right now? Asked
+        from the poll loop, so only through the side-effect-free ``decision_reason_pending``;
+        none wired, or one that raises, claims nothing and the reply stays an H117 piece."""
+        pending = self.decision_reason_pending
+        if pending is None:
+            return False
+        try:
+            return bool(pending(chat_id=chat_id, user_id=uid, reply_to_message_id=reply_id))
+        except Exception:
+            logger.warning("Telegram decision-reason check failed; the reply is handled as a message",
+                           exc_info=True)
+            return False
+
     async def _consumed_as_reason(self, text, chat_id, uid, reply_id) -> bool:
-        """Ask the decision-reason hook whether this reply is a rejection's reason; a hook
-        that raises is taken as declining, so the reply is handled as a message, never lost."""
+        """In the chat's lane: let the decision-reason hook save and acknowledge the reason.
+        A decline runs the reply as a turn, and so does a hook that raises: the inbox can
+        raise only before it has saved anything (never after the save), so a reply is never
+        lost and a saved reason never also becomes a chat turn."""
         try:
             return bool(await self.on_decision_reason(
                 text, chat_id=chat_id, user_id=uid, reply_to_message_id=reply_id,

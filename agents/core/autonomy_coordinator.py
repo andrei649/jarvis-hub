@@ -214,6 +214,9 @@ class AutonomyCoordinator:
             self._orch.autonomy.notifier = self._away_notifier(base, exclude={"telegram"})
             tg.on_callback = self._on_callback
             tg.on_decision_reason = self._on_reason_reply
+            # H117: the poll loop asks this (it has no side effects) whether a reply is a
+            # reason, and runs the hook above in the chat's lane only when it is.
+            tg.decision_reason_pending = self.would_consume_reason_reply
             logger.info(
                 "Autonomy decision inbox wired to Telegram (H34.2 away-notify via escalation)"
             )
@@ -307,40 +310,77 @@ class AutonomyCoordinator:
         if len(self._reason_prompts) > 64:
             self._reason_prompts.pop(next(iter(self._reason_prompts)))
 
-    async def _on_reason_reply(self, text, *, chat_id, user_id, reply_to_message_id):
-        """Consume only the owner's reply to a live prompt for an exact decision."""
+    def _reason_reply_target(self, chat_id, user_id, reply_to_message_id):
+        """What a reply answers, read without side effects: ``None`` when it is no reason
+        reply (it stays a chat message); ``("window", key, window)`` when it answers the
+        owner's open window (live or expired); ``("stale", key, None)`` when it answers an
+        earlier prompt of this owner (superseded, answered, or expired and pruned)."""
         if type(reply_to_message_id) is not int or reply_to_message_id <= 0:
-            return False
+            return None
         if not self._callback_is_owner(chat_id, user_id):
-            return False
+            return None
         key = (str(chat_id), str(user_id))
         window = self._reason_windows.get(key)
-        channel = self._telegram_channel()
-        if window is None or window["prompt"] != reply_to_message_id:
-            if (*key, reply_to_message_id) in self._reason_prompts:
-                await channel.send("That reason prompt is no longer active; no decision changed.", chat_id=chat_id)
-                return True
+        if window is not None and window["prompt"] == reply_to_message_id:
+            return "window", key, window
+        if (*key, reply_to_message_id) in self._reason_prompts:
+            return "stale", key, None
+        return None
+
+    def would_consume_reason_reply(self, chat_id, user_id, reply_to_message_id) -> bool:
+        """Would :meth:`_on_reason_reply` consume this reply right now? Exactly the same
+        test (the owner, in the owner chat, replying to one of their reason prompts), with
+        no side effect: nothing is saved, sent or closed. Telegram's poll loop asks this to
+        decide, and runs the reply through ``_on_reason_reply`` in the chat's lane (H117)."""
+        return self._reason_reply_target(chat_id, user_id, reply_to_message_id) is not None
+
+    async def _reason_ack(self, chat_id, text) -> None:
+        """Answer a consumed reason reply with a service line. Never spoken (``voice=False``:
+        it neither goes to TTS nor takes the voice-for-voice mark of a turn in that chat),
+        and best effort: once a reply is consumed, and above all once its reason is saved,
+        a failed acknowledgement never turns it back into a chat turn."""
+        try:
+            await self._telegram_channel().send(text, chat_id=chat_id, voice=False)
+        except Exception:
+            logger.warning("Telegram decision reason acknowledgement failed", exc_info=True)
+
+    async def _on_reason_reply(self, text, *, chat_id, user_id, reply_to_message_id):
+        """Consume only the owner's reply to a live prompt for an exact decision.
+
+        Returns False, before any side effect, only for a reply that is no reason reply
+        (see :meth:`would_consume_reason_reply`); every other outcome is True. It never
+        raises once the reason is saved, so a caller's fallback on an exception (running the
+        reply as a turn) can only follow a failure before anything was saved."""
+        target = self._reason_reply_target(chat_id, user_id, reply_to_message_id)
+        if target is None:
             return False
+        kind, key, window = target
+        if kind == "stale":
+            await self._reason_ack(chat_id, "That reason prompt is no longer active; no decision changed.")
+            return True
         if self._reason_clock() >= window["deadline"]:
             self._reason_windows.pop(key, None)
-            await channel.send("The reason window expired; the rejection is unchanged.", chat_id=chat_id)
+            await self._reason_ack(chat_id, "The reason window expired; the rejection is unchanged.")
             return True
         try:
             task = self._orch.autonomy_queue.attach_human_reason(
                 window["task_id"], text, expected_decision=window["expected"],
             )
         except ValueError:
-            await channel.send("Use a nonempty reason of at most 280 characters.", chat_id=chat_id)
+            await self._reason_ack(chat_id, "Use a nonempty reason of at most 280 characters.")
             return True
         except Exception:
             logger.warning("Telegram decision reason could not be saved")
-            await channel.send("The reason could not be saved; the rejection is unchanged.", chat_id=chat_id)
+            await self._reason_ack(chat_id, "The reason could not be saved; the rejection is unchanged.")
             return True
         self._reason_windows.pop(key, None)
         if task is not None:
-            self._orch.autonomy._audit("autonomy.decision.reason", task,
-                                      "by telegram: " + task.human_decision["reason"])
-        await channel.send("Reason saved." if task is not None else "That decision no longer accepts a reason.", chat_id=chat_id)
+            try:
+                self._orch.autonomy._audit("autonomy.decision.reason", task,
+                                          "by telegram: " + task.human_decision["reason"])
+            except Exception:
+                logger.warning("Telegram decision reason audit failed after the save", exc_info=True)
+        await self._reason_ack(chat_id, "Reason saved." if task is not None else "That decision no longer accepts a reason.")
         return True
 
     def _callback_is_owner(self, chat_id, user_id) -> bool:

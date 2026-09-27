@@ -1,5 +1,6 @@
+import copy
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -87,18 +88,24 @@ async def test_failed_prompt_never_opens_capture(rig):
 
 async def test_matching_reason_reply_bypasses_chat_but_edits_forwards_and_commands_do_not():
     channel = TelegramChannel(token='fake-token', allowed_user_ids=[99])
+    # H117 round 2: the channel claims a reply with the inbox's side-effect-free predicate
+    # (wired next to the hook by AutonomyCoordinator.wire) and runs the hook in the lane.
+    channel.decision_reason_pending = Mock(return_value=True)
     channel.on_decision_reason = AsyncMock(return_value=True)
     channel._queue_turn = AsyncMock()
     message = {'from': {'id': 99}, 'chat': {'id': 42, 'type': 'private'}, 'text': 'Use staging',
                'reply_to_message': {'message_id': 77}}
     try:
         await channel._handle_update({'message': message})
+        channel.decision_reason_pending.assert_called_once_with(chat_id=42, user_id=99, reply_to_message_id=77)
         channel.on_decision_reason.assert_awaited_once_with('Use staging', chat_id=42, user_id=99, reply_to_message_id=77)
         channel._queue_turn.assert_not_awaited()
+        channel.decision_reason_pending.reset_mock()
         channel.on_decision_reason.reset_mock()
         await channel._handle_update({'edited_message': message})
         await channel._handle_update({'message': {**message, 'forward_origin': {'type': 'user'}}})
         await channel._handle_update({'message': {**message, 'text': '/help'}})
+        channel.decision_reason_pending.assert_not_called()
         channel.on_decision_reason.assert_not_awaited()
     finally:
         await channel.client.aclose()
@@ -122,3 +129,68 @@ async def test_wired_telegram_card_describes_group_without_changing_approval_tar
     callbacks = [button['callback_data'] for row in card['reply_markup']['inline_keyboard'] for button in row]
     assert callbacks and all(value.startswith(f'aut:{first.id}:') for value in callbacks)
     assert queue.get(first.id).payload == queue.get(second.id).payload == {'path': 'old'}
+
+
+# ── H117 round 2: the side-effect-free predicate the poll loop decides with ─────
+
+def _snapshot(queue, channel, coordinator, task_ids):
+    return (copy.deepcopy(coordinator._reason_windows), dict(coordinator._reason_prompts),
+            [queue.get(task_id).human_decision for task_id in task_ids], channel.send.await_count,
+            channel.request_decision_reason.await_count)
+
+
+@pytest.mark.parametrize('case,expected', [
+    ('live', True), ('superseded', True), ('expired', True), ('answered', True),
+    ('other_chat', False), ('other_member', False), ('unknown_prompt', False),
+    ('no_reply_id', False), ('bool_reply_id', False), ('revoked_owner', False),
+])
+async def test_would_consume_is_exactly_what_on_reason_reply_consumes_and_writes_nothing(rig, case, expected):
+    queue, _, channel, coordinator = rig
+    coordinator._reason_clock = lambda: 100
+    task_ids = [await reject(rig)]
+    chat, user, reply = 42, 99, 77
+    if case == 'superseded':
+        channel.request_decision_reason.return_value = 78
+        task_ids.append(await reject(rig))
+    elif case == 'expired':
+        coordinator._reason_clock = lambda: 221
+    elif case == 'answered':
+        assert await coordinator._on_reason_reply('First', chat_id=42, user_id=99, reply_to_message_id=77)
+    elif case == 'other_chat':
+        chat = 43
+    elif case == 'other_member':
+        user = 100
+    elif case == 'unknown_prompt':
+        reply = 78
+    elif case == 'no_reply_id':
+        reply = None
+    elif case == 'bool_reply_id':
+        reply = True
+    elif case == 'revoked_owner':
+        channel.allowed_users = [100]
+    before = _snapshot(queue, channel, coordinator, task_ids)
+    claimed = coordinator.would_consume_reason_reply(chat_id=chat, user_id=user, reply_to_message_id=reply)
+    assert claimed is expected
+    assert coordinator.would_consume_reason_reply(chat, user, reply) is expected
+    assert _snapshot(queue, channel, coordinator, task_ids) == before
+    consumed = await coordinator._on_reason_reply('A reason', chat_id=chat, user_id=user, reply_to_message_id=reply)
+    assert consumed is claimed
+
+
+async def test_every_reason_acknowledgement_is_a_service_line_that_is_never_spoken(rig):
+    queue, _, channel, coordinator = rig
+    coordinator._reason_clock = lambda: 100
+    task_id = await reject(rig)
+    await coordinator._on_reason_reply('x' * 281, chat_id=42, user_id=99, reply_to_message_id=77)   # invalid
+    await coordinator._on_reason_reply('Use staging', chat_id=42, user_id=99, reply_to_message_id=77)
+    await coordinator._on_reason_reply('Again', chat_id=42, user_id=99, reply_to_message_id=77)     # stale
+    channel.request_decision_reason.return_value = 78
+    await reject(rig)
+    coordinator._reason_clock = lambda: 400
+    await coordinator._on_reason_reply('Late', chat_id=42, user_id=99, reply_to_message_id=78)      # expired
+    assert queue.get(task_id).human_decision['reason'] == 'Use staging'
+    texts = [call.args[0] for call in channel.send.await_args_list]
+    assert texts == ['Use a nonempty reason of at most 280 characters.', 'Reason saved.',
+                     'That reason prompt is no longer active; no decision changed.',
+                     'The reason window expired; the rejection is unchanged.']
+    assert all(call.kwargs == {'chat_id': 42, 'voice': False} for call in channel.send.await_args_list)
