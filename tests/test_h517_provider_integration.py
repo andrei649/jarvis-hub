@@ -511,3 +511,146 @@ async def test_a_guard_that_breaks_before_the_request_is_the_same_failure(rig):
     assert rig.requests == []
     assert task.result["status"] == "failed" and task.result["reason"] == "local_guard_failed"
     assert _outcomes(rig.queue) == (0, 1)
+
+
+# ── round 6, items 1 and 2: a provider changed mid-request withholds; a broken
+#    mediation store is a failure, never a governance hold ─────────────────────
+
+
+async def _change_during_the_request(rig, change):
+    """One approved image task whose backend request waits until *change* ran."""
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed(request):
+        entered.set()
+        await release.wait()
+        return httpx.Response(200, json={"data": [{"b64_json": base64.b64encode(PNG).decode()}]})
+
+    rig.hooks.response = delayed
+    async with rig.client() as client:
+        task_id = await propose(rig, client)
+        await accept(client, task_id)
+        running = asyncio.create_task(rig.worker.tick())
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            change(task_id)
+        finally:
+            release.set()
+            await running
+    return rig.queue.get(task_id)
+
+
+def _reconfigure(rig, monkeypatch, change):
+    # The provider row is exactly {protocol, url, models}; its endpoint is what binds.
+    rig.config["studio"]["url"] = {"port": "http://127.0.0.1:8766",
+                                   "host": "http://[::1]:8765"}[change]
+    monkeypatch.setenv("JARVIS_LOCAL_IMAGE_PROVIDERS", json.dumps(rig.config))
+
+
+@pytest.mark.parametrize("change", ["port", "host"])
+@pytest.mark.asyncio
+async def test_a_provider_the_owner_changed_during_the_request_withholds_the_image(
+        rig, monkeypatch, change):
+    """Hunt MINOR 1 (round 6, item 1): the owner reconfigures the approved provider while
+    its request is in flight. The approval check compared the approved head first and
+    raised ``approval_binding_invalid`` — a failure (0,1) — so the guard's own
+    ``backend_binding_changed`` never ran. A changed binding is governance: the
+    generated image is withheld (``withheld_after_generation``, cause in ``detail``),
+    nothing is recorded (0,0), nothing is published."""
+    task = await _change_during_the_request(
+        rig, lambda _task_id: _reconfigure(rig, monkeypatch, change))
+    assert len(rig.requests) == 1
+    assert (task.result["reason"], task.result.get("detail")) == (
+        "withheld_after_generation", "backend_binding_changed"), task.result
+    assert list(rig.root.rglob("*.png")) == []
+    assert _outcomes(rig.queue) == (0, 0)
+
+
+@pytest.mark.parametrize("change", ["port", "host"])
+@pytest.mark.asyncio
+async def test_the_same_provider_change_before_the_request_is_the_same_refusal(
+        rig, monkeypatch, change):
+    """The contrast: the same change before any request is ``backend_binding_changed``, a
+    refusal (0,0) with nothing sent."""
+    async with rig.client() as client:
+        task_id = await propose(rig, client)
+        await accept(client, task_id)
+        _reconfigure(rig, monkeypatch, change)
+        await rig.worker.tick()
+    task = rig.queue.get(task_id)
+    assert rig.requests == []
+    assert task.result["reason"] == "backend_binding_changed", task.result
+    assert _outcomes(rig.queue) == (0, 0)
+
+
+def _break_mediation_store_inside(queue, caller):
+    """sqlite raising inside ``validate_mediated_execution`` (its first read), only when
+    *caller* (the runtime's own recheck) asks. Returns the list of hits."""
+    import sqlite3
+    import sys
+
+    real, hits = queue.validate_mediated_execution, []
+
+    def boom():
+        raise sqlite3.OperationalError("disk I/O error")
+
+    def validate(task, fingerprint):
+        if sys._getframe(1).f_code.co_name == caller:
+            hits.append(caller)
+            queue._validated_mediation_snapshot_locked = boom
+            try:
+                return real(task, fingerprint)
+            finally:
+                del queue._validated_mediation_snapshot_locked
+        return real(task, fingerprint)
+
+    queue.validate_mediated_execution = validate
+    return hits
+
+
+@pytest.mark.parametrize("when", ["before", "after"])
+@pytest.mark.asyncio
+async def test_a_mediation_store_that_breaks_is_a_failure_not_a_governance_hold(rig, when):
+    """Closure P1 / hunt MINOR 2 (round 6, item 2): ``validate_mediated_execution``
+    turned every exception (a locked or corrupt database, a signer that raised) into
+    False, which the runtime reported as ``mediation_execution_required`` — a governance
+    hold: a refusal before the request, a withheld image after it, (0,0) either way. A
+    store that cannot be read is the machinery failing: ``mediation_state_unavailable``,
+    a failure (0,1). Nothing is published."""
+    if when == "before":
+        hits = _break_mediation_store_inside(rig.queue, "_approval")
+        async with rig.client() as client:
+            task_id = await propose(rig, client)
+            await accept(client, task_id)
+            await rig.worker.tick()
+        task = rig.queue.get(task_id)
+        assert rig.requests == []
+    else:
+        armed = {}
+
+        def arm(_task_id):
+            armed["hits"] = _break_mediation_store_inside(rig.queue, "_approval")
+
+        task = await _change_during_the_request(rig, arm)
+        hits = armed["hits"]
+        assert len(rig.requests) == 1
+    assert hits
+    assert task.result["status"] == "failed"
+    assert task.result["reason"] == "mediation_state_unavailable", task.result
+    assert "detail" not in task.result
+    assert list(rig.root.rglob("*.png")) == []
+    assert _outcomes(rig.queue) == (0, 1)
+
+
+@pytest.mark.asyncio
+async def test_a_task_the_mediation_store_no_longer_holds_is_still_a_governance_hold(rig):
+    """The contrast: the queue answering "not mediated" (the mediation switched to hold
+    mid-request) stays the governance hold ``mediation_execution_required``, withheld
+    after generation (0,0)."""
+    def hold(_task_id):
+        rig.queue.mediation_mode = "hold"
+
+    task = await _change_during_the_request(rig, hold)
+    assert (task.result["reason"], task.result.get("detail")) == (
+        "withheld_after_generation", "mediation_execution_required"), task.result
+    assert _outcomes(rig.queue) == (0, 0)

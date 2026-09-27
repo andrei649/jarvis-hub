@@ -37,7 +37,14 @@ from .mediation import (
     issue_receipt,
 )
 from .policy import ACT, ASK, NOTIFY, AutonomyPolicy, RiskTier
-from .queue import MAX_ATTEMPTS, Task, TaskQueue, TaskQueueError, TaskStatus
+from .queue import (
+    MAX_ATTEMPTS,
+    MediationStateUnavailable,
+    Task,
+    TaskQueue,
+    TaskQueueError,
+    TaskStatus,
+)
 
 logger = logging.getLogger("jarvis.autonomy.worker")
 
@@ -108,6 +115,51 @@ INTERRUPT_BUDGET_PER_DAY = 4
 # fallback (``TaskExecutor.handles`` is False) — the capability its manifest names did
 # not run, whatever the fallback returned or raised.
 #
+# Review round 6 — the three-way rule, path by path:
+#   * A DEFERRAL is not work done (item 4). The default (offline) rails — call.outbound,
+#     social.*, writeback.* with no credential and no live flag, node.dispatch with no
+#     node transport — return their client's ``degraded({"status": "deferred"})``; each
+#     broker lifts that marker and its reason to the top level (keeping ``status`` and
+#     the nested key for its readers), and ``_attempt_outcome`` never counts a success
+#     status wrapped around a degraded value (defence in depth). The record follows the
+#     rule for a deferral: a credential or a transport this hub has not configured is
+#     "nothing attempted", a configuration refusal of its kind
+#     (``call_credential_not_configured``, ``social_credential_not_configured``,
+#     ``writeback_credential_not_configured``, ``node_transport_not_built`` are listed
+#     below): nothing is recorded. A nested degraded reason nobody listed is a failure.
+#     A top-level mock (ADV-094) still records nothing: the handler itself says it did
+#     nothing.
+#   * The EXECUTION GUARD (item 6) runs before any attempt. A guard that declined for a
+#     gate it can name raises ``ExecutionGuardDeclined(reason)``; the task still fails
+#     (``mediation_execution_context_required``, a TaskQueueError, the reason kept as
+#     ``guard_reason``), and the capability records NOTHING when the reason is a refusal
+#     of the kind (the cloud image and URL monitor guards: the plugin or heavy features
+#     off, mediation or the kernel switched off, the credential missing, the key, the
+#     job or the approval record changed, a secret in the prompt). A guard that returned
+#     a bare False, raised anything else, or named an unlisted reason is a failure.
+#   * A MEDIATION STORE that cannot be read (item 2) is machinery:
+#     ``TaskQueue.validate_mediated_execution`` raises ``MediationStateUnavailable``
+#     instead of answering False, and every caller reports it as a failure
+#     (``mediation_state_unavailable`` in the image, cloud image and URL monitor
+#     runtimes; the worker's own pre-dispatch check fails the task before the handler,
+#     recording nothing — no handler ran). False stays the governance hold
+#     ``mediation_execution_required``.
+#   * A PROVIDER the owner reconfigured during a local image request (item 1) reaches
+#     the guard as ``backend_binding_changed`` — governance, the image withheld (0,0);
+#     ``approval_binding_invalid`` is only an approval record that is missing,
+#     unreadable or does not match the running row (a failure).
+#   * A cloud image whose bytes and completion record are durable but whose CATALOG row
+#     failed (item 3) is a success with ``warning: catalog_record_failed``; ``unknown``
+#     is only an image that may exist remotely and is not durably kept here.
+#   * The URL monitor (item 7) splits like the cloud image runtime: a gate declining
+#     at the dial is ``refused`` (0,0); a gate declining on a check after the response
+#     arrived withholds it (``withheld_after_fetch``, 0,0); a fetch or kernel that broke
+#     is a failure.
+#   * House (item 5): a driver that did not succeed — it returned an error or a refusal
+#     after it ran, or raised — is a failure (``driver_failed``) even when the device
+#     state verifies (it may have matched already); the row finishes, nothing is rolled
+#     back, the result names both (``state_verified``, ``driver_reason``).
+#
 # What counts as a refusal: a governance decision (kernel, capability token, kill
 # switch, allowlist, approval binding, a human decision the handler needs), a spent
 # budget, a guard against a concurrent or changed request, or a capability this hub
@@ -118,10 +170,11 @@ INTERRUPT_BUDGET_PER_DAY = 4
 # ``tool_error``, ``apply_failed``, ``verification_failed``, ``classify_failed``,
 # ``provider_store_unavailable``, ``install_failed``, ``promotion_store_unavailable``,
 # ``attention_ledger_unavailable``, ``work_run_ledger_unavailable``,
-# ``wall_time_budget_exceeded``, ``capability_broker_unavailable``, a kernel that raised
-# or answered with no Decision — ``kernel_error``, ``local_guard_failed`` — or is not
-# there — ``kernel_unavailable``) — and a world the handler found unfit to act in (a
-# stale or degraded house state).
+# ``wall_time_budget_exceeded``, ``capability_broker_unavailable``,
+# ``mediation_state_unavailable``, ``driver_failed``, a kernel that raised or answered
+# with no Decision — ``kernel_error``, ``local_guard_failed`` — or is not there —
+# ``kernel_unavailable``) — and a world the handler found unfit to act in (a stale or
+# degraded house state).
 #
 # Known gap (review round 4, closure C; not fixed here): ``credential_not_configured``
 # (call.outbound, social.*, writeback.*) also covers a secret that is configured but
@@ -143,6 +196,18 @@ INTERRUPT_BUDGET_PER_DAY = 4
 #     retry SENDS the reply again.
 # Each needs its handler to key the write to the task (or roll back before raising).
 #
+# Known gaps (review round 6; documented, not fixed here):
+#   * The ComfyUI local image provider drops the post-request ``guard``
+#     (``media_backends/registry.py:134``, ``ComfyImageProvider.generate``): a
+#     governance change during a ComfyUI generation is not rechecked after the request,
+#     so the image is published and a success recorded.
+#   * skill.install: a task reaped mid-install and reconciled reads as
+#     ``promotion_refused`` (``acquisition/runtime.py``), whichever way the reconcile
+#     went.
+#   * A task whose DONE transition failed is retried, so its handler runs again (only
+#     the record is kept right: round 5, item 3); with the three duplicate-effect gaps
+#     above, that retry can repeat the effect.
+#
 # Collected by reading the executor of every ACTION_CAPABILITY_MANIFESTS kind the
 # worker runs. The kinds with an empty entry (kg.write, media.*, model.pull,
 # report.export, terminal.exec, file.write, browser.step, desktop.step, host.control,
@@ -160,26 +225,40 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     # matches by prefix, below). ``capability_broker_unavailable`` is not one: the
     # broker (``orch.capabilities``) is None only when its component failed to start —
     # machinery, a failure (round 5, item 7).
+    # ``node_transport_not_built`` is the deferral every dispatch returns while no node
+    # transport exists (round 6, item 4): nothing was attempted.
     "node.dispatch": ("unknown_node", "no_valid_capability",
-                      "no valid capability token for this action", "denied"),
+                      "no valid capability token for this action", "denied",
+                      "node_transport_not_built"),
     # call.outbound — CallBroker.execute (budget ledger, credential, live-rail config,
     # interrupt budget; ``call_config_missing:<keys>`` matches by prefix, below).
     # ``interrupt_budget_exhausted`` is only an attention ledger that declined to admit
     # the call (a spent budget, or a delivery it already settled before dispatch); a
     # ledger that cannot be read is ``attention_ledger_unavailable``, a failure
     # (round 4, item 5).
+    # ``call_credential_not_configured`` is the default (offline) rail's deferral with no
+    # credential (round 6, item 4), like ``social_…`` and ``writeback_…`` below.
     "call.outbound": ("budget_exceeded", "credential_not_configured", "call_config_missing",
-                      "interrupt_budget_exhausted"),
+                      "interrupt_budget_exhausted", "call_credential_not_configured"),
     # social.* — SocialBroker.execute / _execute_postiz.
-    "social.*": ("credential_not_configured", "postiz_not_configured"),
+    "social.*": ("credential_not_configured", "postiz_not_configured",
+                 "social_credential_not_configured"),
     # writeback.* — WriteBackBroker.execute.
-    "writeback.*": ("credential_not_configured",),
+    "writeback.*": ("credential_not_configured", "writeback_credential_not_configured"),
     "payment": (),
     # plugin.egress — the coordinator's URL monitor routing, the URL monitor and cloud
-    # image executors, all ``refused``.
+    # image executors, all ``refused``; and the gates their EXECUTION GUARDS report
+    # before any attempt (round 6, item 6: ``ExecutionGuardDeclined`` — the plugin or a
+    # heavy feature switched off, mediation not enforced or the kernel switched off, the
+    # credential missing, the key or the monitored job changed since the approval, the
+    # approval record no longer binding the task, a secret in the prompt). The same gates
+    # in ``execute`` return ``refused``; after the request they withhold (below).
     "plugin.egress": ("URL monitor unavailable", "unsupported egress operation",
                       "URL monitor execution claim required",
-                      "cloud image execution claim required"),
+                      "cloud image execution claim required",
+                      "cloud_image_unavailable", "enforced_mediation_unavailable",
+                      "credential_not_configured", "configuration_changed",
+                      "approved_payload_changed", "prompt_screening_refused"),
     "mcp.mutating": (),
     "host.control": (),
     # tool.rpc — the coordinator's image-only gate, ToolRPCServer.execute (allowlist,
@@ -190,7 +269,10 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     # round 5, item 1). The runtime gates ``local_image_disabled``, ``kernel_required``
     # and ``heavy_features_paused`` are refusals since that split. Failures, not listed
     # (before OR after the request): ``classify_failed`` (the classifier crashed:
-    # machinery), ``approval_binding_invalid`` (also an OSError reading the binding),
+    # machinery), ``approval_binding_invalid`` (an approval record missing, unreadable
+    # or not matching the running row — a provider changed since the approval is
+    # ``backend_binding_changed``, round 6, item 1), ``mediation_state_unavailable`` (the
+    # queue's mediation state could not be read, round 6, item 2),
     # ``validation_failed`` (also a preflight that raised),
     # ``runtime_changed_restart_required`` / ``backend_source_changed`` (the code itself
     # changed), ``local_guard_failed`` / ``kernel_error`` (the kernel raised or gave no
@@ -257,10 +339,11 @@ REFUSAL_REASON_PREFIXES_BY_KIND: dict[str, tuple[str, ...]] = {
     "node.dispatch": ("kill-switch engaged for scope ",),
 }
 # Attempted, then withheld by governance: records nothing (see above). plugin.egress:
-# the cloud image runtime's recheck after the provider answered (round 5, item 8).
+# the cloud image runtime's recheck after the provider answered (round 5, item 8), and
+# the URL monitor's check after the response arrived (round 6, item 7).
 WITHHELD_REASONS_BY_KIND: dict[str, frozenset[str]] = {
     "tool.rpc": frozenset({"withheld_after_generation"}),
-    "plugin.egress": frozenset({"withheld_after_generation"}),
+    "plugin.egress": frozenset({"withheld_after_generation", "withheld_after_fetch"}),
 }
 # Statuses by which a handler itself says it declined.
 REFUSAL_STATUSES = frozenset({"refused", "blocked"})
@@ -342,6 +425,22 @@ def _retry_record(error: BaseException, *, failures: int, recorded: bool) -> dic
     if recorded:
         record[_OUTCOME_RECORDED_KEY] = True
     return record
+
+
+def _guard_refusal(result: dict) -> TaskQueueError:
+    """The error that fails a task whose execution guard declined (the executor's
+    ``mediation_execution_context_required``). When the guard named its reason
+    (``ExecutionGuardDeclined``, review round 6, item 6) the error carries it as
+    ``reason`` — so a governance decline in the kind's refusal vocabulary records
+    nothing, like any refusal raised before an attempt — and the FAILED task keeps it
+    (``guard_reason``). A guard that declined without a reason, or broke, stays a
+    failure."""
+    error = TaskQueueError("mediation execution context refused")
+    reason = result.get("guard_reason")
+    if isinstance(reason, str) and reason:
+        error.reason = reason
+        error.task_record = {"guard_reason": reason}
+    return error
 
 
 def _failure_record(error: BaseException) -> dict:
@@ -863,7 +962,12 @@ class AutonomyWorker:
         """Exempt only a receipt the B7 execution boundary reauthenticates."""
 
         fingerprint = TaskQueue.execution_fingerprint(task)
-        return bool(fingerprint) and self.queue.validate_mediated_execution(task, fingerprint)
+        try:
+            return bool(fingerprint) and self.queue.validate_mediated_execution(task, fingerprint)
+        except MediationStateUnavailable:
+            # Not exempt (round 6, item 2): an unreadable store proves no receipt, and
+            # this observation never changes the task's execution.
+            return False
 
     def _observe_qa4_intake(self, task: Task) -> None:
         """Record missing QA4 evidence, while leaving task execution unchanged."""
@@ -1403,14 +1507,21 @@ class AutonomyWorker:
                     and TaskQueue.execution_fingerprint(persisted) == fingerprint
                     and persisted.status == TaskStatus.RUNNING.value
                 )
+                unreadable = False
                 if valid and mediated:
-                    valid = self.queue.validate_mediated_execution(task, fingerprint)
+                    try:
+                        valid = self.queue.validate_mediated_execution(task, fingerprint)
+                    except MediationStateUnavailable:
+                        # The store could not be read (round 6, item 2): the task fails
+                        # before any handler, as a refused validation does, and says why.
+                        valid, unreadable = False, True
                 if not valid:
                     if mediated:
                         self.queue.transition(
                             task.id,
                             TaskStatus.FAILED,
-                            result={"error": "mediation execution validation failed"},
+                            result={"error": "mediation state unavailable" if unreadable
+                                    else "mediation execution validation failed"},
                         )
                         failed += 1
                     else:
@@ -1435,7 +1546,7 @@ class AutonomyWorker:
                     if result.get("status") == "refused" and result.get("reason") == (
                         "mediation_execution_context_required"
                     ):
-                        raise TaskQueueError("mediation execution context refused")
+                        raise _guard_refusal(result)
                 except Exception as e:
                     # The capability's handler raised: a failed attempt, unless its
                     # reason is a refusal of this kind.
@@ -1609,12 +1720,24 @@ class AutonomyWorker:
             status = result.get("status")
             if status == "noop" or is_refusal(task.kind, result) or is_withheld(task.kind, result):
                 return None
-            from agents.core.plugins.degradation import is_degraded
+            from agents.core.plugins.degradation import is_degraded, nested_degraded
 
             if is_degraded(result):
                 logger.debug("capability outcome skipped: degraded/mock result for %s", task.kind)
                 return None
-            return status in SUCCESS_STATUSES or (status is None and result.get("ok") is True)
+            if not (status in SUCCESS_STATUSES or (status is None and result.get("ok") is True)):
+                return False
+            nested = nested_degraded(result)
+            if nested is not None:
+                # A success status wrapped around a degraded client result (round 6, item
+                # 4 — defence in depth; the brokers lift the marker themselves): the work
+                # was not done, so it is not a success. Nothing when its reason is a
+                # refusal of the kind (a credential or transport this hub has not
+                # configured: nothing was attempted), a failure otherwise.
+                reason = nested["_degraded"].get("reason") if isinstance(
+                    nested.get("_degraded"), dict) else None
+                return None if is_refusal_reason(task.kind, reason) else False
+            return True
         if error is not None and is_refusal_reason(task.kind, getattr(error, "reason", None)):
             return None
         return False

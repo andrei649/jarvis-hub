@@ -112,6 +112,10 @@ def test_normalization_never_drops_unsupported_options(tmp_path, options):
 
 
 def test_status_is_pure_and_model_names_are_data(monkeypatch):
+    # The backend module (and the direct transport it imports) reads httpx.AsyncClient at
+    # import time: import it BEFORE AsyncClient is replaced, so this test does not depend
+    # on another test having imported it first (review round 6).
+    import agents.core.media_backends.local_openai_image  # noqa: F401
     from agents.core.media_backends.registry import configuration_status, resolve_config
     def forbidden(*args, **kwargs):
         raise AssertionError('status constructed a client')

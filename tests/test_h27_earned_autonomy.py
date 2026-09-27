@@ -634,7 +634,11 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
     house = {"house.control", "house.security_control"}
     voice_and_grant = {"settings.voice_command", "permission.grant"}
     assert {reason: kinds for reason, kinds in kinds_by_reason.items() if len(kinds) > 1} == {
-        "credential_not_configured": {"call.outbound", "social.*", "writeback.*"},
+        # round 6, item 6: plugin.egress's execution guards report a missing credential
+        # and an approval record that no longer binds the task, before any attempt.
+        "credential_not_configured": {"call.outbound", "social.*", "writeback.*",
+                                      "plugin.egress"},
+        "approved_payload_changed": {"tool.rpc", "plugin.egress"},
         "kernel_denied": house | {"tool.rpc"},
         "execution_in_progress": house,
         "task_payload_changed": house,
@@ -694,11 +698,18 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
                    "withheld_after_generation",
                    # round 5: a broker that failed to start, a kernel that broke
                    "capability_broker_unavailable", "kernel_error", "kernel_unavailable",
-                   "local_guard_failed", "backend_source_changed"):
+                   "local_guard_failed", "backend_source_changed",
+                   # round 6: a mediation store that could not be read, a driver that
+                   # failed on a verified state, a response withheld after the fetch
+                   "mediation_state_unavailable", "driver_failed", "withheld_after_fetch",
+                   "approval_binding_invalid"):
         for kind in every_kind:
             assert not is_refusal(kind, {"status": "failed", "reason": reason}), (kind, reason)
     # The one class that is neither: an image generated, then withheld by governance.
     assert is_withheld("tool.rpc", {"status": "failed", "reason": "withheld_after_generation"})
+    # ... or a fetched URL-monitor response withheld the same way (round 6, item 7).
+    assert is_withheld("plugin.egress", {"status": "failed", "reason": "withheld_after_fetch"})
+    assert not is_withheld("tool.rpc", {"status": "failed", "reason": "withheld_after_fetch"})
     assert not is_withheld("call.outbound", {"status": "failed", "reason": "withheld_after_generation"})
     assert not is_withheld("tool.rpc", {"status": "ok", "reason": "withheld_after_generation"})
     assert is_refusal("kg.write", {"status": "refused", "reason": "anything"})
@@ -1482,4 +1493,248 @@ async def test_a_manifest_kind_run_by_the_llm_fallback_records_nothing(tmp_path,
     assert _counts(queue, "repo.sync") == (0, 0)
     await _run_real(queue, executor.execute, "kg.write", {})
     assert _counts(queue, "kg.write") == (1, 0)
+    queue.close()
+
+
+# ── round 6, item 4: a deferral on the default (offline) rails is not work done ──
+
+
+def _default_rail(which, tmp_path, monkeypatch):
+    from agents.core.autonomy.call_broker import CallBroker
+    from agents.core.node_mesh import KIND as NODE_KIND
+    from agents.core.node_mesh import NodeMesh
+    from agents.core.security.capability import CapabilityBroker, KillSwitch
+    from agents.core.social import SocialBroker
+    from agents.core.writeback import WriteBackBroker
+
+    for flag in ("JARVIS_CALL_LIVE", "JARVIS_SOCIAL_LIVE", "JARVIS_WRITEBACK_LIVE"):
+        monkeypatch.delenv(flag, raising=False)
+    if which == "call":
+        return "call.outbound", CallBroker().execute, _CALL, "call", "call_credential_not_configured"
+    if which == "social":
+        return ("social.x.post", SocialBroker().execute,
+                {"platform": "x", "action": "post", "fields": {"text": "hi"}}, "social",
+                "social_credential_not_configured")
+    if which == "writeback":
+        return ("writeback.github.create_issue", WriteBackBroker().execute,
+                {"system": "github", "action": "create_issue",
+                 "fields": {"repo": "a/b", "title": "t"}}, "writeback",
+                "writeback_credential_not_configured")
+    mesh = NodeMesh(capability_broker=CapabilityBroker(),
+                    kill_switch=KillSwitch(path=str(tmp_path / "kill.json")))
+    mesh.register_node("phone", ["notify"])
+    return (NODE_KIND, mesh.execute, {"node": "phone", "capability": "notify"}, "dispatch",
+            "node_transport_not_built")
+
+
+@pytest.mark.parametrize("which", ["call", "social", "writeback", "node"])
+@pytest.mark.asyncio
+async def test_a_deferral_on_the_default_rail_records_nothing(tmp_path, monkeypatch, which):
+    """Closure P8 (round 6, item 4): with no credential and no live flag, each broker
+    wrapped its client's ``degraded({"status": "deferred"})`` under a top-level
+    ``"status": "ok"``; the worker looks for the degraded marker at the top level only,
+    so every approved call, post, write-back and node dispatch recorded a SUCCESS for
+    work that was not done. The broker now lifts the marker (and the nested reason) to
+    the top level, keeping its keys; a credential or a transport this hub has not
+    configured is a deferral in which nothing was attempted — a config refusal of the
+    kind: nothing recorded."""
+    from agents.core.autonomy.worker import is_refusal_reason
+    from agents.core.plugins.degradation import is_degraded
+
+    kind, handler, payload, nested, reason = _default_rail(which, tmp_path, monkeypatch)
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, handler, kind, payload)
+    result = task.result
+    # Backwards-compatible: the status and the nested client result are unchanged.
+    assert result["status"] == "ok" and result[nested]["status"] == "deferred"
+    assert result[nested]["_degraded"]["reason"] == reason
+    # ... and the marker is at the top level, with the nested reason.
+    assert is_degraded(result) and result["_degraded"] == result[nested]["_degraded"]
+    assert result["reason"] == reason
+    assert is_refusal_reason(kind, reason)
+    assert _counts(queue, kind) == (0, 0)
+    queue.close()
+
+
+@pytest.mark.parametrize("nested_reason, expected", [
+    ("call_credential_not_configured", (0, 0)),     # a config refusal of the kind
+    ("some_client_that_fell_back", (0, 1)),          # anything else: not a success
+])
+@pytest.mark.asyncio
+async def test_a_nested_degraded_result_is_never_a_success(tmp_path, nested_reason, expected):
+    """Defence in depth: a handler that still wraps a degraded client result under a
+    top-level ``ok`` (no lifted marker) is not a success. Its record follows the
+    deferral rule: a reason the kind lists as a refusal records nothing; any other is a
+    failure (the conservative direction)."""
+    from agents.core.plugins.degradation import degraded
+
+    async def wrapping(_task):
+        return {"status": "ok", "call": degraded({"status": "deferred"}, reason=nested_reason)}
+
+    queue = _queue(tmp_path / "autonomy.db")
+    await _run_real(queue, wrapping, "call.outbound", _CALL)
+    assert _counts(queue, "call.outbound") == expected
+    queue.close()
+
+
+# ── round 6, item 5: a driver that failed on a device already in the state ────
+
+
+@pytest.mark.parametrize("driver, driver_reason", [
+    ("service_failed", "ha_service_failed"),
+    ("raises", "implementation_error"),
+    ("returns_kernel_denied", "kernel_denied"),
+])
+@pytest.mark.asyncio
+async def test_house_a_failed_driver_on_a_matching_device_is_a_failure(
+        tmp_path, monkeypatch, driver, driver_reason):
+    """Closure P6 (round 6, item 5): the post-actuation check verifies the WORLD, not the
+    driver. With the light already ``on`` and the task asking for ``on``, a driver that
+    failed (returned an error, raised, or returned a refusal after it ran) read as
+    ``verified`` — a success (1,0) for an actuation that did not work. It is a failure
+    now; the row still finishes (no rollback: the world is in the approved state), the
+    result names both facts, and the device is commanded once over every attempt."""
+    from agents.core.autonomy.executor import TaskExecutor
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+    from agents.core.house.actuation import HOUSE_CONTROL_KIND, register_house_handlers
+    from tests.test_h30_house_actuation import _actuator, _Simulator
+
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    sim = _Simulator(state="on")
+
+    async def apply(command):
+        sim.calls.append(dict(command))
+        if driver == "raises":
+            raise RuntimeError("home assistant unreachable")
+        if driver == "service_failed":
+            return {"ok": False, "transport_status": 500, "reason": "ha_service_failed"}
+        return {"ok": False, "reason": "kernel_denied"}
+
+    sim.apply = apply
+    actuator = _actuator(tmp_path, sim)
+    queue = _queue(tmp_path / "autonomy.db")
+    executor = register_house_handlers(TaskExecutor(), actuator)
+    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
+    assert task.status == TaskStatus.FAILED.value
+    assert task.result == {"error": "driver_failed", "state_verified": True,
+                           "driver_reason": driver_reason}, task.result
+    assert len(sim.calls) == 1 and sim.state == "on"
+    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
+    # The finished row is the task's result: no second command, no rollback.
+    from types import SimpleNamespace
+
+    cached = await actuator.execute_task(SimpleNamespace(
+        id=task.id, kind=HOUSE_CONTROL_KIND, agent="jarvis", payload=dict(_HOUSE)))
+    assert cached == {"status": "failed", "reason": "driver_failed", "verified": False,
+                      "state_verified": True, "driver_reason": driver_reason,
+                      "manual_recovery_required": False}
+    assert len(sim.calls) == 1
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_house_a_driver_that_worked_on_a_matching_device_still_succeeds(tmp_path, monkeypatch):
+    """The contrast: a driver that answered ``ok`` on a device already in the state is
+    a verified success (1,0)."""
+    from agents.core.autonomy.executor import TaskExecutor
+    from agents.core.house.actuation import HOUSE_CONTROL_KIND, register_house_handlers
+    from tests.test_h30_house_actuation import _actuator, _Simulator
+
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    sim = _Simulator(state="on")
+    queue = _queue(tmp_path / "autonomy.db")
+    executor = register_house_handlers(TaskExecutor(), _actuator(tmp_path, sim))
+    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE)
+    assert task.result["status"] == "verified" and len(sim.calls) == 1
+    assert _counts(queue, HOUSE_CONTROL_KIND) == (1, 0)
+    queue.close()
+
+
+# ── round 6, item 6: the execution guard reports why it declined ─────────────
+
+
+def _guarded(guard):
+    from agents.core.autonomy.executor import TaskExecutor
+
+    executor = TaskExecutor(execution_guard=guard)
+
+    async def handler(_task):
+        return {"status": "ok"}
+
+    executor.register("plugin.egress", handler)
+    return executor
+
+
+@pytest.mark.parametrize("guard, expected, guard_reason", [
+    # A governance decline in the kind's refusal vocabulary, before any attempt.
+    ("declines_cloud_image_unavailable", (0, 0), "cloud_image_unavailable"),
+    # A reason the kind does not list as a refusal: a failure.
+    ("declines_something_else", (0, 1), "something_else"),
+    # No reason at all (closure P7), or the guard itself raised: machinery, a failure.
+    ("returns_false", (0, 1), None),
+    ("raises", (0, 1), None),
+], ids=["vocabulary_reason", "unlisted_reason", "bare_false", "raises"])
+@pytest.mark.asyncio
+async def test_the_execution_guard_records_nothing_only_for_a_listed_refusal(
+        tmp_path, guard, expected, guard_reason):
+    """Closure P3/P7, hunt NIT 4 (round 6, item 6; known gap 6 of round 5): every guard
+    decline became ``mediation_execution_context_required`` and one recorded FAILURE,
+    whatever the cause. The guard can now say why (``ExecutionGuardDeclined``): a reason
+    the kind lists as a refusal records nothing; no reason, an unlisted one, or a guard
+    that raised is a failure. The task still fails (the TaskQueueError control flow),
+    naming the guard's reason."""
+    from agents.core.autonomy.executor import ExecutionGuardDeclined
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+
+    def check(_task):
+        if guard == "returns_false":
+            return False
+        if guard == "raises":
+            raise RuntimeError("guard store unreadable")
+        raise ExecutionGuardDeclined(guard_reason)
+
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, _guarded(check).execute, "plugin.egress",
+                           {"plugin": "cloud-image"}, ticks=MAX_ATTEMPTS)
+    assert task.status == TaskStatus.FAILED.value
+    assert task.result.get("guard_reason") == guard_reason, task.result
+    assert _counts(queue, "plugin.egress") == expected
+    queue.close()
+
+
+# ── round 6, item 2: the queue says when its mediation state cannot be read ────
+
+
+def test_validate_mediated_execution_raises_on_a_store_that_breaks(tmp_path):
+    """Closure P1/P2 (round 6, item 2): ``validate_mediated_execution`` caught every
+    exception and returned False — "not mediated", a governance answer — for a store
+    that could not be read. It now raises ``MediationStateUnavailable``; False stays the
+    answer for a task the store holds but does not authorise."""
+    import sqlite3
+
+    from agents.core.autonomy.queue import MediationStateUnavailable, TaskQueueError
+    from tests.test_task_mediation_evidence import _head_anchor, _signer
+
+    path = tmp_path / "queue.db"
+    queue = TaskQueue(str(path), mediation_mode="enforce", mediation_signer=_signer(),
+                      mediation_head_anchor=_head_anchor(path),
+                      mediation_scope="global").initialize()
+    from types import SimpleNamespace
+
+    # A task the store does not hold as a running mediated row, or no fingerprint: the
+    # governance answer, False.
+    task = SimpleNamespace(id=4242, status="running", kind="kg.write")
+    fingerprint = "f" * 64
+    assert queue.validate_mediated_execution(task, fingerprint) is False
+    assert queue.validate_mediated_execution(task, "") is False
+
+    def boom():
+        raise sqlite3.OperationalError("disk I/O error")
+
+    queue._validated_mediation_snapshot_locked = boom
+    with pytest.raises(MediationStateUnavailable) as raised:
+        queue.validate_mediated_execution(task, fingerprint)
+    assert isinstance(raised.value, TaskQueueError)
     queue.close()

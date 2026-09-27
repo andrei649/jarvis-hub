@@ -15,7 +15,8 @@ import uuid
 from pathlib import Path
 
 from . import estop
-from .autonomy.queue import TaskQueue
+from .autonomy.executor import ExecutionGuardDeclined
+from .autonomy.queue import MediationStateUnavailable, TaskQueue
 from .env_config import env_flag, env_str
 from .http_client import PluginHTTPClient, PluginTimeouts
 from .image_generation_runtime import _task_binding
@@ -50,6 +51,14 @@ class _ProviderFailed(ValueError):
     def __init__(self, reason, message):
         super().__init__(message)
         self.reason = reason
+
+
+class _StateUnavailable(ValueError):
+    """The queue could not read the mediated-execution state (review round 6, item 2):
+    the machinery failing, reported as ``mediation_state_unavailable``, a failure —
+    never the governance hold ``mediation_execution_required``."""
+
+    reason = "mediation_state_unavailable"
 
 
 def matches(task):
@@ -178,14 +187,14 @@ class CloudImageRuntime:
         manifest = (self.gate.plugins if self.gate is not None else BUILTIN_PLUGINS).get(PLUGIN)
         if manifest is None or not manifest.enabled or not heavy_features_enabled():
             raise _Declined("cloud_image_unavailable", "cloud image feature unavailable")
-        if (
-            self.worker.queue.mediation_mode != "enforce"
-            or not kernel_enabled()
-            or not callable(self.kernel)
-            or not callable(self.redact)
-        ):
+        if self.worker.queue.mediation_mode != "enforce" or not kernel_enabled():
             raise _Declined("enforced_mediation_unavailable",
                             "cloud image enforced mediation unavailable")
+        if not callable(self.kernel) or not callable(self.redact):
+            # A kernel or a screen that is not wired is a component that failed to
+            # start — machinery, not configuration (review round 6, item 6: the guard
+            # now reports its declines, so only a governance one may be a refusal).
+            raise ValueError("cloud image enforced mediation unavailable")
         signer = getattr(self.worker, "_mediation_signer", None)
         if not callable(getattr(signer, "sign", None)) or (
             probe_signing and signer.sign(b"cloud-image availability") is None
@@ -293,6 +302,11 @@ class CloudImageRuntime:
                 return False
             self._claim.set(_Claim(TaskQueue.execution_fingerprint(task)))
             return True
+        except _Declined as exc:
+            # A gate that declined before any attempt — governance or configuration:
+            # the guard says which (review round 6, item 6), so the worker records it as
+            # the refusal it is instead of a failure. Anything else is a bare False.
+            raise ExecutionGuardDeclined(exc.reason) from None
         except Exception:
             return False
 
@@ -313,24 +327,36 @@ class CloudImageRuntime:
         if hashlib.sha256(data).hexdigest() != done["sha256"]:
             raise ValueError("cloud image artifact changed")
         result = {"ok": True, "kind": "image", "result": artifact}
+        warning = None
         if done.get("catalog_id"):
             result["catalog_id"] = done["catalog_id"]
         elif done.get("catalog_requested") and env_flag("JARVIS_MEDIA_CATALOG"):
-            catalog = MediaCatalog(self.root / "media" / "catalog.json")
-            row = catalog.add(
-                kind="image",
-                prompt=task.payload["image"]["body"]["prompt"],
-                path=str(self.root / "media" / "generated" / (artifact["artifact_id"] + ".png")),
-                now=done["created_at"],
-                backend="openai:gpt-image-1.5",
-                cloud=True,
-                record_id="md-" + hashlib.sha256(_task_binding(task).encode()).hexdigest()[:12],
-                meta={"task_id": task.id, "sha256": done["sha256"]},
-            )
-            result["catalog_id"] = row["id"]
-            done["catalog_id"] = row["id"]
-            _write(self._path(task, "complete"), json.dumps(done).encode(), replace=True)
-        return {"status": "ok", "tool": "cloud_image_generate", "result": result}
+            # The image is saved and its completion record durable, so the image WAS
+            # delivered: a catalog (index) step that fails here is a warning on a
+            # success, as on the local image path — never ``unknown`` (review round 6,
+            # item 3). The completion keeps no catalog id, so a later ``recover`` adds
+            # the row (idempotently: the record id derives from the task binding).
+            try:
+                catalog = MediaCatalog(self.root / "media" / "catalog.json")
+                row = catalog.add(
+                    kind="image",
+                    prompt=task.payload["image"]["body"]["prompt"],
+                    path=str(self.root / "media" / "generated" / (artifact["artifact_id"] + ".png")),
+                    now=done["created_at"],
+                    backend="openai:gpt-image-1.5",
+                    cloud=True,
+                    record_id="md-" + hashlib.sha256(_task_binding(task).encode()).hexdigest()[:12],
+                    meta={"task_id": task.id, "sha256": done["sha256"]},
+                )
+                done["catalog_id"] = row["id"]
+                _write(self._path(task, "complete"), json.dumps(done).encode(), replace=True)
+                result["catalog_id"] = row["id"]
+            except Exception:
+                warning = "catalog_record_failed"
+        completed = {"status": "ok", "tool": "cloud_image_generate", "result": result}
+        if warning is not None:
+            completed["warning"] = warning
+        return completed
 
     def project(self, task):
         from .image_generation_view import ImageArtifactView, project_image_task
@@ -384,7 +410,11 @@ class CloudImageRuntime:
                     raise _Declined("estop_engaged", "cloud image dispatch refused")
                 if method != "POST" or url != ENDPOINT:
                     raise _Declined("dispatch_changed", "cloud image dispatch refused")
-                if not self.worker.queue.validate_mediated_execution(task, fingerprint):
+                try:
+                    mediated = self.worker.queue.validate_mediated_execution(task, fingerprint)
+                except MediationStateUnavailable:
+                    raise _StateUnavailable("cloud image mediation state unavailable") from None
+                if not mediated:
                     raise _Declined("mediation_execution_required",
                                     "cloud image execution receipt invalid")
                 decision = self.kernel(
@@ -480,6 +510,11 @@ def _attempt_result(phase, exc):
     round 5, item 8). It was ``{"status": "unknown"}`` on every path, which the worker
     recorded as a SUCCESS."""
     declined = isinstance(exc, _Declined)
+    if isinstance(exc, _StateUnavailable) and phase in {"preflight", "generated"}:
+        # The queue's mediation state could not be read at a check (round 6, item 2):
+        # the machinery failing, before the dial or after the answer — a failure under
+        # its own reason, never the governance hold (refused / withheld).
+        return {"status": "failed", "reason": exc.reason}
     if phase == "preflight":
         # Nothing was sent: a gate that declined is a refusal; anything else (a
         # malformed request, a record or a screening that failed, the signer, the
@@ -504,8 +539,10 @@ def _attempt_result(phase, exc):
             return {"status": "failed", "reason": "withheld_after_generation",
                     "detail": exc.reason}
         return {"status": "failed", "reason": "cloud_image_recheck_failed"}
-    # Generated and allowed, but the local completion did not finish (a write, the
-    # catalog): ``recover`` can finish it later from the durable bytes.
+    # Generated and allowed, but the image or its completion record was not durably
+    # kept here (a write failed): the image may exist remotely and is not kept locally
+    # — ``unknown``. A failure only of the catalog step after the completion was
+    # written is a success with a warning (``_recover``, round 6, item 3).
     return {
         "status": "unknown",
         "reason": "cloud image completion unavailable; submission not replayed",

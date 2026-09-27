@@ -14,6 +14,7 @@ import stat
 from collections.abc import Mapping
 from pathlib import Path
 
+from .autonomy.queue import MediationStateUnavailable
 from .env_config import env_str
 from .media_backends.comfyui import (
     ComfyUIBackend,
@@ -200,7 +201,6 @@ class LocalImageRuntime:
             and persisted.decided_by and str(persisted.decided_by).strip().lower() != "policy"
             and _task_binding(task) == _task_binding(persisted)
             and persisted.payload.get("args") == args
-            and args["_binding"]["head"] == self._head(config)
         ):
             raise ImageGenerationError("approval_binding_invalid")
         proposal = self._record_path(persisted, "proposal")
@@ -213,14 +213,29 @@ class LocalImageRuntime:
         # must be reported as changed, not as an unreadable binding (round 4, item 3).
         if oversized or recorded != {"digest": _task_binding(persisted)}:
             raise ImageGenerationError("approved_payload_changed")
+        # The approved provider binding, checked after the approval record (round 6,
+        # item 1): an intact approval whose provider the owner reconfigured since is the
+        # governance change ``backend_binding_changed`` — a refusal before the request,
+        # a withheld image after it — never the unreadable binding
+        # ``approval_binding_invalid`` (a failure), which stays for a record that is
+        # missing, unreadable or corrupt. A backend whose source changed raises its own
+        # error from ``_head`` (``backend_source_changed``, a failure).
+        if args["_binding"]["head"] != self._head(config):
+            raise ImageGenerationError("backend_binding_changed")
         mode = getattr(self._queue, "mediation_mode", None)
         if mode == "enforce":
             # The worker has already consumed its private dispatch permit.
             # Recheck the presented snapshot against current authenticated
             # storage at each guard, including immediately before the attempt.
-            if not self._queue.validate_mediated_execution(
-                task, self._queue.execution_fingerprint(task),
-            ):
+            # A store that could not be read is the machinery failing (round 6, item
+            # 2): ``mediation_state_unavailable``, a failure — not the governance hold.
+            try:
+                mediated = self._queue.validate_mediated_execution(
+                    task, self._queue.execution_fingerprint(task),
+                )
+            except MediationStateUnavailable:
+                raise ImageGenerationError("mediation_state_unavailable") from None
+            if not mediated:
                 raise ImageGenerationError("mediation_execution_required")
         elif mode != "off":
             raise ImageGenerationError("mediation_execution_required")

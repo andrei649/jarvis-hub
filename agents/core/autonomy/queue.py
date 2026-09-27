@@ -170,6 +170,14 @@ class TaskQueueError(Exception):
     """Raised on an illegal state transition."""
 
 
+class MediationStateUnavailable(TaskQueueError):
+    """The mediated-execution state could not be read or checked — the database, the
+    head anchor or the receipt signer raised (review round 6, item 2). Machinery, not a
+    governance answer: a caller reports it as a failure (``mediation_state_unavailable``),
+    never as the hold ``mediation_execution_required`` that a task the store holds but
+    does not authorise gets (``validate_mediated_execution`` returns False for that)."""
+
+
 @dataclass
 class Task:
     id: int
@@ -1589,6 +1597,13 @@ class TaskQueue:
         this check independently proves that the same snapshot is still the
         authenticated RUNNING row in durable storage immediately before a
         handler receives it.
+
+        False is the governance answer: the store was read and does not authorise this
+        execution. A check that could not complete — the database, the head anchor, a
+        stored receipt or the signer raised — raises :class:`MediationStateUnavailable`
+        (review round 6, item 2): it used to read as False, so a broken store was
+        reported as a mediation hold (a refusal, or a withheld result) instead of a
+        failure.
         """
 
         if self.mediation_mode != "enforce" or not expected_fingerprint:
@@ -1664,8 +1679,8 @@ class TaskQueue:
                         now_ms=self._clock_ms(),
                     )
                 )
-            except Exception:
-                return False
+            except Exception as exc:
+                raise MediationStateUnavailable("mediation state unavailable") from exc
 
     def scan_unmediated_tasks(self) -> list[int]:
         """Quarantine executable classified rows without a valid B7 binding."""

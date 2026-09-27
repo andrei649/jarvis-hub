@@ -38,9 +38,11 @@ class PerformResult:
     output: Any = None
     # Where ``perform`` stopped (review round 5, item 6): ``"gate"`` — before any kernel
     # decision (a flag switched off, the manifest, the inputs, the binding, or the
-    # kernel's own machinery: raised, no Decision, not there); ``"decision"`` — a real
-    # kernel Decision refused or queued it; ``"handler"`` — the implementation was
-    # invoked, whatever it returned (a refused/queued from ``_invoke`` came AFTER it ran).
+    # kernel's own machinery: raised, no Decision, not there; a delegated adapter's own
+    # pre-check, e.g. ``capability_requires_gated_tool``); ``"decision"`` — a real kernel
+    # Decision refused or queued it, the facade's or a delegated broker's own (round 6,
+    # item 8); ``"handler"`` — the implementation was invoked, whatever it returned (for a
+    # facade binding a refused/queued from ``_invoke`` came AFTER it ran).
     stage: str = "gate"
 
 
@@ -235,17 +237,21 @@ class CapabilityActionAPI:
             return PerformResult("failed", capability_id, action_kind, "implementation_error",
                                  stage="handler")
         # A delegated binding's handler IS the mediation point, so its own refusal maps to
-        # refused/queued; for a facade binding it comes after the implementation ran —
-        # ``stage="handler"`` tells a caller that cares (house actuation) apart.
+        # refused/queued: the broker's kernel decided (``stage="decision"``), or its
+        # adapter's own pre-check declined without calling the tool (``"gate"``; review
+        # round 6, item 8). For a facade binding the same output came AFTER the
+        # implementation ran — ``stage="handler"`` tells a caller that cares (house
+        # actuation) apart.
+        delegated = binding.mediation == "delegated"
         if isinstance(output, Mapping) and output.get("reason") == "approval_required":
             return PerformResult(
                 "queued", capability_id, action_kind, "approval_required", tier, output=output,
-                stage="handler",
+                stage="decision" if delegated else "handler",
             )
         if isinstance(output, Mapping) and output.get("reason") == "kernel_denied":
             return PerformResult(
                 "refused", capability_id, action_kind, "kernel_denied", tier, output=output,
-                stage="handler",
+                stage="decision" if delegated else "handler",
             )
         if isinstance(output, Mapping) and output.get("reason") == "capability_requires_gated_tool":
             return PerformResult(
@@ -254,7 +260,7 @@ class CapabilityActionAPI:
                 action_kind,
                 "capability_requires_gated_tool",
                 tier,
-                stage="handler",
+                stage="gate" if delegated else "handler",
             )
         return PerformResult(
             "completed", capability_id, action_kind, reason, tier, output=output, stage="handler"

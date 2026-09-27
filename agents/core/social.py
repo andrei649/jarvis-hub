@@ -405,7 +405,13 @@ class SocialBroker:
             return {"status": "failed", "reason": "client_error",
                     "platform": platform, "action": action}
         self._record("social.execute", f"{platform}.{action}", target=platform)
-        return {"status": "ok", "platform": platform, "action": action, "social": result}
+        # A deferral (the default Null client: no credential) is not a post made: its
+        # degraded marker and reason are lifted to the top level, every key kept (review
+        # round 6, item 4), so the worker never records it as a success.
+        from .plugins.degradation import lift_degraded
+
+        return lift_degraded(
+            {"status": "ok", "platform": platform, "action": action, "social": result}, result)
 
     async def _execute_postiz(self, fields: dict) -> dict:
         """Run an APPROVED postiz.schedule task through the PostizPlugin.

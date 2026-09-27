@@ -226,14 +226,17 @@ class NodeMesh:
         # brokers there is NO client pair here yet — no node transport exists at
         # all. Stamp the deferred dispatch as degraded so callers/HUD see it is
         # not a real delivery and what remains unbuilt.
-        from .plugins.degradation import degraded
-        return {"status": "ok", "node": node_id, "capability": capability,
-                "dispatch": degraded(
-                    {"status": "deferred",
-                     "note": "handed to node client — host seam"},
-                    reason="node_transport_not_built",
-                    needs=["node transport client (host seam)"],
-                )}
+        # The marker and its reason are also at the top level (review round 6, item 4):
+        # a deferral is not a dispatch, and the worker must never record it as one.
+        from .plugins.degradation import degraded, lift_degraded
+        dispatch = degraded(
+            {"status": "deferred",
+             "note": "handed to node client — host seam"},
+            reason="node_transport_not_built",
+            needs=["node transport client (host seam)"],
+        )
+        return lift_degraded({"status": "ok", "node": node_id, "capability": capability,
+                              "dispatch": dispatch}, dispatch)
 
     # ── internals ────────────────────────────────────────────────────────────
 

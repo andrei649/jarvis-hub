@@ -318,3 +318,73 @@ async def test_invalid_context_and_kernel_failure_fail_closed(monkeypatch):
     assert malformed.status == "refused"
     assert malformed.reason == "kernel_error"
     assert not calls
+
+
+# ── review round 6, item 8: PerformResult.stage says where perform stopped ────
+
+
+@pytest.mark.asyncio
+async def test_a_gated_tool_precheck_that_called_nothing_is_stage_gate(monkeypatch):
+    """Hunt NIT 5: ``register_tool_rpc`` refuses an ungated tool WITHOUT calling it, yet
+    the result said ``stage="handler"`` ("the implementation was invoked"). It is the
+    adapter's own gate: ``stage="gate"``."""
+    _enable(monkeypatch)
+    rpc_kernel = KernelSpy()
+    executed = []
+
+    async def read_only(args):
+        executed.append(args)
+        return {"value": 1}
+
+    server = ToolRPCServer(kernel=rpc_kernel)
+    server.register_tool("read", read_only, gated=False)
+    api = CapabilityActionAPI()
+    api.register_tool_rpc("action:tool.rpc", server)
+    result = await api.perform("action:tool.rpc", {"tool": "read", "args": {}})
+    assert (result.status, result.reason, result.stage) == (
+        "refused", "capability_requires_gated_tool", "gate")
+    assert not executed and not rpc_kernel.calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("verdict, status, reason", [
+    (Verdict.DENY, "refused", "kernel_denied"),
+    (Verdict.QUEUE, "queued", "approval_required"),
+])
+async def test_a_delegated_kernel_decision_is_stage_decision(monkeypatch, verdict, status, reason):
+    """Hunt NIT 5: a delegated binding's handler IS its mediation point, so the
+    broker's own kernel refusing (or queueing) is a real kernel Decision —
+    ``stage="decision"``, not "handler"."""
+    _enable(monkeypatch)
+    rpc_kernel = KernelSpy(verdict)
+    executed = []
+
+    async def danger(args):
+        executed.append(args)
+        return {"done": True}
+
+    server = ToolRPCServer(kernel=rpc_kernel, enqueue=lambda *a, **kw: 42)
+    server.register_tool("danger", danger, gated=True)
+    api = CapabilityActionAPI()
+    api.register_tool_rpc("action:tool.rpc", server)
+    result = await api.perform("action:tool.rpc", {"tool": "danger", "args": {"target": "x"}})
+    assert (result.status, result.reason, result.stage) == (status, reason, "decision")
+    assert not executed and len(rpc_kernel.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_facade_implementation_output_refusal_stays_stage_handler(monkeypatch):
+    """The contrast (house relies on it): for a facade binding the implementation RAN
+    before it returned ``kernel_denied`` — ``stage="handler"``."""
+    _enable(monkeypatch)
+    ran = []
+
+    def implementation(params, context):
+        ran.append(params)
+        return {"ok": False, "reason": "kernel_denied"}
+
+    api = CapabilityActionAPI(authorizer=KernelSpy())
+    api.register("action:kg.write", implementation)
+    result = await api.perform("action:kg.write", {"operation": "upsert"})
+    assert (result.status, result.reason, result.stage) == ("refused", "kernel_denied", "handler")
+    assert ran

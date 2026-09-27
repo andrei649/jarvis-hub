@@ -654,7 +654,12 @@ class WriteBackBroker:
         out = {"status": "ok", "target": target, "action": action, "writeback": result}
         if mapped_from:
             out["mapped_from"] = mapped_from
-        return out
+        # A deferral (the default Null client: no credential) is not a write made: its
+        # degraded marker and reason are lifted to the top level, every key kept (review
+        # round 6, item 4), so the worker never records it as a success.
+        from .plugins.degradation import lift_degraded
+
+        return lift_degraded(out, result)
 
     # ── internals ────────────────────────────────────────────────────────────
 

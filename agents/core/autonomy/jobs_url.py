@@ -11,12 +11,47 @@ from agents.core import estop
 from agents.core.http_client import PluginHTTPClient
 from agents.core.kernel import Action, Verdict, kernel_enabled
 
-from .queue import TaskQueue
+from .executor import ExecutionGuardDeclined
+from .queue import MediationStateUnavailable, TaskQueue
 
 PLUGIN = 'job-url-monitor'
 MAX_BYTES = 262144
 MAX_HOPS = 5
 logger = logging.getLogger(__name__)
+# The only failure reason a fetch that broke reports: no URL, body, header or exception
+# text ever reaches queue storage.
+FETCH_FAILED = 'URL monitor fetch failed or unavailable'
+
+
+class _Declined(ValueError):
+    """A gate that declined — governance or configuration (mediation not enforced or the
+    kernel switched off, the monitor's job changed, the dispatch changed, the emergency
+    stop, a mediation hold, the kernel denying) — rather than machinery that broke.
+    ``reason`` names it (review round 6, item 7: the cloud image runtime's split, ported
+    to the other ``plugin.egress`` executor)."""
+
+    def __init__(self, reason, message):
+        super().__init__(message)
+        self.reason = reason
+
+
+def _attempt_result(phase, exc):
+    """The result of an attempt that stopped at *phase* with *exc* (review round 6, item
+    7). Every stop was ``failed`` / FETCH_FAILED, so a governance decline recorded a
+    failure here while the cloud image executor — the same capability id — records the
+    same causes as nothing. ``preflight``: nothing was sent — a gate that declined is a
+    refusal. ``dialled``: the GET went out — a gate declining on a check after the
+    response arrived withholds the fetched response (records nothing, like the image
+    runtimes' ``withheld_after_generation``). A mediation store that could not be read
+    is ``mediation_state_unavailable`` (round 6, item 2); anything else is a fetch that
+    broke: FETCH_FAILED. All three failures are recorded as failures."""
+    if isinstance(exc, MediationStateUnavailable):
+        return {'status': 'failed', 'reason': 'mediation_state_unavailable'}
+    if isinstance(exc, _Declined):
+        if phase == 'preflight':
+            return {'status': 'refused', 'reason': exc.reason}
+        return {'status': 'failed', 'reason': 'withheld_after_fetch', 'detail': exc.reason}
+    return {'status': 'failed', 'reason': FETCH_FAILED}
 
 
 def screen_url(value, redact):
@@ -75,8 +110,10 @@ class URLMonitorExecutor:
         self._claim = contextvars.ContextVar('job_url_claim', default=None)
 
     def _available(self):
-        if (self.worker.queue.mediation_mode != 'enforce' or not kernel_enabled()
-                or not callable(self.kernel) or not callable(self.redact) or not callable(self.current)):
+        if self.worker.queue.mediation_mode != 'enforce' or not kernel_enabled():
+            raise _Declined('enforced_mediation_unavailable', 'URL monitor enforced mediation unavailable')
+        if not callable(self.kernel) or not callable(self.redact) or not callable(self.current):
+            # A component that is not wired failed to start: machinery, not configuration.
             raise ValueError('URL monitor enforced mediation unavailable')
         signer = getattr(self.worker, '_mediation_signer', None)
         if not callable(getattr(signer, 'sign', None)) or signer.sign(b'job-url-monitor availability') is None:
@@ -100,7 +137,7 @@ class URLMonitorExecutor:
             raise ValueError('invalid URL monitor attempt')
         screen_url(payload.get('url'), self.redact)
         if not self.current(payload):
-            raise ValueError('URL monitor configuration changed')
+            raise _Declined('configuration_changed', 'URL monitor configuration changed')
 
     def screen(self, url):
         self._available()
@@ -126,6 +163,10 @@ class URLMonitorExecutor:
                 return False
             self._claim.set(_Claim(TaskQueue.execution_fingerprint(task)))
             return True
+        except _Declined as exc:
+            # A gate that declined before any attempt: the guard says which (review
+            # round 6, item 6), so the worker records the refusal as nothing.
+            raise ExecutionGuardDeclined(exc.reason) from None
         except Exception:
             return False
 
@@ -136,21 +177,38 @@ class URLMonitorExecutor:
         if (task.kind != 'plugin.egress' or not isinstance(claim, _Claim)
                 or not claim.consume(fingerprint)):
             return {'status':'refused', 'reason':'URL monitor execution claim required'}
+        # How far this attempt got decides what a decline means (review round 6, item
+        # 7): "preflight" — nothing sent; "dialled" — the dial check passed and the GET
+        # may be on the wire (every later check runs after the response arrived).
+        phase = 'preflight'
         try:
             self.validate(task.payload)
             payload = task.payload
             def check(method, url):
                 self.validate(payload)
-                if method != 'GET' or url != payload['url'] or estop.is_engaged():
-                    raise ValueError('URL monitor dispatch refused')
+                if method != 'GET' or url != payload['url']:
+                    raise _Declined('dispatch_changed', 'URL monitor dispatch refused')
+                if estop.is_engaged():
+                    raise _Declined('estop_engaged', 'URL monitor dispatch refused')
+                # A store that cannot be read raises MediationStateUnavailable: a failure.
                 if not self.worker.queue.validate_mediated_execution(task, fingerprint):
-                    raise ValueError('URL monitor execution receipt invalid')
+                    raise _Declined('mediation_execution_required',
+                                    'URL monitor execution receipt invalid')
                 decision = self.kernel(Action(kind='plugin.egress', agent='jarvis',
                     title='Approved URL monitor GET', payload=payload, origin=task.origin))
+                verdict = getattr(decision, 'verdict', None)
+                if verdict is Verdict.DENY:
+                    raise _Declined('kernel_denied', 'URL monitor live kernel refused')
                 # QUEUE is not the grant: the consumed signed execution claim above is.
-                if decision.verdict not in {Verdict.GRANT, Verdict.QUEUE}:
+                if verdict not in {Verdict.GRANT, Verdict.QUEUE}:
                     raise ValueError('URL monitor live kernel refused')
-            client = _StrictClient(check, resolver=self.resolver, transport_factory=self.transport_factory)
+
+            def dial(method, url):
+                nonlocal phase
+                check(method, url)
+                phase = 'dialled'
+
+            client = _StrictClient(dial, resolver=self.resolver, transport_factory=self.transport_factory)
             try:
                 async with asyncio.timeout(30):
                     async with client.stream('GET', payload['url'], follow_redirects=False,
@@ -184,9 +242,10 @@ class URLMonitorExecutor:
                 await client.close()
         except asyncio.CancelledError:
             raise
-        except Exception:
-            # Never expose request URL, raw body, headers or exception text to queue storage.
-            return {'status':'failed', 'reason':'URL monitor fetch failed or unavailable'}
+        except Exception as exc:
+            # Never expose request URL, raw body, headers or exception text to queue
+            # storage: only a fixed reason code, and a gate's own reason code.
+            return _attempt_result(phase, exc)
 
 
 def initial_payload(row):

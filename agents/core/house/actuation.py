@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import json
 import math
+import re
 import sqlite3
 import threading
 import time
@@ -70,14 +71,22 @@ class HouseActuationError(RuntimeError):
     did not verify); ``task_record`` hands it to the worker, which keeps it in the
     FAILED task's result (review round 4, hunt NIT 1)."""
 
-    def __init__(self, reason: str, *, manual_recovery_required: bool = False) -> None:
+    def __init__(self, reason: str, *, manual_recovery_required: bool = False,
+                 record: dict | None = None) -> None:
         super().__init__(reason)
         self.reason = reason
         self.manual_recovery_required = manual_recovery_required is True
+        # Further facts the FAILED task keeps (review round 6, item 5: a driver that
+        # failed on a device whose state verified names both — ``state_verified`` and
+        # ``driver_reason``).
+        self._record = dict(record or {})
 
     @property
     def task_record(self) -> dict:
-        return {"manual_recovery_required": True} if self.manual_recovery_required else {}
+        record = dict(self._record)
+        if self.manual_recovery_required:
+            record["manual_recovery_required"] = True
+        return record
 
 
 def _text(value: object, *, label: str, limit: int = 128) -> str:
@@ -678,6 +687,20 @@ class HouseActuator:
             return {"status": "verified"}
         return {"status": "failed", "reason": "recovery_verification_failed"}
 
+    @staticmethod
+    def _driver_failure(perform) -> str | None:
+        """Why the driver's own result is not a success, or None when it is: a driver
+        answers ``{"ok": True, ...}`` for a service call it made. A refused/queued the
+        facade mapped from the driver's output, a raise (``implementation_error``) or an
+        ``ok`` that is not True is a failure of the driver — named by its reason code."""
+        output = perform.output if isinstance(perform.output, Mapping) else {}
+        if perform.status == "completed" and output.get("ok") is True:
+            return None
+        reason = perform.reason if perform.status != "completed" else output.get("reason")
+        if isinstance(reason, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", reason):
+            return reason
+        return "driver_error"
+
     async def execute_task(self, task) -> dict:
         try:
             task_id = int(task.id)
@@ -799,6 +822,23 @@ class HouseActuator:
             post = None
             current = None
         if post is not None and post.status == "live" and self._verified(current, payload):
+            driver_reason = self._driver_failure(perform)
+            if driver_reason is not None:
+                # The WORLD is in the approved state — the device may already have
+                # matched — but the driver did not do the work (review round 6, item 5):
+                # it returned an error or a refusal after it ran, or raised. Not a
+                # success: a failure naming both facts. The row is finished (no second
+                # command), and nothing is rolled back — the state is the approved one.
+                result = {
+                    "status": "failed",
+                    "reason": "driver_failed",
+                    "verified": False,
+                    "state_verified": True,
+                    "driver_reason": driver_reason,
+                    "manual_recovery_required": False,
+                }
+                await asyncio.to_thread(self._ledger.finish, task_id, result)
+                return result
             result = {
                 "status": "verified",
                 "reason": "state_verified",
@@ -825,9 +865,12 @@ def register_house_handlers(executor, actuator: HouseActuator):
     async def _execute(task):
         result = await actuator.execute_task(task)
         if result.get("status") == "failed":
+            record = {key: result[key] for key in ("state_verified", "driver_reason")
+                      if key in result}
             raise HouseActuationError(
                 str(result.get("reason") or "house actuation failed"),
                 manual_recovery_required=result.get("manual_recovery_required") is True,
+                record=record,
             )
         return result
 

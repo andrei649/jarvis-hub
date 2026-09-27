@@ -239,3 +239,135 @@ async def test_redirect_credentials_are_not_persisted(rig):
     assert task.result['status']=='failed'
     assert 'secret-value' not in str(task.result)
     assert len(rig.requests)==1
+
+
+# ── review round 6, item 7: the URL monitor's declines, by how far it got ─────
+
+
+def _outcomes(rig):
+    stats = rig.queue.capability_outcome_stats('action:plugin.egress')
+    return stats['successes'], stats['failures']
+
+
+async def _accepted_then(rig, change=None):
+    task_id = rig.adapter.submit(payload(), 'job-url:one:1:0')
+    await rig.worker.apply_decision(task_id, 'accept', decided_by='test owner')
+    if change is not None:
+        change()
+    await rig.worker.tick()
+    return rig.queue.get(task_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('decline, reason', [('kernel_deny', 'kernel_denied'),
+                                             ('estop', 'estop_engaged')])
+async def test_a_governance_decline_at_the_dial_is_a_refusal(rig, monkeypatch, decline, reason):
+    """Closure P4 (round 6, item 7): every decline became ``failed / URL monitor fetch
+    failed or unavailable``, a failure (0,1) — while the cloud executor, the same
+    capability id, records the same causes as nothing. A kernel DENY or the emergency
+    stop at the dial sent nothing: ``refused`` with its reason, recorded as nothing."""
+    from agents.core import estop
+    from agents.core.kernel import Decision, Verdict
+
+    def change():
+        if decline == 'kernel_deny':
+            rig.adapter.kernel = lambda action: Decision(Verdict.DENY, reason='policy changed')
+        else:
+            monkeypatch.setattr(estop, 'is_engaged', lambda: True)
+
+    task = await _accepted_then(rig, change)
+    assert not rig.requests
+    assert task.result == {'status': 'refused', 'reason': reason}
+    assert _outcomes(rig) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_a_denial_after_the_response_was_read_withholds_it(rig):
+    """Closure P5: the kernel denying on the check after the GET returned is governance
+    withholding a fetched response — the capability ran and worked. It is withheld (no
+    body is kept) and records nothing, like the image runtimes' withheld results."""
+    from agents.core.kernel import Decision, Verdict
+
+    real, calls = rig.adapter.kernel, []
+
+    def kernel(action):
+        calls.append(1)
+        if len(calls) >= 2:                 # a check after the response arrived
+            return Decision(Verdict.DENY, reason='policy changed')
+        return real(action)
+
+    task = await _accepted_then(rig, lambda: setattr(rig.adapter, 'kernel', kernel))
+    assert len(rig.requests) == 1
+    assert task.result == {'status': 'failed', 'reason': 'withheld_after_fetch',
+                           'detail': 'kernel_denied'}
+    assert _outcomes(rig) == (0, 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('breakage', ['kernel_raises', 'http_error'])
+async def test_a_fetch_or_kernel_that_broke_is_still_a_failure(rig, breakage):
+    """The contrast: a kernel that raises at the dial, or a fetch that failed, is the
+    machinery — a failure (0,1) under the fixed reason."""
+    import httpx
+
+    def change():
+        if breakage == 'kernel_raises':
+            def broken(action):
+                raise RuntimeError('policy store unreadable')
+            rig.adapter.kernel = broken
+        else:
+            rig.state.response = lambda: httpx.Response(500, stream=httpx.ByteStream(b'no'))
+
+    task = await _accepted_then(rig, change)
+    assert task.result == {'status': 'failed', 'reason': 'URL monitor fetch failed or unavailable'}
+    assert len(rig.requests) == (0 if breakage == 'kernel_raises' else 1)
+    assert _outcomes(rig) == (0, 1)
+
+
+@pytest.mark.asyncio
+async def test_a_mediation_store_that_breaks_at_the_dial_is_a_failure(rig):
+    """Round 6, item 2: the store failing inside ``validate_mediated_execution`` is not
+    the governance decline ``mediation_execution_required``; it is a failure (0,1)."""
+    import sqlite3
+    import sys
+
+    real = rig.queue.validate_mediated_execution
+
+    def boom():
+        raise sqlite3.OperationalError('disk I/O error')
+
+    def validate(task, fingerprint):
+        if sys._getframe(1).f_code.co_name == 'check':
+            rig.queue._validated_mediation_snapshot_locked = boom
+            try:
+                return real(task, fingerprint)
+            finally:
+                del rig.queue._validated_mediation_snapshot_locked
+        return real(task, fingerprint)
+
+    task = await _accepted_then(rig, lambda: setattr(rig.queue, 'validate_mediated_execution', validate))
+    assert not rig.requests
+    assert task.result == {'status': 'failed', 'reason': 'mediation_state_unavailable'}
+    assert _outcomes(rig) == (0, 1)
+
+
+@pytest.mark.asyncio
+async def test_a_job_that_changed_before_the_run_is_a_refusal_at_the_guard(rig):
+    """Round 6, item 6: the execution guard found the monitor's job changed (a governance
+    decline before any attempt) and now says so: the task fails, naming the reason, and
+    records nothing. It was a bare False, recorded as a failure."""
+    task = await _accepted_then(rig, lambda: setattr(rig.state, 'current', False))
+    assert not rig.requests
+    assert task.status == 'failed'
+    assert task.result.get('guard_reason') == 'configuration_changed', task.result
+    assert _outcomes(rig) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_a_kernel_that_is_not_wired_is_a_failure_at_the_guard(rig):
+    """Round 6, item 6: a kernel callable that is missing is machinery, not a governance
+    decline — the guard names no reason and it records a failure (0,1)."""
+    task = await _accepted_then(rig, lambda: setattr(rig.adapter, 'kernel', None))
+    assert not rig.requests
+    assert task.status == 'failed' and 'guard_reason' not in task.result, task.result
+    assert _outcomes(rig) == (0, 1)
