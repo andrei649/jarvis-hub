@@ -696,5 +696,8 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         # H613: the Piper binary and the voice command providers do not run in safe mode.
         "agents/core/voice/command_settings.py",
         "agents/core/voice/local_providers.py",
+        # Review round 2 (MINOR 2): the worker's refusal vocabulary names the voice
+        # handler's "safe_mode" refusal reason; it never reads the flag.
+        "agents/core/autonomy/worker.py",
         "agents/web.py",
     ])

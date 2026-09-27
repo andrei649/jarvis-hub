@@ -13,9 +13,14 @@ existing human-approval queue. It is deliberately conservative:
   purely advisory "keep monitoring" items are skipped.
 - **Audited.** An optional ``audit`` callable records every queued item.
 - **Tainted at ingest.** Recommendations are derived from external OSINT feeds, so
-  every queued payload carries the taint mark (``TAINT_SOURCE``). The kernel's
-  escalation and the approval judge's remote-refusal read that mark; this bridge
+  every queued payload carries the taint mark (``TAINT_SOURCE``); this bridge
   queues outside the worker, whose origin marking it therefore cannot rely on.
+  Today exactly one consumer reads that mark: the task approval judge
+  (``TaskApprovalJudge._snapshot``), which then refuses to send the row to a remote
+  judge. Nothing else does — the bridge enqueues directly, so no kernel action is
+  ever built from the row, and no executor is registered for
+  ``signal_recommendation``: an approved row falls to the coordinator's generic
+  ``_llm`` fallback, which runs its prompt (or title) without carrying the mark.
 
 This keeps the project's invariant intact: facts, raw leads, model inference,
 forecasts, and recommendations stay separate, and nothing acts without approval.

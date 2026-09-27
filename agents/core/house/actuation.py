@@ -62,7 +62,14 @@ _SECURITY_STATES = {
 
 
 class HouseActuationError(RuntimeError):
-    """A durable house task failed and must not be settled as successful."""
+    """A durable house task failed and must not be settled as successful.
+
+    ``reason`` is the result's reason, so the worker can tell a refusal (a kernel
+    denial, a missing strong confirmation) from an actuation that broke."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 def _text(value: object, *, label: str, limit: int = 128) -> str:

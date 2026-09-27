@@ -43,6 +43,112 @@ logger = logging.getLogger("jarvis.autonomy.worker")
 
 INTERRUPT_BUDGET_PER_DAY = 4
 
+# ── the refusal vocabulary (review round 2, MINOR 2) ─────────────────────────
+#
+# A refusal ran nothing, so it says nothing about how well a capability works and
+# records no capability outcome (``_record_capability_outcome``). A handler that
+# says so in its status (``refused``; ``blocked`` for a contract denial) is taken at
+# its word whatever the reason. But many handlers return a refusal as
+# ``{"status": "failed", "reason": ...}``, the same shape as an attempt that broke,
+# so for ``failed`` the REASON decides: a reason listed here is a refusal; any other
+# reason — including one nobody listed yet — is a failure, the conservative
+# direction (it lowers confidence, it can never earn autonomy).
+#
+# What counts as a refusal: a gate declined BEFORE any attempt — a governance
+# decision (kernel, capability token, kill switch, allowlist, approval binding, a
+# human decision the handler needs), a spent budget, a guard against a concurrent
+# or changed request, or a capability this hub has not configured. What does not:
+# a malformed request the handler could not carry out (``invalid_call``,
+# ``bad_args``, ``unknown_target_action``), an error of the capability's own
+# machinery (``client_error``, ``send_failed``, ``tool_error``, ``apply_failed``,
+# ``verification_failed``, ``wall_time_budget_exceeded``) and a world the handler
+# found unfit to act in (a stale or degraded house state).
+#
+# Collected by reading the executor of every ACTION_CAPABILITY_MANIFESTS kind the
+# worker runs. The other manifest kinds (kg.write, media.*, model.pull,
+# report.export, terminal.exec, file.write, browser.step, desktop.step,
+# host.control, repo.sync, admin.*, payment, mcp.mutating, house.recovery) have no
+# worker executor of their own; their implementations run at a route or the
+# unified action API and return nothing to this worker.
+_REFUSALS_BY_HANDLER: dict[str, tuple[str, ...]] = {
+    # call.outbound — CallBroker.execute (budget ledger, credential, live-rail config,
+    # interrupt budget; ``call_config_missing:<keys>`` matches by prefix, below).
+    "call.outbound": ("budget_exceeded", "credential_not_configured", "call_config_missing",
+                      "interrupt_budget_exhausted"),
+    # social.* — SocialBroker.execute / _execute_postiz.
+    "social.*": ("credential_not_configured", "postiz_not_configured"),
+    # writeback.* — WriteBackBroker.execute.
+    "writeback.*": ("credential_not_configured",),
+    # channel.reply — ChannelReplyBroker.execute (its contract denial is ``blocked``).
+    "channel.reply": ("channel_manager_unavailable", "reply_transport_unavailable"),
+    # node.dispatch — NodeMesh.execute re-authorises at action time: NodeMesh._authorize
+    # and security.capability.authorize (``kill-switch engaged for scope '<scope>'``
+    # matches by prefix, below).
+    "node.dispatch": ("unknown_node", "capability_broker_unavailable", "no_valid_capability",
+                      "no valid capability token for this action", "denied"),
+    # tool.rpc — the coordinator's image-only gate, ToolRPCServer.execute (allowlist,
+    # H506 class binding — a classifier that fails refuses the call —, trusted
+    # execution, kernel), the image dispatcher's cloud routing guard and the local
+    # image runtime's own guard. (Its ``approval_binding_invalid`` stays a failure: it
+    # is also what an OSError while reading the binding reports.)
+    "tool.rpc": ("image_task_required", "tool_not_allowed", "classify_failed",
+                 "approval_class_mismatch", "trusted_execution_required", "kernel_denied",
+                 "cloud_worker_required", "approved_payload_changed", "backend_binding_changed",
+                 "mediation_execution_required"),
+    # house.control / house.security_control — HouseActuator.execute_task; the
+    # registered handler raises HouseActuationError(reason) instead of returning.
+    "house.control": ("kernel_denied", "strong_confirmation_required", "execution_in_progress",
+                      "task_payload_changed"),
+    # skill.install — AcquisitionRuntime.execute_install_task and
+    # PromotionBroker.execute_task. ``promotion_refused`` is every PromotionError,
+    # which is a refusal (disabled, no approved proposal, tampered receipt, kernel
+    # deny) except a package-store error during install, which the handler does not
+    # tell apart.
+    "skill.install": ("acquisition_unavailable", "promotion_refused"),
+    # settings.voice_command — irreversible.execute and command_settings.apply_approved,
+    # all returned as ``refused``.
+    "settings.voice_command": (
+        "unknown_kind", "human_decision_required", "decision_not_approval", "payload_required",
+        "edit_not_supported", "decision_not_accept", "not_requested", "payload_changed",
+        "invalid_provider_id", "payload_invalid", "invalid_command", "not_armed", "safe_mode",
+        "changed_since_request", "provider_store_unavailable", "provider_revision_conflict",
+        "provider_capacity_full"),
+    # permission.grant — PermissionLedger.apply_grant, all ``refused`` (a contract
+    # denial carries the contract's own reason).
+    "permission.grant": ("kind_mismatch", "human_decision_required", "decision_not_approval",
+                         "payload_required", "contract_denied", "never_entry"),
+    # goal.approve — the coordinator's _open_approved_goal, all ``refused`` (plus the
+    # GoalContractError / WorkRunError reason).
+    "goal.approve": ("work_run_ledger_unavailable",),
+    # plugin.egress — the URL monitor and cloud image executors, ``refused``.
+    "plugin.egress": ("URL monitor unavailable", "unsupported egress operation",
+                      "cloud image execution claim required"),
+}
+REFUSAL_REASONS: frozenset[str] = frozenset(
+    reason for reasons in _REFUSALS_BY_HANDLER.values() for reason in reasons)
+# The two refusal reasons that carry a parameter.
+REFUSAL_REASON_PREFIXES: tuple[str, ...] = ("call_config_missing:", "kill-switch engaged for scope ")
+# Statuses by which a handler itself says it declined.
+REFUSAL_STATUSES = frozenset({"refused", "blocked"})
+
+
+def is_refusal_reason(reason: object) -> bool:
+    """Whether a ``failed`` result's (or a raised error's) reason names a refusal."""
+    if not isinstance(reason, str) or not reason:
+        return False
+    return reason in REFUSAL_REASONS or reason.startswith(REFUSAL_REASON_PREFIXES)
+
+
+def is_refusal(result: object) -> bool:
+    """Whether a handler's returned result is a refusal: nothing ran, nothing to record."""
+    if not isinstance(result, dict):
+        return False
+    status = result.get("status")
+    if status in REFUSAL_STATUSES:
+        return True
+    return status == "failed" and is_refusal_reason(result.get("reason"))
+
+
 # executor(task) -> dict result ; notifier(task) -> bool (pushed ok)
 Executor = Callable[[Task], Awaitable[dict]]
 Notifier = Callable[[Task], Awaitable[bool]]
@@ -1122,7 +1228,7 @@ class AutonomyWorker:
             except Exception as e:
                 if mediated or attempts >= MAX_ATTEMPTS:
                     self.queue.transition(task.id, TaskStatus.FAILED, result={"error": str(e)})
-                    self._record_capability_outcome(task, success=False)
+                    self._record_capability_outcome(task, success=False, error=e)
                     self._audit("autonomy.failed", task, f"giving up after {attempts}: {e}")
                     failed += 1
                 else:
@@ -1160,8 +1266,9 @@ class AutonomyWorker:
         *,
         success: bool,
         result: dict | None = None,
+        error: BaseException | None = None,
     ) -> None:
-        """Record one terminal REAL execution; ignore no-ops, mocks and unknown actions.
+        """Record one terminal REAL execution; ignore no-ops, mocks, refusals and unknown actions.
 
         ADV-094 (adversarial audit 2026-07-25): this skipped only a literal
         ``status == "noop"``, while ``is_degraded()`` — which recognises the ``_mock`` /
@@ -1181,10 +1288,16 @@ class AutonomyWorker:
         A ``refused`` result executed nothing (a machine decider, a card changed since
         the request, a gate that was off), so it records nothing; a ``failed`` result
         is a failure, never a success.
+
+        Review round 2 (MINOR 2): many handlers return a refusal as ``failed`` too (a
+        spent interrupt budget, a kernel denial, a missing credential), and the house
+        handler raises one. :func:`is_refusal` / :data:`REFUSAL_REASONS` name those,
+        so a refusal records nothing whichever shape it takes; every other ``failed``
+        result, and every other raised error, is a failure.
         """
         if success and isinstance(result, dict):
             status = result.get("status")
-            if status in ("noop", "refused"):
+            if status == "noop" or is_refusal(result):
                 return
             if status == "failed":
                 success = False
@@ -1193,6 +1306,8 @@ class AutonomyWorker:
             if is_degraded(result):
                 logger.debug("capability outcome skipped: degraded/mock result for %s", task.kind)
                 return
+        if not success and error is not None and is_refusal_reason(getattr(error, "reason", None)):
+            return
         try:
             from agents.core.capability_manifests import manifest_for_action
 

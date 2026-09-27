@@ -253,7 +253,11 @@ class _Rows:
 
 async def test_audit_and_intent_rows_name_the_provider_identity(rig):
     """Review F3: a named provider's request, approval and clear name the provider and
-    its revision; clearing it never reads as revoking the legacy voice.tts_command."""
+    its revision; clearing it never reads as revoking the legacy voice.tts_command.
+    Round-2 NIT 1: each row says which revision it means — the request the revision it
+    is based on, the approval the revision it wrote, the clear the revision it revoked
+    (the one in force, never the tombstone the clear writes) — so a clear matches the
+    approval it revoked, and the intent metadata carries the same numbers by name."""
     rows = _Rows()
     rig.orch.audit = rows
     rig.orch.intent_log = rows
@@ -261,14 +265,16 @@ async def test_audit_and_intent_rows_name_the_provider_identity(rig):
     await install(rig, None)
     requested = rows.audited('voice_command_requested')
     approved = rows.audited('voice_command_approved')
-    assert requested[0].startswith("voice.tts provider 'studio' (revision 0) change sent to approval")
-    assert approved[0].startswith("voice.tts provider 'studio' (revision 1) approved")
+    assert requested[0].startswith("voice.tts provider 'studio' (based on revision 0) change sent to approval")
+    assert approved[0].startswith("voice.tts provider 'studio' (now revision 1) approved")
     assert requested[1].startswith('voice.tts_command change sent to approval')
     assert approved[1].startswith('voice.tts_command approved')
     named_set, legacy_set = rows.intended('voice.command.set')
     assert named_set['metadata']['provider_id'] == 'studio'
-    assert named_set['metadata']['provider_revision'] == 1
-    assert "'studio'" in named_set['why'] and 'revision 1' in named_set['why']
+    assert named_set['metadata']['based_on_revision'] == 0
+    assert named_set['metadata']['now_revision'] == 1
+    assert 'provider_revision' not in named_set['metadata']
+    assert "'studio'" in named_set['why'] and 'now revision 1' in named_set['why']
     assert 'provider_id' not in legacy_set['metadata']
 
     rows.audit.clear()
@@ -278,11 +284,13 @@ async def test_audit_and_intent_rows_name_the_provider_identity(rig):
     assert code == 200
     named_row, legacy_row = rows.audited('voice_command_cleared')
     assert named_row != legacy_row
-    revision = named['provider_revision']
-    assert named_row.startswith(f"voice.tts provider 'studio' (revision {revision}) cleared")
+    assert named['provider_revision'] == 2          # the tombstone the clear wrote
+    assert named_row.startswith("voice.tts provider 'studio' (revoked revision 1) cleared")
+    assert 'revision 2' not in named_row
     assert legacy_row.startswith('voice.tts_command cleared')
     named_clear, legacy_clear = rows.intended('voice.command.clear')
     assert named_clear['metadata']['provider_id'] == 'studio'
-    assert named_clear['metadata']['provider_revision'] == revision
-    assert "'studio'" in named_clear['why'] and f'revision {revision}' in named_clear['why']
+    assert named_clear['metadata']['revoked_revision'] == named_set['metadata']['now_revision'] == 1
+    assert 'provider_revision' not in named_clear['metadata']
+    assert "'studio'" in named_clear['why'] and 'revoked revision 1' in named_clear['why']
     assert 'provider_id' not in legacy_clear['metadata']

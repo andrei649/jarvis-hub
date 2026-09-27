@@ -596,6 +596,84 @@ def test_expired_legacy_block_is_still_held(queue, tmp_path, monkeypatch):
         ledger.close()
 
 
+def _fails_first_read(queue):
+    """A task reader whose first call raises (a briefly locked queue), then reads."""
+    calls = {'n': 0}
+
+    def read(task_id):
+        calls['n'] += 1
+        if calls['n'] == 1:
+            raise OSError('queue briefly locked')
+        return queue.get(task_id)
+    return read, calls
+
+
+def test_expired_legacy_block_is_held_when_the_first_read_fails(queue, tmp_path, monkeypatch):
+    """Round-2 MINOR 1: the first read of the only ask raises, so the pass does not know
+    up front that it is an expiry; the ask is re-read, found expired and settled. That
+    settlement holds an unmarked block, and the pass must not then resume it through
+    the pre-v3 path as if the owner had answered."""
+    expired = expired_task(queue)
+    path = tmp_path / 'runs.db'
+    run, seq = legacy_v2_blocked_run(path, expired.id, monkeypatch)
+    ledger = upgraded(path, queue)
+    try:
+        monkeypatch.setattr(ledger, 'resume_unmarked_after_asks',
+                            lambda *args: pytest.fail('expiry must not resume a legacy block'))
+        read, calls = _fails_first_read(queue)
+        result = PendingRequests(ledger, read_task=read).reconcile(run.id)
+        assert calls['n'] == 2
+        assert [(o.step_seq, o.resolution) for o in result.outcomes] == [(seq, 'expired_unanswered')]
+        assert not result.resumed and result.note == 'expiry settled; run held'
+        assert ledger.get(run.id).status == 'blocked'
+        assert ledger.outstanding_asks(run.id) == []
+    finally:
+        ledger.close()
+
+
+def test_expiry_found_on_a_reread_reports_the_atomic_resume_of_a_marked_block(queue, monkeypatch):
+    """The same transient read on a marked block: the expiry settlement resumes the run
+    atomically, and the pass reports that resume instead of trying a second one."""
+    expired = expired_task(queue)
+    ledger = WorkRunLedger(':memory:', clock=lambda: 1000)
+    ledger.bind_approval_task_reader(queue.get)
+    try:
+        run = open_run(ledger)
+        ask(ledger, run, expired.id)
+        monkeypatch.setattr(ledger, 'resume_after_asks',
+                            lambda *args, **kwargs: pytest.fail('nonatomic second resume'))
+        read, _ = _fails_first_read(queue)
+        result = PendingRequests(ledger, read_task=read).reconcile(run.id)
+        assert result.resumed and result.note == 'expiry settled atomically'
+        assert [o.resolution for o in result.outcomes] == ['expired_unanswered']
+        assert ledger.get(run.id).status == 'working'
+    finally:
+        ledger.close()
+
+
+def test_expiry_found_on_a_reread_still_settles_after_the_other_answers(queue, monkeypatch):
+    """An expiry learned only on the re-read is ordered like any other expiry: after the
+    ordinary answers, so its settlement closes the epoch instead of leaving a marked run
+    blocked with every ask answered and nothing left that could resume it."""
+    expired = expired_task(queue)
+    accepted_id = queue.enqueue('jarvis', 'delete_file', 'accepted ask')
+    queue.transition(accepted_id, TaskStatus.APPROVED, decided_by='owner', decision='accept')
+    ledger = WorkRunLedger(':memory:', clock=lambda: 1000)
+    ledger.bind_approval_task_reader(queue.get)
+    try:
+        run = open_run(ledger)
+        first = ask(ledger, run, expired.id)          # its first read fails
+        ask(ledger, run, accepted_id)
+        read, _ = _fails_first_read(queue)
+        result = PendingRequests(ledger, read_task=read).reconcile(run.id)
+        assert result.resumed and result.note == 'expiry settled atomically', result.note
+        assert [o.resolution for o in result.outcomes] == ['approved', 'expired_unanswered']
+        assert result.outcomes[-1].step_seq == first.seq
+        assert ledger.get(run.id).status == 'working'
+    finally:
+        ledger.close()
+
+
 def test_unmarked_resume_refuses_a_marked_block_and_an_open_ask(queue, tmp_path, monkeypatch):
     marked = WorkRunLedger(':memory:', clock=lambda: 1000)
     try:
@@ -618,5 +696,27 @@ def test_unmarked_resume_refuses_a_marked_block_and_an_open_ask(queue, tmp_path,
         with pytest.raises(WorkRunError, match='approval_resume_held'):
             ledger.resume_unmarked_after_asks(legacy_run.id)
         assert ledger.get(legacy_run.id).status == 'blocked'
+    finally:
+        ledger.close()
+
+
+@pytest.mark.parametrize('status', ['planning', 'working', 'succeeded'])
+def test_unmarked_resume_refuses_a_run_that_is_not_blocked(status):
+    """Round-2 NIT 3: the pre-v3 resume moves only a BLOCKED run. A run with no marker
+    because it never blocked (planning, working) or has finished (succeeded) is held:
+    no ask was answered that could move it, and a finished run is never reopened."""
+    ledger = WorkRunLedger(':memory:', clock=lambda: 1000)
+    try:
+        run = open_run(ledger)
+        if status != 'planning':
+            ledger.record_step(run.id, kind='act', summary='did one thing', outcome='ok')
+        if status == 'succeeded':
+            ledger.record_verdict(run.id, role='verifier', passed=True, reason='holds')
+            ledger.record_verdict(run.id, role='judge', passed=True, reason='goal met')
+        assert ledger.get(run.id).status == status
+        assert ledger.approval_block_seq(run.id) is None
+        with pytest.raises(WorkRunError, match='approval_resume_held'):
+            ledger.resume_unmarked_after_asks(run.id)
+        assert ledger.get(run.id).status == status
     finally:
         ledger.close()

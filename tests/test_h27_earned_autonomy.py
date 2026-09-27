@@ -139,38 +139,225 @@ async def test_worker_records_returned_refusals_as_nothing_and_failures_as_failu
     queue.close()
 
 
-class _RecordingQueue:
-    def __init__(self):
-        self.recorded = []
-
-    def record_capability_outcome(self, capability_id, success=True):
-        self.recorded.append((capability_id, success))
+# ── round-2 MINOR 2: outcomes from REAL handlers, one kind at a time ─────────
 
 
-def test_every_action_manifest_kind_records_outcomes_by_the_same_rule():
-    """Review F2: only the refusal/failure statuses changed; every manifest kind still
-    records a genuine success, and noop/degraded results stay unrecorded."""
-    from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
+async def _run_real(queue, executor, kind, payload, *, ticks=1):
+    """One approved task of *kind* through a real worker tick and a real handler."""
+    worker = AutonomyWorker(queue, policy=AutonomyPolicy(), executor=executor)
+    task_id = queue.enqueue("jarvis", kind, "real handler", risk_tier=1,
+                            autonomy_level=ACT, payload=payload)
+    queue.transition(task_id, TaskStatus.APPROVED)
+    for _ in range(ticks):
+        await worker.tick()
+    return queue.get(task_id)
 
-    worker = AutonomyWorker.__new__(AutonomyWorker)
-    for kind, manifest in sorted(ACTION_CAPABILITY_MANIFESTS.items()):
-        concrete = kind.replace("*", "example")
-        task = type("T", (), {"kind": concrete, "payload": {}})()
-        cases = [
-            ({"status": "ok"}, [(manifest.id, True)]),
-            ({"value": "real"}, [(manifest.id, True)]),
-            ({"status": "noop"}, []),
-            ({"_mock": True}, []),
-            ({"status": "refused", "reason": "human_decision_required"}, []),
-            ({"status": "failed", "reason": "apply_failed"}, [(manifest.id, False)]),
-        ]
-        for result, recorded in cases:
-            worker.queue = _RecordingQueue()
-            worker._record_capability_outcome(task, success=True, result=result)
-            assert worker.queue.recorded == recorded, (kind, result)
-        worker.queue = _RecordingQueue()
-        worker._record_capability_outcome(task, success=False)
-        assert worker.queue.recorded == [(manifest.id, False)], kind
+
+def _counts(queue, kind):
+    from agents.core.capability_manifests import manifest_for_action
+
+    stats = queue.capability_outcome_stats(manifest_for_action(kind).id)
+    return stats["successes"], stats["failures"]
+
+
+_CALL = {"provider": "twilio", "to": "+40700000000", "message": "hi"}
+
+
+@pytest.mark.asyncio
+async def test_call_budget_refusal_records_nothing_but_a_placed_or_broken_call_does(tmp_path):
+    from agents.core.autonomy.call_broker import CallBroker
+
+    class Spent:
+        delivery_broker = None
+
+        def consume(self):
+            return False
+
+    class Client:
+        def __init__(self, fail=False):
+            self.placed, self.fail = [], fail
+
+        async def call(self, *args):
+            self.placed.append(args)
+            if self.fail:
+                raise OSError("carrier down")
+            return {"status": "ok"}
+
+    queue = _queue(tmp_path / "autonomy.db")
+    refused = Client()
+    task = await _run_real(queue, CallBroker(client=refused, budget=Spent()).execute,
+                           "call.outbound", _CALL)
+    assert task.result == {"status": "failed", "reason": "interrupt_budget_exhausted"}
+    assert refused.placed == [] and _counts(queue, "call.outbound") == (0, 0)
+
+    placed = Client()
+    task = await _run_real(queue, CallBroker(client=placed).execute, "call.outbound", _CALL)
+    assert task.result["status"] == "ok" and len(placed.placed) == 1
+    assert _counts(queue, "call.outbound") == (1, 0)
+
+    task = await _run_real(queue, CallBroker(client=Client(fail=True)).execute,
+                           "call.outbound", _CALL)
+    assert task.result["reason"] == "client_error"
+    assert _counts(queue, "call.outbound") == (1, 1)
+    queue.close()
+
+
+_HOUSE = {"version": 1, "control": "light", "entity_id": "light.kitchen", "action": "on",
+          "risk_tier": 1, "reversible": True, "signal_quality": 1.0}
+
+
+@pytest.mark.asyncio
+async def test_house_kernel_denial_records_nothing_but_a_verified_actuation_succeeds(
+        tmp_path, monkeypatch):
+    """The house handler raises on a failed result (the task must not settle as DONE),
+    so its refusal reaches the worker as an exception carrying the reason."""
+    from agents.core.autonomy.executor import TaskExecutor
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+    from agents.core.house.actuation import HOUSE_CONTROL_KIND, register_house_handlers
+    from agents.core.kernel import Verdict
+    from tests.test_h30_house_actuation import _actuator, _Kernel, _Simulator
+
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    queue = _queue(tmp_path / "autonomy.db")
+    sim = _Simulator()
+    denied = register_house_handlers(
+        TaskExecutor(), _actuator(tmp_path / "deny", sim, kernel=_Kernel(Verdict.DENY)))
+    task = await _run_real(queue, denied.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
+    assert task.status == TaskStatus.FAILED.value and "kernel_denied" in task.result["error"]
+    assert sim.calls == [] and _counts(queue, HOUSE_CONTROL_KIND) == (0, 0)
+
+    granted = register_house_handlers(TaskExecutor(), _actuator(tmp_path / "grant", sim))
+    task = await _run_real(queue, granted.execute, HOUSE_CONTROL_KIND, _HOUSE)
+    assert task.result["status"] == "verified" and sim.state == "on"
+    assert _counts(queue, HOUSE_CONTROL_KIND) == (1, 0)
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_channel_reply_contract_block_records_nothing_but_a_send_does(tmp_path):
+    from agents.core.channel_reply import ChannelReplyBroker
+
+    class Channels:
+        def __init__(self, sent=True):
+            self.sent, self.ok = [], sent
+
+        async def send_channel_reply(self, channel, text, **reply):
+            self.sent.append((channel, text))
+            return self.ok
+
+    queue = _queue(tmp_path / "autonomy.db")
+    reply = {"channel": "telegram", "text": "hi", "thread_id": "t1", "message_id": "m1",
+             "reply": {"chat_id": "1"}}
+    channels = Channels()
+    broker = ChannelReplyBroker(channel_manager=channels)
+    task = await _run_real(queue, broker.execute, "channel.reply", {"channel": "telegram", "text": "hi"})
+    assert task.result["status"] == "blocked" and channels.sent == []
+    assert _counts(queue, "channel.reply") == (0, 0)
+
+    task = await _run_real(queue, broker.execute, "channel.reply", reply)
+    assert task.result["status"] == "ok" and channels.sent == [("telegram", "hi")]
+    assert _counts(queue, "channel.reply") == (1, 0)
+
+    broken = ChannelReplyBroker(channel_manager=Channels(sent=False))
+    task = await _run_real(queue, broken.execute, "channel.reply", reply)
+    assert task.result["reason"] == "send_failed"
+    assert _counts(queue, "channel.reply") == (1, 1)
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_node_reauthorisation_denial_records_nothing(tmp_path):
+    from agents.core.node_mesh import KIND, NodeMesh
+    from agents.core.security.capability import CapabilityBroker, KillSwitch
+
+    queue = _queue(tmp_path / "autonomy.db")
+    kill = KillSwitch(path=str(tmp_path / "kill.json"))
+    mesh = NodeMesh(capability_broker=CapabilityBroker(), kill_switch=kill)
+    mesh.register_node("phone", ["notify"])
+    kill.engage()
+    task = await _run_real(queue, mesh.execute, KIND, {"node": "phone", "capability": "notify"})
+    assert task.result["status"] == "failed" and "kill-switch" in task.result["reason"]
+    task = await _run_real(queue, mesh.execute, KIND, {"node": "gone", "capability": "notify"})
+    assert task.result == {"status": "failed", "reason": "unknown_node", "node": "gone"}
+    assert _counts(queue, KIND) == (0, 0)
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_missing_credential_records_nothing_but_a_delivered_write_succeeds(tmp_path):
+    from agents.core.social import HttpSocialClient, SocialBroker
+    from agents.core.writeback import HttpWriteBackClient, WriteBackBroker
+
+    class Social:
+        async def send(self, platform, action, fields, credentials):
+            return {"status": "ok", "id": "1"}
+
+    class Target:
+        async def write(self, target, action, fields, credentials):
+            return {"status": "ok", "id": "2"}
+
+    queue = _queue(tmp_path / "autonomy.db")
+    post = {"platform": "x", "action": "post", "fields": {"text": "hi"}}
+    issue = {"system": "github", "action": "create_issue", "fields": {"repo": "a/b", "title": "t"}}
+    cases = [
+        ("social.x.post", post, SocialBroker(client=HttpSocialClient()), SocialBroker(client=Social())),
+        ("writeback.github.create_issue", issue,
+         WriteBackBroker(client=HttpWriteBackClient()), WriteBackBroker(client=Target())),
+    ]
+    for kind, payload, unconfigured, configured in cases:
+        task = await _run_real(queue, unconfigured.execute, kind, payload)
+        assert task.result["reason"] == "credential_not_configured", kind
+        assert _counts(queue, kind) == (0, 0), kind
+        task = await _run_real(queue, configured.execute, kind, payload)
+        assert task.result["status"] == "ok", kind
+        assert _counts(queue, kind) == (1, 0), kind
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_tool_rpc_and_skill_install_refusals_record_nothing(tmp_path):
+    from agents.core.acquisition.promotion import PromotionBroker
+    from agents.core.tool_rpc import ToolRPCServer
+
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, ToolRPCServer().execute, "tool.rpc",
+                           {"tool": "not_registered", "args": {}})
+    assert task.result["reason"] == "tool_not_allowed"
+    assert _counts(queue, "tool.rpc") == (0, 0)
+
+    off = dict.fromkeys(("quarantine", "requests", "proposals", "packages", "journal",
+                         "tool_rpc", "runtime", "marketplace", "profile"))
+    broker = PromotionBroker(enabled=lambda: False, **off)
+    task = await _run_real(queue, broker.execute_task, "skill.install", {"proposal_id": "p1"})
+    assert task.result == {"status": "failed", "reason": "promotion_refused"}
+    assert _counts(queue, "skill.install") == (0, 0)
+    queue.close()
+
+
+def test_refusal_vocabulary_names_refusals_only():
+    """The vocabulary decides only for a returned ``failed``: a reason in it ran nothing.
+    Every reason a handler uses for an attempt that broke stays out of it, and so does
+    any reason nobody listed."""
+    from agents.core.autonomy.worker import REFUSAL_REASONS, is_refusal
+
+    for reason in ("interrupt_budget_exhausted", "budget_exceeded", "credential_not_configured",
+                   "kernel_denied", "strong_confirmation_required", "execution_in_progress",
+                   "tool_not_allowed", "promotion_refused", "human_decision_required",
+                   "changed_since_request", "not_requested", "provider_revision_conflict",
+                   "unknown_node"):
+        assert reason in REFUSAL_REASONS, reason
+        assert is_refusal({"status": "failed", "reason": reason}), reason
+    assert is_refusal({"status": "failed", "reason": "call_config_missing:account_sid,from"})
+    assert is_refusal({"status": "failed", "reason": "kill-switch engaged for scope 'node:phone'"})
+    for reason in ("client_error", "send_failed", "tool_error", "apply_failed", "invalid_call",
+                   "verification_failed", "wall_time_budget_exceeded", "invalid_result",
+                   "house_state_unavailable", "something_new", "", None):
+        assert reason not in REFUSAL_REASONS, reason
+        assert not is_refusal({"status": "failed", "reason": reason}), reason
+    assert is_refusal({"status": "refused", "reason": "anything"})
+    assert is_refusal({"status": "blocked", "reason": "missing_field:thread_id"})
+    assert not is_refusal({"status": "ok"}) and not is_refusal(None)
 
 
 def test_registry_projects_action_outcomes_into_confidence(tmp_path):

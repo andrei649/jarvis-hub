@@ -163,6 +163,10 @@ class SweepReport:
         }
 
 
+# A task whose read raised in this pass: never a decision, never re-read again.
+_UNREADABLE = object()
+
+
 def _status_of(task: Any) -> str:
     return str(getattr(task, "status", "") or "").strip().lower()
 
@@ -240,8 +244,12 @@ class PendingRequests:
         run = self._ledger.get(run_id)
         if run is None:
             return ReconcileResult(run_id, note="unknown run")
-        outcomes, expiry_resumed, has_expiry = self._close_asks_with_expiry(run_id)
-        if has_expiry:
+        outcomes, expiry_resumed, settled_expiry = self._close_asks_with_expiry(run_id)
+        if settled_expiry:
+            # An expiry settled in this pass — found on the first read or on a re-read
+            # after that read failed — has already decided, atomically, whether the run
+            # resumes. No generic resume may follow it: for an unmarked (pre-v3) block
+            # that would turn "nobody answered" into a resume (round-2 MINOR 1).
             return ReconcileResult(run_id, outcomes, resumed=expiry_resumed,
                                    note="expiry settled atomically" if expiry_resumed else "expiry settled; run held")
         if run.terminal:
@@ -295,68 +303,78 @@ class PendingRequests:
         return marker_of(run_id) is None
 
     def _close_asks_with_expiry(self, run_id: str) -> tuple[tuple[AskOutcome, ...], bool, bool]:
+        """Close every outstanding ask of one run.
+
+        Returns ``(outcomes, resumed, settled_expiry)``: ``settled_expiry`` is True when
+        any ask was settled as expired in this pass, and ``resumed`` when one of those
+        settlements resumed the run atomically.
+        """
         steps = self._ledger.outstanding_asks(run_id)
-        # One authoritative read per source; expiry is terminal. Settle normal
-        # answers first so the final expiry transaction can close the epoch.
-        prepared = []
-        for step in steps:
-            try:
-                task = self._read_task(step.task_id) if step.task_id is not None else None
-            except Exception:
-                # Preserve per-source ordinary reconciliation on read failures.
-                # The failed source remains queued and prevents atomic resume.
-                task = ...
-            prepared.append((step, task))
-        has_expiry = any(_status_of(task) == "expired" for _, task in prepared)
-        if not has_expiry:
-            return tuple(self._close_one(run_id, step, task=task) for step, task in prepared), False, False
+        # One authoritative read per source (a second only when the first raised);
+        # expiry is terminal. The re-read happens here, before ordering, so an
+        # expiry found only on the re-read is ordered like any other: normal answers
+        # first, every expiry last, so the final expiry transaction can close the
+        # epoch. A source unreadable twice stays queued and prevents atomic resume.
+        prepared = [(step, self._read_or_unreadable(step)) for step in steps]
+        prepared = [(step, self._read_or_unreadable(step) if task is _UNREADABLE else task)
+                    for step, task in prepared]
         prepared.sort(key=lambda item: _status_of(item[1]) == "expired")
-        outcomes = []
+        outcomes: list[AskOutcome] = []
+        settled_expiry = False
         resumed = False
         for step, task in prepared:
-            if _status_of(task) != "expired":
-                outcomes.append(self._close_one(run_id, step, task=task))
-                continue
-            result = self._ledger.settle_expired_ask(
-                run_id, step.seq, task_id=step.task_id, expired_at=task.expired_at,
-            )
-            resumed = resumed or result.resumed
-            outcomes.append(AskOutcome(run_id, step.seq, step.task_id, "expired_unanswered",
-                                       "approval deadline elapsed unanswered", "system", True))
-        return tuple(outcomes), resumed, True
+            outcome, expiry_resumed = self._close_one(run_id, step, task=task)
+            if expiry_resumed is not None:
+                settled_expiry = True
+                resumed = resumed or expiry_resumed
+            outcomes.append(outcome)
+        return tuple(outcomes), resumed, settled_expiry
 
-    def _close_asks(self, run_id: str) -> tuple[AskOutcome, ...]:
-        outcomes: list[AskOutcome] = []
-        for step in self._ledger.outstanding_asks(run_id):
-            outcomes.append(self._close_one(run_id, step))
-        return tuple(outcomes)
+    def _read_or_unreadable(self, step: Any) -> Any:
+        if step.task_id is None:
+            return None
+        try:
+            return self._read_task(step.task_id)
+        except Exception:
+            # Preserve per-source ordinary reconciliation on read failures.
+            return _UNREADABLE
 
-    def _close_one(self, run_id: str, step: Any, *, task: Any = ...) -> AskOutcome:
+    def _close_one(self, run_id: str, step: Any, *, task: Any = ...) -> tuple[AskOutcome, bool | None]:
+        """Close one ask. Returns ``(outcome, expiry_resumed)``: ``None`` when this call
+        settled no expiry, otherwise whether the ledger's expiry settlement resumed the
+        run. This is the only place a reconcile pass settles an expiry, and it reports
+        it, so the caller holds the run on the expiry's own decision instead of resuming
+        it a second way (round-2 MINOR 1)."""
         task_id = getattr(step, "task_id", None)
         seq = int(getattr(step, "seq", 0))
         if not isinstance(task_id, int) or isinstance(task_id, bool) or task_id <= 0:
             # A queued step with no durable task is a bug in whatever recorded it.
             # It is recorded as lost rather than silently waiting forever, so the
             # streak rule can end the run instead of the run hanging until dawn.
-            return self._apply(run_id, seq, None, "lost", "the step carries no durable task")
-        try:
-            if task is ...:
+            return self._apply(run_id, seq, None, "lost", "the step carries no durable task"), None
+        if task is ...:
+            try:
                 task = self._read_task(task_id)
-        except Exception:
-            # A queue that cannot be read is not a queue that said yes.
+            except Exception:
+                task = _UNREADABLE
+        if task is _UNREADABLE:
+            # A queue that cannot be read is not a queue that said yes. The source
+            # remains queued and prevents atomic resume.
             logger.warning("could not read task %s while reconciling %s", task_id, run_id)
             return AskOutcome(
                 run_id, seq, task_id, "waiting", "the task could not be read"
-            )
+            ), None
         resolution, detail = classify(task)
         if resolution == "expired_unanswered":
-            self._ledger.settle_expired_ask(run_id, seq, task_id=task_id, expired_at=task.expired_at)
-            return AskOutcome(run_id, seq, task_id, resolution, detail, "system", True)
+            settlement = self._ledger.settle_expired_ask(run_id, seq, task_id=task_id,
+                                                         expired_at=task.expired_at)
+            return (AskOutcome(run_id, seq, task_id, resolution, detail, "system", True),
+                    bool(getattr(settlement, "resumed", False)))
         decided_by = _decider_of(task) if task is not None else ""
         return self._apply(
             run_id, seq, task_id, resolution, detail, decided_by=decided_by,
             human_reason=_human_reason_of(task),
-        )
+        ), None
 
     def _apply(
         self,
