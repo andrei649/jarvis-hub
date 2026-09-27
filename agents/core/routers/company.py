@@ -1,6 +1,6 @@
 """Company-mode routes — read the work runs, stop one.
 
-Four user-guarded routes, three of them read-only:
+Five user-guarded routes, three of them read-only:
 
 * ``GET /api/company/runs`` — the brief: every run, its honest headline, what is
   waiting on the owner and which runs took unauthorised steps.
@@ -10,6 +10,9 @@ Four user-guarded routes, three of them read-only:
   answers it. Deciding happens in the decision inbox, where every other
   privileged act is decided, and reconciling happens on the scheduler's sweep.
 * ``POST /api/company/runs/{run_id}/stop`` — stop a run. **Narrowing only.**
+* ``POST /api/company/runs/{run_id}/barrier/clear`` — let a parked run go (H464).
+  It grants nothing: the run returns to the cadence it was already approved for,
+  still inside its budget, and the clear is on the run's event log as the owner's.
 
 There is no route that *starts* a run, and that omission is the point. Opening a
 run requires an owner-approved `GoalSpec`, and approval happens in the decision
@@ -31,6 +34,7 @@ from fastapi import APIRouter, Depends
 
 from agents.core.app_state import get_orch
 from agents.core.autonomy.company_report import build_company_brief
+from agents.core.autonomy.run_barriers import RunBarriers
 from agents.core.autonomy.work_runs import FLAG, WorkRunError, WorkRunLedger
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
@@ -167,3 +171,19 @@ async def company_run_stop(run_id: str):
         status = 404 if exc.reason == "unknown_run" else 409
         return nocache_json({"ok": False, "reason": exc.reason}, status_code=status)
     return nocache_json({"ok": True, "run": run.as_dict()})
+
+
+@router.post("/api/company/runs/{run_id}/barrier/clear", dependencies=[Depends(user_guard)])
+async def company_run_barrier_clear(run_id: str):
+    """Stop waiting: clear a parked run's barrier (H464). Idempotent — with no
+    barrier it answers ``cleared: false`` rather than an error. Same guard as stop:
+    clearing restores an already-approved, budget-bounded cadence and grants nothing."""
+    if not _valid(run_id):
+        return nocache_json({"ok": False, "reason": "invalid_run_id"}, status_code=400)
+    ledger = await _get_ledger()
+    try:
+        cleared, run = await asyncio.to_thread(RunBarriers(ledger).clear, run_id, by="owner")
+    except WorkRunError as exc:
+        status = 404 if exc.reason == "unknown_run" else 409
+        return nocache_json({"ok": False, "reason": exc.reason}, status_code=status)
+    return nocache_json({"ok": True, "cleared": bool(cleared), "run": run.as_dict()})

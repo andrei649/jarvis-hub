@@ -236,6 +236,15 @@ def build_parser() -> argparse.ArgumentParser:
     engage.add_argument("--reason", default="")
     estop_verbs.add_parser("resume", help="lift the emergency stop (admin)")
 
+    company = verbs.add_parser("company", help="company-mode work runs (user)")
+    company_verbs = company.add_subparsers(dest="action", required=True, metavar="action")
+    company_list = company_verbs.add_parser("list", help="every run and its honest headline")
+    company_list.add_argument("--json", action="store_true")
+    clear_wait = company_verbs.add_parser(
+        "clear-wait", help="let a parked run go: clear what it is waiting on (H464)")
+    clear_wait.add_argument("run_id")
+    clear_wait.add_argument("--json", action="store_true")
+
     jobs = verbs.add_parser("jobs", help="your scheduled jobs (admin)")
     jobs_verbs = jobs.add_subparsers(dest="action", required=True, metavar="action")
     jobs_list = jobs_verbs.add_parser("list", help="every job and whether the scheduler is alive")
@@ -1394,6 +1403,42 @@ def cmd_estop(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"e-stop ENGAGED since {state.get('engaged_at') or '?'} — {state.get('reason') or 'no reason given'}")
     else:
         ctx.say("e-stop not engaged")
+    return EXIT_OK
+
+
+_RUN_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def cmd_company(ns: argparse.Namespace, ctx: Context) -> int:
+    """H464 — read the work runs, and let a parked one go.
+
+    There is no verb that starts a run, for the same reason there is no route: a run
+    opens only on a goal the owner approved in the decision inbox. ``clear-wait``
+    grants nothing — the run goes back to the cadence it was already approved for.
+    """
+    client = ctx.client()
+    if ns.action == "list":
+        reply = client.get("/api/company/runs")
+        runs = reply.get("runs") if isinstance(reply, dict) else None
+        if not isinstance(runs, list):
+            ctx.err.write("unexpected reply from the hub: no list of runs in it\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(reply)
+        elif not runs:
+            ctx.say(str(reply.get("reason") or "no work runs"))
+        else:
+            for run in runs:
+                ctx.say(f"{run.get('run_id')}  {run.get('status')}  {run.get('headline')}")
+        return EXIT_OK
+    if not _RUN_ID.match(ns.run_id or ""):
+        ctx.err.write(f"not a run id: {ns.run_id!r} (letters, digits, _ and -)\n")
+        return EXIT_USAGE
+    reply = client.post(f"/api/company/runs/{ns.run_id}/barrier/clear")
+    if ns.json:
+        ctx.dump(reply)
+    else:
+        ctx.say("cleared" if (reply or {}).get("cleared") else "no barrier")
     return EXIT_OK
 
 
@@ -2881,6 +2926,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "logs": cmd_logs,
     "skills": cmd_skills,
     "estop": cmd_estop,
+    "company": cmd_company,
     "jobs": cmd_jobs,
     "sessions": cmd_sessions,
     "todo": cmd_todo,

@@ -29,6 +29,10 @@ all*, and the answers to that are deliberate:
   same act.
 * **A sweep never raises into the scheduler.** One bad run must not silently
   unregister the job that would have recovered it.
+* **A parked run is skipped, not poked (H464).** One :class:`RunBarriers` is built
+  over the ledger, the task reader and the webhook store, and its check is handed
+  to both the scheduler and the supervisor. It is not an orchestrator slot: it
+  lives here, on :class:`RuntimeParts`, with the rest of the chain.
 
 Nothing here can authorise. The supervisor hands every effect to the governed
 intake, the reconciler can only unblock a run, and opening a run still requires
@@ -45,6 +49,7 @@ from typing import Any
 from agents.core.autonomy.company_planner import ChecklistPlanner
 from agents.core.autonomy.company_supervisor import CompanySupervisor, SupervisorConfig
 from agents.core.autonomy.pending_requests import PendingRequests
+from agents.core.autonomy.run_barriers import RunBarriers
 from agents.core.autonomy.schedule_runtime import ScheduleConfig, ScheduleRuntime
 from agents.core.autonomy.work_runs import FLAG, WorkRunLedger
 
@@ -68,6 +73,7 @@ class RuntimeParts:
     scheduler: Any
     reconciler: Any
     reasons: tuple[str, ...] = field(default=())
+    barriers: Any = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -129,6 +135,13 @@ class CompanyRuntime:
         }
 
 
+def _webhook_store() -> Any:
+    """The canonical inbound-webhook store, built lazily on first use."""
+    from agents.core.routers.webhooks import _get_webhook_store
+
+    return _get_webhook_store()
+
+
 def _plan_for(ledger: Any, run: Any, goals: Any) -> ChecklistPlanner:
     """The planner for one run: the checklist the owner approved, and no more.
 
@@ -163,6 +176,7 @@ def build_company_runtime(
     planner: Callable[..., Any] | None = None,
     verify: Callable[..., Any] | None = None,
     judge: Callable[..., Any] | None = None,
+    judge_wait: Callable[[str], Any] | None = None,
     config: ScheduleConfig | None = None,
     supervisor_config: SupervisorConfig | None = None,
 ) -> CompanyRuntime | None:
@@ -206,6 +220,9 @@ def build_company_runtime(
         chosen = planner or _plan_for(ledger, run, goals)
         return chosen(context)
 
+    # Without a queue reader a task trigger is refused rather than guessed; the
+    # webhook store is resolved only when a hook trigger is actually used.
+    barriers = RunBarriers(ledger, read_task=reader, hooks=_webhook_store)
     supervisor = CompanySupervisor(
         ledger,
         enqueue=intake,
@@ -213,12 +230,15 @@ def build_company_runtime(
         verify=verify,
         judge=judge,
         config=supervisor_config or SupervisorConfig(enabled=True),
+        barriers=barriers,
+        judge_wait=judge_wait,
     )
     scheduler = ScheduleRuntime(
         ledger,
         tick=supervisor.tick,
         reconcile=(reconciler.sweep if reconciler is not None else None),
         config=config or ScheduleConfig(enabled=True),
+        barrier_active=barriers.active,
     )
     if planner is not None:
         reasons.append("a planner was supplied explicitly; the approved checklist is not in use")
@@ -227,6 +247,6 @@ def build_company_runtime(
         RuntimeParts(
             ledger=ledger, supervisor=supervisor,
             scheduler=scheduler, reconciler=reconciler,
-            reasons=tuple(reasons),
+            reasons=tuple(reasons), barriers=barriers,
         )
     )

@@ -13,6 +13,11 @@ Waking is not a licence, so the rules are about restraint, not throughput:
 * **A blocked run does not get poked.** It is waiting on the owner's decision;
   ticking it changes nothing and adds noise. It becomes due again only once the
   decision lands and something resumes it.
+* **A parked run does not get poked either (H464).** A run waiting on a build, a
+  deploy or a clock carries a barrier; while it holds, the run is skipped as
+  ``waiting`` and no tick — so no step of budget — is spent asking "is it done
+  yet?". The check clears a stale barrier as it goes, so the run is due again on
+  the first sweep after the process exits, the trigger fires or the time passes.
 * **Night hours are quiet hours for attention, not for work.** During the night
   window a run may still take steps, but a step that would interrupt the owner is
   deferred to the morning. This mirrors `is_night_window` in the existing worker
@@ -51,6 +56,7 @@ SKIP_REASONS = (
     "terminal",        # already finished; a record, not a resource
     "stopping",        # a stop is in flight — the supervisor closes it out
     "blocked",         # waiting on the owner; poking it changes nothing
+    "waiting",         # parked on a process, a trigger or a clock (H464)
     "budget_spent",    # a limit is already out
     "not_due",         # its interval has not elapsed
     "at_capacity",     # max_concurrent reached this sweep
@@ -142,6 +148,7 @@ class ScheduleRuntime:
         config: ScheduleConfig | None = None,
         clock: Callable[[], float] = time.time,
         local_hour: Callable[[], int] | None = None,
+        barrier_active: Callable[[str], bool] | None = None,
     ) -> None:
         self._ledger = ledger
         self._tick = tick
@@ -150,6 +157,9 @@ class ScheduleRuntime:
         # listed, so a run whose ask was answered overnight is eligible in this
         # same pass rather than waiting a whole interval to notice.
         self._reconcile = reconcile
+        # H464: "is this run parked?" (RunBarriers.active). Optional, so a scheduler
+        # built without one behaves exactly as before.
+        self._barrier_active = barrier_active
         self.config = config or ScheduleConfig()
         self._clock = clock
         self._local_hour = local_hour or (lambda: time.localtime().tm_hour)
@@ -169,6 +179,16 @@ class ScheduleRuntime:
             return "stopping"
         if status == "blocked":
             return "blocked"
+        # Before the budget check, which is safe only because every barrier is
+        # capped by the run's own wall-clock budget: once that is spent the cap has
+        # already cleared the barrier, so "waiting" can never mask exhaustion.
+        if self._barrier_active is not None:
+            try:
+                if self._barrier_active(run.id):
+                    return "waiting"
+            except Exception:
+                # A broken check must not park a run forever: tick it normally.
+                logger.debug("barrier check failed; ticking normally", exc_info=True)
         try:
             if self._ledger.budget_state(run.id)["exceeded"]:
                 return "budget_spent"

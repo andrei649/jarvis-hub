@@ -361,6 +361,7 @@
   "POST /api/coach/review",
   "POST /api/coach/session",
   "POST /api/codeintel/reindex",
+  "POST /api/company/runs/{run_id}/barrier/clear",
   "POST /api/company/runs/{run_id}/stop",
   "POST /api/context/compress",
   "POST /api/creative/export-packs",

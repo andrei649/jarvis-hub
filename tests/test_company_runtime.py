@@ -376,3 +376,37 @@ async def test_the_tick_interval_never_drops_below_a_minute(ledger, monkeypatch)
     orch.get_setting = lambda key, default=None: 1 if "company_tick" in key else default
     SchedulerService(orch).schedule_company_mode()
     assert sched.seconds == 60
+
+
+# ── H464: one barrier check, shared by the scheduler and the supervisor ──────
+
+async def test_a_parked_run_is_skipped_by_the_built_chain(ledger, monkeypatch):
+    monkeypatch.setenv("JARVIS_COMPANY_MODE", "1")
+    runtime = build_company_runtime(_Orch(ledger), goals=lambda _gid: None)
+    barriers = runtime.parts.barriers
+    assert barriers is not None
+    run = ledger.open_run(_goal_obj())
+    barriers.request(run.id, {"kind": "deadline", "target": {"in_seconds": 600}},
+                     source="planner")
+    result = await runtime.sweep()
+    assert result["skipped"] == {run.id: "waiting"}
+    assert (await runtime.parts.supervisor.tick(run.id)).outcome == "waiting"
+    assert ledger.get(run.id).steps_used == 0
+
+
+async def test_the_judge_wait_probe_is_passed_through(ledger, monkeypatch):
+    monkeypatch.setenv("JARVIS_COMPANY_MODE", "1")
+    asked = []
+
+    async def _grader(_rid):
+        return types.SimpleNamespace(passed=False, reason="not yet")
+
+    runtime = build_company_runtime(
+        _Orch(ledger), goals=lambda _gid: None, verify=_grader, judge=_grader,
+        judge_wait=lambda rid: asked.append(rid) or {"kind": "deadline",
+                                                     "target": {"in_seconds": 60}},
+    )
+    run = ledger.open_run(_goal_obj())
+    assert (await runtime.parts.supervisor.tick(run.id)).outcome == "waiting"
+    assert asked == [run.id]
+    assert ledger.get(run.id).barrier["source"] == "judge"

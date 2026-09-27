@@ -29,6 +29,11 @@ The rules it enforces, none of which the planner or the model can talk it out of
   with an honest reason rather than burning the night on it.
 * **Finishing is graded, never asserted.** The supervisor calls the verifier and
   then the judge; it has no way to mark a run succeeded itself.
+* **A parked run spends nothing (H464).** While a barrier holds — a process, a
+  trigger, a clock — a tick returns ``waiting`` after the stop and budget checks
+  and before planning or grading: no step, no plan, no judge call. The planner can
+  ask to park (``Action(kind="wait", barrier=…)``) and so can the judge's wait
+  probe, before any verdict is spent; either way the barrier only suppresses work.
 
 The planner is injected (``plan_next``) and returns either an :class:`Action` or
 ``None`` meaning "nothing left to do" — at which point the run goes to grading.
@@ -38,10 +43,11 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from agents.core.autonomy.run_barriers import MAX_JUDGE_WAITS
 from agents.core.autonomy.work_runs import WorkRunError
 
 logger = logging.getLogger("jarvis.company_supervisor")
@@ -58,7 +64,11 @@ TICK_OUTCOMES = (
     "blocked",        # the run is waiting on an approval and cannot proceed
     "disabled",       # company mode is off
     "idle",           # the run is already terminal; nothing to do
+    "waiting",        # parked on a process, a trigger or a clock (H464)
 )
+
+# The action kind that parks the run instead of doing anything (H464).
+_WAIT_KIND = "wait"
 
 
 @dataclass(frozen=True)
@@ -75,12 +85,19 @@ class Action:
     summary: str
     task: dict[str, Any] = field(default_factory=dict)
     interrupts_owner: bool = False
+    # H464: only on ``kind="wait"`` — what to park the run on instead of doing
+    # anything. A wait never reaches the governed intake and never becomes a step.
+    barrier: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if not str(self.kind or "").strip():
             raise ValueError("action kind is required")
         if not str(self.summary or "").strip():
             raise ValueError("action summary is required")
+        if self.kind == _WAIT_KIND and not isinstance(self.barrier, Mapping):
+            raise ValueError("a wait action needs a barrier")
+        if self.kind != _WAIT_KIND and self.barrier is not None:
+            raise ValueError("only a wait action carries a barrier")
 
 
 @dataclass(frozen=True)
@@ -133,6 +150,9 @@ class CompanySupervisor:
         judge: Callable[..., Any] | None = None,
         stop_requested: Callable[[str], bool] | None = None,
         config: SupervisorConfig | None = None,
+        barrier_active: Callable[[str], bool] | None = None,
+        barriers: Any = None,
+        judge_wait: Callable[[str], Any] | None = None,
     ) -> None:
         self._ledger = ledger
         self._enqueue = enqueue
@@ -140,6 +160,14 @@ class CompanySupervisor:
         self._verify = verify
         self._judge = judge
         self._stop_requested = stop_requested
+        # H464: ``barriers`` is the RunBarriers that sets and describes barriers;
+        # ``barrier_active`` is its check (defaulting to it). ``judge_wait`` is the
+        # judge's wait probe: run_id -> a barrier request, or None.
+        self._barriers = barriers
+        self._barrier_active = barrier_active or (
+            barriers.active if barriers is not None else None
+        )
+        self._judge_wait = judge_wait
         self.config = config or SupervisorConfig()
         # Per-run failure streaks. In-memory on purpose: after a restart the run
         # deserves a fresh attempt at whatever it was stuck on, and the durable
@@ -183,6 +211,15 @@ class CompanySupervisor:
             return TickResult(
                 "blocked", "waiting on an outstanding approval", run_id
             )
+        # Parked: after stop and budget, so an owner stop or a spent budget always
+        # settles even a parked run; before planning and grading, so waiting on a
+        # build costs no step, no plan and no judge call.
+        if self._barrier_active is not None:
+            try:
+                if self._barrier_active(run_id):
+                    return TickResult("waiting", f"parked: {self._waiting_on(run_id)}", run_id)
+            except Exception:
+                logger.debug("barrier check failed; ticking normally", exc_info=True)
 
         action = await _maybe_await(
             self._plan_next({"run": run.as_dict(), "budget": budget})
@@ -202,6 +239,8 @@ class CompanySupervisor:
 
     async def _arrange(self, run_id: str, action: Action) -> TickResult:
         """Hand one action to the governed intake and record what came back."""
+        if action.kind == _WAIT_KIND:
+            return self._park(run_id, action)
         try:
             task_id = await _maybe_await(self._enqueue(**dict(action.task)))
         except Exception as exc:
@@ -234,6 +273,29 @@ class CompanySupervisor:
         return TickResult(
             "stepped", f"queued task {task_id} for approval", run_id, step.seq
         )
+
+    def _park(self, run_id: str, action: Action) -> TickResult:
+        """The planner asked to wait: set the barrier instead of doing anything.
+
+        Never enqueues and never records a step. A malformed wait goes down the
+        same road as any unusable plan — a failed ``plan`` step — so the streak rule
+        ends a planner that keeps asking for the same bad wait instead of letting it
+        loop for free.
+        """
+        if self._barriers is None:
+            return self._record_failure(run_id, "plan", "waits are not wired")
+        try:
+            state = self._barriers.request(run_id, action.barrier, source="planner")
+        except WorkRunError as exc:
+            return self._record_failure(run_id, "plan", f"invalid wait: {exc.reason}")
+        return TickResult("waiting", f"parked: {state.get('waiting_on') or 'a barrier'}", run_id)
+
+    def _waiting_on(self, run_id: str) -> str:
+        try:
+            state = self._barriers.state(run_id) if self._barriers is not None else None
+        except Exception:
+            state = None
+        return str((state or {}).get("waiting_on") or "a barrier")
 
     def _record_failure(
         self, run_id: str, kind: str, detail: str, *, summary: str = ""
@@ -303,6 +365,9 @@ class CompanySupervisor:
             return TickResult(
                 "idle", "no work left, and no grader is wired to settle the run", run_id
             )
+        parked = await self._judge_parks(run_id)
+        if parked is not None:
+            return parked
         report = await _maybe_await(self._verify(run_id))
         judgement = await _maybe_await(self._judge(run_id))
         passed = bool(getattr(judgement, "passed", False))
@@ -311,6 +376,37 @@ class CompanySupervisor:
         if not passed and getattr(report, "passed", True) is False:
             detail = f"not met: {getattr(report, 'reason', '') or reason}"
         return TickResult("graded", detail, run_id)
+
+
+    async def _judge_parks(self, run_id: str) -> TickResult | None:
+        """Ask the judge whether to wait, BEFORE any verdict is spent.
+
+        The ledger takes one verdict per role per run, so a wait decided after
+        ``verify`` would have burned the verifier's only verdict on stale evidence.
+        Asking first means grading starts clean once the barrier clears. Bounded to
+        ``MAX_JUDGE_WAITS`` per run; a probe that fails or answers anything but a
+        valid barrier falls through to ordinary grading.
+        """
+        if self._judge_wait is None or self._barriers is None:
+            return None
+        try:
+            if self._ledger.barrier_set_count(run_id, source="judge") >= MAX_JUDGE_WAITS:
+                return None
+            request = await _maybe_await(self._judge_wait(run_id))
+        except Exception:
+            logger.warning("the judge's wait probe failed; grading instead", exc_info=True)
+            return None
+        if not isinstance(request, Mapping):
+            return None
+        try:
+            state = self._barriers.request(run_id, request, source="judge")
+        except WorkRunError as exc:
+            logger.info("the judge asked for a wait that was refused (%s); grading", exc.reason)
+            return None
+        return TickResult(
+            "waiting", f"the judge asked to wait: {state.get('waiting_on') or 'a barrier'}",
+            run_id,
+        )
 
 
 __all__ = [

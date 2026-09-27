@@ -219,3 +219,96 @@ async def test_record_false_grades_without_settling_the_run(ledger):
     assert judgement.passed is True
     assert ledger.get(run.id).status == "working"
     assert [v.role for v in ledger.verdicts(run.id)] == ["verifier"]
+
+
+# ── H464: the judge may ask to wait, and sees what is still running ──────────
+
+def _unverified_run(ledger, *, kinds=("research",)):
+    run = ledger.open_run(_goal())
+    for index, kind in enumerate(kinds, start=1):
+        ledger.record_step(run.id, kind=kind, summary=f"step {index}",
+                           outcome="ok", task_id=index)
+    return run
+
+
+_WAIT = {"verdict": "wait", "wait": {"kind": "trigger", "target": "task:1",
+                                     "reason": "the build is still running", "max_wait": 600,
+                                     "extra": "dropped"}}
+
+
+async def test_wait_probe_accepts_only_a_structured_wait(ledger):
+    run = _unverified_run(ledger)
+    judge = WorkJudge(ledger, rubric=lambda _ctx: _WAIT)
+    assert await judge.wait_probe(run.id, TERMS) == {
+        "kind": "trigger", "target": "task:1", "reason": "the build is still running",
+        "max_wait": 600,
+    }
+    # it records nothing: no verdict, no settle
+    assert ledger.verdicts(run.id) == [] and ledger.get(run.id).status == "working"
+
+    def _boom(_ctx):
+        raise RuntimeError("grader down")
+
+    for rubric in (
+        lambda _ctx: "wait",
+        lambda _ctx: {"passed": True},
+        lambda _ctx: {"verdict": "wait"},
+        lambda _ctx: {"verdict": "wait", "wait": {"target": 5}},
+        lambda _ctx: {"verdict": "pass", "wait": _WAIT["wait"]},
+        _boom,
+    ):
+        assert await WorkJudge(ledger, rubric=rubric).wait_probe(run.id, TERMS) is None
+    assert await WorkJudge(ledger).wait_probe(run.id, TERMS) is None
+
+
+async def test_wait_probe_never_waits_out_a_mechanical_refusal(ledger, monkeypatch):
+    """Waiting cannot fix the wrong goal, a tampered row or unauthorised work."""
+    asked = []
+    judge = WorkJudge(ledger, rubric=lambda ctx: asked.append(ctx) or _WAIT)
+    run = ledger.open_run(_goal())
+    ledger.record_step(run.id, kind="research", summary="no task", outcome="ok")
+    assert await judge.wait_probe(run.id, TERMS) is None
+    assert await judge.wait_probe(run.id, GoalTerms(goal_id="other", title="x")) is None
+    real = ledger.snapshot
+    monkeypatch.setattr(ledger, "snapshot",
+                        lambda rid, **kw: {**real(rid, **kw), "tampered": True,
+                                           "unauthorised_steps": []})
+    assert await judge.wait_probe(run.id, TERMS) is None
+    assert asked == []
+
+
+async def test_the_rubric_sees_the_background_list_and_phase(ledger):
+    run = _unverified_run(ledger)
+    seen = []
+    background = [{"kind": "task", "id": 1, "status": "running", "done": False}]
+    judge = WorkJudge(ledger, rubric=lambda ctx: seen.append(ctx) or None,
+                      background=lambda rid: background if rid == run.id else [])
+    await judge.wait_probe(run.id, TERMS)
+    ledger.record_verdict(run.id, role="verifier", passed=True, reason="ok")
+    await judge.judge(run.id, TERMS, record=False)
+    assert [ctx["phase"] for ctx in seen] == ["wait_probe", "settle"]
+    assert all(ctx["background"] == background for ctx in seen)
+    assert seen[0]["goal"] == TERMS.title and seen[0]["deliverable"] == TERMS.deliverable
+
+
+async def test_a_background_reader_that_fails_hands_the_rubric_an_empty_list(ledger):
+    run = _verified_run(ledger)
+    seen = []
+
+    def _boom(_rid):
+        raise RuntimeError("queue unreadable")
+
+    judge = WorkJudge(ledger, rubric=lambda ctx: seen.append(ctx) or None, background=_boom)
+    assert (await judge.judge(run.id, TERMS)).passed is True
+    assert seen[0]["background"] == []
+
+
+async def test_a_settle_phase_wait_withholds_and_never_passes(ledger):
+    """A dict without `passed` used to read as "no opinion", i.e. a pass. A wait at
+    settlement is a grader saying "not yet", so it withholds."""
+    run = _verified_run(ledger)
+    judgement = await WorkJudge(ledger, rubric=lambda _ctx: _WAIT).judge(run.id, TERMS)
+    assert judgement.passed is False
+    assert judgement.rule == "rubric"
+    assert judgement.reason == "the grader asked to wait at settlement"
+    assert ledger.get(run.id).status == "failed"

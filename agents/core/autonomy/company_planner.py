@@ -21,6 +21,11 @@ against the goal before it ever becomes an :class:`Action`:
   honest outcome: we ran out of ideas, not "we finished".
 * **The planner never enqueues.** It returns a description; only the supervisor
   hands it to the governed intake.
+* **A wait is not a step (H464).** A proposal ``{"kind": "wait", "barrier": …}``
+  asks the supervisor to park the run instead of doing anything. It is exempt
+  from the scope and repeat clamps — it never becomes a step row, so it is
+  invisible to the judge's scope rule — and the barrier itself is validated where
+  it is set, by ``RunBarriers``.
 
 Two proposers ship. :class:`ChecklistPlanner` walks a fixed list written when the
 goal was approved — fully deterministic, and the one to use when the owner wants
@@ -137,6 +142,8 @@ class _ClampedPlanner:
         action = self._coerce(proposed)
         if action is None:
             return PlanDecision(None, "malformed", f"{type(proposed).__name__} is not an action")
+        if action.kind == "wait":
+            return PlanDecision(action)
         if not self.covers(action.kind):
             return PlanDecision(
                 None, "out_of_scope",
@@ -160,11 +167,13 @@ class _ClampedPlanner:
             )
         if isinstance(proposed, Mapping):
             try:
+                barrier = proposed.get("barrier")
                 return Action(
                     kind=str(proposed.get("kind", "")),
                     summary=str(proposed.get("summary", ""))[:_MAX_SUMMARY],
                     task=dict(proposed.get("task") or {}),
                     interrupts_owner=bool(proposed.get("interrupts_owner", False)),
+                    barrier=dict(barrier) if isinstance(barrier, Mapping) else barrier,
                 )
             except (ValueError, TypeError):
                 return None

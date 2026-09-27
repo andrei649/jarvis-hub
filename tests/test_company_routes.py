@@ -82,10 +82,16 @@ def test_there_is_no_route_that_starts_a_run():
         ("GET", "/api/company/runs/{run_id}"),
         ("GET", "/api/company/waiting"),
         ("POST", "/api/company/runs/{run_id}/stop"),
+        ("POST", "/api/company/runs/{run_id}/barrier/clear"),
     }
-    # Exactly one write, and it is the narrowing one. Pinned as a count so a
-    # future POST cannot be added here without this test being re-read.
-    assert [p for m, p in paths if m == "POST"] == ["/api/company/runs/{run_id}/stop"]
+    # Two writes, and both only narrow or restore: stop ends a run, and clearing a
+    # barrier (H464) returns a parked run to the cadence it was already approved
+    # for, still inside its budget. Pinned so a future POST cannot be added here
+    # without this test being re-read.
+    assert sorted(p for m, p in paths if m == "POST") == [
+        "/api/company/runs/{run_id}/barrier/clear",
+        "/api/company/runs/{run_id}/stop",
+    ]
 
 
 def test_every_route_is_user_guarded():
@@ -111,6 +117,7 @@ def test_every_route_is_user_guarded():
         "/api/company/runs/{run_id}": {"user_guard"},
         "/api/company/waiting": {"user_guard"},
         "/api/company/runs/{run_id}/stop": {"user_guard"},
+        "/api/company/runs/{run_id}/barrier/clear": {"user_guard"},
     }
 
 
@@ -129,6 +136,7 @@ def test_routes_refuse_without_a_user_token(ledger, monkeypatch):
     assert c.get("/api/company/runs").status_code == 401
     assert c.get("/api/company/runs/x").status_code == 401
     assert c.post("/api/company/runs/x/stop").status_code == 401
+    assert c.post("/api/company/runs/x/barrier/clear").status_code == 401
 
 
 # ── the brief ────────────────────────────────────────────────────────────────
@@ -309,3 +317,45 @@ def test_waiting_never_answers_an_ask(client, ledger, monkeypatch):
         client.get("/api/company/waiting")
     assert len(ledger.outstanding_asks(run.id)) == 1
     assert ledger.get(run.id).status == "blocked"
+
+
+# ── H464: the owner can always stop a run waiting ────────────────────────────
+
+def _park(ledger, run_id):
+    from agents.core.autonomy.run_barriers import RunBarriers
+
+    return RunBarriers(ledger, clock=lambda: 1_000.0).request(
+        run_id, {"kind": "deadline", "target": {"in_seconds": 600}}, source="planner")
+
+
+def test_the_owner_clears_a_barrier_and_the_clear_is_on_the_record(client, ledger):
+    run = ledger.open_run(_goal())
+    _park(ledger, run.id)
+    r = client.post(f"/api/company/runs/{run.id}/barrier/clear")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and body["cleared"] is True
+    assert body["run"]["barrier"] is None and body["run"]["status"] == "planning"
+    assert ledger.events(run.id)[0]["detail"]["by"] == "owner"
+
+
+def test_clearing_with_no_barrier_is_not_an_error(client, ledger):
+    run = ledger.open_run(_goal())
+    r = client.post(f"/api/company/runs/{run.id}/barrier/clear")
+    assert r.status_code == 200 and r.json()["cleared"] is False
+
+
+def test_clearing_an_unknown_or_invalid_run_is_refused(client):
+    assert client.post("/api/company/runs/nope/barrier/clear").status_code == 404
+    assert client.post(f"/api/company/runs/{'x' * 65}/barrier/clear").status_code == 400
+
+
+def test_the_run_detail_carries_the_barrier_and_its_events(client, ledger):
+    run = ledger.open_run(_goal())
+    _park(ledger, run.id)
+    body = client.get(f"/api/company/runs/{run.id}").json()
+    assert body["run"]["barrier"]["kind"] == "deadline"
+    assert body["events"][0]["kind"] == "barrier.set"
+    brief = client.get("/api/company/runs").json()
+    assert brief["runs"][0]["waiting_on"].startswith("the clock to reach ")
+    assert brief["parked"] == [run.id]

@@ -27,19 +27,29 @@ agent that did the work is worth very little. So:
   into a successful one.
 
 The judge writes exactly one verdict, through the ledger, which settles the run.
+
+**Waiting is not a verdict (H464).** Before grading, :meth:`WorkJudge.wait_probe`
+may ask the rubric whether the run is still waiting on something — it sees the
+live background list (``background``: the run's barrier, registered processes and
+queued tasks) — and returns a barrier request or None. It records nothing, and it
+never runs on a run that fails a mechanical rule, since waiting cannot fix those.
+At settlement a ``wait`` answer withholds the pass: it is a grader saying "not
+yet", and must never read as the "no opinion" that lets a run through.
 """
 
 from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger("jarvis.work_judge")
 
 _MAX_REASON = 500
+_MAX_BACKGROUND = 20
+_WAIT_FIELDS = ("kind", "target", "reason", "max_wait")
 
 
 @dataclass(frozen=True)
@@ -86,9 +96,68 @@ def _reason(text: str) -> str:
 class WorkJudge:
     """Grades one run against its goal. Stateless; construct per judgement."""
 
-    def __init__(self, ledger: Any, *, rubric: Callable[..., Any] | None = None) -> None:
+    def __init__(
+        self,
+        ledger: Any,
+        *,
+        rubric: Callable[..., Any] | None = None,
+        background: Callable[[str], Any] | None = None,
+    ) -> None:
         self._ledger = ledger
         self._rubric = rubric
+        # H464: run_id -> what is still running for it (RunBarriers.background).
+        self._background = background
+
+    def _background_for(self, run_id: Any) -> list[dict[str, Any]]:
+        """The live background list for the rubric, or [] when unavailable. Data,
+        never instructions, and bounded like everything else a grader sees."""
+        if self._background is None or not run_id:
+            return []
+        try:
+            items = self._background(str(run_id))
+        except Exception:
+            logger.warning("work judge could not read the background list", exc_info=True)
+            return []
+        return [dict(item) for item in list(items or ())[:_MAX_BACKGROUND]
+                if isinstance(item, Mapping)]
+
+    async def wait_probe(self, run_id: str, terms: GoalTerms) -> dict[str, Any] | None:
+        """Ask the rubric whether the run should wait instead of being graded.
+
+        Returns a barrier request (``kind``, ``target``, optional ``reason`` and
+        ``max_wait``) or None. Records nothing and settles nothing. A run that fails
+        goal identity, integrity or authorisation is never offered a wait — waiting
+        cannot fix those, and the ordinary path will fail it. Only an explicit
+        ``{"verdict": "wait", "wait": {...}}`` counts; anything else, including a
+        rubric that raises, is None.
+        """
+        if self._rubric is None:
+            return None
+        snapshot = self._ledger.snapshot(run_id)
+        run = snapshot["run"]
+        if (
+            run.get("goal_id") != terms.goal_id
+            or snapshot.get("tampered")
+            or snapshot.get("unauthorised_steps")
+        ):
+            return None
+        try:
+            value = self._rubric({
+                "phase": "wait_probe", "run": run, "steps": snapshot["steps"],
+                "goal": terms.title, "deliverable": terms.deliverable,
+                "background": self._background_for(run_id),
+            })
+            if inspect.isawaitable(value):
+                value = await value
+        except Exception:
+            logger.warning("work judge wait probe failed; not waiting", exc_info=True)
+            return None
+        if not isinstance(value, Mapping) or value.get("verdict") != "wait":
+            return None
+        wait = value.get("wait")
+        if not isinstance(wait, Mapping) or not wait.get("kind") or "target" not in wait:
+            return None
+        return {key: wait[key] for key in _WAIT_FIELDS if key in wait}
 
     async def judge(
         self,
@@ -216,14 +285,19 @@ class WorkJudge:
             return None
         try:
             value = self._rubric(
-                {"run": run, "steps": steps, "goal": terms.title,
-                 "deliverable": terms.deliverable}
+                {"phase": "settle", "run": run, "steps": steps, "goal": terms.title,
+                 "deliverable": terms.deliverable,
+                 "background": self._background_for(run.get("id"))}
             )
             if inspect.isawaitable(value):
                 value = await value
         except Exception:
             logger.warning("work judge rubric failed; ignoring it", exc_info=True)
             return None
+        if isinstance(value, dict) and value.get("verdict") == "wait":
+            # H464: "not yet" at settlement withholds. It must never fall through to
+            # the no-opinion branch below, which would let the run pass.
+            return "the grader asked to wait at settlement"
         if not isinstance(value, dict) or "passed" not in value:
             logger.warning("work judge rubric returned no verdict; ignoring it")
             return None

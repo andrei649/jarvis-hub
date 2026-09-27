@@ -10,7 +10,8 @@ hardest ones to leave out:
   durable approved task behind it, that is the first line of the run's summary,
   above whatever it achieved.
 * **A blocked run says what it is waiting for.** "Waiting on your approval" is
-  actionable; "in progress" is not.
+  actionable; "in progress" is not. A *parked* run (H464) says what it is waiting
+  on too — a task, a process, a webhook, a time — and the latest it can hold.
 * **Nothing is inferred.** Every number comes from the ledger. When the ledger
   has nothing — no runs at all — the brief says so rather than rendering a row
   of zeros under a confident heading.
@@ -26,6 +27,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+from agents.core.autonomy.run_barriers import describe, until
 
 SCHEMA = "nerva.company.brief.v1"
 
@@ -56,6 +59,16 @@ def _clip(value: Any, limit: int = _MAX_LINE) -> str:
     return str(value or "").strip()[:limit]
 
 
+def _waiting_on(run: Mapping[str, Any]) -> str | None:
+    """What a live run is parked on, read from the record — never probed. A barrier
+    on a run that is not planning or working is not reported: the ledger clears it
+    on every stop and settle, and the report does not rely on that alone."""
+    barrier = run.get("barrier")
+    if not barrier or run.get("status") not in {"planning", "working"}:
+        return None
+    return describe(barrier)
+
+
 def _run_headline(snapshot: Mapping[str, Any]) -> str:
     """One sentence: what happened to this run, worst news first."""
     run = dict(snapshot.get("run") or {})
@@ -69,6 +82,10 @@ def _run_headline(snapshot: Mapping[str, Any]) -> str:
             f"{count} step{'s' if count != 1 else ''} changed something without an "
             "approved task behind it"
         )
+    waiting_on = _waiting_on(run)
+    if waiting_on:
+        cap = until(run.get("barrier")) if run["barrier"].get("kind") != "deadline" else ""
+        return f"parked — waiting on {waiting_on}" + (f" (at most until {cap})" if cap else "")
     text = _STATUS_TEXT.get(status, status or "in an unknown state")
     if status == "exhausted":
         limit = str(run.get("stop_reason") or "").removeprefix("budget:")
@@ -113,6 +130,7 @@ def build_run_summary(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         "title": _clip(run.get("title")),
         "status": run.get("status"),
         "headline": _run_headline(snapshot),
+        "waiting_on": _waiting_on(run),
         "steps": len(steps),
         "outcomes": outcomes,
         "steps_left": budget.get("steps_left"),
@@ -160,6 +178,8 @@ def build_company_brief(
         ),
         "counts": {"runs": len(runs), "by_status": by_status},
         "needs_you": [r["run_id"] for r in needs_you],
+        # Parked on real async work (H464): not stuck, not needing you — waiting.
+        "parked": [r["run_id"] for r in runs if r.get("waiting_on")],
         "unauthorised": [r["run_id"] for r in unauthorised],
         "runs": runs,
     }
@@ -184,6 +204,10 @@ def render_company_brief(brief: Mapping[str, Any]) -> str:
     needs_you = list(brief.get("needs_you") or ())
     if needs_you:
         lines += [f"⏳ {len(needs_you)} run(s) are waiting on your approval.", ""]
+    parked = [r for r in brief.get("runs") or () if r.get("waiting_on")]
+    if parked:
+        lines += [f"⏸ {r['title']} is parked, waiting on {r['waiting_on']}." for r in parked]
+        lines.append("")
 
     for run in brief.get("runs") or ():
         lines.append(f"*{run['title']}* — {run['headline']}")

@@ -26,6 +26,14 @@ Governance (MOONSHOT §5):
   one and marks the run ``exhausted`` rather than quietly continuing.
 * **A stop is honoured immediately.** ``request_stop`` is a one-way door: a
   stopping run accepts no further steps, whatever else is in flight.
+* **A barrier parks, it never grants (H464).** A run waiting on real async work
+  — a process, a trigger, a wall-clock time — carries a ``barrier`` the scheduler
+  and supervisor read to skip it without spending a step. Setting and clearing
+  one are *events* (``run_events``), never steps, so parking costs no budget; the
+  column is outside the fingerprint, so parking is not tampering; and any move to
+  ``stopping`` or a terminal status clears it in the same write, so a stop always
+  wins. Validation and probing live in :mod:`agents.core.autonomy.run_barriers`;
+  this module only stores, and re-checks the bounds under its own lock.
 
 Runtime flag: ``JARVIS_COMPANY_MODE`` (default off). Off, nothing in this module
 is constructed by the runtime; the ledger itself stays usable in tests and in a
@@ -54,7 +62,7 @@ from pathlib import Path
 from typing import Any
 
 from agents.core.paths import data_path
-from agents.core.persistence.migrations import apply_migrations
+from agents.core.persistence.migrations import apply_migrations, column_adder
 
 logger = logging.getLogger("jarvis.work_runs")
 
@@ -123,6 +131,36 @@ VERDICT_ROLES = ("verifier", "judge")
 
 _MAX_TEXT = 2_000
 _MAX_SUMMARY = 500
+
+# H464 — what a run may be parked on. The validation and the probes live in
+# run_barriers.py; the ledger keeps the vocabulary and the hard bounds so it can
+# re-check them under its own lock rather than trusting its caller.
+BARRIER_KINDS = ("pid", "trigger", "deadline")
+MAX_BARRIERS_PER_RUN = 50            # barrier.set events per run, then refuse
+_MAX_BARRIER_BYTES = 2_048
+_PARKABLE = frozenset({"planning", "working"})
+BARRIER_SOURCES = ("planner", "judge", "hub")
+BARRIER_CLEAR_REASONS = (
+    "elapsed", "exited", "pid_reused", "ns_mismatch", "fired", "vanished", "cap",
+    "probe_error", "owner", "replaced",
+)
+BARRIER_CLEARED_BY = ("check", "owner", "ledger")
+
+
+def _exceeded(run: WorkRun, moment: float) -> str | None:
+    """The FIRST spent limit — steps, then seconds, then deadline, then interrupts.
+
+    A free function so a caller already holding the lock can ask without
+    re-entering ``get`` (the lock is not re-entrant)."""
+    if run.steps_used >= run.budget.max_steps:
+        return "steps"
+    if run.seconds_used(moment) >= run.budget.max_seconds:
+        return "seconds"
+    if run.deadline_at and moment >= run.deadline_at:
+        return "deadline"
+    if run.interrupts_used > run.budget.max_interrupts:
+        return "interrupts"
+    return None
 
 
 class WorkRunError(RuntimeError):
@@ -214,6 +252,10 @@ class WorkRun:
     deadline_at: float = 0.0
     stop_reason: str = ""
     fingerprint: str = ""
+    # H464: what the run is parked on, or None. Deliberately NOT in identity():
+    # parking and un-parking are ordinary life, and fingerprinting them would make
+    # every set or clear read as a hand-edited row.
+    barrier: dict[str, Any] | None = None
 
     @property
     def terminal(self) -> bool:
@@ -243,6 +285,7 @@ class WorkRun:
             "updated_at": self.updated_at,
             "stop_reason": self.stop_reason,
             "fingerprint": self.fingerprint,
+            "barrier": dict(self.barrier) if self.barrier else None,
         }
 
 
@@ -351,7 +394,39 @@ def _v1(conn: sqlite3.Connection) -> None:
     )
 
 
-MIGRATIONS = [_v1]
+def _v2(conn: sqlite3.Connection) -> None:
+    """H464 — the barrier column, the event log that audits it, and the processes a
+    run may wait on. Idempotent against a DB that already carries any of them."""
+    column_adder("runs", "barrier", "TEXT NOT NULL DEFAULT ''")(conn)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS run_events (
+            seq    INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id TEXT NOT NULL,
+            kind   TEXT NOT NULL,
+            at     REAL NOT NULL,
+            detail TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS run_events_run ON run_events (run_id, seq)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS run_procs (
+            run_id TEXT NOT NULL,
+            pid    INTEGER NOT NULL,
+            start  TEXT NOT NULL,
+            ns     TEXT NOT NULL,
+            boot   TEXT NOT NULL,
+            label  TEXT NOT NULL DEFAULT '',
+            at     REAL NOT NULL,
+            PRIMARY KEY (run_id, pid, start)
+        )
+        """
+    )
+
+
+MIGRATIONS = [_v1, _v2]
 
 
 # ── the ledger ───────────────────────────────────────────────────────────────
@@ -517,6 +592,9 @@ class WorkRunLedger:
             started_at=row["started_at"], updated_at=row["updated_at"],
             deadline_at=row["deadline_at"], stop_reason=row["stop_reason"],
             fingerprint=row["fingerprint"],
+            # A corrupt blob reads as "not parked": the safe direction, since a
+            # barrier only ever suppresses work.
+            barrier=_load(row["barrier"]) or None,
         )
 
     # ── budget ───────────────────────────────────────────────────────────
@@ -533,15 +611,7 @@ class WorkRunLedger:
             raise WorkRunError("unknown_run")
         moment = self._now() if now is None else float(now)
         used_seconds = run.seconds_used(moment)
-        exceeded = None
-        if run.steps_used >= run.budget.max_steps:
-            exceeded = "steps"
-        elif used_seconds >= run.budget.max_seconds:
-            exceeded = "seconds"
-        elif run.deadline_at and moment >= run.deadline_at:
-            exceeded = "deadline"
-        elif run.interrupts_used > run.budget.max_interrupts:
-            exceeded = "interrupts"
+        exceeded = _exceeded(run, moment)
         return {
             "run_id": run.id,
             "steps_used": run.steps_used,
@@ -811,6 +881,161 @@ class WorkRunLedger:
             evidence=rows, at=now,
         )
 
+    # ── barriers (H464) ──────────────────────────────────────────────────
+
+    def set_barrier(self, run_id: str, record: Mapping[str, Any]) -> WorkRun:
+        """Park a run: store the barrier and log ``barrier.set``. Never a step.
+
+        ``record`` comes from :class:`RunBarriers`, which validates it; the bounds
+        are re-checked here under the lock anyway, so the ledger alone never holds
+        a barrier on a run that may not be parked, one without a future end, or
+        more of them than a run is allowed. A barrier already in place is logged
+        as ``replaced`` first, so the audit never loses one.
+        """
+        payload = dict(record or {})
+        encoded = _canonical(payload)
+        if len(encoded.encode("utf-8")) > _MAX_BARRIER_BYTES:
+            raise WorkRunError("barrier_too_large")
+        barrier_id = str(payload.get("id") or "")
+        if not barrier_id or not isinstance(payload.get("id"), str):
+            raise WorkRunError("malformed_barrier")
+        if payload.get("kind") not in BARRIER_KINDS:
+            raise WorkRunError("unknown_kind")
+        now = self._now()
+        try:
+            cap_at = float(payload.get("cap_at"))
+        except (TypeError, ValueError):
+            raise WorkRunError("malformed_barrier") from None
+        with self._lock:
+            run = self._run_locked(run_id)
+            if run.status not in _PARKABLE:
+                raise WorkRunError("run_not_parkable")
+            if _exceeded(run, now):
+                raise WorkRunError("budget_spent")
+            if not cap_at > now:
+                raise WorkRunError("no_time_left")
+            if self._set_count_locked(run_id) >= MAX_BARRIERS_PER_RUN:
+                raise WorkRunError("barrier_limit")
+            if run.barrier:
+                self._event_locked(run_id, "barrier.cleared", now, {
+                    "id": run.barrier.get("id"), "why": "replaced", "by": "ledger",
+                })
+            self._conn.execute("UPDATE runs SET barrier = ? WHERE id = ?", (encoded, run_id))
+            self._event_locked(run_id, "barrier.set", now, {
+                key: payload.get(key)
+                for key in ("id", "kind", "target", "cap_at", "source", "reason")
+            })
+            self._conn.commit()
+        logger.info("run %s parked on %s (%s) by %s", run_id, payload.get("kind"),
+                    payload.get("target"), payload.get("source"))
+        return WorkRun(**{**run.__dict__, "barrier": payload})
+
+    def clear_barrier(
+        self,
+        run_id: str,
+        *,
+        why: str,
+        by: str,
+        expect_id: str | None = None,
+    ) -> WorkRun:
+        """Un-park a run and log ``barrier.cleared``. A no-op when nothing is set.
+
+        ``expect_id`` makes it a compare-and-clear: a background check that read
+        barrier A must never erase barrier B set in the meantime, nor undo an
+        owner's action it raced with.
+        """
+        if (why not in BARRIER_CLEAR_REASONS and not str(why).startswith("run_")) or (
+            by not in BARRIER_CLEARED_BY
+        ):
+            raise WorkRunError("invalid_clear")
+        now = self._now()
+        with self._lock:
+            run = self._run_locked(run_id)
+            current = run.barrier
+            if not current or (expect_id is not None and current.get("id") != expect_id):
+                return run
+            self._conn.execute("UPDATE runs SET barrier = '' WHERE id = ?", (run_id,))
+            self._event_locked(run_id, "barrier.cleared", now,
+                               {"id": current.get("id"), "why": why, "by": by})
+            self._conn.commit()
+        logger.info("run %s barrier cleared: %s by %s", run_id, why, by)
+        return WorkRun(**{**run.__dict__, "barrier": None})
+
+    def barrier_set_count(self, run_id: str, *, source: str | None = None) -> int:
+        """How many barriers this run has ever been parked on (by ``source``)."""
+        with self._lock:
+            if source is None:
+                return self._set_count_locked(run_id)
+            rows = self._conn.execute(
+                "SELECT detail FROM run_events WHERE run_id = ? AND kind = 'barrier.set'",
+                (run_id,),
+            ).fetchall()
+        return sum(1 for row in rows if _load(row["detail"]).get("source") == source)
+
+    def events(self, run_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        """The run's barrier audit, newest first. Append-only: there is no API to
+        rewrite or delete an event."""
+        limit = max(1, min(int(limit), 500))
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM run_events WHERE run_id = ? ORDER BY seq DESC LIMIT ?",
+                (run_id, limit),
+            ).fetchall()
+        return [
+            {"seq": row["seq"], "kind": row["kind"], "at": row["at"],
+             "detail": _load(row["detail"])}
+            for row in rows
+        ]
+
+    def add_process(self, run_id: str, record: Mapping[str, Any]) -> None:
+        """Store a process the hub spawned for this run. Storage only — the
+        refusals (who may be registered, how many) live in RunBarriers."""
+        with self._lock:
+            self._run_locked(run_id)
+            self._conn.execute(
+                """INSERT OR IGNORE INTO run_procs (run_id, pid, start, ns, boot, label, at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    run_id, int(record["pid"]), str(record.get("start") or ""),
+                    str(record.get("ns") or ""), str(record.get("boot") or ""),
+                    str(record.get("label") or "")[:200], self._now(),
+                ),
+            )
+            self._conn.commit()
+
+    def processes(self, run_id: str) -> list[dict[str, Any]]:
+        """The processes registered for this run, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM run_procs WHERE run_id = ? ORDER BY at, pid", (run_id,)
+            ).fetchall()
+        return [
+            {"pid": row["pid"], "start": row["start"], "ns": row["ns"], "boot": row["boot"],
+             "label": row["label"], "at": row["at"]}
+            for row in rows
+        ]
+
+    def _run_locked(self, run_id: str) -> WorkRun:
+        row = self._conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise WorkRunError("unknown_run")
+        return self._row_to_run(row)
+
+    def _set_count_locked(self, run_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM run_events WHERE run_id = ? AND kind = 'barrier.set'",
+            (run_id,),
+        ).fetchone()
+        return int(row[0])
+
+    def _event_locked(
+        self, run_id: str, kind: str, now: float, detail: Mapping[str, Any]
+    ) -> None:
+        self._conn.execute(
+            "INSERT INTO run_events (run_id, kind, at, detail) VALUES (?, ?, ?, ?)",
+            (run_id, kind, now, _canonical(dict(detail))),
+        )
+
     # ── internals ────────────────────────────────────────────────────────
 
     def _transition_locked(
@@ -827,14 +1052,29 @@ class WorkRunLedger:
         if new_status not in allowed:
             raise WorkRunError(f"illegal_transition:{run.status}->{new_status}")
         reason = stop_reason or run.stop_reason
-        self._conn.execute(
-            "UPDATE runs SET status = ?, updated_at = ?, stop_reason = ? WHERE id = ?",
-            (new_status, now, reason, run.id),
-        )
+        barrier = run.barrier
+        if barrier and (new_status == "stopping" or new_status in TERMINAL_STATUSES):
+            # H464: stop always wins. A stopping or finished run never reads as
+            # "waiting on …", so the barrier goes in the same write as the move.
+            self._conn.execute(
+                "UPDATE runs SET status = ?, updated_at = ?, stop_reason = ?, barrier = '' "
+                "WHERE id = ?",
+                (new_status, now, reason, run.id),
+            )
+            self._event_locked(run.id, "barrier.cleared", now, {
+                "id": barrier.get("id"), "why": f"run_{new_status}", "by": "ledger",
+            })
+            barrier = None
+        else:
+            self._conn.execute(
+                "UPDATE runs SET status = ?, updated_at = ?, stop_reason = ? WHERE id = ?",
+                (new_status, now, reason, run.id),
+            )
         if commit:
             self._conn.commit()
         return WorkRun(
-            **{**run.__dict__, "status": new_status, "updated_at": now, "stop_reason": reason}
+            **{**run.__dict__, "status": new_status, "updated_at": now, "stop_reason": reason,
+               "barrier": barrier}
         )
 
     # ── reporting ────────────────────────────────────────────────────────
@@ -851,6 +1091,9 @@ class WorkRunLedger:
             "steps": [step.as_dict() for step in steps],
             "verdicts": [verdict.as_dict() for verdict in self.verdicts(run_id)],
             "tampered": self.tampered(run_id),
+            # H464: the barrier audit. Events are not steps, so they never count
+            # toward budget or toward the unauthorised list below.
+            "events": self.events(run_id),
             # A run is only "authorised throughout" when every step that changed
             # something names the durable task that was approved to change it.
             "unauthorised_steps": [
@@ -860,8 +1103,10 @@ class WorkRunLedger:
 
 
 __all__ = [
+    "BARRIER_KINDS",
     "FLAG",
     "KIND",
+    "MAX_BARRIERS_PER_RUN",
     "MIGRATIONS",
     "RUN_STATUSES",
     "STEP_OUTCOMES",

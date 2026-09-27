@@ -396,3 +396,222 @@ async def test_a_full_run_queues_work_resumes_and_is_graded(ledger):
     assert (await sup.tick(run.id)).outcome == "graded"
     assert ledger.get(run.id).status == "succeeded"
     assert [v.role for v in ledger.verdicts(run.id)] == ["judge", "verifier"]
+
+
+# ── H464: a parked run spends nothing ────────────────────────────────────────
+
+def _barriers(ledger, clock, *, probe=None):
+    from agents.core.autonomy.run_barriers import RunBarriers
+
+    return RunBarriers(
+        ledger, clock=clock, pid_probe=probe or (lambda _b: "alive"),
+        proc_identity=lambda _pid: {"start": "1", "ns": "n", "boot": "b"},
+    )
+
+
+def _wait(seconds: float = 600.0, **over) -> Action:
+    return Action(kind="wait", summary="wait for the build",
+                  barrier={"kind": "deadline", "target": {"in_seconds": seconds}, **over})
+
+
+async def test_a_parked_run_spends_no_step_no_plan_and_no_judge_call(ledger, clock):
+    run = ledger.open_run(_goal())
+    barriers = _barriers(ledger, clock)
+    barriers.request(run.id, {"kind": "deadline", "target": {"in_seconds": 600}},
+                     source="planner")
+    planned, seen, intake = [], {}, _Intake()
+
+    def _planner(ctx):
+        planned.append(ctx)
+        return None
+
+    async def _verify(rid):
+        seen["verified"] = rid
+
+    async def _judge(rid):
+        seen["judged"] = rid
+
+    sup = CompanySupervisor(
+        ledger, enqueue=intake, plan_next=_planner, verify=_verify, judge=_judge,
+        barriers=barriers, config=ON,
+    )
+    result = await sup.tick(run.id)
+    assert result.outcome == "waiting"
+    assert "parked: the clock to reach" in result.detail
+    assert planned == [] and seen == {} and intake.calls == []
+    assert ledger.get(run.id).steps_used == 0
+    assert (await sup.run_until_settled(run.id))[-1].outcome == "waiting"
+
+
+async def test_stop_and_budget_still_win_over_a_barrier(ledger, clock):
+    barriers = _barriers(ledger, clock)
+    stopped = ledger.open_run(_goal("stopped"))
+    barriers.request(stopped.id, {"kind": "deadline", "target": {"in_seconds": 600}},
+                     source="planner")
+    sup = CompanySupervisor(
+        ledger, enqueue=_Intake(), plan_next=_plan(), barriers=barriers,
+        stop_requested=lambda rid: rid == stopped.id, config=ON,
+    )
+    assert (await sup.tick(stopped.id)).outcome == "stopped"
+    assert ledger.get(stopped.id).barrier is None
+
+    spent = ledger.open_run(_goal("spent"), budget=Budget(max_seconds=100))
+    barriers.request(spent.id, {"kind": "deadline", "target": {"in_seconds": 600}},
+                     source="planner")
+    clock.advance(100)
+    result = await CompanySupervisor(
+        ledger, enqueue=_Intake(), plan_next=_plan(), barriers=barriers, config=ON,
+    ).tick(spent.id)
+    assert result.outcome == "exhausted"
+
+
+async def test_a_barrier_check_that_raises_ticks_normally(ledger):
+    run = ledger.open_run(_goal())
+
+    def _boom(_rid):
+        raise RuntimeError("probe exploded")
+
+    sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=_plan(_action()),
+                            barrier_active=_boom, config=ON)
+    assert (await sup.tick(run.id)).outcome == "stepped"
+
+
+async def test_a_planner_wait_parks_the_run_without_enqueueing(ledger, clock):
+    run = ledger.open_run(_goal())
+    intake = _Intake()
+    barriers = _barriers(ledger, clock)
+    sup = CompanySupervisor(ledger, enqueue=intake, plan_next=_plan(_wait(), _action()),
+                            barriers=barriers, config=ON)
+    result = await sup.tick(run.id)
+    assert result.outcome == "waiting"
+    assert intake.calls == [] and ledger.steps(run.id) == []
+    assert ledger.get(run.id).barrier["source"] == "planner"
+    # parked: the next tick does not even ask the planner
+    assert (await sup.tick(run.id)).outcome == "waiting"
+    clock.advance(600)
+    assert (await sup.tick(run.id)).outcome == "stepped"
+    assert len(intake.calls) == 1
+
+
+async def test_a_malformed_planner_wait_records_a_failed_plan_step_and_the_streak_stops_it(
+    ledger, clock,
+):
+    run = ledger.open_run(_goal())
+    bad = Action(kind="wait", summary="wait", barrier={"kind": "sleep", "target": 5})
+    sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=lambda _c: bad,
+                            barriers=_barriers(ledger, clock), config=ON)
+    first = await sup.tick(run.id)
+    assert first.outcome == "stepped"
+    step = ledger.steps(run.id)[0]
+    assert (step.kind, step.outcome) == ("plan", "failed")
+    assert step.detail["reason"] == "invalid wait: unknown_kind"
+    await sup.tick(run.id)
+    assert (await sup.tick(run.id)).outcome == "stopped"
+
+
+async def test_a_planner_wait_with_no_barriers_wired_is_a_failure(ledger):
+    run = ledger.open_run(_goal())
+    sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=_plan(_wait()), config=ON)
+    assert (await sup.tick(run.id)).outcome == "stepped"
+    assert ledger.steps(run.id)[0].detail["reason"] == "waits are not wired"
+
+
+async def test_a_wait_action_needs_a_barrier_and_only_a_wait_may_carry_one():
+    with pytest.raises(ValueError):
+        Action(kind="wait", summary="wait")
+    with pytest.raises(ValueError):
+        Action(kind="research", summary="x", barrier={"kind": "deadline", "target": 1})
+
+
+async def test_a_judge_wait_parks_before_any_verdict_is_recorded(ledger, clock):
+    from agents.core.autonomy.run_barriers import MAX_JUDGE_WAITS
+    from agents.core.autonomy.work_judge import GoalTerms, WorkJudge
+    from agents.core.autonomy.work_verifier import Check, WorkVerifier
+
+    run = ledger.open_run(_goal())
+    ledger.record_step(run.id, kind="research", summary="build", outcome="ok", task_id=7)
+    verifier, judge = WorkVerifier(ledger), WorkJudge(ledger)
+    terms = GoalTerms(goal_id="g-1", title="Prepare the quarterly brief",
+                      scope_kinds=frozenset({"research"}))
+    calls = {"verify": 0, "judge": 0, "probe": 0}
+    answer = {"wait": {"kind": "deadline", "target": {"in_seconds": 300}}}
+
+    def _probe(_rid):
+        calls["probe"] += 1
+        return answer["wait"]
+
+    async def _verify(rid):
+        calls["verify"] += 1
+        return await verifier.verify(rid, [Check(id="c", describe="c", probe=lambda: True)])
+
+    async def _judge(rid):
+        calls["judge"] += 1
+        return await judge.judge(rid, terms)
+
+    sup = CompanySupervisor(
+        ledger, enqueue=_Intake(), plan_next=_plan(), verify=_verify, judge=_judge,
+        barriers=_barriers(ledger, clock), judge_wait=_probe, config=ON,
+    )
+    result = await sup.tick(run.id)
+    assert result.outcome == "waiting"
+    assert result.detail.startswith("the judge asked to wait: ")
+    assert ledger.verdicts(run.id) == [] and calls["verify"] == calls["judge"] == 0
+    assert ledger.get(run.id).barrier["source"] == "judge"
+    assert (await sup.tick(run.id)).outcome == "waiting"      # parked; no probe either
+    assert calls["probe"] == 1
+
+    # the barrier clears; a malformed judge wait falls back to grading, once
+    clock.advance(300)
+    answer["wait"] = {"kind": "sleep"}
+    graded = await sup.tick(run.id)
+    assert graded.outcome == "graded"
+    assert calls == {"verify": 1, "judge": 1, "probe": 2}
+    assert ledger.get(run.id).status == "succeeded"
+    assert MAX_JUDGE_WAITS == 3
+
+
+async def test_the_judge_wait_probe_is_skipped_after_max_judge_waits(ledger, clock):
+    from agents.core.autonomy.run_barriers import MAX_JUDGE_WAITS
+
+    run = ledger.open_run(_goal())
+    barriers = _barriers(ledger, clock)
+    probes = []
+
+    def _probe(rid):
+        probes.append(rid)
+        return {"kind": "deadline", "target": {"in_seconds": 60}}
+
+    async def _grader(_rid):
+        return types.SimpleNamespace(passed=False, reason="not yet")
+
+    sup = CompanySupervisor(
+        ledger, enqueue=_Intake(), plan_next=_plan(), verify=_grader, judge=_grader,
+        barriers=barriers, judge_wait=_probe, config=ON,
+    )
+    for _ in range(MAX_JUDGE_WAITS):
+        assert (await sup.tick(run.id)).outcome == "waiting"
+        clock.advance(60)
+    assert (await sup.tick(run.id)).outcome == "graded"
+    assert len(probes) == MAX_JUDGE_WAITS
+
+
+async def test_a_judge_wait_probe_that_raises_falls_back_to_grading(ledger, clock):
+    run = ledger.open_run(_goal())
+
+    def _probe(_rid):
+        raise RuntimeError("grader down")
+
+    async def _grader(_rid):
+        return types.SimpleNamespace(passed=False, reason="not met")
+
+    sup = CompanySupervisor(
+        ledger, enqueue=_Intake(), plan_next=_plan(), verify=_grader, judge=_grader,
+        barriers=_barriers(ledger, clock), judge_wait=_probe, config=ON,
+    )
+    assert (await sup.tick(run.id)).outcome == "graded"
+
+
+async def test_waiting_is_a_named_tick_outcome():
+    from agents.core.autonomy.company_supervisor import TICK_OUTCOMES
+
+    assert "waiting" in TICK_OUTCOMES

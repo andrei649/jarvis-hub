@@ -365,6 +365,7 @@
   "POST /api/coach/review": "user",
   "POST /api/coach/session": "user",
   "POST /api/codeintel/reindex": "admin",
+  "POST /api/company/runs/{run_id}/barrier/clear": "user",
   "POST /api/company/runs/{run_id}/stop": "user",
   "POST /api/context/compress": "user",
   "POST /api/creative/export-packs": "user",

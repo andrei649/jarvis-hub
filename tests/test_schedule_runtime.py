@@ -450,3 +450,109 @@ async def test_a_scheduler_with_no_reconciler_behaves_exactly_as_before():
     )
     await runtime.sweep()
     assert ticked == ["r1"]
+
+
+# ── H464: a run parked on real async work is not poked ───────────────────────
+
+def _parked(ledger, clock, *, probe=None):
+    from agents.core.autonomy.run_barriers import RunBarriers
+
+    return RunBarriers(
+        ledger, clock=clock, pid_probe=probe or (lambda _b: "alive"),
+        proc_identity=lambda _pid: {"start": "1", "ns": "n", "boot": "b"},
+    )
+
+
+def _barrier_runtime(ledger, tick, clock, barriers):
+    return ScheduleRuntime(
+        ledger, tick=tick, config=ON, clock=clock, local_hour=lambda: 12,
+        barrier_active=barriers.active,
+    )
+
+
+async def test_a_run_behind_a_deadline_barrier_is_waiting_and_not_ticked(ledger, clock):
+    """The plan's first red: the run is waiting on a clock, so a tick is waste."""
+    run = ledger.open_run(_goal())
+    barriers = _parked(ledger, clock)
+    barriers.request(run.id, {"kind": "deadline", "target": clock.now + 600}, source="planner")
+    tick = _Tick()
+    result = await _barrier_runtime(ledger, tick, clock, barriers).sweep()
+    assert result.skipped == {run.id: "waiting"}
+    assert tick.calls == []
+    assert ledger.get(run.id).steps_used == 0
+
+
+async def test_an_elapsed_deadline_barrier_clears_and_the_run_is_ticked(ledger, clock):
+    run = ledger.open_run(_goal())
+    barriers = _parked(ledger, clock)
+    barriers.request(run.id, {"kind": "deadline", "target": clock.now + 600}, source="planner")
+    tick = _Tick()
+    runtime = _barrier_runtime(ledger, tick, clock, barriers)
+    await runtime.sweep()
+    clock.advance(601)
+    result = await runtime.sweep()
+    assert result.ticked == (run.id,)
+    assert ledger.get(run.id).barrier is None
+    cleared = [e for e in ledger.events(run.id) if e["kind"] == "barrier.cleared"]
+    assert cleared and cleared[0]["detail"]["why"] == "elapsed"
+
+
+async def test_a_dead_pid_clears_on_the_next_sweep(ledger, clock):
+    run = ledger.open_run(_goal())
+    answer = {"now": "alive"}
+    barriers = _parked(ledger, clock, probe=lambda _b: answer["now"])
+    barriers.register_process(run.id, 4242, label="npm run build")
+    barriers.request(run.id, {"kind": "pid", "target": 4242}, source="hub")
+    tick = _Tick()
+    runtime = _barrier_runtime(ledger, tick, clock, barriers)
+    assert (await runtime.sweep()).skipped == {run.id: "waiting"}
+    answer["now"] = "dead"
+    assert (await runtime.sweep()).ticked == (run.id,)
+    assert ledger.events(run.id)[0]["detail"]["why"] == "exited"
+
+
+async def test_a_barrier_check_that_raises_does_not_wedge_the_run(ledger, clock):
+    run = ledger.open_run(_goal())
+
+    def _boom(_run_id):
+        raise RuntimeError("probe exploded")
+
+    tick = _Tick()
+    runtime = ScheduleRuntime(ledger, tick=tick, config=ON, clock=clock,
+                              local_hour=lambda: 12, barrier_active=_boom)
+    result = await runtime.sweep()
+    assert result.ticked == (run.id,)
+
+
+async def test_waiting_is_reported_before_budget_but_never_masks_exhaustion(ledger, clock):
+    """Checked before the budget, which is only safe because every barrier is
+    capped by the run's own wall-clock budget: once that is spent the cap has
+    already cleared the barrier, and the honest reason comes back."""
+    run = ledger.open_run(_goal(), budget=Budget(max_seconds=900))
+    barriers = _parked(ledger, clock)
+    barriers.request(run.id, {"kind": "deadline", "target": clock.now + 86_400},
+                     source="planner")
+    runtime = _barrier_runtime(ledger, _Tick(), clock, barriers)
+    assert runtime.due(ledger.get(run.id), now=clock.now) == "waiting"
+    clock.advance(900)
+    assert runtime.due(ledger.get(run.id), now=clock.now) == "budget_spent"
+    assert ledger.get(run.id).barrier is None
+    assert ledger.events(run.id)[0]["detail"]["why"] == "cap"
+
+
+async def test_waiting_is_a_named_skip_reason_and_the_order_is_pinned():
+    from agents.core.autonomy.schedule_runtime import SKIP_REASONS
+
+    assert SKIP_REASONS.index("blocked") < SKIP_REASONS.index("waiting")
+    assert SKIP_REASONS.index("waiting") < SKIP_REASONS.index("budget_spent")
+
+
+async def test_a_blocked_run_reads_blocked_even_with_a_barrier_check_wired(ledger, clock):
+    run = ledger.open_run(_goal())
+    ledger.record_step(run.id, kind="ask", summary="waiting", outcome="queued", task_id=1)
+    asked: list[str] = []
+    runtime = ScheduleRuntime(ledger, tick=_Tick(), config=ON, clock=clock,
+                              local_hour=lambda: 12,
+                              barrier_active=lambda rid: asked.append(rid) or True)
+    assert runtime.due(ledger.get(run.id), now=clock.now) == "blocked"
+    assert asked == []

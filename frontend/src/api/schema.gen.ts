@@ -9895,6 +9895,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/company/runs/{run_id}/barrier/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Company Run Barrier Clear
+         * @description Stop waiting: clear a parked run's barrier (H464). Idempotent — with no
+         *     barrier it answers ``cleared: false`` rather than an error. Same guard as stop:
+         *     clearing restores an already-approved, budget-bounded cadence and grants nothing.
+         */
+        post: operations["company_run_barrier_clear_api_company_runs__run_id__barrier_clear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operator/benchmark": {
         parameters: {
             query?: never;
@@ -26144,6 +26166,37 @@ export interface operations {
         };
     };
     company_run_stop_api_company_runs__run_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    company_run_barrier_clear_api_company_runs__run_id__barrier_clear_post: {
         parameters: {
             query?: never;
             header?: never;

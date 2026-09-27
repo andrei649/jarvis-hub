@@ -266,3 +266,48 @@ def test_a_run_with_an_unauthorised_step_is_caught_end_to_end():
         assert "no approved task" in render_company_brief(brief)
     finally:
         led.close()
+
+
+# ── H464: a parked run says what it is waiting on ────────────────────────────
+
+_TASK_BARRIER = {
+    "v": 1, "id": "b-1", "kind": "trigger", "target": "task:412", "set_at": 1_000.0,
+    "cap_at": 1_000.0 + 3_600, "reason": "the build", "source": "planner",
+    "marker": {"status": "running"},
+}
+
+
+def test_a_parked_run_says_what_it_is_waiting_on():
+    summary = build_run_summary(_snapshot(run={"barrier": _TASK_BARRIER}))
+    assert summary["waiting_on"] == "task 412 to finish"
+    assert summary["headline"].startswith("parked — waiting on task 412 to finish (at most until ")
+
+
+def test_a_run_without_a_barrier_reads_exactly_as_before():
+    summary = build_run_summary(_snapshot())
+    assert summary["waiting_on"] is None
+    assert summary["headline"] == "in progress"
+    assert build_run_summary(_snapshot(run={"barrier": None}))["headline"] == "in progress"
+
+
+def test_a_barrier_on_a_finished_run_is_never_reported_as_parked():
+    """The ledger clears it on settle; the report does not trust that alone."""
+    summary = build_run_summary(_snapshot(run={"status": "stopped", "barrier": _TASK_BARRIER}))
+    assert summary["waiting_on"] is None
+    assert summary["headline"] == "you stopped it"
+
+
+def test_worse_news_still_outranks_a_barrier():
+    snap = _snapshot(run={"barrier": _TASK_BARRIER}, unauthorised_steps=[2])
+    assert "without an approved task" in build_run_summary(snap)["headline"]
+
+
+def test_the_brief_lists_parked_runs_and_renders_one_line_each():
+    brief = build_company_brief([
+        _snapshot(run={"id": "a", "title": "Ship it", "barrier": _TASK_BARRIER}),
+        _snapshot(run={"id": "b"}),
+    ])
+    assert brief["parked"] == ["a"]
+    text = render_company_brief(brief)
+    assert "⏸ Ship it is parked, waiting on task 412 to finish" in text
+    assert build_company_brief([_snapshot()])["parked"] == []

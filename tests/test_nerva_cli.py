@@ -87,7 +87,7 @@ def test_the_command_tree_is_discoverable_and_complete():
     tree = command_tree(build_parser())
     assert set(tree) == {
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
-        "prompt-size", "desktop", "security", "todo", "skills",
+        "prompt-size", "desktop", "security", "todo", "skills", "company",
     }
     # S2 added the two owner acts an extension needs: agree to what a descriptor
     # declares, and prove it in the sandbox. `doctor` and `list` stay read-only.
@@ -100,6 +100,8 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["estop"] == ["engage", "resume", "status"]
     # H350: the linter reads files and reports; it never writes a skill.
     assert tree["skills"] == ["lint", "list", "off", "on"]
+    # H464: read the runs, and let a parked one go. Nothing here starts a run.
+    assert tree["company"] == ["clear-wait", "list"]
 
 
 @pytest.mark.parametrize("report,expected", [
@@ -1261,3 +1263,61 @@ def test_jobs_create_prints_whether_a_first_run_was_queued():
     older = _FakeHub({"POST /api/jobs": {"ok": True, "job": job}})
     code, out, _err, _hub = _run(["jobs", "create", "--blueprint", "ask_agent", "--param", "prompt=hi"], older)
     assert code == EXIT_OK and "every weekday at 8:00 (0 8 * * 1-5)" in out
+
+
+# ── H464: company runs, and letting a parked one go ─────────────────────────
+
+_BRIEF = {
+    "schema": "nerva.company.brief.v1", "enabled": True, "empty": False, "reason": "",
+    "runs": [
+        {"run_id": "r1", "status": "working", "headline": "parked — waiting on task 412 to finish",
+         "waiting_on": "task 412 to finish"},
+        {"run_id": "r2", "status": "succeeded", "headline": "met its goal", "waiting_on": None},
+    ],
+}
+
+
+def test_company_list_prints_one_line_per_run():
+    hub = _FakeHub({"GET /api/company/runs": _BRIEF})
+    code, out, _err, hub = _run(["company", "list"], hub)
+    assert code == EXIT_OK
+    assert out.splitlines() == [
+        "r1  working  parked — waiting on task 412 to finish",
+        "r2  succeeded  met its goal",
+    ]
+    code, out, _err, _hub = _run(["company", "list", "--json"], hub)
+    assert code == EXIT_OK and json.loads(out) == _BRIEF
+
+
+def test_company_list_says_why_it_is_empty():
+    hub = _FakeHub({"GET /api/company/runs": {"empty": True, "runs": [],
+                                              "reason": "company mode is off, so no run was opened"}})
+    code, out, _err, _hub = _run(["company", "list"], hub)
+    assert code == EXIT_OK and out.strip() == "company mode is off, so no run was opened"
+
+
+def test_company_list_refuses_a_reply_with_no_runs_in_it():
+    code, _out, err, _hub = _run(["company", "list"], _FakeHub({"GET /api/company/runs": {}}))
+    assert code == EXIT_FAILED and "no list of runs" in err
+
+
+@pytest.mark.parametrize("cleared,said", [(True, "cleared"), (False, "no barrier")])
+def test_company_clear_wait_posts_the_owner_clear(cleared, said):
+    route = "POST /api/company/runs/r1/barrier/clear"
+    hub = _FakeHub({route: {"ok": True, "cleared": cleared, "run": {"id": "r1"}}})
+    code, out, _err, hub = _run(["company", "clear-wait", "r1"], hub)
+    assert code == EXIT_OK and out.strip() == said
+    assert hub.calls == [("POST", "/api/company/runs/r1/barrier/clear", {})]
+    code, out, _err, _hub = _run(["company", "clear-wait", "r1", "--json"], hub)
+    assert json.loads(out)["cleared"] is cleared
+
+
+def test_company_clear_wait_refuses_a_bad_run_id_before_the_hub():
+    code, _out, err, hub = _run(["company", "clear-wait", "../x"])
+    assert code == EXIT_USAGE and "not a run id" in err
+    assert hub.calls == []
+
+
+def test_company_clear_wait_reports_an_unknown_run():
+    code, _out, err, _hub = _run(["company", "clear-wait", "nope"], _FakeHub())
+    assert code == EXIT_FAILED and "no fake route" in err
