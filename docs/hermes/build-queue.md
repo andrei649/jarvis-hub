@@ -2,7 +2,7 @@
 
 Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) row that still carried only the 2026-09-07 audit verdict: 16 read-only assessors read the requirement and the code on `main` at 6578cd3c, a skeptic stood ready for every claimed promotion (none was claimed — the old audit held up), and a cross-row critic checked the plans against each other and against the code. The verdicts are in [assessment.json](assessment.json); this page keeps what the ledger does not: how each gap would close.
 
-**Pruned** (2026-09-26): the 43 rows closed so far (H681, H410, H586, H667, H670, H145, H157, H283, H285, H296, H314, H350, H441, H501, H504, H526, H117, H275, H328, H380, H450, H659, H674, H677, H156, H161, H168, H209, H227, H247, H259, H309, H373, H378, H507, H689, H222, H329, H413, H490, H594, H579, H182) left the queue table, and their plans were cut to a one-line stub that keeps the anchor the critic notes link to. Their records are in the ledger.
+**Pruned** (2026-09-27): the 44 rows closed so far (H262, H681, H410, H586, H667, H670, H145, H157, H283, H285, H296, H314, H350, H441, H501, H504, H526, H117, H275, H328, H380, H450, H659, H674, H677, H156, H161, H168, H209, H227, H247, H259, H309, H373, H378, H507, H689, H222, H329, H413, H490, H594, H579, H182) left the queue table, and their plans were cut to a one-line stub that keeps the anchor the critic notes link to. Their records are in the ledger.
 
 **How to use it.** Pick from the top (smallest honest estimate first), read the row with `python3 scripts/hermes_status.py show <ID>`, then its plan here **and every critic note it links** — 60 of the 93 plans overlap another plan or rest on a premise the critic corrected, and building two of them separately would collide. Estimates are hours for a careful engineer including tests, not a schedule. A plan is a starting point, not a contract: the requirement in the frozen inventory wins. When a row closes, its ledger entry changes in the same PR and it leaves this page.
 
@@ -52,7 +52,6 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 | [H512](#h512) | See who authenticated, who failed, and when | partial | 6 |  |
 | [H696](#h696) | A small default skill bundle with a large on-demand catalog, re-pinned to the current release | partial | 6 | [21](#critic-note-21), [25](#critic-note-25) |
 | [H334](#h334) | Importing skills from an upstream project at a verified pin | partial | 7 | [25](#critic-note-25) |
-| [H262](#h262) | Config-driven data lifecycle — prune, archive, vacuum on an interval-gated sweep | partial | 8 | [5](#critic-note-5), [14](#critic-note-14), [28](#critic-note-28) |
 | [H427](#h427) | Fail-closed pre-compression checkpoint — never discard a transcript unless the extraction durably landed | missing | 8 | [13](#critic-note-13) |
 | [H464](#h464) | Park a run on real async work instead of poking it | partial | 8 |  |
 | [H613](#h613) | Choose how it sounds and how it hears (TTS / STT provider matrix) | partial | 8 |  |
@@ -221,11 +220,7 @@ Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scr
 
 ## H262
 
-**Config-driven data lifecycle — prune, archive, vacuum on an interval-gated sweep** (config) — partial, ~8 h. Critic notes: [5](#critic-note-5), [14](#critic-note-14), [28](#critic-note-28).
-
-Files: `agents/core/retention.py`, `agents/core/security/audit.py`, `agents/core/scheduler_service.py`, `agents/core/settings_db.py`, `agents/core/routers/admin.py`, `tests/test_retention.py`
-
-Plan: 1) Add settings retention.archive_days (0 = off), retention.vacuum_after_prune (True), retention.min_vacuum_interval_days (30) and retention.min_interval_hours (24). 2) In run_retention, first read a persisted marker, written atomically under a file lock (e.g. data_path('retention_state.json') holding last_run and last_vacuum). Skip with {'skipped': 'interval'} when the last run is younger than min_interval_hours, and record last_run afterwards. 3) Archive tier: transcripts past archive_days move to data_root/'archive'/'sessions' (restorable through a restore helper and route). Pinned sessions are exempt (add a pin marker file or list). Only archived items past conversation_ttl_days are deleted. 4) VACUUM: when prune_before deleted rows and vacuum_after_prune is on, and last_vacuum is older than min_vacuum_interval_days, run VACUUM on the audit connection outside the transaction and record last_vacuum. 5) Route retention-category PUTs that enable the sweep or shorten a TTL through the approval queue's irreversible tier, not an immediate write. Red-first tests in tests/test_retention.py: (a) after pruning a large audit table, the audit DB file size decreases (fails today, no VACUUM); (b) a second run_retention inside min_interval_hours is skipped; (c) an archived transcript can be restored before its TTL deletes it.
+Closed in #1207 (equivalent): its plan was built, with critic notes 5 (one archive state, H218), 14 and 28 (the shared irreversible-tier helper). The row's record: `python3 scripts/hermes_status.py show H262`.
 
 ## H309
 
