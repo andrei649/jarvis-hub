@@ -1082,6 +1082,21 @@ class Orchestrator:
         self.skills.discover()
         logger.info(f"Skills loaded: {list(self.skills.skills.keys())}")
 
+        # ── H277: the advisory approval judge + the approval audit rows ──
+        # Off unless JARVIS_ROLE_APPROVAL_JUDGE_MODEL is set; scored off the request path on
+        # this loop, it annotates a queued tool call and decides nothing.
+        try:
+            approvals_q = getattr(self, "action_approvals", None)
+            if approvals_q is not None:
+                from .autonomy.approval_judge import ApprovalJudge
+                approvals_q.attach_audit(getattr(self, "intent_log", None))
+                approvals_q.attach_judge(
+                    ApprovalJudge(router=self.llm_router,
+                                  agent_policy=getattr(self.llm_router, "get_agent_policy", None)),
+                    loop=asyncio.get_running_loop())
+        except Exception:
+            logger.warning("approval judge wiring failed", exc_info=True)
+
         # ── H20 learning loop: per-turn background reviewer (default-off) ──
         # Gated at spawn time by cognition.review_enabled; the LLM policy is
         # strict-local by construction (router.local_backend fails closed —

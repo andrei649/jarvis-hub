@@ -19,13 +19,20 @@ logger = logging.getLogger("jarvis.web")
 router = APIRouter(tags=["actions"])
 
 
+def _judge_status(q) -> dict:
+    """H277: the advisory approval judge's state (``configured``, ``reason``, provider/model,
+    ``judging`` ids) — never a key, a base URL only for a local judge."""
+    status = getattr(q, "judge_status_public", None)
+    return status() if callable(status) else {"configured": False, "reason": "judge_unset", "judging": []}
+
+
 @router.get("/api/actions", dependencies=[Depends(user_guard)])
 async def actions_list(status: str = Query("", max_length=20)):
     orch = get_orch()
     q = getattr(orch, "action_approvals", None) if orch else None
     if q is None:
         return nocache_json({"actions": [], "stats": {}})
-    return nocache_json({"actions": q.list(status or None), "stats": q.stats()})
+    return nocache_json({"actions": q.list(status or None), "stats": q.stats(), "judge": _judge_status(q)})
 
 
 @router.get("/api/actions/pending", dependencies=[Depends(user_guard)])
@@ -34,7 +41,7 @@ async def actions_pending():
     q = getattr(orch, "action_approvals", None) if orch else None
     if q is None:
         return nocache_json({"actions": []})
-    return nocache_json({"actions": q.list("pending")})
+    return nocache_json({"actions": q.list("pending"), "judge": _judge_status(q)})
 
 
 @router.post("/api/actions/request", dependencies=[Depends(user_guard)])

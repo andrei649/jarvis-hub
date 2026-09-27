@@ -36,6 +36,13 @@ config_sources      advisory   informational: which layer supplied each configur
                                predicted from this shell; warns when it withholds a .env name
                                that may be value material (a mis-quoted multi-line value),
                                which it never prints
+model_roles         advisory   informational: the H277 model roles (main, deep, vision, video,
+                               approval_judge), one line each — ``provider/model (local|remote,
+                               policy) [source]`` or ``off (reason)`` — read from the environment
+                               only, offline; warns on a provider id a role cannot use
+                               (``role_provider_unknown`` / ``role_provider_unsupported``), a
+                               legacy variable a ``JARVIS_ROLE_*`` name shadows, or an ignored
+                               ``JARVIS_ROLE_MAIN_*`` / deep provider variable. Never a key
 smoke               advisory   the install smoke (only with ``--smoke``; ~30s) failed
 host_not_root       advisory   the hub runs as root, or elevated on Windows (H501)
 sshd_no_passwords   advisory   sshd accepts passwords, by its own reading of sshd_config and
@@ -109,7 +116,7 @@ WILDCARD_HOSTS = frozenset({"0.0.0.0", "::", "[::]"})  # nosec B104 — compared
 LOOPBACK_HOSTS = frozenset({"", "127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"})
 
 REQUIRED = ("python", "venv", "locks_in_sync", "bind_is_loopback", "data_root_writable")
-ADVISORY = ("runtimes", "readyz", "runtime_resolves", "voice", "config_sources", "smoke",
+ADVISORY = ("runtimes", "readyz", "runtime_resolves", "voice", "config_sources", "model_roles", "smoke",
             "host_not_root", "sshd_no_passwords", "container_storage")
 
 OK, FAIL, WARN, SKIP = "ok", "fail", "warn", "skip"
@@ -817,6 +824,53 @@ def _plain_name(key: str, value) -> bool:
     return value == "" or value.strip("=") != ""
 
 
+def check_model_roles(env=None) -> Check:
+    """H277: which model does which job — read from the environment only (offline).
+
+    One line per role. A role whose provider id is not a provider profile, or not one it
+    can use, a legacy variable shadowed by its ``JARVIS_ROLE_*`` name, or a variable the
+    role ignores (``JARVIS_ROLE_MAIN_*``, the deep slot's provider) makes the row ``warn``;
+    it never fails the doctor. The judge's runtime gates (safe mode, strict-local, the
+    cloud-fallback setting, the H378 guards) are applied when an approval is queued and
+    shown on ``/api/actions/pending``; this row lists only what the environment chose.
+    """
+    try:
+        from agents.core.llm import model_roles
+
+        rows = model_roles.describe(env)
+    except Exception as exc:  # noqa: BLE001 — the doctor must run in a broken install
+        return Check("model_roles", SKIP, "model_roles_unavailable", type(exc).__name__)
+    lines, attention = [], []
+    for row in rows:
+        name, reason = row["role"], row.get("reason", "")
+        if row["error"]:
+            attention.append(f"{name}:{reason}")
+            lines.append(f"{name}: off ({reason}: {row.get('detail', '')})")
+            continue
+        if name == "main":
+            text = "main: settings llm.* (not env-selectable)"
+        elif not row["configured"]:
+            text = f"{name}: off ({reason})"
+        else:
+            where = {True: "local", False: "remote"}.get(row["local"], "local backend")
+            policy = f", {row['data_policy']}" if row["data_policy"] else ""
+            source = row["source"].get("model", "default")
+            text = f"{name}: {row['provider'] or 'router'}/{row['model']} ({where}{policy}) [{source}]"
+            if name == "approval_judge" and row["provider"] == "lm-studio" and row["model"] != "active":
+                text += ("; may load a second model next to the main one "
+                         "(JARVIS_ROLE_APPROVAL_JUDGE_MODEL=active reuses the loaded one)")
+        if name == "video":
+            text += f" — {row['note']}"
+        if row["ignored"]:
+            attention.append(f"{name}:ignored")
+            text += f"; ignored: {', '.join(row['ignored'])}"
+        lines.append(text)
+    detail = "; ".join(lines)
+    if attention:
+        return _result("model_roles", False, "model_roles_attention:" + ",".join(attention), detail)
+    return _result("model_roles", True, "roles_ok", detail)
+
+
 def check_smoke(root: Path, *, enabled: bool, run=None) -> Check:
     if not enabled:
         return Check("smoke", SKIP, "skipped", "pass --smoke to run it (~30s)")
@@ -850,6 +904,7 @@ def run_doctor(root: Path = REPO_ROOT, *, env=None, opener=None,
         check_runtime_resolves(to_hub, readyz=readyz, env=env),
         check_voice(to_hub, readyz=readyz, env=env),
         check_config_sources(root, env, opener=to_hub, readyz=readyz),
+        check_model_roles(env),
         check_smoke(root, enabled=smoke, run=run),
         *check_host_posture(root, env),   # H501: advisory, never a FAIL
     ]

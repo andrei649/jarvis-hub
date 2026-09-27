@@ -420,6 +420,60 @@ Still requires `JARVIS_VLM_MODEL` (refuses `vlm_model_unset`); an unknown id ref
 the **wrong** preset mis-clicks — which is exactly why it is explicit rather than
 guessed.
 
+### `JARVIS_ROLE_<NAME>_PROVIDER` · `_MODEL` · `_BASE_URL` (H277 model roles)
+
+**Default: unset** — every role behaves exactly as before. `agents/core/llm/model_roles.py`
+is a frozen table of five roles; the new names win when set, the old ones are fallbacks:
+
+| Role | New names | Fallback | Providers | Read by |
+|---|---|---|---|---|
+| `main` | none (`JARVIS_ROLE_MAIN_*` is **ignored**, the doctor says so) | settings `llm.*` | not env-selectable: the main model is chosen on the H378-guarded settings surfaces | the router |
+| `deep` | `JARVIS_ROLE_DEEP_MODEL` | `JARVIS_DEEP_MODEL`, then `deepseek-r1-distill-qwen-32b` | none (the router's local backend; `_PROVIDER`/`_BASE_URL` ignored) | the deep slot |
+| `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_MODEL` / `_BASE_URL` | `JARVIS_VLM_BACKEND` / `JARVIS_VLM_MODEL` / `JARVIS_VLM_URL` | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`) | `resolve_vlm_config` and all its consumers |
+| `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio`, `ollama`, `openai-compatible` | **nothing**: declared; nothing reads video yet |
+| `approval_judge` | `JARVIS_ROLE_APPROVAL_JUDGE_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio` (default), `ollama`, `openai-compatible` | `autonomy/approval_judge.py` |
+
+A provider value is a ProviderProfile id: an unknown one refuses `role_provider_unknown`
+(vision: `VLMNotConfigured("role_provider_unknown")`), a real one the role cannot speak to
+(`anthropic` for vision) refuses `role_provider_unsupported`. Keys stay where they were
+(`JARVIS_VLM_KEY`; the judge uses the provider profile's own key, `OPENAI_API_KEY` for
+`openai-compatible`). Base URLs: vision keeps the VLM `/v1` convention (LM Studio default
+`http://localhost:1234/v1`, never `JARVIS_LM_STUDIO_URL`); the judge and video use the
+provider profile's address (`JARVIS_LM_STUDIO_URL` / `JARVIS_OLLAMA_URL` / `OPENAI_BASE_URL`,
+else `http://localhost:1234` / `http://localhost:11434` / `https://api.openai.com/v1`).
+`python scripts/doctor.py` lists every role (row `model_roles`) and warns on a bad
+provider id, a shadowed legacy name or an ignored variable.
+
+**The approval judge** (`JARVIS_ROLE_APPROVAL_JUDGE_MODEL` set): each tool call queued on
+the action-approval queue is shown to that model **after** the card exists; its risk
+score (0–100) and one-line reason appear on the card as a labelled *model opinion*, with
+the judge's provider and model on the item and in the signed audit rows
+(`action_approval.judged`, `action_approval.decided`). It never changes the status, never
+approves, never blocks, and the request never waits for it. Skill-change cards are not
+judged. `JARVIS_ROLE_APPROVAL_JUDGE_MODEL=active` reuses the model LM Studio / Ollama
+already has loaded (no second model on the GPU; any other LM Studio model may load one
+next to the main one).
+
+**Where the text goes.** For each queued approval, its tool name, agent, summary and
+arguments (fenced as untrusted data, invisible characters stripped, capped at 4000
+characters) are sent to the judge model. By default there is no judge. A local judge
+(`lm-studio` / `ollama` on a loopback address) keeps the text on this machine (still an
+`llm:<provider>` row in the egress ledger). Any other judge — a LAN LM Studio, or any
+`openai-compatible` endpoint, even on loopback — sends that text to its base URL and runs
+only with `JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE=1`; it is off under
+`JARVIS_STRICT_LOCAL=1`, `llm.cloud_fallback=never`, and safe mode (safe mode turns off
+even a local judge), and never sees an item from a local-policy agent or with tainted
+arguments. A model the H378 guards flag (trains on inputs, or over the cost line) keeps
+the judge off (`judge_trains_on_inputs` / `judge_over_cost_line`): an env choice cannot
+carry the acknowledgement the settings surfaces ask for. The judge's state and reason are
+on `GET /api/actions/pending` as `judge`.
+
+`JARVIS_ROLE_APPROVAL_JUDGE_TIMEOUT` (default `20` s, minimum `1`) bounds each judgement;
+a timeout, an error or a reply that is not exactly `{"risk", "why"}` stores nothing.
+**Cost/benefit:** a second opinion on each queued call for one small-model call each, at
+the price of sending the call's text to the judge (local by default). **Revert:** unset
+`JARVIS_ROLE_APPROVAL_JUDGE_MODEL`; stored opinions stay on their items.
+
 ### `JARVIS_FAULT_INJECT` (test lane only)
 
 **Default: OFF.** Arms the in-process failure-injection harness
@@ -662,6 +716,7 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_MCP_STDIO_ENV_BASELINE` | **on** (`mcp/client.py` `STDIO_ENV_BASELINE_FLAG`) | stdio MCP subprocesses are handed only `STDIO_ENV_ALLOWLIST` + `JARVIS_MCP_STDIO_ALLOWED_ENV` + the per-server `env` — they are not handed the hub's API keys, tokens or proxies; one INFO line per connect reports the withheld **count** of host values (never names or values) and `GET /api/admin/mcp` reports `env_baseline` per spawning row (`null` for rows that spawn nothing) | **Defence in depth, not a boundary:** the child is same-UID, so a hostile server still reads the hub env from `/proc/<ppid>/environ`; the boundary needs the unshipped command screener + process isolation. A server that relied on inheriting a hub credential stops seeing it — the remedy is `JARVIS_MCP_STDIO_ALLOWED_ENV`, **not** the per-server `env` (in-process only, no config surface) | `JARVIS_MCP_STDIO_ENV_BASELINE=0` + reconnect: full parent env inherited again, for every stdio server at once |
 | `JARVIS_MCP_STDIO_ALLOWED_ENV` | empty (`mcp/client.py` `STDIO_ENV_ALLOW_FLAG`) | Comma-separated host variable **names** stdio MCP servers may keep inheriting on top of the allow-list; a listed name passes through even if it looks like a credential | Host-wide, not per-server: every stdio MCP server sees every listed name — list the minimum. Still narrower than `=0`, which surrenders the whole environment | Remove the name + reconnect: that variable is withheld again |
 | `JARVIS_VLM_PRESET` | unset (absolute pixels assumed) | Names a pinned open grounder from `vlm.py:VLM_PRESETS` so `LocalVLMLocator` normalizes 0–1000-relative vs absolute-on-resized coordinates before a click | Right preset = clicks land where the model meant; **wrong** preset = mis-clicks (why it is explicit). Still needs `JARVIS_VLM_MODEL` (`vlm_model_unset`); unknown id → `vlm_preset_unknown` | Unset: the locator assumes absolute pixels on the original screenshot |
+| `JARVIS_ROLE_<NAME>_*` (H277: `DEEP_MODEL`, `VISION_PROVIDER/_MODEL/_BASE_URL`, `VIDEO_*`, `APPROVAL_JUDGE_*`) | unset (`llm/model_roles.py`) | Picks a model per job; the `JARVIS_VLM_*` / `JARVIS_DEEP_MODEL` names stay the fallbacks. `APPROVAL_JUDGE_MODEL` turns on an advisory judge that scores queued tool-call approvals off the request path | The judge sees each queued call's arguments: local by default; remote only with `JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE=1`, never under strict-local / `cloud_fallback=never` / safe mode / H378 findings, never for local-policy agents or tainted items. It decides nothing | Unset: roles fall back to the legacy names; no judge |
 | `JARVIS_FAULT_INJECT` | off (`observability/fault_injection.py`) | Arms the in-process failure-injection harness (llm_down / db_corrupt / disk_full / clock_skew) for the **test lane** | `inject()` may patch httpx send, `open()`/`sqlite3.connect` under the data root, and `time.time` inside a `with` block; nothing outside `data_root()` is touched | Unset: nothing is patched. `JARVIS_HARDENED=1` refuses unconditionally (`fault_injection_refused:hardened`) |
 | `JARVIS_CHANNEL_PAIRING` | **on** (`channels/pairing.py`) | `0` admits every sender; the boot guard then demands an allowlist or `JARVIS_CHANNEL_OPEN=1` | Off = anyone who finds the bot talks to it | Set back to `1` (or unset) + restart: strangers are held again |
 | `JARVIS_CHANNEL_OPEN` | off (`channels/pairing.py`) | Acknowledges an open chat bot (no allowlist, pairing off) so boot proceeds with a `[SECURITY]` line | Every listed channel answers anyone | Unset + restart: boot refuses until an allowlist or pairing guards the channel |

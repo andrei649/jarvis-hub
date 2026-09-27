@@ -376,3 +376,164 @@ describe('Action Approvals — a refused change', () => {
     expect(buttons.find((b) => b.textContent === 'Reject').disabled).toBeFalsy();
   });
 });
+
+// H277 — the approval judge's score is a model's opinion: a separate, muted line under the
+// summary, never next to the buttons; a low score is plain text (never green, never "safe"),
+// the buttons never depend on it, and a bounded quiet re-poll waits for a pending opinion.
+describe('Action Approvals — model opinion (H277)', () => {
+  const OPINION = { score: 37, rationale: 'Writes one file; reversible.', flags: [], advisory: true,
+                    judge: { provider: 'lm-studio', model: 'qwen3-4b', local: true }, at: 1 };
+  function boot(pending) {
+    env.cleanup();
+    const calls = { pending: 0 };
+    const fetch = vi.fn((url) => {
+      if (url === '/api/actions/pending') {
+        calls.pending += 1;   // a fresh object per read, as the wire gives
+        return json(JSON.parse(JSON.stringify(typeof pending === 'function' ? pending(calls.pending) : pending)));
+      }
+      if (url.startsWith('/api/skills/proposals')) return json({ proposals: [], cards: [] });
+      return json({});
+    });
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch, lang: 'ro' });
+    return calls;
+  }
+  async function open() {
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Action Approvals');
+    await env.flush();
+    await env.flush();
+    return container;
+  }
+  const card = (c, text) => [...c.querySelectorAll('.console-content .tool-card')].find((x) => x.textContent.includes(text));
+  const approveOf = (el) => [...el.querySelectorAll('.tool-btn')].find((b) => b.textContent === 'Approve');
+  const configured = { configured: true, reason: '', judging: [], timeout: 20 };
+
+  it('shows the score as a labelled, advisory model opinion under the summary', async () => {
+    boot({ actions: [{ id: 'a1', tool: 'write_file', summary: 'write notes', judge: OPINION }], judge: configured });
+    const c = await open();
+    const el = card(c, 'write notes');
+    const line = el.querySelector('.judge-score');
+    expect(line.textContent).toContain('Model opinion (lm-studio · qwen3-4b, local) — risk 37/100');
+    expect(line.textContent).toContain('advisory only, it decides nothing');
+    expect(line.closest('.tool-actions')).toBeNull();
+    expect(el.querySelector('.tool-actions').textContent).not.toContain('risk');
+  });
+
+  it('never dresses a low score as reassurance', async () => {
+    boot({ actions: [{ id: 'a2', tool: 'send_email', summary: 'mail', judge: { ...OPINION, score: 5 } }], judge: configured });
+    const c = await open();
+    const line = card(c, 'mail').querySelector('.judge-score');
+    expect(line.className).not.toMatch(/ok|success|safe|good/);
+    expect(line.classList.contains('judge-high')).toBe(false);
+    expect(line.textContent.toLowerCase()).not.toMatch(/\bsafe\b|approved|✓|✔/);
+    expect(line.getAttribute('style') || '').not.toMatch(/green/);
+  });
+
+  it('flags a high score with the warning colour', async () => {
+    boot({ actions: [{ id: 'a3', tool: 'rm', summary: 'delete', judge: { ...OPINION, score: 82 } }], judge: configured });
+    const c = await open();
+    const line = card(c, 'delete').querySelector('.judge-score');
+    expect(line.classList.contains('judge-high')).toBe(true);
+    expect(line.getAttribute('style')).toContain('--amber-warn');
+  });
+
+  it('puts the manipulation warning before the score when the arguments carried injection text', async () => {
+    boot({ actions: [{ id: 'a4', tool: 'send', summary: 'forward page', judge: { ...OPINION, score: 0, flags: ['ignore_previous'] } }], judge: configured });
+    const c = await open();
+    const el = card(c, 'forward page');
+    const text = el.textContent;
+    expect(text).toContain('may have been manipulated');
+    expect(text.indexOf('may have been manipulated')).toBeLessThan(text.indexOf('Model opinion ('));
+  });
+
+  it('leaves the Approve button identical with and without an opinion', async () => {
+    boot({ actions: [
+      { id: 'b1', tool: 'write_file', summary: 'with opinion', judge: { ...OPINION, score: 0 } },
+      { id: 'b2', tool: 'write_file', summary: 'without opinion' },
+    ], judge: configured });
+    const c = await open();
+    const a = approveOf(card(c, 'with opinion'));
+    const b = approveOf(card(c, 'without opinion'));
+    expect(a.className).toBe(b.className);
+    expect(a.disabled).toBe(b.disabled);
+    expect(a.disabled).toBe(false);
+  });
+
+  it('says "not available" / "pending…" only when a judge is configured', async () => {
+    boot({ actions: [{ id: 'c1', tool: 'x', summary: 'old card' }, { id: 'c2', tool: 'x', summary: 'new card' }],
+           judge: { ...configured, judging: ['c2'] } });
+    let c = await open();
+    expect(card(c, 'old card').textContent).toContain('Model opinion: not available');
+    expect(card(c, 'new card').textContent).toContain('Model opinion: pending…');
+    boot({ actions: [{ id: 'c1', tool: 'x', summary: 'old card' }], judge: { configured: false, reason: 'judge_unset', judging: [] } });
+    c = await open();
+    expect(card(c, 'old card').textContent).not.toContain('Model opinion');
+  });
+
+  it('never shows an opinion line on a skill-change card', async () => {
+    boot({ actions: [{ id: 's1', tool: 'skill.patch_proposal', summary: 'skill change' }], judge: configured });
+    const c = await open();
+    expect(card(c, 'skill change').textContent).not.toContain('Model opinion');
+  });
+
+  // The panel's 3 s re-poll timers, captured (and cleared) by hand; every other timer is real.
+  function capturePolls() {
+    const timers = new Map();
+    let next = 0;
+    const realSet = env.window.setTimeout, realClear = env.window.clearTimeout;
+    env.window.setTimeout = function (fn, ms, ...rest) {
+      if (ms === 3000) { next += 1; timers.set('p' + next, fn); return 'p' + next; }
+      return realSet.call(env.window, fn, ms, ...rest);
+    };
+    env.window.clearTimeout = function (id) {
+      if (timers.has(id)) { timers.delete(id); return undefined; }
+      return realClear.call(env.window, id);
+    };
+    return {
+      active: () => timers.size,
+      async fire() {
+        const [id, fn] = timers.entries().next().value;
+        timers.delete(id);
+        fn();
+        await env.flush();
+      },
+    };
+  }
+
+  it('re-polls quietly while an opinion is pending and stops once it lands', async () => {
+    let landed = false;
+    const calls = boot(() => (landed
+      ? { actions: [{ id: 'p1', tool: 'x', summary: 'waiting card', judge: OPINION }], judge: configured }
+      : { actions: [{ id: 'p1', tool: 'x', summary: 'waiting card' }], judge: { ...configured, judging: ['p1'] } }));
+    const polls = capturePolls();
+    const c = await open();
+    expect(card(c, 'waiting card').textContent).toContain('pending…');
+    expect(polls.active()).toBe(1);
+    const before = calls.pending;
+    await polls.fire();
+    expect(calls.pending).toBe(before + 1);
+    expect(card(c, 'waiting card').textContent).toContain('pending…');   // a quiet read: no "Loading…"
+    expect(c.textContent).not.toContain('Loading…');
+    expect(polls.active()).toBe(1);
+    landed = true;
+    await polls.fire();
+    expect(card(c, 'waiting card').textContent).toContain('risk 37/100');
+    expect(polls.active()).toBe(0);                                        // nothing is judging: no more polls
+  });
+
+  it('stops re-polling after the judge timeout plus 5 s', async () => {
+    const calls = boot({ actions: [{ id: 'q1', tool: 'x', summary: 'stuck card' }], judge: { ...configured, judging: ['q1'], timeout: 1 } });
+    const polls = capturePolls();
+    await open();
+    const before = calls.pending;
+    let fired = 0;
+    while (polls.active() && fired < 10) {
+      await polls.fire();
+      fired += 1;
+    }
+    // ceil((1 + 5) s / 3 s) = 2 quiet re-reads, then it stops.
+    expect(fired).toBe(2);
+    expect(calls.pending).toBe(before + 2);
+  });
+});

@@ -662,6 +662,9 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/inspector.py",
         "agents/core/acquisition/runtime.py",
         "agents/core/agent.py",
+        # H277: the advisory approval judge is off in safe mode (and reads cloud_fallback's
+        # stricter value).
+        "agents/core/autonomy/approval_judge.py",
         # Review-H275 F1: a job armed after the boot stays off the scheduler too.
         "agents/core/autonomy/jobs.py",
         "agents/core/routers/jobs.py",
