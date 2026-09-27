@@ -80,7 +80,9 @@
   // H277 — the approval judge's opinion: a separate, muted, clearly-labelled line under the
   // summary, never beside the buttons. Asymmetric on purpose: a high score is flagged, a low
   // one is plain text — never green, never a check mark, never "safe". The buttons never
-  // read it. The text is a model's output from untrusted arguments; React escapes it.
+  // read it. The text is a model's output from untrusted arguments; React escapes it, and it
+  // sits in its own italic span between typographic quotes the hub strips from it, so it can
+  // never close the quote and continue in the HUD's own voice (review F1).
   const JUDGE_POLL_MS = 3000;
   const JUDGE_HIGH = 70;
   const JUDGE_FLAGGED = '⚠ the arguments contain instruction-like text — the model opinion below may have been manipulated';
@@ -98,23 +100,32 @@
     return h('div', { className: 'judge-opinion' },
       (j.flags && j.flags.length) ? h('div', { className: 'tool-card-text judge-flag', style: warn }, JUDGE_FLAGGED) : null,
       h('div', { className: 'tool-card-text judge-score' + (high ? ' judge-high' : ''), style: high ? warn : muted },
-        'Model opinion (' + (who.provider || '?') + ' · ' + (who.model || '?') + ', ' + (who.local ? 'local' : 'remote') + ') — risk ' + j.score + '/100: "' + (j.rationale || '') + '" · advisory only, it decides nothing'));
+        'Model opinion (' + (who.provider || '?') + ' · ' + (who.model || '?') + ', ' + (who.local ? 'local' : 'remote') + ') — risk ' + j.score + '/100' +
+          (j.truncated ? ' (judged on a shortened copy)' : '') + ': “',
+        h('span', { className: 'judge-why', style: { fontStyle: 'italic' } }, j.rationale || ''),
+        '” · advisory only, it decides nothing'));
   }
 
   function ActionsPanel() {
     const _ = useApi('/api/actions/pending', true), s = _[0], reload = _[1];
-    // H277: while a pending card waits for the judge, re-read quietly every 3 s, for at most
-    // the judge's timeout + 5 s; nothing is pushed.
-    const polls = useRef({ n: 0, max: 0 });
+    // H277: while a pending card waits for the judge, re-read quietly every 3 s; each waiting
+    // card has its own budget of the judge's timeout + 5 s from when it was first seen
+    // waiting (review F11), so a card queued mid-cycle is not stranded; nothing is pushed.
+    const polls = useRef({});   // card id -> quiet re-reads since it was first seen waiting
     useEffect(function () {
       const d = s.data, js = d && d.judge;
-      if (!js || !js.configured) return undefined;
+      if (!js || !js.configured) { polls.current = {}; return undefined; }
       const ids = (d.actions || []).map(function (a) { return a.id; });
-      const waiting = (js.judging || []).some(function (id) { return ids.indexOf(id) >= 0; });
-      if (!waiting) { polls.current = { n: 0, max: 0 }; return undefined; }
-      if (!polls.current.max) polls.current = { n: 0, max: Math.ceil(((Number(js.timeout) || 20) + 5) * 1000 / JUDGE_POLL_MS) };
-      if (polls.current.n >= polls.current.max) return undefined;
-      const t = setTimeout(function () { polls.current.n += 1; reload(true); }, JUDGE_POLL_MS);
+      const waiting = (js.judging || []).filter(function (id) { return ids.indexOf(id) >= 0; });
+      const max = Math.ceil(((Number(js.timeout) || 20) + 5) * 1000 / JUDGE_POLL_MS);
+      const seen = polls.current, next = {};
+      waiting.forEach(function (id) { next[id] = seen[id] || 0; });
+      polls.current = next;       // a card no longer waiting drops out
+      if (!waiting.some(function (id) { return next[id] < max; })) return undefined;
+      const t = setTimeout(function () {
+        waiting.forEach(function (id) { polls.current[id] = (polls.current[id] || 0) + 1; });
+        reload(true);
+      }, JUDGE_POLL_MS);
       return function () { clearTimeout(t); };
     }, [s.data]);
     // H318 (review-H318b M-2): a skill change is shown with its whole diff, built by the hub

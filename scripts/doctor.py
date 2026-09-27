@@ -830,7 +830,8 @@ def check_model_roles(env=None) -> Check:
     One line per role. A role whose provider id is not a provider profile, or not one it
     can use, a legacy variable shadowed by its ``JARVIS_ROLE_*`` name, or a variable the
     role ignores (``JARVIS_ROLE_MAIN_*``, the deep slot's provider) makes the row ``warn``;
-    it never fails the doctor. The judge's runtime gates (safe mode, strict-local, the
+    so does a vision setup ``resolve_vlm_config`` refuses (the vision line is that function's
+    own verdict, its locality ``VLMConfig.is_local``). It never fails the doctor. The judge's runtime gates (safe mode, strict-local, the
     cloud-fallback setting, the H378 guards) are applied when an approval is queued and
     shown on ``/api/actions/pending``; this row lists only what the environment chose.
     """
@@ -851,6 +852,8 @@ def check_model_roles(env=None) -> Check:
             text = "main: settings llm.* (not env-selectable)"
         elif not row["configured"]:
             text = f"{name}: off ({reason})"
+            if name == "vision" and reason not in ("", "vlm_disabled"):
+                attention.append(f"{name}:{reason}")   # set up, but every consumer refuses it
         else:
             where = {True: "local", False: "remote"}.get(row["local"], "local backend")
             policy = f", {row['data_policy']}" if row["data_policy"] else ""

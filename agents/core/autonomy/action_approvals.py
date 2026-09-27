@@ -13,6 +13,11 @@ orchestrator; off unless ``JARVIS_ROLE_APPROVAL_JUDGE_MODEL`` is set) scores a q
 ``await_decision`` and every gate ignore it, a failed or late judgement leaves the item
 (and the file) exactly as it was, and the first answer is the only one. With an intent log
 attached, each judgement and each decision is one signed audit row that names the judge.
+At most :data:`JUDGE_MAX_CONCURRENT` judge calls run at once and at most
+:data:`JUDGE_MAX_PENDING` are in flight or waiting; past that an item is not judged (no
+annotation; ``judge_status_public()["skipped_busy"]`` counts it). An action queued with a
+taint mark (on itself, its metadata, a nested argument, or an untrusted turn origin) is
+stored with ``tainted: True``; a non-local judge never sees it.
 """
 
 from __future__ import annotations
@@ -24,12 +29,16 @@ import logging
 import threading
 import time
 import uuid
+import weakref
 from pathlib import Path
 from typing import Optional
 
 from ..persistence import JsonStore
 
 logger = logging.getLogger("jarvis.autonomy.action_approvals")
+
+JUDGE_MAX_CONCURRENT = 2     # judge calls generating at once (per event loop)
+JUDGE_MAX_PENDING = 32       # judgements in flight + waiting; past this an item is skipped
 
 
 class ActionApprovalQueue(JsonStore):
@@ -47,6 +56,8 @@ class ActionApprovalQueue(JsonStore):
         self._judge_tasks: set = set()
         self._judging: set[str] = set()
         self._judge_lock = threading.Lock()
+        self._judge_slots: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+        self._skipped_busy = 0
         self._audit = None
         super().__init__(path)
 
@@ -65,6 +76,9 @@ class ActionApprovalQueue(JsonStore):
         action_id = uuid.uuid4().hex[:12]
         tool = action.get("tool", "")
         args = action.get("args") or {}
+        from .approval_judge import action_is_tainted
+
+        tainted = action_is_tainted(action)
         try:
             from .dry_run import preview_task
             preview = preview_task({"kind": tool, "title": action.get("summary", tool),
@@ -84,6 +98,8 @@ class ActionApprovalQueue(JsonStore):
             "created_at": time.time(),
             "decided_at": None,
         }
+        if tainted:
+            item["tainted"] = True      # H277 review F4: a non-local judge never sees it
         with self._lock:
             self._items[action_id] = item
             self._events[action_id] = asyncio.Event()
@@ -199,7 +215,9 @@ class ActionApprovalQueue(JsonStore):
                 from .approval_judge import JudgeStatus
 
                 status = JudgeStatus(False, "judge_status_error")
-        return {**status.public(), "judging": judging}
+        with self._judge_lock:
+            skipped = self._skipped_busy
+        return {**status.public(), "judging": judging, "skipped_busy": skipped}
 
     def annotate(self, action_id: str, annotation: dict) -> Optional[dict]:
         """Store the first judgement on a still-pending item; ``None`` (and nothing written)
@@ -230,23 +248,38 @@ class ActionApprovalQueue(JsonStore):
         loop = self._loop
         hub_up = loop is not None and not loop.is_closed() and loop.is_running()
         if running is not None and (running is loop or not hub_up):
-            self._mark_judging(action_id)
-            self._spawn(running, snapshot, status, fresh)
+            if self._mark_judging(action_id):
+                self._spawn(running, snapshot, status, fresh)
             return
         if not hub_up:
             return   # an offline CLI / a cold sync caller: no judge, the item stays as it is
         # A worker thread (asyncio.to_thread) or a short-lived loop of its own: the judgement
         # runs on the hub's loop, which outlives the caller.
-        self._mark_judging(action_id)
+        if not self._mark_judging(action_id):
+            return
         try:
             loop.call_soon_threadsafe(self._spawn, loop, snapshot, status, fresh,
                                       context=contextvars.Context())
         except RuntimeError:   # the loop closed in between
             self._unmark_judging(action_id)
 
-    def _mark_judging(self, action_id: str) -> None:
+    def _mark_judging(self, action_id: str) -> bool:
+        """Claim a judging slot; ``False`` (and the item counted as skipped) when
+        :data:`JUDGE_MAX_PENDING` judgements are already in flight or waiting."""
         with self._judge_lock:
+            if len(self._judging) >= JUDGE_MAX_PENDING:
+                self._skipped_busy += 1
+                logger.debug("approval judge busy: %s is not judged", action_id)
+                return False
             self._judging.add(action_id)
+            return True
+
+    def _slots_for(self, loop) -> asyncio.Semaphore:
+        with self._judge_lock:
+            slots = self._judge_slots.get(loop)
+            if slots is None:
+                slots = self._judge_slots[loop] = asyncio.Semaphore(JUDGE_MAX_CONCURRENT)
+            return slots
 
     def _unmark_judging(self, action_id: str) -> None:
         with self._judge_lock:
@@ -272,7 +305,10 @@ class ActionApprovalQueue(JsonStore):
 
         action_id = snapshot["id"]
         try:
-            annotation = await asyncio.wait_for(self._judge.score(snapshot, status), timeout=status.timeout)
+            # the timeout bounds one judge call, not the wait for a slot
+            async with self._slots_for(asyncio.get_running_loop()):
+                annotation = await asyncio.wait_for(self._judge.score(snapshot, status),
+                                                    timeout=status.timeout)
         except Exception:  # noqa: BLE001 — timeout, backend down, refusal: nothing persisted
             logger.debug("approval judge gave no verdict for %s", action_id, exc_info=True)
             return
@@ -287,6 +323,7 @@ class ActionApprovalQueue(JsonStore):
         self._audit_row("approval_judge", "action_approval.judged", "", action_id, {
             "tool": snapshot.get("tool", ""), "agent": snapshot.get("agent", ""),
             "score": stored.get("score"), "flags": list(stored.get("flags") or []),
+            "truncated": bool(stored.get("truncated")),
             "judge": stored.get("judge"), "rationale_sha256": rationale_sha256(stored)})
 
     def _audit_row(self, actor: str, action: str, why: str, action_id: str, metadata: dict) -> None:

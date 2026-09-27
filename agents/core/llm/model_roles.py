@@ -24,8 +24,14 @@ What is *not* here, on purpose:
   (boot cannot break on the deep slot).
 - ``video`` is declared with no consumer: nothing in Nerva reads video yet (inbound video
   is not read, ``/api/media`` reports ``video: false``). The listing says so.
-- Keys stay where they were: ``JARVIS_VLM_KEY`` for vision, the provider profile's own
-  ``auth_env`` for the judge. No new secret variable exists.
+- A key never follows an address it was not issued for. Vision keeps ``JARVIS_VLM_KEY``
+  exactly as before for the legacy URL; a ``JARVIS_ROLE_VISION_BASE_URL`` receives it only
+  when it has the same scheme, host and port as the address that key served
+  (``JARVIS_VLM_URL``, or LM Studio's default for ``JARVIS_VLM_BACKEND=lmstudio``), and
+  otherwise only the dedicated ``JARVIS_ROLE_VISION_KEY``. The judge's rule is the same
+  (``approval_judge._judge_key``, ``JARVIS_ROLE_APPROVAL_JUDGE_KEY``).
+- The vision row is ``resolve_vlm_config`` itself: its refusal is the row's reason and its
+  ``VLMConfig.is_local`` the row's locality, so the listing and the runtime never disagree.
 
 Every read goes through ``env_config`` (or the caller's ``env`` mapping, as
 ``resolve_vlm_config(env=...)`` always allowed); this module never reads the process
@@ -44,7 +50,7 @@ from ..env_config import env_str
 from .providers import BUILTIN_PROVIDER_IDS, get_profile
 
 __all__ = ["ROLES", "RoleSpec", "ResolvedRole", "RoleConfigError", "resolve", "describe",
-           "vision_env_view", "LMSTUDIO_VLM_BASE", "VIDEO_NOTE"]
+           "vision_env_view", "same_origin", "LMSTUDIO_VLM_BASE", "VIDEO_NOTE"]
 
 # LM Studio's OpenAI-compatible server with the ``/v1`` suffix the VLM adapter posts under
 # (re-exported by ``vlm`` under the same name). The judge and video roles use the profile's
@@ -150,6 +156,28 @@ def _is_loopback_base(url: str) -> bool:
         return False
 
 
+_DEFAULT_PORTS = MappingProxyType({"http": 80, "https": 443})
+
+
+def _origin(url: str) -> tuple[str, str, int | None] | None:
+    try:
+        parts = urlsplit(str(url or "").strip())
+        port = parts.port
+    except ValueError:
+        return None
+    scheme, host = parts.scheme.lower(), (parts.hostname or "").lower()
+    if not scheme or not host:
+        return None
+    return scheme, host, port if port is not None else _DEFAULT_PORTS.get(scheme)
+
+
+def same_origin(a: str, b: str) -> bool:
+    """True when *a* and *b* share scheme, host and port (default ports filled in) — the
+    test a credential passes before it is sent to an address other than its own."""
+    left, right = _origin(a), _origin(b)
+    return left is not None and left == right
+
+
 def _reader(env: Mapping[str, str] | None):
     if env is not None:
         return lambda name: str(env.get(name, "") or "")
@@ -191,9 +219,25 @@ def vision_env_view(env: Mapping[str, str] | None = None) -> tuple[str, str, str
     role_provider = read(spec.env_name("provider")).strip()
     backend = (_VISION_BACKEND_OF[_validate(spec, role_provider)] if role_provider
                else read("JARVIS_VLM_BACKEND"))
-    url = read(spec.env_name("base_url")).strip() or read("JARVIS_VLM_URL")
+    role_url = read(spec.env_name("base_url")).strip()
+    legacy_url = read("JARVIS_VLM_URL")
+    url = role_url or legacy_url
     model = read(spec.env_name("model")).strip() or read("JARVIS_VLM_MODEL")
-    return backend, url, model, read("JARVIS_VLM_KEY"), read("JARVIS_VLM_PRESET")
+    return backend, url, model, _vision_key(read, spec, role_url, legacy_url), read("JARVIS_VLM_PRESET")
+
+
+def _vision_key(read, spec: RoleSpec, role_url: str, legacy_url: str) -> str:
+    """``JARVIS_VLM_KEY`` unchanged for the legacy address; a role base URL gets it only on
+    the origin that key served, otherwise only ``JARVIS_ROLE_VISION_KEY`` (or no key)."""
+    legacy_key = read("JARVIS_VLM_KEY")
+    if not role_url:
+        return legacy_key
+    dedicated = read(spec.env_name("key")).strip()
+    if dedicated:
+        return dedicated
+    legacy_backend = read("JARVIS_VLM_BACKEND").strip().lower()
+    issued_for = legacy_url.strip() or (LMSTUDIO_VLM_BASE if legacy_backend == "lmstudio" else "")
+    return legacy_key if issued_for and same_origin(role_url, issued_for) else ""
 
 
 def _pick(read, spec: RoleSpec, fld: str) -> tuple[str, str, list[str]]:
@@ -203,45 +247,49 @@ def _pick(read, spec: RoleSpec, fld: str) -> tuple[str, str, list[str]]:
     legacy_name = spec.legacy.get(fld, "")
     legacy = read(legacy_name).strip() if legacy_name else ""
     if new:
-        return new, new_name, ([legacy_name] if legacy and legacy.lower() != new.lower() else [])
+        # exact: a model id or URL can be case-sensitive on the host (only the provider
+        # selector is case-folded, by its own comparison in _resolve_vision)
+        return new, new_name, ([legacy_name] if legacy and legacy != new else [])
     if legacy:
         return legacy, legacy_name, []
     return "", "default", []
 
 
-def _resolve_vision(read, spec: RoleSpec) -> ResolvedRole:
+def _resolve_vision(read, spec: RoleSpec, env: Mapping[str, str] | None) -> ResolvedRole:
+    """The vision row *is* ``resolve_vlm_config``: a refusal (``vlm_model_unset``,
+    ``vlm_url_unset``, ``vlm_preset_unknown``, …) is ``configured=False`` with that reason,
+    and provider, model, base URL and locality (``VLMConfig.is_local``) come from the
+    ``VLMConfig`` the consumers get — the listing cannot call a refused role healthy."""
+    from .vlm import VLMNotConfigured, resolve_vlm_config
+
     source: dict[str, str] = {}
     ignored: list[str] = []
     role_provider = read(spec.env_name("provider")).strip()
     legacy_backend = read("JARVIS_VLM_BACKEND").strip().lower()
-    url, source["base_url"], shadow = _pick(read, spec, "base_url")
+    _url, source["base_url"], shadow = _pick(read, spec, "base_url")
     ignored += shadow
-    model, source["model"], shadow = _pick(read, spec, "model")
+    _model, source["model"], shadow = _pick(read, spec, "model")
     ignored += shadow
-    reason = ""
     if role_provider:
         provider = _validate(spec, role_provider)
         source["provider"] = spec.env_name("provider")
         if legacy_backend and legacy_backend != _VISION_BACKEND_OF[provider]:
             ignored.append("JARVIS_VLM_BACKEND")
+    elif legacy_backend:
+        source["provider"] = "JARVIS_VLM_BACKEND"
     else:
-        source["provider"] = "JARVIS_VLM_BACKEND" if legacy_backend else "default"
-        if legacy_backend in {"", "off"} and not (legacy_backend == "" and url):
-            provider, reason = "", "vlm_disabled"
-        elif legacy_backend not in {"", "lmstudio", "custom"}:
-            provider, reason = "", "vlm_backend_unknown"
-        else:
-            provider = _VISION_PROVIDER_OF.get(legacy_backend or "custom", "")
-            if not legacy_backend:
-                source["provider"] = "JARVIS_VLM_URL"
-    if provider == "lm-studio":
-        url = url or LMSTUDIO_VLM_BASE
-    elif provider == "openai-compatible" and not model:
-        model = "qwen2-vl"   # the adapter's historical default for a custom endpoint
-    local, policy = _locality(provider, model, url)
-    return ResolvedRole("vision", bool(provider), provider, model if provider else "",
-                        url if provider else "", MappingProxyType(source), local, policy,
-                        reason, tuple(ignored))
+        source["provider"] = "JARVIS_VLM_URL" if read("JARVIS_VLM_URL").strip() else "default"
+    if read(spec.env_name("key")).strip() and not read(spec.env_name("base_url")).strip():
+        ignored.append(spec.env_name("key"))       # the role key serves the role base URL only
+    try:
+        config = resolve_vlm_config(env=env)
+    except VLMNotConfigured as exc:
+        return ResolvedRole("vision", False, "", "", "", MappingProxyType(source), None, "",
+                            exc.reason, tuple(ignored))
+    provider = _VISION_PROVIDER_OF[config.backend]
+    policy = get_profile(provider).data_policy_for(config.model)[0]
+    return ResolvedRole("vision", True, provider, config.model, config.base_url,
+                        MappingProxyType(source), bool(config.is_local), policy, "", tuple(ignored))
 
 
 def _resolve_env_role(read, spec: RoleSpec) -> ResolvedRole:
@@ -284,7 +332,7 @@ def resolve(role: str, env: Mapping[str, str] | None = None) -> ResolvedRole:
         return ResolvedRole("deep", True, "", model or DEFAULT_DEEP_MODEL, "",
                             MappingProxyType({"model": src}), None, "", "", ignored)
     if role == "vision":
-        return _resolve_vision(read, spec)
+        return _resolve_vision(read, spec, env)
     return _resolve_env_role(read, spec)
 
 

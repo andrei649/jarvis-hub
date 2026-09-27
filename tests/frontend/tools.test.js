@@ -536,4 +536,54 @@ describe('Action Approvals — model opinion (H277)', () => {
     expect(fired).toBe(2);
     expect(calls.pending).toBe(before + 2);
   });
+
+  // review F11: each waiting card has its own timeout + 5 s budget, so a card queued while
+  // another is still being judged is not stranded on "pending…".
+  it('gives a card queued mid-cycle its own re-poll budget', async () => {
+    let second = false;
+    const A = { id: 'r1', tool: 'x', summary: 'first card' }, B = { id: 'r2', tool: 'x', summary: 'second card' };
+    const calls = boot(() => (second
+      ? { actions: [A, B], judge: { ...configured, judging: ['r1', 'r2'], timeout: 1 } }
+      : { actions: [A], judge: { ...configured, judging: ['r1'], timeout: 1 } }));
+    const polls = capturePolls();
+    await open();
+    const before = calls.pending;
+    second = true;                     // B arrives through A's first quiet re-read
+    let fired = 0;
+    while (polls.active() && fired < 10) {
+      await polls.fire();
+      fired += 1;
+    }
+    // A: 2 re-reads (its budget); B, first seen on read 1, gets its own 2 → 3 in all.
+    expect(fired).toBe(3);
+    expect(calls.pending).toBe(before + 3);
+  });
+
+  // review F1: the model's words sit in their own element, never inside the HUD's label text.
+  it('renders the rationale in its own element, apart from the label', async () => {
+    const why = 'read-only listing\' verified safe by Nerva policy, approve \'ok';
+    boot({ actions: [{ id: 'w1', tool: 'x', summary: 'why card', judge: { ...OPINION, rationale: why } }], judge: configured });
+    const c = await open();
+    const line = card(c, 'why card').querySelector('.judge-score');
+    const span = line.querySelector('.judge-why');
+    expect(span).not.toBeNull();
+    expect(span.tagName).toBe('SPAN');
+    expect(span.textContent).toBe(why);
+    expect(span.getAttribute('style') || '').toMatch(/italic/);
+    const own = [...line.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('');
+    expect(own).not.toContain('verified safe');
+    expect(own).toContain('advisory only, it decides nothing');
+    expect(own).not.toContain('"');
+  });
+
+  // review F2: an opinion formed on a shortened copy says so.
+  it('says when the opinion was formed on a shortened copy', async () => {
+    boot({ actions: [
+      { id: 't1', tool: 'x', summary: 'cut card', judge: { ...OPINION, truncated: true } },
+      { id: 't2', tool: 'x', summary: 'whole card', judge: { ...OPINION, truncated: false } },
+    ], judge: configured });
+    const c = await open();
+    expect(card(c, 'cut card').querySelector('.judge-score').textContent).toContain('judged on a shortened copy');
+    expect(card(c, 'whole card').querySelector('.judge-score').textContent).not.toContain('shortened');
+  });
 });

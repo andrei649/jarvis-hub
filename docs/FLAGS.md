@@ -435,14 +435,25 @@ is a frozen table of five roles; the new names win when set, the old ones are fa
 
 A provider value is a ProviderProfile id: an unknown one refuses `role_provider_unknown`
 (vision: `VLMNotConfigured("role_provider_unknown")`), a real one the role cannot speak to
-(`anthropic` for vision) refuses `role_provider_unsupported`. Keys stay where they were
-(`JARVIS_VLM_KEY`; the judge uses the provider profile's own key, `OPENAI_API_KEY` for
-`openai-compatible`). Base URLs: vision keeps the VLM `/v1` convention (LM Studio default
+(`anthropic` for vision) refuses `role_provider_unsupported`. **Keys never follow an
+address they were not issued for.** `JARVIS_VLM_KEY` works exactly as before for
+`JARVIS_VLM_URL` (or LM Studio's default); a `JARVIS_ROLE_VISION_BASE_URL` receives it only
+when its scheme, host and port equal that address's, and otherwise only the dedicated
+`JARVIS_ROLE_VISION_KEY` (optional; ignored without a role base URL). The judge's only
+dedicated credential is `JARVIS_ROLE_APPROVAL_JUDGE_KEY` (optional): with it set, that key
+and no other goes to the judge's address; without it, an `lm-studio` / `ollama` judge gets
+no key, and an `openai-compatible` judge gets `OPENAI_API_KEY` only when its base URL has
+the scheme, host and port of `OPENAI_BASE_URL` (else of `https://api.openai.com/v1`).
+Base URLs: vision keeps the VLM `/v1` convention (LM Studio default
 `http://localhost:1234/v1`, never `JARVIS_LM_STUDIO_URL`); the judge and video use the
 provider profile's address (`JARVIS_LM_STUDIO_URL` / `JARVIS_OLLAMA_URL` / `OPENAI_BASE_URL`,
 else `http://localhost:1234` / `http://localhost:11434` / `https://api.openai.com/v1`).
 `python scripts/doctor.py` lists every role (row `model_roles`) and warns on a bad
-provider id, a shadowed legacy name or an ignored variable.
+provider id, a shadowed legacy name (compared exactly; only the provider selector ignores
+case) or an ignored variable. Its vision line is `resolve_vlm_config`'s own verdict: a
+setup every vision consumer refuses (`vlm_model_unset`, `vlm_url_unset`,
+`vlm_preset_unknown`, …) shows `off (<reason>)` and warns, and its local/remote label is
+`VLMConfig.is_local` (a loopback custom VLM is local).
 
 **The approval judge** (`JARVIS_ROLE_APPROVAL_JUDGE_MODEL` set): each tool call queued on
 the action-approval queue is shown to that model **after** the card exists; its risk
@@ -455,21 +466,29 @@ already has loaded (no second model on the GPU; any other LM Studio model may lo
 next to the main one).
 
 **Where the text goes.** For each queued approval, its tool name, agent, summary and
-arguments (fenced as untrusted data, invisible characters stripped, capped at 4000
-characters) are sent to the judge model. By default there is no judge. A local judge
+arguments (fenced as untrusted data, invisible characters stripped, each argument value
+capped so every key stays visible, 4000 characters in all) are sent to the judge model.
+When anything was cut the judge is told to score the call as high risk, the item and the
+audit row carry `truncated: true`, and the card says "judged on a shortened copy". By default there is no judge. A local judge
 (`lm-studio` / `ollama` on a loopback address) keeps the text on this machine (still an
 `llm:<provider>` row in the egress ledger). Any other judge — a LAN LM Studio, or any
 `openai-compatible` endpoint, even on loopback — sends that text to its base URL and runs
 only with `JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE=1`; it is off under
 `JARVIS_STRICT_LOCAL=1`, `llm.cloud_fallback=never`, and safe mode (safe mode turns off
-even a local judge), and never sees an item from a local-policy agent or with tainted
-arguments. A model the H378 guards flag (trains on inputs, or over the cost line) keeps
+even a local judge), and never sees an item from a local-policy agent or a tainted one: a
+`tainted` mark on the action, its metadata or anywhere in its arguments, or a queue from a
+turn with an untrusted origin (the item is stored with `tainted: true`). A model the H378 guards flag (trains on inputs, or over the cost line) keeps
 the judge off (`judge_trains_on_inputs` / `judge_over_cost_line`): an env choice cannot
 carry the acknowledgement the settings surfaces ask for. The judge's state and reason are
 on `GET /api/actions/pending` as `judge`.
 
-`JARVIS_ROLE_APPROVAL_JUDGE_TIMEOUT` (default `20` s, minimum `1`) bounds each judgement;
-a timeout, an error or a reply that is not exactly `{"risk", "why"}` stores nothing.
+`JARVIS_ROLE_APPROVAL_JUDGE_TIMEOUT` (default `20` s) bounds each judgement: a value
+below 1 s or unparsable falls back to 20 s, and a value above 60 s is 60 s. A timeout, an
+error or a reply that is not exactly `{"risk", "why"}` stores nothing. At most 2 judge
+calls run at once and at most 32 are in flight or waiting; past that a queued item is not
+judged (its card says "not available"; `judge.skipped_busy` on `/api/actions/pending`
+counts them). Injection flags are computed over every string in the call (keys and values,
+at any depth), so a newline or tab between the words does not hide them.
 **Cost/benefit:** a second opinion on each queued call for one small-model call each, at
 the price of sending the call's text to the judge (local by default). **Revert:** unset
 `JARVIS_ROLE_APPROVAL_JUDGE_MODEL`; stored opinions stay on their items.

@@ -27,6 +27,7 @@ _ENV_NAMES = (
     *(f"JARVIS_ROLE_{role}_{field}" for role in ("MAIN", "DEEP", "VISION", "VIDEO", "APPROVAL_JUDGE")
       for field in ("PROVIDER", "MODEL", "BASE_URL")),
     "JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE", "JARVIS_ROLE_APPROVAL_JUDGE_TIMEOUT",
+    "JARVIS_ROLE_VISION_KEY", "JARVIS_ROLE_APPROVAL_JUDGE_KEY",
 )
 
 
@@ -152,8 +153,8 @@ def test_role_provider_openai_compatible_with_base_url_is_the_custom_backend(mon
     assert config.model == "qwen3-vl" and config.is_local is True
     role = model_roles.resolve("vision")
     assert role.provider_id == "openai-compatible" and role.source["provider"] == "JARVIS_ROLE_VISION_PROVIDER"
-    # an openai-compatible endpoint may be a proxy: the role table never calls it local
-    assert role.local is False
+    # the vision row carries the runtime's own label (VLMConfig.is_local), review F7
+    assert role.local is config.is_local is True
 
 
 def test_role_provider_lm_studio_maps_to_the_lmstudio_backend(monkeypatch):
@@ -379,3 +380,127 @@ def test_doctor_model_roles_row_notes_a_second_lm_studio_model():
     assert "may load a second model" in check.detail
     active = doctor.check_model_roles({"JARVIS_ROLE_APPROVAL_JUDGE_MODEL": "active"})
     assert "may load a second model" not in active.detail
+
+
+# ══ review round (h277_review.json findings 3, 6, 7, 8) ════════════════════════════════
+
+# F6/F7 — the doctor's vision row is built from resolve_vlm_config itself.
+
+AGREEMENT_MATRIX = LEGACY_MATRIX + [
+    {"JARVIS_VLM_BACKEND": "custom", "JARVIS_VLM_URL": "http://localhost:8000/v1"},
+    {"JARVIS_VLM_URL": "http://localhost:8000/v1"},
+    {"JARVIS_ROLE_VISION_PROVIDER": "openai-compatible"},
+    {"JARVIS_ROLE_VISION_PROVIDER": "openai-compatible", "JARVIS_ROLE_VISION_BASE_URL": "https://v.example/v1"},
+    {"JARVIS_ROLE_VISION_PROVIDER": "lm-studio"},
+    {"JARVIS_ROLE_VISION_PROVIDER": "lm-studio", "JARVIS_ROLE_VISION_MODEL": "q"},
+    {"JARVIS_ROLE_VISION_PROVIDER": "nope"},
+    {"JARVIS_ROLE_VISION_PROVIDER": "anthropic"},
+    {"JARVIS_VLM_BACKEND": "lmstudio", "JARVIS_VLM_MODEL": "q", "JARVIS_VLM_PRESET": "nope"},
+]
+
+
+def _role_outcome(env):
+    try:
+        return model_roles.resolve("vision", env=env)
+    except RoleConfigError as exc:
+        return exc.reason
+
+
+@pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+    from scripts import doctor
+
+    runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+    role = _role_outcome(env)
+    check = doctor.check_model_roles(env)
+    vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+    if runtime[0] == "refused":
+        reason = runtime[1]
+        assert (role if isinstance(role, str) else role.reason) == reason
+        if not isinstance(role, str):
+            assert role.configured is False
+        assert vision.startswith(f"vision: off ({reason}")
+        if reason != "vlm_disabled":
+            assert check.status == doctor.WARN
+        return
+    config = runtime[1]
+    assert role.configured is True
+    assert role.provider_id == {"lmstudio": "lm-studio", "custom": "openai-compatible"}[config.backend]
+    assert (role.model, role.base_url, role.local) == (config.model, config.base_url, config.is_local)
+    assert f"({'local' if config.is_local else 'remote'}" in vision
+
+
+def test_a_loopback_custom_vlm_is_listed_as_local():
+    from scripts import doctor
+
+    check = doctor.check_model_roles({"JARVIS_VLM_URL": "http://localhost:8000/v1"})
+    assert "vision: openai-compatible/qwen2-vl (local" in check.detail
+
+
+# F8 — model and base URL are compared exactly; only the provider selector is case-folded.
+
+def test_a_legacy_model_differing_only_by_case_is_reported_as_shadowed(monkeypatch):
+    monkeypatch.setenv("JARVIS_VLM_BACKEND", "lmstudio")
+    monkeypatch.setenv("JARVIS_VLM_MODEL", "qwen3-vl")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_MODEL", "Qwen3-VL")
+    assert "JARVIS_VLM_MODEL" in model_roles.resolve("vision").ignored
+    monkeypatch.setenv("JARVIS_DEEP_MODEL", "X")
+    monkeypatch.setenv("JARVIS_ROLE_DEEP_MODEL", "x")
+    assert "JARVIS_DEEP_MODEL" in model_roles.resolve("deep").ignored
+
+
+def test_a_legacy_base_url_differing_only_by_case_is_reported_as_shadowed(monkeypatch):
+    monkeypatch.setenv("JARVIS_VLM_BACKEND", "custom")
+    monkeypatch.setenv("JARVIS_VLM_URL", "http://127.0.0.1:8000/V1")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_BASE_URL", "http://127.0.0.1:8000/v1")
+    assert "JARVIS_VLM_URL" in model_roles.resolve("vision").ignored
+
+
+def test_the_provider_selector_still_compares_case_insensitively(monkeypatch):
+    monkeypatch.setenv("JARVIS_VLM_BACKEND", "LMStudio")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_PROVIDER", "LM-Studio")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_MODEL", "q")
+    assert "JARVIS_VLM_BACKEND" not in model_roles.resolve("vision").ignored
+
+
+# F3 (vision, same class) — JARVIS_VLM_KEY never follows a role base URL to another origin.
+
+def test_the_legacy_vlm_key_never_goes_to_a_foreign_role_base_url(monkeypatch):
+    monkeypatch.setenv("JARVIS_VLM_URL", "https://a.example/v1")
+    monkeypatch.setenv("JARVIS_VLM_KEY", "sk-vision-a")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_BASE_URL", "https://b.example/v1")
+    config = resolve_vlm_config()
+    assert config.base_url == "https://b.example/v1" and config.api_key == ""
+
+
+def test_the_dedicated_vision_role_key_goes_to_the_role_base_url(monkeypatch):
+    monkeypatch.setenv("JARVIS_VLM_URL", "https://a.example/v1")
+    monkeypatch.setenv("JARVIS_VLM_KEY", "sk-vision-a")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_BASE_URL", "https://b.example/v1")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_KEY", "sk-vision-b")
+    assert resolve_vlm_config().api_key == "sk-vision-b"
+
+
+@pytest.mark.parametrize("legacy, role_url, sent", [
+    ({"JARVIS_VLM_URL": "https://a.example/v1"}, "https://a.example/v2", True),
+    ({"JARVIS_VLM_URL": "https://a.example/v1"}, "https://a.example:8443/v1", False),
+    ({"JARVIS_VLM_URL": "https://a.example/v1"}, "http://a.example/v1", False),
+    ({"JARVIS_VLM_BACKEND": "lmstudio", "JARVIS_VLM_MODEL": "q"}, "http://localhost:1234/v1", True),
+    ({"JARVIS_VLM_BACKEND": "lmstudio", "JARVIS_VLM_MODEL": "q"}, "http://192.168.1.9:1234/v1", False),
+    ({"JARVIS_VLM_BACKEND": "custom"}, "https://b.example/v1", False),
+])
+def test_the_legacy_vlm_key_follows_only_its_own_origin(monkeypatch, legacy, role_url, sent):
+    for name, value in legacy.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("JARVIS_VLM_KEY", "sk-vision-a")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_BASE_URL", role_url)
+    assert resolve_vlm_config().api_key == ("sk-vision-a" if sent else "")
+
+
+def test_the_vision_role_key_is_ignored_without_a_role_base_url(monkeypatch):
+    monkeypatch.setenv("JARVIS_VLM_URL", "https://a.example/v1")
+    monkeypatch.setenv("JARVIS_VLM_KEY", "sk-vision-a")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_KEY", "sk-vision-b")
+    assert resolve_vlm_config().api_key == "sk-vision-a"
+    assert "JARVIS_ROLE_VISION_KEY" in model_roles.resolve("vision").ignored
+    assert "sk-vision-b" not in repr(model_roles.describe())
