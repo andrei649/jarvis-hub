@@ -115,7 +115,11 @@ export function CompanyRoomPanel() {
     act(`/api/company/runs/${id}/barrier/clear`, {},
       (r: any) => {
         setNote(r && r.ok
-          ? (r.cleared ? `${id} is no longer waiting` : `${id} was not waiting on anything`)
+          ? (r.cleared ? `${id} is no longer waiting`
+            // H464 review F8: `cleared` is what this call did — a newer wait that
+            // raced it is named, never reported as "not waiting on anything".
+            : r.waiting_on ? `${id} is now waiting on ${r.waiting_on}`
+            : `${id} was not waiting on anything`)
           : `refused · ${(r && r.reason) || 'clear failed'}`);
         reload();
         resolve(!!(r && r.ok));

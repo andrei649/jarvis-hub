@@ -1438,7 +1438,15 @@ def cmd_company(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.json:
         ctx.dump(reply)
     else:
-        ctx.say("cleared" if (reply or {}).get("cleared") else "no barrier")
+        reply = reply if isinstance(reply, dict) else {}
+        # ``cleared`` is what this call did; a newer wait that raced it is named
+        # rather than reported as "no barrier" (H464 review F8).
+        if reply.get("cleared"):
+            ctx.say("cleared")
+        elif reply.get("waiting_on"):
+            ctx.say(f"not cleared: it is now waiting on {reply['waiting_on']}")
+        else:
+            ctx.say("no barrier")
     return EXIT_OK
 
 

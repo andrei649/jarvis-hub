@@ -18,6 +18,8 @@ Waking is not a licence, so the rules are about restraint, not throughput:
   ``waiting`` and no tick — so no step of budget — is spent asking "is it done
   yet?". The check clears a stale barrier as it goes, so the run is due again on
   the first sweep after the process exits, the trigger fires or the time passes.
+  A spent budget outranks a barrier: the cap only covers the wall clock, so a
+  steps budget spent while parked must read ``budget_spent``, never ``waiting``.
 * **Night hours are quiet hours for attention, not for work.** During the night
   window a run may still take steps, but a step that would interrupt the owner is
   deferred to the morning. This mirrors `is_night_window` in the existing worker
@@ -56,8 +58,8 @@ SKIP_REASONS = (
     "terminal",        # already finished; a record, not a resource
     "stopping",        # a stop is in flight — the supervisor closes it out
     "blocked",         # waiting on the owner; poking it changes nothing
-    "waiting",         # parked on a process, a trigger or a clock (H464)
     "budget_spent",    # a limit is already out
+    "waiting",         # parked on a process, a trigger or a clock (H464)
     "not_due",         # its interval has not elapsed
     "at_capacity",     # max_concurrent reached this sweep
 )
@@ -179,9 +181,15 @@ class ScheduleRuntime:
             return "stopping"
         if status == "blocked":
             return "blocked"
-        # Before the budget check, which is safe only because every barrier is
-        # capped by the run's own wall-clock budget: once that is spent the cap has
-        # already cleared the barrier, so "waiting" can never mask exhaustion.
+        try:
+            if self._ledger.budget_state(run.id)["exceeded"]:
+                return "budget_spent"
+        except Exception:
+            logger.debug("scheduler could not read a budget", exc_info=True)
+            return "budget_spent"
+        # After the budget (H464 review F9): a barrier's cap covers only the wall
+        # clock, so a steps or interrupts budget spent while a run is parked on a
+        # far-off clock would otherwise read "waiting" and never be reported spent.
         if self._barrier_active is not None:
             try:
                 if self._barrier_active(run.id):
@@ -189,12 +197,6 @@ class ScheduleRuntime:
             except Exception:
                 # A broken check must not park a run forever: tick it normally.
                 logger.debug("barrier check failed; ticking normally", exc_info=True)
-        try:
-            if self._ledger.budget_state(run.id)["exceeded"]:
-                return "budget_spent"
-        except Exception:
-            logger.debug("scheduler could not read a budget", exc_info=True)
-            return "budget_spent"
         last = self._last.get(run.id)
         if last is not None and (now - last) < self.config.interval_seconds:
             return "not_due"

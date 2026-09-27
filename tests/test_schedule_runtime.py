@@ -524,10 +524,11 @@ async def test_a_barrier_check_that_raises_does_not_wedge_the_run(ledger, clock)
     assert result.ticked == (run.id,)
 
 
-async def test_waiting_is_reported_before_budget_but_never_masks_exhaustion(ledger, clock):
-    """Checked before the budget, which is only safe because every barrier is
-    capped by the run's own wall-clock budget: once that is spent the cap has
-    already cleared the barrier, and the honest reason comes back."""
+async def test_a_wall_clock_budget_spent_behind_a_barrier_reads_budget_spent(ledger, clock):
+    """Every barrier is capped by the run's own wall-clock budget, so once that is
+    spent the cap has cleared the barrier as well, and the honest reason comes back.
+    (That the budget is checked FIRST is pinned by the steps-budget test below: the
+    cap cannot cover a steps budget.)"""
     run = ledger.open_run(_goal(), budget=Budget(max_seconds=900))
     barriers = _parked(ledger, clock)
     barriers.request(run.id, {"kind": "deadline", "target": clock.now + 86_400},
@@ -536,7 +537,7 @@ async def test_waiting_is_reported_before_budget_but_never_masks_exhaustion(ledg
     assert runtime.due(ledger.get(run.id), now=clock.now) == "waiting"
     clock.advance(900)
     assert runtime.due(ledger.get(run.id), now=clock.now) == "budget_spent"
-    assert ledger.get(run.id).barrier is None
+    assert barriers.active(run.id) is False                  # and the cap has cleared it
     assert ledger.events(run.id)[0]["detail"]["why"] == "cap"
 
 
@@ -544,7 +545,7 @@ async def test_waiting_is_a_named_skip_reason_and_the_order_is_pinned():
     from agents.core.autonomy.schedule_runtime import SKIP_REASONS
 
     assert SKIP_REASONS.index("blocked") < SKIP_REASONS.index("waiting")
-    assert SKIP_REASONS.index("waiting") < SKIP_REASONS.index("budget_spent")
+    assert SKIP_REASONS.index("budget_spent") < SKIP_REASONS.index("waiting")
 
 
 async def test_a_blocked_run_reads_blocked_even_with_a_barrier_check_wired(ledger, clock):
@@ -556,3 +557,17 @@ async def test_a_blocked_run_reads_blocked_even_with_a_barrier_check_wired(ledge
                               barrier_active=lambda rid: asked.append(rid) or True)
     assert runtime.due(ledger.get(run.id), now=clock.now) == "blocked"
     assert asked == []
+
+
+async def test_a_spent_steps_budget_is_budget_spent_even_behind_a_barrier(ledger, clock):
+    """H464 review F9: the barrier's cap only covers the wall-clock budget. A steps
+    budget spent while the run is parked on a far-off clock must read
+    ``budget_spent``, never ``waiting`` — so the budget is checked first."""
+    run = ledger.open_run(_goal(), budget=Budget(max_steps=1))
+    barriers = _parked(ledger, clock)
+    barriers.request(run.id, {"kind": "deadline", "target": clock.now + 3_600},
+                     source="planner")
+    ledger.record_step(run.id, kind="research", summary="landed", outcome="ok", task_id=5)
+    assert barriers.active(run.id) is True
+    runtime = _barrier_runtime(ledger, _Tick(), clock, barriers)
+    assert runtime.due(ledger.get(run.id), now=clock.now) == "budget_spent"

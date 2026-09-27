@@ -34,7 +34,7 @@ from fastapi import APIRouter, Depends
 
 from agents.core.app_state import get_orch
 from agents.core.autonomy.company_report import build_company_brief
-from agents.core.autonomy.run_barriers import RunBarriers
+from agents.core.autonomy.run_barriers import RunBarriers, describe
 from agents.core.autonomy.work_runs import FLAG, WorkRunError, WorkRunLedger
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
@@ -84,6 +84,9 @@ async def company_runs(active_only: bool = False, limit: int = 50):
 
     def _read() -> dict:
         runs = ledger.list_runs(active_only=active_only, limit=limit)
+        # The ledger's clock, read once: "parked" only while a barrier is in force
+        # by the same clock that stamped it (H464 review F2/F7).
+        now = ledger.now()
         snapshots = []
         for run in runs:
             try:
@@ -92,7 +95,7 @@ async def company_runs(active_only: bool = False, limit: int = 50):
                 # A run that vanished between the list and the read is not an
                 # error worth failing the whole brief for.
                 continue
-        return build_company_brief(snapshots, company_mode_enabled=_enabled())
+        return build_company_brief(snapshots, company_mode_enabled=_enabled(), now=now)
 
     return nocache_json(await asyncio.to_thread(_read))
 
@@ -177,7 +180,13 @@ async def company_run_stop(run_id: str):
 async def company_run_barrier_clear(run_id: str):
     """Stop waiting: clear a parked run's barrier (H464). Idempotent — with no
     barrier it answers ``cleared: false`` rather than an error. Same guard as stop:
-    clearing restores an already-approved, budget-bounded cadence and grants nothing."""
+    clearing restores an already-approved, budget-bounded cadence and grants nothing.
+
+    ``cleared`` is what this call did. When it cleared nothing because a newer
+    barrier was set in the meantime, ``waiting_on`` says what the run waits on now,
+    so a surface never reports "was not waiting on anything" over a parked run. An
+    owner's clear also sticks: neither the planner nor the judge may park the run on
+    that same wait again."""
     if not _valid(run_id):
         return nocache_json({"ok": False, "reason": "invalid_run_id"}, status_code=400)
     ledger = await _get_ledger()
@@ -186,4 +195,8 @@ async def company_run_barrier_clear(run_id: str):
     except WorkRunError as exc:
         status = 404 if exc.reason == "unknown_run" else 409
         return nocache_json({"ok": False, "reason": exc.reason}, status_code=status)
-    return nocache_json({"ok": True, "cleared": bool(cleared), "run": run.as_dict()})
+    barrier = run.barrier if run.status in {"planning", "working"} else None
+    return nocache_json({
+        "ok": True, "cleared": bool(cleared), "run": run.as_dict(),
+        "waiting_on": describe(barrier) if barrier else None,
+    })

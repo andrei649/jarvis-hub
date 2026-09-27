@@ -23,8 +23,9 @@ rules that keep it from ever wedging a run:
 
 * **Bounded.** Every barrier carries a hard ``cap_at``: the earliest of its own
   wait, the run's deadline and the run's wall-clock budget. So a barrier can never
-  outlive the run's budget, and checking ``waiting`` before ``budget_spent`` can
-  never mask exhaustion — by then the cap has already cleared it.
+  outlive the run's time budget. The cap cannot cover a steps or interrupts budget,
+  so the scheduler and the supervisor both check the budget *before* the barrier:
+  a spent budget always wins over a wait.
 * **Anything unprovable clears.** A dead or reused pid, another boot or pid
   namespace, a zombie, a fired or vanished trigger, an elapsed deadline, the cap,
   a probe that raises — each clears the barrier on the next check. Clearing only
@@ -35,6 +36,16 @@ rules that keep it from ever wedging a run:
   registered for this run by hub code that spawned it (``register_process`` is
   Python-only: no route, planner, judge or model can register one), and a task
   trigger must be a task this run itself queued.
+* **The owner's "stop waiting" sticks.** Once the owner clears a wait, neither the
+  planner nor the judge may park the run on that same wait again (``owner_cleared``);
+  a different wait is still theirs to ask for.
+* **Nothing to wait on is not a failure.** ``request`` refuses a wait on work that
+  has already finished (and the other codes in :data:`NOTHING_TO_WAIT_ON`) the same
+  way it refuses a malformed one, but a caller must not charge the run for it: the
+  work it wanted to wait for is simply not pending any more.
+* **``request`` raises only :class:`WorkRunError`.** A task queue, a webhook store
+  or a pid probe that fails while a barrier is being set is a refusal
+  (``trigger_unavailable`` / ``probe_failed``), never a raw exception out of a tick.
 """
 
 from __future__ import annotations
@@ -71,8 +82,25 @@ _TRIGGER_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 _PARKABLE = frozenset({"planning", "working"})
 
-# The pid probe's answers. Only "alive" keeps a barrier; everything else clears.
-_PID_CLEAR = {"dead": "exited", "reused": "pid_reused", "ns": "ns_mismatch"}
+# The pid probe's answers. Only "alive" keeps a barrier; everything else clears —
+# "unknown" (a platform that cannot tell this pid from a reused one) included (I3).
+_PID_CLEAR = {"dead": "exited", "reused": "pid_reused", "ns": "ns_mismatch",
+              "unknown": "probe_error"}
+
+# Refusals that mean "there is nothing to wait on", not "the request was bad": the
+# trigger already fired, the process already exited (or cannot be told apart from
+# a reused pid), there is no time left, or the owner already let the run go from
+# this very wait. A caller treats these as "no wait happened" — no failed step, no
+# budget — and plans again (H464 review F0/F3). Every other refusal is malformed
+# or forbidden and goes down the failed-plan-step road the streak rule bounds.
+NOTHING_TO_WAIT_ON = frozenset({
+    "trigger_already_fired", "pid_not_running", "pid_unprovable", "no_time_left",
+    "owner_cleared",
+})
+
+# Who is bound by an owner's clear: the model-driven sources. Hub code that spawned
+# the work itself ("hub") is not a model second-guessing the owner.
+_MODEL_SOURCES = frozenset({"planner", "judge"})
 
 
 class RunBarriersError(WorkRunError):
@@ -92,6 +120,13 @@ def _number(value: Any) -> float | None:
         return None
     value = float(value)
     return value if math.isfinite(value) else None
+
+
+def _count(value: Any, cast: Callable[[Any], Any]) -> Any:
+    """A counter read from a store a person may have hand-edited: a finite number,
+    else 0 — never a ValueError out of a check (H464 review F6)."""
+    number = _number(value)
+    return cast(number) if number is not None else cast(0)
 
 
 def _task_status(task: Any) -> str:
@@ -162,6 +197,11 @@ def default_pid_probe(barrier: Mapping[str, Any]) -> str:
     here, so it clears; a reused pid (start token changed) clears; a zombie is a
     process that has already exited. A permission error reads as alive, as in
     exec_cache — the pid was registered by the hub, and the cap bounds it anyway.
+
+    ``unknown`` when the identity cannot be proven: no start token was captured, or
+    none can be read now (macOS/BSD, where there is no /proc — ``kill(pid, 0)``
+    alone cannot tell this process from a zombie or a reused pid). Unknown clears
+    (I3: anything the check cannot confirm clears) — H464 review F4.
     """
     from agents.core import exec_cache
 
@@ -174,6 +214,8 @@ def default_pid_probe(barrier: Mapping[str, Any]) -> str:
         return "reused" if start and exec_cache._pid_alive(pid) else "dead"
     if _proc_state(pid) in {"Z", "X"}:
         return "dead"
+    if not start or not exec_cache._start_token(pid):
+        return "unknown"
     return "alive"
 
 
@@ -228,7 +270,11 @@ class RunBarriers:
         """Validate a barrier request and park the run on it. Returns :meth:`state`.
 
         Refusals are :class:`RunBarriersError` with a public code; the ledger's own
-        refusals (``unknown_run``, and its re-checks) come through unchanged.
+        refusals (``unknown_run``, and its re-checks) come through unchanged. The
+        codes in :data:`NOTHING_TO_WAIT_ON` mean there is nothing to wait on, not
+        that the request was bad. A failing reader, store or probe is a refusal
+        too — nothing but a :class:`WorkRunError` leaves this method on their
+        account.
         """
         if source not in BARRIER_SOURCES:
             raise RunBarriersError("invalid_source")
@@ -277,8 +323,25 @@ class RunBarriers:
             record.update(self._pid_target(run_id, raw.get("target")))
         else:
             record.update(self._trigger_target(run_id, raw.get("target")))
+        if source in _MODEL_SOURCES and self._owner_let_go(run_id, kind, record["target"]):
+            raise RunBarriersError("owner_cleared")
         self._ledger.set_barrier(run_id, record)
         return self.state(run_id) or {}
+
+    def _owner_let_go(self, run_id: str, kind: str, target: Any) -> bool:
+        """Whether the owner already cleared this same wait on this run.
+
+        "The same wait" is the same kind and target — except the clock: a deadline's
+        target is recomputed from ``in_seconds`` on every ask, so for the clock any
+        deadline is the same wait. Otherwise the judge would re-park a run on a
+        fresh six-hour clock the very tick after the owner let it go.
+        """
+        for cleared in self._ledger.owner_cleared(run_id):
+            if cleared.get("kind") != kind:
+                continue
+            if kind == "deadline" or cleared.get("target") == target:
+                return True
+        return False
 
     @staticmethod
     def _deadline_target(target: Any, now: float) -> float:
@@ -301,11 +364,15 @@ class RunBarriers:
         fields = {"target": target, "start": proc["start"], "ns": proc["ns"],
                   "boot": proc["boot"], "label": _clean(proc.get("label"), _MAX_LABEL)}
         try:
-            alive = self._pid_probe(fields) == "alive"
+            answer = self._pid_probe(fields)
         except Exception:
-            logger.debug("pid probe failed while parking %s", run_id, exc_info=True)
-            alive = False
-        if not alive:
+            logger.warning("pid probe failed while parking %s", run_id, exc_info=True)
+            raise RunBarriersError("probe_failed") from None
+        if answer == "unknown":
+            # This platform cannot tell the pid from a reused one: the check would
+            # clear it on the next sweep, so there is nothing to wait on.
+            raise RunBarriersError("pid_unprovable")
+        if answer != "alive":
             # Nothing to wait on: parking on a process that is already gone would
             # only cost a sweep before the check cleared it.
             raise RunBarriersError("pid_not_running")
@@ -330,18 +397,31 @@ class RunBarriers:
                 raise RunBarriersError("trigger_not_owned")
             if self._read_task is None:
                 raise RunBarriersError("trigger_unavailable")
-            task = self._read_task(task_id)
+            try:
+                task = self._read_task(task_id)
+            except Exception:
+                # A locked or broken queue db: a refusal, never an exception out of
+                # the tick — which would fail every sweep and bound nothing.
+                logger.warning("could not read task %s while parking %s", task_id, run_id,
+                               exc_info=True)
+                raise RunBarriersError("trigger_unavailable") from None
             if task is None:
                 raise RunBarriersError("trigger_unknown")
             status = _task_status(task)
             if status in _terminal_task_statuses():
                 raise RunBarriersError("trigger_already_fired")
             return {"target": f"task:{task_id}", "marker": {"status": status}}
-        store = self._store()
+        try:
+            store = self._store()
+            rec = store.get(ident) if store is not None else None
+            enabled = bool(rec) and self._hook_enabled(store, rec)
+        except Exception:
+            logger.warning("could not read webhook %s while parking %s", ident, run_id,
+                           exc_info=True)
+            raise RunBarriersError("trigger_unavailable") from None
         if store is None:
             raise RunBarriersError("trigger_unavailable")
-        rec = store.get(ident)
-        if not rec or not self._hook_enabled(store, rec):
+        if not enabled:
             raise RunBarriersError("trigger_unknown")
         return {"target": f"hook:{ident}", "marker": self._hook_marker(rec)}
 
@@ -355,8 +435,8 @@ class RunBarriers:
 
     @staticmethod
     def _hook_marker(rec: Mapping[str, Any]) -> dict[str, Any]:
-        return {"calls": int(rec.get("calls") or 0),
-                "last_called": float(rec.get("last_called") or 0.0)}
+        return {"calls": _count(rec.get("calls"), int),
+                "last_called": _count(rec.get("last_called"), float)}
 
     def register_process(self, run_id: str, pid: int, *, label: str = "") -> dict[str, Any]:
         """Register a process the hub spawned for this run, so the run may wait on it.
@@ -447,8 +527,8 @@ class RunBarriers:
             if not rec or not self._hook_enabled(store, rec):
                 return "vanished"
             now = self._hook_marker(rec)
-            if now["calls"] > int(marker.get("calls") or 0) or now["last_called"] > float(
-                marker.get("last_called") or 0.0
+            if now["calls"] > _count(marker.get("calls"), int) or now["last_called"] > _count(
+                marker.get("last_called"), float
             ):
                 return "fired"
             return None
@@ -523,16 +603,20 @@ class RunBarriers:
 
         Idempotent: with no barrier it clears nothing and says so. It compares and
         clears the barrier it read, so a newer one set in between is left alone.
+        ``cleared`` is what THIS call did — the compare-and-clear's own answer —
+        never read off the state afterwards: a barrier the check cleared first is
+        not the owner's clear, and a newer one left in place is not "nothing to
+        clear" (H464 review F8). ``run`` is the state afterwards, so a caller can
+        say what it is waiting on now.
         """
         before = self._ledger.get(run_id)
         if before is None:
             raise WorkRunError("unknown_run")
         if not before.barrier:
             return False, before
-        after = self._ledger.clear_barrier(
+        return self._ledger.clear_barrier_if(
             run_id, why="owner", by=by, expect_id=before.barrier.get("id")
         )
-        return after.barrier is None, after
 
 
 __all__ = [
@@ -543,6 +627,7 @@ __all__ = [
     "MAX_BARRIER_SECONDS",
     "MAX_JUDGE_WAITS",
     "MAX_PROCS_PER_RUN",
+    "NOTHING_TO_WAIT_ON",
     "RunBarriers",
     "RunBarriersError",
     "default_pid_probe",

@@ -275,10 +275,11 @@ _TASK_BARRIER = {
     "cap_at": 1_000.0 + 3_600, "reason": "the build", "source": "planner",
     "marker": {"status": "running"},
 }
+_NOW = 1_060.0          # inside the barrier's window: set at 1 000, capped at 4 600
 
 
 def test_a_parked_run_says_what_it_is_waiting_on():
-    summary = build_run_summary(_snapshot(run={"barrier": _TASK_BARRIER}))
+    summary = build_run_summary(_snapshot(run={"barrier": _TASK_BARRIER}), now=_NOW)
     assert summary["waiting_on"] == "task 412 to finish"
     assert summary["headline"].startswith("parked — waiting on task 412 to finish (at most until ")
 
@@ -292,22 +293,80 @@ def test_a_run_without_a_barrier_reads_exactly_as_before():
 
 def test_a_barrier_on_a_finished_run_is_never_reported_as_parked():
     """The ledger clears it on settle; the report does not trust that alone."""
-    summary = build_run_summary(_snapshot(run={"status": "stopped", "barrier": _TASK_BARRIER}))
+    summary = build_run_summary(_snapshot(run={"status": "stopped", "barrier": _TASK_BARRIER}),
+                                now=_NOW)
     assert summary["waiting_on"] is None
     assert summary["headline"] == "you stopped it"
 
 
 def test_worse_news_still_outranks_a_barrier():
     snap = _snapshot(run={"barrier": _TASK_BARRIER}, unauthorised_steps=[2])
-    assert "without an approved task" in build_run_summary(snap)["headline"]
+    assert "without an approved task" in build_run_summary(snap, now=_NOW)["headline"]
 
 
 def test_the_brief_lists_parked_runs_and_renders_one_line_each():
     brief = build_company_brief([
         _snapshot(run={"id": "a", "title": "Ship it", "barrier": _TASK_BARRIER}),
         _snapshot(run={"id": "b"}),
-    ])
+    ], now=_NOW)
     assert brief["parked"] == ["a"]
     text = render_company_brief(brief)
     assert "⏸ Ship it is parked, waiting on task 412 to finish" in text
-    assert build_company_brief([_snapshot()])["parked"] == []
+    assert build_company_brief([_snapshot()], now=_NOW)["parked"] == []
+
+
+# ── H464 review round: "parked" only while the barrier is in force ───────────
+
+_PID_BARRIER = {
+    "v": 1, "id": "b-2", "kind": "pid", "target": 4242, "set_at": 1_000.0,
+    "cap_at": 1_000.0 + 3_600, "reason": "the build", "source": "hub",
+    "start": "1", "ns": "n", "boot": "b", "label": "npm run build",
+}
+_CLOCK_BARRIER = {
+    "v": 1, "id": "b-3", "kind": "deadline", "target": 1_000.0 + 600, "set_at": 1_000.0,
+    "cap_at": 1_000.0 + 3_600, "reason": "cooldown", "source": "judge",
+}
+
+
+def test_a_barrier_past_its_cap_is_not_reported_as_parked():
+    """F2: with no sweep running (company mode off, hub just restarted), the stale
+    record is still there — but past its cap it no longer holds, so the brief reads
+    the run as it would without one."""
+    snap = _snapshot(run={"id": "a", "barrier": _PID_BARRIER})
+    past = 1_000.0 + 3_600
+    summary = build_run_summary(snap, now=past)
+    assert summary["waiting_on"] is None
+    assert summary["headline"] == "in progress"
+    assert build_company_brief([snap], now=past)["parked"] == []
+    assert "parked" not in render_company_brief(build_company_brief([snap], now=past))
+    assert build_run_summary(snap, now=past - 1)["waiting_on"] == "process 4242 (npm run build) to exit"
+
+
+def test_a_clock_barrier_whose_time_has_come_is_not_reported_as_parked():
+    """F7: a deadline barrier ends at its target, before its cap."""
+    snap = _snapshot(run={"barrier": _CLOCK_BARRIER})
+    assert build_run_summary(snap, now=1_599.0)["waiting_on"].startswith("the clock to reach ")
+    summary = build_run_summary(snap, now=1_600.0)
+    assert summary["waiting_on"] is None and summary["headline"] == "in progress"
+
+
+def test_the_brief_reads_the_real_clock_when_none_is_given():
+    """A caller that passes no clock gets the wall clock — a 1970 cap has long passed."""
+    snap = _snapshot(run={"barrier": _TASK_BARRIER})
+    assert build_run_summary(snap)["waiting_on"] is None
+    assert build_company_brief([snap])["parked"] == []
+
+
+def test_a_clock_barrier_headline_has_no_at_most_until_suffix():
+    """F10: a deadline's own end IS its limit; "(at most until …)" would repeat it or,
+    capped, contradict it. Any other kind names its cap."""
+    from agents.core.autonomy.run_barriers import describe, until
+
+    clock_head = build_run_summary(_snapshot(run={"barrier": _CLOCK_BARRIER}), now=_NOW)["headline"]
+    assert clock_head == f"parked — waiting on {describe(_CLOCK_BARRIER)}"
+    assert "at most until" not in clock_head
+    pid_head = build_run_summary(_snapshot(run={"barrier": _PID_BARRIER}), now=_NOW)["headline"]
+    assert pid_head == (
+        f"parked — waiting on process 4242 (npm run build) to exit "
+        f"(at most until {until(_PID_BARRIER)})"
+    )

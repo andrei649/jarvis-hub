@@ -568,3 +568,217 @@ def test_a_check_that_errors_reports_not_waiting(ledger, clock):
     assert barriers.active(run.id) is False
     ledger.get = _boom
     assert barriers.active(run.id) is False
+
+
+# ── review round (H464 F1, F3, F4, F6, F8) ───────────────────────────────────
+
+class _Raises:
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+
+    def __call__(self, *_a, **_k):
+        raise self.exc
+
+    def get(self, *_a, **_k):
+        raise self.exc
+
+
+def test_a_task_reader_that_raises_is_a_refusal_not_an_escape(ledger, clock):
+    """F1: a locked queue db while parking is ``trigger_unavailable``, never a raw
+    exception out of ``request`` (which would escape the tick every sweep)."""
+    run = _run_with_task(ledger, 7)
+    barriers = _barriers(ledger, clock, tasks=_Raises(RuntimeError("database is locked")))
+    with pytest.raises(RunBarriersError) as exc:
+        barriers.request(run.id, {"kind": "trigger", "target": "task:7"}, source="judge")
+    assert exc.value.reason == "trigger_unavailable"
+    assert ledger.get(run.id).barrier is None
+
+
+@pytest.mark.parametrize("where", ["build", "get"])
+def test_a_webhook_store_that_raises_is_a_refusal_not_an_escape(ledger, clock, where):
+    run = ledger.open_run(_goal())
+    boom = _Raises(OSError("store unreadable"))
+    barriers = RunBarriers(
+        ledger, clock=clock, pid_probe=_Probe(), proc_identity=_identity,
+        hooks=boom if where == "build" else (lambda: boom),
+    )
+    with pytest.raises(RunBarriersError) as exc:
+        barriers.request(run.id, {"kind": "trigger", "target": "hook:ab12cd"}, source="judge")
+    assert exc.value.reason == "trigger_unavailable"
+
+
+def test_a_pid_probe_that_raises_while_parking_is_probe_failed(ledger, clock):
+    run = ledger.open_run(_goal())
+    barriers = _barriers(ledger, clock, probe=_Probe(OSError("proc unreadable")))
+    barriers.register_process(run.id, 4242)
+    with pytest.raises(RunBarriersError) as exc:
+        barriers.request(run.id, {"kind": "pid", "target": 4242}, source="planner")
+    assert exc.value.reason == "probe_failed"
+
+
+def test_a_hand_edited_hook_record_never_raises(ledger, clock):
+    """F6: ``last_called: "2026-09-01"`` in the store is read as nothing, not as a
+    ValueError out of ``request`` or out of the check."""
+    run = ledger.open_run(_goal())
+    hooks = _Hooks(ab12cd={"enabled": True, "calls": "three", "last_called": "2026-09-01"})
+    barriers = _barriers(ledger, clock, hooks=hooks)
+    barriers.request(run.id, {"kind": "trigger", "target": "hook:ab12cd"}, source="judge")
+    assert ledger.get(run.id).barrier["marker"] == {"calls": 0, "last_called": 0.0}
+    assert barriers.active(run.id) is True
+    hooks.hooks["ab12cd"].update(calls=1, last_called=1_001.0)
+    assert barriers.active(run.id) is False
+    assert _events(ledger, run.id)[0][1]["why"] == "fired"
+
+
+@pytest.mark.parametrize("source", ["planner", "judge"])
+def test_an_owner_clear_sticks_against_the_same_wait(ledger, clock, source):
+    """F3: once the owner lets a run go from a wait, neither the planner nor the
+    judge may park it on that same wait again; a different wait is still allowed."""
+    run = _run_with_task(ledger, 7)
+    ledger.record_step(run.id, kind="build", summary="another", outcome="ok", task_id=8)
+    barriers = _barriers(ledger, clock, tasks=_Tasks(t7="running", t8="running"))
+    barriers.request(run.id, {"kind": "trigger", "target": "task:7"}, source=source)
+    assert barriers.clear(run.id)[0] is True
+    for who in ("planner", "judge"):
+        with pytest.raises(RunBarriersError) as exc:
+            barriers.request(run.id, {"kind": "trigger", "target": "task:7"}, source=who)
+        assert exc.value.reason == "owner_cleared"
+    assert ledger.get(run.id).barrier is None
+    state = barriers.request(run.id, {"kind": "trigger", "target": "task:8"}, source=source)
+    assert state["target"] == "task:8"
+    # hub code that spawned the work is not a model; the owner's clear binds the models
+    barriers.clear(run.id)
+    assert barriers.request(run.id, {"kind": "trigger", "target": "task:7"},
+                            source="hub")["target"] == "task:7"
+
+
+def test_an_owner_clear_of_a_clock_wait_refuses_any_clock_wait_after_it(ledger, clock):
+    """A deadline's target is re-computed from ``in_seconds`` on every ask, so "the
+    same wait" for the clock is any clock wait — else the judge re-parks at once."""
+    run = _run_with_task(ledger, 7)
+    barriers = _barriers(ledger, clock, tasks=_Tasks(t7="running"))
+    barriers.request(run.id, {"kind": "deadline", "target": {"in_seconds": 600}}, source="judge")
+    barriers.clear(run.id)
+    clock.advance(5)
+    with pytest.raises(RunBarriersError) as exc:
+        barriers.request(run.id, {"kind": "deadline", "target": {"in_seconds": 900}},
+                         source="judge")
+    assert exc.value.reason == "owner_cleared"
+    assert barriers.request(run.id, {"kind": "trigger", "target": "task:7"},
+                            source="judge")["kind"] == "trigger"
+
+
+def test_a_check_clear_does_not_make_a_wait_sticky(ledger, clock):
+    run = ledger.open_run(_goal())
+    barriers = _barriers(ledger, clock)
+    barriers.request(run.id, {"kind": "deadline", "target": {"in_seconds": 60}}, source="judge")
+    clock.advance(61)
+    assert barriers.active(run.id) is False          # cleared by the check, not the owner
+    assert barriers.request(run.id, {"kind": "deadline", "target": {"in_seconds": 60}},
+                            source="judge")["kind"] == "deadline"
+
+
+def _unprovable(monkeypatch):
+    """What macOS/BSD look like to the probe: no /proc, so no start token, no pid
+    namespace, no boot id and no process state — only ``kill(pid, 0)``."""
+    from agents.core import exec_cache
+    from agents.core.autonomy import run_barriers
+
+    monkeypatch.setattr(exec_cache, "_start_token", lambda _pid: "")
+    monkeypatch.setattr(exec_cache, "_pid_ns", lambda: "")
+    monkeypatch.setattr(exec_cache, "_boot_id", lambda: "")
+    monkeypatch.setattr(exec_cache, "_pid_alive", lambda _pid, _start="": True)
+    monkeypatch.setattr(run_barriers, "_proc_state", lambda _pid: "")
+
+
+def test_a_pid_the_probe_cannot_prove_reads_unknown_and_clears(ledger, clock, monkeypatch):
+    """F4: off Linux (and off Windows) nothing tells this pid from a reused one or a
+    zombie, so the default probe answers ``unknown`` — and unknown clears (I3)."""
+    _unprovable(monkeypatch)
+    blank = {"target": 4242, "start": "", "ns": "", "boot": ""}
+    assert default_pid_probe(blank) == "unknown"
+    assert default_pid_probe({**blank, "start": "111"}) == "unknown"   # token unreadable now
+
+    run = ledger.open_run(_goal())
+
+    def _blank_identity(_pid):
+        return {"start": "", "ns": "", "boot": ""}
+
+    barriers = RunBarriers(ledger, clock=clock, proc_identity=_blank_identity)  # default probe
+    ledger.set_barrier(run.id, {
+        "v": 1, "id": "b-mac", "kind": "pid", "target": 4242, "set_at": clock.now,
+        "cap_at": clock.now + 3_600, "reason": "build", "source": "hub",
+        "start": "", "ns": "", "boot": "", "label": "",
+    })
+    assert barriers.active(run.id) is False
+    assert _events(ledger, run.id)[0][1]["why"] == "probe_error"
+
+    barriers.register_process(run.id, 4242)
+    with pytest.raises(RunBarriersError) as exc:
+        barriers.request(run.id, {"kind": "pid", "target": 4242}, source="hub")
+    assert exc.value.reason == "pid_unprovable"
+
+
+class _RacingLedger:
+    """Runs ``race`` right after RunBarriers.clear has read the run, before its
+    compare-and-clear — the window F8 is about."""
+
+    def __init__(self, ledger, race) -> None:
+        self._ledger, self._race, self._armed = ledger, race, True
+
+    def get(self, run_id):
+        run = self._ledger.get(run_id)
+        if self._armed:
+            self._armed = False
+            self._race()
+        return run
+
+    def __getattr__(self, name):
+        return getattr(self._ledger, name)
+
+
+def test_an_owner_clear_reports_what_this_call_did_when_a_new_barrier_raced_in(ledger, clock):
+    """F8: the check cleared barrier A and the planner set B between the read and the
+    compare-and-clear. The owner's call cleared nothing, and says so — with the run
+    still holding B, not "was not waiting on anything"."""
+    run = ledger.open_run(_goal())
+    barriers = _barriers(ledger, clock)
+    barriers.request(run.id, {"kind": "deadline", "target": {"in_seconds": 60}}, source="judge")
+    first = ledger.get(run.id).barrier["id"]
+
+    def _race():
+        ledger.clear_barrier(run.id, why="elapsed", by="check", expect_id=first)
+        barriers.request(run.id, {"kind": "deadline", "target": {"in_seconds": 90}},
+                         source="planner")
+
+    cleared, after = RunBarriers(_RacingLedger(ledger, _race), clock=clock).clear(run.id)
+    assert cleared is False
+    assert after.barrier is not None and after.barrier["id"] != first
+    assert [e["detail"].get("by") for e in ledger.events(run.id)
+            if e["kind"] == "barrier.cleared"] == ["check"]
+
+
+def test_an_owner_clear_that_lost_the_race_to_the_check_did_not_clear(ledger, clock):
+    """The mirror case: the check cleared A first. The run is not waiting, but this
+    call cleared nothing — the audit says by=check, and so does the answer."""
+    run = ledger.open_run(_goal())
+    barriers = _barriers(ledger, clock)
+    barriers.request(run.id, {"kind": "deadline", "target": {"in_seconds": 60}}, source="judge")
+    first = ledger.get(run.id).barrier["id"]
+
+    def _race():
+        ledger.clear_barrier(run.id, why="elapsed", by="check", expect_id=first)
+
+    cleared, after = RunBarriers(_RacingLedger(ledger, _race), clock=clock).clear(run.id)
+    assert cleared is False and after.barrier is None
+
+
+def test_the_ledger_compare_and_clear_says_whether_it_wrote(ledger, clock):
+    run = ledger.open_run(_goal())
+    barriers = _barriers(ledger, clock)
+    barriers.request(run.id, {"kind": "deadline", "target": {"in_seconds": 60}}, source="judge")
+    first = ledger.get(run.id).barrier["id"]
+    assert ledger.clear_barrier_if(run.id, why="owner", by="owner", expect_id="b-other")[0] is False
+    wrote, after = ledger.clear_barrier_if(run.id, why="owner", by="owner", expect_id=first)
+    assert wrote is True and after.barrier is None
+    assert ledger.clear_barrier_if(run.id, why="owner", by="owner", expect_id=first)[0] is False

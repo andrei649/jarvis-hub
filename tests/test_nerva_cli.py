@@ -1321,3 +1321,14 @@ def test_company_clear_wait_refuses_a_bad_run_id_before_the_hub():
 def test_company_clear_wait_reports_an_unknown_run():
     code, _out, err, _hub = _run(["company", "clear-wait", "nope"], _FakeHub())
     assert code == EXIT_FAILED and "no fake route" in err
+
+
+def test_company_clear_wait_that_lost_a_race_says_what_the_run_waits_on_now():
+    """H464 review F8: nothing was cleared because a new barrier raced in — say that,
+    not "no barrier"."""
+    route = "POST /api/company/runs/r1/barrier/clear"
+    hub = _FakeHub({route: {"ok": True, "cleared": False, "waiting_on": "task 8 to finish",
+                            "run": {"id": "r1"}}})
+    code, out, _err, _hub = _run(["company", "clear-wait", "r1"], hub)
+    assert code == EXIT_OK
+    assert out.strip() == "not cleared: it is now waiting on task 8 to finish"

@@ -944,6 +944,23 @@ class WorkRunLedger:
         barrier A must never erase barrier B set in the meantime, nor undo an
         owner's action it raced with.
         """
+        return self.clear_barrier_if(run_id, why=why, by=by, expect_id=expect_id)[1]
+
+    def clear_barrier_if(
+        self,
+        run_id: str,
+        *,
+        why: str,
+        by: str,
+        expect_id: str | None = None,
+    ) -> tuple[bool, WorkRun]:
+        """:meth:`clear_barrier`, also saying whether THIS call cleared anything.
+
+        The run's state afterwards cannot say that: a barrier another caller already
+        cleared reads the same as one this call cleared, and a newer barrier left in
+        place reads as "still waiting". Whoever reports a clear (the owner's route)
+        reports this flag, never the post-state (H464 review F8).
+        """
         if (why not in BARRIER_CLEAR_REASONS and not str(why).startswith("run_")) or (
             by not in BARRIER_CLEARED_BY
         ):
@@ -953,13 +970,39 @@ class WorkRunLedger:
             run = self._run_locked(run_id)
             current = run.barrier
             if not current or (expect_id is not None and current.get("id") != expect_id):
-                return run
+                return False, run
             self._conn.execute("UPDATE runs SET barrier = '' WHERE id = ?", (run_id,))
             self._event_locked(run_id, "barrier.cleared", now,
                                {"id": current.get("id"), "why": why, "by": by})
             self._conn.commit()
         logger.info("run %s barrier cleared: %s by %s", run_id, why, by)
-        return WorkRun(**{**run.__dict__, "barrier": None})
+        return True, WorkRun(**{**run.__dict__, "barrier": None})
+
+    def owner_cleared(self, run_id: str) -> list[dict[str, Any]]:
+        """The waits the owner let this run go from, oldest first: ``{kind, target}``
+        as each one's ``barrier.set`` event recorded it. Read from the append-only
+        audit, so an owner's "stop waiting" outlives a restart (H464 review F3)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT kind, detail FROM run_events WHERE run_id = ? ORDER BY seq",
+                (run_id,),
+            ).fetchall()
+        sets: dict[Any, dict[str, Any]] = {}
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            detail = _load(row["detail"])
+            if row["kind"] == "barrier.set":
+                sets[detail.get("id")] = detail
+            elif row["kind"] == "barrier.cleared" and detail.get("by") == "owner":
+                origin = sets.get(detail.get("id"))
+                if origin is not None:
+                    out.append({"kind": origin.get("kind"), "target": origin.get("target")})
+        return out
+
+    def now(self) -> float:
+        """The ledger's clock — what a report compares a barrier's end against, so
+        it reads the same time the ledger stamped the barrier with."""
+        return self._now()
 
     def barrier_set_count(self, run_id: str, *, source: str | None = None) -> int:
         """How many barriers this run has ever been parked on (by ``source``)."""

@@ -306,6 +306,21 @@ describe('CompanyRoomPanel — the night shift, reported without flattery', () =
     await waitFor(() => expect(screen.getByText(/run-1 was not waiting on anything/)).toBeTruthy());
   });
 
+  it('says what the run waits on now when a new wait raced the clear', async () => {
+    // H464 review F8: this call cleared nothing because a new barrier was set in
+    // between; "was not waiting on anything" would be false while it is parked.
+    mockFetch({
+      '/barrier/clear': ok({ ok: true, cleared: false, waiting_on: 'task 8 to finish', run: { id: 'run-1' } }),
+      '/api/company/runs': ok({ ...BRIEF, runs: [PARKED] }),
+    });
+    render(<CompanyRoomPanel />);
+    await waitFor(() => expect(screen.getByTitle(/stop waiting/)).toBeTruthy());
+    fireEvent.click(screen.getByTitle(/stop waiting/));
+    fireEvent.click(screen.getByText(/confirm stop waiting/));
+    await waitFor(() => expect(screen.getByText(/run-1 is now waiting on task 8 to finish/)).toBeTruthy());
+    expect(screen.queryByText(/was not waiting on anything/)).toBeNull();
+  });
+
   it('surfaces a refused clear instead of reading as success', async () => {
     mockFetch({
       '/barrier/clear': refuse(404, { ok: false, reason: 'unknown_run' }),

@@ -11,7 +11,10 @@ hardest ones to leave out:
   above whatever it achieved.
 * **A blocked run says what it is waiting for.** "Waiting on your approval" is
   actionable; "in progress" is not. A *parked* run (H464) says what it is waiting
-  on too — a task, a process, a webhook, a time — and the latest it can hold.
+  on too — a task, a process, a webhook, a time — and the latest it can hold. Only
+  while the barrier is in force, though: past its cap (or, for a clock, past its
+  time) the run reads as it would without one, even when no sweep has run to
+  clear the stale record. That is a plain clock comparison, never a probe.
 * **Nothing is inferred.** Every number comes from the ledger. When the ledger
   has nothing — no runs at all — the brief says so rather than rendering a row
   of zeros under a confident heading.
@@ -20,11 +23,15 @@ hardest ones to leave out:
   report (``day_report.py``) draws the same line for the same reason.
 
 Pure and network-free, like ``digest.build_morning_brief``: the caller reads the
-ledger and passes it in, so this stays testable without a database.
+ledger and passes it in, so this stays testable without a database. The caller
+passes its clock (``now``) too — the ledger's, so a barrier is read against the
+same time it was stamped with; without one the wall clock is used.
 """
 
 from __future__ import annotations
 
+import math
+import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -59,17 +66,41 @@ def _clip(value: Any, limit: int = _MAX_LINE) -> str:
     return str(value or "").strip()[:limit]
 
 
-def _waiting_on(run: Mapping[str, Any]) -> str | None:
+def _finite(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return value if math.isfinite(value) else None
+
+
+def _in_force(barrier: Mapping[str, Any], now: float) -> bool:
+    """Whether a stored barrier still holds at ``now`` by the clock alone: before
+    its cap, and — for a clock wait — before its own time. Never probes; a record
+    without a readable cap is not reported as holding."""
+    cap = _finite(barrier.get("cap_at"))
+    if cap is None or now >= cap:
+        return False
+    if barrier.get("kind") == "deadline":
+        end = _finite(barrier.get("target"))
+        return end is not None and now < end
+    return True
+
+
+def _waiting_on(run: Mapping[str, Any], now: float) -> str | None:
     """What a live run is parked on, read from the record — never probed. A barrier
     on a run that is not planning or working is not reported: the ledger clears it
-    on every stop and settle, and the report does not rely on that alone."""
+    on every stop and settle, and the report does not rely on that alone. Nor is
+    one whose time is up: with company mode off, or between sweeps, nothing has
+    cleared the record yet, but it no longer holds (H464 review F2/F7)."""
     barrier = run.get("barrier")
     if not barrier or run.get("status") not in {"planning", "working"}:
+        return None
+    if not _in_force(barrier, now):
         return None
     return describe(barrier)
 
 
-def _run_headline(snapshot: Mapping[str, Any]) -> str:
+def _run_headline(snapshot: Mapping[str, Any], now: float) -> str:
     """One sentence: what happened to this run, worst news first."""
     run = dict(snapshot.get("run") or {})
     status = str(run.get("status") or "")
@@ -82,8 +113,10 @@ def _run_headline(snapshot: Mapping[str, Any]) -> str:
             f"{count} step{'s' if count != 1 else ''} changed something without an "
             "approved task behind it"
         )
-    waiting_on = _waiting_on(run)
+    waiting_on = _waiting_on(run, now)
     if waiting_on:
+        # A clock's own time is its limit: "(at most until …)" would repeat it or,
+        # when capped earlier, contradict it.
         cap = until(run.get("barrier")) if run["barrier"].get("kind") != "deadline" else ""
         return f"parked — waiting on {waiting_on}" + (f" (at most until {cap})" if cap else "")
     text = _STATUS_TEXT.get(status, status or "in an unknown state")
@@ -116,8 +149,13 @@ def _verdict_lines(snapshot: Mapping[str, Any]) -> list[str]:
     return lines
 
 
-def build_run_summary(snapshot: Mapping[str, Any]) -> dict[str, Any]:
-    """One run, projected to what a person needs — never task payloads."""
+def build_run_summary(
+    snapshot: Mapping[str, Any], *, now: float | None = None
+) -> dict[str, Any]:
+    """One run, projected to what a person needs — never task payloads.
+
+    ``now`` is the caller's clock (the ledger's); the wall clock when omitted."""
+    now = time.time() if now is None else float(now)
     run = dict(snapshot.get("run") or {})
     budget = dict(snapshot.get("budget") or {})
     steps = list(snapshot.get("steps") or ())
@@ -129,8 +167,8 @@ def build_run_summary(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         "run_id": run.get("id"),
         "title": _clip(run.get("title")),
         "status": run.get("status"),
-        "headline": _run_headline(snapshot),
-        "waiting_on": _waiting_on(run),
+        "headline": _run_headline(snapshot, now),
+        "waiting_on": _waiting_on(run, now),
         "steps": len(steps),
         "outcomes": outcomes,
         "steps_left": budget.get("steps_left"),
@@ -151,15 +189,18 @@ def build_company_brief(
     snapshots: Sequence[Mapping[str, Any]],
     *,
     company_mode_enabled: bool = False,
+    now: float | None = None,
 ) -> dict[str, Any]:
     """The whole night, as a structured brief.
 
     ``snapshots`` is what ``WorkRunLedger.snapshot`` returned for each run the
     caller cares about. An empty sequence is reported as "nothing ran", which is
     a different statement from "everything succeeded" and must never render the
-    same way.
+    same way. ``now`` is the caller's clock (the ledger's, so a barrier is read
+    against the time it was stamped with); the wall clock when omitted.
     """
-    runs = [build_run_summary(s) for s in snapshots]
+    now = time.time() if now is None else float(now)
+    runs = [build_run_summary(s, now=now) for s in snapshots]
     by_status: dict[str, int] = {}
     for run in runs:
         key = str(run["status"] or "")

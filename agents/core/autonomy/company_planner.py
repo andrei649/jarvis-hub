@@ -25,7 +25,9 @@ against the goal before it ever becomes an :class:`Action`:
   asks the supervisor to park the run instead of doing anything. It is exempt
   from the scope and repeat clamps — it never becomes a step row, so it is
   invisible to the judge's scope rule — and the barrier itself is validated where
-  it is set, by ``RunBarriers``.
+  it is set, by ``RunBarriers``. A proposed wait with no barrier is malformed.
+  An owner-approved *checklist* row that happens to be named "wait" is not a
+  barrier — it carries a task and is queued like any other row (H464 review F5).
 
 Two proposers ship. :class:`ChecklistPlanner` walks a fixed list written when the
 goal was approved — fully deterministic, and the one to use when the owner wants
@@ -142,7 +144,7 @@ class _ClampedPlanner:
         action = self._coerce(proposed)
         if action is None:
             return PlanDecision(None, "malformed", f"{type(proposed).__name__} is not an action")
-        if action.kind == "wait":
+        if action.parks:
             return PlanDecision(action)
         if not self.covers(action.kind):
             return PlanDecision(
@@ -157,18 +159,27 @@ class _ClampedPlanner:
         raise NotImplementedError
 
     def _coerce(self, proposed: Any) -> Action | None:
-        """Turn a proposal into an Action, or None. Never raises on bad input."""
-        if isinstance(proposed, Action):
-            return proposed
+        """Turn a proposal into an Action, or None. Never raises on bad input.
+
+        A checklist row is the owner's approved text: it never carries a barrier,
+        so a row named "wait" becomes an ordinary step with its task. A proposal
+        (a mapping or an Action from a model) that says "wait" must say what on —
+        one without a barrier is malformed, never queued as work.
+        """
         if isinstance(proposed, PlanStep):
-            return Action(
-                kind=proposed.kind, summary=proposed.summary,
-                task=dict(proposed.task), interrupts_owner=proposed.interrupts_owner,
-            )
-        if isinstance(proposed, Mapping):
+            try:
+                return Action(
+                    kind=proposed.kind, summary=proposed.summary,
+                    task=dict(proposed.task), interrupts_owner=proposed.interrupts_owner,
+                )
+            except (ValueError, TypeError):
+                return None
+        if isinstance(proposed, Action):
+            action = proposed
+        elif isinstance(proposed, Mapping):
             try:
                 barrier = proposed.get("barrier")
-                return Action(
+                action = Action(
                     kind=str(proposed.get("kind", "")),
                     summary=str(proposed.get("summary", ""))[:_MAX_SUMMARY],
                     task=dict(proposed.get("task") or {}),
@@ -177,7 +188,11 @@ class _ClampedPlanner:
                 )
             except (ValueError, TypeError):
                 return None
-        return None
+        else:
+            return None
+        if action.kind == "wait" and not action.parks:
+            return None
+        return action
 
     def _already_done(self, context: Mapping[str, Any], action: Action) -> bool:
         """True when this run already took a step just like this one."""

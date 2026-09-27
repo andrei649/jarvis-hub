@@ -359,3 +359,35 @@ def test_the_run_detail_carries_the_barrier_and_its_events(client, ledger):
     brief = client.get("/api/company/runs").json()
     assert brief["runs"][0]["waiting_on"].startswith("the clock to reach ")
     assert brief["parked"] == [run.id]
+
+
+def test_the_brief_reads_a_barrier_past_its_cap_as_not_parked(client, ledger):
+    """H464 review F7: company mode off, no sweep — the stale barrier stays on the
+    record, but the brief (and so the HUD's `waiting` tag) reads the ledger's clock
+    and stops calling the run parked once the barrier's time is up."""
+    run = ledger.open_run(_goal())
+    _park(ledger, run.id)                                   # the clock to reach 1 000 + 600
+    assert client.get("/api/company/runs").json()["parked"] == [run.id]
+    ledger._clock = lambda: 1_000.0 + 600
+    brief = client.get("/api/company/runs").json()
+    assert brief["parked"] == []
+    assert brief["runs"][0]["waiting_on"] is None
+    assert not brief["runs"][0]["headline"].startswith("parked")
+
+
+def test_a_clear_that_lost_a_race_says_what_the_run_waits_on_now(client, ledger, monkeypatch):
+    """H464 review F8: this call cleared nothing because a new barrier raced in. The
+    answer says so — and what the run is waiting on now — instead of letting the HUD
+    say it "was not waiting on anything"."""
+    from agents.core.autonomy.run_barriers import RunBarriers
+
+    run = ledger.open_run(_goal())
+    _park(ledger, run.id)
+    with monkeypatch.context() as patch:
+        patch.setattr(RunBarriers, "clear",
+                      lambda self, run_id, by="owner": (False, ledger.get(run_id)))
+        body = client.post(f"/api/company/runs/{run.id}/barrier/clear").json()
+    assert body["ok"] is True and body["cleared"] is False
+    assert body["waiting_on"].startswith("the clock to reach ")
+    body = client.post(f"/api/company/runs/{run.id}/barrier/clear").json()
+    assert body["cleared"] is True and body["waiting_on"] is None
