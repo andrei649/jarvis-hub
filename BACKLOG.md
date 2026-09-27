@@ -14,6 +14,26 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-27 H464 a work run is parked on real async work instead of poked: a process, a trigger or a clock (partial, still; #1207; headline 189/697).
+
+  A run waiting on a build, a deploy or a cooldown used to be ticked every sweep. Each tick spent a step, and eventually budget, asking "is it done yet". Now:
+  - **Three barrier kinds.**
+    - A process registered for the run, until it exits. The process is checked against its start token, namespace and boot, so a reused pid does not count.
+    - A trigger, until it fires: a task of this run finishing, or an enabled webhook being called.
+    - A wall-clock time.
+  - **A barrier is never a step.** It is set and cleared as an event on the run. Setting it costs no budget, is not part of the fingerprint and changes no verdict. Stop, or reaching a terminal status, clears it in the same write.
+  - **Waiting spends nothing.** The scheduler skips a parked run as `waiting`, after the budget check, so a spent budget still wins. The supervisor returns before planning or judging.
+  - **No barrier can wedge a run.** Every barrier is capped by the earliest of its own wait (7 days at most), the run's deadline and the run's budget. On the next check it clears if the process is dead or unprovable, the trigger has fired or vanished, the time has passed, or the probe fails.
+  - **The planner and the judge can ask to wait.**
+    - The planner asks with a `wait` action. A wait with nothing to wait on is free, three times in a row; after that it is a failed step and the streak stops the run.
+    - The judge sees the run's live background processes and can answer `wait` before grading, at most three times per run. At settlement, a `wait` withholds the pass.
+  - **The owner can always let a run go.** The clear route (user), `nerva company clear-wait` and the Company room's two-step "stop waiting" all work. The planner or the judge cannot set the same wait again afterwards. The brief says "parked — waiting on …" only while the barrier is in force.
+
+  Still partial. Nothing in the hub registers a background process for a run yet, so pid waits are reachable only from Python. The shipped runtime also wires no model planner, verifier or judge, so the planner's and the judge's waits take effect only once those are wired.
+
+  Reviewed adversarially (4 lenses): 11 findings confirmed (6 MINOR, 5 NIT), and 7 more found by the verifications; all closed in two verified fix rounds. 50 mutants, all killed (2 by cases added after a first pass). Test manual: GOV-294.
+  Tests: backend 18,014 → 18,150; vitest 1,767 → 1,772.
+
 - 2026-09-27 H262 chats and data have a governed lifecycle: archive, prune and VACUUM in one interval-gated, hub-owned sweep, with widening held at the irreversible tier (partial → equivalent, #1207; headline 188 → 189/697).
 
   Retention deleted transcript files by mtime from a fixed 03:30 cron in every process. It had no archive tier, no VACUUM, no shared last-run marker, and its TTLs were ordinary admin writes. Now:

@@ -53,7 +53,7 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 | [H696](#h696) | A small default skill bundle with a large on-demand catalog, re-pinned to the current release | partial | 6 | [21](#critic-note-21), [25](#critic-note-25) |
 | [H334](#h334) | Importing skills from an upstream project at a verified pin | partial | 7 | [25](#critic-note-25) |
 | [H427](#h427) | Fail-closed pre-compression checkpoint — never discard a transcript unless the extraction durably landed | missing | 8 | [13](#critic-note-13) |
-| [H464](#h464) | Park a run on real async work instead of poking it | partial | 8 |  |
+| [H464](#h464) | Park a run on real async work instead of poking it | partial (built in #1207; needs a process producer and wired graders) | 8 |  |
 | [H613](#h613) | Choose how it sounds and how it hears (TTS / STT provider matrix) | partial | 8 |  |
 | [H277](#h277) | Separate models for separate jobs (vision, video, approval judging) | partial | 9 |  |
 | [H487](#h487) | Ask a human on whatever surface they are on, carry their reason back, and fail closed on silence | partial | 9 | [27](#critic-note-27) |
@@ -256,6 +256,8 @@ Files: `agents/core/autonomy/work_runs.py`, `agents/core/autonomy/schedule_runti
 
 Plan: 1. Add a nullable `barrier` JSON column to the runs table in work_runs.py: {kind: pid|trigger|deadline, target, set_at}. Add WorkRunLedger.set_barrier(run_id, kind, target) and clear_barrier(run_id), each logged as a zero-budget step or event. 2. Add barrier_active(run), which clears the barrier itself when it is stale: the pid no longer exists (os.kill(pid, 0) raises ProcessLookupError), the trigger id has fired (injected predicate), or now ≥ deadline. 3. In ScheduleRuntime.due, return a new 'waiting' skip reason before the budget check while barrier_active(run) is true. Add 'waiting' to SKIP_REASONS. 4. In CompanySupervisor.tick, return TickResult('waiting', ...) before _plan_next and before _grade, so no step, budget or judge call is spent. 5. Let the planner return Action(kind='wait', barrier=…), which sets the barrier instead of enqueueing. Let the judge return a `wait` outcome that does the same. Include the run's registered background pids in the judge's input. 6. Red-first test in tests/test_schedule_runtime.py: a run with barrier {kind: deadline, target: now+600} reports 'waiting' and is not ticked. It currently has no barrier concept and is ticked. 7. Also test that a dead pid clears on the next sweep, that the supervisor spends no budget and makes no judge call while waiting, and that an elapsed deadline resumes the run.
 
+
+**Built in #1207 (2026-09-27), still partial:** all three barrier kinds, the zero-cost `waiting` skip, stale clearing, the planner `wait` action, the judge `wait` verdict with the background-process list and the owner clear shipped. Remaining: nothing in the hub registers a run's background process yet (pid waits reachable only from Python), and the shipped runtime wires no model planner or graders. `python3 scripts/hermes_status.py show H464`.
 ## H507
 
 Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H507`.
