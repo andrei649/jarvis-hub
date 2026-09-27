@@ -218,8 +218,10 @@ class AutonomyCoordinator:
             # H117: the poll loop asks this (it has no side effects) whether a reply is a
             # reason, and runs the hook above in the chat's lane only when it is.
             tg.decision_reason_pending = self.would_consume_reason_reply
-            # ...and reads this clock when it claims one, so the hook judges the reason
-            # window by when the reply arrived, not by when the chat's lane reached it.
+            # ...and reads this clock once per getUpdates page, stamping a claimed reply from
+            # its page (credited by Telegram's date, never before the previous page came back),
+            # so the hook judges the reason window by that stamp, not by when the chat's lane
+            # reached the reply.
             tg.decision_reason_clock = self.reason_clock
             logger.info(
                 "Autonomy decision inbox wired to Telegram (H34.2 away-notify via escalation)"
@@ -337,8 +339,9 @@ class AutonomyCoordinator:
 
     def reason_clock(self) -> float:
         """Now, on the clock reason windows are opened and closed with (read live, so a clock
-        swapped after :meth:`wire` counts). Telegram's poll loop reads it when it claims a reply
-        and hands the reading to :meth:`_on_reason_reply` as ``received_at`` (H117)."""
+        swapped after :meth:`wire` counts). Telegram's poll loop reads it once per getUpdates
+        page and hands a claimed reply's stamp, taken from that reading, to
+        :meth:`_on_reason_reply` as ``received_at`` (H117)."""
         return self._reason_clock()
 
     def would_consume_reason_reply(self, chat_id, user_id, reply_to_message_id) -> bool:
@@ -366,13 +369,17 @@ class AutonomyCoordinator:
         raises once the reason is saved, so a caller's fallback on an exception (running the
         reply as a turn) can only follow a failure before anything was saved.
 
-        ``received_at`` is when the reply arrived, on :meth:`reason_clock` (Telegram reads it
-        in the poll loop when it claims the reply, which may then wait in the chat's lane
-        behind a slow turn). The deadline is checked against it, so a reason sent in time is
-        saved however long the lane kept it, and a late one is refused however soon it runs.
-        Missing, or not a finite instant, it is now (an older caller). Whether the prompt is
-        still the live one is decided here, when the lane reaches the reply: a tap read
-        before the reply runs before it and supersedes the prompt."""
+        ``received_at`` is the channel's stamp of when the reply arrived, on
+        :meth:`reason_clock`. Telegram stamps it from the getUpdates page that carried the
+        reply: never later than when that page came back, never earlier than when the page
+        before it did, and within those bounds moved back by Telegram's date for the reply
+        (see ``TelegramChannel._reason_arrival``); the reply may then wait in the chat's lane
+        behind a slow turn. The deadline is checked against the stamp, so the time the reply
+        waits after its page came back never counts against it, and a reply stamped at or
+        after the deadline is refused however soon it runs. Missing, or not a finite instant,
+        it is now (an older caller). Whether the prompt is still the live one is decided here,
+        when the lane reaches the reply: a tap read before the reply runs before it and
+        supersedes the prompt."""
         target = self._reason_reply_target(chat_id, user_id, reply_to_message_id)
         if target is None:
             return False

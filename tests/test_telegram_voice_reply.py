@@ -8,7 +8,9 @@ only the reply to a voice note and forgets the mark after a silent turn;
 costs the clip and never the text; Telegram's 400 on the clip falls back to an
 audio file once; the transcript echo, the notice that an attachment could not be
 read and the deeplink pairing replies are service lines that are never spoken and
-never spend the mark.
+never spend the mark; and only the running turn of the chat takes its mark — a send
+from outside that turn (the daily digest, an outbound notice, another chat's turn,
+a task an earlier turn left behind) is never the answer to the voice note.
 
 Hermetic: a recording HTTP client, an in-memory mode store, an injected
 synthesizer and transcriber, no Telegram and no speech stack.
@@ -18,12 +20,15 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+from types import SimpleNamespace
 
 import pytest
 
+from agents.core import scheduler_service
 from agents.core.channels import telegram as telegram_module
 from agents.core.channels.inbound_voice import InboundVoiceReader
 from agents.core.channels.media_reader import InboundImageReader
+from agents.core.channels.outbound import send_to_target
 from agents.core.channels.pairing import SenderPairing
 from agents.core.channels.render import to_telegram_html
 from agents.core.channels.spoken_reply import SpokenReply
@@ -366,6 +371,200 @@ async def test_a_deeplink_pairing_reply_is_a_service_line_that_is_never_spoken(t
                      else "That pairing link is not valid."]
     assert client.methods() == ["sendMessage"]
     assert synth.seen == []
+
+
+# ── only the running turn of the chat takes its mark ────────────────────────
+
+NEWS = "Good evening. 3 tasks await you."
+
+
+def _owner_hub(ch, monkeypatch):
+    """The orchestrator as the scheduler and outbound.py see it: the owner chat is 42."""
+    monkeypatch.delenv("AUTONOMY_OWNER_CHAT_ID", raising=False)
+    return SimpleNamespace(
+        autonomy_queue=object(), channels={"telegram": ch},
+        get_setting=lambda key, default="": "42" if key == "autonomy.owner_chat_id" else default,
+    )
+
+
+async def _poll(ch, script):
+    """Feed *script* — (before, page) per getUpdates call, *before* awaited first when set —
+    then stop."""
+    async def fake_updates(timeout=25):
+        if script:
+            before, page = script.pop(0)
+            if before is not None:
+                await asyncio.wait_for(before(), 5)
+            return page
+        ch._running = False
+        return []
+
+    ch._get_updates = fake_updates
+    ch._running = True
+    await asyncio.wait_for(ch._poll_loop(), 10)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sender", ["the daily digest", "an outbound notice"])
+async def test_a_proactive_send_during_a_voice_turn_is_text_and_the_note_keeps_its_voice(
+        tmp_path, monkeypatch, sender):
+    """/voice voice: while the answer to a voice note is being worked out, the scheduler's
+    evening digest (scheduler_service.run_daily_digest) or a non-plain outbound.py notice goes
+    to the owner chat, from outside any turn. Neither is the answer to the note: it is text
+    only, and the note's own answer is the one spoken. (Either used to take the note's mark:
+    the digest was spoken and the answer was not.)"""
+    ch, client, synth = _channel(tmp_path, VOICE)
+    hub = _owner_hub(ch, monkeypatch)
+    monkeypatch.setattr(scheduler_service, "build_evening_retro", lambda queue: NEWS)
+    running, release = asyncio.Event(), asyncio.Event()
+
+    async def handler(text, channel="telegram", **kwargs):
+        running.set()
+        await release.wait()
+        await ch.send(REPLY, chat_id=kwargs["chat_id"])
+        return REPLY
+
+    async def proactive():
+        await running.wait()
+        if sender == "the daily digest":
+            assert await scheduler_service.SchedulerService(hub).run_daily_digest("evening") is None
+        else:
+            assert (await send_to_target(hub, "telegram", NEWS))["ok"] is True
+        release.set()
+
+    ch.handler = handler
+    await _poll(ch, [(None, [_update(**VOICE_NOTE)]), (proactive, [])])
+    texts = [c["json"]["text"] for m, c in client.calls if m == "sendMessage"]
+    assert texts == [NEWS, to_telegram_html(REPLY)]
+    assert synth.seen == [(SPOKEN, "ro")], f"spoken: {synth.seen}"
+    assert ch._voice_turns == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sender", ["another chat's turn", "a task an earlier turn left running"])
+async def test_only_the_running_turn_of_the_chat_takes_its_voice_mark(tmp_path, sender):
+    """/voice voice, a voice note's turn running in chat 42. A turn in chat 43 that tells the
+    owner chat something, or a task an earlier (typed) turn of chat 42 created and that sends
+    only now, is not the answer to the note: text only, and the note's answer is spoken. A
+    task inherits the context of the turn that made it, so the mark is taken only while that
+    turn is still running."""
+    ch, client, synth = _channel(tmp_path, VOICE)
+    running, release, later = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    leftovers = []
+
+    async def handler(text, channel="telegram", **kwargs):
+        if kwargs["chat_id"] == 43:
+            await ch.send(NEWS, chat_id=42)
+            return None
+        if text == "remind me":
+            async def remind():
+                await later.wait()
+                await ch.send(NEWS, chat_id=42)
+
+            leftovers.append(asyncio.create_task(remind()))
+            await ch.send("ok", chat_id=42)
+            return "ok"
+        running.set()
+        await release.wait()
+        await ch.send(REPLY, chat_id=42)
+        return REPLY
+
+    async def news_sent():
+        while NEWS not in [c["json"]["text"] for m, c in client.calls if m == "sendMessage"]:
+            await asyncio.sleep(0.005)
+        release.set()
+
+    async def the_leftover_sends():
+        await running.wait()
+        later.set()
+        await leftovers[0]
+        release.set()
+
+    ch.handler = handler
+    if sender == "another chat's turn":
+        script = [(None, [_update(**VOICE_NOTE)]),
+                  (running.wait, [_update(chat_id=43, uid=43, text="status?")]),
+                  (news_sent, [])]
+    else:
+        script = [(None, [_update(text="remind me")]), (None, [_update(**VOICE_NOTE)]),
+                  (the_leftover_sends, [])]
+    await _poll(ch, script)
+    texts = [c["json"]["text"] for m, c in client.calls if m == "sendMessage"]
+    assert NEWS in texts and texts[-1] == to_telegram_html(REPLY)
+    assert synth.seen == [(SPOKEN, "ro")], f"spoken: {synth.seen}"
+    assert ch._voice_turns == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["awaited", "a task", "a worker thread", "a streamed draft",
+                                  "a draft that never started"])
+async def test_the_notes_answer_is_spoken_on_every_path_its_turn_sends_it(tmp_path, path):
+    """The mark goes with the turn's context: a reply sent from a task the turn created, from a
+    worker thread the turn started with that context (asyncio.to_thread copies it), or as a
+    streaming draft's final text is still the answer to the note."""
+    ch, client, synth = _channel(tmp_path, VOICE)
+    loop = asyncio.get_running_loop()
+
+    async def handler(text, channel="telegram", **kwargs):
+        cid = kwargs["chat_id"]
+        if path == "awaited":
+            await ch.send(REPLY, chat_id=cid)
+        elif path == "a task":
+            await asyncio.create_task(ch.send(REPLY, chat_id=cid))
+        elif path == "a worker thread":
+            await asyncio.to_thread(
+                lambda: asyncio.run_coroutine_threadsafe(ch.send(REPLY, chat_id=cid), loop).result(5))
+        else:
+            draft = ch.begin_stream(chat_id=cid)
+            if path == "a streamed draft":
+                await draft.push("**Este** ora 10.")
+            assert await draft.finish(REPLY) is True
+        return REPLY
+
+    ch.handler = handler
+    await _drain(ch, [_update(**VOICE_NOTE)])
+    assert synth.seen == [(SPOKEN, "ro")], f"spoken: {synth.seen}"
+    assert client.methods().count("sendVoice") == 1
+    assert ch._voice_turns == set()
+
+
+@pytest.mark.asyncio
+async def test_a_plain_notice_the_turn_itself_sends_leaves_the_mark_to_its_answer(tmp_path, monkeypatch):
+    """/voice voice: inside the voice note's own turn, a plain outbound notice to the owner chat
+    (outbound.py sends it with ``voice=False``) goes first. A ``voice=False`` send never takes the
+    mark, even from inside the turn: the answer that follows is the one spoken."""
+    ch, client, synth = _channel(tmp_path, VOICE)
+    hub = _owner_hub(ch, monkeypatch)
+
+    async def handler(text, channel="telegram", **kwargs):
+        assert (await send_to_target(hub, "telegram", NEWS, plain=True))["ok"] is True
+        await ch.send(REPLY, chat_id=kwargs["chat_id"])
+        return REPLY
+
+    ch.handler = handler
+    await _drain(ch, [_update(**VOICE_NOTE)])
+    texts = [c["json"]["text"] for m, c in client.calls if m == "sendMessage"]
+    assert texts == [NEWS, to_telegram_html(REPLY)]
+    assert synth.seen == [(SPOKEN, "ro")], f"spoken: {synth.seen}"
+
+
+@pytest.mark.asyncio
+async def test_a_turn_on_one_bot_never_takes_the_voice_mark_of_the_same_chat_on_another(tmp_path):
+    """Two Telegram channels (two bots) can see the same chat id. A turn running on the first
+    that sends to that chat through the second is not the second's turn: its voice mark stays
+    for its own turn's answer."""
+    first, _client, _synth = _channel(tmp_path, VOICE)
+    second, second_client, second_synth = _channel(tmp_path, VOICE)
+    second._voice_turns.add(42)                        # a voice note's turn of the second bot
+
+    async def handler(text, channel="telegram", **kwargs):
+        await second.send(NEWS, chat_id=42)
+        return None
+
+    first.handler = handler
+    await first._run_turn(42, 42, "status?")
+    assert second_synth.seen == [] and 42 in second._voice_turns
+    assert [m for m, _ in second_client.calls] == ["sendMessage"]
 
 
 # ── the streaming draft ─────────────────────────────────────────────────────

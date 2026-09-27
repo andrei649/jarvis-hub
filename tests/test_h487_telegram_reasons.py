@@ -126,6 +126,36 @@ async def test_expired_windows_are_pruned_only_to_make_room_and_before_a_live_on
     assert ('42', '0') not in coordinator._reason_windows and ('42', '33') in coordinator._reason_windows
 
 
+async def test_an_integer_arrival_in_time_is_saved(rig):
+    """An int stamp is an instant as much as a float (Telegram's dates are whole seconds)."""
+    queue, _, _, coordinator = rig
+    coordinator._reason_clock = lambda: 100
+    task_id = await reject(rig)                               # the window closes at t=220
+    coordinator._reason_clock = lambda: 250                   # handled late
+    assert await coordinator._on_reason_reply('Use staging', chat_id=42, user_id=99,
+                                              reply_to_message_id=77, received_at=219)
+    assert queue.get(task_id).human_decision['reason'] == 'Use staging'
+
+
+async def test_at_the_cap_a_window_closing_exactly_now_goes_before_a_live_one(rig):
+    """A window whose deadline is now is expired (the deadline check is ``>=``), so at the cap
+    it is pruned before the oldest live window is evicted."""
+    queue, _, _, coordinator = rig
+    task = queue.get(await reject(rig))
+    coordinator._reason_windows.clear()
+    coordinator._reason_clock = lambda: 100
+    await coordinator._offer_reason(task, 42, 0)
+    await coordinator._offer_reason(task, 42, 1)              # both close at 220
+    coordinator._reason_clock = lambda: 150
+    await coordinator._offer_reason(task, 42, 0)              # closes at 270; still the oldest entry
+    for user in range(2, 32):
+        await coordinator._offer_reason(task, 42, user)       # close at 270
+    coordinator._reason_clock = lambda: 220                   # user 1's deadline is now: expired
+    await coordinator._offer_reason(task, 42, 32)
+    assert ('42', '1') not in coordinator._reason_windows
+    assert ('42', '0') in coordinator._reason_windows, "a live window was evicted instead"
+
+
 async def test_the_reason_clock_is_the_windows_own_clock_read_live(rig):
     _, _, _, coordinator = rig
     coordinator._reason_clock = lambda: 321.5

@@ -15,9 +15,11 @@ which answers without side effects; a claimed reply is handled in its chat's lan
 everything held for that chat, where the inbox saves the reason and acknowledges it. So the
 acknowledgement keeps the chat's order, never holds the poll loop or another chat, is never
 spoken, and a tap read before the reply still supersedes the prompt it answers. The reason window
-is judged at the instant the poll loop claimed the reply (on the coordinator's clock, handed to
-the channel as ``decision_reason_clock``), so a slow turn ahead of it in the lane never expires a
-reason the owner sent in time, and a late one stays late. Every other reply is queued, merged and
+is judged by the reply's stamp: the instant its getUpdates page came back (on the coordinator's
+clock, handed to the channel as ``decision_reason_clock``), moved back by Telegram's own date for
+the message but never before the previous page came back. So neither a slow turn ahead of it in
+the lane nor the poll loop reading an earlier update expires a reason the owner sent in time, and
+a reply stamped late stays late. Every other reply is queued, merged and
 flushed as if the hook were not wired, and a failing hook never loses the reply. While a reason
 prompt is still on its way to a chat (its message id not yet known), a reply in that chat is
 classified behind it in the chat's lane too. These cases run on the real poll loop.
@@ -723,12 +725,13 @@ async def test_another_members_rejection_handled_after_the_deadline_never_drops_
     assert "Reason saved." in inbox.posted
 
 
-@pytest.mark.parametrize("clock", [None, 5.0, "raises"])
+@pytest.mark.parametrize("clock", [None, 5.0, "raises", "reads no instant"])
 async def test_the_hook_is_told_when_the_reply_arrived_only_by_a_wired_clock(monkeypatch, clock):
-    """With a clock wired, the hook gets ``received_at``: the clock's reading when the poll loop
-    claimed the reply. With none (or one that fails) it is called exactly as before, so an older
-    hook that takes no ``received_at`` still consumes the replies it claims, and the inbox judges
-    such a reply when it runs."""
+    """With a clock wired, the hook gets ``received_at``: here the clock's reading when the reply's
+    getUpdates page came back (it carries no Telegram date to credit). With none (or one that
+    fails) it is called exactly as before, so an older hook that takes no ``received_at`` still
+    consumes the replies it claims, and the inbox judges such a reply when it runs. A clock that
+    reads no instant (NaN) counts as failed."""
     channel, received = _channel(monkeypatch)
     seen = []
     channel.decision_reason_pending = lambda **kwargs: True
@@ -737,6 +740,8 @@ async def test_the_hook_is_told_when_the_reply_arrived_only_by_a_wired_clock(mon
             raise RuntimeError("clock offline")
 
         channel.decision_reason_clock = broken
+    elif clock == "reads no instant":
+        channel.decision_reason_clock = lambda: float("nan")
     elif clock is not None:
         channel.decision_reason_clock = lambda: clock
 
@@ -753,3 +758,218 @@ async def test_the_hook_is_told_when_the_reply_arrived_only_by_a_wired_clock(mon
     expected = {"chat_id": 42, "user_id": 7, "reply_to_message_id": PROMPT}
     assert seen == [{**expected, "received_at": 5.0} if clock == 5.0 else expected]
     assert received == []
+
+
+async def test_a_reply_read_while_its_prompt_posts_is_judged_by_its_stamp_behind_a_slow_turn(
+        monkeypatch, tmp_path):
+    """The owner's question and their reply to the prompt come in one page while the prompt is
+    still being posted (its id unknown), so the reply is classified in the chat's lane, behind
+    the question's slow turn, which ends at t=1150. The reply is still stamped when its page
+    came back (t=1000) and the reason is saved."""
+    channel, received = _channel(monkeypatch)
+    running, release = _answering(channel, received, slow="is the backup done?")
+    clock = [1000.0]
+    async with _Inbox(channel, tmp_path, 42, hold_prompt=True) as inbox:
+        inbox.coordinator._reason_clock = lambda: clock[0]
+        task_id = await inbox.task()
+
+        async def prompt_answers():
+            inbox.prompt_response.set()
+            await inbox.registered()
+
+        async def the_turn_ends_late():
+            await running.wait()
+            clock[0] = 1150.0
+            release.set()
+
+        await _run(channel, [
+            (0, [_tap(task_id)]),
+            (inbox.prompt_visible.wait, [_msg("is the backup done?", uid=OWNER),
+                                         _msg("Use staging", uid=OWNER, **_reply(PROMPT))]),
+            (prompt_answers, []),
+            (the_turn_ends_late, []),
+            (0.2, []),
+        ])
+        assert inbox.reason(task_id) == "Use staging"
+    assert [t for t, _ in received] == ["is the backup done?"]
+
+
+# ── round 4: the stamp is the reply's page, credited by Telegram's date ─────────
+
+#: The host's wall clock reads WALL plus the coordinator's (fake) clock, so a Telegram date
+#: of WALL + t says the message was sent at t on the coordinator's clock.
+WALL = 1_750_000_000
+
+
+@pytest.mark.parametrize("delivered", ["on the next page", "in the photo's page"])
+async def test_a_reason_sent_in_time_while_the_poll_loop_reads_another_chats_photo_is_saved(
+        monkeypatch, tmp_path, delivered):
+    """The prompt opens at t=1000 (window to 1120). Another user, in chat 55, sends a photo; the
+    poll loop itself reads it (the download, then the local vision model), from t=1095 to
+    t=1125. The owner's reply to the prompt is saved either way:
+
+    - sent at t=1100 while the photo is read, it comes on the next page (back at t=1125; the
+      photo's page came back at t=1000): Telegram's date credits it back to t=1100;
+    - already in the photo's page, behind the photo: it is stamped when that page came back
+      (t=1000), not when the poll loop got to it (t=1125).
+
+    Round 3 stamped it when the poll loop got to it: "expired", and the reason was lost."""
+    channel, received = _channel(monkeypatch)
+    clock = [1000.0]
+    channel._wall_clock = lambda: WALL + clock[0]
+    async with _Inbox(channel, tmp_path, 42) as inbox:
+        inbox.coordinator._reason_clock = lambda: clock[0]
+        hook, stamps = channel.on_decision_reason, []
+
+        async def stamped(text, **kwargs):
+            stamps.append(kwargs.get("received_at"))
+            return await hook(text, **kwargs)
+
+        channel.on_decision_reason = stamped
+        task_id = await inbox.task()
+
+        async def slow_vlm_read(attachment, spoken, chat_id, uid):
+            clock[0] = 1095.0            # the photo is read from here...
+            await asyncio.sleep(0)
+            clock[0] = 1125.0            # ...to here
+            return "[photo: a cat]", ""
+
+        monkeypatch.setattr(channel, "_read_attachment", slow_vlm_read)
+        photo = _msg("", chat_id=55, uid=8,
+                     photo=[{"file_id": "f", "file_unique_id": "u", "width": 1, "height": 1}])
+        photo["message"].pop("text")
+        if delivered == "on the next page":
+            reply = _msg("Use staging", uid=OWNER, date=WALL + 1100, **_reply(PROMPT))
+            pages = [(inbox.registered, [photo]), (0, [reply])]
+        else:
+            pages = [(inbox.registered, [photo, _msg("Use staging", uid=OWNER, **_reply(PROMPT))])]
+        await _run(channel, [(0, [_tap(task_id)]), *pages, (0.2, [])])
+        assert inbox.reason(task_id) == "Use staging"
+    assert stamps == [1100.0 if delivered == "on the next page" else 1000.0]
+    assert EXPIRED not in inbox.posted and "Reason saved." in inbox.posted
+    assert [t for t, _ in received] == ["[photo: a cat]"]
+
+
+def _at(clock, t):
+    async def tick():
+        clock[0] = t
+    return tick
+
+
+@pytest.mark.parametrize("previous, sent, stamp", [
+    ("read", None, 600.0),                  # no date: the page's own instant
+    ("read", WALL + 550, 550.0),            # sent 50 s before its page came back: credited
+    ("read", WALL + 600, 600.0),            # sent as its page came back
+    ("read", WALL + 100, 500.0),            # far in the past (a skewed clock): never before the previous page
+    ("read", WALL + 700, 600.0),            # in the future: the page's instant, never later
+    ("read", float("-inf"), 600.0),         # not an instant: the page's instant
+    ("read", float("nan"), 600.0),
+    ("read", True, 600.0),
+    ("read", str(WALL + 550), 600.0),
+    ("none", WALL + 550, 600.0),            # the first page: no previous page to bound it, no credit
+    ("failed", WALL + 550, 600.0),          # the previous page's reading failed: no credit
+    ("stepped back", WALL + 550, 600.0),    # a clock swapped between pages: never after the page
+])
+async def test_telegrams_date_moves_a_stamp_back_only_as_far_as_the_previous_page(
+        monkeypatch, previous, sent, stamp):
+    """The poll loop reads the clock once per getUpdates page, as it comes back. A claimed reply
+    is stamped with its page's instant, moved back by its age on Telegram's date (measured on
+    the host's wall clock, read with the page), but never before the previous page came back
+    and never after its own; the hook, run later in the chat's lane, gets that stamp."""
+    channel, _received = _channel(monkeypatch)
+    clock, stamps = [0.0], []
+
+    def reading():
+        if clock[0] is None:
+            raise RuntimeError("clock offline")
+        return clock[0]
+
+    async def hook(text, **kwargs):
+        stamps.append(kwargs.get("received_at"))
+        return True
+
+    channel.decision_reason_pending = lambda **kwargs: True
+    channel.decision_reason_clock = reading
+    channel._wall_clock = lambda: WALL + (clock[0] or 0.0)
+    channel.on_decision_reason = hook
+    earlier = {"read": [(_at(clock, 400.0), []), (_at(clock, 500.0), [])],
+               "none": [],
+               "failed": [(_at(clock, 400.0), []), (_at(clock, None), [])],
+               "stepped back": [(_at(clock, 650.0), [])]}[previous]
+    date = {} if sent is None else {"date": sent}
+    await _run(channel, [
+        *earlier,
+        (_at(clock, 600.0), [_msg("Use staging", **_reply(PROMPT), **date)]),
+        (_at(clock, 900.0), []),                    # when the lane runs it does not matter
+    ])
+    assert stamps == [stamp]
+
+
+async def test_the_replys_age_is_measured_when_its_page_came_back_not_when_it_is_reached(monkeypatch):
+    """The previous page came back at t=900, the reply's page at t=1000. A photo ahead of the
+    reply in that page holds the poll loop until t=1125. The reply was sent at t=950: its age is
+    measured on the wall clock read with its page (50 s), so it is stamped 950 - not 900, as a
+    wall clock read only when the poll loop reached it (175 s) would have it."""
+    channel, _received = _channel(monkeypatch)
+    clock, stamps = [0.0], []
+
+    async def hook(text, **kwargs):
+        stamps.append(kwargs.get("received_at"))
+        return True
+
+    async def slow_read(attachment, spoken, chat_id, uid):
+        clock[0] = 1125.0
+        return "[photo: a cat]", ""
+
+    channel.decision_reason_pending = lambda **kwargs: True
+    channel.decision_reason_clock = lambda: clock[0]
+    channel._wall_clock = lambda: WALL + clock[0]
+    channel.on_decision_reason = hook
+    monkeypatch.setattr(channel, "_read_attachment", slow_read)
+    photo = _msg("", chat_id=55, uid=8,
+                 photo=[{"file_id": "f", "file_unique_id": "u", "width": 1, "height": 1}])
+    photo["message"].pop("text")
+    await _run(channel, [
+        (_at(clock, 900.0), []),
+        (_at(clock, 1000.0), [photo, _msg("Use staging", date=WALL + 950, **_reply(PROMPT))]),
+    ])
+    assert stamps == [950.0]
+
+
+async def test_an_update_handled_outside_the_poll_loop_is_stamped_when_it_is_claimed(monkeypatch):
+    """No page, no previous page: the clock is read as the reply is claimed and its Telegram
+    date is not credited."""
+    channel, _received = _channel(monkeypatch)
+    stamps = []
+
+    async def hook(text, **kwargs):
+        stamps.append(kwargs.get("received_at"))
+        return True
+
+    channel.decision_reason_pending = lambda **kwargs: True
+    channel.decision_reason_clock = lambda: 42.0
+    channel._wall_clock = lambda: WALL + 42.0
+    channel.on_decision_reason = hook
+    await channel._handle_update(_msg("Use staging", date=WALL + 10, **_reply(PROMPT)))
+    assert stamps == [42.0]
+
+
+async def test_a_failing_clock_is_logged_once_until_it_reads_again(monkeypatch, caplog):
+    """The clock is read on every page; one that keeps failing is named once, not every poll,
+    and named again if it fails after it recovered."""
+    import logging
+
+    channel, _received = _channel(monkeypatch)
+    readings = [RuntimeError("clock offline")] * 3 + [5.0, RuntimeError("clock offline again")]
+
+    def reading():
+        value = readings.pop(0) if readings else 6.0
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    channel.decision_reason_clock = reading
+    with caplog.at_level(logging.WARNING, logger="jarvis.channels.telegram"):
+        await _run(channel, [(0, []), (0, []), (0, []), (0, []), (0, [])])
+    failures = [r for r in caplog.records if "decision-reason clock failed" in r.getMessage()]
+    assert len(failures) == 2

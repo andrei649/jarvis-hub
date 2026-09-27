@@ -7,10 +7,12 @@ Uses the PermissionGate to enforce domain restrictions.
 """
 
 import asyncio
+import contextvars
 import logging
+import math
 import re
 import time
-from typing import Callable, Optional
+from typing import Callable, NamedTuple, Optional
 
 import httpx
 
@@ -56,6 +58,45 @@ STREAM_EDIT_INTERVAL = 1.2
 #: H677: at stop, how long the turns already in their chats' lanes get to finish.
 LANE_DRAIN_BUDGET = 2.0
 _STREAM_CURSOR = " ▍"
+
+
+class _TurnScope:
+    """One turn of one chat while it runs (see :data:`_RUNNING_TURN`)."""
+
+    __slots__ = ("channel", "chat_id", "running")
+
+    def __init__(self, channel, chat_id) -> None:
+        self.channel, self.chat_id, self.running = channel, chat_id, True
+
+    def answers(self, channel, chat_id) -> bool:
+        """Is a reply to *chat_id* on *channel*, sent in this scope, this turn's own reply?"""
+        return self.running and self.channel is channel and self.chat_id == chat_id
+
+
+#: H071 x H117: the turn whose context this code runs in. ``_run_turn`` sets it for the length
+#: of one turn, and every task the turn creates inherits it (asyncio copies the context into a
+#: new task, and ``asyncio.to_thread`` into its thread). ``_after_reply`` lets a reply take the
+#: chat's voice mark only inside the scope of that chat's turn, and only while the turn still
+#: runs: the daily digest, an outbound notice, another chat's turn, or a task an earlier turn
+#: left behind is never the answer to a voice note. (``loop.run_in_executor`` copies no
+#: context, so a reply marshalled back from such a thread is never the answer either.)
+_RUNNING_TURN: contextvars.ContextVar = contextvars.ContextVar("telegram_running_turn", default=None)
+
+
+class _Page(NamedTuple):
+    """When one getUpdates page came back, read once as it did (see ``_reason_arrival``):
+    ``now`` on ``decision_reason_clock`` (None when no clock is wired or the reading failed),
+    ``wall`` on the host's wall clock (None when unreadable), and ``previous``, the ``now`` of
+    the page before it (None before the first page, or after a page whose reading failed)."""
+
+    previous: Optional[float]
+    now: Optional[float]
+    wall: Optional[float]
+
+
+def _is_instant(value) -> bool:
+    """A finite int or float (a bool is not an instant)."""
+    return type(value) in (int, float) and math.isfinite(value)
 
 
 class TelegramDraft:
@@ -215,11 +256,19 @@ class TelegramChannel(ChannelAdapter):
         # only replies read while a reason prompt is still being posted to their chat.
         self.decision_reason_pending: Optional[Callable] = None
         # H117: decision_reason_clock() reads the decision inbox's own clock
-        # (AutonomyCoordinator.reason_clock). The poll loop reads it when it claims a reply
-        # and hands the reading to on_decision_reason as ``received_at``, so the reason
-        # window is judged by when the reply arrived, not when the chat's lane reached it.
-        # With none wired the hook is called without it and judges the reply when it runs.
+        # (AutonomyCoordinator.reason_clock). The poll loop reads it once per getUpdates page,
+        # as the page comes back, and stamps a claimed reply from that reading (see
+        # _reason_arrival); the stamp goes to on_decision_reason as ``received_at``, so the
+        # reason window is judged by when the reply arrived, not when the chat's lane (or the
+        # poll loop) got to it. With none wired the hook is called without it and judges the
+        # reply when it runs.
         self.decision_reason_clock: Optional[Callable] = None
+        # When the last getUpdates page came back, on that clock (None before the first page
+        # or after a failed reading): how far back the next page may move a reply's stamp.
+        self._last_page_at: Optional[float] = None
+        # The host's wall clock, which a Telegram ``date`` (Unix seconds) is compared with.
+        self._wall_clock: Callable[[], float] = time.time
+        self._reason_clock_failing = False
         # H487 x H117: chats a decision-reason prompt is being posted to, with how many.
         # Until Telegram answers, the prompt's message id is unknown, so a reply in that
         # chat may be answering it and is classified behind it (see _handle_update).
@@ -246,8 +295,8 @@ class TelegramChannel(ChannelAdapter):
         # Injectable per-chat mode store; production uses the process-wide one.
         self._voice_modes: Optional[voice_mode.VoiceModeStore] = None
         # Chats whose current turn arrived as a voice note. The reply answering
-        # it consumes the mark, which is how "voice for voice" tells a spoken
-        # question from a typed one.
+        # it (the first one sent inside that turn, see _RUNNING_TURN) consumes the
+        # mark, which is how "voice for voice" tells a spoken question from a typed one.
         self._voice_turns: set = set()
         # H677: chats whose NEXT delivered turn was a voice note. The mark is taken
         # when the note is read, but with chat lanes an earlier turn of the chat may
@@ -311,7 +360,8 @@ class TelegramChannel(ChannelAdapter):
         # The words are delivered; a voice note follows only if this chat asked.
         # `voice=False` marks a service line (a transcript echo, an unreadable-attachment
         # notice, a pairing reply, a reason acknowledgement) that is never spoken and
-        # never takes the voice mark of a voice-note turn running in the chat.
+        # never takes the voice mark of a voice-note turn running in the chat. Any other
+        # send takes that mark only from inside the turn itself (see _after_reply).
         await self._after_reply(cid, str(message or ""), speak=kwargs.get("voice", True))
         return True
 
@@ -476,9 +526,12 @@ class TelegramChannel(ChannelAdapter):
                     if wait > 0:
                         await asyncio.sleep(wait)
                     updates = await self._get_updates(timeout=0)
+                # H117: when this page came back, read once, before any update in it is
+                # handled; a claimed reply in it is stamped from this reading.
+                page = self._page_received()
                 for up in updates:
                     self._offset = up["update_id"] + 1
-                    await self._handle_update(up)
+                    await self._handle_update(up, page)
                 for key in self._batch.due():
                     await self._flush_turn(key)
             except Exception as e:
@@ -494,9 +547,10 @@ class TelegramChannel(ChannelAdapter):
         if lanes is not None:
             await lanes.drain(LANE_DRAIN_BUDGET)
 
-    async def _handle_update(self, up: dict) -> None:
+    async def _handle_update(self, up: dict, page: Optional[_Page] = None) -> None:
         """One update: a button tap, an ignored message, a rejection's reason (H487), or a
-        turn piece to batch (H117)."""
+        turn piece to batch (H117). *page* is when the update's getUpdates page came back
+        (see ``_reason_arrival``); None for an update handled outside the poll loop."""
         # Decision-inbox button taps arrive as callback_query updates.
         cb = up.get("callback_query")
         if cb:
@@ -539,9 +593,13 @@ class TelegramChannel(ChannelAdapter):
                 # lane: what the chat said before it goes first, a tap read before it runs
                 # before it (so a superseded prompt is refused), its acknowledgement keeps the
                 # chat's order and voice marks, and polling and other chats never wait on it.
-                # Its arrival is read now, before it can wait in the lane: the reason window
-                # is judged by when the owner replied, not by how long the chat was busy.
-                received_at = self._reason_arrival()
+                # It is stamped from its page (see _reason_arrival): never later than when that
+                # page came back, so the time it then waits in the lane, or behind a slow
+                # update ahead of it in the page, never counts against it; and moved back by
+                # Telegram's date for it, never before the previous page came back, so the
+                # time the poll loop was busy before fetching it (reading an attachment, a
+                # back-off) is credited within that bound.
+                received_at = self._reason_arrival(msg, page)
                 await self._flush_chat_turns(chat_id)
 
                 async def handle_reply():
@@ -570,19 +628,63 @@ class TelegramChannel(ChannelAdapter):
                            exc_info=True)
             return False
 
-    def _reason_arrival(self):
-        """When a claimed reply arrived: ``decision_reason_clock()``, read in the poll loop as
-        the reply is claimed. None when no clock is wired or it fails; the hook is then called
-        without ``received_at`` and judges the reply when it runs."""
+    def _clock_reading(self):
+        """``(now, wall)``: ``decision_reason_clock()`` and the host's wall clock, read back to
+        back. None when no clock is wired or it fails (or reads no instant); ``wall`` is None
+        when the wall clock cannot be read."""
         clock = self.decision_reason_clock
         if clock is None:
             return None
         try:
-            return clock()
+            now = clock()
         except Exception:
-            logger.warning("Telegram decision-reason clock failed; the reply is judged when it runs",
-                           exc_info=True)
+            if not self._reason_clock_failing:
+                logger.warning("Telegram decision-reason clock failed; a reply is judged when it runs",
+                               exc_info=True)
+            self._reason_clock_failing = True
             return None
+        self._reason_clock_failing = False
+        if not _is_instant(now):
+            return None
+        try:
+            wall = self._wall_clock()
+        except Exception:
+            wall = None
+        return now, (wall if _is_instant(wall) else None)
+
+    def _page_received(self) -> _Page:
+        """Read once per getUpdates page, as it comes back: when it did, and when the page
+        before it did. A page whose reading failed leaves the next one no previous page."""
+        reading = self._clock_reading()
+        now, wall = reading if reading is not None else (None, None)
+        previous, self._last_page_at = self._last_page_at, now
+        return _Page(previous, now, wall)
+
+    def _reason_arrival(self, msg: dict, page: Optional[_Page]):
+        """The stamp of a claimed reply, on ``decision_reason_clock``: the instant its page came
+        back, moved back by the reply's age on Telegram's ``date`` for it (as of the page's
+        wall-clock reading), but never before the previous page came back:
+        ``min(now, max(previous, now - max(0, wall - date)))``.
+
+        What that guarantees: the stamp is never later than when the reply's page came back
+        and never earlier than when the page before it did (the first bound wins should the
+        clock ever step back between pages). Within those bounds it is only as exact as
+        Telegram's clock and this host's wall clock agree, and ``date`` is whole seconds, so a
+        reply can be credited up to a second early. A missing, non-finite or future ``date``,
+        or no previous page (the first page, or one whose reading failed), gives the page's
+        instant.
+        An update handled outside the poll loop has no page: the clock is read now. None when
+        no clock is wired or it fails; the hook is then called without ``received_at`` and
+        judges the reply when it runs."""
+        if page is None:
+            reading = self._clock_reading()
+            page = _Page(None, *reading) if reading is not None else None
+        if page is None or page.now is None:
+            return None
+        date = msg.get("date")
+        if page.previous is None or page.wall is None or not _is_instant(date):
+            return page.now
+        return min(page.now, max(page.previous, page.now - max(0, page.wall - date)))
 
     async def _consumed_as_reason(self, text, chat_id, uid, reply_id, received_at=None) -> bool:
         """In the chat's lane: let the decision-reason hook save and acknowledge the reason.
@@ -716,6 +818,10 @@ class TelegramChannel(ChannelAdapter):
             lanes.submit(chat_id, work)
 
     async def _run_turn(self, chat_id, uid, turn: str, *, spoken: bool = False) -> None:
+        # Only this turn's own replies (sent in its context, see _RUNNING_TURN) may take the
+        # chat's voice mark, and only while it runs.
+        scope = _TurnScope(self, chat_id)
+        token = _RUNNING_TURN.set(scope)
         if spoken:
             self._voice_turns.add(chat_id)
         try:
@@ -724,6 +830,8 @@ class TelegramChannel(ChannelAdapter):
             # A turn the router answered with nothing must not leave
             # its voice mark behind for the next, typed, question.
             self._voice_turns.discard(chat_id)
+            scope.running = False
+            _RUNNING_TURN.reset(token)
 
 
     async def _maybe_pair_deeplink(self, text: str, uid, chat_id) -> bool:
@@ -921,8 +1029,15 @@ class TelegramChannel(ChannelAdapter):
         """
         if not speak:
             return
-        inbound_voice = chat_id in self._voice_turns
-        self._voice_turns.discard(chat_id)
+        # The voice mark belongs to the running turn of this chat: only a reply sent in that
+        # turn's context takes it (_RUNNING_TURN). Any other send (a digest, an outbound
+        # notice, another chat's turn, a task an earlier turn left running) is judged as a
+        # reply to a typed question and leaves the mark to the turn's own answer.
+        scope = _RUNNING_TURN.get()
+        inbound_voice = False
+        if scope is not None and scope.answers(self, chat_id):
+            inbound_voice = chat_id in self._voice_turns
+            self._voice_turns.discard(chat_id)
         try:
             mode = self._voice_mode_store().get("telegram", chat_id)
         except Exception:
