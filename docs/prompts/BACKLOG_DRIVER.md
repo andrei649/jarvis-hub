@@ -5,6 +5,11 @@
 > supervision. It is the operational twin of [`MAX.md`](../../MAX.md): Max defines *how* a run
 > behaves; this prompt defines *what gets picked next and when to stop*. Owner: Andrei ·
 > Created 2026-09-06 · Referenced from [`docs/NERVA_2_ROADMAP.md`](../NERVA_2_ROADMAP.md) §8.
+>
+> **When a large draft PR is parked, use [`PARALLEL_LANE.md`](PARALLEL_LANE.md) instead.** §1b below
+> sends the developer at the *current* milestone, and while that milestone is itself an open draft PR
+> (1.1.0 = #1207) that is a collision, not a pick. The companion keeps §0 and §2–§6 of this file and
+> replaces only §1.
 
 ---
 

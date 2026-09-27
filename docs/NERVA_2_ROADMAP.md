@@ -227,6 +227,9 @@ Capability growth that makes Nerva noisier or less local is failure, not progres
 ## 10. Anti-drift protocol
 
 - The unattended developer runs `docs/prompts/BACKLOG_DRIVER.md`; a human run says "Max".
+  While a large draft PR is parked (1.1.0 = #1207), a second session runs
+  [`docs/prompts/PARALLEL_LANE.md`](prompts/PARALLEL_LANE.md) instead: same gates, a pick order that
+  replaces §1b so it cannot walk into the parked PR's 881-file footprint.
 - Builder ≠ reviewer ≠ integrator for R2/R3 work; program acceptance is the owner's.
 - A milestone closes on its exit gate, recorded here and in `docs/HISTORY.md`, never on ticks.
 - Re-recount before trusting any row (`docs/BACKLOG_ZERO_LEDGER.md` recount rule).
