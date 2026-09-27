@@ -27,7 +27,7 @@ import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, s
 import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
-import { RETENTION_KIND, RetentionBanner, RetentionCard, approvalNote } from './panels/retention';
+import { RETENTION_KIND, RetentionBanner, RetentionCard, approvalNote, refusedWhy } from './panels/retention';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
@@ -2803,7 +2803,7 @@ export function SettingsPanel() {
         });
         reload();
       })
-      .catch((err: any) => setRefused([`${cat}: ${refusalReason(err, 'not saved')}`]));
+      .catch((err: any) => setRefused([`${cat}: ${refusedWhy(err, 'not saved')}`]));
   const save = async () => {
     // A refused category keeps its edits and shows the hub's own reason (review-H318b n-4:
     // "updated 0" over a 422 read as saved, and the typed text stayed in the box).
@@ -2819,7 +2819,7 @@ export function SettingsPanel() {
       }
       catch (err) {
         kept[cat] = dirty[cat];
-        guard.catchGuard(saveGuarded(cat, dirty[cat]), (e) => why.push(`${cat}: ${refusalReason(e, 'not saved')}`))(err);
+        guard.catchGuard(saveGuarded(cat, dirty[cat]), (e) => why.push(`${cat}: ${refusedWhy(e, 'not saved')}`))(err);
       }
     }
     setSaved(n); setRefused(why); setSent(queued); setDirty(kept); setRetentionTick((t) => t + 1); reload();

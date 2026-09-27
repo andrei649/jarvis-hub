@@ -84,6 +84,21 @@ def enqueue(orch: Any, kind: str, *, title: str, payload: dict, preview: dict) -
     return {"pending": int(task_id)}
 
 
+def pending(orch: Any, kind: str) -> list[Any]:
+    """The tasks of ``kind`` waiting for a human decision, oldest first; none when there is
+    no queue to ask (H262 review: the settings route merges a new request with a waiting
+    one, and never queues a second identical card)."""
+    worker = getattr(orch, "autonomy", None) if orch is not None else None
+    lister = getattr(getattr(worker, "queue", None), "pending_decisions", None)
+    if not callable(lister):
+        return []
+    try:
+        return [task for task in lister() if getattr(task, "kind", None) == kind]
+    except Exception:  # noqa: BLE001 — a queue that cannot answer holds nothing we can merge
+        logger.warning("the approval queue could not list the waiting %s tasks", kind, exc_info=True)
+        return []
+
+
 async def execute(task: Any, *, orch: Any) -> dict:
     """Apply an approved task of a registered kind — only on a human's accept or edit."""
     kind = str(getattr(task, "kind", "") or "")
@@ -105,4 +120,4 @@ async def execute(task: Any, *, orch: Any) -> dict:
         return {"status": "failed", "reason": "apply_failed"}
 
 
-__all__ = ["HUMAN_DECISIONS", "MACHINE_DECIDERS", "RISK_TIER", "enqueue", "execute", "kinds", "register"]
+__all__ = ["HUMAN_DECISIONS", "MACHINE_DECIDERS", "RISK_TIER", "enqueue", "execute", "kinds", "pending", "register"]

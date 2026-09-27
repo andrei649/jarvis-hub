@@ -145,7 +145,8 @@ def test_the_card_preview_counts_what_the_new_horizon_would_remove(env, client):
         with env.cp._lock:
             env.cp._conn.execute("UPDATE sessions SET started_at=?, ended_at=? WHERE id=?", (old, old, sid))
             env.cp._conn.commit()
-        env.cp.set_archived(sid, archived)
+        if archived:                        # archived long ago: past the week's grace
+            env.cp.set_archived(sid, True, at=old)
     settings_db.put_category("retention", {"enabled": True})
     settings_db.put_category("memory", {"auto_archive_days": 30})
     _approve(env, retention__conversation_ttl_days=0, retention__audit_ttl_days=0)
@@ -155,7 +156,11 @@ def test_the_card_preview_counts_what_the_new_horizon_would_remove(env, client):
     preview = env.queue.get(resp.json()["pending"]).payload["preview"]
     assert preview["horizons"]["conversations"] == 60 and preview["horizons"]["audit"] == 100
     assert preview["approved"]["conversations"] is None and sorted(preview["widened"]) == ["audit", "conversations"]
-    assert preview["would_delete"] == {"archived_chats": 1, "audit_rows": 2}
+    assert preview["would_delete"] == {"archived_chats": {"count": 1, "more": False},
+                                       "chats_to_archive": {"count": 1, "more": False},
+                                       "audit_rows": {"count": 2, "more": False},
+                                       "ingestion": {"count": 0, "more": False},
+                                       "attachments": {"count": 0, "more": False}}
 
 
 def test_a_narrowing_put_is_written_at_once(env, client):
@@ -353,12 +358,25 @@ def test_a_widening_undo_is_refused_with_nothing_restored(env, client):
     assert settings_db.list_resets()[0]["undone"] is False
 
 
-def test_an_undo_within_the_approved_horizon_is_restored(env, client):
+def test_an_undo_of_a_narrowing_reset_needs_approval_again(env, client):
+    """H262 review F4: the reset (retention back off) is a human narrowing, so it lowers the
+    approval; the undo that would switch it back on is a widening like any other."""
     settings_db.put_category("retention", {"enabled": True, "audit_ttl_days": 30})
     _approve(env)
     client.post("/api/admin/settings/retention/reset", headers=ADMIN, json={})
+    assert retention.approved_horizons(env.cp)["audit"] == float("inf")
     resp = client.post("/api/admin/settings/undo", headers=ADMIN, json={})
-    assert resp.status_code == 200 and _value("retention.enabled") is True
+    assert resp.status_code == 409 and _value("retention.enabled") is False
+
+
+def test_an_undo_that_deepens_nothing_is_restored(env, client):
+    settings_db.put_category("retention", {"audit_ttl_days": 30, "min_interval_hours": 6})    # retention off
+    _approve(env)
+    client.post("/api/admin/settings/retention/reset", headers=ADMIN, json={})
+    assert _value("retention.audit_ttl_days") == 365
+    resp = client.post("/api/admin/settings/undo", headers=ADMIN, json={})
+    assert resp.status_code == 200, resp.text
+    assert _value("retention.audit_ttl_days") == 30 and _value("retention.min_interval_hours") == 6
 
 
 # ── 20. nerva config set ──────────────────────────────────────────────────────────
@@ -408,3 +426,171 @@ def test_the_retention_state_route_is_admin_only_and_says_what_is_approved(env, 
     got = client.get("/api/admin/retention", headers=ADMIN).json()
     assert got["awaiting_approval"] is False and got["approved"]["values"]["retention.enabled"] is True
     assert got["horizons"]["effective"]["audit"] == 365 and got["sweep"]["last_vacuum_at"] == 5.0
+
+
+# ── review round (H262) ───────────────────────────────────────────────────────────
+
+def _age_chat(env, sid, idle_days, *, archived_days_ago=None):
+    from datetime import UTC, datetime, timedelta
+
+    at = (datetime.now(UTC) - timedelta(days=idle_days)).isoformat()
+    env.cp.create_session_record(sid, "jarvis", {})
+    with env.cp._lock:
+        env.cp._conn.execute("UPDATE sessions SET started_at=?, ended_at=? WHERE id=?", (at, at, sid))
+        env.cp._conn.commit()
+    if archived_days_ago is not None:
+        env.cp.set_archived(sid, True, at=(datetime.now(UTC) - timedelta(days=archived_days_ago)).isoformat())
+
+
+def _accept(env, task_id):
+    task = asyncio.run(env.worker.apply_decision(task_id, "accept", decided_by="admin"))
+    return asyncio.run(irreversible.execute(task, orch=env.orch))
+
+
+def test_f1_the_card_counts_the_chats_the_archive_phase_will_hand_to_retention(env):
+    for i in range(5):
+        _age_chat(env, f"old{i}", 200)
+    _age_chat(env, "recent", 50)
+    _age_chat(env, "gone-soon", 200, archived_days_ago=30)
+    _age_chat(env, "just-archived", 200, archived_days_ago=1)
+    values = {**retention.stored_values(), "retention.enabled": True, "memory.auto_archive_days": 30,
+              "retention.conversation_ttl_days": 90}
+    gone = retention.approval_preview(values, None, env.cp, env.audit)["would_delete"]
+    assert gone["chats_to_archive"] == {"count": 5, "more": False}
+    assert gone["archived_chats"] == {"count": 1, "more": False}          # past the week's grace only
+    assert gone["ingestion"] == {"count": 0, "more": False} and gone["attachments"] == {"count": 0, "more": False}
+
+
+def test_f11_ingestion_and_attachments_are_not_counted_and_a_capped_count_is_a_lower_bound(env, monkeypatch):
+    for i in range(5):
+        _age_chat(env, f"old{i}", 200, archived_days_ago=30)
+    monkeypatch.setattr(retention, "_PREVIEW_CHATS", 3)
+    values = {**retention.stored_values(), "retention.enabled": True, "memory.auto_archive_days": 30,
+              "retention.conversation_ttl_days": 90, "retention.ingestion_ttl_days": 7,
+              "retention.artifact_ttl_days": 30}
+    gone = retention.approval_preview(values, None, env.cp, env.audit)["would_delete"]
+    assert gone["archived_chats"] == {"count": 3, "more": True}
+    assert gone["ingestion"] == retention.NOT_COUNTED and gone["attachments"] == retention.NOT_COUNTED
+    assert retention.NOT_COUNTED == {"counted": False}
+    assert gone["audit_rows"] == {"count": 0, "more": False}
+
+
+def test_f5_the_title_and_the_audit_row_name_every_class_the_accept_widens(env, client):
+    settings_db.put_category("retention", {"enabled": True, "audit_ttl_days": 365, "ingestion_ttl_days": 7,
+                                           "artifact_ttl_days": 30, "conversation_ttl_days": 90})
+    task_id = _queued(env, client, {"auto_archive_days": 30}, category="memory")
+    task = env.queue.get(task_id)
+    assert task.title == ("Retention: delete deeper — chats 90d, audit 365d, ingestion 7d, attachments 30d"
+                          " (memory.auto_archive_days=30)")
+    assert len(task.title) <= retention.TITLE_MAX
+    assert _accept(env, task_id)["status"] == "ok"
+    row = next(r for r in _audit_rows(env) if r.action_taken == "settings_retention_approved")
+    for part in ("chats 90d", "audit 365d", "ingestion 7d", "attachments 30d"):
+        assert part in row.content_preview, part
+    snap = env.cp.get_state(retention.APPROVED_STATE)["value"]
+    assert snap["horizons"] == task.payload["preview"]["horizons"]
+
+
+def test_f5_a_long_title_stays_under_the_limit():
+    values = {f"retention.x{i}": "y" * 50 for i in range(10)}
+    title = retention._title(dict.fromkeys(retention.DATA_CLASSES, 36500.0), list(retention.DATA_CLASSES), values)
+    assert len(title) <= retention.TITLE_MAX and title.endswith("…)")
+
+
+def test_f4_a_narrowing_lowers_the_approval_so_an_import_or_put_back_needs_approval_again(env, client):
+    settings_db.put_category("retention", {"enabled": True, "audit_ttl_days": 30})
+    _approve(env)
+    assert client.put("/api/admin/settings/retention", headers=ADMIN,
+                      json={"values": {"audit_ttl_days": 3650}}).status_code == 200
+    assert retention.approved_horizons(env.cp)["audit"] == 3650
+    imported = client.post("/api/admin/settings/import", headers=ADMIN,
+                           json={"settings": {"retention": {"audit_ttl_days": 30}}})
+    assert imported.status_code == 409 and _value("retention.audit_ttl_days") == 3650
+    put = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"audit_ttl_days": 30}})
+    assert put.status_code == 202 and _value("retention.audit_ttl_days") == 3650
+
+
+def test_f4_switching_retention_off_and_on_again_needs_approval_again(env, client):
+    settings_db.put_category("retention", {"enabled": True, "audit_ttl_days": 30})
+    _approve(env)
+    assert client.put("/api/admin/settings/retention", headers=ADMIN,
+                      json={"values": {"enabled": False}}).status_code == 200
+    assert retention.approved_horizons(env.cp) == dict.fromkeys(retention.DATA_CLASSES, float("inf"))
+    again = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"enabled": True}})
+    assert again.status_code == 202 and _value("retention.enabled") is False
+
+
+def test_f4_the_cli_lowers_the_approval_too(env):
+    settings_db.put_category("retention", {"enabled": True, "audit_ttl_days": 30})
+    _approve(env)
+    code, _out, err = _cli("config", "set", "retention.audit_ttl_days", "3650")
+    assert code == 0, err
+    assert retention.approved_horizons(env.cp)["audit"] == 3650
+    code, _out, err = _cli("config", "set", "retention.audit_ttl_days", "30")
+    assert code == 1 and _value("retention.audit_ttl_days") == 3650
+
+
+def test_f4_a_lowering_never_widens_and_reads_the_old_shape(env):
+    settings_db.put_category("retention", {"enabled": True, "audit_ttl_days": 900})
+    env.cp.put_state(retention.APPROVED_STATE, {"values": {**retention.stored_values(), "retention.audit_ttl_days": 3650}})
+    assert retention.approved_horizons(env.cp)["audit"] == 3650
+    assert retention.lower_approval(env.cp) is False                  # 900 is deeper: never widened here
+    assert retention.approved_horizons(env.cp)["audit"] == 3650
+    settings_db.put_category("retention", {"audit_ttl_days": 5000})
+    assert retention.lower_approval(env.cp) is True
+    state = env.cp.get_state(retention.APPROVED_STATE)["value"]
+    assert state["horizons"]["audit"] == 5000 and retention.approved_horizons(env.cp)["audit"] == 5000
+    env.cp.put_state(retention.APPROVED_STATE, {})                    # no snapshot: nothing to lower
+    assert retention.lower_approval(env.cp) is False
+
+
+def test_f10_a_harmless_retention_put_after_a_gated_memory_put_keeps_the_card_acceptable(env, client):
+    settings_db.put_category("retention", {"enabled": True, "conversation_ttl_days": 90})
+    _approve(env)
+    task_id = _queued(env, client, {"auto_archive_days": 30}, category="memory")        # the HUD sends memory first
+    assert client.put("/api/admin/settings/retention", headers=ADMIN,
+                      json={"values": {"audit_ttl_days": 900}}).status_code == 200      # then retention, ungated
+    result = _accept(env, task_id)
+    assert result["status"] == "ok", result
+    assert _value("memory.auto_archive_days") == 30 and _value("retention.audit_ttl_days") == 900
+    snap = retention.approved_horizons(env.cp)
+    assert snap["conversations"] == 90 and snap["audit"] == 900
+
+
+def test_f10_a_retention_put_that_deepens_a_pending_card_is_gated_with_it(env, client):
+    settings_db.put_category("retention", {"enabled": True, "conversation_ttl_days": 90})
+    _approve(env)
+    first = _queued(env, client, {"auto_archive_days": 30}, category="memory")
+    second = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"conversation_ttl_days": 30}})
+    assert second.status_code == 202 and _value("retention.conversation_ttl_days") == 90
+    card = env.queue.get(second.json()["pending"]).payload
+    assert card["values"] == {"memory": {"auto_archive_days": 30}, "retention": {"conversation_ttl_days": 30}}
+    assert card["preview"]["horizons"]["conversations"] == 30
+    assert _accept(env, first)["status"] == "ok"
+    assert _accept(env, second.json()["pending"])["status"] == "ok"
+    assert retention.approved_horizons(env.cp)["conversations"] == 30
+
+
+def test_f10_a_card_is_still_refused_when_the_result_is_deeper_than_it_showed(env, client):
+    settings_db.put_category("retention", {"enabled": True, "conversation_ttl_days": 90})
+    _approve(env)
+    task_id = _queued(env, client, {"auto_archive_days": 30}, category="memory")        # the card: chats 90d
+    settings_db.put_category("retention", {"conversation_ttl_days": 7})    # a writer that bypassed the gate
+    assert _accept(env, task_id) == {"status": "refused", "reason": "changed_since_request"}
+
+
+def test_f12_retention_on_with_every_horizon_forever_awaits_nothing(env, client):
+    settings_db.put_category("retention", {"enabled": True, "audit_ttl_days": 0, "conversation_ttl_days": 0})
+    got = client.get("/api/admin/retention", headers=ADMIN).json()
+    assert got["awaiting_approval"] is False and got["approved"] is None
+
+
+def test_the_state_route_names_the_waiting_card_and_a_second_identical_put_reuses_it(env, client):
+    settings_db.put_category("retention", {"enabled": True})
+    assert client.get("/api/admin/retention", headers=ADMIN).json()["pending_task"] is None
+    first = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"enabled": True}})
+    assert first.status_code == 202
+    assert client.get("/api/admin/retention", headers=ADMIN).json()["pending_task"] == first.json()["pending"]
+    again = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"enabled": True}})
+    assert again.status_code == 202 and again.json()["pending"] == first.json()["pending"]
+    assert len(_pending(env)) == 1

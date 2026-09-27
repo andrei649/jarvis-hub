@@ -841,3 +841,215 @@ async def test_the_delete_route_goes_through_the_shared_helper(env, monkeypatch)
     monkeypatch.setattr(route, "get_orch", lambda: SimpleNamespace(session_id="live"))
     got = await route.delete_session("gone", confirm="DELETE")
     assert got.status_code == 200 and seen == [("gone", {})]
+
+
+# ── review round (H262) ──────────────────────────────────────────────────────────
+
+def _resume_client(env, monkeypatch):
+    async def resume(sid):
+        return True
+
+    async def history(sid):
+        return []
+    orch = SimpleNamespace(checkpoints=env.cp, session_id=None,
+                           memory=SimpleNamespace(resume_session=resume, get_history=history))
+    return _client(monkeypatch, orch)
+
+
+async def test_f0_a_never_archived_idle_chat_survives_the_sweep_that_archives_it(env):
+    settings = _settings()                        # horizon = max(60, 100) = 100 days
+    _approve(env.cp, settings)
+    orch = _orch(env, settings)
+    _chat(env, "idle", 120, archived=False)
+    report = await _sweep(orch)
+    assert report["archived"] == ["idle"] and report["retention"]["conversations"]["deleted"] == []
+    assert env.cp.session_row("idle") is not None
+    later = await _sweep(orch, at=NOW + 6 * _DAY)                # inside the week in the Archived view
+    assert later["retention"]["conversations"]["deleted"] == [] and env.cp.session_row("idle") is not None
+    week = await _sweep(orch, at=NOW + retention.DELETE_GRACE_DAYS * _DAY)
+    assert week["retention"]["conversations"]["deleted"] == ["idle"] and env.cp.session_row("idle") is None
+
+
+async def test_f0_an_unarchived_chat_is_not_archived_again_by_the_next_sweep(env, monkeypatch):
+    settings = _settings()
+    _approve(env.cp, settings)
+    _chat(env, "kept", 120)                                     # archived 120 days ago
+    got = _client(monkeypatch, SimpleNamespace(checkpoints=env.cp)).post("/sessions/kept/unarchive")
+    assert got.status_code == 200 and "archived_at" not in _meta(env.cp, "kept")
+    assert _meta(env.cp, "kept")["kept_at"]
+    report = await _sweep(_orch(env, settings), at=time.time())
+    assert report["archived"] == [] and report["retention"]["conversations"]["deleted"] == []
+    assert env.cp.session_row("kept") is not None and "archived_at" not in _meta(env.cp, "kept")
+
+
+async def test_f0_a_resumed_chat_is_not_archived_again_by_the_next_sweep(env, monkeypatch):
+    settings = _settings()
+    _approve(env.cp, settings)
+    _chat(env, "back", 120)
+    assert _resume_client(env, monkeypatch).post("/sessions/resume", json={"session_id": "back"}).status_code == 200
+    assert "archived_at" not in _meta(env.cp, "back") and _meta(env.cp, "back")["kept_at"]
+    report = await _sweep(_orch(env, settings), at=time.time())
+    assert report["archived"] == [] and env.cp.session_row("back") is not None
+
+
+def test_f0_the_grace_is_in_the_expired_query(env):
+    _chat(env, "just-archived", 120, archived=False, files=False)
+    env.cp.set_archived("just-archived", True, at=MOMENT.isoformat())
+    _chat(env, "long-archived", 120, files=False)
+    grace = (MOMENT - timedelta(days=retention.DELETE_GRACE_DAYS)).isoformat()
+    assert env.cp.expired_sessions(_iso(100), archived_before=grace) == ["long-archived"]
+    assert env.cp.is_expired("just-archived", _iso(100), archived_before=grace) is False
+    assert env.cp.is_expired("long-archived", _iso(100), archived_before=grace) is True
+    assert env.cp.expired_sessions(_iso(100)) == ["long-archived"]            # the grace by default
+    assert "7" in next(r for r in settings_db.DEFAULTS if r["key"] == "conversation_ttl_days")["label"]
+
+
+async def test_f2_failed_attempts_after_their_backup_never_prune_a_deleted_chats_backup(env, monkeypatch):
+    monkeypatch.setenv("JARVIS_SESSION_BACKUP_KEEP", "1")
+    settings = _settings()
+    _approve(env.cp, settings)
+    orch = _orch(env, settings)
+    for i, sid in enumerate(("ok1", "ok2", "bad1", "bad2", "bad3", "bad4")):
+        _chat(env, sid, 110 + i, files=False)             # newest first: ok1, ok2, then the failures
+    calls = []
+
+    async def forget(sid):
+        calls.append(sid)
+        if sid.startswith("bad"):
+            raise RuntimeError("database is locked")
+        return 0
+    orch.memory.forget_session_embeddings = forget
+    report = await _sweep(orch)
+    conv = report["retention"]["conversations"]
+    assert conv["deleted"] == ["ok1", "ok2"] and conv["backups_pruned"] == []
+    left = {p.name.split("-")[0] for p in env.backup.glob("*.json.enc")}
+    assert {"ok1", "ok2"} <= left
+
+
+async def _pin_during_delete(env, monkeypatch, act):
+    settings = _settings()
+    _approve(env.cp, settings)
+    orch = _orch(env, settings)
+    _chat(env, "late", 120)
+    real = sa._write_backup
+
+    def backup_then_act(record, target):
+        out = real(record, target)
+        act()                                                   # lands after the in-lease re-check
+        return out
+    monkeypatch.setattr(sa, "_write_backup", backup_then_act)
+    report = await _sweep(orch)
+    return report
+
+
+@pytest.mark.parametrize("act", ["pin", "unarchive", "resume"])
+async def test_f3_a_pin_unarchive_or_resume_after_the_recheck_keeps_the_chat(env, monkeypatch, act):
+    from agents.core.memory.precompress import TranscriptArchive
+
+    def landing():
+        if act == "pin":
+            env.cp.set_pinned("late", True)
+        else:
+            env.cp.unarchive("late")
+    report = await _pin_during_delete(env, monkeypatch, landing)
+    conv = report["retention"]["conversations"]
+    assert conv["deleted"] == [] and conv["skipped"] == {"late": "no_longer_expired"}
+    assert env.cp.session_row("late") is not None
+    assert (env.root / "late.json").exists() and (env.root / "late.jsonl").exists()
+    assert TranscriptArchive().path_for("late").exists()
+
+
+def test_f3_the_guarded_row_delete_removes_nothing_when_no_longer_expired(env):
+    _chat(env, "s", 120, files=False)
+    env.cp.set_pinned("s", True)
+    grace = (MOMENT - timedelta(days=7)).isoformat()
+    assert env.cp.delete_session_rows("s", expired=(_iso(100), grace)) is None
+    assert env.cp.session_row("s") is not None
+    env.cp.set_pinned("s", False)
+    assert env.cp.delete_session_rows("s", expired=(_iso(100), grace))["sessions"] == 1
+
+
+def test_f8_an_earlier_clock_read_committed_later_never_claims_twice(env):
+    other = CheckpointManager(env.cp.db_path)
+    other.initialize()
+    try:
+        assert env.cp.claim_sweep("lifecycle_sweep", 1000.0, 3600) is True
+        assert other.claim_sweep("lifecycle_sweep", 999.9, 3600) is False
+    finally:
+        other.close()
+
+
+def test_f9_the_checkpoint_connection_waits_out_a_vacuum(env):
+    assert env.cp._conn.execute("PRAGMA busy_timeout").fetchone()[0] == 30000
+    assert "30 s" in CheckpointManager.vacuum.__doc__
+
+
+def _hold_hub_lock(root):
+    import fcntl
+
+    root.mkdir(parents=True, exist_ok=True)
+    handle = open(root / "hub.lock", "a+", encoding="ascii")  # noqa: SIM115
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return handle
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="flock")
+async def test_f7_a_process_without_the_hub_lock_skips_while_a_hub_holds_it(env, monkeypatch):
+    from agents.core import install_identity
+
+    settings = _settings()
+    _approve(env.cp, settings)
+    _chat(env, "idle", 120, archived=False)
+    monkeypatch.setattr(install_identity, "_hub_handle", None)
+    handle = _hold_hub_lock(env.root)                     # the hub, as another open file
+    try:
+        assert install_identity.holds_hub_lock() is False
+        assert install_identity.hub_lock_held_elsewhere(env.root) is True
+        got = await lifecycle_sweep.run_sweep(_orch(env, settings), now=NOW, root=env.root)
+        assert got == {"_scheduler_status": "skipped", "reason": "hub_runs_it"}
+        assert env.cp.get_state("lifecycle_sweep") is None and "archived_at" not in _meta(env.cp, "idle")
+    finally:
+        handle.close()
+    assert install_identity.hub_lock_held_elsewhere(env.root) is False     # released: a coordinator alone runs it
+    got = await lifecycle_sweep.run_sweep(_orch(env, settings), now=NOW, root=env.root)
+    assert got["archived"] == ["idle"]
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="flock")
+async def test_f7_the_hub_lock_holder_runs_it(env, monkeypatch):
+    from agents.core import install_identity
+
+    settings = _settings()
+    _approve(env.cp, settings)
+    monkeypatch.setattr(install_identity, "_hub_handle", None)
+    install_identity.acquire_hub_lock(env.root)
+    try:
+        assert install_identity.holds_hub_lock() is True
+        assert install_identity.hub_lock_held_elsewhere(env.root) is False
+        got = await lifecycle_sweep.run_sweep(_orch(env, settings), now=NOW, root=env.root)
+        assert "_scheduler_status" not in got
+    finally:
+        install_identity.release_hub_lock()
+
+
+def test_f7_the_probe_never_creates_the_data_root(tmp_path, monkeypatch):
+    from agents.core import install_identity
+
+    monkeypatch.setattr(install_identity, "_hub_handle", None)
+    missing = tmp_path / "nowhere"
+    assert install_identity.hub_lock_held_elsewhere(missing) is False and not missing.exists()
+
+
+async def test_f3_a_pin_after_the_last_check_is_caught_by_the_guarded_row_delete(env):
+    settings = _settings()
+    _approve(env.cp, settings)
+    orch = _orch(env, settings)
+    _chat(env, "late", 120)
+
+    async def forget(sid):
+        env.cp.set_pinned(sid, True)                  # between every Python-side check and the delete
+        return 0
+    orch.memory.forget_session_embeddings = forget
+    report = await _sweep(orch)
+    assert report["retention"]["conversations"]["skipped"] == {"late": "no_longer_expired"}
+    assert env.cp.session_row("late") is not None and (env.root / "late.jsonl").exists()

@@ -11,6 +11,8 @@ user-guarded and never cached — a plan is work in flight and a stale copy miss
 
 H262 adds the pin (`POST /sessions/{id}/pin` and `/unpin`, user-guarded): a pinned chat is
 never auto-archived and never deleted by retention; each list row carries `pinned_at`.
+H262 review: unarchiving or resuming a chat stamps `kept_at`, from which the archiver
+counts its idle time again, so the next sweep does not archive it straight back.
 """
 
 from uuid import UUID
@@ -61,13 +63,22 @@ def _set_stamp(session_id: str, field: str, on: bool):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    done = getattr(orch.checkpoints, _STAMPS[field])(session_id, on)
+    if (field, on) == ("archived", False):
+        done = _keep(orch.checkpoints, session_id)
+    else:
+        done = getattr(orch.checkpoints, _STAMPS[field])(session_id, on)
     if done is None:
         return JSONResponse({"error": "the session store is unavailable", "reason": "store_unavailable"},
                             status_code=503)
     if not done:
         return JSONResponse({"error": f"session '{session_id}' not found"}, status_code=404)
     return JSONResponse({"ok": True, "session": session_id, field: on}, headers=_NO_STORE)
+
+
+def _keep(checkpoints, session_id: str):
+    """H262 review — the owner keeps a chat: unarchived, with ``kept_at`` stamped."""
+    keep = getattr(checkpoints, "unarchive", None)
+    return keep(session_id) if callable(keep) else checkpoints.set_archived(session_id, False)
 
 
 @router.post("/sessions/{session_id}/archive", dependencies=[Depends(user_guard)])
@@ -176,7 +187,7 @@ async def resume_session(req: Request):
     orch.session_id = sid
     checkpoints = getattr(orch, "checkpoints", None)
     if checkpoints is not None:
-        checkpoints.set_archived(sid, False)   # H218: resuming an archived chat brings it back (H262: pin kept)
+        _keep(checkpoints, sid)   # H218: resuming an archived chat brings it back (H262: pin kept, kept_at stamped)
     history = await orch.memory.get_history(sid)
     from agents.core.memory.recap import render_recap
 

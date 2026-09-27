@@ -437,7 +437,7 @@ DEFAULTS: list[dict[str, Any]] = [
     # deleted only once it is archived (memory.auto_archive_days, or by hand) and unpinned.
     dict(category="retention", key="artifact_ttl_days", value=0, label="Delete unpinned binary attachments older than (days; 0 = keep forever)", kind="number"),
     dict(category="retention", key="enabled",               value=False, label="Enable data-retention sweeps", kind="toggle"),
-    dict(category="retention", key="conversation_ttl_days", value=90,    label="Delete archived, unpinned chats idle longer than (days; 0 = keep forever; needs chat archiving on)", kind="number"),
+    dict(category="retention", key="conversation_ttl_days", value=90,    label="Delete archived, unpinned chats idle longer than (days; 0 = keep forever; needs chat archiving on; a chat stays archived at least 7 days first)", kind="number"),
     dict(category="retention", key="audit_ttl_days",        value=365,   label="Prune audit-log rows older than (days; 0 = keep forever)", kind="number"),
     dict(category="retention", key="ingestion_ttl_days",   value=0,     label="Delete stale Howard imports/archive after (days; 0 = keep forever)", kind="number"),
     dict(category="retention", key="min_interval_hours",   value=24,    label="Run the data lifecycle sweep at most every (hours, 1-720)", kind="number"),

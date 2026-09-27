@@ -12,7 +12,10 @@ broken record re-minted. Here:
 - **One hub per root.** :func:`acquire_hub_lock` holds ``<data root>/hub.lock`` for the
   life of the hub (``serve.py``, and the app's lifespan for a bare ``uvicorn
   agents.web:app``); a second hub on the same root is refused and told the holder's pid.
-  The lock is the kernel's, so a crashed hub leaves nothing to clean.
+  The lock is the kernel's, so a crashed hub leaves nothing to clean. H262 review:
+  :func:`holds_hub_lock` and :func:`hub_lock_held_elsewhere` (a non-blocking probe on a
+  handle of its own, never creating the data root) let a coordinator leave the lifecycle
+  sweep to a running hub.
 - **Profiles.** ``JARVIS_PROFILE=<name>`` (see :func:`agents.core.paths.data_root`) gives
   each profile its own data root, beside the default one, and with it its own id, lock,
   settings and secret store (``agents/core/secrets.py`` resolves it under the data root the
@@ -190,6 +193,38 @@ def acquire_hub_lock(root: str | Path | None = None):
     return handle
 
 
+def holds_hub_lock() -> bool:
+    """H262 review — whether this process holds ``hub.lock`` (it is the hub)."""
+    return _hub_handle is not None
+
+
+def hub_lock_held_elsewhere(root: str | Path | None = None) -> bool:
+    """H262 review — whether another process (a running hub) holds ``hub.lock`` under the
+    data root: a probe on a handle of its own, non-blocking, released at once. It never
+    creates the data root or the lock file; one that cannot be opened or locked for any
+    reason but "held" answers False. This process's own hold is not "elsewhere"."""
+    if _hub_handle is not None:
+        return False
+    path = _root(root) / HUB_LOCK_FILE
+    try:
+        handle = open(path, "r+" if os.name == "nt" else "r", encoding="ascii")   # noqa: SIM115
+    except OSError:
+        return False
+    try:
+        try:
+            _file_lock(handle, blocking=False)
+        except BlockingIOError:
+            return True
+        except PermissionError:                            # Windows: a locked byte
+            return os.name == "nt"
+        except OSError:
+            return False
+        _file_unlock(handle)
+        return False
+    finally:
+        handle.close()
+
+
 def release_hub_lock() -> None:
     global _hub_handle
     handle, _hub_handle = _hub_handle, None
@@ -202,5 +237,5 @@ def release_hub_lock() -> None:
 
 __all__ = [
     "HUB_LOCK_FILE", "HubAlreadyRunning", "ID_FILE", "LOCK_FILE", "acquire_hub_lock", "forget_cache",
-    "install_id", "release_hub_lock",
+    "holds_hub_lock", "hub_lock_held_elsewhere", "install_id", "release_hub_lock",
 ]

@@ -205,20 +205,31 @@ async def admin_put_category(category: str, body: AdminPutBody):
         return guarded
     # H262 — a write that makes retention delete deeper than approved goes to the approval
     # queue (202); the rest of it is written. A queue that cannot take it: 503, nothing written.
+    # H262 review — the gate sees the values of the retention cards still waiting as if
+    # accepted: a write that deepens one of them further (the HUD saving memory, then
+    # retention) is queued together with it, as one card, so the first card is not refused
+    # on accept. An identical card already waiting is answered with its id, not queued twice.
+    from agents.core import retention
+
     values, pending = body.values, None
-    gated, stored, approved = await _retention_gate({category: body.values}, confirm=True)
+    waiting = await _waiting_retention()
+    gated, stored, approved = await _retention_gate({category: body.values}, confirm=True, waiting=waiting)
     if gated:
-        pending = await _request_retention_approval({category: body.values}, stored, approved)
+        request = retention.as_changes({**waiting, **retention.retention_part({category: body.values})})
+        pending = await _request_retention_approval(request, stored, approved)
         if "refused" in pending:
             return nocache_json({"error": "retention_needs_approval", "reason": pending["refused"],
                                  "gated": gated}, status_code=503)
-        await _audit_row(f"settings.{category} retention change sent to approval (task {pending['pending']}): "
-                         f"{gated}", "settings_retention_requested", category)
+        if not pending.get("existing"):
+            await _audit_row(f"settings.{category} retention change sent to approval (task {pending['pending']}): "
+                             f"{gated}", "settings_retention_requested", category)
         values = {k: v for k, v in body.values.items() if f"{category}.{k}" not in gated}
     updated, skipped = put_category(category, values) if values else (0, [])
     changed = [k for k in values if k not in skipped]
     if changed:
         await _audit_settings_change(category, changed, values)
+        if retention.retention_part({category: {k: values[k] for k in changed}}):
+            await _lower_approval()
     resp = {"updated": updated, "category": category}
     if skipped:
         resp["skipped"] = skipped
@@ -229,21 +240,50 @@ async def admin_put_category(category: str, body: AdminPutBody):
     return resp
 
 
-async def _retention_gate(changes: dict, *, confirm: bool = False) -> tuple[list, dict, dict | None]:
+async def _retention_gate(changes: dict, *, confirm: bool = False,
+                          waiting: dict | None = None) -> tuple[list, dict, dict | None]:
     """H262 — ``(the retention keys of *changes* a human must approve, the stored retention
     settings, the approved horizons)``. Nothing approved, or no store to say: every
-    deletion counts as deeper (fail closed)."""
+    deletion counts as deeper (fail closed). *waiting* (``{name: value}`` of the cards
+    still waiting) is judged as if accepted."""
     from agents.core import retention
 
     orch = get_orch()
     stored = await asyncio.to_thread(retention.stored_values)
     approved = await asyncio.to_thread(retention.approved_horizons, getattr(orch, "checkpoints", None) if orch else None)
-    return retention.needs_approval(changes, stored, approved, confirm=confirm), stored, approved
+    return retention.needs_approval(changes, {**stored, **(waiting or {})}, approved, confirm=confirm), stored, approved
+
+
+async def _waiting_retention() -> dict:
+    """H262 review — the retention values of the ``settings.retention`` cards waiting for a
+    decision, oldest first, later ones over earlier ones (``{name: value}``)."""
+    from agents.core import retention
+    from agents.core.autonomy import irreversible
+
+    merged: dict = {}
+    for task in await asyncio.to_thread(irreversible.pending, get_orch(), retention.APPROVAL_KIND):
+        values = (getattr(task, "payload", None) or {}).get("values")
+        if isinstance(values, dict):
+            merged.update(retention.retention_part(values))
+    return merged
+
+
+async def _lower_approval() -> None:
+    """H262 review — a direct write of retention settings lowers the approved snapshot to
+    what they now hold (``retention.lower_approval``), never raises it."""
+    from agents.core import retention
+
+    orch = get_orch()
+    try:
+        await asyncio.to_thread(retention.lower_approval, getattr(orch, "checkpoints", None) if orch else None)
+    except Exception:  # noqa: BLE001 — the write happened; the sweep's clamp still holds the old approval
+        logger.warning("could not lower the approved retention snapshot", exc_info=True)
 
 
 async def _request_retention_approval(changes: dict, stored: dict, approved: dict | None) -> dict:
     """Queue the retention part of *changes* at the irreversible tier, with the card's
-    preview: ``{"pending": id}`` or ``{"refused": reason}``."""
+    preview: ``{"pending": id}`` or ``{"refused": reason}``. A card with the same values
+    already waiting is answered instead: ``{"pending": its id, "existing": True}``."""
     from agents.core import retention
     from agents.core.autonomy import irreversible
 
@@ -251,11 +291,15 @@ async def _request_retention_approval(changes: dict, stored: dict, approved: dic
     request = await asyncio.to_thread(retention.approval_request, changes, stored, approved,
                                       getattr(orch, "checkpoints", None) if orch else None,
                                       getattr(orch, "audit", None) if orch else None)
+    for task in await asyncio.to_thread(irreversible.pending, orch, retention.APPROVAL_KIND):
+        if (getattr(task, "payload", None) or {}).get("values") == request["payload"]["values"]:
+            return {"pending": int(task.id), "existing": True}
     return irreversible.enqueue(orch, retention.APPROVAL_KIND, **request)
 
 
 def _retention_refusal(settings: list) -> JSONResponse:
     return nocache_json({"error": "retention_needs_approval", "settings": settings,
+                         "reason": f"needs approval in Settings → Retention: {', '.join(settings)}",
                          "detail": "these settings would make retention delete deeper than approved: "
                                    "change them in Settings → Retention, which asks for approval"},
                         status_code=409)
@@ -337,6 +381,7 @@ async def admin_import_settings(request: Request):
         return guarded
     written = await asyncio.to_thread(settings_db.apply_import, changes) if changes else 0
     if written:
+        await _lower_approval()
         names = [f"{cat}.{key}" for cat in sorted(changes) for key in sorted(changes[cat])]
         shown = " ".join(filter(None, (_audited_values(cat, changes[cat]) for cat in sorted(changes))))
         await _audit_row(f"settings imported: {written} setting(s): {names}" + (f" · {shown}" if shown else ""),
@@ -388,6 +433,7 @@ async def admin_reset_category(category: str, request: Request):
         return nocache_json({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
     moved = sorted(done[0].get(category, {}))
     if moved:
+        await _lower_approval()
         await _audit_row(f"settings.{category} reset to defaults: {moved}", "settings_reset", category)
     return nocache_json({"ok": True, "category": category, "reset": moved, "undo": done[1],
                          "kept": settings_db.reset_kept(category), "retention_kept": sorted(held),
@@ -418,6 +464,7 @@ async def admin_reseed(request: Request):
     moved, snap = await asyncio.to_thread(settings_db.reset_settings, None, held)
     names = [f"{cat}.{key}" for cat in sorted(moved) for key in sorted(moved[cat])]
     if names:
+        await _lower_approval()
         await _audit_row(f"settings reset to defaults in every category: {len(names)} setting(s): {names}",
                          "settings_reseed", "all")
     return nocache_json({"ok": True, "message": "Settings reseeded from defaults", "reset": names,
@@ -444,6 +491,8 @@ async def admin_undo_reset(request: Request):
     if undone.get("refused"):
         return _retention_refusal(undone["refused"])
     skipped = [s["setting"] for s in undone["skipped"]]
+    if undone.get("restored"):
+        await _lower_approval()
     await _audit_row(f"settings reset undone ({undone['scope']}): restored {undone['restored']}"
                      + (f" · left {skipped}" if skipped else ""), "settings_reset_undo", undone["scope"])
     return nocache_json({"ok": True, **undone})
@@ -454,8 +503,12 @@ async def admin_retention_state():
     """H262 — the data lifecycle, read-only: the retention settings as stored, the approved
     snapshot the sweep clamps to (``approved``; None: nothing approved, so retention deletes
     nothing — ``awaiting_approval`` when it is on), the horizons in days (None: kept
-    forever) and the last sweep's state (claim time, last VACUUM, pending VACUUMs, report)."""
+    forever) and the last sweep's state (claim time, last VACUUM, pending VACUUMs, report).
+    H262 review: ``awaiting_approval`` only when some horizon in force is finite (all kept
+    forever: there is nothing to confirm), and ``pending_task`` names a ``settings.retention``
+    card already waiting (the HUD then points at Approvals instead of offering Confirm)."""
     from agents.core import lifecycle_sweep, retention
+    from agents.core.autonomy import irreversible
 
     orch = get_orch()
     checkpoints = getattr(orch, "checkpoints", None) if orch else None
@@ -471,10 +524,13 @@ async def admin_retention_state():
         return None if found is None else retention.days_shown(found)
 
     sweep = (sweep_row or {}).get("value") or {}
+    waiting = await asyncio.to_thread(irreversible.pending, orch, retention.APPROVAL_KIND)
     return nocache_json({
         "current": current,
         "approved": (approved_row or {}).get("value") if approved is not None else None,
-        "awaiting_approval": current.get("retention.enabled") is True and approved is None,
+        "awaiting_approval": (current.get("retention.enabled") is True and approved is None
+                              and bool(retention.widening(in_force, None))),
+        "pending_task": int(waiting[-1].id) if waiting else None,
         "horizons": {"current": shown(in_force), "approved": shown(approved), "effective": shown(effective)},
         "sweep": {"last_run_at": (sweep_row or {}).get("last_run_at"), "last_vacuum_at": sweep.get("last_vacuum_at"),
                   "vacuum_pending": sweep.get("vacuum_pending", []), "last_report": sweep.get("last_report")},

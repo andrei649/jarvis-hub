@@ -6413,6 +6413,9 @@ export interface paths {
          *     snapshot the sweep clamps to (``approved``; None: nothing approved, so retention deletes
          *     nothing — ``awaiting_approval`` when it is on), the horizons in days (None: kept
          *     forever) and the last sweep's state (claim time, last VACUUM, pending VACUUMs, report).
+         *     H262 review: ``awaiting_approval`` only when some horizon in force is finite (all kept
+         *     forever: there is nothing to confirm), and ``pending_task`` names a ``settings.retention``
+         *     card already waiting (the HUD then points at Approvals instead of offering Confirm).
          */
         get: operations["admin_retention_state_api_admin_retention_get"];
         put?: never;

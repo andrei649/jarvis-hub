@@ -928,6 +928,10 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
                 ctx.err.write(f"{ns.name}: {exc}\n")
                 return EXIT_FAILED
         settings.put_category(category, {key: value})
+        if f"{category}.{key}" in retention.RETENTION_KEYS:
+            # H262 review — a narrowing is a human decision too: the approval is lowered to it,
+            # so deepening again later needs a new approval (never raised here).
+            retention.lower_approval_offline()
         # A stored secret is echoed back masked, as `config get` shows it (review-H465e
         # nit 3); the value typed on this command line is the shell's to keep or not.
         shown = _shown({"key": key, "kind": spec.get("kind", ""), "value": value}, reveal=False)

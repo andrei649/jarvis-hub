@@ -8,28 +8,38 @@ are one hourly job (``data-retention-sweep``) that runs at most every
 
 1. **Nothing to do** — ``memory.auto_archive_days`` 0 and ``retention.enabled`` off: the
    sweep is skipped and claims nothing.
-2. **The claim** — ``CheckpointManager.claim_sweep``: one compare-and-set statement on
+2. **Whose sweep** (H262 review) — the hub's. Each process's "live" chats (the one in use,
+   the channel chats) are only known in that process, so a process that does not hold
+   ``hub.lock`` (the coordinator) skips the sweep while another process holds it
+   (``hub_runs_it``, nothing claimed); with no hub running, the coordinator runs it.
+   Residual: a hub that starts while a coordinator sweep is already running does not stop
+   it, so that one sweep can still archive or delete a chat the new hub just opened.
+3. **The claim** — ``CheckpointManager.claim_sweep``: one compare-and-set statement on
    checkpoints.db, which the hub and the coordinator share, so of two processes exactly
    one runs the sweep per interval. A store that cannot answer skips it (fail closed); a
    sweep that crashes keeps its claim, and the next one waits out the interval.
-3. **Archive** (reversible, needs no approval) — idle chats older than
+4. **Archive** (reversible, needs no approval) — idle chats older than
    ``memory.auto_archive_days`` are stamped archived; a pinned chat, and every chat a
-   channel or the hub is on (``Orchestrator.live_session_ids``), never is.
-4. **Retention** (only when ``retention.enabled``) — at the wider of the settings' and the
+   channel or the hub is on (``Orchestrator.live_session_ids``), never is. Idle time runs
+   from the last turn or the owner's last unarchive or resume (``kept_at``), so a chat the
+   owner kept is not archived again for another ``auto_archive_days``.
+5. **Retention** (only when ``retention.enabled``) — at the wider of the settings' and the
    last approved horizon (``retention.effective_horizons``; no approval yet: nothing is
    deleted, ``awaiting_approval``):
    a. archived, unpinned chats idle past the horizon (the database clock, never a file
-      mtime), newest first, each through H218's backup-first delete under its turn lease
-      (``session_archive.delete_expired``). A refusal is a skip with its reason; the
-      backups this sweep wrote are all kept until the next prune;
+      mtime) and archived at least ``retention.DELETE_GRACE_DAYS`` (7) ago — so a chat is
+      never archived and deleted in the same sweep, and sits in the Archived view a week
+      first —, newest first, each through H218's backup-first delete under its turn lease
+      (``session_archive.delete_expired``). A refusal is a skip with its reason; every
+      backup this sweep's delete attempts may have written is kept until the next prune;
    b. compaction archives no transcript or session row claims; orphan transcripts are
       counted, not deleted;
    c. audit rows, private ingestion and attachments past their effective TTL.
-5. **VACUUM** — each database a phase deleted rows from joins ``vacuum_pending``; when
+6. **VACUUM** — each database a phase deleted rows from joins ``vacuum_pending``; when
    ``retention.vacuum_after_prune`` is on and ``retention.min_vacuum_interval_days`` have
    passed since the last one, each pending database is compacted (checkpoints.db,
    audit.db, artifacts.db). One that could not be stays pending for the next due sweep.
-6. The report is kept in the ``lifecycle_sweep`` state row and logged in one line.
+7. The report is kept in the ``lifecycle_sweep`` state row and logged in one line.
 
 Not closed here: there is no cross-process turn lease, so a coordinator turn on an
 archived, expired chat can still race the hub's delete (the in-lease re-check narrows it).
@@ -98,15 +108,17 @@ def _days_or_none(value: float) -> int | None:
     return None if math.isinf(value) else int(value)
 
 
-async def _delete_expired(orch: Any, candidates: list[str], before: str, conv: dict) -> None:
+async def _delete_expired(orch: Any, candidates: list[str], before: str, archived_before: str, conv: dict) -> None:
     """Delete each candidate; a refusal is a skip with its reason. A parent met before its
-    continued child (its last turn is newer) is tried once more after the child is gone."""
+    continued child (its last turn is newer) is tried once more after the child is gone.
+    ``conv["attempts"]`` counts the deletes tried: each writes at most one backup."""
     pending = candidates
     for attempt in range(2):
         retry: list[str] = []
         for sid in pending:
+            conv["attempts"] += 1
             try:
-                await session_archive.delete_expired(orch, sid, before)
+                await session_archive.delete_expired(orch, sid, before, archived_before=archived_before)
             except session_archive.SessionDeleteError as exc:
                 conv["skipped"][sid] = exc.reason
                 if exc.reason == "has_continuations":
@@ -132,19 +144,24 @@ async def _retention(orch: Any, checkpoints: Any, root: Path, now: float, delete
     if effective is None:
         return "awaiting_approval"
     out: dict[str, Any] = {"horizons": {name: _days_or_none(days) for name, days in effective.items()}}
-    conv: dict[str, Any] = {"deleted": [], "skipped": {}, "remaining": False, "backups_pruned": []}
+    conv: dict[str, Any] = {"deleted": [], "skipped": {}, "remaining": False, "backups_pruned": [], "attempts": 0}
     conv_days = effective["conversations"]
     if not math.isinf(conv_days):
-        before = (datetime.fromtimestamp(now, UTC) - timedelta(days=conv_days)).isoformat()
-        candidates = await asyncio.to_thread(checkpoints.expired_sessions, before, limit=BATCH)
+        moment = datetime.fromtimestamp(now, UTC)
+        before = (moment - timedelta(days=conv_days)).isoformat()
+        archived_before = (moment - timedelta(days=retention.DELETE_GRACE_DAYS)).isoformat()
+        candidates = await asyncio.to_thread(checkpoints.expired_sessions, before,
+                                             archived_before=archived_before, limit=BATCH)
         conv["remaining"] = len(candidates) >= BATCH
-        await _delete_expired(orch, candidates, before, conv)
+        await _delete_expired(orch, candidates, before, archived_before, conv)
         if conv["deleted"]:
             deleted_from.add("checkpoints")
-            # Keep every backup this sweep wrote, on top of the usual few.
+            # Keep every backup this sweep may have written — one per delete attempt, a
+            # failed one included (its backup lands before the failure) — on top of the
+            # usual few, so no deleted chat's backup is pruned in its own sweep.
             keep = env_int("JARVIS_SESSION_BACKUP_KEEP", session_archive.BACKUP_KEEP_DEFAULT, minimum=1)
             conv["backups_pruned"] = await asyncio.to_thread(
-                session_archive.prune_backups, session_archive.default_backup_dir(), keep + len(conv["deleted"]))
+                session_archive.prune_backups, session_archive.default_backup_dir(), keep + conv["attempts"])
     out["conversations"] = conv
     known = await asyncio.to_thread(checkpoints.session_ids)
     out["orphans"] = await asyncio.to_thread(retention.orphan_transcripts, root, known)
@@ -185,6 +202,14 @@ async def _vacuum(orch: Any, root: Path, now: float, state: dict, deleted_from: 
     return out, (now if out["done"] else last)
 
 
+def _ours(root: Path) -> bool:
+    """Whether this process runs the sweep: it holds ``hub.lock`` (the hub), or no other
+    process does (a coordinator with no hub running)."""
+    from agents.core import install_identity
+
+    return install_identity.holds_hub_lock() or not install_identity.hub_lock_held_elsewhere(root)
+
+
 async def run_sweep(orch: Any, *, now: float | None = None, root: Path | None = None) -> dict:
     """Run the lifecycle sweep once, if it is due (see the module docstring); the report,
     or ``{"_scheduler_status": "skipped"}`` with the reason."""
@@ -193,6 +218,9 @@ async def run_sweep(orch: Any, *, now: float | None = None, root: Path | None = 
     enabled = orch.get_setting("retention.enabled", False) is True
     if not days and not enabled:
         return dict(_SKIPPED)
+    root = Path(root) if root is not None else data_root()
+    if not await asyncio.to_thread(_ours, root):
+        return {**_SKIPPED, "reason": "hub_runs_it"}
     checkpoints = getattr(orch, "checkpoints", None)
     claim = getattr(checkpoints, "claim_sweep", None)
     interval = _int_setting(orch, "retention.min_interval_hours", 24, 1, 720) * 3600
@@ -202,7 +230,6 @@ async def run_sweep(orch: Any, *, now: float | None = None, root: Path | None = 
     if not claimed:
         return {**_SKIPPED, "reason": "not_due"}
     state = (await asyncio.to_thread(checkpoints.get_state, SWEEP_STATE) or {}).get("value") or {}
-    root = Path(root) if root is not None else data_root()
     report: dict[str, Any] = {"archived": [], "retention": "off"}
     if days:
         report["archived"] = await asyncio.to_thread(

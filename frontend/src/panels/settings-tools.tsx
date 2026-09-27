@@ -24,6 +24,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost } from '../api/client';
 import { ConfirmAction, RISK_TIER } from '../confirm';
 import { inpS, mono, refusalReason, taS } from '../panel-kit';
+import { refusedWhy } from './retention';
 
 export const EXPORT_PATH = '/api/admin/settings/export';
 export const IMPORT_PATH = '/api/admin/settings/import';
@@ -149,7 +150,7 @@ export function UndoReset({ refresh = 0, onDone }: { refresh?: number; onDone?: 
       if (onDone) onDone([...new Set([...restored, ...skipped.map((x: any) => x.setting)].map((n: string) => n.split('.')[0]))]);
       return true;
     })
-    .catch((err) => { setError(`not undone · ${refusalReason(err, 'refused')}`); load(); return true; });
+    .catch((err) => { setError(`not undone · ${refusedWhy(err)}`); load(); return true; });
   const open = last && !last.undone;
   if (!open && !note && !error) return null;
   const count = Array.isArray(last?.settings) ? last.settings.length : 0;

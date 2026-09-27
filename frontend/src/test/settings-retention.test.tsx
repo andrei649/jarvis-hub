@@ -10,8 +10,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
 import { SettingsPanel, DecisionInboxPanel } from '../gap';
-import { ResetCategory, SettingsTransfer } from '../panels/settings-tools';
-import { RETENTION_STATE_PATH, retentionConfirmValues } from '../panels/retention';
+import { ResetCategory, SettingsTransfer, UndoReset } from '../panels/settings-tools';
+import { RETENTION_STATE_PATH, refusedWhy, retentionConfirmValues } from '../panels/retention';
 
 let calls;
 let putReply;
@@ -211,5 +211,69 @@ describe('Decision Inbox — the retention card — H262', () => {
     expect(card.textContent).toContain('kept forever → 90 days');
     expect(card.textContent).toContain('5 archived chats');
     expect(card.textContent).toContain('audit rows: unknown');
+  });
+});
+
+describe('H262 review — counts, the waiting card, readable refusals', () => {
+  it('the card counts every class the change deletes, a capped count as a lower bound and the uncounted plainly', async () => {
+    global.fetch = vi.fn(async (url) => {
+      const u = String(url);
+      if (u.includes('/autonomy/tasks')) {
+        return reply(200, { tasks: [{ id: 44, kind: 'settings.retention', risk_tier: 3, status: 'blocked', title: 'Retention',
+          payload: { preview: { horizons: { conversations: 90, audit: 365, ingestion: 7, artifacts: 30 }, approved: null,
+            widened: ['conversations', 'audit', 'ingestion', 'artifacts'],
+            would_delete: { archived_chats: { count: 500, more: true }, chats_to_archive: { count: 5, more: false },
+              audit_rows: { count: 1234, more: false }, ingestion: { counted: false }, attachments: { counted: false } } } } }] });
+      }
+      return reply(200, {});
+    });
+    render(<DecisionInboxPanel />);
+    const card = await screen.findByTestId('retention-card');
+    expect(card.textContent).toContain('500+ archived chats');
+    expect(card.textContent).toContain('5 chats archived by the next sweep, deleted 7 days later');
+    expect(card.textContent).toContain('1234 audit rows');
+    expect(card.textContent).toContain('ingestion: not counted');
+    expect(card.textContent).toContain('attachments: not counted');
+  });
+
+  it('a card already waiting replaces Confirm with a pointer to Approvals', async () => {
+    state = { ...state, pending_task: 9 };
+    render(<SettingsPanel />);
+    const banner = await screen.findByTestId('retention-unconfirmed');
+    expect(banner.textContent).toContain('waiting in Approvals');
+    expect(banner.textContent).toContain('task 9');
+    expect(screen.queryByRole('button', { name: 'confirm retention settings' })).toBeNull();
+  });
+
+  it('a refused save names the hub\'s reason before its error code', async () => {
+    putReply = () => reply(503, { error: 'retention_needs_approval', reason: 'approval_queue_unavailable', gated: ['retention.audit_ttl_days'] });
+    state = { ...state, awaiting_approval: false };
+    render(<SettingsPanel />);
+    await screen.findByText('Prune audit-log rows older than');
+    fireEvent.change(screen.getAllByRole('spinbutton')[0], { target: { value: '30' } });
+    fireEvent.click(screen.getByText(/save 1 change/));
+    const alert = await screen.findByText(/not saved ·/);
+    expect(alert.textContent).toContain('approval_queue_unavailable');
+    expect(refusedWhy({ body: { error: 'e', reason: 'r' } })).toBe('r');
+    expect(refusedWhy({ body: { error: 'e' } })).toBe('e');
+  });
+
+  it('a refused undo names the hub\'s reason', async () => {
+    global.fetch = vi.fn(async (url, init = {}) => {
+      const u = String(url).replace(/^https?:\/\/[^/]+/, '');
+      if (u === '/api/admin/settings/resets') {
+        return reply(200, { resets: [{ id: 3, at: 1790000000, scope: 'retention', settings: ['retention.enabled'], undone: false }] });
+      }
+      if (u === '/api/admin/settings/undo') {
+        return reply(409, { error: 'retention_needs_approval', reason: 'needs approval in Settings → Retention: retention.enabled',
+          settings: ['retention.enabled'] });
+      }
+      return reply(404, {});
+    });
+    render(<UndoReset />);
+    fireEvent.click(await screen.findByRole('button', { name: /undo…/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /undo the reset/ }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('needs approval in Settings → Retention');
   });
 });

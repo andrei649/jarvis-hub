@@ -1401,25 +1401,36 @@ function AdminApp() {
       if (status === 409 && body && body.error === 'selection_guard') {
         const guards = Array.isArray(body.guards) ? body.guards : [];
         const lines = guards.map(g => '• ' + g.message).join('\n');
-        if (!window.confirm(`Această alegere de model cere acordul tău:\n${lines}\n\nO alegi totuși?`)) return { updated: 0 };
+        if (!window.confirm(`Această alegere de model cere acordul tău:\n${lines}\n\nO alegi totuși?`)) return { cat, values, body: { updated: 0 } };
         const flags = {};
         guards.forEach(g => { flags[g.needs] = true; });
-        return put(cat, values, flags).then(({ body: saved }) => saved);
+        return put(cat, values, flags).then(({ body: saved }) => ({ cat, values, body: saved }));
       }
-      return body;
-    }));
+      return { cat, values, body };
+    }).catch(() => ({ cat, values, body: null })));
 
     Promise.all(promises)
       .then(results => {
-        const totalUpdated = results.reduce((sum, r) => sum + (r.updated || 0), 0);
+        const saved = results.filter(r => r.body && typeof r.body.updated === 'number');
+        const totalUpdated = saved.reduce((sum, r) => sum + (r.body.updated || 0), 0);
         // H262 — a retention change that deletes deeper than approved is not saved: the hub
-        // sends it to Approvals (202, `gated`), or refuses it when the queue cannot take it.
-        const gated = results.filter(r => r && r.pending != null).flatMap(r => r.gated || []);
-        const refused = results.filter(r => r && r.error === 'retention_needs_approval').flatMap(r => r.gated || []);
-        setDirty({});
-        showToast(`Parametri salvați cu succes! Am actualizat ${totalUpdated} setări.`
+        // sends it to Approvals (202, `gated`).
+        const gated = saved.filter(r => r.body.pending != null).flatMap(r => r.body.gated || []);
+        // H262 review — a category the hub answered without `updated` (a 503, a 422, any
+        // error) wrote nothing: every one of its edits stays dirty and is named as not saved,
+        // with the hub's reason (its `reason`, then its `error`).
+        const failed = results.filter(r => !(r.body && typeof r.body.updated === 'number'));
+        const kept = {};
+        const notSaved = [];
+        failed.forEach(r => {
+          const why = (r.body && (r.body.reason || r.body.error)) || 'eroare';
+          Object.keys(r.values).forEach(k => { kept[k] = r.values[k]; });
+          notSaved.push(`${Object.keys(r.values).map(k => `${r.cat}.${k}`).join(', ')} (${why})`);
+        });
+        setDirty(kept);
+        showToast((failed.length ? `Am actualizat ${totalUpdated} setări.` : `Parametri salvați cu succes! Am actualizat ${totalUpdated} setări.`)
           + (gated.length ? ` Trimise spre aprobare (Approvals): ${gated.join(', ')}.` : '')
-          + (refused.length ? ` Nesalvate (coada de aprobare indisponibilă): ${refused.join(', ')}.` : ''));
+          + (notSaved.length ? ` Nesalvate: ${notSaved.join('; ')}.` : ''));
         afetch('/api/admin/settings').then(r=>r.json()).then(s=>setSettings(s));
       })
       .catch(() => showToast('Eroare la salvarea setărilor globale.'));

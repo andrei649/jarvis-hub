@@ -9,9 +9,11 @@
      approved yet deletes nothing (the sweep clamps to the approved snapshot, and there is
      none), so the banner says that and offers Confirm: the stored retention values sent
      again, which queues them for a person to accept (GET /api/admin/retention says
-     whether one is awaited).
+     whether one is awaited). A card already waiting (`pending_task`) replaces Confirm with
+     a pointer to Approvals, so a reload never queues a second one.
    - RetentionCard is the Decision Inbox's view of such a task: the horizons before and
-     after, the kinds of data it deepens, and what it would delete now. */
+     after, the kinds of data it deepens, and what it would delete per kind — a count that
+     reached the hub's limit is a lower bound ("500+"), a kind the hub cannot count says so. */
 import React, { useEffect, useState } from 'react';
 import { apiPut } from '../api/client';
 import { mono, refusalReason, useApi } from '../panel-kit';
@@ -39,10 +41,14 @@ export function approvalNote(r: any): string {
     + ' — a person accepts it in the Decision Inbox';
 }
 
-/** A retention refusal's own reason (the queue could not take it), else the hub's error. */
-function refusedWhy(err: any): string {
-  const reason = err?.body?.reason;
-  return typeof reason === 'string' && reason ? reason : refusalReason(err, 'refused');
+/** A refusal as a person reads it: the body's `reason` (why the queue could not take it,
+    what a refused undo needs), then its `error`, then the generic fallback. */
+export function refusedWhy(err: any, fallback = 'refused'): string {
+  for (const key of ['reason', 'error']) {
+    const v = err?.body?.[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return refusalReason(err, fallback);
 }
 
 export function RetentionBanner({ refresh = 0 }: { refresh?: number }) {
@@ -52,6 +58,7 @@ export function RetentionBanner({ refresh = 0 }: { refresh?: number }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (refresh) reload(); }, [refresh]); // eslint-disable-line
   if (!d || (d as any).awaiting_approval !== true) return null;
+  const waiting = (d as any).pending_task;
   const confirm = () => {
     setBusy(true); setError('');
     apiPut(RETENTION_SETTINGS_PATH, { values: retentionConfirmValues((d as any).current) }, { admin: true })
@@ -63,7 +70,10 @@ export function RetentionBanner({ refresh = 0 }: { refresh?: number }) {
     padding: '5px 7px', border: '1px solid var(--amber)', borderRadius: 4 }}>
     <div><span style={{ color: 'var(--amber)' }}>Retention is on but not confirmed</span>: it deletes nothing until a
       person approves these settings once. Confirming sends them to Approvals.</div>
-    {sent
+    {!sent && waiting != null
+      ? <div data-testid="retention-confirm-waiting" role="status" style={{ ...mono, fontSize: 10, marginTop: 4 }}>
+          waiting in Approvals · task {String(waiting)} — a person accepts it in the Decision Inbox</div>
+      : sent
       ? <div data-testid="retention-confirm-sent" role="status" style={{ ...mono, fontSize: 10, marginTop: 4 }}>{sent}</div>
       : <button className="tool-btn" style={{ marginTop: 4 }} disabled={busy} aria-label="confirm retention settings"
           onClick={confirm}>{busy ? 'sending…' : 'confirm'}</button>}
@@ -72,7 +82,16 @@ export function RetentionBanner({ refresh = 0 }: { refresh?: number }) {
 }
 
 const days = (n: any) => (typeof n === 'number' ? `${n} days` : 'kept forever');
-const count = (n: any, one: string, many: string) => (typeof n === 'number' ? `${n} ${n === 1 ? one : many}` : `${many}: unknown`);
+/** One would-delete count: `{count, more}` (more: the hub stopped at its limit, so "N+"),
+    `{counted: false}` (the hub cannot count this kind), or an older card's plain number. */
+const count = (n: any, one: string, many: string) => {
+  if (n && typeof n === 'object') {
+    if (n.counted === false) return `${many}: not counted`;
+    if (typeof n.count === 'number') return `${n.count}${n.more ? '+' : ''} ${n.count === 1 && !n.more ? one : many}`;
+    return `${many}: unknown`;
+  }
+  return typeof n === 'number' ? `${n} ${n === 1 ? one : many}` : `${many}: unknown`;
+};
 
 /** The Decision Inbox card of a `settings.retention` task, from the preview it carries. */
 export function RetentionCard({ task }: { task: any }) {
@@ -88,8 +107,11 @@ export function RetentionCard({ task }: { task: any }) {
       {name}: {days(approved ? approved[name] : null)} → {days(after[name])}
       {widened.includes(name) && <span style={{ color: 'var(--red)' }}> · deeper</span>}
     </div>)}
-    <div style={{ marginTop: 2 }}>would delete now: {count(gone.archived_chats, 'archived chat', 'archived chats')}
-      {' · '}{count(gone.audit_rows, 'audit row', 'audit rows')}</div>
+    <div style={{ marginTop: 2 }}>would delete: {count(gone.archived_chats, 'archived chat', 'archived chats')}
+      {gone.chats_to_archive !== undefined && <>{' · '}{count(gone.chats_to_archive, 'chat', 'chats')} archived by the next sweep, deleted 7 days later</>}
+      {' · '}{count(gone.audit_rows, 'audit row', 'audit rows')}
+      {gone.ingestion !== undefined && <>{' · '}{count(gone.ingestion, 'ingestion root', 'ingestion')}</>}
+      {gone.attachments !== undefined && <>{' · '}{count(gone.attachments, 'attachment', 'attachments')}</>}</div>
     <div style={{ color: 'var(--red)', marginTop: 2 }}>accepting lets the sweep delete this data; what it deletes cannot be undone</div>
   </div>;
 }

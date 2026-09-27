@@ -20,9 +20,14 @@ listed and resumed; the only deletion was the install-wide ``/api/admin/forget``
   session in use, and one another chat continues, cannot be deleted. Facts already
   extracted into the knowledge graph and the append-only audit log are not touched.
 - **Retention (H262).** :func:`delete_expired` is the same delete, taken by the lifecycle
-  sweep for an archived, unpinned session idle past the retention horizon; it repeats that
-  check inside the turn lease, and leaves the backups unpruned until the sweep is done, so
-  a bulk sweep never prunes the backups of its own deletes.
+  sweep for an archived, unpinned session idle past the retention horizon and archived at
+  least ``retention.DELETE_GRACE_DAYS`` ago; it repeats that check inside the turn lease,
+  again just before the chat's embeddings are forgotten, and a last time in the SQL that
+  deletes the session row, in the same transaction as the other rows and before any file
+  (a pin, unarchive or resume in between keeps the chat: ``no_longer_expired``; the backup
+  already written stays). It leaves the backups unpruned until the sweep is done, so a bulk
+  sweep never prunes the backups of its own deletes. The residual: a pin landing between
+  the embeddings' forget and the row delete keeps the chat but not its recall embeddings.
 """
 from __future__ import annotations
 
@@ -223,8 +228,18 @@ def prune_backups(root: Path, keep: int | None = None) -> list[str]:
     return removed
 
 
-def _delete_traces(session_id: str, checkpoints: Any, files: dict[str, Path]) -> dict:
-    removed: dict[str, Any] = {"rows": checkpoints.delete_session_rows(session_id) if checkpoints is not None else {}}
+def _delete_traces(session_id: str, checkpoints: Any, files: dict[str, Path],
+                   expired: tuple[str, str] | None = None) -> dict:
+    """The rows (retention's: only while still expired, else nothing at all), then the files."""
+    if checkpoints is None:
+        rows: Any = {}
+    elif expired is None:
+        rows = checkpoints.delete_session_rows(session_id)
+    else:
+        rows = checkpoints.delete_session_rows(session_id, expired=expired)
+        if rows is None:
+            raise SessionDeleteError("no_longer_expired")
+    removed: dict[str, Any] = {"rows": rows}
     for name, path in files.items():
         try:
             path.unlink()
@@ -248,11 +263,16 @@ def _memory_locks(memory: Any) -> list[asyncio.Lock]:
 
 async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = None, todos: Any = None,
                          notes: Any = None, active: str | None = None, backup_root: Path | None = None,
-                         archive_root: Path | None = None, prune: bool = True) -> dict:
+                         archive_root: Path | None = None, prune: bool = True,
+                         expired: tuple[str, str] | None = None) -> dict:
     """Back the session up, then delete it. Raises :class:`SessionDeleteError`
     (``active_session``, ``not_found``, ``has_continuations``, ``backup_failed``,
     ``recall_unavailable``) before anything is deleted. ``prune=False`` leaves the older
     backups for the caller to prune once (the lifecycle sweep's bulk delete).
+
+    ``expired`` (``(before, archived_before)``, retention's delete): the session must
+    still be expired just before its embeddings are forgotten and in the row delete's own
+    transaction, else ``no_longer_expired`` with nothing deleted.
 
     The caller holds the session's turn lease (the route does). The memory locks are held
     here from the first read to the last delete, so a turn written meanwhile is in the
@@ -283,6 +303,9 @@ async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = Non
         except (OSError, ValueError, TypeError, SecretStoreError) as exc:
             logger.warning("session delete refused: the backup did not land (%s)", type(exc).__name__)
             raise SessionDeleteError("backup_failed") from exc
+        if expired is not None and not await asyncio.to_thread(
+                checkpoints.is_expired, session_id, expired[0], archived_before=expired[1]):
+            raise SessionDeleteError("no_longer_expired")
         forget = getattr(memory, "forget_session_embeddings", None)
         try:
             embeddings = await forget(session_id) if callable(forget) else 0
@@ -290,7 +313,8 @@ async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = Non
             logger.warning("session delete refused: its turn embeddings could not be removed (%s)",
                            type(exc).__name__)
             raise SessionDeleteError("recall_unavailable") from exc
-        removed = await asyncio.to_thread(_delete_traces, session_id, checkpoints, _files(session_id, archive_root))
+        removed = await asyncio.to_thread(_delete_traces, session_id, checkpoints, _files(session_id, archive_root),
+                                          expired)
         removed["embeddings"] = embeddings
         conversation = getattr(memory, "conversation", memory)
         for live in (getattr(conversation, "sessions", None), getattr(conversation, "instances", None)):
@@ -314,12 +338,14 @@ def live_session_ids(orch: Any) -> set[str]:
 
 
 async def delete_leased(orch: Any, session_id: str, *, live: Iterable[str] | None = None,
-                        still_eligible: Callable[[], bool] | None = None, prune: bool = True) -> dict:
+                        still_eligible: Callable[[], bool] | None = None, prune: bool = True,
+                        expired: tuple[str, str] | None = None) -> dict:
     """The permanent delete with what the orchestrator adds around it: refuse a live session
     (``live``, by default the session in use), hold the session's turn lease
     (``session_busy`` when a turn keeps it past the wait), repeat ``still_eligible`` inside
-    it (``no_longer_expired``), delete with the chat's checklist and note, and forget the
-    channel binding. Shared by ``DELETE /sessions/{id}`` and the lifecycle sweep."""
+    it (``no_longer_expired``), delete with the chat's checklist and note (``expired``: see
+    :func:`delete_session`), and forget the channel binding. Shared by ``DELETE
+    /sessions/{id}`` and the lifecycle sweep."""
     from agents.core import todo_tool
 
     active = getattr(orch, "session_id", None)
@@ -333,20 +359,27 @@ async def delete_leased(orch: Any, session_id: str, *, live: Iterable[str] | Non
             raise SessionDeleteError("no_longer_expired")
         result = await delete_session(
             session_id, checkpoints=orch.checkpoints, memory=getattr(orch, "memory", None), todos=todo_tool.TODOS,
-            notes=getattr(orch, "notes", None), active=active, prune=prune)
+            notes=getattr(orch, "notes", None), active=active, prune=prune, expired=expired)
         forget = getattr(orch, "forget_channel_session", None)
         if callable(forget):
             forget(session_id)
     return result
 
 
-async def delete_expired(orch: Any, session_id: str, before: str) -> dict:
+async def delete_expired(orch: Any, session_id: str, before: str, *, archived_before: str | None = None) -> dict:
     """H262 — retention's delete of one archived, unpinned session idle since before
-    ``before``: never a session a chat is on, re-checked inside the turn lease, backups
-    left for the sweep to prune once."""
+    ``before`` and archived at or before ``archived_before`` (default: the grace before
+    now): never a session a chat is on, re-checked inside the turn lease and in the row
+    delete itself, backups left for the sweep to prune once."""
     checkpoints = orch.checkpoints
-    return await delete_leased(orch, session_id, live=live_session_ids(orch),
-                               still_eligible=lambda: checkpoints.is_expired(session_id, before), prune=False)
+    cutoff = archived_before
+    if cutoff is None:
+        from agents.core.retention import DELETE_GRACE_DAYS
+
+        cutoff = (_now() - timedelta(days=DELETE_GRACE_DAYS)).isoformat()
+    return await delete_leased(
+        orch, session_id, live=live_session_ids(orch), prune=False, expired=(before, cutoff),
+        still_eligible=lambda: checkpoints.is_expired(session_id, before, archived_before=cutoff))
 
 
 __all__ = [
