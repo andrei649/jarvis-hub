@@ -17,12 +17,15 @@ acknowledgement keeps the chat's order, never holds the poll loop or another cha
 spoken, and a tap read before the reply still supersedes the prompt it answers. The reason window
 is judged by the reply's stamp: the instant its getUpdates page came back (on the coordinator's
 clock, handed to the channel as ``decision_reason_clock``), moved back by Telegram's own date for
-the message but never before the previous page came back. So neither a slow turn ahead of it in
-the lane nor the poll loop reading an earlier update expires a reason the owner sent in time, and
-a reply stamped late stays late. Every other reply is queued, merged and
-flushed as if the hook were not wired, and a failing hook never loses the reply. While a reason
-prompt is still on its way to a chat (its message id not yet known), a reply in that chat is
-classified behind it in the chat's lane too. These cases run on the real poll loop.
+the message but never before the previous page came back (a page cut short by an error is not
+the previous page of the updates that come again). So neither a slow turn ahead of it in the
+lane nor the poll loop reading an earlier update expires a reason the owner sent in time, as far
+as the host's clock and Telegram's agree (see ``TelegramChannel._reason_arrival``), and a reply
+stamped late stays late; no date Telegram sends makes the stamp raise. Every other reply is
+queued, merged and flushed as if the hook were not wired, and a failing hook never loses the
+reply. While a reason prompt is still on its way to a chat (its message id not yet known), a
+reply in that chat is classified behind it in the chat's lane too. These cases run on the real
+poll loop.
 """
 from __future__ import annotations
 
@@ -30,6 +33,7 @@ import asyncio
 import contextlib
 import itertools
 import json
+import sys
 from types import SimpleNamespace
 
 import httpx
@@ -41,7 +45,7 @@ from agents.core.autonomy_coordinator import AutonomyCoordinator
 from agents.core.channels import voice_mode
 from agents.core.channels.group_policy import GroupPolicy
 from agents.core.channels.spoken_reply import Audio
-from agents.core.channels.telegram import TelegramChannel
+from agents.core.channels.telegram import TelegramChannel, _is_instant
 
 BOT = 999
 OWNER = 99
@@ -973,3 +977,221 @@ async def test_a_failing_clock_is_logged_once_until_it_reads_again(monkeypatch, 
         await _run(channel, [(0, []), (0, []), (0, []), (0, []), (0, [])])
     failures = [r for r in caplog.records if "decision-reason clock failed" in r.getMessage()]
     assert len(failures) == 2
+
+
+# ── round 5: a page cut short, hostile dates, and the stamp's other inputs ──────
+
+def _photo(chat_id=55, uid=8):
+    """A photo from another user in another chat: the poll loop itself reads it."""
+    photo = _msg("", chat_id=chat_id, uid=uid,
+                 photo=[{"file_id": "f", "file_unique_id": "u", "width": 1, "height": 1}])
+    photo["message"].pop("text")
+    return photo
+
+
+def _stamped(channel, stamps, *, keep_kwargs=False):
+    """Claim every reply and record what the hook is handed: its ``received_at`` (or, with
+    *keep_kwargs*, every keyword)."""
+    async def hook(text, **kwargs):
+        stamps.append(dict(kwargs) if keep_kwargs else kwargs.get("received_at"))
+        return True
+
+    channel.decision_reason_pending = lambda **kwargs: True
+    channel.on_decision_reason = hook
+
+
+@pytest.mark.parametrize("photo", ["read", "whose reading raises"])
+async def test_a_reason_behind_an_update_whose_handling_failed_keeps_its_credit(
+        monkeypatch, tmp_path, photo):
+    """The prompt opens at t=1000 (window to 1120) and the previous page came back at t=1000.
+    The owner replies at t=1100, in time, but the reply's page only comes back at t=1130, with
+    a photo from chat 55 ahead of it. Read normally, the photo leaves the reply its credit: it
+    is stamped max(1000, 1130 - 30) = 1100 and saved. If handling the photo raises, the poll
+    loop backs off and the reply comes again on the next page (t=1133), since its offset was
+    never passed. The page that failed before reaching it is not its previous page (that page
+    already carried it), so its lower bound stays t=1000: stamped 1100 and saved, not 1130 and
+    refused as expired."""
+    channel, received = _channel(monkeypatch)
+    clock = [1000.0]
+    channel._wall_clock = lambda: WALL + clock[0]
+    async with _Inbox(channel, tmp_path, 42) as inbox:
+        inbox.coordinator._reason_clock = lambda: clock[0]
+        hook, stamps = channel.on_decision_reason, []
+
+        async def stamped(text, **kwargs):
+            stamps.append(kwargs.get("received_at"))
+            return await hook(text, **kwargs)
+
+        channel.on_decision_reason = stamped
+        task_id = await inbox.task()
+
+        async def read(attachment, spoken, chat_id, uid):
+            if photo == "whose reading raises":
+                raise RuntimeError("vision backend misconfigured")
+            return "[photo: a cat]", ""
+
+        monkeypatch.setattr(channel, "_read_attachment", read)
+        reply = _msg("Use staging", uid=OWNER, date=WALL + 1100, **_reply(PROMPT))
+        pages = [(0, [_tap(task_id)]), (inbox.registered, []),
+                 (_at(clock, 1130.0), [_photo(), reply])]
+        if photo == "whose reading raises":
+            pages.append((_at(clock, 1133.0), [reply]))     # fetched again after the back-off
+        await _run(channel, [*pages, (0.2, [])])
+        assert inbox.reason(task_id) == "Use staging"
+    assert stamps == [1100.0]
+    assert EXPIRED not in inbox.posted and "Reason saved." in inbox.posted
+
+
+@pytest.mark.parametrize("failure", ["getUpdates", "after the page was handled"])
+async def test_a_poll_error_that_cut_no_page_short_keeps_the_previous_page(monkeypatch, failure):
+    """Only a page cut short gives its previous page back. A getUpdates that fails reads no
+    page: the next page's reply is still credited back to the page before (t=500). A page
+    handled to its end whose batch flush then fails is a previous page like any other: the
+    next page's reply is credited back no further than it (t=550)."""
+    channel, _received = _channel(monkeypatch)
+    clock, stamps = [0.0], []
+    _stamped(channel, stamps)
+    channel.decision_reason_clock = lambda: clock[0]
+    channel._wall_clock = lambda: WALL + clock[0]
+    if failure == "getUpdates":
+        async def bad_gateway():
+            raise RuntimeError("502 Bad Gateway")
+
+        earlier, stamp = [(_at(clock, 500.0), []), (bad_gateway, [])], 520.0
+    else:
+        due, calls = channel._batch.due, [0]
+
+        def flush_fails_on_the_second_page(*args, **kwargs):
+            calls[0] += 1
+            if calls[0] == 2:
+                raise RuntimeError("flush failed")
+            return due(*args, **kwargs)
+
+        monkeypatch.setattr(channel._batch, "due", flush_fails_on_the_second_page)
+        earlier, stamp = [(_at(clock, 500.0), []), (_at(clock, 550.0), [])], 550.0
+    await _run(channel, [*earlier, (_at(clock, 600.0), [_msg("Use staging", date=WALL + 520,
+                                                                **_reply(PROMPT))])])
+    assert stamps == [stamp]
+
+
+#: An int that still rounds to the largest finite float, though its sum with a wall clock read
+#: as an int does not.
+_ALMOST_TOO_LARGE = int(sys.float_info.max) + 2 ** 970 - 1
+
+
+@pytest.mark.parametrize("value, instant", [
+    (WALL, True), (float(WALL), True), (10 ** 308, True), (_ALMOST_TOO_LARGE, True),
+    (10 ** 400, False), (-10 ** 400, False), (float("inf"), False), (float("nan"), False),
+    (True, False), (str(WALL), False), (None, False),
+], ids=["int", "float", "10**308", "almost too large", "10**400", "-10**400", "inf", "nan",
+        "bool", "str", "None"])
+def test_an_instant_is_a_finite_int_or_float_and_asking_never_raises(value, instant):
+    """An int too large for a float is no instant: False, not an OverflowError."""
+    assert _is_instant(value) is instant
+
+
+@pytest.mark.parametrize("date, wall, stamp", [
+    (10 ** 400, WALL + 600.0, 600.0),         # too large for a float: no instant, the page's
+    (-10 ** 400, WALL + 600.0, 600.0),
+    (10 ** 308, WALL + 600.0, 600.0),         # far in the future: the page's instant
+    (-10 ** 308, WALL + 600.0, 500.0),        # far in the past: the previous page
+    (-_ALMOST_TOO_LARGE, WALL + 600, 500.0),  # its age overflows a float against an int wall clock
+], ids=["10**400", "-10**400", "10**308", "-10**308", "-almost too large, int wall clock"])
+async def test_a_hostile_date_never_raises_and_the_reply_is_stamped_within_its_bounds(
+        monkeypatch, date, wall, stamp):
+    """Only a broken or hostile API server sends such a date. The reply is still claimed and
+    handed to the hook with a stamp between the previous page (t=500) and its own (t=600); it
+    is not dropped with the poll loop backing off."""
+    channel, _received = _channel(monkeypatch)
+    clock, stamps = [0.0], []
+    _stamped(channel, stamps)
+    channel.decision_reason_clock = lambda: clock[0]
+    channel._wall_clock = lambda: wall
+    await _run(channel, [(_at(clock, 500.0), []),
+                         (_at(clock, 600.0), [_msg("Use staging", date=date, **_reply(PROMPT))])])
+    assert stamps == [stamp]
+
+
+async def test_a_first_page_reply_behind_a_slow_photo_is_stamped_with_its_page_instant(monkeypatch):
+    """No previous page (the first page): the reply is stamped with its page's instant (t=1000),
+    not when the poll loop reached it behind a slow photo (t=1125)."""
+    channel, _received = _channel(monkeypatch)
+    clock, stamps = [0.0], []
+    _stamped(channel, stamps)
+    channel.decision_reason_clock = lambda: clock[0]
+    channel._wall_clock = lambda: WALL + clock[0]
+
+    async def slow_read(attachment, spoken, chat_id, uid):
+        clock[0] = 1125.0
+        return "[photo: a cat]", ""
+
+    monkeypatch.setattr(channel, "_read_attachment", slow_read)
+    await _run(channel, [(_at(clock, 1000.0), [_photo(), _msg("Use staging", date=WALL + 990,
+                                                                **_reply(PROMPT))])])
+    assert stamps == [1000.0]
+
+
+@pytest.mark.parametrize("wall", ["raises", "inf", "nan"])
+async def test_an_unreadable_wall_clock_gives_the_page_instant_and_polling_goes_on(monkeypatch, wall):
+    """The host's wall clock fails, or reads no instant: Telegram's date is not credited (the
+    page's instant), and the poll loop is not disturbed."""
+    channel, _received = _channel(monkeypatch)
+    clock, stamps = [0.0], []
+    _stamped(channel, stamps)
+    channel.decision_reason_clock = lambda: clock[0]
+
+    def broken():
+        if wall == "raises":
+            raise OSError("no wall clock")
+        return float(wall)
+
+    channel._wall_clock = broken
+    await _run(channel, [(_at(clock, 500.0), []),
+                         (_at(clock, 600.0), [_msg("Use staging", date=WALL + 550, **_reply(PROMPT))])])
+    assert stamps == [600.0]
+
+
+async def test_a_fractional_wall_clock_is_used_as_read(monkeypatch):
+    """The reply's age is the wall clock as read, fractions of a second kept, less its date."""
+    channel, _received = _channel(monkeypatch)
+    clock, stamps = [0.0], []
+    _stamped(channel, stamps)
+    channel.decision_reason_clock = lambda: clock[0]
+    channel._wall_clock = lambda: WALL + clock[0]
+    await _run(channel, [(_at(clock, 500.0), []),
+                         (_at(clock, 600.75), [_msg("Use staging", date=WALL + 550, **_reply(PROMPT))])])
+    assert stamps == [pytest.approx(550.0, abs=1e-3)]
+
+
+async def test_a_page_whose_clock_reading_failed_hands_the_hook_no_stamp(monkeypatch):
+    """The clock fails as the reply's page comes back and reads again when the reply is claimed:
+    the hook gets no ``received_at`` (the inbox judges the reply when it runs), not a stamp read
+    when the reply was claimed."""
+    channel, _received = _channel(monkeypatch)
+    calls, seen = [0], []
+    _stamped(channel, seen, keep_kwargs=True)
+
+    def flaky():
+        calls[0] += 1
+        if calls[0] == 2:                 # the reply's page
+            raise RuntimeError("clock hiccup")
+        return 500.0 + calls[0]
+
+    channel.decision_reason_clock = flaky
+    channel._wall_clock = lambda: WALL + 600.0
+    await _run(channel, [(0, []), (0, [_msg("Use staging", date=WALL + 550, **_reply(PROMPT))])])
+    assert len(seen) == 1 and "received_at" not in seen[0]
+
+
+async def test_an_update_handled_outside_the_poll_loop_after_pages_gets_no_credit(monkeypatch):
+    """Pages came back before, but an update handled directly has no page: it is stamped when it
+    is claimed, and its Telegram date is not credited back to the last page."""
+    channel, _received = _channel(monkeypatch)
+    clock, stamps = [0.0], []
+    _stamped(channel, stamps)
+    channel.decision_reason_clock = lambda: clock[0]
+    channel._wall_clock = lambda: WALL + clock[0]
+    await _run(channel, [(_at(clock, 500.0), [])])
+    clock[0] = 600.0
+    await channel._handle_update(_msg("Use staging", date=WALL + 550, **_reply(PROMPT)))
+    assert stamps == [600.0]

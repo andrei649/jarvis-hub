@@ -10,7 +10,8 @@ audio file once; the transcript echo, the notice that an attachment could not be
 read and the deeplink pairing replies are service lines that are never spoken and
 never spend the mark; and only the running turn of the chat takes its mark — a send
 from outside that turn (the daily digest, an outbound notice, another chat's turn,
-a task an earlier turn left behind) is never the answer to the voice note.
+a task or a scheduler job an earlier turn left behind) is never the answer to the
+voice note.
 
 Hermetic: a recording HTTP client, an in-memory mode store, an injected
 synthesizer and transcriber, no Telegram and no speech stack.
@@ -19,6 +20,7 @@ synthesizer and transcriber, no Telegram and no speech stack.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import itertools
 from types import SimpleNamespace
 
@@ -565,6 +567,55 @@ async def test_a_turn_on_one_bot_never_takes_the_voice_mark_of_the_same_chat_on_
     await first._run_turn(42, 42, "status?")
     assert second_synth.seen == [] and 42 in second._voice_turns
     assert [m for m, _ in second_client.calls] == ["sendMessage"]
+
+
+@pytest.mark.asyncio
+async def test_a_job_an_ended_voice_turn_armed_never_takes_a_later_voice_turns_mark(tmp_path, monkeypatch):
+    """/voice voice. A voice note's turn arms a job on a real AsyncIOScheduler (as /remind does:
+    ``add_job``, then ``wakeup``). APScheduler runs its wakeup through
+    ``loop.call_soon_threadsafe`` and re-arms its timer with ``loop.call_later``; both copy the
+    turn's context, so the task the job later runs in carries that turn's scope. The turn
+    answers and ends. The job fires while a second voice note's turn is still working: the
+    first turn's scope is closed and answers nothing, so the job's digest is text only and the
+    second note's own answer is the one spoken."""
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    ch, client, synth = _channel(tmp_path, VOICE)
+    hub = _owner_hub(ch, monkeypatch)
+    monkeypatch.setattr(scheduler_service, "build_evening_retro", lambda queue: NEWS)
+    service = scheduler_service.SchedulerService(hub)
+    sched = AsyncIOScheduler()
+    sched.start()
+    second_running, digest_sent = asyncio.Event(), asyncio.Event()
+    turns = []
+
+    async def armed_by_the_first_turn():
+        await second_running.wait()
+        await service.run_daily_digest("evening")
+        digest_sent.set()
+
+    async def handler(text, channel="telegram", **kwargs):
+        turns.append(text)
+        if len(turns) == 1:
+            sched.add_job(armed_by_the_first_turn, "date", id="reminder",
+                          run_date=dt.datetime.now(dt.UTC) + dt.timedelta(seconds=0.1))
+        else:
+            second_running.set()
+            await asyncio.wait_for(digest_sent.wait(), 5)     # still working when the job sends
+        await ch.send(REPLY, chat_id=kwargs["chat_id"])
+        return REPLY
+
+    ch.handler = handler
+    try:
+        await _poll(ch, [(None, [_update(**VOICE_NOTE)]), (None, [_update(**VOICE_NOTE)]),
+                         (digest_sent.wait, [])])
+    finally:
+        sched.shutdown(wait=False)
+    texts = [c["json"]["text"] for m, c in client.calls if m == "sendMessage"]
+    assert texts == [to_telegram_html(REPLY), NEWS, to_telegram_html(REPLY)]
+    assert synth.seen == [(SPOKEN, "ro"), (SPOKEN, "ro")], f"spoken: {synth.seen}"
+    assert client.methods().count("sendVoice") == 2
+    assert ch._voice_turns == set()
 
 
 # ── the streaming draft ─────────────────────────────────────────────────────

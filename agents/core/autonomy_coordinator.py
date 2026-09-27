@@ -372,14 +372,15 @@ class AutonomyCoordinator:
         ``received_at`` is the channel's stamp of when the reply arrived, on
         :meth:`reason_clock`. Telegram stamps it from the getUpdates page that carried the
         reply: never later than when that page came back, never earlier than when the page
-        before it did, and within those bounds moved back by Telegram's date for the reply
-        (see ``TelegramChannel._reason_arrival``); the reply may then wait in the chat's lane
-        behind a slow turn. The deadline is checked against the stamp, so the time the reply
-        waits after its page came back never counts against it, and a reply stamped at or
-        after the deadline is refused however soon it runs. Missing, or not a finite instant,
-        it is now (an older caller). Whether the prompt is still the live one is decided here,
-        when the lane reaches the reply: a tap read before the reply runs before it and
-        supersedes the prompt."""
+        before it did (the first bound wins should this clock step back between pages), and
+        within those bounds moved back by Telegram's date for the reply, as far as the host's
+        clock and Telegram's agree (see ``TelegramChannel._reason_arrival``); the reply may
+        then wait in the chat's lane behind a slow turn. The deadline is checked against the
+        stamp, so the time the reply waits after its page came back never counts against it,
+        and a reply stamped at or after the deadline is refused however soon it runs. Missing,
+        or not a finite instant, it is now (an older caller). Whether the prompt is still the
+        live one is decided here, when the lane reaches the reply: a tap read before the reply
+        runs before it and supersedes the prompt."""
         target = self._reason_reply_target(chat_id, user_id, reply_to_message_id)
         if target is None:
             return False
