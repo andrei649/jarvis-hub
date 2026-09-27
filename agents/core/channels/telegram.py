@@ -208,6 +208,10 @@ class TelegramChannel(ChannelAdapter):
         # Decision-inbox callback: on_callback(task_id, action, chat_id=..., user_id=...)
         self.on_callback: Optional[Callable] = None
         self.on_decision_reason: Optional[Callable] = None
+        # H487 x H117: chats a decision-reason prompt is being posted to, with how many.
+        # Until Telegram answers, the prompt's message id is unknown, so a reply in that
+        # chat may be answering it and is classified behind it (see _handle_update).
+        self._reason_prompts_posting: dict = {}
         # The process's ONE `SenderPairing` — the object the gateway gates on and
         # the pairing router mints and revokes deeplinks from; `web.py` hands it
         # in. It is never built here: a second store over the same file is not a
@@ -408,13 +412,22 @@ class TelegramChannel(ChannelAdapter):
 
     async def request_decision_reason(self, task_id: int, *, chat_id: int) -> int:
         """Offer an optional reply bound to one rejected decision, not a chat turn."""
-        response = await self.client.post(f"{self.api_base}/sendMessage", json={
-            "chat_id": chat_id,
-            "text": f"Task #{task_id} rejected. Reply to this message within 2 minutes with an optional reason (maximum 280 characters).",
-            "reply_markup": {"force_reply": True, "selective": True},
-        })
-        response.raise_for_status()
-        return _message_id_of(response)
+        posting = self._reason_prompts_posting
+        posting[chat_id] = posting.get(chat_id, 0) + 1
+        try:
+            response = await self.client.post(f"{self.api_base}/sendMessage", json={
+                "chat_id": chat_id,
+                "text": f"Task #{task_id} rejected. Reply to this message within 2 minutes with an optional reason (maximum 280 characters).",
+                "reply_markup": {"force_reply": True, "selective": True},
+            })
+            response.raise_for_status()
+            return _message_id_of(response)
+        finally:
+            # The caller registers the returned id before it next awaits, so from the
+            # poll loop's point of view the prompt is either on its way or registered.
+            left = posting.pop(chat_id, 1) - 1
+            if left > 0:
+                posting[chat_id] = left
 
     async def _answer_callback(self, callback_id: str, text: str = ""):
         try:
@@ -468,7 +481,8 @@ class TelegramChannel(ChannelAdapter):
             await lanes.drain(LANE_DRAIN_BUDGET)
 
     async def _handle_update(self, up: dict) -> None:
-        """One update: a button tap, an ignored message, or a turn piece to batch (H117)."""
+        """One update: a button tap, an ignored message, a rejection's reason (H487), or a
+        turn piece to batch (H117)."""
         # Decision-inbox button taps arrive as callback_query updates.
         cb = up.get("callback_query")
         if cb:
@@ -503,16 +517,15 @@ class TelegramChannel(ChannelAdapter):
                 and attachment is None and not is_command(text)
                 and not any(msg.get(key) for key in ("forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))):
             reply_id = (msg.get("reply_to_message") or {}).get("message_id")
-            if reply_id is not None:
-                # The callback's ForceReply request may still be awaiting its HTTP
-                # response. Classify behind it in this chat, without blocking polling
-                # or other chats. Flush earlier prose before this standalone reply.
-                await self._flush_turn((chat_id, str(uid)))
+            if reply_id is not None and self._reason_prompts_posting.get(chat_id):
+                # A reason prompt's ForceReply request to this chat is still awaiting
+                # its HTTP response, so its id is unknown and this reply may answer it.
+                # Classify behind it in this chat, without blocking polling or other
+                # chats; what this chat said before the reply goes first.
+                await self._flush_chat_turns(chat_id)
 
                 async def handle_reply():
-                    if await self.on_decision_reason(
-                        text, chat_id=chat_id, user_id=uid, reply_to_message_id=reply_id,
-                    ):
+                    if await self._consumed_as_reason(text, chat_id, uid, reply_id):
                         return
                     await self._handle_message_content(
                         msg, uid, chat_id, text, attachment, inline=True,
@@ -520,7 +533,26 @@ class TelegramChannel(ChannelAdapter):
 
                 await self._in_chat(chat_id, handle_reply)
                 return
+            # H117: only a reply the hook consumes (the owner answering a live reason
+            # prompt in the owner chat) leaves the batching path; its acknowledgement goes
+            # out from here, as a deeplink pairing's does. The inbox declines without side
+            # effects, so any other reply is queued, merged and flushed as if the hook
+            # were not wired.
+            if reply_id is not None and await self._consumed_as_reason(text, chat_id, uid, reply_id):
+                return
         await self._handle_message_content(msg, uid, chat_id, text, attachment)
+
+    async def _consumed_as_reason(self, text, chat_id, uid, reply_id) -> bool:
+        """Ask the decision-reason hook whether this reply is a rejection's reason; a hook
+        that raises is taken as declining, so the reply is handled as a message, never lost."""
+        try:
+            return bool(await self.on_decision_reason(
+                text, chat_id=chat_id, user_id=uid, reply_to_message_id=reply_id,
+            ))
+        except Exception:
+            logger.warning("Telegram decision-reason hook failed; the reply is handled as a message",
+                           exc_info=True)
+            return False
 
     async def _handle_message_content(
         self, msg, uid, chat_id, text, attachment, *, inline=False,
@@ -605,6 +637,12 @@ class TelegramChannel(ChannelAdapter):
     async def _flush_all_turns(self) -> None:
         for key in self._batch.held_keys():
             await self._flush_turn(key)
+
+    async def _flush_chat_turns(self, chat_id) -> None:
+        """Hand over every batch held for *chat_id*, oldest first (any sender)."""
+        for key in self._batch.held_keys():
+            if key[0] == chat_id:
+                await self._flush_turn(key)
 
     async def _deliver_turn(self, chat_id, uid, turn: str) -> None:
         mark = (chat_id, str(uid))
