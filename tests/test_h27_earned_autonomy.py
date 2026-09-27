@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -298,7 +299,8 @@ async def test_house_attempt_that_actuated_then_raised_is_a_failure_not_in_progr
     queue = _queue(tmp_path / "autonomy.db")
     task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
     assert task.status == TaskStatus.FAILED.value
-    assert task.result == {"error": "execution_stranded"}
+    # Round 4 (hunt NIT 1): the task record says a human must look at the device.
+    assert task.result == {"error": "execution_stranded", "manual_recovery_required": True}
     assert len(sim.calls) == 1
     assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
     queue.close()
@@ -334,7 +336,8 @@ async def test_house_row_stranded_by_a_crash_is_a_failure_and_never_reactuates(
         await worker.tick()
     task = queue.get(task_id)
     assert task.status == TaskStatus.FAILED.value
-    assert task.result == {"error": "execution_stranded"}
+    # Round 4 (hunt NIT 1): the task record says a human must look at the device.
+    assert task.result == {"error": "execution_stranded", "manual_recovery_required": True}
     assert sim.calls == []
     assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
     queue.close()
@@ -601,38 +604,128 @@ async def test_tool_rpc_classifier_crash_records_a_failure(tmp_path):
     queue.close()
 
 
-def test_refusal_vocabulary_names_refusals_only():
+def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
     """The vocabulary decides only for a returned ``failed``: a reason in it ran nothing.
+    Round 4, item 4: it is a mapping kind -> reasons (and kind -> prefixes), so a reason
+    one handler uses as a refusal is never read as a refusal from another kind's handler.
     Every reason a handler uses for an attempt that broke stays out of it, and so does
     any reason nobody listed."""
-    from agents.core.autonomy.worker import REFUSAL_REASONS, is_refusal
+    from agents.core.autonomy.worker import (
+        REFUSAL_REASON_PREFIXES_BY_KIND,
+        REFUSAL_REASONS_BY_KIND,
+        WITHHELD_REASONS_BY_KIND,
+        is_refusal,
+        is_refusal_reason,
+        is_withheld,
+    )
+    from agents.core.capability_manifests import ACTION_CAPABILITY_MANIFESTS
 
-    for reason in ("interrupt_budget_exhausted", "budget_exceeded", "credential_not_configured",
-                   "kernel_denied", "strong_confirmation_required", "execution_in_progress",
-                   "tool_not_allowed", "promotion_refused", "human_decision_required",
-                   "changed_since_request", "not_requested", "provider_revision_conflict",
-                   "unknown_node"):
-        assert reason in REFUSAL_REASONS, reason
-        assert is_refusal({"status": "failed", "reason": reason}), reason
-    assert is_refusal({"status": "failed", "reason": "call_config_missing:account_sid,from"})
-    assert is_refusal({"status": "failed", "reason": "kill-switch engaged for scope 'node:phone'"})
+    # Every manifest kind has an entry (an empty one when its handler never returns a
+    # refusal as ``failed``), and nothing else does.
+    assert set(REFUSAL_REASONS_BY_KIND) == set(ACTION_CAPABILITY_MANIFESTS)
+    assert set(REFUSAL_REASON_PREFIXES_BY_KIND) <= set(ACTION_CAPABILITY_MANIFESTS)
+    assert set(WITHHELD_REASONS_BY_KIND) <= set(ACTION_CAPABILITY_MANIFESTS)
+    # No reason is shared by accident: every reason more than one kind lists is listed
+    # here, with exactly the kinds that list it, on purpose.
+    kinds_by_reason: dict[str, set[str]] = {}
+    for kind, reasons in REFUSAL_REASONS_BY_KIND.items():
+        for reason in reasons:
+            kinds_by_reason.setdefault(reason, set()).add(kind)
+    house = {"house.control", "house.security_control"}
+    voice_and_grant = {"settings.voice_command", "permission.grant"}
+    assert {reason: kinds for reason, kinds in kinds_by_reason.items() if len(kinds) > 1} == {
+        "credential_not_configured": {"call.outbound", "social.*", "writeback.*"},
+        "kernel_denied": house | {"tool.rpc"},
+        "execution_in_progress": house,
+        "task_payload_changed": house,
+        "human_decision_required": voice_and_grant,
+        "decision_not_approval": voice_and_grant,
+        "payload_required": voice_and_grant,
+    }
+    # A withheld reason is never also a refusal, for any kind.
+    for kind, reasons in WITHHELD_REASONS_BY_KIND.items():
+        assert not set(reasons) & set().union(*REFUSAL_REASONS_BY_KIND.values()), kind
+
+    for kind, reason in (("call.outbound", "interrupt_budget_exhausted"),
+                         ("call.outbound", "budget_exceeded"),
+                         ("call.outbound", "credential_not_configured"),
+                         ("house.control", "kernel_denied"),
+                         ("house.security_control", "strong_confirmation_required"),
+                         ("house.control", "execution_in_progress"),
+                         ("tool.rpc", "tool_not_allowed"),
+                         ("tool.rpc", "kernel_denied"),
+                         ("skill.install", "promotion_refused"),
+                         ("settings.voice_command", "human_decision_required"),
+                         ("settings.voice_command", "changed_since_request"),
+                         ("settings.voice_command", "not_requested"),
+                         ("settings.voice_command", "provider_revision_conflict"),
+                         ("node.dispatch", "unknown_node"),
+                         ("plugin.egress", "URL monitor execution claim required")):
+        assert reason in REFUSAL_REASONS_BY_KIND[kind], (kind, reason)
+        assert is_refusal(kind, {"status": "failed", "reason": reason}), (kind, reason)
+    # The kind resolves like the manifests: exact first, then a ``.*`` pattern.
+    assert is_refusal("social.x.post", {"status": "failed", "reason": "postiz_not_configured"})
+    assert is_refusal("writeback.github.create_issue",
+                      {"status": "failed", "reason": "credential_not_configured"})
+    assert is_refusal("call.outbound", {"status": "failed", "reason": "call_config_missing:account_sid,from"})
+    assert is_refusal("node.dispatch",
+                      {"status": "failed", "reason": "kill-switch engaged for scope 'node:phone'"})
+    # ... and a reason, or a prefix, is a refusal only for the kind that uses it.
+    for kind, reason in (("call.outbound", "kernel_denied"), ("tool.rpc", "execution_in_progress"),
+                         ("house.control", "tool_not_allowed"),
+                         ("house.control", "strong_confirmation_required"),
+                         ("kg.write", "kernel_denied"), ("social.x.post", "interrupt_budget_exhausted"),
+                         ("node.dispatch", "call_config_missing:account_sid"),
+                         ("call.outbound", "kill-switch engaged for scope 'node:phone'"),
+                         ("unknown.action", "kernel_denied")):
+        assert not is_refusal_reason(kind, reason), (kind, reason)
+        assert not is_refusal(kind, {"status": "failed", "reason": reason}), (kind, reason)
+    every_kind = list(REFUSAL_REASONS_BY_KIND)
     for reason in ("client_error", "send_failed", "tool_error", "apply_failed", "invalid_call",
                    "verification_failed", "wall_time_budget_exceeded", "invalid_result",
                    "house_state_unavailable", "something_new", "", None,
-                   # round 3: machinery failures and reasons that can follow an attempt
+                   # machinery failures and reasons that can follow an attempt
                    "classify_failed", "provider_store_unavailable", "install_failed",
                    "promotion_store_unavailable", "execution_stranded", "validation_failed",
-                   "local_image_disabled", "kernel_required", "heavy_features_paused"):
-        assert reason not in REFUSAL_REASONS, reason
-        assert not is_refusal({"status": "failed", "reason": reason}), reason
-    assert "URL monitor execution claim required" in REFUSAL_REASONS
-    assert is_refusal({"status": "refused", "reason": "anything"})
-    assert is_refusal({"status": "blocked", "reason": "missing_field:thread_id"})
-    assert not is_refusal({"status": "ok"}) and not is_refusal(None)
+                   "attention_ledger_unavailable", "work_run_ledger_unavailable",
+                   "withheld_after_generation"):
+        for kind in every_kind:
+            assert not is_refusal(kind, {"status": "failed", "reason": reason}), (kind, reason)
+    # The one class that is neither: an image generated, then withheld by governance.
+    assert is_withheld("tool.rpc", {"status": "failed", "reason": "withheld_after_generation"})
+    assert not is_withheld("call.outbound", {"status": "failed", "reason": "withheld_after_generation"})
+    assert not is_withheld("tool.rpc", {"status": "ok", "reason": "withheld_after_generation"})
+    assert is_refusal("kg.write", {"status": "refused", "reason": "anything"})
+    assert is_refusal("channel.reply", {"status": "blocked", "reason": "missing_field:thread_id"})
+    assert not is_refusal("kg.write", {"status": "ok"}) and not is_refusal("kg.write", None)
     # Only a FAILED result is read through the vocabulary: a success that happens to
     # carry a listed reason is still a success.
-    assert not is_refusal({"status": "ok", "reason": "kernel_denied"})
-    assert not is_refusal({"status": "verified", "reason": "execution_in_progress"})
+    assert not is_refusal("tool.rpc", {"status": "ok", "reason": "kernel_denied"})
+    assert not is_refusal("house.control", {"status": "verified", "reason": "execution_in_progress"})
+
+
+@pytest.mark.asyncio
+async def test_a_reason_is_a_refusal_only_from_the_kind_that_uses_it(tmp_path):
+    """Round 4, item 4: ``kernel_denied`` is house's and tool.rpc's refusal. A call or a
+    graph write never says it, so from their handlers it is a failure, not a refusal
+    borrowed from another kind; from tool.rpc it still records nothing."""
+    queue = _queue(tmp_path / "autonomy.db")
+
+    def returning(result):
+        async def executor(_task):
+            return dict(result)
+        return executor
+
+    await _run_real(queue, returning({"status": "failed", "reason": "kernel_denied"}),
+                    "call.outbound", _CALL)
+    await _run_real(queue, returning({"status": "failed", "reason": "tool_not_allowed"}),
+                    "kg.write", {})
+    await _run_real(queue, returning({"status": "failed", "reason": "kernel_denied"}),
+                    "tool.rpc", {"tool": "image_generate"})
+    assert _counts(queue, "call.outbound") == (0, 1)
+    assert _counts(queue, "kg.write") == (0, 1)
+    assert _counts(queue, "tool.rpc") == (0, 0)
+    queue.close()
 
 
 def test_registry_projects_action_outcomes_into_confidence(tmp_path):
@@ -751,4 +844,304 @@ async def test_worker_injects_stats_but_taint_still_forces_approval(tmp_path):
     )
     assert tainted.status == TaskStatus.BLOCKED.value
     assert tainted.autonomy_level == ASK
+    queue.close()
+
+
+# ── round 4, item 1: a task's outcome is decided over ALL its attempts ─────────
+
+
+class _RaisedRefusal(RuntimeError):
+    """A refusal raised instead of returned (the shape of the house handler's)."""
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+async def _attempts(queue, kind, outcomes):
+    """One approved task of *kind*, each attempt run by a FRESH worker (what an earlier
+    attempt did must be durable, not a worker's memory). The executor plays *outcomes*
+    in order: an exception is raised, a dict is returned."""
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+
+    task_id = queue.enqueue("jarvis", kind, "attempts", risk_tier=1, autonomy_level=ACT,
+                            payload={})
+    queue.transition(task_id, TaskStatus.APPROVED)
+    script = iter(outcomes)
+
+    async def executor(_task):
+        outcome = next(script)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return dict(outcome)
+
+    for _ in range(MAX_ATTEMPTS):
+        await AutonomyWorker(queue, policy=AutonomyPolicy(), executor=executor).tick()
+    return queue.get(task_id)
+
+
+@pytest.mark.parametrize("kind, outcomes", [
+    # open_run-style: the first attempt wrote the run, then its commit raised; the
+    # retry finds the run it wrote and returns the ledger's refusal.
+    ("goal.approve", [sqlite3.OperationalError("disk I/O error"),
+                      {"status": "refused", "reason": "run_already_open_for_goal"}]),
+    ("call.outbound", [RuntimeError("carrier timed out after dialling"),
+                       {"status": "failed", "reason": "interrupt_budget_exhausted"}]),
+    # The house handler raises its refusals: the retries after an attempt that broke
+    # raise ``execution_in_progress`` until the retry budget is spent.
+    ("house.control", [RuntimeError("database is locked"),
+                       _RaisedRefusal("execution_in_progress"),
+                       _RaisedRefusal("execution_in_progress")]),
+], ids=["open_run_refused_on_retry", "returned_failed_refusal", "raised_refusal"])
+@pytest.mark.asyncio
+async def test_a_refusal_after_an_attempt_that_broke_records_one_failure(tmp_path, kind, outcomes):
+    """Round 4, item 1 (closure E): an attempt raised, and a later attempt of the same
+    task returned (or raised) a refusal. The refusal is true of THAT attempt, but the
+    task did attempt the capability and it broke: one failure, never nothing."""
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _attempts(queue, kind, outcomes)
+    assert task.attempts == len(outcomes)
+    assert _counts(queue, kind) == (0, 1)
+    queue.close()
+
+
+@pytest.mark.parametrize("kind, outcomes, expected", [
+    ("goal.approve", [{"status": "refused", "reason": "run_already_open_for_goal"}], (0, 0)),
+    ("call.outbound", [{"status": "failed", "reason": "interrupt_budget_exhausted"}], (0, 0)),
+    ("house.control", [_RaisedRefusal("execution_in_progress")] * 3, (0, 0)),
+    # A refusal raised by an earlier attempt is not a failure either.
+    ("house.control", [_RaisedRefusal("kernel_denied"),
+                       {"status": "failed", "reason": "kernel_denied"}], (0, 0)),
+    # A later attempt that succeeds is the task's one outcome.
+    ("call.outbound", [RuntimeError("carrier timed out"), {"status": "ok"}], (1, 0)),
+], ids=["returned_refused", "returned_failed_refusal", "raised_refusals",
+        "refusal_then_refusal", "broke_then_succeeded"])
+@pytest.mark.asyncio
+async def test_a_refusal_with_no_attempt_that_broke_still_records_nothing(
+        tmp_path, kind, outcomes, expected):
+    """Round 4, item 1, the guard: a refusal on the first attempt (or on every attempt)
+    records nothing, and a success after an attempt that broke records one success."""
+    queue = _queue(tmp_path / "autonomy.db")
+    await _attempts(queue, kind, outcomes)
+    assert _counts(queue, kind) == expected
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_skill_install_retry_after_a_partial_install_records_one_failure(tmp_path, monkeypatch):
+    """Round 4, items 1 and 2 (hunt MINOR 1, the round-3 hunter's repro): the install
+    ran — package active, tool registered — then ``mark_installed`` raised something
+    that is not a PromotionError. The task records exactly one failure, never the
+    ``promotion_refused`` a retry would read, and never nothing."""
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+
+    broker, packages, payload = await _approved_promotion(tmp_path)
+    real_mark, calls = broker.proposals.mark_installed, []
+
+    def mark_once(proposal_id):
+        calls.append(proposal_id)
+        if len(calls) == 1:
+            raise RuntimeError("secret store hiccup while encrypting")
+        return real_mark(proposal_id)
+
+    monkeypatch.setattr(broker.proposals, "mark_installed", mark_once)
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, broker.execute_task, "skill.install", payload, ticks=MAX_ATTEMPTS)
+    name = broker.journal.get(payload["proposal_id"]).name
+    assert packages.get(name) is not None and broker.tool_rpc.allows(name)
+    # Item 1 (the worker, over all attempts) alone gives this: one failure...
+    assert _counts(queue, "skill.install") == (0, 1)
+    # ... and item 2 (the handler) makes the first attempt say so itself, so no retry
+    # ever reads the refusal.
+    assert task.result == {"status": "failed", "reason": "install_failed"}
+    assert len(calls) == 1
+    queue.close()
+
+
+# ── round 4, item 2: every error once the install began is install_failed ─────
+
+
+@pytest.mark.parametrize("seam, error", [
+    ("proposals.mark_installed", RuntimeError("secret store hiccup")),
+    ("marketplace.index_acquired_package", KeyError("catalog")),
+    ("tool_rpc.register_tool", ValueError("tool name already registered")),
+])
+@pytest.mark.asyncio
+async def test_skill_install_any_error_once_the_install_began_is_install_failed(
+        tmp_path, monkeypatch, seam, error):
+    """Hunt MINOR 1: not only a PromotionError — any error raised from ``journal.begin``
+    onward is the install breaking: ``install_failed``, a failure, returned by the
+    handler (never escaping it to be retried into a refusal)."""
+    broker, _packages, payload = await _approved_promotion(tmp_path)
+    owner, method = seam.split(".")
+
+    def broken(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(getattr(broker, owner), method, broken)
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, broker.execute_task, "skill.install", payload)
+    assert task.result == {"status": "failed", "reason": "install_failed"}
+    assert _counts(queue, "skill.install") == (0, 1)
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_skill_install_journal_unreadable_inside_begin_is_store_unavailable(tmp_path, monkeypatch):
+    """Hunt NIT 3: a journal that cannot be read inside ``journal.begin`` has written
+    nothing yet — ``promotion_store_unavailable`` (a failure), not ``install_failed``."""
+    from agents.core.acquisition.promotion import PromotionError
+
+    broker, packages, payload = await _approved_promotion(tmp_path)
+
+    def unreadable():
+        raise PromotionError("cannot decrypt or validate promotion store")
+
+    monkeypatch.setattr(broker.journal, "_read_payload", unreadable)
+    monkeypatch.setattr(broker.journal, "_rows", None)
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, broker.execute_task, "skill.install", payload)
+    assert task.result == {"status": "failed", "reason": "promotion_store_unavailable"}
+    assert packages.list_records() == []
+    assert _counts(queue, "skill.install") == (0, 1)
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_skill_install_quarantine_hash_mismatch_is_a_refusal(tmp_path):
+    """Hunt NIT 3: the quarantine's package hash check is a pre-install check that
+    declined (a tampered package), like the receipt tamper check: ``promotion_refused``,
+    nothing installed, nothing recorded. An unreadable quarantine stays a failure (the
+    store-unreadable test above)."""
+    from dataclasses import replace
+
+    broker, packages, payload = await _approved_promotion(tmp_path)
+    broker.quarantine._records = [
+        replace(record, package=replace(record.package, code=record.package.code + "\n# tampered"))
+        for record in broker.quarantine._load()
+    ]
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, broker.execute_task, "skill.install", payload)
+    assert task.result == {"status": "failed", "reason": "promotion_refused"}
+    assert packages.list_records() == []
+    assert _counts(queue, "skill.install") == (0, 0)
+    queue.close()
+
+
+# ── round 4, item 5: store failures are failures, not refusals ────────────────
+
+
+@pytest.mark.asyncio
+async def test_call_with_an_unavailable_attention_ledger_is_a_failure(tmp_path):
+    """Closure B: the attention ledger that cannot be read is the call's own machinery
+    failing — ``attention_ledger_unavailable``, a failure — while a spent interrupt
+    budget stays the refusal ``interrupt_budget_exhausted``. No call is placed."""
+    from agents.core.ambient.policy import AttentionDeliveryBroker, AttentionLedger
+    from agents.core.autonomy.call_broker import CallBroker
+
+    placed = []
+
+    class Client:
+        async def call(self, *args):
+            placed.append(args)
+            return {"status": "ok"}
+
+    def budget(ledger):
+        return type("Budget", (), {"delivery_broker": AttentionDeliveryBroker(ledger)})()
+
+    closed = AttentionLedger(tmp_path / "closed.db", timezone_name="Europe/Bucharest")
+    closed.close()                                   # the store is gone
+    spent = AttentionLedger(tmp_path / "spent.db", timezone_name="Europe/Bucharest", per_day=0)
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, CallBroker(client=Client(), budget=budget(closed)).execute,
+                           "call.outbound", _CALL)
+    assert task.result == {"status": "failed", "reason": "attention_ledger_unavailable"}
+    assert _counts(queue, "call.outbound") == (0, 1)
+    task = await _run_real(queue, CallBroker(client=Client(), budget=budget(spent)).execute,
+                           "call.outbound", _CALL)
+    assert task.result == {"status": "failed", "reason": "interrupt_budget_exhausted"}
+    assert _counts(queue, "call.outbound") == (0, 1)
+    assert placed == []
+    spent.close()
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_goal_approve_with_a_work_run_ledger_that_failed_to_construct_is_a_failure(
+        tmp_path, monkeypatch):
+    """Closure D: the coordinator binds the work-run ledger whatever the flag says, so
+    a missing ledger at execution means it failed to construct — machinery, reported
+    as ``failed`` (a failure), never as a ``refused`` that ran nothing."""
+    import time
+
+    from agents.core.autonomy import work_runs
+    from agents.core.autonomy.goal_contract import GoalDraft, SuccessCheck, propose
+    from tests.test_web_tools_wiring import _coordinator
+
+    def cannot_open(self, *_args, **_kwargs):
+        raise sqlite3.OperationalError("unable to open database file")
+
+    monkeypatch.setattr(work_runs.WorkRunLedger, "__init__", cannot_open)
+    executor = _coordinator({}).build_executor()
+    draft = GoalDraft(title="Prepare the quarterly brief", scope_kinds=("research",),
+                      budget=work_runs.Budget(max_steps=5), deadline_at=time.time() + 86_400,
+                      stop_conditions=("the source data goes stale",),
+                      checks=(SuccessCheck(id="brief", describe="the brief exists"),))
+    intake = []
+    propose(draft, lambda **kwargs: intake.append(kwargs) or 1)
+    queue = _queue(tmp_path / "autonomy.db")
+    task_id = queue.enqueue("jarvis", "goal.approve", "Approve goal", risk_tier=3,
+                            autonomy_level=ASK, payload=intake[0]["payload"])
+    queue.transition(task_id, TaskStatus.APPROVED, decided_by="owner", decision="accept")
+    await AutonomyWorker(queue, policy=AutonomyPolicy(), executor=executor.execute).tick()
+    assert queue.get(task_id).result == {"status": "failed", "reason": "work_run_ledger_unavailable"}
+    assert _counts(queue, "goal.approve") == (0, 1)
+    queue.close()
+
+
+# ── round 4, item 7: house — the recovery flag, the shared in-flight claim ────
+
+
+@pytest.mark.asyncio
+async def test_house_two_actuators_on_one_ledger_share_the_in_flight_claim(tmp_path, monkeypatch):
+    """Hunt NIT 4: ``routers/house.py`` builds a new HouseActuator on the same ledger
+    file when the orchestrator changes. An execution in flight through the first must
+    read, through the second, as the refusal ``execution_in_progress`` — not as a
+    stranded row (a failure asking for manual recovery) — and the device is commanded
+    once. A claim kept per actuator instance fails this."""
+    import asyncio
+
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+    from agents.core.house.actuation import HOUSE_CONTROL_KIND
+    from tests.test_h30_house_actuation import _Simulator
+
+    sim = _Simulator()
+    first, _first_executor = _house_rig(tmp_path, monkeypatch, sim)
+    second, executor = _house_rig(tmp_path, monkeypatch, sim)
+    assert first is not second and first._ledger.path == second._ledger.path
+    entered, release = asyncio.Event(), asyncio.Event()
+    real_apply = sim.apply
+
+    async def held_apply(command):
+        entered.set()
+        await release.wait()
+        return await real_apply(command)
+
+    sim.apply = held_apply
+    queue = _queue(tmp_path / "autonomy.db")
+    task_id = queue.enqueue("jarvis", HOUSE_CONTROL_KIND, "real handler", risk_tier=1,
+                            autonomy_level=ACT, payload=_HOUSE)
+    queue.transition(task_id, TaskStatus.APPROVED)
+    in_flight = asyncio.create_task(first.execute_task(queue.get(task_id)))
+    await asyncio.wait_for(entered.wait(), 5)
+    worker = AutonomyWorker(queue, policy=AutonomyPolicy(), executor=executor.execute)
+    for _ in range(MAX_ATTEMPTS):
+        await worker.tick()
+    task = queue.get(task_id)
+    assert task.status == TaskStatus.FAILED.value
+    assert task.result == {"error": "execution_in_progress"}
+    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 0)
+    release.set()
+    assert (await asyncio.wait_for(in_flight, 5))["status"] == "verified"
+    assert len(sim.calls) == 1 and sim.state == "on"
     queue.close()

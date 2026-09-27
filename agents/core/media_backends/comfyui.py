@@ -34,6 +34,30 @@ class ImageGenerationError(ValueError):
         super().__init__(reason)
 
 
+class ImageWithheldAfterGeneration(ImageGenerationError):
+    """The backend request completed and returned an image; then a gate re-checked
+    after the request (the local runtime's guard) declined, so the image is withheld,
+    never published. Its reason is ``withheld_after_generation`` — the capability ran
+    and worked, governance withheld the result — and ``cause`` is the gate's own reason
+    (review round 4, item 3)."""
+
+    def __init__(self, cause: str):
+        super().__init__("withheld_after_generation")
+        self.cause = cause
+
+
+def withheld_after_generation(guard):
+    """*guard* as a post-request check: a decline becomes :class:`ImageWithheldAfterGeneration`."""
+    def check():
+        try:
+            guard()
+        except ImageWithheldAfterGeneration:
+            raise
+        except ImageGenerationError as exc:
+            raise ImageWithheldAfterGeneration(exc.reason) from None
+    return check
+
+
 def implementation_fingerprint():
     """Checked shared PNG/endpoint/artifact implementation identity."""
     try:

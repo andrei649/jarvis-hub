@@ -390,6 +390,11 @@ class CallBroker:
                     delivery_id, "call", _place_call
                 )
                 if delivery["status"] == "downgraded":
+                    if delivery.get("reason") == "attention_ledger_unavailable":
+                        # The ledger could not be read or written: the call's own
+                        # machinery failed, not a spent budget — a failure under its own
+                        # reason (review round 4, item 5).
+                        return {"status": "failed", "reason": "attention_ledger_unavailable"}
                     return {"status": "failed", "reason": "interrupt_budget_exhausted"}
                 if delivery["status"] != "delivered":
                     logger.warning("call execute failed: %s", delivery.get("reason"))

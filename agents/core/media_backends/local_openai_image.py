@@ -13,7 +13,13 @@ import httpx
 
 from ..llm.data_handling import DataHandlingRefused
 from ..llm.direct_transport import require_direct_async_transport
-from .comfyui import ImageGenerationError, implementation_fingerprint, save_artifact, validate_png
+from .comfyui import (
+    ImageGenerationError,
+    implementation_fingerprint,
+    save_artifact,
+    validate_png,
+    withheld_after_generation,
+)
 from .registry import local_endpoint, normalize_options, registry_fingerprint, strict_json
 
 _IMPORTED_SHA = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
@@ -95,8 +101,11 @@ class LocalOpenAIImageBackend:
                             if len(data) + len(chunk) > config.max_json_bytes:
                                 raise ImageGenerationError('response_too_large')
                             data.extend(chunk)
-                # Close is awaited before publication; config/approval changes during it refuse.
-                recheck()
+                # Close is awaited before publication. From here the image was generated,
+                # so a config/approval change during the request WITHHOLDS it: the same
+                # gates, reported as withheld_after_generation (round 4, item 3). The
+                # response is validated first, so only an image is ever "withheld".
+                withheld = withheld_after_generation(recheck)
                 try:
                     result = strict_json(data)
                     entries = result['data']
@@ -113,7 +122,8 @@ class LocalOpenAIImageBackend:
                 dimensions = validate_png(png)
                 if dimensions != (opts['width'], opts['height']):
                     raise ImageGenerationError('image_dimensions_mismatch')
-                return save_artifact(config.output_root, png, *dimensions, guard=recheck)
+                withheld()
+                return save_artifact(config.output_root, png, *dimensions, guard=withheld)
         except TimeoutError:
             raise ImageGenerationError('generation_timeout_submission_may_continue') from None
         except httpx.HTTPError:

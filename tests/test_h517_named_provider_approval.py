@@ -324,31 +324,72 @@ async def test_clear_names_only_the_revision_in_force(rig):
     assert whys[1].endswith("'studio' (nothing in force)") and whys[2].endswith("'never' (nothing in force)")
 
 
-async def test_clear_names_the_revision_its_own_write_replaced(rig, monkeypatch):
-    """An approval that lands between a read and the clear's write must not leave the
-    row naming the revision before it: the revision named is the one the write replaced
-    (the tombstone minus one), whatever happened before the write."""
+def _race_an_approval_into_the_write(monkeypatch) -> list:
+    """Land a concurrent approval of 'studio' at the transaction boundary the clear
+    really uses: when the first read-write connection opens — after anything the clear
+    read before it, before that write's own BEGIN IMMEDIATE. Read-only connections
+    (``_read``) pass through. Returns the revision the approval wrote, once it landed."""
+    import sqlite3
+
+    landed: list = []
+
+    class RacingSqlite:
+        def __getattr__(self, name):
+            return getattr(sqlite3, name)
+
+        def connect(self, database, *args, **kwargs):
+            if not landed and not kwargs.get('uri'):
+                landed.append(None)                     # once; the approval writes too
+                current = provider_store.load('tts', 'studio')['provider_revision']
+                landed[0] = provider_store.save_approved(
+                    'tts', 'studio', {'argv': ['newer'], 'approved_task': 7},
+                    expected_revision=current)
+            return sqlite3.connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(provider_store, 'sqlite3', RacingSqlite())
+    return landed
+
+
+async def _clear_while_an_approval_lands(rig, monkeypatch) -> tuple[int, int, object, str]:
     rows = _Rows()
     rig.orch.audit = rows
     rig.orch.intent_log = rows
-    await install(rig, 'studio')
-    real_load, raced = provider_store.load, []
-
-    def load_then_race(side, provider_id):
-        value = real_load(side, provider_id)
-        if not raced:
-            raced.append(value['provider_revision'])     # before the write, which loads too
-            provider_store.save_approved(side, provider_id, {'argv': ['newer'], 'approved_task': 7},
-                                         expected_revision=value['provider_revision'])
-        return value
-
-    monkeypatch.setattr(provider_store, 'load', load_then_race)
+    await install(rig, 'studio')                        # revision 1 is in force
+    landed = _race_an_approval_into_the_write(monkeypatch)
     code, answer = await command_settings.clear(rig.orch, 'tts', provider_id='studio')
     assert code == 200
+    assert landed == [2], landed                       # the approval really landed first
     revoked = rows.intended('voice.command.clear')[0]['metadata']['revoked_revision']
-    assert revoked == answer['provider_revision'] - 1, (revoked, answer, raced)
-    assert rows.audited('voice_command_cleared')[0].startswith(
-        f"voice.tts provider 'studio' (revoked revision {revoked}) cleared")
+    return revoked, answer['provider_revision'], landed[0], rows.audited('voice_command_cleared')[0]
+
+
+async def test_clear_names_the_revision_its_own_write_replaced(rig, monkeypatch):
+    """Round 4, item 6 (hunt MINOR 2): an approval lands after anything the clear read
+    and before its write (the write's own transaction boundary, hooked at the connection
+    it opens). The row names the revision that write replaced — the one that landed —
+    never the one in force before it."""
+    revoked, tombstone, landed, row = await _clear_while_an_approval_lands(rig, monkeypatch)
+    assert tombstone == 3 and revoked == landed == 2, (revoked, tombstone, landed)
+    assert row.startswith("voice.tts provider 'studio' (revoked revision 2) cleared (was argv sha256 ")
+    assert not provider_store.load('tts', 'studio').get('argv')
+
+
+def _check_then_write_clear(side, provider_id):
+    """The variant the round-3 hunter wrote (adv681/test_adv_voice2.py): what is in force
+    is read OUTSIDE the write's transaction, then the write happens."""
+    before = next((r for r in provider_store._read(side) if r['provider_id'] == provider_id), None)
+    revision, _ = provider_store._write(side, provider_id, {}, None)
+    return revision, (before if before and before.get('argv') else None)
+
+
+async def test_the_race_pin_fails_a_check_then_write_clear(rig, monkeypatch):
+    """The pin above has teeth: on the check-then-write variant the same race makes the
+    row name revision 1, while revision 2 was the one revoked."""
+    monkeypatch.setattr(provider_store, 'clear_in_force', _check_then_write_clear)
+    revoked, tombstone, landed, row = await _clear_while_an_approval_lands(rig, monkeypatch)
+    assert (revoked, tombstone, landed) == (1, 3, 2)
+    assert revoked != tombstone - 1                     # what the pin asserts, failing
+    assert "(revoked revision 1)" in row
 
 
 @pytest.mark.parametrize('seam', ['read', 'write'])

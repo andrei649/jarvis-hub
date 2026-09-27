@@ -65,11 +65,19 @@ class HouseActuationError(RuntimeError):
     """A durable house task failed and must not be settled as successful.
 
     ``reason`` is the result's reason, so the worker can tell a refusal (a kernel
-    denial, a missing strong confirmation) from an actuation that broke."""
+    denial, a missing strong confirmation) from an actuation that broke.
+    ``manual_recovery_required`` is the result's flag (a stranded row, a rollback that
+    did not verify); ``task_record`` hands it to the worker, which keeps it in the
+    FAILED task's result (review round 4, hunt NIT 1)."""
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, *, manual_recovery_required: bool = False) -> None:
         super().__init__(reason)
         self.reason = reason
+        self.manual_recovery_required = manual_recovery_required is True
+
+    @property
+    def task_record(self) -> dict:
+        return {"manual_recovery_required": True} if self.manual_recovery_required else {}
 
 
 def _text(value: object, *, label: str, limit: int = 128) -> str:
@@ -700,6 +708,16 @@ class HouseActuator:
             # device may have been commanded and nobody verified it: a failure that
             # needs a human, never the refusal ``execution_in_progress``, and never a
             # second command.
+            #
+            # Multi-process (review round 4, hunt NIT 2): the in-flight claim is per
+            # process, so a row ANOTHER live process began before this lookup reads as
+            # stranded here (a failure), while one it began between this lookup and
+            # ``begin`` below reads as ``execution_in_progress`` (a refusal) — two
+            # classifications of one situation. It cannot arise in a deployment: the
+            # hub lock (``install_identity.acquire_hub_lock``, H689) admits one hub
+            # process per data root, and this ledger lives in that root and is run only
+            # by that hub. Were two processes ever to share it, "stranded" is the
+            # conservative reading (a human looks; the device is never commanded twice).
             return {
                 "status": "failed",
                 "reason": "execution_stranded",
@@ -728,6 +746,8 @@ class HouseActuator:
         if not await asyncio.to_thread(self._ledger.begin, task_id, digest):
             # The row appeared after this call's lookup found none, while this process
             # holds the task's claim: another process began it. Nothing attempted here.
+            # (Only with two processes on one ledger, which the hub lock prevents; see
+            # the multi-process note above.)
             return {"status": "failed", "reason": "execution_in_progress", "verified": False}
 
         capability = _SECURITY_CAPABILITY if kind == HOUSE_SECURITY_KIND else _CONTROL_CAPABILITY
@@ -784,7 +804,10 @@ def register_house_handlers(executor, actuator: HouseActuator):
     async def _execute(task):
         result = await actuator.execute_task(task)
         if result.get("status") == "failed":
-            raise HouseActuationError(str(result.get("reason") or "house actuation failed"))
+            raise HouseActuationError(
+                str(result.get("reason") or "house actuation failed"),
+                manual_recovery_required=result.get("manual_recovery_required") is True,
+            )
         return result
 
     executor.register(HOUSE_CONTROL_KIND, _execute)

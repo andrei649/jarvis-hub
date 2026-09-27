@@ -663,12 +663,18 @@ class ToolRPCServer:
             reason = result.get("reason")
             if not isinstance(reason, str) or not reason:
                 reason = "invalid_result"
-            return {
+            failed = {
                 "status": "failed",
                 "reason": reason,
                 "tool": name,
                 "result": self._scrub(result),
             }
+            # The specific cause behind a general reason (e.g. the gate that withheld a
+            # generated image: round 4, item 3), beside it like the kernel denial's.
+            detail = result.get("detail")
+            if isinstance(detail, str) and detail:
+                failed["detail"] = detail
+            return failed
         self._record("toolrpc.execute", name, agent=effective_actor)
         return {"status": "ok", "tool": name, "result": self._scrub(result)}
 

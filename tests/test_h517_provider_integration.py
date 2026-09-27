@@ -222,6 +222,10 @@ async def test_configuration_revoked_while_response_waits_prevents_publication(r
         state = (await client.get(f"/api/media/generation-tasks/{task_id}")).json()
         assert state["state"] != "ready" and state["artifact"] is None
         assert list(rig.root.rglob("*.png")) == []
+    # Round 4, item 3: generated, then withheld — its own reason, the gate in detail.
+    result = rig.queue.get(task_id).result
+    assert (result["reason"], result["detail"]) == ("withheld_after_generation", "local_image_disabled")
+    assert _outcomes(rig.queue) == (0, 0)
 
 
 @pytest.mark.asyncio
@@ -283,6 +287,8 @@ async def test_bad_response_consumes_one_attempt_and_restart_cannot_retry(rig, i
         await rig.worker.tick()
         assert len(rig.requests) == 1 and attempt.read_bytes() == before
         assert list(rig.root.rglob("*.png")) == []
+    # A generation that broke is a failure (the contrast to the withheld class below).
+    assert _outcomes(rig.queue) == (0, 1)
 
 
 @pytest.mark.parametrize("option", [{"seed": 7}, {"steps": 5}, {"reference": "a" * 32},
@@ -293,3 +299,135 @@ async def test_supported_protocol_does_not_silently_drop_unsupported_options(rig
         response = await client.post("/api/media/generate", json={**BODY, **option})
         assert response.status_code == 422, response.text
         assert rig.queue.list() == [] and rig.requests == []
+
+
+# ── round 4, item 3: generated, then withheld by the post-request guard ───────
+
+
+def _outcomes(queue):
+    stats = queue.capability_outcome_stats("action:tool.rpc")
+    return stats["successes"], stats["failures"]
+
+
+def _deny_local_image(rig, *, then=None):
+    """The worker's kernel, except that the runtime's own local-image check is denied
+    (or, with *then*, runs *then* and passes)."""
+    from dataclasses import replace
+
+    from agents.core.kernel import Verdict
+
+    real = rig.worker._mediation_kernel
+
+    def kernel(action, **kwargs):
+        decision = real(action, **kwargs)
+        if action.kind == "tool.rpc" and (action.payload or {}).get("effect") == "local_image":
+            if then is None:
+                return replace(decision, verdict=Verdict.DENY, reason="policy changed")
+            then()
+        return decision
+
+    rig.worker._mediation_kernel = kernel
+
+
+@pytest.mark.parametrize("cause", ["kernel_denied", "mediation_execution_required",
+                                   "backend_binding_changed", "approved_payload_changed"])
+@pytest.mark.asyncio
+async def test_an_image_withheld_after_generation_is_its_own_reason_and_records_nothing(
+        rig, monkeypatch, cause):
+    """Closure A: the backend POST completed and returned an image; then the runtime's
+    post-request guard (the recheck after the response, the save_artifact guard)
+    withheld it. That is not a refusal (the capability ran) and not a failure (it
+    worked; governance withheld the result): ``withheld_after_generation``, the cause in
+    ``detail``, nothing recorded. Nothing is published."""
+    from dataclasses import fields
+
+    from agents.core import image_generation_runtime as image
+
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed(request):
+        entered.set()
+        await release.wait()
+        return httpx.Response(200, json={"data": [{"b64_json": base64.b64encode(PNG).decode()}]})
+
+    def change(task_id):
+        if cause == "kernel_denied":
+            _deny_local_image(rig)
+        elif cause == "mediation_execution_required":
+            rig.queue.mediation_mode = "hold"
+        elif cause == "backend_binding_changed":
+            # The live config differs while the approved head does not: an unequal
+            # config (another class) with the very same fields, so the same fingerprint.
+            real_config = image.LocalImageRuntime._config
+
+            def drifted(self, options=None):
+                config = real_config(self, options)
+                drifted_type = type("Drifted", (type(config),), {})
+                return drifted_type(**{f.name: getattr(config, f.name) for f in fields(config)})
+
+            monkeypatch.setattr(image.LocalImageRuntime, "_config", drifted)
+        else:
+            # The durable proposal record changed on disk.
+            (proposal,) = (rig.root / "media" / "image_approvals").glob(f"{task_id}-*.proposal")
+            proposal.write_text(json.dumps({"digest": "0" * 64}), encoding="utf-8")
+
+    rig.hooks.response = delayed
+    async with rig.client() as client:
+        task_id = await propose(rig, client)
+        await accept(client, task_id)
+        running = asyncio.create_task(rig.worker.tick())
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            change(task_id)
+        finally:
+            release.set()
+            await running
+    task = rig.queue.get(task_id)
+    assert len(rig.requests) == 1                       # the image was generated
+    assert task.result["status"] == "failed"
+    assert task.result["reason"] == "withheld_after_generation", task.result
+    assert task.result["detail"] == cause
+    assert list(rig.root.rglob("*.png")) == []
+    assert _outcomes(rig.queue) == (0, 0)
+
+
+@pytest.mark.parametrize("cause", ["kernel_denied", "mediation_execution_required"])
+@pytest.mark.asyncio
+async def test_a_governance_gate_before_the_request_stays_a_refusal(rig, cause):
+    """Before any request, ``kernel_denied`` and ``mediation_execution_required`` are
+    refusals: nothing reached the backend, nothing is recorded."""
+    async with rig.client() as client:
+        task_id = await propose(rig, client)
+        await accept(client, task_id)
+
+        def hold():
+            rig.queue.mediation_mode = "hold"   # the re-check right after the kernel refuses
+
+        _deny_local_image(rig, then=None if cause == "kernel_denied" else hold)
+        await rig.worker.tick()
+    task = rig.queue.get(task_id)
+    assert rig.requests == []
+    assert task.result["status"] == "failed" and task.result["reason"] == cause, task.result
+    assert _outcomes(rig.queue) == (0, 0)
+
+
+@pytest.mark.parametrize("gate, env", [
+    ("local_image_disabled", {"JARVIS_LOCAL_IMAGE_GENERATION": "0"}),
+    ("heavy_features_paused", {"JARVIS_SYSTEM_PROFILE": "gaming"}),
+    ("kernel_required", {"JARVIS_ACTION_KERNEL": "0"}),
+])
+@pytest.mark.asyncio
+async def test_a_runtime_gate_before_the_request_is_a_refusal(rig, monkeypatch, gate, env):
+    """Round 4, item 3: once a gate re-checked after the request reports
+    ``withheld_after_generation``, the runtime's own gates can only be reported before
+    the request — refusals: nothing reached the backend, nothing is recorded."""
+    async with rig.client() as client:
+        task_id = await propose(rig, client)
+        await accept(client, task_id)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        await rig.worker.tick()
+    task = rig.queue.get(task_id)
+    assert rig.requests == []
+    assert task.result["status"] == "failed" and task.result["reason"] == gate, task.result
+    assert _outcomes(rig.queue) == (0, 0)

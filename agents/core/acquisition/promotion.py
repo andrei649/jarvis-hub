@@ -17,7 +17,7 @@ from agents.core.secrets import SecretStore, SecretStoreError
 
 from .models import RequestStatus
 from .package_store import PackageStoreError
-from .quarantine import QuarantineError
+from .quarantine import QuarantineError, QuarantinePackageRejected
 from .receipt import VerificationReceipt, receipt_is_current, receipt_matches_package
 
 
@@ -26,14 +26,17 @@ class PromotionError(RuntimeError):
 
 
 class PromotionStoreUnavailable(PromotionError):
-    """The proposal or quarantine store could not be read before any install work: the
-    promotion's own machinery failed; no gate declined (review round 3, item 1)."""
+    """The proposal, quarantine or journal store could not be read before any install
+    work was written (the journal: inside ``journal.begin``, before its first write):
+    the promotion's own machinery failed; no gate declined (review round 3, item 1;
+    round 4, item 2)."""
 
 
 class PromotionInstallFailed(PromotionError):
     """A promotion that broke once its install work began — from ``journal.begin``, the
-    install's first durable write, onward: a journal that cannot commit, a package
-    store that fails mid-install (review round 3, item 1)."""
+    install's first durable write, onward — whatever raised: a journal that cannot
+    commit, a package store that fails mid-install, a secret store, the marketplace or
+    the tool registry (review round 3, item 1; round 4, item 2)."""
 
 
 def make_skill_install_kernel_gate(action_kernel):
@@ -298,7 +301,12 @@ class PromotionJournal(_EncryptedRows):
 
     def begin(self, proposal: PromotionProposal) -> JournalEntry:
         with self._lock:
-            rows = self._load()
+            try:
+                rows = self._load()
+            except (PromotionError, OSError) as exc:
+                # Nothing is written yet: a journal that cannot be read is a store
+                # failure before any install work (round 4, item 2).
+                raise PromotionStoreUnavailable("cannot read the promotion journal") from exc
             existing = next((row for row in rows if row.proposal_id == proposal.proposal_id), None)
             if existing is not None:
                 return existing
@@ -439,8 +447,12 @@ class PromotionBroker:
             raise PromotionError("approved permanent proposal required")
         try:
             record = self.quarantine.get_record(proposal.artifact_id)
+        except QuarantinePackageRejected as exc:
+            # The package's own hash/size check declined it: a pre-install check, like
+            # the receipt tamper check below (round 4, item 2).
+            raise PromotionError("quarantined package failed its integrity check") from exc
         except QuarantineError as exc:
-            raise PromotionStoreUnavailable("quarantine integrity is tampered") from exc
+            raise PromotionStoreUnavailable("quarantine cannot be read") from exc
         if record is None or record.status != "verified" or record.receipt is None:
             raise PromotionError("verified quarantine artifact required")
         try:
@@ -457,8 +469,10 @@ class PromotionBroker:
             raise PromotionError("approval receipt recheck detected tamper")
 
         # Every check above declines before anything is written. From here on the
-        # install has begun, so a PromotionError is the install breaking, never a
-        # refusal.
+        # install has begun, so ANY error is the install breaking, never a refusal —
+        # not only a PromotionError: an error escaping this handler would be retried by
+        # the worker into a check that now declines (round 4, item 2). The one
+        # exception is a journal ``begin`` could not read: nothing written yet.
         try:
             entry = self.journal.begin(proposal)
             if entry.stage == "prepared":
@@ -479,7 +493,9 @@ class PromotionBroker:
             self.journal.advance(proposal_id, "registered")
             self._fail("registered")
             self._finalize(proposal, record.package.request_id)
-        except PromotionError as exc:
+        except PromotionStoreUnavailable:
+            raise
+        except Exception as exc:
             raise PromotionInstallFailed(str(exc)) from exc
         return {
             "status": "installed",
@@ -489,10 +505,11 @@ class PromotionBroker:
 
     async def execute_task(self, task) -> dict:
         """The ``skill.install`` executor. Its reasons keep the refusal vocabulary honest
-        (``agents.core.autonomy.worker``, review round 3, item 1): ``promotion_refused``
-        only for a check that declined before any install work; ``install_failed`` once
-        the install began (``journal.begin`` onward); ``promotion_store_unavailable`` for
-        a proposal or quarantine store that could not be read before it."""
+        (``agents.core.autonomy.worker``, review rounds 3 and 4): ``promotion_refused``
+        only for a check that declined before any install work (the quarantine's package
+        hash check included); ``install_failed`` for any error once the install began
+        (``journal.begin`` onward); ``promotion_store_unavailable`` for a proposal,
+        quarantine or journal store that could not be read before anything was written."""
         payload = getattr(task, "payload", None)
         proposal_id = payload.get("proposal_id") if isinstance(payload, dict) else None
         if not isinstance(proposal_id, str):

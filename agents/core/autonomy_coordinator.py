@@ -1598,7 +1598,10 @@ class AutonomyCoordinator:
                 return {"status": "refused", "reason": exc.reason}
             runs = getattr(self._orch, "work_runs", None)
             if not isinstance(runs, WorkRunLedger):
-                return {"status": "refused", "reason": "work_run_ledger_unavailable"}
+                # The ledger is bound above whatever the flag says, so its absence
+                # means it failed to construct: machinery, a failure — never a
+                # ``refused`` that ran nothing (review round 4, item 5).
+                return {"status": "failed", "reason": "work_run_ledger_unavailable"}
             try:
                 run = await asyncio.to_thread(
                     runs.open_run, goal, budget=goal.budget, deadline_at=goal.deadline_at

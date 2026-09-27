@@ -164,11 +164,17 @@ async def test_fresh_guard_prevents_send_or_publication(tmp_path, phase):
     def service(request):
         calls.append(True)
         return httpx.Response(200, json={'data': [{'b64_json': base64.b64encode(png()).decode()}]})
-    with pytest.raises(ImageGenerationError, match='revoked'):
+    with pytest.raises(ImageGenerationError) as raised:
         await LocalOpenAIImageBackend(resolve_config(env=environment(), output_root=tmp_path),
                                       transport=httpx.MockTransport(service)).generate(
             'boat', {'width': 64, 'height': 64}, guard=guard)
     assert len(calls) == (phase == 'publication') and not list(tmp_path.iterdir())
+    if phase == 'send':
+        assert raised.value.reason == 'revoked'          # before the request: the gate itself
+    else:
+        # After the request the generated image is withheld, the gate as its cause
+        # (review round 4, item 3).
+        assert (raised.value.reason, raised.value.cause) == ('withheld_after_generation', 'revoked')
 
 
 async def test_uncertain_post_is_never_retried(tmp_path):

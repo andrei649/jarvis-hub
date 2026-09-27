@@ -36,6 +36,12 @@ class QuarantineError(RuntimeError):
     pass
 
 
+class QuarantinePackageRejected(QuarantineError):
+    """A quarantined package failed its own integrity check (a size or hash mismatch):
+    the check declined the package — nothing about the store failing to be read
+    (review round 4, item 2)."""
+
+
 @dataclass(frozen=True, slots=True)
 class QuarantineRecord:
     package: GeneratedPackage
@@ -310,13 +316,13 @@ class QuarantineStore:
     def _validate_package(self, package: GeneratedPackage) -> None:
         size = len(package.code.encode("utf-8")) + len(package.test_code.encode("utf-8"))
         if size > self._max_artifact_bytes:
-            raise QuarantineError("quarantine artifact capacity reached")
+            raise QuarantinePackageRejected("quarantine artifact capacity reached")
         if package.source_hash != self._sha(package.code):
-            raise QuarantineError("generated source hash mismatch")
+            raise QuarantinePackageRejected("generated source hash mismatch")
         if package.test_hash != self._sha(package.test_code):
-            raise QuarantineError("generated test hash mismatch")
+            raise QuarantinePackageRejected("generated test hash mismatch")
         if package.package_hash != self._package_hash(package):
-            raise QuarantineError("generated package hash mismatch")
+            raise QuarantinePackageRejected("generated package hash mismatch")
 
     @staticmethod
     def _sha(value: str) -> str:
@@ -353,4 +359,4 @@ class QuarantineStore:
         return any(candidate.is_symlink() for candidate in (absolute, *absolute.parents))
 
 
-__all__ = ["QuarantineError", "QuarantineRecord", "QuarantineStore"]
+__all__ = ["QuarantineError", "QuarantinePackageRejected", "QuarantineRecord", "QuarantineStore"]

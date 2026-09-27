@@ -50,14 +50,41 @@ INTERRUPT_BUDGET_PER_DAY = 4
 # says so in its status (``refused``; ``blocked`` for a contract denial) is taken at
 # its word whatever the reason. But many handlers return a refusal as
 # ``{"status": "failed", "reason": ...}``, the same shape as an attempt that broke,
-# so for ``failed`` the REASON decides: a reason listed here is a refusal; any other
-# reason — including one nobody listed yet — is a failure, the conservative
-# direction (it lowers confidence, it can never earn autonomy).
+# so for ``failed`` the REASON decides: a reason listed for the task's kind is a
+# refusal; any other reason — including one nobody listed yet — is a failure, the
+# conservative direction (it lowers confidence, it can never earn autonomy).
 #
 # The principle (review round 3): a reason is a refusal only when it can ONLY mean
 # "nothing was attempted" — a gate declined BEFORE any attempt. An ambiguous reason,
 # one that can also follow an attempt that began, is a failure until its handler
 # splits it into two reasons.
+#
+# Per kind (review round 4, item 4): the vocabulary maps each ACTION_CAPABILITY_MANIFESTS
+# kind to the refusal reasons ITS handler returns (and the parameterised prefixes, the
+# same way). A reason one handler uses as a refusal is not a refusal when another
+# kind's handler returns it: ``kernel_denied`` from house or tool.rpc ran nothing, from a
+# call handler (which never says it) it is an unknown reason, a failure. A kind resolves
+# like the manifests do: its exact key, else a ``prefix.*`` pattern.
+#
+# Over ALL of a task's attempts (review round 4, item 1): the worker retries a task
+# whose attempt raised, and a retry can meet what the broken attempt left behind — a
+# run it opened before its commit raised reads ``run_already_open_for_goal``, an
+# install it began reads as a refusal. That refusal is true of the retry, not of the
+# task: the capability WAS attempted and broke. So a task whose final attempt would
+# record nothing (a refusal, a withheld result, a no-op or a mock) records ONE failure
+# when an earlier attempt of it failed (raised an error whose reason is not a refusal
+# of its kind; the retry records that durably on the task). A first-attempt refusal,
+# or a refusal on every attempt, still records nothing; a later success records the
+# one success.
+#
+# The one class that is neither (review round 4, item 3): ATTEMPTED BUT WITHHELD BY
+# GOVERNANCE. tool.rpc's local image runtime re-checks its gates after the backend
+# request has completed (the recheck after the response, the save_artifact guard);
+# when one withholds an image that was already generated it reports
+# ``withheld_after_generation`` (the gate's own reason in ``detail``). The capability
+# ran and worked — governance withheld the result — so it is not a refusal (something
+# was attempted) and not a failure (nothing broke): it records NOTHING
+# (WITHHELD_REASONS_BY_KIND). Before the request the same gates stay refusals.
 #
 # What counts as a refusal: a governance decision (kernel, capability token, kill
 # switch, allowlist, approval binding, a human decision the handler needs), a spent
@@ -67,57 +94,101 @@ INTERRUPT_BUDGET_PER_DAY = 4
 # capability's own machinery — even one before the attempt, such as a classifier that
 # crashed or a store that could not be read (``client_error``, ``send_failed``,
 # ``tool_error``, ``apply_failed``, ``verification_failed``, ``classify_failed``,
-# ``provider_store_unavailable``, ``install_failed``, ``wall_time_budget_exceeded``) —
-# and a world the handler found unfit to act in (a stale or degraded house state).
+# ``provider_store_unavailable``, ``install_failed``, ``promotion_store_unavailable``,
+# ``attention_ledger_unavailable``, ``work_run_ledger_unavailable``,
+# ``wall_time_budget_exceeded``) — and a world the handler found unfit to act in (a
+# stale or degraded house state).
+#
+# Known gap (review round 4, closure C; not fixed here): ``credential_not_configured``
+# (call.outbound, social.*, writeback.*) also covers a secret that is configured but
+# cannot be decrypted — ``SecretBroker._safe_get`` swallows ``SecretStoreError`` and
+# the lookup reads as not found. That is a store failure reported as a refusal; the
+# broker lives in a protected module (agents/core/security/secret_broker.py), so the
+# split is the owner's change to make.
 #
 # Collected by reading the executor of every ACTION_CAPABILITY_MANIFESTS kind the
-# worker runs. The other manifest kinds (kg.write, media.*, model.pull,
-# report.export, terminal.exec, file.write, browser.step, desktop.step,
-# host.control, repo.sync, admin.*, payment, mcp.mutating, house.recovery) have no
-# worker executor of their own; their implementations run at a route or the
-# unified action API and return nothing to this worker.
-_REFUSALS_BY_HANDLER: dict[str, tuple[str, ...]] = {
+# worker runs. The kinds with an empty entry (kg.write, media.*, model.pull,
+# report.export, terminal.exec, file.write, browser.step, desktop.step, host.control,
+# repo.sync, admin.*, payment, mcp.mutating, house.recovery) have no worker executor
+# of their own that returns a refusal as ``failed``; their implementations run at a
+# route or the unified action API.
+_HOUSE_REFUSALS = ("kernel_denied", "execution_in_progress", "task_payload_changed")
+_REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
+    # node.dispatch — NodeMesh.execute re-authorises at action time: NodeMesh._authorize
+    # and security.capability.authorize (``kill-switch engaged for scope '<scope>'``
+    # matches by prefix, below).
+    "node.dispatch": ("unknown_node", "capability_broker_unavailable", "no_valid_capability",
+                      "no valid capability token for this action", "denied"),
     # call.outbound — CallBroker.execute (budget ledger, credential, live-rail config,
     # interrupt budget; ``call_config_missing:<keys>`` matches by prefix, below).
+    # ``interrupt_budget_exhausted`` is only an attention ledger that declined to admit
+    # the call (a spent budget, or a delivery it already settled before dispatch); a
+    # ledger that cannot be read is ``attention_ledger_unavailable``, a failure
+    # (round 4, item 5).
     "call.outbound": ("budget_exceeded", "credential_not_configured", "call_config_missing",
                       "interrupt_budget_exhausted"),
     # social.* — SocialBroker.execute / _execute_postiz.
     "social.*": ("credential_not_configured", "postiz_not_configured"),
     # writeback.* — WriteBackBroker.execute.
     "writeback.*": ("credential_not_configured",),
-    # channel.reply — ChannelReplyBroker.execute (its contract denial is ``blocked``).
-    "channel.reply": ("channel_manager_unavailable", "reply_transport_unavailable"),
-    # node.dispatch — NodeMesh.execute re-authorises at action time: NodeMesh._authorize
-    # and security.capability.authorize (``kill-switch engaged for scope '<scope>'``
-    # matches by prefix, below).
-    "node.dispatch": ("unknown_node", "capability_broker_unavailable", "no_valid_capability",
-                      "no valid capability token for this action", "denied"),
+    "payment": (),
+    # plugin.egress — the coordinator's URL monitor routing, the URL monitor and cloud
+    # image executors, all ``refused``.
+    "plugin.egress": ("URL monitor unavailable", "unsupported egress operation",
+                      "URL monitor execution claim required",
+                      "cloud image execution claim required"),
+    "mcp.mutating": (),
+    "host.control": (),
     # tool.rpc — the coordinator's image-only gate, ToolRPCServer.execute (allowlist,
     # H506 class binding, trusted execution, kernel), the image dispatcher's cloud
-    # routing guard and the local image runtime's own guard. Failures, not listed:
+    # routing guard and the local image runtime's own guard BEFORE the backend request
+    # (after it, every gate is ``withheld_after_generation``: round 4, item 3). The
+    # runtime gates ``local_image_disabled``, ``kernel_required`` and
+    # ``heavy_features_paused`` are refusals since that split: before the request is
+    # the only place they can still be reported. Failures, not listed:
     # ``classify_failed`` (the classifier crashed: machinery), ``approval_binding_invalid``
     # (also an OSError reading the binding), ``validation_failed`` (also a preflight
-    # that raised) and the local image gates ``local_image_disabled``,
-    # ``kernel_required`` and ``heavy_features_paused`` — the runtime's guard re-reads
-    # them after the backend request has completed (local_openai_image / save_artifact),
-    # so each can follow an image that was generated and then withheld.
+    # that raised), ``runtime_changed_restart_required`` (the runtime itself changed).
     "tool.rpc": ("image_task_required", "tool_not_allowed",
                  "approval_class_mismatch", "trusted_execution_required", "kernel_denied",
                  "cloud_worker_required", "approved_payload_changed", "backend_binding_changed",
-                 "mediation_execution_required"),
+                 "mediation_execution_required", "local_image_disabled", "kernel_required",
+                 "heavy_features_paused"),
+    "repo.sync": (),
+    "admin.kill_switch": (),
+    "admin.capability_issue": (),
+    "kg.write": (),
+    # channel.reply — ChannelReplyBroker.execute (its contract denial is ``blocked``).
+    "channel.reply": ("channel_manager_unavailable", "reply_transport_unavailable"),
+    # skill.install — AcquisitionRuntime.execute_install_task and
+    # PromotionBroker.execute_task. ``promotion_refused`` is only a check that declined
+    # before any install work (disabled, no approved proposal, the quarantine's package
+    # hash check, receipt tamper); once the journal began — whatever raised — it is
+    # ``install_failed``, and a store unreadable before any write (proposals, quarantine,
+    # the journal inside ``begin``) is ``promotion_store_unavailable``: both failures
+    # (round 3, item 1; round 4, item 2).
+    "skill.install": ("acquisition_unavailable", "promotion_refused"),
+    "media.present": (),
+    "media.restore": (),
+    "desktop.step": (),
+    "browser.step": (),
     # house.control / house.security_control — HouseActuator.execute_task; the
     # registered handler raises HouseActuationError(reason) instead of returning.
     # ``execution_in_progress`` is only another execution of this task in flight right
     # now; a row an earlier attempt left ``running`` (it raised after ``begin``, or the
-    # process died) is ``execution_stranded``, a failure (round 3, item 2).
-    "house.control": ("kernel_denied", "strong_confirmation_required", "execution_in_progress",
-                      "task_payload_changed"),
-    # skill.install — AcquisitionRuntime.execute_install_task and
-    # PromotionBroker.execute_task. ``promotion_refused`` is only a check that declined
-    # before any install work (disabled, no approved proposal, receipt tamper); once
-    # the journal began it is ``install_failed``, and a store unreadable before that is
-    # ``promotion_store_unavailable`` — both failures (round 3, item 1).
-    "skill.install": ("acquisition_unavailable", "promotion_refused"),
+    # process died) is ``execution_stranded``, a failure (round 3, item 2). Only a
+    # security task needs a strong confirmation.
+    "house.control": _HOUSE_REFUSALS,
+    "house.security_control": (*_HOUSE_REFUSALS, "strong_confirmation_required"),
+    "house.recovery": (),
+    # permission.grant — PermissionLedger.apply_grant, all ``refused`` (a contract
+    # denial carries the contract's own reason).
+    "permission.grant": ("kind_mismatch", "human_decision_required", "decision_not_approval",
+                         "payload_required", "contract_denied", "never_entry"),
+    "terminal.exec": (),
+    "file.write": (),
+    "model.pull": (),
+    "report.export": (),
     # settings.voice_command — irreversible.execute and command_settings.apply_approved,
     # returned as ``refused``; a store that fails while applying is returned as
     # ``failed`` / ``provider_store_unavailable``, a failure (round 3, item 5).
@@ -126,42 +197,87 @@ _REFUSALS_BY_HANDLER: dict[str, tuple[str, ...]] = {
         "edit_not_supported", "decision_not_accept", "not_requested", "payload_changed",
         "invalid_provider_id", "payload_invalid", "invalid_command", "not_armed", "safe_mode",
         "changed_since_request", "provider_revision_conflict", "provider_capacity_full"),
-    # permission.grant — PermissionLedger.apply_grant, all ``refused`` (a contract
-    # denial carries the contract's own reason).
-    "permission.grant": ("kind_mismatch", "human_decision_required", "decision_not_approval",
-                         "payload_required", "contract_denied", "never_entry"),
-    # goal.approve — the coordinator's _open_approved_goal, all ``refused`` (plus the
-    # GoalContractError / WorkRunError reason).
-    "goal.approve": ("work_run_ledger_unavailable",),
-    # plugin.egress — the coordinator's URL monitor routing, the URL monitor and cloud
-    # image executors, all ``refused``.
-    "plugin.egress": ("URL monitor unavailable", "unsupported egress operation",
-                      "URL monitor execution claim required",
-                      "cloud image execution claim required"),
+    # goal.approve — the coordinator's _open_approved_goal: its refusals are all
+    # ``refused`` (the GoalContractError / WorkRunError reason). A work-run ledger that
+    # failed to construct is ``failed`` / ``work_run_ledger_unavailable``, a failure
+    # (round 4, item 5).
+    "goal.approve": (),
 }
-REFUSAL_REASONS: frozenset[str] = frozenset(
-    reason for reasons in _REFUSALS_BY_HANDLER.values() for reason in reasons)
-# The two refusal reasons that carry a parameter.
-REFUSAL_REASON_PREFIXES: tuple[str, ...] = ("call_config_missing:", "kill-switch engaged for scope ")
+REFUSAL_REASONS_BY_KIND: dict[str, frozenset[str]] = {
+    kind: frozenset(reasons) for kind, reasons in _REFUSALS_BY_KIND.items()}
+# The refusal reasons that carry a parameter, per kind.
+REFUSAL_REASON_PREFIXES_BY_KIND: dict[str, tuple[str, ...]] = {
+    "call.outbound": ("call_config_missing:",),
+    "node.dispatch": ("kill-switch engaged for scope ",),
+}
+# Attempted, then withheld by governance: records nothing (see above).
+WITHHELD_REASONS_BY_KIND: dict[str, frozenset[str]] = {
+    "tool.rpc": frozenset({"withheld_after_generation"}),
+}
 # Statuses by which a handler itself says it declined.
 REFUSAL_STATUSES = frozenset({"refused", "blocked"})
 
 
-def is_refusal_reason(reason: object) -> bool:
-    """Whether a ``failed`` result's (or a raised error's) reason names a refusal."""
-    if not isinstance(reason, str) or not reason:
+def _vocabulary_kind(kind: object) -> str | None:
+    """The vocabulary entry for a task kind: its exact key, else a ``prefix.*`` pattern
+    (the resolution ``capability_manifests.manifest_for_action`` uses)."""
+    if not isinstance(kind, str) or not kind:
+        return None
+    if kind in REFUSAL_REASONS_BY_KIND:
+        return kind
+    return next((pattern for pattern in REFUSAL_REASONS_BY_KIND
+                 if pattern.endswith(".*") and kind.startswith(pattern[:-1])), None)
+
+
+def is_refusal_reason(kind: object, reason: object) -> bool:
+    """Whether a ``failed`` result's (or a raised error's) reason names a refusal of the
+    handler of *kind*."""
+    entry = _vocabulary_kind(kind)
+    if entry is None or not isinstance(reason, str) or not reason:
         return False
-    return reason in REFUSAL_REASONS or reason.startswith(REFUSAL_REASON_PREFIXES)
+    return (reason in REFUSAL_REASONS_BY_KIND[entry]
+            or reason.startswith(REFUSAL_REASON_PREFIXES_BY_KIND.get(entry, ())))
 
 
-def is_refusal(result: object) -> bool:
+def is_refusal(kind: object, result: object) -> bool:
     """Whether a handler's returned result is a refusal: nothing ran, nothing to record."""
     if not isinstance(result, dict):
         return False
     status = result.get("status")
     if status in REFUSAL_STATUSES:
         return True
-    return status == "failed" and is_refusal_reason(result.get("reason"))
+    return status == "failed" and is_refusal_reason(kind, result.get("reason"))
+
+
+def is_withheld(kind: object, result: object) -> bool:
+    """Whether a returned ``failed`` result is an attempt governance withheld the result
+    of (the capability ran and worked): nothing to record."""
+    entry = _vocabulary_kind(kind)
+    return (entry is not None and isinstance(result, dict) and result.get("status") == "failed"
+            and result.get("reason") in WITHHELD_REASONS_BY_KIND.get(entry, ()))
+
+
+# A retry marks the task with the failed attempts before it (round 4, item 1), in the
+# task's ``result`` (outside every execution fingerprint; DONE/FAILED overwrite it).
+_FAILED_ATTEMPTS_KEY = "failed_attempts"
+
+
+def _earlier_failed_attempts(task: Task) -> int:
+    result = task.result if isinstance(task.result, dict) else {}
+    count = result.get(_FAILED_ATTEMPTS_KEY)
+    return count if type(count) is int and count > 0 else 0
+
+
+def _failure_record(error: BaseException) -> dict:
+    """The FAILED task's result: the error, plus the flags a handler's error carries for
+    the record (``task_record``, e.g. house's ``manual_recovery_required``)."""
+    record: dict = {"error": str(error)}
+    extra = getattr(error, "task_record", None)
+    if isinstance(extra, dict):
+        for key, value in extra.items():
+            if isinstance(key, str) and key != "error" and isinstance(value, (bool, int, str)):
+                record[key] = value
+    return record
 
 
 # executor(task) -> dict result ; notifier(task) -> bool (pushed ok)
@@ -1227,6 +1343,9 @@ class AutonomyWorker:
                     continue
                 task = persisted
             self._observe_qa4_intake(task)
+            # Round 4, item 1: the failed attempts before this one, as the retry that
+            # followed each recorded them on the task (durable across workers).
+            earlier_failures = _earlier_failed_attempts(task)
             execution_permit = _ExecutionPermit(task) if mediated else None
             execution_token = self._execution_context.set(execution_permit)
             try:
@@ -1236,19 +1355,29 @@ class AutonomyWorker:
                 ):
                     raise TaskQueueError("mediation execution context refused")
                 self.queue.transition(task.id, TaskStatus.DONE, result=result)
-                self._record_capability_outcome(task, success=True, result=result)
+                self._record_capability_outcome(task, success=True, result=result,
+                                                earlier_failures=earlier_failures)
                 self._settle_spend(task)
                 self._audit("autonomy.done", task, "executed")
                 done += 1
             except Exception as e:
                 if mediated or attempts >= MAX_ATTEMPTS:
-                    self.queue.transition(task.id, TaskStatus.FAILED, result={"error": str(e)})
-                    self._record_capability_outcome(task, success=False, error=e)
+                    self.queue.transition(task.id, TaskStatus.FAILED, result=_failure_record(e))
+                    self._record_capability_outcome(task, success=False, error=e,
+                                                    earlier_failures=earlier_failures)
                     self._audit("autonomy.failed", task, f"giving up after {attempts}: {e}")
                     failed += 1
                 else:
-                    # back to approved for another attempt
-                    self.queue.transition(task.id, TaskStatus.APPROVED)
+                    # Back to approved for another attempt. An attempt that broke (not
+                    # a refusal of this kind) is counted on the task, so a retry that
+                    # then refuses still records the failure (round 4, item 1).
+                    failures = earlier_failures + (
+                        0 if is_refusal_reason(task.kind, getattr(e, "reason", None)) else 1)
+                    self.queue.transition(
+                        task.id, TaskStatus.APPROVED,
+                        result={**_failure_record(e), _FAILED_ATTEMPTS_KEY: failures}
+                        if failures else None,
+                    )
                     logger.info(f"Task #{task.id} failed (attempt {attempts}), will retry: {e}")
             finally:
                 if execution_permit is not None:
@@ -1282,6 +1411,7 @@ class AutonomyWorker:
         success: bool,
         result: dict | None = None,
         error: BaseException | None = None,
+        earlier_failures: int = 0,
     ) -> None:
         """Record one terminal REAL execution; ignore no-ops, mocks, refusals and unknown actions.
 
@@ -1306,22 +1436,20 @@ class AutonomyWorker:
 
         Review round 2 (MINOR 2): many handlers return a refusal as ``failed`` too (a
         spent interrupt budget, a kernel denial, a missing credential), and the house
-        handler raises one. :func:`is_refusal` / :data:`REFUSAL_REASONS` name those,
-        so a refusal records nothing whichever shape it takes; every other ``failed``
-        result, and every other raised error, is a failure.
-        """
-        if success and isinstance(result, dict):
-            status = result.get("status")
-            if status == "noop" or is_refusal(result):
-                return
-            if status == "failed":
-                success = False
-            from agents.core.plugins.degradation import is_degraded
+        handler raises one. :func:`is_refusal` / :data:`REFUSAL_REASONS_BY_KIND` name
+        those, per kind (round 4), so a refusal records nothing whichever shape it
+        takes; every other ``failed`` result, and every other raised error, is a
+        failure. A result governance withheld after the capability ran
+        (:func:`is_withheld`) records nothing either.
 
-            if is_degraded(result):
-                logger.debug("capability outcome skipped: degraded/mock result for %s", task.kind)
-                return
-        if not success and error is not None and is_refusal_reason(getattr(error, "reason", None)):
+        Review round 4 (item 1): the outcome is the TASK's, over all its attempts. When
+        this final attempt would record nothing but *earlier_failures* attempts of the
+        task broke, it records one failure.
+        """
+        outcome = self._attempt_outcome(task, success=success, result=result, error=error)
+        if outcome is None and earlier_failures > 0:
+            outcome = False
+        if outcome is None:
             return
         try:
             from agents.core.capability_manifests import manifest_for_action
@@ -1329,9 +1457,34 @@ class AutonomyWorker:
             manifest = manifest_for_action(task.kind)
             record = getattr(self.queue, "record_capability_outcome", None)
             if manifest is not None and callable(record):
-                record(manifest.id, success=success)
+                record(manifest.id, success=outcome)
         except Exception:
             logger.warning("capability outcome record failed", exc_info=True)
+
+    @staticmethod
+    def _attempt_outcome(
+        task: Task,
+        *,
+        success: bool,
+        result: dict | None,
+        error: BaseException | None,
+    ) -> bool | None:
+        """What this attempt alone says: True a success, False a failure, None nothing
+        to record (a no-op, a refusal, a result governance withheld, a mock)."""
+        if success and isinstance(result, dict):
+            status = result.get("status")
+            if status == "noop" or is_refusal(task.kind, result) or is_withheld(task.kind, result):
+                return None
+            from agents.core.plugins.degradation import is_degraded
+
+            if is_degraded(result):
+                logger.debug("capability outcome skipped: degraded/mock result for %s", task.kind)
+                return None
+            return status != "failed"
+        if not success and error is not None and is_refusal_reason(
+                task.kind, getattr(error, "reason", None)):
+            return None
+        return success
 
     # ── human decisions ───────────────────────────────────────────
     async def _push_promoted_group(self, group_id: str | None) -> None:

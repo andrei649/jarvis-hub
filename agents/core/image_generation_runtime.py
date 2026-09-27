@@ -205,10 +205,14 @@ class LocalImageRuntime:
             raise ImageGenerationError("approval_binding_invalid")
         proposal = self._record_path(persisted, "proposal")
         try:
-            if proposal.stat().st_size > 1024 or json.loads(proposal.read_text(encoding="utf-8")) != {"digest": _task_binding(persisted)}:
-                raise ImageGenerationError("approved_payload_changed")
+            oversized = proposal.stat().st_size > 1024
+            recorded = None if oversized else json.loads(proposal.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             raise ImageGenerationError("approval_binding_invalid") from None
+        # Outside the try: ImageGenerationError is a ValueError, and a changed record
+        # must be reported as changed, not as an unreadable binding (round 4, item 3).
+        if oversized or recorded != {"digest": _task_binding(persisted)}:
+            raise ImageGenerationError("approved_payload_changed")
         mode = getattr(self._queue, "mediation_mode", None)
         if mode == "enforce":
             # The worker has already consumed its private dispatch permit.
@@ -230,6 +234,7 @@ class LocalImageRuntime:
         from .security.taint import is_untrusted_source
 
         reason = "local_refused"
+        detail = None
         try:
             config = self._config(args)
             task = self._approval(args, config)
@@ -287,7 +292,7 @@ class LocalImageRuntime:
                 return False, reason
 
         async def comfyui(prompt, opts):
-            nonlocal reason
+            nonlocal reason, detail
             try:
                 def recheck():
                     allowed, why = guard("image", prompt, opts, consume=False)
@@ -300,7 +305,11 @@ class LocalImageRuntime:
                                                backend_factories={"comfyui": ComfyUIBackend,
                                                                   "openai_images": LocalOpenAIImageBackend})
             except ImageGenerationError as exc:
+                # A gate that declined after the request completed withholds a
+                # generated image: ``withheld_after_generation``, its cause in
+                # ``detail`` (round 4, item 3).
                 reason = exc.reason
+                detail = getattr(exc, "cause", None)
                 raise
 
         comfyui.__name__ = args.get("backend", env_str("JARVIS_LOCAL_IMAGE_DEFAULT_BACKEND", "comfyui"))
@@ -309,6 +318,8 @@ class LocalImageRuntime:
         result = await manager.generate("image", args["prompt"], opts=options)
         if not result.get("ok"):
             result["reason"] = reason
+            if isinstance(detail, str) and detail:
+                result["detail"] = detail
         elif isinstance(result.get("result"), dict):
             artifact = result["result"]
             artifact.pop("path", None)
