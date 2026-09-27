@@ -71,13 +71,13 @@ def tts_available() -> bool:
     """Whether a server-side TTS path exists for the owner's settings (H613): edge, Kokoro,
     Piper with a model, a ready command provider, or a configured XTTS / ElevenLabs / Fish.
     With ``voice.local_only`` only Piper, Kokoro or XTTS count."""
-    import os
+    from agents.core.env_config import env_str
 
     if local_providers.local_only():
-        return bool(HAS_KOKORO or os.getenv("XTTS_SERVER_URL") or local_providers.piper_status()["available"])
+        return bool(HAS_KOKORO or env_str("XTTS_SERVER_URL") or local_providers.piper_status()["available"])
     if HAS_EDGE or HAS_KOKORO:
         return True
-    if any(os.getenv(name) for name in ("XTTS_SERVER_URL", "ELEVENLABS_API_KEY", "FISH_AUDIO_API_KEY")):
+    if any(env_str(name) for name in ("XTTS_SERVER_URL", "ELEVENLABS_API_KEY", "FISH_AUDIO_API_KEY")):
         return True
     return bool(local_providers.piper_status()["available"] or local_providers.command_ready("tts").ok)
 

@@ -180,7 +180,9 @@ def armed() -> bool:
 
 def timeout_for(default: int) -> int:
     """*default*, or ``JARVIS_VOICE_COMMAND_TIMEOUT_S`` clamped to ``1..600``."""
-    raw = (os.environ.get(TIMEOUT_ENV) or "").strip()
+    from agents.core.env_config import env_str
+
+    raw = env_str(TIMEOUT_ENV).strip()
     if not raw:
         return default
     try:
