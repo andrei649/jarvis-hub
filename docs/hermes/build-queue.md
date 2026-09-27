@@ -2,7 +2,7 @@
 
 Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) row that still carried only the 2026-09-07 audit verdict: 16 read-only assessors read the requirement and the code on `main` at 6578cd3c, a skeptic stood ready for every claimed promotion (none was claimed — the old audit held up), and a cross-row critic checked the plans against each other and against the code. The verdicts are in [assessment.json](assessment.json); this page keeps what the ledger does not: how each gap would close.
 
-**Pruned** (2026-09-27): the 44 rows closed so far (H262, H681, H410, H586, H667, H670, H145, H157, H283, H285, H296, H314, H350, H441, H501, H504, H526, H117, H275, H328, H380, H450, H659, H674, H677, H156, H161, H168, H209, H227, H247, H259, H309, H373, H378, H507, H689, H222, H329, H413, H490, H594, H579, H182) left the queue table, and their plans were cut to a one-line stub that keeps the anchor the critic notes link to. Their records are in the ledger.
+**Pruned** (2026-09-27): the 45 rows closed so far (H613, H262, H681, H410, H586, H667, H670, H145, H157, H283, H285, H296, H314, H350, H441, H501, H504, H526, H117, H275, H328, H380, H450, H659, H674, H677, H156, H161, H168, H209, H227, H247, H259, H309, H373, H378, H507, H689, H222, H329, H413, H490, H594, H579, H182) left the queue table, and their plans were cut to a one-line stub that keeps the anchor the critic notes link to. Their records are in the ledger.
 
 **How to use it.** Pick from the top (smallest honest estimate first), read the row with `python3 scripts/hermes_status.py show <ID>`, then its plan here **and every critic note it links** — 60 of the 93 plans overlap another plan or rest on a premise the critic corrected, and building two of them separately would collide. Estimates are hours for a careful engineer including tests, not a schedule. A plan is a starting point, not a contract: the requirement in the frozen inventory wins. When a row closes, its ledger entry changes in the same PR and it leaves this page.
 
@@ -54,7 +54,6 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 | [H334](#h334) | Importing skills from an upstream project at a verified pin | partial | 7 | [25](#critic-note-25) |
 | [H427](#h427) | Fail-closed pre-compression checkpoint — never discard a transcript unless the extraction durably landed | missing | 8 | [13](#critic-note-13) |
 | [H464](#h464) | Park a run on real async work instead of poking it | partial (built in #1207; needs a process producer and wired graders) | 8 |  |
-| [H613](#h613) | Choose how it sounds and how it hears (TTS / STT provider matrix) | partial | 8 |  |
 | [H277](#h277) | Separate models for separate jobs (vision, video, approval judging) | partial | 9 |  |
 | [H487](#h487) | Ask a human on whatever surface they are on, carry their reason back, and fail closed on silence | partial | 9 | [27](#critic-note-27) |
 | [H513](#h513) | Restrict a capability to the surface it belongs on, and let the owner acknowledge a data-handling tradeoff without silencing the warning | partial | 9 | [9](#critic-note-9) |
@@ -264,11 +263,7 @@ Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scr
 
 ## H613
 
-**Choose how it sounds and how it hears (TTS / STT provider matrix)** (docs-features) — partial, ~8 h.
-
-Files: `agents/core/voice/tts.py`, `agents/core/voice/stt.py`, `agents/core/settings_db.py`, `tests/test_tts_piper_command.py (new)`
-
-Plan: 1) agents/core/voice/tts.py: add `_speak_piper(text, voice)` for `piper:<model>` voices, or a voice.piper_model setting. Use the piper Python package when it imports, otherwise the `piper` binary through asyncio.create_subprocess_exec: argv list, text on stdin, --output_file under TEMP_DIR, 30 s timeout. On failure, fall back to _safe_default_voice. When voice.local_only is set, try Piper before edge. 2) Command providers: add admin-only settings voice.tts_command and voice.stt_command, each a JSON argv template with {text_file}, {output}, {audio} and {lang} placeholders. Run them without a shell, with a bounded timeout and output size, and confine the output path to TEMP_DIR. `command:` voices dispatch to the TTS command. STTEngine.transcribe uses the STT command when faster-whisper is absent or when voice.stt_engine=command. Leave the consent gate unchanged: piper and command voices are not persona markers, and xtts/elevenlabs/fish stay gated. 3) Tests in tests/test_tts_piper_command.py use fake executables in tmp_path. The first red test is test_piper_voice_invokes_piper_argv. Then cover: command TTS and STT happy paths; timeout and non-zero exit falling back; text never interpolated into a shell; consent still blocking xtts without owner consent.
+Closed in #1207 (equivalent): its plan was built, with the command providers held at the approval queue's irreversible tier (critic note 28's shared helper), bound to every file that runs, and `voice.local_only` made strict. Named limits: the `settings.voice_command` kernel kind (protected registry) and unshipped Piper models. The row's record: `python3 scripts/hermes_status.py show H613`.
 
 ## H681
 

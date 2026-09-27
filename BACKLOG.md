@@ -14,6 +14,19 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-27 H613 ✅ choose how it sounds and how it hears: Piper as a local voice, and the owner's own TTS/STT programs, each run only as a human approved it (equivalent; #1207; headline 190/697).
+
+  Nerva spoke through cloud voices or Kokoro and heard only through Whisper. Now:
+  - **Piper speaks on this machine.** A `piper:<model>` voice (or bare `piper`, picked by language) goes through the piper package (off the event loop, one synthesis at a time) or the `piper` binary, with models in `<data>/voice/piper` or `voice.piper_model_dir`. Bare `piper` never picks a model the persona/cloned-voice consent gate would flag, and a failing local voice falls back to an edge voice, never to itself.
+  - **Any local engine, as a command.** `voice.tts_command` / `voice.stt_command` are an argv template with whole-element `{text_file}`, `{output}`, `{audio}`, `{lang}`. No shell, launcher, dynamic loader or inline code; the program, any directory above it and an interpreter's script must not be writable by other users. It runs without a shell in a private run directory, with a scrubbed environment (a Python script imports nothing from its own folder or the user's site-packages), one deadline that kills the whole process group, capped output, two at a time; only magic-checked audio is read back.
+  - **Nothing runs until a human accepts the exact card.** The rows are route-only (the settings PUT, import, reset and undo never write them). A request becomes a tier-3 `settings.voice_command` card in the Decision Inbox showing the program, every bound file with its sha256, the argv with the placeholders marked, the user it runs as and the timeout. Only a plain accept of that recorded card writes it, while nothing changed; a clear is explicit and immediate. It also needs `JARVIS_VOICE_COMMANDS=1` and is off in safe mode.
+  - **Any change needs approving again.** The program and an interpreter's script are bound by path, inode, size, mtime and sha256, and checked before every spawn and again once the concurrency slot is held. A waiting card whose program changed is refused, not handed back.
+  - **The owner's selectors hold.** `voice.local_only` speaks only Piper, Kokoro or XTTS (never the command, never a Piper model twice), and TTS availability, capabilities and the speak tool honour it. `voice.stt_engine` (whisper | command | auto) picks the engine. Doctor names why a command is not used; the HUD has Voice → Command providers.
+
+  Named limits: `settings.voice_command` is not a registered Action Kernel kind (protected registry), so under mediation enforce or hold a set answers 503 (a clear still works). Piper models are not shipped. What an approved program loads (libraries, a non-Python script's modules) is not bound. OpenAI, MiniMax, Mistral, Gemini, xAI, NeuTTS and KittenTTS providers and Python plugin providers were not taken; the command provider is their local escape hatch.
+
+  Reviewed adversarially (4 lenses): 21 findings confirmed (6 MAJOR, 11 MINOR, 4 NIT), closed in a verified fix round; the verification found 3 more (1 MINOR, 2 NIT), closed red-first. 72 mutants, all killed (16 by cases added after a first pass). Test manual: CHN-189, CHN-190.
+  Tests: backend 18,150 → 18,269; vitest 1,772 → 1,783.
 - 2026-09-27 H464 a work run is parked on real async work instead of poked: a process, a trigger or a clock (partial, still; #1207; headline 189/697).
 
   A run waiting on a build, a deploy or a cooldown used to be ticked every sweep. Each tick spent a step, and eventually budget, asking "is it done yet". Now:
