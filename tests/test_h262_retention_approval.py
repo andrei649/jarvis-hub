@@ -242,7 +242,8 @@ def test_a_setting_changed_since_the_request_is_refused(env, client):
     settings_db.put_category("retention", {"audit_ttl_days": 7})
     task = asyncio.run(env.worker.apply_decision(task_id, "accept", decided_by="admin"))
     result = asyncio.run(irreversible.execute(task, orch=env.orch))
-    assert result == {"status": "refused", "reason": "changed_since_request"}
+    assert result["status"] == "refused" and result["reason"] == "changed_since_request"
+    assert result["classes"] == ["audit"] and "audit" in result["detail"]
     assert _value("retention.enabled") is False and env.cp.get_state(retention.APPROVED_STATE) is None
 
 
@@ -457,7 +458,9 @@ def test_f1_the_card_counts_the_chats_the_archive_phase_will_hand_to_retention(e
               "retention.conversation_ttl_days": 90}
     gone = retention.approval_preview(values, None, env.cp, env.audit)["would_delete"]
     assert gone["chats_to_archive"] == {"count": 5, "more": False}
-    assert gone["archived_chats"] == {"count": 1, "more": False}          # past the week's grace only
+    # H262 review round 2 (N1): every archived chat past the horizon, whatever its archive
+    # age — the sweeps of the next week delete "just-archived" too, once its grace ends.
+    assert gone["archived_chats"] == {"count": 2, "more": False}
     assert gone["ingestion"] == {"count": 0, "more": False} and gone["attachments"] == {"count": 0, "more": False}
 
 
@@ -544,12 +547,18 @@ def test_f4_a_lowering_never_widens_and_reads_the_old_shape(env):
     assert retention.lower_approval(env.cp) is False
 
 
-def test_f10_a_harmless_retention_put_after_a_gated_memory_put_keeps_the_card_acceptable(env, client):
+def test_f10_the_hud_order_retention_then_memory_gives_a_card_that_applies(env, client):
+    """H262 review round 2: the HUD sends ``retention`` before ``memory``. The retention PUT
+    (a narrowing) is written at once, and the memory PUT's card previews the horizons that
+    will be in force, so accepting it applies."""
     settings_db.put_category("retention", {"enabled": True, "conversation_ttl_days": 90})
     _approve(env)
-    task_id = _queued(env, client, {"auto_archive_days": 30}, category="memory")        # the HUD sends memory first
     assert client.put("/api/admin/settings/retention", headers=ADMIN,
-                      json={"values": {"audit_ttl_days": 900}}).status_code == 200      # then retention, ungated
+                      json={"values": {"audit_ttl_days": 900}}).status_code == 200      # retention first, ungated
+    task_id = _queued(env, client, {"auto_archive_days": 30}, category="memory")        # then memory, gated
+    card = env.queue.get(task_id).payload
+    assert card["values"] == {"memory": {"auto_archive_days": 30}}
+    assert card["preview"]["horizons"]["conversations"] == 90 and card["preview"]["horizons"]["audit"] == 900
     result = _accept(env, task_id)
     assert result["status"] == "ok", result
     assert _value("memory.auto_archive_days") == 30 and _value("retention.audit_ttl_days") == 900
@@ -557,18 +566,32 @@ def test_f10_a_harmless_retention_put_after_a_gated_memory_put_keeps_the_card_ac
     assert snap["conversations"] == 90 and snap["audit"] == 900
 
 
-def test_f10_a_retention_put_that_deepens_a_pending_card_is_gated_with_it(env, client):
+def test_f10_a_change_of_a_key_that_moves_no_horizon_keeps_the_card_acceptable(env, client):
     settings_db.put_category("retention", {"enabled": True, "conversation_ttl_days": 90})
     _approve(env)
-    first = _queued(env, client, {"auto_archive_days": 30}, category="memory")
+    task_id = _queued(env, client, {"auto_archive_days": 30}, category="memory")
+    assert client.put("/api/admin/settings/retention", headers=ADMIN,
+                      json={"values": {"min_interval_hours": 6}}).status_code == 200
+    assert _accept(env, task_id)["status"] == "ok"
+    assert _value("memory.auto_archive_days") == 30 and _value("retention.min_interval_hours") == 6
+
+
+def test_f10_a_retention_put_that_deepens_a_class_a_waiting_card_makes_finite_leaves_the_card_refused(env, client):
+    """H262 review round 2 (N3/N4): a later write is judged against the stored values and
+    the approval only, never a waiting card's values. Chats are kept forever while archiving
+    is off, so a shorter chat TTL is written at once; the card that turns archiving on then
+    no longer shows what an accept would do, and is refused naming the class."""
+    settings_db.put_category("retention", {"enabled": True, "conversation_ttl_days": 90})
+    _approve(env)
+    first = _queued(env, client, {"auto_archive_days": 30}, category="memory")           # the card: chats 90d
     second = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"conversation_ttl_days": 30}})
-    assert second.status_code == 202 and _value("retention.conversation_ttl_days") == 90
-    card = env.queue.get(second.json()["pending"]).payload
-    assert card["values"] == {"memory": {"auto_archive_days": 30}, "retention": {"conversation_ttl_days": 30}}
-    assert card["preview"]["horizons"]["conversations"] == 30
-    assert _accept(env, first)["status"] == "ok"
-    assert _accept(env, second.json()["pending"])["status"] == "ok"
-    assert retention.approved_horizons(env.cp)["conversations"] == 30
+    assert second.status_code == 200, second.text
+    assert _value("retention.conversation_ttl_days") == 30 and len(_pending(env)) == 1
+    result = _accept(env, first)
+    assert result["status"] == "refused" and result["reason"] == "changed_since_request"
+    assert result["classes"] == ["conversations"] and "chats" in result["detail"]
+    assert _value("memory.auto_archive_days") == 0
+    assert retention.approved_horizons(env.cp)["conversations"] == float("inf")
 
 
 def test_f10_a_card_is_still_refused_when_the_result_is_deeper_than_it_showed(env, client):
@@ -576,7 +599,9 @@ def test_f10_a_card_is_still_refused_when_the_result_is_deeper_than_it_showed(en
     _approve(env)
     task_id = _queued(env, client, {"auto_archive_days": 30}, category="memory")        # the card: chats 90d
     settings_db.put_category("retention", {"conversation_ttl_days": 7})    # a writer that bypassed the gate
-    assert _accept(env, task_id) == {"status": "refused", "reason": "changed_since_request"}
+    result = _accept(env, task_id)
+    assert result["status"] == "refused" and result["reason"] == "changed_since_request"
+    assert result["classes"] == ["conversations"]
 
 
 def test_f12_retention_on_with_every_horizon_forever_awaits_nothing(env, client):
@@ -594,3 +619,86 @@ def test_the_state_route_names_the_waiting_card_and_a_second_identical_put_reuse
     again = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"enabled": True}})
     assert again.status_code == 202 and again.json()["pending"] == first.json()["pending"]
     assert len(_pending(env)) == 1
+
+
+# ── review round 2 (H262) ─────────────────────────────────────────────────────────
+
+def test_n2_a_narrowing_saved_after_the_request_makes_the_card_stale(env, client):
+    """The owner keeps attachments forever after asking for 30 days: accepting the old card
+    is refused and changes nothing (it would have put the 30 days back)."""
+    settings_db.put_category("retention", {"enabled": True, "artifact_ttl_days": 90})
+    _approve(env)
+    task_id = _queued(env, client, {"artifact_ttl_days": 30})
+    assert client.put("/api/admin/settings/retention", headers=ADMIN,
+                      json={"values": {"artifact_ttl_days": 0}}).status_code == 200
+    approved = env.cp.get_state(retention.APPROVED_STATE)["value"]
+    result = _accept(env, task_id)
+    assert result["status"] == "refused" and result["reason"] == "changed_since_request"
+    assert result["classes"] == ["artifacts"] and "attachments" in result["detail"]
+    assert _value("retention.artifact_ttl_days") == 0
+    assert env.cp.get_state(retention.APPROVED_STATE)["value"] == approved
+    assert retention.approved_horizons(env.cp)["artifacts"] == float("inf")
+
+
+def test_n3_archiving_alone_is_written_while_a_retention_card_waits(env, client):
+    first = _queued(env, client, {"enabled": True, "conversation_ttl_days": 90})
+    resp = client.put("/api/admin/settings/memory", headers=ADMIN, json={"values": {"auto_archive_days": 30}})
+    assert resp.status_code == 200, resp.text
+    assert _value("memory.auto_archive_days") == 30 and _value("retention.enabled") is False
+    assert [t.id for t in _pending(env)] == [first]
+
+
+def test_n4_a_write_is_judged_against_the_stored_values_not_a_waiting_card(env, client):
+    settings_db.put_category("retention", {"enabled": True, "conversation_ttl_days": 90})
+    _approve(env)                                          # archiving off: chats kept forever
+    card = _queued(env, client, {"conversation_ttl_days": 0, "audit_ttl_days": 30})
+    resp = client.put("/api/admin/settings/memory", headers=ADMIN, json={"values": {"auto_archive_days": 30}})
+    assert resp.status_code == 202, resp.text              # chats 90d in force: deeper than approved
+    assert resp.json()["gated"] == ["memory.auto_archive_days"] and resp.json()["pending"] != card
+    assert _value("memory.auto_archive_days") == 0
+    assert env.queue.get(resp.json()["pending"]).payload["values"] == {"memory": {"auto_archive_days": 30}}
+
+
+def test_n6_an_import_that_narrows_lowers_the_approval(env, client):
+    settings_db.put_category("retention", {"enabled": True, "audit_ttl_days": 30})
+    _approve(env)
+    resp = client.post("/api/admin/settings/import", headers=ADMIN,
+                       json={"settings": {"retention": {"audit_ttl_days": 3650}}})
+    assert resp.status_code == 200, resp.text
+    assert retention.approved_horizons(env.cp)["audit"] == 3650
+
+
+def test_n6_a_reseed_that_narrows_lowers_the_approval(env, client):
+    settings_db.put_category("retention", {"enabled": True, "audit_ttl_days": 30})
+    _approve(env)
+    done = client.post("/api/admin/settings/reseed", headers=ADMIN, json={})
+    assert done.status_code == 200 and _value("retention.enabled") is False
+    assert retention.approved_horizons(env.cp) == dict.fromkeys(retention.DATA_CLASSES, float("inf"))
+
+
+def test_n6_an_undo_that_narrows_lowers_the_approval(env, client, monkeypatch):
+    # A reset that deepens within the approval (audit 900 → the default 365, approved 365),
+    # then an undo that puts 900 back: a narrowing, which lowers the approval to 900.
+    monkeypatch.setitem(settings_db._SPEC[("retention", "enabled")], "value", True)
+    settings_db.put_category("retention", {"enabled": True, "audit_ttl_days": 900})
+    _approve(env, retention__audit_ttl_days=365)
+    done = client.post("/api/admin/settings/retention/reset", headers=ADMIN, json={}).json()
+    assert "audit_ttl_days" in done["reset"] and _value("retention.audit_ttl_days") == 365
+    assert retention.approved_horizons(env.cp)["audit"] == 365
+    resp = client.post("/api/admin/settings/undo", headers=ADMIN, json={})
+    assert resp.status_code == 200, resp.text
+    assert _value("retention.audit_ttl_days") == 900 and retention.approved_horizons(env.cp)["audit"] == 900
+
+
+def test_n7_a_waiting_card_is_found_behind_150_other_pending_decisions(env, client):
+    for i in range(150):
+        env.queue.enqueue("owner", "note.other", f"other {i}")
+    assert len(env.queue.pending_decisions()) == 100                     # the default page is full of others
+    settings_db.put_category("retention", {"enabled": True})
+    first = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"enabled": True}})
+    assert first.status_code == 202
+    assert [t.id for t in irreversible.pending(env.orch, KIND)] == [first.json()["pending"]]
+    assert client.get("/api/admin/retention", headers=ADMIN).json()["pending_task"] == first.json()["pending"]
+    again = client.put("/api/admin/settings/retention", headers=ADMIN, json={"values": {"enabled": True}})
+    assert again.status_code == 202 and again.json()["pending"] == first.json()["pending"]
+    assert [t.kind for t in env.queue.list(limit=1000)].count(KIND) == 1

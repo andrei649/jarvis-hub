@@ -13,9 +13,9 @@ broken record re-minted. Here:
   life of the hub (``serve.py``, and the app's lifespan for a bare ``uvicorn
   agents.web:app``); a second hub on the same root is refused and told the holder's pid.
   The lock is the kernel's, so a crashed hub leaves nothing to clean. H262 review:
-  :func:`holds_hub_lock` and :func:`hub_lock_held_elsewhere` (a non-blocking probe on a
-  handle of its own, never creating the data root) let a coordinator leave the lifecycle
-  sweep to a running hub.
+  :func:`holds_hub_lock` and :func:`hub_lock_held_elsewhere` (a read-only probe of the pid
+  in ``hub.lock`` — it never takes the lock and never creates the data root) let a
+  coordinator leave the lifecycle sweep to a running hub.
 - **Profiles.** ``JARVIS_PROFILE=<name>`` (see :func:`agents.core.paths.data_root`) gives
   each profile its own data root, beside the default one, and with it its own id, lock,
   settings and secret store (``agents/core/secrets.py`` resolves it under the data root the
@@ -198,31 +198,46 @@ def holds_hub_lock() -> bool:
     return _hub_handle is not None
 
 
-def hub_lock_held_elsewhere(root: str | Path | None = None) -> bool:
-    """H262 review — whether another process (a running hub) holds ``hub.lock`` under the
-    data root: a probe on a handle of its own, non-blocking, released at once. It never
-    creates the data root or the lock file; one that cannot be opened or locked for any
-    reason but "held" answers False. This process's own hold is not "elsewhere"."""
-    if _hub_handle is not None:
-        return False
-    path = _root(root) / HUB_LOCK_FILE
+def _pid_alive(pid: int) -> bool:
+    """Whether *pid* is a live process. POSIX: ``os.kill(pid, 0)`` — a permission error is
+    a live process of another user, no such process is a dead one. Windows (where
+    ``os.kill`` would end the process): the exec cache's handle-based check."""
+    if os.name == "nt":
+        from agents.core.exec_cache import _pid_alive as alive_on_windows
+
+        return alive_on_windows(pid)
     try:
-        handle = open(path, "r+" if os.name == "nt" else "r", encoding="ascii")   # noqa: SIM115
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
     except OSError:
         return False
-    try:
-        try:
-            _file_lock(handle, blocking=False)
-        except BlockingIOError:
-            return True
-        except PermissionError:                            # Windows: a locked byte
-            return os.name == "nt"
-        except OSError:
-            return False
-        _file_unlock(handle)
+    return True
+
+
+def hub_lock_held_elsewhere(root: str | Path | None = None) -> bool:
+    """H262 review — whether another process (a running hub) holds ``hub.lock`` under the
+    data root. Read-only (review round 2): the pid the hub wrote in the file is read, the
+    lock itself is never taken, so a hub starting at that moment is never refused because
+    of the probe. An empty, missing or unreadable file, or anything but a pid, is no hub;
+    this process's pid, or its own hold, is not "elsewhere"; a dead process's stale pid is
+    no hub. A hub between truncating the file and writing its pid reads as none (a window
+    of one write). The data root and the file are never created."""
+    if _hub_handle is not None:
         return False
-    finally:
-        handle.close()
+    try:
+        with open(_root(root) / HUB_LOCK_FILE, encoding="ascii") as handle:
+            text = handle.read(32).strip()
+    except (OSError, ValueError):
+        return False
+    if not text.isdigit():
+        return False
+    pid = int(text)
+    if pid <= 0 or pid == os.getpid():
+        return False
+    return _pid_alive(pid)
 
 
 def release_hub_lock() -> None:

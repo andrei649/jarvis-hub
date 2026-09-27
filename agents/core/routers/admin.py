@@ -205,18 +205,17 @@ async def admin_put_category(category: str, body: AdminPutBody):
         return guarded
     # H262 — a write that makes retention delete deeper than approved goes to the approval
     # queue (202); the rest of it is written. A queue that cannot take it: 503, nothing written.
-    # H262 review — the gate sees the values of the retention cards still waiting as if
-    # accepted: a write that deepens one of them further (the HUD saving memory, then
-    # retention) is queued together with it, as one card, so the first card is not refused
-    # on accept. An identical card already waiting is answered with its id, not queued twice.
+    # H262 review round 2 — the write is judged against the stored values and the approval
+    # only, never a waiting card's values; a card whose horizons a later write moved is
+    # refused on accept (``retention.apply_approved``). The HUD saves ``retention`` before
+    # ``memory`` so its own two-category save leaves the card acceptable. An identical card
+    # already waiting is answered with its id, not queued twice.
     from agents.core import retention
 
     values, pending = body.values, None
-    waiting = await _waiting_retention()
-    gated, stored, approved = await _retention_gate({category: body.values}, confirm=True, waiting=waiting)
+    gated, stored, approved = await _retention_gate({category: body.values}, confirm=True)
     if gated:
-        request = retention.as_changes({**waiting, **retention.retention_part({category: body.values})})
-        pending = await _request_retention_approval(request, stored, approved)
+        pending = await _request_retention_approval({category: body.values}, stored, approved)
         if "refused" in pending:
             return nocache_json({"error": "retention_needs_approval", "reason": pending["refused"],
                                  "gated": gated}, status_code=503)
@@ -240,32 +239,16 @@ async def admin_put_category(category: str, body: AdminPutBody):
     return resp
 
 
-async def _retention_gate(changes: dict, *, confirm: bool = False,
-                          waiting: dict | None = None) -> tuple[list, dict, dict | None]:
+async def _retention_gate(changes: dict, *, confirm: bool = False) -> tuple[list, dict, dict | None]:
     """H262 — ``(the retention keys of *changes* a human must approve, the stored retention
     settings, the approved horizons)``. Nothing approved, or no store to say: every
-    deletion counts as deeper (fail closed). *waiting* (``{name: value}`` of the cards
-    still waiting) is judged as if accepted."""
+    deletion counts as deeper (fail closed)."""
     from agents.core import retention
 
     orch = get_orch()
     stored = await asyncio.to_thread(retention.stored_values)
     approved = await asyncio.to_thread(retention.approved_horizons, getattr(orch, "checkpoints", None) if orch else None)
-    return retention.needs_approval(changes, {**stored, **(waiting or {})}, approved, confirm=confirm), stored, approved
-
-
-async def _waiting_retention() -> dict:
-    """H262 review — the retention values of the ``settings.retention`` cards waiting for a
-    decision, oldest first, later ones over earlier ones (``{name: value}``)."""
-    from agents.core import retention
-    from agents.core.autonomy import irreversible
-
-    merged: dict = {}
-    for task in await asyncio.to_thread(irreversible.pending, get_orch(), retention.APPROVAL_KIND):
-        values = (getattr(task, "payload", None) or {}).get("values")
-        if isinstance(values, dict):
-            merged.update(retention.retention_part(values))
-    return merged
+    return retention.needs_approval(changes, stored, approved, confirm=confirm), stored, approved
 
 
 async def _lower_approval() -> None:

@@ -229,7 +229,7 @@ describe('H262 review — counts, the waiting card, readable refusals', () => {
     });
     render(<DecisionInboxPanel />);
     const card = await screen.findByTestId('retention-card');
-    expect(card.textContent).toContain('500+ archived chats');
+    expect(card.textContent).toContain('500+ archived chats deleted by the sweeps of the next 7 days');
     expect(card.textContent).toContain('5 chats archived by the next sweep, deleted 7 days later');
     expect(card.textContent).toContain('1234 audit rows');
     expect(card.textContent).toContain('ingestion: not counted');
@@ -256,6 +256,23 @@ describe('H262 review — counts, the waiting card, readable refusals', () => {
     expect(alert.textContent).toContain('approval_queue_unavailable');
     expect(refusedWhy({ body: { error: 'e', reason: 'r' } })).toBe('r');
     expect(refusedWhy({ body: { error: 'e' } })).toBe('e');
+  });
+
+  it('a save sends retention before memory, so the memory card previews what retention will hold (review round 2)', async () => {
+    settings = {
+      memory: [{ key: 'auto_archive_days', value: 0, default: 0, source: 'default', label: 'Archive chats idle for', kind: 'number' }],
+      ...SETTINGS,
+    };
+    state = { ...state, awaiting_approval: false };
+    render(<SettingsPanel />);
+    await screen.findByText('Archive chats idle for');
+    const boxes = screen.getAllByRole('spinbutton');
+    fireEvent.change(boxes[0], { target: { value: '30' } });       // memory edited first
+    fireEvent.change(boxes[1], { target: { value: '900' } });      // then retention
+    fireEvent.click(screen.getByText(/save 2 changes/));
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PUT').length).toBe(2));
+    const puts = calls.filter((c) => c.method === 'PUT').map((c) => c.url);
+    expect(puts).toEqual(['/api/admin/settings/retention', '/api/admin/settings/memory']);
   });
 
   it('a refused undo names the hub\'s reason', async () => {

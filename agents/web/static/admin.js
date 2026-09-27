@@ -1337,6 +1337,15 @@ function ChartsPage() {
   );
 }
 
+/* H262 review round 2 — the order a settings save sends its categories in: `retention`
+   before `memory`, the rest after in the order they came. The hub judges each write
+   against what is stored (never a waiting approval card), so a memory write (archiving on)
+   that goes to Approvals must follow the retention write it depends on. */
+function settingsSaveOrder(cats) {
+  const rank = c => (c === 'retention' ? 0 : c === 'memory' ? 1 : 2);
+  return cats.map((c, i) => [c, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([c]) => c);
+}
+
 function AdminApp() {
   const [active, setActive] = useState('charts');
   const [settings, setSettings] = useState({});
@@ -1389,13 +1398,14 @@ function AdminApp() {
       byCategory[foundCat][k] = dirty[k];
     });
 
-    // Make PUT requests for each category in parallel
+    // PUT each category: `retention` first and on its own, then the rest in parallel
+    // (settingsSaveOrder — H262 review round 2).
     const put = (cat, values, flags) => afetch(`/api/admin/settings/${cat}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ values, ...flags }),
     }).then(r => r.json().then(body => ({ status: r.status, body })));
-    const promises = Object.entries(byCategory).map(([cat, values]) => put(cat, values, {}).then(({ status, body }) => {
+    const saveOne = ([cat, values]) => put(cat, values, {}).then(({ status, body }) => {
       // H378 — the hub asks before a very expensive model or a vendor that may train on the
       // prompts; the owner's yes is sent back as the flags the hub named.
       if (status === 409 && body && body.error === 'selection_guard') {
@@ -1407,9 +1417,13 @@ function AdminApp() {
         return put(cat, values, flags).then(({ body: saved }) => ({ cat, values, body: saved }));
       }
       return { cat, values, body };
-    }).catch(() => ({ cat, values, body: null })));
+    }).catch(() => ({ cat, values, body: null }));
+    const ordered = settingsSaveOrder(Object.keys(byCategory)).map(c => [c, byCategory[c]]);
+    const first = ordered.filter(([c]) => c === 'retention');
+    const rest = ordered.filter(([c]) => c !== 'retention');
 
-    Promise.all(promises)
+    Promise.all(first.map(saveOne))
+      .then(done => Promise.all(rest.map(saveOne)).then(more => done.concat(more)))
       .then(results => {
         const saved = results.filter(r => r.body && typeof r.body.updated === 'number');
         const totalUpdated = saved.reduce((sum, r) => sum + (r.body.updated || 0), 0);

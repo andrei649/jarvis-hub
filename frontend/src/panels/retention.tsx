@@ -13,7 +13,10 @@
      a pointer to Approvals, so a reload never queues a second one.
    - RetentionCard is the Decision Inbox's view of such a task: the horizons before and
      after, the kinds of data it deepens, and what it would delete per kind — a count that
-     reached the hub's limit is a lower bound ("500+"), a kind the hub cannot count says so. */
+     reached the hub's limit is a lower bound ("500+"), a kind the hub cannot count says so.
+     Every archived chat past the new horizon counts, however recently it was archived: the
+     sweeps of the next 7 days (the grace) delete them all.
+   - saveOrder puts `retention` before `memory` in a Settings save (review round 2). */
 import React, { useEffect, useState } from 'react';
 import { apiPut } from '../api/client';
 import { mono, refusalReason, useApi } from '../panel-kit';
@@ -32,6 +35,17 @@ export function retentionConfirmValues(current: any): Record<string, any> {
     if (name.startsWith('retention.')) out[name.slice('retention.'.length)] = value;
   }
   return out;
+}
+
+/** The order a save sends its dirty categories in: `retention` before `memory` (review
+    round 2). The hub judges each write against what is stored, never a waiting card, so
+    a memory write (archiving on) that goes to Approvals must come after the retention
+    write it depends on — its card then previews the horizons that will be in force, and
+    an accept applies instead of being refused as changed since the request. */
+export function saveOrder(cats: string[]): string[] {
+  const rank = (c: string) => (c === 'retention' ? 0 : c === 'memory' ? 1 : 2);
+  return cats.map((c, i) => [c, i] as [string, number])
+    .sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([c]) => c);
 }
 
 /** "sent to Approvals · a, b · task 42": what a 202 queued, and where to decide it. */
@@ -107,7 +121,7 @@ export function RetentionCard({ task }: { task: any }) {
       {name}: {days(approved ? approved[name] : null)} → {days(after[name])}
       {widened.includes(name) && <span style={{ color: 'var(--red)' }}> · deeper</span>}
     </div>)}
-    <div style={{ marginTop: 2 }}>would delete: {count(gone.archived_chats, 'archived chat', 'archived chats')}
+    <div style={{ marginTop: 2 }}>would delete: {count(gone.archived_chats, 'archived chat', 'archived chats')} deleted by the sweeps of the next 7 days
       {gone.chats_to_archive !== undefined && <>{' · '}{count(gone.chats_to_archive, 'chat', 'chats')} archived by the next sweep, deleted 7 days later</>}
       {' · '}{count(gone.audit_rows, 'audit row', 'audit rows')}
       {gone.ingestion !== undefined && <>{' · '}{count(gone.ingestion, 'ingestion root', 'ingestion')}</>}

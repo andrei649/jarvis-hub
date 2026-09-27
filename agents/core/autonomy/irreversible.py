@@ -84,16 +84,25 @@ def enqueue(orch: Any, kind: str, *, title: str, payload: dict, preview: dict) -
     return {"pending": int(task_id)}
 
 
+#: How many waiting tasks of one kind :func:`pending` returns at most.
+PENDING_MAX = 1000
+
+
 def pending(orch: Any, kind: str) -> list[Any]:
     """The tasks of ``kind`` waiting for a human decision, oldest first; none when there is
-    no queue to ask (H262 review: the settings route merges a new request with a waiting
-    one, and never queues a second identical card)."""
+    no queue to ask (H262 review: the settings route never queues a second identical card,
+    and the state route names the waiting one). The queue is asked for that kind only
+    (review round 2, N7), so other kinds waiting in any number never hide one."""
     worker = getattr(orch, "autonomy", None) if orch is not None else None
     lister = getattr(getattr(worker, "queue", None), "pending_decisions", None)
     if not callable(lister):
         return []
     try:
-        return [task for task in lister() if getattr(task, "kind", None) == kind]
+        try:
+            found = lister(kind=kind, limit=PENDING_MAX)
+        except TypeError:                     # a queue without the kind filter: every page
+            found = lister(limit=10**9)
+        return [task for task in found if getattr(task, "kind", None) == kind]
     except Exception:  # noqa: BLE001 — a queue that cannot answer holds nothing we can merge
         logger.warning("the approval queue could not list the waiting %s tasks", kind, exc_info=True)
         return []

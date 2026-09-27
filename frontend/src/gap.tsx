@@ -27,7 +27,7 @@ import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, s
 import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
-import { RETENTION_KIND, RetentionBanner, RetentionCard, approvalNote, refusedWhy } from './panels/retention';
+import { RETENTION_KIND, RetentionBanner, RetentionCard, approvalNote, refusedWhy, saveOrder } from './panels/retention';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
@@ -2811,7 +2811,8 @@ export function SettingsPanel() {
     const kept: Record<string, any> = {};
     const why: string[] = [];
     const queued: string[] = [];
-    for (const cat of Object.keys(dirty)) {
+    // H262 review round 2: retention before memory, one at a time (saveOrder).
+    for (const cat of saveOrder(Object.keys(dirty))) {
       try {
         const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true });
         n += (r && r.updated) || 0;

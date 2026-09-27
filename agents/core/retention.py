@@ -418,6 +418,10 @@ _KEY_CLASSES: dict[str, tuple[str, ...]] = {
 #: How many chats a card counts at most (one sweep's batch); a count that reaches it is a
 #: lower bound (``"more": True``, shown "500+").
 _PREVIEW_CHATS = 500
+#: An ``archived_before`` no archive stamp is after: a card counts every archived chat past
+#: the horizon, whatever its archive age (the grace only delays its delete by at most
+#: :data:`DELETE_GRACE_DAYS`).
+_ANY_ARCHIVE_AGE = "9999-12-31T23:59:59+00:00"
 #: What a card says for a class it cannot count (private ingestion roots, attachments).
 NOT_COUNTED: dict[str, bool] = {"counted": False}
 #: How long a card's title may be.
@@ -499,8 +503,10 @@ def approval_preview(values: dict, approved: Optional[dict], checkpoints: Any, a
     days, None: kept forever), the classes it deepens, and what the new values would delete,
     per class (``{"count", "more"}``, or :data:`NOT_COUNTED`):
 
-    * ``archived_chats`` — archived, unpinned, past the horizon and the grace: the next
-      sweep deletes them;
+    * ``archived_chats`` — archived, unpinned, past the horizon, whatever their archive
+      age (H262 review round 2): the sweeps of the next :data:`DELETE_GRACE_DAYS` days
+      delete them, each once its grace has passed — a chat archived yesterday by a sweep
+      that ran while retention was off is counted here, not left out;
     * ``chats_to_archive`` — not archived, unpinned, idle past the horizon (so past
       ``memory.auto_archive_days`` too): the next sweep archives them, and they are deleted
       once the grace (:data:`DELETE_GRACE_DAYS`) has passed;
@@ -519,9 +525,8 @@ def approval_preview(values: dict, approved: Optional[dict], checkpoints: Any, a
     else:
         moment = datetime.fromtimestamp(now, UTC)
         before = (moment - timedelta(days=after["conversations"])).isoformat()
-        grace = (moment - timedelta(days=DELETE_GRACE_DAYS)).isoformat()
         expired, stale = getattr(checkpoints, "expired_sessions", None), getattr(checkpoints, "stale_sessions", None)
-        gone["archived_chats"] = _counted(len(expired(before, archived_before=grace, limit=_PREVIEW_CHATS))
+        gone["archived_chats"] = _counted(len(expired(before, archived_before=_ANY_ARCHIVE_AGE, limit=_PREVIEW_CHATS))
                                           if callable(expired) else None, _PREVIEW_CHATS)
         gone["chats_to_archive"] = _counted(len(stale(before, limit=_PREVIEW_CHATS)) if callable(stale) else None,
                                             _PREVIEW_CHATS)
@@ -565,7 +570,7 @@ def approval_request(changes: dict, stored: dict, approved: Optional[dict], chec
     """The ``title``, ``payload`` and ``preview`` of the task a gated write becomes. The
     payload keeps every retention setting as it was (``before``); an accept applies the
     values onto the settings as they are then, unless that ends deeper than the card's
-    preview (:func:`apply_approved`). The title names every class the accept deepens."""
+    preview or a class was narrowed since (:func:`apply_approved`). The title names every class the accept deepens."""
     part = retention_part(changes)
     preview = approval_preview({**stored, **part}, approved, checkpoints, audit_logger)
     after = horizons({**stored, **part})
@@ -610,16 +615,33 @@ def _card_horizons(payload: dict) -> Optional[dict[str, float]]:
     return horizons({**before, **retention_part(changes)})
 
 
+def _stale_classes(stored_now: dict[str, float], before: dict[str, float], merged: dict[str, float],
+                   card: dict[str, float]) -> list[str]:
+    """The data classes that make a card stale (H262 review round 2): the accept would end
+    deeper than the card showed (``merged`` < ``card``), or the owner narrowed the class
+    since the request (the stored horizon is now wider than the card's ``before``), which
+    the accept would otherwise undo."""
+    return [name for name in DATA_CLASSES if merged[name] < card[name] or stored_now[name] > before[name]]
+
+
+def _stale_detail(classes: list[str]) -> str:
+    return ("the retention settings changed since this was requested ("
+            + ", ".join(_CLASS_LABELS[name] for name in classes)
+            + "): ask again from Settings → Retention")
+
+
 async def apply_approved(task: Any, orch: Any) -> dict:
     """Apply a ``settings.retention`` task a human accepted (``irreversible.execute`` has
     checked who decided): the values are validated again and merged onto the retention
-    settings as they are now. That is refused (``changed_since_request``) only when some
-    class would end deeper than the card showed for it; a harmless move of another
-    retention key since the request (a narrowing, an unrelated key) keeps the card
-    acceptable. Then the values are written and — last, so a failure in between leaves the
-    sweep clamped to the old approval — the applied state's horizons, never deeper than the
-    card's, become the approved snapshot, and a SETTINGS_CHANGE audit row names every class
-    the accept deepened with its horizon."""
+    settings as they are now. That is refused (``changed_since_request``, naming the
+    ``classes``) when, for some data class, the result would end deeper than the card
+    showed, or the owner has narrowed it since the request (the stored horizon is now
+    wider than in the card's ``before``: accepting would undo that). A move since the
+    request that changes no horizon keeps the card acceptable. Then the values are written
+    and — last, so a failure in between leaves the sweep clamped to the old approval — the
+    applied state's horizons, never deeper than the card's, become the approved snapshot,
+    and a SETTINGS_CHANGE audit row names every class the accept deepened with its
+    horizon."""
     from agents.core import settings_db
 
     payload = task.payload
@@ -643,8 +665,9 @@ async def apply_approved(task: Any, orch: Any) -> dict:
         return _refused("payload_invalid")
     stored = await asyncio.to_thread(stored_values)
     merged = horizons({**stored, **retention_part(changes)})
-    if any(merged[name] < card[name] for name in DATA_CLASSES):
-        return _refused("changed_since_request")
+    stale = _stale_classes(horizons(stored), horizons({**stored, **before}), merged, card)
+    if stale:
+        return _refused("changed_since_request", classes=stale, detail=_stale_detail(stale))
     prior = await asyncio.to_thread(approved_horizons, checkpoints)
     for cat, values in changes.items():
         await asyncio.to_thread(settings_db.put_category, cat, dict(values))

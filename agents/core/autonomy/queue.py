@@ -1650,19 +1650,27 @@ class TaskQueue:
             ).fetchall()
         return [_row_to_task(r) for r in rows]
 
-    def pending_decisions(self, only_unpushed: bool = False, limit: int = 100) -> list[Task]:
+    def pending_decisions(self, only_unpushed: bool = False, limit: int = 100,
+                          kind: Optional[str] = None) -> list[Task]:
         # O26-P0.7 (F3): a 'proposed' task also awaits a human decision
         # (PROPOSED -> APPROVED is a legal apply_decision transition) — before
         # this, broker-originated proposals never appeared in the decision
         # inbox (Telegram or HUD), only in the raw task list.
+        # H262 review round 2 (N7): ``kind`` filters in SQL, so the waiting tasks of one
+        # kind are found however many decisions of other kinds wait before them.
         clause = "status IN ('blocked','proposed')"
+        params: list = []
         if only_unpushed:
             clause += " AND pushed=0"
+        if kind is not None:
+            clause += " AND kind=?"
+            params.append(kind)
+        params.append(limit)
         with self._lock:
             rows = self._conn.execute(
-                # `clause` is one of the two fixed pending-decision predicates.
+                # `clause` is built only from the fixed predicates above; values are bound.
                 f"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?",  # nosec B608
-                (limit,),
+                params,
             ).fetchall()
         return [_row_to_task(r) for r in rows]
 

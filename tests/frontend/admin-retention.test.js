@@ -54,3 +54,23 @@ describe('v1 admin — a refused category save keeps the whole category dirty', 
     expect(saveBtn(), 'the refused edits are still unsaved').toBeTruthy();
   });
 });
+
+// H262 review round 2 — the hub judges each settings write against what is stored, never a
+// waiting approval card, so a save that carries both sends `retention` first and `memory`
+// (archiving on, which may go to Approvals) only after it. The v1 page lists neither a
+// retention key nor memory.auto_archive_days today, so the order is pinned on the helper
+// the save uses; a save still sends every category it has.
+describe('v1 admin — retention is saved before memory', () => {
+  let env;
+  afterEach(() => env && env.cleanup());
+
+  it('orders retention, then memory, then the rest as they came', () => {
+    env = loadHud({ files: ['i18n', 'data', 'components', 'admin'], fetch: backend(), lang: 'ro',
+                    expose: ['settingsSaveOrder'] });
+    const order = env.hud.settingsSaveOrder;
+    expect(typeof order).toBe('function');
+    expect(order(['memory', 'security', 'retention', 'general'])).toEqual(['retention', 'memory', 'security', 'general']);
+    expect(order(['general', 'memory'])).toEqual(['memory', 'general']);
+    expect(order(['security', 'general'])).toEqual(['security', 'general']);
+  });
+});

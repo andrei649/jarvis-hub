@@ -984,16 +984,26 @@ def test_f9_the_checkpoint_connection_waits_out_a_vacuum(env):
     assert "30 s" in CheckpointManager.vacuum.__doc__
 
 
-def _hold_hub_lock(root):
-    import fcntl
+def _other_process():
+    """A live process that is not this one: a hub, as far as ``hub.lock`` says."""
+    import subprocess
+    import sys
 
+    return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+
+
+def _stop(proc) -> int:
+    """Stop *proc* by its handle and reap it: its pid is then a dead one."""
+    proc.kill()
+    proc.wait(timeout=30)
+    return proc.pid
+
+
+def _write_hub_lock(root, text: str) -> None:
     root.mkdir(parents=True, exist_ok=True)
-    handle = open(root / "hub.lock", "a+", encoding="ascii")  # noqa: SIM115
-    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    return handle
+    (root / "hub.lock").write_text(text, encoding="ascii")
 
 
-@pytest.mark.skipif(__import__("os").name == "nt", reason="flock")
 async def test_f7_a_process_without_the_hub_lock_skips_while_a_hub_holds_it(env, monkeypatch):
     from agents.core import install_identity
 
@@ -1001,16 +1011,17 @@ async def test_f7_a_process_without_the_hub_lock_skips_while_a_hub_holds_it(env,
     _approve(env.cp, settings)
     _chat(env, "idle", 120, archived=False)
     monkeypatch.setattr(install_identity, "_hub_handle", None)
-    handle = _hold_hub_lock(env.root)                     # the hub, as another open file
+    hub = _other_process()                                # the hub: its pid in hub.lock, alive
     try:
+        _write_hub_lock(env.root, str(hub.pid))
         assert install_identity.holds_hub_lock() is False
         assert install_identity.hub_lock_held_elsewhere(env.root) is True
         got = await lifecycle_sweep.run_sweep(_orch(env, settings), now=NOW, root=env.root)
         assert got == {"_scheduler_status": "skipped", "reason": "hub_runs_it"}
         assert env.cp.get_state("lifecycle_sweep") is None and "archived_at" not in _meta(env.cp, "idle")
     finally:
-        handle.close()
-    assert install_identity.hub_lock_held_elsewhere(env.root) is False     # released: a coordinator alone runs it
+        _stop(hub)
+    assert install_identity.hub_lock_held_elsewhere(env.root) is False     # the hub is gone: a coordinator runs it
     got = await lifecycle_sweep.run_sweep(_orch(env, settings), now=NOW, root=env.root)
     assert got["archived"] == ["idle"]
 
@@ -1053,3 +1064,69 @@ async def test_f3_a_pin_after_the_last_check_is_caught_by_the_guarded_row_delete
     report = await _sweep(orch)
     assert report["retention"]["conversations"]["skipped"] == {"late": "no_longer_expired"}
     assert env.cp.session_row("late") is not None and (env.root / "late.jsonl").exists()
+
+
+# ── review round 2 (H262) ─────────────────────────────────────────────────────────
+
+async def test_n1_the_card_counts_every_archived_chat_the_next_weeks_sweeps_delete(env):
+    """Archiving turned on while retention is off (not gated) archives the whole history;
+    retention enabled two days later with chats at 90 days: the card counts every old
+    archived chat, and the sweeps of the next week delete exactly those."""
+    off = _settings(retention__enabled=False, memory__auto_archive_days=30, retention__conversation_ttl_days=90)
+    for i in range(20):
+        _chat(env, f"old{i}", 200, archived=False)
+    _chat(env, "recent", 10, archived=False)
+    first = await _sweep(_orch(env, off))
+    assert len(first["archived"]) == 20 and first["retention"] == "off"
+    on = {**off, "retention.enabled": True}
+    gone = retention.approval_preview(on, None, env.cp, None, now=NOW + 2 * _DAY)["would_delete"]
+    assert gone["chats_to_archive"] == {"count": 0, "more": False}
+    assert gone["archived_chats"] == {"count": 20, "more": False}
+    _approve(env.cp, on)
+    week = await _sweep(_orch(env, on), at=NOW + retention.DELETE_GRACE_DAYS * _DAY)
+    assert len(week["retention"]["conversations"]["deleted"]) == gone["archived_chats"]["count"]
+
+
+def test_n5_a_live_pid_in_the_lock_file_is_a_hub_and_the_probe_never_takes_the_lock(tmp_path, monkeypatch):
+    from agents.core import install_identity
+
+    def no_lock(*_a, **_k):
+        raise AssertionError("the probe took hub.lock")
+
+    monkeypatch.setattr(install_identity, "_hub_handle", None)
+    monkeypatch.setattr(install_identity, "_file_lock", no_lock)
+    monkeypatch.setattr(install_identity, "_file_unlock", no_lock)
+    hub = _other_process()
+    try:
+        _write_hub_lock(tmp_path, f"{hub.pid}\n")
+        assert install_identity.hub_lock_held_elsewhere(tmp_path) is True
+    finally:
+        _stop(hub)
+
+
+def test_n5_a_dead_hubs_stale_pid_is_no_hub(tmp_path, monkeypatch):
+    from agents.core import install_identity
+
+    monkeypatch.setattr(install_identity, "_hub_handle", None)
+    _write_hub_lock(tmp_path, str(_stop(_other_process())))
+    assert install_identity.hub_lock_held_elsewhere(tmp_path) is False
+
+
+@pytest.mark.parametrize("text", ["", "   ", "not a pid", "-4", "0"])
+def test_n5_an_empty_or_unreadable_lock_file_is_no_hub(tmp_path, monkeypatch, text):
+    from agents.core import install_identity
+
+    monkeypatch.setattr(install_identity, "_hub_handle", None)
+    _write_hub_lock(tmp_path, text)
+    assert install_identity.hub_lock_held_elsewhere(tmp_path) is False
+
+
+def test_n5_a_missing_lock_file_or_this_processs_own_pid_is_no_hub(tmp_path, monkeypatch):
+    import os
+
+    from agents.core import install_identity
+
+    monkeypatch.setattr(install_identity, "_hub_handle", None)
+    assert install_identity.hub_lock_held_elsewhere(tmp_path) is False and not (tmp_path / "hub.lock").exists()
+    _write_hub_lock(tmp_path, str(os.getpid()))
+    assert install_identity.hub_lock_held_elsewhere(tmp_path) is False
