@@ -821,15 +821,19 @@ def test_generic_writers_refuse_voice_commands(armed, monkeypatch, capsys):
 
 
 def test_undo_reset_never_restores_a_route_only_row(env):
+    now = {"argv": ["/now", "{output}"]}
+    assert settings_db.put_category("voice", {"tts_command": now}) == (1, [])
     conn = settings_db.get_conn()
     with conn:
         conn.execute("INSERT INTO settings_resets (at, scope, before, after) VALUES (?,?,?,?)",
                      (time.time(), "voice", json.dumps({"voice": {"tts_command": {"argv": ["/x", "{output}"]}}}),
-                      json.dumps({"voice": {"tts_command": {}}})))
+                      json.dumps({"voice": {"tts_command": now}})))
     conn.close()
     done = settings_db.undo_last_reset()
     assert "voice.tts_command" not in done["restored"]
-    assert lp.stored_command("tts") == {}
+    [why] = [row["reason"] for row in done["skipped"] if row["setting"] == "voice.tts_command"]
+    assert "/api/admin/voice/commands" in why
+    assert lp.stored_command("tts") == now
 
 
 def test_admin_put_refuses_voice_commands(client):
