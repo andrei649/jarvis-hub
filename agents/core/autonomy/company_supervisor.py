@@ -89,6 +89,8 @@ _WAIT_KIND = "wait"
 # bound keeps a planner that asks for it on every sweep from spending the night on
 # model calls with nothing to show — the streak rule then ends the run.
 MAX_FREE_WAIT_REFUSALS = 3
+#: The failed-step reason once a planner is past its free wait refusals.
+OVER_LIMIT_WAIT = "the planner keeps asking for waits that cannot be set"
 
 
 @dataclass(frozen=True)
@@ -345,7 +347,14 @@ class CompanySupervisor:
             return self._record_failure(
                 run_id, "plan", f"invalid wait: {exc.__class__.__name__}"
             )
-        self._reset_free_refusals(run_id)
+        # A park on real async work (a task or hook trigger, a process) starts the
+        # free-refusal count over; a clock park does not (review round 2 verify, R1),
+        # or a planner could buy three more free refusals by parking on a short
+        # clock every fourth ask and never reach the streak's stop.
+        if str((action.barrier or {}).get("kind")) != "deadline":
+            self._reset_free_refusals(run_id)
+        else:
+            self._last_refused.pop(run_id, None)
         return TickResult("waiting", f"parked: {state.get('waiting_on') or 'a barrier'}", run_id)
 
     def _free_refusal(self, run_id: str, reason: str) -> TickResult:
@@ -357,9 +366,12 @@ class CompanySupervisor:
         self._free_refusals[run_id] = count
         transient = reason in WAIT_CHECK_FAILED
         if count > MAX_FREE_WAIT_REFUSALS:
-            why = ("the planner's wait keeps failing its check" if transient
-                   else "the planner keeps asking to wait on work that is done")
-            return self._record_failure(run_id, "plan", f"{why}: {reason}")
+            # One fixed reason, so the streak rule counts every over-limit ask
+            # whatever was refused (R2); the particular refusal is the summary.
+            return self._record_failure(
+                run_id, "plan", OVER_LIMIT_WAIT,
+                summary=f"{OVER_LIMIT_WAIT}: {reason}",
+            )
         logger.info("run %s: planner wait refused (%s), %d in a row; planning again",
                     run_id, reason, count)
         what = "the wait could not be checked" if transient else "nothing to wait on"
@@ -488,7 +500,6 @@ class CompanySupervisor:
             logger.warning("setting the judge's wait failed on run %s; grading", run_id,
                            exc_info=True)
             return None
-        self._reset_free_refusals(run_id)
         return TickResult(
             "waiting", f"the judge asked to wait: {state.get('waiting_on') or 'a barrier'}",
             run_id,

@@ -822,6 +822,24 @@ def test_a_pid_owner_clear_recorded_without_a_start_token_matches_on_the_pid(led
     assert exc.value.reason == "owner_cleared"
 
 
+def test_a_tokenless_owner_clear_still_binds_a_later_request_with_a_token(ledger, clock):
+    """N5: when only ONE side has a start token (the owner's clear was recorded
+    without one), the two processes cannot be told apart, so the clear keeps binding
+    the pid number — only two different tokens prove a different process."""
+    token = {"start": ""}
+    barriers = _barriers(ledger, clock,
+                         identity=lambda _pid: {"start": token["start"], "ns": "", "boot": ""})
+    run = ledger.open_run(_goal())
+    barriers.register_process(run.id, 4242)
+    barriers.request(run.id, {"kind": "pid", "target": 4242}, source="planner")
+    barriers.clear(run.id)                                  # recorded with no token
+    token["start"] = "777"
+    barriers.register_process(run.id, 4242)
+    with pytest.raises(RunBarriersError) as exc:
+        barriers.request(run.id, {"kind": "pid", "target": 4242}, source="planner")
+    assert exc.value.reason == "owner_cleared"
+
+
 def test_a_pid_whose_signal_is_refused_is_still_checked_against_its_start_token(
     monkeypatch,
 ):

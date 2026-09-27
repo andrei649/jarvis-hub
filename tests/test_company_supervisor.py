@@ -19,6 +19,7 @@ import types
 import pytest
 
 from agents.core.autonomy.company_supervisor import (
+    OVER_LIMIT_WAIT,
     Action,
     CompanySupervisor,
     SupervisorConfig,
@@ -729,8 +730,8 @@ async def test_a_planner_wait_whose_task_read_keeps_raising_is_free_then_bounded
     assert [s.outcome for s in ledger.steps(run.id)] == ["ok"]
     result = await sup.tick(run.id)
     assert result.outcome == "stepped"
-    assert ledger.steps(run.id)[-1].detail["reason"] == (
-        "the planner's wait keeps failing its check: trigger_unavailable")
+    assert ledger.steps(run.id)[-1].detail["reason"] == OVER_LIMIT_WAIT
+    assert ledger.steps(run.id)[-1].summary == f"{OVER_LIMIT_WAIT}: trigger_unavailable"
     await sup.tick(run.id)
     assert (await sup.tick(run.id)).outcome == "stopped"      # the streak bounds it
 
@@ -871,7 +872,7 @@ async def test_a_spent_steps_budget_wins_over_a_barrier_with_a_later_cap(ledger,
 
 # ── H464 review round 2 ──────────────────────────────────────────────────────
 
-_DONE_REASON = "the planner keeps asking to wait on work that is done"
+_DONE_REASON = OVER_LIMIT_WAIT
 
 
 @pytest.mark.parametrize("case", ["task_done", "owner_cleared"])
@@ -921,10 +922,10 @@ async def test_a_planner_that_keeps_asking_for_a_free_wait_is_bounded(ledger, cl
     assert len(calls) == parked + 6                        # 3 free, then 3 failed steps
     after = ledger.get(run.id)
     assert after.status == "stopped"
-    assert after.stop_reason == f"stuck: {_DONE_REASON}: {reason}"
+    assert after.stop_reason == f"stuck: {_DONE_REASON}"
     failed = [s for s in ledger.steps(run.id) if s.outcome == "failed"]
-    assert [(s.kind, s.detail["reason"]) for s in failed] == [
-        ("plan", f"{_DONE_REASON}: {reason}")] * 3
+    assert [(s.kind, s.detail["reason"], s.summary) for s in failed] == [
+        ("plan", _DONE_REASON, f"{_DONE_REASON}: {reason}")] * 3
     assert not any(reason == "budget_spent" for reason, _ in outcomes)
     # the planner is told why its last wait was refused
     assert calls[parked].get("last_wait_refused") is None
@@ -957,7 +958,8 @@ async def test_the_free_wait_count_resets_after_a_real_step(ledger, clock):
         assert (result.outcome, result.step_seq) == ("idle", None)
     fourth = await sup.tick(run.id)
     assert fourth.outcome == "stepped"
-    assert ledger.steps(run.id)[-1].detail["reason"] == f"{_DONE_REASON}: trigger_already_fired"
+    assert ledger.steps(run.id)[-1].detail["reason"] == _DONE_REASON
+    assert ledger.steps(run.id)[-1].summary == f"{_DONE_REASON}: trigger_already_fired"
     assert seen == [None, "trigger_already_fired", "trigger_already_fired",
                     "trigger_already_fired", None, "trigger_already_fired",
                     "trigger_already_fired", "trigger_already_fired"]
@@ -981,6 +983,66 @@ async def test_a_successful_park_resets_the_free_wait_count(ledger, clock):
         result = await sup.tick(run.id)
         assert result.outcome == "idle", result
     assert [s.outcome for s in ledger.steps(run.id)] == ["ok"]
+
+
+async def test_a_clock_park_does_not_buy_more_free_refusals(ledger, clock):
+    """R1: the verifier's repro. A planner that asks to wait on a finished task three
+    times, then parks on a 60 s clock, and repeats, used to reset the count with every
+    park and never reach the streak. A clock park proves no pending work, so it does
+    not reset the count: the refusals after it are failed steps and the streak ends it."""
+    run = ledger.open_run(_goal())
+    ledger.record_step(run.id, kind="research", summary="build", outcome="ok", task_id=7)
+    barriers = _task_barriers(ledger, clock, lambda _i: types.SimpleNamespace(status="done"))
+    asks = {"n": 0}
+
+    def _planner(_ctx):
+        asks["n"] += 1
+        if asks["n"] % 4 == 0:
+            return Action(kind="wait", summary="nap",
+                          barrier={"kind": "deadline", "target": {"in_seconds": 60}})
+        return Action(kind="wait", summary="wait", barrier={"kind": "trigger", "target": "task:7"})
+
+    sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=_planner,
+                            barriers=barriers, config=ON)
+    outcomes = []
+    for _ in range(20):
+        clock.advance(120)                                  # past each 60 s clock
+        result = await sup.tick(run.id)
+        outcomes.append(result.outcome)
+        if result.outcome == "stopped":
+            break
+    assert outcomes[-1] == "stopped" and asks["n"] <= 8
+    assert ledger.get(run.id).stop_reason == f"stuck: {OVER_LIMIT_WAIT}"
+
+
+async def test_alternating_refusals_still_reach_the_streak(ledger, clock):
+    """R2: the streak counts one fixed reason for every over-limit ask, so a planner
+    alternating between two free refusals (a finished task, a dead process) is still
+    stopped, not left to spend the whole steps budget."""
+    run = ledger.open_run(_goal())
+    ledger.record_step(run.id, kind="research", summary="build", outcome="ok", task_id=7)
+    ledger.record_step(run.id, kind="research", summary="docs", outcome="ok", task_id=8)
+
+    def _read(task_id):
+        if int(task_id) == 8:
+            raise RuntimeError("database is locked")       # trigger_unavailable
+        return types.SimpleNamespace(status="done")         # trigger_already_fired
+
+    barriers = _task_barriers(ledger, clock, _read)
+    asks = {"n": 0}
+
+    def _planner(_ctx):
+        asks["n"] += 1
+        if asks["n"] % 2:
+            return Action(kind="wait", summary="wait", barrier={"kind": "trigger", "target": "task:7"})
+        return Action(kind="wait", summary="wait", barrier={"kind": "trigger", "target": "task:8"})
+
+    sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=_planner,
+                            barriers=barriers, config=ON)
+    for _ in range(12):
+        if (await sup.tick(run.id)).outcome == "stopped":
+            break
+    assert ledger.get(run.id).status == "stopped" and asks["n"] == 6
 
 
 async def test_a_transient_task_read_failure_on_a_planner_wait_is_free(ledger, clock):
@@ -1031,8 +1093,7 @@ async def test_a_pid_probe_that_raises_on_a_planner_wait_is_free_then_bounded(le
             "idle", "the wait could not be checked: probe_failed")
     assert ledger.steps(run.id) == []
     assert (await sup.tick(run.id)).outcome == "stepped"
-    assert ledger.steps(run.id)[-1].detail["reason"] == (
-        "the planner's wait keeps failing its check: probe_failed")
+    assert ledger.steps(run.id)[-1].detail["reason"] == OVER_LIMIT_WAIT
     await sup.tick(run.id)
     assert (await sup.tick(run.id)).outcome == "stopped"
 

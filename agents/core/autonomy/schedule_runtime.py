@@ -185,7 +185,6 @@ class ScheduleRuntime:
             return "blocked"
         try:
             if self._ledger.budget_state(run.id)["exceeded"]:
-                self._clear_spent_barrier(run)
                 return "budget_spent"
         except Exception:
             logger.debug("scheduler could not read a budget", exc_info=True)
@@ -264,6 +263,9 @@ class ScheduleRuntime:
         for run in runs:
             reason = self.due(run, now=now)
             if reason:
+                if reason == "budget_spent":
+                    # Only the sweep writes this, never a status read (snapshot).
+                    self._clear_spent_barrier(run)
                 entries.append(SweepEntry(run.id, False, reason))
                 continue
             if advanced >= self.config.max_concurrent:

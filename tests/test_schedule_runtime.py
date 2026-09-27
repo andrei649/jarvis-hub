@@ -538,7 +538,11 @@ async def test_a_wall_clock_budget_spent_behind_a_barrier_reads_budget_spent(led
     assert runtime.due(ledger.get(run.id), now=clock.now) == "waiting"
     clock.advance(900)
     assert runtime.due(ledger.get(run.id), now=clock.now) == "budget_spent"
-    assert ledger.get(run.id).barrier is None               # cleared by the skip itself
+    assert ledger.get(run.id).barrier is not None           # a status read writes nothing
+    runtime.snapshot()
+    assert ledger.get(run.id).barrier is not None           # nor does the HUD's snapshot
+    await runtime.sweep()
+    assert ledger.get(run.id).barrier is None               # the sweep's skip clears it
     assert ledger.events(run.id)[0]["detail"] == {
         "id": ledger.events(run.id)[1]["detail"]["id"], "why": "budget_spent",
         "by": "scheduler"}
