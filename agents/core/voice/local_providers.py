@@ -213,7 +213,7 @@ def _safe_temp_root(temp_dir: Path) -> Path | None:
             return None
         if hasattr(os, "getuid") and info.st_uid != os.getuid():
             return None
-        os.chmod(temp_dir, 0o700)
+        os.chmod(temp_dir, 0o700)  # nosec B103  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
         return temp_dir
     except OSError:
         return None
