@@ -720,3 +720,85 @@ def test_unmarked_resume_refuses_a_run_that_is_not_blocked(status):
         assert ledger.get(run.id).status == status
     finally:
         ledger.close()
+
+
+def _legacy_block_on(queue, path, monkeypatch, task_ids):
+    """A pre-v3 run blocked on one ask per task id (no approval_block_seq)."""
+    run, _ = legacy_v2_blocked_run(path, task_ids[0], monkeypatch)
+    ledger = upgraded(path, queue)
+    for task_id in task_ids[1:]:
+        ledger._conn.execute(
+            """INSERT INTO steps (run_id, kind, summary, outcome, task_id, interrupted, at, detail)
+               VALUES (?, 'ask', 'owner decision', 'queued', ?, 0, 1000, '{}')""", (run.id, task_id))
+    ledger._conn.execute("UPDATE runs SET steps_used = ? WHERE id=?", (len(task_ids), run.id))
+    ledger._conn.commit()
+    return ledger, run
+
+
+def test_legacy_block_stays_held_when_its_expiry_settled_in_an_earlier_pass(queue, tmp_path, monkeypatch):
+    """Round 3, item 6 (pre-existing): ask A of an unmarked block expires unanswered and
+    is settled in pass 1 while ask B still waits; the owner approves B and pass 2 sees
+    only that answer. The block still has an ask nobody answered, so it stays held —
+    the hold is read from the block's asks, not from what this pass settled."""
+    expired = expired_task(queue)
+    pending_id = queue.enqueue('jarvis', 'delete_file', 'second ask')
+    queue.transition(pending_id, TaskStatus.BLOCKED)
+    ledger, run = _legacy_block_on(queue, tmp_path / 'runs.db', monkeypatch, [expired.id, pending_id])
+    try:
+        reconciler = PendingRequests(ledger, read_task=queue.get)
+        first = reconciler.reconcile(run.id)
+        assert first.note == 'expiry settled; run held'
+        assert [o.resolution for o in first.outcomes] == ['waiting', 'expired_unanswered']
+        queue.transition(pending_id, TaskStatus.APPROVED, decided_by='owner', decision='accept')
+        second = reconciler.reconcile(run.id)
+        assert [o.resolution for o in second.outcomes] == ['approved']
+        assert not second.resumed, second.note
+        assert ledger.get(run.id).status == 'blocked'
+        assert ledger.outstanding_asks(run.id) == []
+        with pytest.raises(WorkRunError, match='approval_resume_held'):
+            ledger.resume_unmarked_after_asks(run.id)
+    finally:
+        ledger.close()
+
+
+def test_legacy_block_resumes_when_every_ask_was_answered_across_passes(queue, tmp_path, monkeypatch):
+    """The hold is the expiry, not the second pass: two asks answered in two passes
+    (none expired) still resume the unmarked block."""
+    first_id = queue.enqueue('jarvis', 'delete_file', 'first ask')
+    second_id = queue.enqueue('jarvis', 'delete_file', 'second ask')
+    for task_id in (first_id, second_id):
+        queue.transition(task_id, TaskStatus.BLOCKED)
+    ledger, run = _legacy_block_on(queue, tmp_path / 'runs.db', monkeypatch, [first_id, second_id])
+    try:
+        reconciler = PendingRequests(ledger, read_task=queue.get)
+        queue.transition(first_id, TaskStatus.APPROVED, decided_by='owner', decision='accept')
+        assert not reconciler.reconcile(run.id).resumed
+        queue.transition(second_id, TaskStatus.APPROVED, decided_by='owner', decision='accept')
+        result = reconciler.reconcile(run.id)
+        assert result.resumed, result.note
+        assert ledger.get(run.id).status == 'working'
+    finally:
+        ledger.close()
+
+
+def test_marked_block_resumes_after_an_expiry_settled_in_an_earlier_pass(queue):
+    """Marked runs keep their contract: the expiry settled in pass 1 held the run only
+    because B still waited; B's approval in pass 2 closes the epoch and resumes it."""
+    expired = expired_task(queue)
+    pending_id = queue.enqueue('jarvis', 'delete_file', 'second ask')
+    queue.transition(pending_id, TaskStatus.BLOCKED)
+    ledger = WorkRunLedger(':memory:', clock=lambda: 1000)
+    ledger.bind_approval_task_reader(queue.get)
+    try:
+        run = open_run(ledger)
+        ask(ledger, run, expired.id)
+        ask(ledger, run, pending_id)
+        reconciler = PendingRequests(ledger, read_task=queue.get)
+        first = reconciler.reconcile(run.id)
+        assert not first.resumed and first.note == 'expiry settled; run held'
+        queue.transition(pending_id, TaskStatus.APPROVED, decided_by='owner', decision='accept')
+        second = reconciler.reconcile(run.id)
+        assert second.resumed and second.note == 'every ask is answered', second.note
+        assert ledger.get(run.id).status == 'working'
+    finally:
+        ledger.close()

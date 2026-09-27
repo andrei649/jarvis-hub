@@ -111,7 +111,10 @@ def list_records(side) -> list[dict]:
     return [r for r in _read(side) if r.get('argv')]
 
 
-def _write(side, provider_id, value, expected_revision) -> int:
+def _write(side, provider_id, value, expected_revision) -> tuple[int, dict | None]:
+    """Write one named record; returns the new revision and the record it replaced, as
+    read inside this write's own transaction (``None`` when the name was never
+    written)."""
     _identity(side, provider_id)
     if expected_revision is not None and (type(expected_revision) is not int or not 0 <= expected_revision < MAX_REVISION):
         raise ProviderStoreError('invalid_provider_revision')
@@ -146,7 +149,7 @@ def _write(side, provider_id, value, expected_revision) -> int:
                 revision += 1
                 conn.execute('INSERT INTO voice_command_providers(side, provider_id, approved_json, revision) VALUES(?,?,?,?) ON CONFLICT(side,provider_id) DO UPDATE SET approved_json=excluded.approved_json,revision=excluded.revision', (side, provider_id, raw, revision))
                 conn.commit()
-                return revision
+                return revision, previous
             except BaseException:
                 conn.rollback()
                 raise
@@ -157,8 +160,16 @@ def _write(side, provider_id, value, expected_revision) -> int:
 def save_approved(side, provider_id, value, *, expected_revision) -> int:
     if type(expected_revision) is not int or not value:
         raise ProviderStoreError('invalid_provider_revision')
-    return _write(side, provider_id, value, expected_revision)
+    return _write(side, provider_id, value, expected_revision)[0]
 
 
 def clear(side, provider_id) -> int:
-    return _write(side, provider_id, {}, None)
+    return clear_in_force(side, provider_id)[0]
+
+
+def clear_in_force(side, provider_id) -> tuple[int, dict | None]:
+    """Clear one name; returns the tombstone's revision and the approval this clear
+    revoked — the record that was in force, read inside the clear's own write — or
+    ``None`` when nothing was in force (never approved, or already cleared)."""
+    revision, previous = _write(side, provider_id, {}, None)
+    return revision, (previous if previous and previous.get('argv') else None)

@@ -234,6 +234,153 @@ async def test_house_kernel_denial_records_nothing_but_a_verified_actuation_succ
     queue.close()
 
 
+def _house_rig(tmp_path, monkeypatch, sim):
+    from agents.core.autonomy.executor import TaskExecutor
+    from agents.core.house.actuation import register_house_handlers
+    from tests.test_h30_house_actuation import _actuator
+
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
+    actuator = _actuator(tmp_path / "house", sim)
+    return actuator, register_house_handlers(TaskExecutor(), actuator)
+
+
+@pytest.mark.asyncio
+async def test_house_verification_failure_raised_by_the_handler_records_a_failure(
+        tmp_path, monkeypatch):
+    """Round 3, item 3: the device was commanded and never reached the state asked for.
+    The registered handler raises ``HouseActuationError("verification_failed")``; a
+    reason on a raised error is not by itself a refusal, so this records a failure."""
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+    from agents.core.house.actuation import HOUSE_CONTROL_KIND
+    from tests.test_h30_house_actuation import _Simulator
+
+    sim = _Simulator()
+    sim.apply_updates = False                       # the light never turns on
+    _actuator, executor = _house_rig(tmp_path, monkeypatch, sim)
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
+    assert task.status == TaskStatus.FAILED.value
+    assert task.result == {"error": "verification_failed"}
+    assert len(sim.calls) == 1                      # commanded once; retries read the cache
+    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_house_attempt_that_actuated_then_raised_is_a_failure_not_in_progress(
+        tmp_path, monkeypatch):
+    """Round 3, item 2: the first attempt commands the device, verification fails and the
+    ledger's ``finish`` raises once (sqlite busy), leaving the attempt's row ``running``.
+    The retries must not read that stranded row as a concurrent execution (the refusal
+    ``execution_in_progress``): the device was commanded and nobody verified it, so the
+    task fails as ``execution_stranded`` and records a failure — and the device is never
+    commanded a second time."""
+    import sqlite3
+
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+    from agents.core.house.actuation import HOUSE_CONTROL_KIND
+    from tests.test_h30_house_actuation import _Simulator
+
+    sim = _Simulator()
+    sim.apply_updates = False
+    actuator, executor = _house_rig(tmp_path, monkeypatch, sim)
+    real_finish = actuator._ledger.finish
+    calls = {"n": 0}
+
+    def flaky_finish(task_id, result):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return real_finish(task_id, result)
+
+    monkeypatch.setattr(actuator._ledger, "finish", flaky_finish)
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
+    assert task.status == TaskStatus.FAILED.value
+    assert task.result == {"error": "execution_stranded"}
+    assert len(sim.calls) == 1
+    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
+    queue.close()
+
+
+@pytest.mark.parametrize("begun_with", ["same_payload", "other_payload"])
+@pytest.mark.asyncio
+async def test_house_row_stranded_by_a_crash_is_a_failure_and_never_reactuates(
+        tmp_path, monkeypatch, begun_with):
+    """The same after a crash between ``begin`` and ``finish``: the row is ``running``
+    and no execution of the task is in flight in this process. An unfinished row is a
+    begun attempt whatever payload it began with (never ``task_payload_changed``)."""
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+    from agents.core.house.actuation import (
+        HOUSE_CONTROL_KIND,
+        _canonical_task,
+        _payload_hash,
+    )
+    from tests.test_h30_house_actuation import _Simulator
+
+    sim = _Simulator()
+    actuator, executor = _house_rig(tmp_path, monkeypatch, sim)
+    queue = _queue(tmp_path / "autonomy.db")
+    task_id = queue.enqueue("jarvis", HOUSE_CONTROL_KIND, "real handler", risk_tier=1,
+                            autonomy_level=ACT, payload=_HOUSE)
+    digest = _payload_hash(_canonical_task(HOUSE_CONTROL_KIND, queue.get(task_id).payload))
+    if begun_with == "other_payload":
+        digest = "0" * len(digest)
+    assert actuator._ledger.begin(task_id, digest)      # the attempt that died
+    queue.transition(task_id, TaskStatus.APPROVED)
+    worker = AutonomyWorker(queue, policy=AutonomyPolicy(), executor=executor.execute)
+    for _ in range(MAX_ATTEMPTS):
+        await worker.tick()
+    task = queue.get(task_id)
+    assert task.status == TaskStatus.FAILED.value
+    assert task.result == {"error": "execution_stranded"}
+    assert sim.calls == []
+    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_house_concurrent_execution_of_the_same_task_is_a_refusal(tmp_path, monkeypatch):
+    """The genuine ``execution_in_progress``: another execution of this very task is in
+    flight right now (its device call has not returned). This attempt ran nothing and
+    records nothing; the execution in flight completes on its own."""
+    import asyncio
+
+    from agents.core.autonomy.worker import MAX_ATTEMPTS
+    from agents.core.house.actuation import HOUSE_CONTROL_KIND
+    from tests.test_h30_house_actuation import _Simulator
+
+    sim = _Simulator()
+    actuator, executor = _house_rig(tmp_path, monkeypatch, sim)
+    entered, release = asyncio.Event(), asyncio.Event()
+    real_apply = sim.apply
+
+    async def held_apply(command):
+        entered.set()
+        await release.wait()
+        return await real_apply(command)
+
+    sim.apply = held_apply
+    queue = _queue(tmp_path / "autonomy.db")
+    task_id = queue.enqueue("jarvis", HOUSE_CONTROL_KIND, "real handler", risk_tier=1,
+                            autonomy_level=ACT, payload=_HOUSE)
+    queue.transition(task_id, TaskStatus.APPROVED)
+    in_flight = asyncio.create_task(actuator.execute_task(queue.get(task_id)))
+    await asyncio.wait_for(entered.wait(), 5)
+    worker = AutonomyWorker(queue, policy=AutonomyPolicy(), executor=executor.execute)
+    for _ in range(MAX_ATTEMPTS):
+        await worker.tick()
+    task = queue.get(task_id)
+    assert task.status == TaskStatus.FAILED.value
+    assert task.result == {"error": "execution_in_progress"}
+    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 0)
+    release.set()
+    assert (await asyncio.wait_for(in_flight, 5))["status"] == "verified"
+    assert len(sim.calls) == 1 and sim.state == "on"
+    queue.close()
+
+
 @pytest.mark.asyncio
 async def test_channel_reply_contract_block_records_nothing_but_a_send_does(tmp_path):
     from agents.core.channel_reply import ChannelReplyBroker
@@ -317,6 +464,10 @@ async def test_missing_credential_records_nothing_but_a_delivered_write_succeeds
 
 @pytest.mark.asyncio
 async def test_tool_rpc_and_skill_install_refusals_record_nothing(tmp_path):
+    """Refusals before anything ran. For ``skill.install`` that is ``promotion_refused``,
+    which since round 3 names only a check that declined before any install work (here:
+    acquisition disabled) — an install that breaks once it began is ``install_failed``
+    and records a failure (the tests below)."""
     from agents.core.acquisition.promotion import PromotionBroker
     from agents.core.tool_rpc import ToolRPCServer
 
@@ -332,6 +483,121 @@ async def test_tool_rpc_and_skill_install_refusals_record_nothing(tmp_path):
     task = await _run_real(queue, broker.execute_task, "skill.install", {"proposal_id": "p1"})
     assert task.result == {"status": "failed", "reason": "promotion_refused"}
     assert _counts(queue, "skill.install") == (0, 0)
+    queue.close()
+
+
+async def _approved_promotion(tmp_path):
+    from tests.test_h32_promotion import _broker, _contract, _verified_artifact
+
+    requests, _request, package, profile, _receipt, quarantine = await _verified_artifact(tmp_path)
+    broker, packages, _server, _market = _broker(tmp_path, requests=requests,
+                                                 quarantine=quarantine, profile=profile)
+    proposal = broker.propose(package.artifact_id, contract=_contract())
+    broker.decide(proposal.proposal_id, approved=True, actor="owner", permanent=True)
+    return broker, packages, {"proposal_id": proposal.proposal_id}
+
+
+@pytest.mark.asyncio
+async def test_skill_install_that_breaks_once_the_install_began_records_a_failure(
+        tmp_path, monkeypatch):
+    """Round 3, item 1: ``promotion_refused`` is only a refusal before any install work.
+    Here the package store raises once, mid-install: that is ``install_failed``, a
+    failure; the next task installs, a success."""
+    from agents.core.acquisition.package_store import PackageStoreError
+
+    broker, packages, payload = await _approved_promotion(tmp_path)
+    real_install, attempts = packages.install, []
+
+    def install_once(**kwargs):
+        attempts.append(kwargs)
+        if len(attempts) == 1:
+            raise PackageStoreError("disk full while writing the package")
+        return real_install(**kwargs)
+
+    monkeypatch.setattr(packages, "install", install_once)
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, broker.execute_task, "skill.install", payload)
+    assert task.result == {"status": "failed", "reason": "install_failed"}
+    assert len(attempts) == 1 and _counts(queue, "skill.install") == (0, 1)
+    task = await _run_real(queue, broker.execute_task, "skill.install", payload)
+    assert task.result["status"] == "installed" and len(attempts) == 2
+    assert _counts(queue, "skill.install") == (1, 1)
+    queue.close()
+
+
+@pytest.mark.parametrize("seam", ["journal_begin", "journal_advance"])
+@pytest.mark.asyncio
+async def test_skill_install_journal_commit_error_is_a_failure(tmp_path, monkeypatch, seam):
+    """A journal that cannot commit (the first durable write of the install, or a later
+    stage) is the install's own machinery failing, never a refusal."""
+    from agents.core.acquisition.promotion import PromotionError
+
+    broker, _packages, payload = await _approved_promotion(tmp_path)
+
+    def cannot_commit(*_args, **_kwargs):
+        raise PromotionError("cannot atomically commit promotion store")
+
+    monkeypatch.setattr(broker.journal, seam.split("_", 1)[1], cannot_commit)
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, broker.execute_task, "skill.install", payload)
+    assert task.result == {"status": "failed", "reason": "install_failed"}
+    assert _counts(queue, "skill.install") == (0, 1)
+    queue.close()
+
+
+@pytest.mark.parametrize("store", ["proposals", "quarantine"])
+@pytest.mark.asyncio
+async def test_skill_install_store_unreadable_before_any_work_is_a_failure(
+        tmp_path, monkeypatch, store):
+    """Before the journal begins nothing was installed, but a proposal or quarantine
+    store that cannot be read is the machinery failing, not a gate declining: a
+    failure, under its own reason. A proposal that is not approved stays a refusal."""
+    from agents.core.acquisition.promotion import PromotionError
+    from agents.core.acquisition.quarantine import QuarantineError
+
+    broker, _packages, payload = await _approved_promotion(tmp_path)
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, broker.execute_task, "skill.install", {"proposal_id": "unknown"})
+    assert task.result == {"status": "failed", "reason": "promotion_refused"}
+    assert _counts(queue, "skill.install") == (0, 0)
+
+    if store == "proposals":
+        def unreadable(*_args, **_kwargs):
+            raise PromotionError("cannot decrypt or validate promotion store")
+
+        monkeypatch.setattr(broker.proposals, "_read_payload", unreadable)
+        monkeypatch.setattr(broker.proposals, "_rows", None)
+    else:
+        def unreadable(*_args, **_kwargs):
+            raise QuarantineError("cannot decrypt or validate quarantine")
+
+        monkeypatch.setattr(broker.quarantine, "get_record", unreadable)
+    task = await _run_real(queue, broker.execute_task, "skill.install", payload)
+    assert task.result == {"status": "failed", "reason": "promotion_store_unavailable"}
+    assert _counts(queue, "skill.install") == (0, 1)
+    queue.close()
+
+
+@pytest.mark.asyncio
+async def test_tool_rpc_classifier_crash_records_a_failure(tmp_path):
+    """Round 3, item 5: a classifier that raises is the tool's own machinery failing;
+    ``classify_failed`` left the refusal vocabulary, so it records a failure."""
+    from agents.core.tool_rpc import ToolRPCServer
+
+    ran = []
+
+    async def handler(args):
+        ran.append(args)
+        return {"ok": True}
+
+    def classifier(_args):
+        raise RuntimeError("classifier bug")
+
+    server = ToolRPCServer().register_tool("labelled", handler, gated=True, classifier=classifier)
+    queue = _queue(tmp_path / "autonomy.db")
+    task = await _run_real(queue, server.execute, "tool.rpc", {"tool": "labelled", "args": {}})
+    assert task.result["reason"] == "classify_failed" and ran == []
+    assert _counts(queue, "tool.rpc") == (0, 1)
     queue.close()
 
 
@@ -352,12 +618,21 @@ def test_refusal_vocabulary_names_refusals_only():
     assert is_refusal({"status": "failed", "reason": "kill-switch engaged for scope 'node:phone'"})
     for reason in ("client_error", "send_failed", "tool_error", "apply_failed", "invalid_call",
                    "verification_failed", "wall_time_budget_exceeded", "invalid_result",
-                   "house_state_unavailable", "something_new", "", None):
+                   "house_state_unavailable", "something_new", "", None,
+                   # round 3: machinery failures and reasons that can follow an attempt
+                   "classify_failed", "provider_store_unavailable", "install_failed",
+                   "promotion_store_unavailable", "execution_stranded", "validation_failed",
+                   "local_image_disabled", "kernel_required", "heavy_features_paused"):
         assert reason not in REFUSAL_REASONS, reason
         assert not is_refusal({"status": "failed", "reason": reason}), reason
+    assert "URL monitor execution claim required" in REFUSAL_REASONS
     assert is_refusal({"status": "refused", "reason": "anything"})
     assert is_refusal({"status": "blocked", "reason": "missing_field:thread_id"})
     assert not is_refusal({"status": "ok"}) and not is_refusal(None)
+    # Only a FAILED result is read through the vocabulary: a success that happens to
+    # carry a listed reason is still a success.
+    assert not is_refusal({"status": "ok", "reason": "kernel_denied"})
+    assert not is_refusal({"status": "verified", "reason": "execution_in_progress"})
 
 
 def test_registry_projects_action_outcomes_into_confidence(tmp_path):

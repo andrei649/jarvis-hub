@@ -127,6 +127,13 @@ def _refused(reason: str, **extra: Any) -> dict:
     return {"status": "refused", "reason": reason, **extra}
 
 
+def _store_failed() -> dict:
+    """The named-provider store's own I/O failed while applying — before the write or
+    during it. A machinery failure, not a refusal (review round 3, item 5): a revision
+    conflict or a full catalog stay refusals, since nothing was written."""
+    return {"status": "failed", "reason": "provider_store_unavailable"}
+
+
 def _runs_as() -> str:
     try:
         return getpass.getuser()
@@ -150,8 +157,17 @@ def _shown(exe: Any, fingerprint: str) -> str:
 #: Which revision a row names (round-2 NIT 1). A request is based on the revision in
 #: force when it was made; an approval names the revision it wrote; a clear names the
 #: revision it revoked (the one in force), never the empty tombstone it writes — so a
-#: clear matches the approval it revoked by number.
+#: clear matches the approval it revoked by number. A clear that revoked nothing (the
+#: name was never approved, or is already cleared) says so and names no revision
+#: (round 3, item 4).
 _REVISION_ROLES = {"based_on": "based on revision", "now": "now revision", "revoked": "revoked revision"}
+_NOTHING_IN_FORCE = "nothing in force"
+
+
+def _shown_revision(role: str, revision: Any) -> str:
+    if role == "revoked" and revision is None:
+        return _NOTHING_IN_FORCE
+    return f"{_REVISION_ROLES[role]} {revision}"
 
 
 def _target(side: str, provider_id: Any = None, revision: Any = None, *, role: str = "now") -> str:
@@ -162,7 +178,7 @@ def _target(side: str, provider_id: Any = None, revision: Any = None, *, role: s
     apart."""
     if provider_id is None:
         return f"voice.{KEYS[side]}"
-    return f"voice.{side} provider '{provider_id}' ({_REVISION_ROLES[role]} {revision})"
+    return f"voice.{side} provider '{provider_id}' ({_shown_revision(role, revision)})"
 
 
 def _named(provider_id: Any, revisions: dict[str, Any]) -> tuple[str, dict]:
@@ -172,7 +188,7 @@ def _named(provider_id: Any, revisions: dict[str, Any]) -> tuple[str, dict]:
     for the legacy slot, whose rows keep their shape."""
     if provider_id is None:
         return "", {}
-    shown = ", ".join(f"{_REVISION_ROLES[role]} {number}" for role, number in revisions.items())
+    shown = ", ".join(_shown_revision(role, number) for role, number in revisions.items())
     return (f" '{provider_id}' ({shown})",
             {"provider_id": provider_id, **{f"{role}_revision": n for role, n in revisions.items()}})
 
@@ -276,17 +292,24 @@ async def clear(orch: Any, side: str, *, provider_id=None) -> tuple[int, dict]:
         return 422, {'error': 'invalid_provider_id'}
     revision = None
     try:
-        before = providers.load(side, provider_id) if provider_id is not None else lp.stored_command(side)
         if provider_id is not None:
-            revision = await asyncio.to_thread(providers.clear, side, provider_id)
+            # What the clear revoked is read inside its own write (round 3, item 4): an
+            # approval landing between a separate read and the write cannot make the
+            # row name a revision that was no longer in force.
+            revision, in_force = await asyncio.to_thread(providers.clear_in_force, side, provider_id)
+            before = in_force or {}
         else:
+            before = lp.stored_command(side)
             await asyncio.to_thread(put_category, "voice", {KEYS[side]: {}})
     except providers.ProviderStoreError as exc:
         return _provider_error(exc)
     revoked = before.get("provider_revision") if provider_id is not None else None
-    await _audit(orch, f"{_target(side, provider_id, revoked, role='revoked')} cleared "
-                       f"(was argv sha256 {str(before.get('fingerprint') or 'none')[:16]})",
-                 "voice_command_cleared")
+    if provider_id is not None and revoked is None:
+        preview = f"{_target(side, provider_id, None, role='revoked')} cleared"
+    else:
+        preview = (f"{_target(side, provider_id, revoked, role='revoked')} cleared "
+                   f"(was argv sha256 {str(before.get('fingerprint') or 'none')[:16]})")
+    await _audit(orch, preview, "voice_command_cleared")
     suffix, metadata = _named(provider_id, {"revoked": revoked})
     _intent(orch, "voice.command.clear", f"the owner cleared the {side} command provider{suffix}",
             {"side": side, "fingerprint": before.get("fingerprint"), **metadata})
@@ -420,7 +443,7 @@ async def apply_approved(task: Any, orch: Any) -> dict:
     try:
         current = providers.load(side, provider_id) if provider_id is not None else lp.stored_command(side)
     except providers.ProviderStoreError:
-        return _refused('provider_store_unavailable')
+        return _store_failed()
     if provider_id is not None and current['provider_revision'] != payload.get('provider_revision'):
         return _refused('provider_revision_conflict')
     if current.get("fingerprint") != payload.get("before_fingerprint"):
@@ -436,8 +459,10 @@ async def apply_approved(task: Any, orch: Any) -> dict:
                                                expected_revision=payload.get('provider_revision'))
         else:
             await asyncio.to_thread(put_category, "voice", {KEYS[side]: value})
-    except providers.ProviderStoreError as exc:
+    except (providers.ProviderConflict, providers.ProviderLimit) as exc:
         return _refused(_provider_error(exc)[1]['error'])
+    except providers.ProviderStoreError:
+        return _store_failed()
     await asyncio.to_thread(_forget_request, task_id)
     await _audit(orch, f"{_target(side, provider_id, revision, role='now')} approved (task {task_id} by {decided_by}): "
                        f"{_shown(exe, fingerprint)}", "voice_command_approved")

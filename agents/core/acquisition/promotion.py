@@ -25,6 +25,17 @@ class PromotionError(RuntimeError):
     pass
 
 
+class PromotionStoreUnavailable(PromotionError):
+    """The proposal or quarantine store could not be read before any install work: the
+    promotion's own machinery failed; no gate declined (review round 3, item 1)."""
+
+
+class PromotionInstallFailed(PromotionError):
+    """A promotion that broke once its install work began — from ``journal.begin``, the
+    install's first durable write, onward: a journal that cannot commit, a package
+    store that fails mid-install (review round 3, item 1)."""
+
+
 def make_skill_install_kernel_gate(action_kernel):
     """Bind the ``skill.install`` kernel gate used by :meth:`PromotionBroker.propose`.
 
@@ -420,13 +431,16 @@ class PromotionBroker:
 
     async def promote(self, proposal_id: str) -> dict:
         self._require_enabled()
-        proposal = self.proposals.get(proposal_id)
+        try:
+            proposal = self.proposals.get(proposal_id)
+        except PromotionError as exc:
+            raise PromotionStoreUnavailable(str(exc)) from exc
         if proposal is None or proposal.status != "approved":
             raise PromotionError("approved permanent proposal required")
         try:
             record = self.quarantine.get_record(proposal.artifact_id)
         except QuarantineError as exc:
-            raise PromotionError("quarantine integrity is tampered") from exc
+            raise PromotionStoreUnavailable("quarantine integrity is tampered") from exc
         if record is None or record.status != "verified" or record.receipt is None:
             raise PromotionError("verified quarantine artifact required")
         try:
@@ -442,25 +456,31 @@ class PromotionBroker:
         ):
             raise PromotionError("approval receipt recheck detected tamper")
 
-        entry = self.journal.begin(proposal)
-        if entry.stage == "prepared":
-            self.journal.advance(proposal_id, "verified")
-            self._fail("verified")
+        # Every check above declines before anything is written. From here on the
+        # install has begun, so a PromotionError is the install breaking, never a
+        # refusal.
         try:
-            installed = self.packages.install(
-                package=record.package,
-                receipt=receipt,
-                version="0.1.0",
-            )
-        except PackageStoreError as exc:
-            raise PromotionError(str(exc)) from exc
-        self.journal.advance(proposal_id, "installed")
-        self.marketplace.index_acquired_package(installed.catalog_metadata())
-        self._fail("installed")
-        self._register(installed.name)
-        self.journal.advance(proposal_id, "registered")
-        self._fail("registered")
-        self._finalize(proposal, record.package.request_id)
+            entry = self.journal.begin(proposal)
+            if entry.stage == "prepared":
+                self.journal.advance(proposal_id, "verified")
+                self._fail("verified")
+            try:
+                installed = self.packages.install(
+                    package=record.package,
+                    receipt=receipt,
+                    version="0.1.0",
+                )
+            except PackageStoreError as exc:
+                raise PromotionError(str(exc)) from exc
+            self.journal.advance(proposal_id, "installed")
+            self.marketplace.index_acquired_package(installed.catalog_metadata())
+            self._fail("installed")
+            self._register(installed.name)
+            self.journal.advance(proposal_id, "registered")
+            self._fail("registered")
+            self._finalize(proposal, record.package.request_id)
+        except PromotionError as exc:
+            raise PromotionInstallFailed(str(exc)) from exc
         return {
             "status": "installed",
             "name": installed.name,
@@ -468,12 +488,21 @@ class PromotionBroker:
         }
 
     async def execute_task(self, task) -> dict:
+        """The ``skill.install`` executor. Its reasons keep the refusal vocabulary honest
+        (``agents.core.autonomy.worker``, review round 3, item 1): ``promotion_refused``
+        only for a check that declined before any install work; ``install_failed`` once
+        the install began (``journal.begin`` onward); ``promotion_store_unavailable`` for
+        a proposal or quarantine store that could not be read before it."""
         payload = getattr(task, "payload", None)
         proposal_id = payload.get("proposal_id") if isinstance(payload, dict) else None
         if not isinstance(proposal_id, str):
             return {"status": "failed", "reason": "proposal_id_required"}
         try:
             return await self.promote(proposal_id)
+        except PromotionInstallFailed:
+            return {"status": "failed", "reason": "install_failed"}
+        except PromotionStoreUnavailable:
+            return {"status": "failed", "reason": "promotion_store_unavailable"}
         except PromotionError:
             return {"status": "failed", "reason": "promotion_refused"}
 
@@ -634,7 +663,9 @@ __all__ = [
     "JournalEntry",
     "PromotionBroker",
     "PromotionError",
+    "PromotionInstallFailed",
     "PromotionJournal",
     "PromotionProposal",
     "PromotionStore",
+    "PromotionStoreUnavailable",
 ]

@@ -294,3 +294,103 @@ async def test_audit_and_intent_rows_name_the_provider_identity(rig):
     assert 'provider_revision' not in named_clear['metadata']
     assert "'studio'" in named_clear['why'] and 'revoked revision 1' in named_clear['why']
     assert 'provider_id' not in legacy_clear['metadata']
+
+
+async def test_clear_names_only_the_revision_in_force(rig):
+    """Round 3, item 4: a clear names the revision it actually revoked, read inside its
+    own write. Clearing a name with nothing in force — never approved, or already
+    cleared — says so and names no revision (not 0, not the tombstone)."""
+    rows = _Rows()
+    rig.orch.audit = rows
+    rig.orch.intent_log = rows
+    await install(rig, 'studio')
+    answers = []
+    for name in ('studio', 'studio', 'never'):
+        code, answer = await command_settings.clear(rig.orch, 'tts', provider_id=name)
+        assert code == 200
+        answers.append(answer['provider_revision'])
+    assert answers == [2, 3, 1]                         # the tombstones the clears wrote
+    first, second, never = rows.audited('voice_command_cleared')
+    assert first.startswith("voice.tts provider 'studio' (revoked revision 1) cleared (was argv sha256 ")
+    assert 'argv sha256 none' not in first
+    for row, name in ((second, 'studio'), (never, 'never')):
+        assert row == f"voice.tts provider '{name}' (nothing in force) cleared", row
+        assert 'revision' not in row
+    metadata = [entry['metadata'] for entry in rows.intended('voice.command.clear')]
+    assert [m['revoked_revision'] for m in metadata] == [1, None, None]
+    assert [m['fingerprint'] is None for m in metadata] == [False, True, True]
+    whys = [entry['why'] for entry in rows.intended('voice.command.clear')]
+    assert "'studio' (revoked revision 1)" in whys[0]
+    assert whys[1].endswith("'studio' (nothing in force)") and whys[2].endswith("'never' (nothing in force)")
+
+
+async def test_clear_names_the_revision_its_own_write_replaced(rig, monkeypatch):
+    """An approval that lands between a read and the clear's write must not leave the
+    row naming the revision before it: the revision named is the one the write replaced
+    (the tombstone minus one), whatever happened before the write."""
+    rows = _Rows()
+    rig.orch.audit = rows
+    rig.orch.intent_log = rows
+    await install(rig, 'studio')
+    real_load, raced = provider_store.load, []
+
+    def load_then_race(side, provider_id):
+        value = real_load(side, provider_id)
+        if not raced:
+            raced.append(value['provider_revision'])     # before the write, which loads too
+            provider_store.save_approved(side, provider_id, {'argv': ['newer'], 'approved_task': 7},
+                                         expected_revision=value['provider_revision'])
+        return value
+
+    monkeypatch.setattr(provider_store, 'load', load_then_race)
+    code, answer = await command_settings.clear(rig.orch, 'tts', provider_id='studio')
+    assert code == 200
+    revoked = rows.intended('voice.command.clear')[0]['metadata']['revoked_revision']
+    assert revoked == answer['provider_revision'] - 1, (revoked, answer, raced)
+    assert rows.audited('voice_command_cleared')[0].startswith(
+        f"voice.tts provider 'studio' (revoked revision {revoked}) cleared")
+
+
+@pytest.mark.parametrize('seam', ['read', 'write'])
+async def test_provider_store_failure_while_applying_is_a_failure(rig, monkeypatch, seam):
+    """Round 3, item 5: ``provider_store_unavailable`` is the store's own I/O failing —
+    before the write or during it — so the apply fails (and records a failure) instead
+    of being reported as a refusal that ran nothing."""
+    code, result = await command_settings.request(rig.orch, 'tts', rig.argv, provider_id='studio')
+    assert code == 202
+
+    def unavailable(*_args, **_kwargs):
+        raise provider_store.ProviderStoreError('provider_store_unavailable')
+
+    monkeypatch.setattr(provider_store, 'load' if seam == 'read' else 'save_approved', unavailable)
+    await rig.worker.apply_decision(result['pending'], 'accept', decided_by='owner')
+    await rig.worker.tick()
+    assert rig.q.get(result['pending']).result == {'status': 'failed', 'reason': 'provider_store_unavailable'}
+    stats = rig.q.capability_outcome_stats('action:settings.voice_command')
+    assert (stats['successes'], stats['failures']) == (0, 1), stats
+
+
+@pytest.mark.parametrize('seam', ['before_write', 'in_write_conflict', 'in_write_full'])
+async def test_revision_conflict_or_full_catalog_while_applying_stays_a_refusal(rig, monkeypatch, seam):
+    """A revision conflict or a full catalog is a guard (the write is refused or rolled
+    back, nothing written) — found before the write or inside it. It stays a
+    ``refused`` result and records no capability outcome."""
+    code, result = await command_settings.request(rig.orch, 'tts', rig.argv, provider_id='studio')
+    assert code == 202
+    expected = 'provider_revision_conflict'
+    if seam == 'before_write':
+        provider_store.clear('tts', 'studio')          # the owner changed the name meanwhile
+    else:
+        error = (provider_store.ProviderConflict('provider_revision_conflict') if seam == 'in_write_conflict'
+                 else provider_store.ProviderLimit('provider_capacity_full'))
+        expected = 'provider_revision_conflict' if seam == 'in_write_conflict' else 'provider_capacity_full'
+
+        def refused(*_args, **_kwargs):
+            raise error
+
+        monkeypatch.setattr(provider_store, 'save_approved', refused)
+    await rig.worker.apply_decision(result['pending'], 'accept', decided_by='owner')
+    await rig.worker.tick()
+    assert rig.q.get(result['pending']).result == {'status': 'refused', 'reason': expected}
+    stats = rig.q.capability_outcome_stats('action:settings.voice_command')
+    assert stats['total'] == 0, stats

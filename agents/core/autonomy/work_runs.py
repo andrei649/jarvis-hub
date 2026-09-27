@@ -1196,6 +1196,13 @@ class WorkRunLedger:
             raise WorkRunError('unknown_run')
         return row[0]
 
+    def _expired_ask_locked(self, run_id: str) -> bool:
+        """Whether an ask of *run_id* was settled as expired unanswered."""
+        rows = self._conn.execute(
+            "SELECT detail FROM steps WHERE run_id=? AND outcome='failed' "
+            "AND detail LIKE '%expired_unanswered%'", (run_id,)).fetchall()
+        return any(_load(row[0]).get('resolution') == 'expired_unanswered' for row in rows)
+
     def resume_unmarked_after_asks(self, run_id: str) -> WorkRun:
         """Reconciler-only resume of a block no marker can prove (review F5).
 
@@ -1205,7 +1212,14 @@ class WorkRunLedger:
         blocked → working once every ask is answered) plus the holds the marked path
         has: a stop reason, a barrier, a still-queued step or a spent budget refuse,
         in one transaction. A marked block never takes this path, and expiry
-        settlement still holds unmarked blocks (:meth:`settle_expired_ask`)."""
+        settlement still holds unmarked blocks (:meth:`settle_expired_ask`).
+
+        Round 3, item 6: so does an ask of the block that expired unanswered in an
+        EARLIER pass — an answer to another ask later must not turn "nobody answered"
+        into a resume. It is read from the run's settled asks: expiry settlement and
+        the marker arrived together (migration v3), and a block that starts after it is
+        always marked, so every settled expiry on a run blocked without a marker is an
+        ask of this block."""
         tasks = self._approval_tasks(run_id)
         with self._lock:
             self._conn.execute('BEGIN IMMEDIATE')
@@ -1217,6 +1231,7 @@ class WorkRunLedger:
                 if (run.status != 'blocked' or marker is not None
                         or run.stop_reason or run.barrier
                         or self._conn.execute("SELECT 1 FROM steps WHERE run_id=? AND outcome='queued' LIMIT 1", (run_id,)).fetchone()
+                        or self._expired_ask_locked(run_id)
                         or _exceeded(run, self._budget_moment_locked(run, now), credit=credit)):
                     raise WorkRunError('approval_resume_held')
                 result = self._transition_locked(run, 'working', now, commit=False)

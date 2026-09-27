@@ -286,7 +286,9 @@ class PendingRequests:
                 # Review F5: a run blocked before migration v3 has no causal marker.
                 # An answered ask resumes it on the pre-v3 contract plus the same
                 # stop/barrier/outstanding/budget holds, atomically in the ledger;
-                # expiry settlement (above) still holds such a run.
+                # expiry settlement (above) still holds such a run, and so does the
+                # ledger when an ask of the block expired in an EARLIER pass (round 3,
+                # item 6) — the hold is read from the block's asks, not from this pass.
                 self._ledger.resume_unmarked_after_asks(run_id)
             else:
                 self._ledger.resume_after_asks(run_id, answered_seqs=[o.step_seq for o in outcomes])
@@ -339,12 +341,13 @@ class PendingRequests:
             # Preserve per-source ordinary reconciliation on read failures.
             return _UNREADABLE
 
-    def _close_one(self, run_id: str, step: Any, *, task: Any = ...) -> tuple[AskOutcome, bool | None]:
-        """Close one ask. Returns ``(outcome, expiry_resumed)``: ``None`` when this call
-        settled no expiry, otherwise whether the ledger's expiry settlement resumed the
-        run. This is the only place a reconcile pass settles an expiry, and it reports
-        it, so the caller holds the run on the expiry's own decision instead of resuming
-        it a second way (round-2 MINOR 1)."""
+    def _close_one(self, run_id: str, step: Any, *, task: Any) -> tuple[AskOutcome, bool | None]:
+        """Close one ask, given what :meth:`_read_or_unreadable` read for it (the task,
+        ``None``, or ``_UNREADABLE``). Returns ``(outcome, expiry_resumed)``: ``None``
+        when this call settled no expiry, otherwise whether the ledger's expiry
+        settlement resumed the run. This is the only place a reconcile pass settles an
+        expiry, and it reports it, so the caller holds the run on the expiry's own
+        decision instead of resuming it a second way (round-2 MINOR 1)."""
         task_id = getattr(step, "task_id", None)
         seq = int(getattr(step, "seq", 0))
         if not isinstance(task_id, int) or isinstance(task_id, bool) or task_id <= 0:
@@ -352,11 +355,6 @@ class PendingRequests:
             # It is recorded as lost rather than silently waiting forever, so the
             # streak rule can end the run instead of the run hanging until dawn.
             return self._apply(run_id, seq, None, "lost", "the step carries no durable task"), None
-        if task is ...:
-            try:
-                task = self._read_task(task_id)
-            except Exception:
-                task = _UNREADABLE
         if task is _UNREADABLE:
             # A queue that cannot be read is not a queue that said yes. The source
             # remains queued and prevents atomic resume.

@@ -206,6 +206,34 @@ def _payload_hash(payload: Mapping) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+# The executions in flight in this process, per ledger file (review round 3, item 2).
+# A ``running`` row alone cannot say whether its attempt is still executing or raised /
+# died after ``begin`` (a stranded row): only an execution that holds a claim here is
+# live. Keyed by the resolved ledger path, so two actuators on one file share it. In
+# memory only — never a sqlite round-trip on the event loop.
+_IN_FLIGHT: dict[str, set[int]] = {}
+_IN_FLIGHT_LOCK = threading.Lock()
+
+
+def _claim_execution(key: str, task_id: int) -> bool:
+    """Mark *task_id* as executing in this process; False when it already is."""
+    with _IN_FLIGHT_LOCK:
+        running = _IN_FLIGHT.setdefault(key, set())
+        if task_id in running:
+            return False
+        running.add(task_id)
+        return True
+
+
+def _release_execution(key: str, task_id: int) -> None:
+    with _IN_FLIGHT_LOCK:
+        running = _IN_FLIGHT.get(key)
+        if running is not None:
+            running.discard(task_id)
+            if not running:
+                _IN_FLIGHT.pop(key, None)
+
+
 class _ExecutionLedger:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -231,9 +259,12 @@ class _ExecutionLedger:
             ).fetchone()
         if row is None:
             return "new", None
+        if row[1] != "done":
+            # A begun attempt that never finished, whatever payload it began with.
+            return "running", None
         if row[0] != digest:
             return "conflict", None
-        if row[1] == "done" and row[2]:
+        if row[2]:
             return "cached", json.loads(row[2])
         return "running", None
 
@@ -380,6 +411,7 @@ class HouseActuator:
         self._confirmations = confirmation_store
         self._clock = clock or time.time
         self._ledger = _ExecutionLedger(ledger_path or data_path("house", "actuation.db"))
+        self._flight_key = str(self._ledger.path.resolve())
         self._actions = CapabilityActionAPI(authorizer=authorizer)
         for capability in (
             _CONTROL_CAPABILITY,
@@ -643,6 +675,17 @@ class HouseActuator:
         except (AttributeError, TypeError, ValueError):
             return {"status": "failed", "reason": "invalid_payload", "verified": False}
         digest = _payload_hash(payload)
+        if not _claim_execution(self._flight_key, task_id):
+            # Another execution of this very task is in flight in this process right
+            # now: this call attempted nothing (the refusal ``execution_in_progress``).
+            return {"status": "failed", "reason": "execution_in_progress", "verified": False}
+        try:
+            return await self._execute_claimed(task, task_id, kind, payload, digest)
+        finally:
+            _release_execution(self._flight_key, task_id)
+
+    async def _execute_claimed(self, task, task_id: int, kind: str, payload: dict,
+                               digest: str) -> dict:
         # Ledger ops are sync sqlite round-trips (lookup/begin/finish/abort);
         # execute_task runs on the loop via the autonomy executor, so offload.
         ledger_state, cached = await asyncio.to_thread(self._ledger.lookup, task_id, digest)
@@ -651,7 +694,18 @@ class HouseActuator:
         if ledger_state == "conflict":
             return {"status": "failed", "reason": "task_payload_changed", "verified": False}
         if ledger_state == "running":
-            return {"status": "failed", "reason": "execution_in_progress", "verified": False}
+            # Review round 3, item 2: a begun attempt of this task that no execution in
+            # this process holds — it raised after ``begin`` (a ledger write that failed
+            # after the device was commanded) or the process died mid-attempt. The
+            # device may have been commanded and nobody verified it: a failure that
+            # needs a human, never the refusal ``execution_in_progress``, and never a
+            # second command.
+            return {
+                "status": "failed",
+                "reason": "execution_stranded",
+                "verified": False,
+                "manual_recovery_required": True,
+            }
 
         try:
             snapshot, pre = await self._snapshot_entity(payload["entity_id"])
@@ -672,6 +726,8 @@ class HouseActuator:
                 "verified": False,
             }
         if not await asyncio.to_thread(self._ledger.begin, task_id, digest):
+            # The row appeared after this call's lookup found none, while this process
+            # holds the task's claim: another process began it. Nothing attempted here.
             return {"status": "failed", "reason": "execution_in_progress", "verified": False}
 
         capability = _SECURITY_CAPABILITY if kind == HOUSE_SECURITY_KIND else _CONTROL_CAPABILITY

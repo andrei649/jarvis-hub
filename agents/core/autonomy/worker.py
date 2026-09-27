@@ -54,15 +54,21 @@ INTERRUPT_BUDGET_PER_DAY = 4
 # reason — including one nobody listed yet — is a failure, the conservative
 # direction (it lowers confidence, it can never earn autonomy).
 #
-# What counts as a refusal: a gate declined BEFORE any attempt — a governance
-# decision (kernel, capability token, kill switch, allowlist, approval binding, a
-# human decision the handler needs), a spent budget, a guard against a concurrent
-# or changed request, or a capability this hub has not configured. What does not:
-# a malformed request the handler could not carry out (``invalid_call``,
-# ``bad_args``, ``unknown_target_action``), an error of the capability's own
-# machinery (``client_error``, ``send_failed``, ``tool_error``, ``apply_failed``,
-# ``verification_failed``, ``wall_time_budget_exceeded``) and a world the handler
-# found unfit to act in (a stale or degraded house state).
+# The principle (review round 3): a reason is a refusal only when it can ONLY mean
+# "nothing was attempted" — a gate declined BEFORE any attempt. An ambiguous reason,
+# one that can also follow an attempt that began, is a failure until its handler
+# splits it into two reasons.
+#
+# What counts as a refusal: a governance decision (kernel, capability token, kill
+# switch, allowlist, approval binding, a human decision the handler needs), a spent
+# budget, a guard against a concurrent or changed request, or a capability this hub
+# has not configured. What does not: a malformed request the handler could not carry
+# out (``invalid_call``, ``bad_args``, ``unknown_target_action``), an error of the
+# capability's own machinery — even one before the attempt, such as a classifier that
+# crashed or a store that could not be read (``client_error``, ``send_failed``,
+# ``tool_error``, ``apply_failed``, ``verification_failed``, ``classify_failed``,
+# ``provider_store_unavailable``, ``install_failed``, ``wall_time_budget_exceeded``) —
+# and a world the handler found unfit to act in (a stale or degraded house state).
 #
 # Collected by reading the executor of every ACTION_CAPABILITY_MANIFESTS kind the
 # worker runs. The other manifest kinds (kg.write, media.*, model.pull,
@@ -87,32 +93,39 @@ _REFUSALS_BY_HANDLER: dict[str, tuple[str, ...]] = {
     "node.dispatch": ("unknown_node", "capability_broker_unavailable", "no_valid_capability",
                       "no valid capability token for this action", "denied"),
     # tool.rpc — the coordinator's image-only gate, ToolRPCServer.execute (allowlist,
-    # H506 class binding — a classifier that fails refuses the call —, trusted
-    # execution, kernel), the image dispatcher's cloud routing guard and the local
-    # image runtime's own guard. (Its ``approval_binding_invalid`` stays a failure: it
-    # is also what an OSError while reading the binding reports.)
-    "tool.rpc": ("image_task_required", "tool_not_allowed", "classify_failed",
+    # H506 class binding, trusted execution, kernel), the image dispatcher's cloud
+    # routing guard and the local image runtime's own guard. Failures, not listed:
+    # ``classify_failed`` (the classifier crashed: machinery), ``approval_binding_invalid``
+    # (also an OSError reading the binding), ``validation_failed`` (also a preflight
+    # that raised) and the local image gates ``local_image_disabled``,
+    # ``kernel_required`` and ``heavy_features_paused`` — the runtime's guard re-reads
+    # them after the backend request has completed (local_openai_image / save_artifact),
+    # so each can follow an image that was generated and then withheld.
+    "tool.rpc": ("image_task_required", "tool_not_allowed",
                  "approval_class_mismatch", "trusted_execution_required", "kernel_denied",
                  "cloud_worker_required", "approved_payload_changed", "backend_binding_changed",
                  "mediation_execution_required"),
     # house.control / house.security_control — HouseActuator.execute_task; the
     # registered handler raises HouseActuationError(reason) instead of returning.
+    # ``execution_in_progress`` is only another execution of this task in flight right
+    # now; a row an earlier attempt left ``running`` (it raised after ``begin``, or the
+    # process died) is ``execution_stranded``, a failure (round 3, item 2).
     "house.control": ("kernel_denied", "strong_confirmation_required", "execution_in_progress",
                       "task_payload_changed"),
     # skill.install — AcquisitionRuntime.execute_install_task and
-    # PromotionBroker.execute_task. ``promotion_refused`` is every PromotionError,
-    # which is a refusal (disabled, no approved proposal, tampered receipt, kernel
-    # deny) except a package-store error during install, which the handler does not
-    # tell apart.
+    # PromotionBroker.execute_task. ``promotion_refused`` is only a check that declined
+    # before any install work (disabled, no approved proposal, receipt tamper); once
+    # the journal began it is ``install_failed``, and a store unreadable before that is
+    # ``promotion_store_unavailable`` — both failures (round 3, item 1).
     "skill.install": ("acquisition_unavailable", "promotion_refused"),
     # settings.voice_command — irreversible.execute and command_settings.apply_approved,
-    # all returned as ``refused``.
+    # returned as ``refused``; a store that fails while applying is returned as
+    # ``failed`` / ``provider_store_unavailable``, a failure (round 3, item 5).
     "settings.voice_command": (
         "unknown_kind", "human_decision_required", "decision_not_approval", "payload_required",
         "edit_not_supported", "decision_not_accept", "not_requested", "payload_changed",
         "invalid_provider_id", "payload_invalid", "invalid_command", "not_armed", "safe_mode",
-        "changed_since_request", "provider_store_unavailable", "provider_revision_conflict",
-        "provider_capacity_full"),
+        "changed_since_request", "provider_revision_conflict", "provider_capacity_full"),
     # permission.grant — PermissionLedger.apply_grant, all ``refused`` (a contract
     # denial carries the contract's own reason).
     "permission.grant": ("kind_mismatch", "human_decision_required", "decision_not_approval",
@@ -120,8 +133,10 @@ _REFUSALS_BY_HANDLER: dict[str, tuple[str, ...]] = {
     # goal.approve — the coordinator's _open_approved_goal, all ``refused`` (plus the
     # GoalContractError / WorkRunError reason).
     "goal.approve": ("work_run_ledger_unavailable",),
-    # plugin.egress — the URL monitor and cloud image executors, ``refused``.
+    # plugin.egress — the coordinator's URL monitor routing, the URL monitor and cloud
+    # image executors, all ``refused``.
     "plugin.egress": ("URL monitor unavailable", "unsupported egress operation",
+                      "URL monitor execution claim required",
                       "cloud image execution claim required"),
 }
 REFUSAL_REASONS: frozenset[str] = frozenset(
