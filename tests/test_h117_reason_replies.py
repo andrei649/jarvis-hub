@@ -14,11 +14,13 @@ Now only a reply the decision inbox claims leaves the batching path. The poll lo
 which answers without side effects; a claimed reply is handled in its chat's lane, after
 everything held for that chat, where the inbox saves the reason and acknowledges it. So the
 acknowledgement keeps the chat's order, never holds the poll loop or another chat, is never
-spoken, and a tap read before the reply still supersedes the prompt it answers. Every other reply
-is queued, merged and flushed as if the hook were not wired, and a failing hook never loses the
-reply. While a reason prompt is still on its way to a chat (its message id not yet known), a
-reply in that chat is classified behind it in the chat's lane too. These cases run on the real
-poll loop.
+spoken, and a tap read before the reply still supersedes the prompt it answers. The reason window
+is judged at the instant the poll loop claimed the reply (on the coordinator's clock, handed to
+the channel as ``decision_reason_clock``), so a slow turn ahead of it in the lane never expires a
+reason the owner sent in time, and a late one stays late. Every other reply is queued, merged and
+flushed as if the hook were not wired, and a failing hook never loses the reply. While a reason
+prompt is still on its way to a chat (its message id not yet known), a reply in that chat is
+classified behind it in the chat's lane too. These cases run on the real poll loop.
 """
 from __future__ import annotations
 
@@ -625,3 +627,129 @@ async def test_wire_hands_the_channel_the_side_effect_free_predicate(monkeypatch
     channel, _ = _channel(monkeypatch)
     async with _Inbox(channel, tmp_path, 42) as inbox:
         assert channel.decision_reason_pending == inbox.coordinator.would_consume_reason_reply
+        assert channel.decision_reason_clock == inbox.coordinator.reason_clock
+        inbox.coordinator._reason_clock = lambda: 12.5          # read live, never copied at wire
+        assert channel.decision_reason_clock() == 12.5
+
+
+# ── round 3: the reason window is judged when the reply arrived ─────────────────
+
+EXPIRED = "The reason window expired; the rejection is unchanged."
+
+
+@pytest.mark.parametrize("replied_at, saved", [(1060.0, True), (1130.0, False)])
+async def test_a_reason_is_judged_by_when_it_arrived_not_when_the_chats_lane_reaches_it(
+        monkeypatch, tmp_path, replied_at, saved):
+    """The prompt opens at t=1000, so its window ends at 1120. The owner asks a slow question,
+    then replies to the prompt at *replied_at* while that turn runs; the turn ends at t=1150 and
+    only then does the lane reach the reply. It is judged at the instant the poll loop claimed it,
+    on the coordinator's clock: 60 s in, it is saved; 130 s in, it is refused as expired, though
+    it waited in the same lane. Either way it follows the answer the chat was waiting for and is
+    never a chat turn. (Round 2 judged it when the lane reached it: "expired" for both.)"""
+    channel, received = _channel(monkeypatch)
+    running, release = _answering(channel, received, slow="is the backup done?")
+    clock = [1000.0]
+    async with _Inbox(channel, tmp_path, 42) as inbox:
+        inbox.coordinator._reason_clock = lambda: clock[0]
+        task_id = await inbox.task()
+
+        async def owner_replies():
+            await running.wait()
+            clock[0] = replied_at
+
+        async def the_turn_ends_late():
+            await asyncio.sleep(0.05)
+            clock[0] = 1150.0
+            release.set()
+
+        await _run(channel, [
+            (0, [_tap(task_id)]),
+            (inbox.registered, [_msg("is the backup done?", uid=OWNER)]),
+            (0.1, []),                                          # that turn starts
+            (owner_replies, [_msg("Use staging", uid=OWNER, **_reply(PROMPT))]),
+            (the_turn_ends_late, []),
+            (0.1, []),
+        ])
+        assert inbox.reason(task_id) == ("Use staging" if saved else None)
+        assert inbox.queue.get(task_id).status == "rejected"
+        assert not inbox.coordinator._reason_windows
+    assert [t for t, _ in received] == ["is the backup done?"]
+    assert [p for p in inbox.posted if p in ("answer to is the backup done?", "Reason saved.", EXPIRED)] == [
+        "answer to is the backup done?", "Reason saved." if saved else EXPIRED]
+
+
+async def test_another_members_rejection_handled_after_the_deadline_never_drops_a_reason_sent_in_time(
+        monkeypatch, tmp_path):
+    """A group owner chat (no allowed-user list: every member counts as the owner). The owner's
+    prompt opens at t=1000 (window to 1120) and they ask a slow question. At t=1050 another member
+    rejects a second task; at t=1060 the owner replies to their prompt. Both wait in the chat's
+    lane behind the slow turn, which ends at t=1150: the member's rejection opens its own window
+    then, and must not prune the owner's window as expired, since their reply arrived in time."""
+    group = -100
+    channel, received = _channel(monkeypatch, policy=GroupPolicy())
+    running, release = _answering(channel, received, slow="is the backup done?")
+    clock = [1000.0]
+    async with _Inbox(channel, tmp_path, group) as inbox:
+        inbox.coordinator._reason_clock = lambda: clock[0]
+        first, second = await inbox.task(), await inbox.task()
+
+        async def member_rejects():
+            await running.wait()
+            clock[0] = 1050.0
+
+        async def owner_replies():
+            clock[0] = 1060.0
+
+        async def the_turn_ends_late():
+            await asyncio.sleep(0.05)
+            clock[0] = 1150.0
+            release.set()
+
+        await _run(channel, [
+            (0, [_tap(first, chat_id=group)]),
+            (inbox.registered, [_msg("@nerva_bot is the backup done?", chat_id=group,
+                                     chat_type="supergroup", uid=OWNER)]),
+            (0.1, []),                                          # that turn starts
+            (member_rejects, [_tap(second, chat_id=group, uid=100)]),
+            (owner_replies, [_msg("Use staging", chat_id=group, chat_type="supergroup", uid=OWNER,
+                                  **_reply(PROMPT))]),
+            (the_turn_ends_late, []),
+            (0.2, []),
+        ])
+        assert inbox.reason(first) == "Use staging"
+        assert inbox.reason(second) is None
+        assert list(inbox.coordinator._reason_windows) == [(str(group), "100")]
+    assert [t for t, _ in received] == ["is the backup done?"]
+    assert "Reason saved." in inbox.posted
+
+
+@pytest.mark.parametrize("clock", [None, 5.0, "raises"])
+async def test_the_hook_is_told_when_the_reply_arrived_only_by_a_wired_clock(monkeypatch, clock):
+    """With a clock wired, the hook gets ``received_at``: the clock's reading when the poll loop
+    claimed the reply. With none (or one that fails) it is called exactly as before, so an older
+    hook that takes no ``received_at`` still consumes the replies it claims, and the inbox judges
+    such a reply when it runs."""
+    channel, received = _channel(monkeypatch)
+    seen = []
+    channel.decision_reason_pending = lambda **kwargs: True
+    if clock == "raises":
+        def broken():
+            raise RuntimeError("clock offline")
+
+        channel.decision_reason_clock = broken
+    elif clock is not None:
+        channel.decision_reason_clock = lambda: clock
+
+    async def older_hook(text, *, chat_id, user_id, reply_to_message_id):
+        seen.append({"chat_id": chat_id, "user_id": user_id, "reply_to_message_id": reply_to_message_id})
+        return True
+
+    async def hook(text, **kwargs):
+        seen.append(kwargs)
+        return True
+
+    channel.on_decision_reason = hook if clock == 5.0 else older_hook
+    await _run(channel, [(0, [_msg("Use staging", **_reply(PROMPT))])])
+    expected = {"chat_id": 42, "user_id": 7, "reply_to_message_id": PROMPT}
+    assert seen == [{**expected, "received_at": 5.0} if clock == 5.0 else expected]
+    assert received == []

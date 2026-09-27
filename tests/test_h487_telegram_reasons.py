@@ -78,6 +78,60 @@ async def test_expired_window_and_revoked_owner_cannot_write_reason(rig):
     assert queue.get(second).human_decision['reason'] is None
 
 
+@pytest.mark.parametrize('received_at,saved', [
+    (219.5, True),                  # arrived in time; handled after the deadline (a busy lane)
+    (220, False),                   # arrived at the deadline
+    (None, False),                  # an older caller: judged when handled
+    (True, False), ('100', False), (float('nan'), False), (float('-inf'), False),   # no instant: judged when handled
+])
+async def test_a_reply_is_judged_by_when_it_arrived_not_when_it_is_handled(rig, received_at, saved):
+    """H117 round 3: Telegram hands the lane the instant the poll loop claimed the reply; the
+    window's deadline is checked against it. Anything that is not a finite instant falls back
+    to now, as for a caller that passes none."""
+    queue, _, channel, coordinator = rig
+    coordinator._reason_clock = lambda: 100
+    task_id = await reject(rig)                               # the window closes at t=220
+    coordinator._reason_clock = lambda: 250                   # the reply is handled at t=250
+    kwargs = {} if received_at is None else {'received_at': received_at}
+    assert await coordinator._on_reason_reply('Use staging', chat_id=42, user_id=99,
+                                              reply_to_message_id=77, **kwargs)
+    assert queue.get(task_id).human_decision['reason'] == ('Use staging' if saved else None)
+    assert channel.send.await_args_list[-1].args[0] == (
+        'Reason saved.' if saved else 'The reason window expired; the rejection is unchanged.')
+    assert not coordinator._reason_windows
+
+
+async def test_expired_windows_are_pruned_only_to_make_room_and_before_a_live_one(rig):
+    """Below the cap an expired window stays (a reply that arrived in time may still be queued
+    in the chat's lane behind the rejection that opens the next window); at the cap the
+    expired ones go first, and only then the oldest live one."""
+    queue, _, _, coordinator = rig
+    task = queue.get(await reject(rig))                       # rejected on Telegram, no reason yet
+    coordinator._reason_windows.clear()
+    coordinator._reason_clock = lambda: 100
+    await coordinator._offer_reason(task, 42, 0)
+    await coordinator._offer_reason(task, 42, 1)              # both close at 220
+    coordinator._reason_clock = lambda: 150
+    await coordinator._offer_reason(task, 42, 0)              # closes at 270; still the oldest entry
+    coordinator._reason_clock = lambda: 230
+    for user in range(2, 32):
+        await coordinator._offer_reason(task, 42, user)       # close at 350
+    assert len(coordinator._reason_windows) == 32
+    assert ('42', '1') in coordinator._reason_windows         # expired, but kept below the cap
+    await coordinator._offer_reason(task, 42, 32)             # full: the expired one goes, not the oldest
+    assert len(coordinator._reason_windows) == 32
+    assert ('42', '1') not in coordinator._reason_windows and ('42', '0') in coordinator._reason_windows
+    await coordinator._offer_reason(task, 42, 33)             # full, none expired: the oldest goes
+    assert len(coordinator._reason_windows) == 32
+    assert ('42', '0') not in coordinator._reason_windows and ('42', '33') in coordinator._reason_windows
+
+
+async def test_the_reason_clock_is_the_windows_own_clock_read_live(rig):
+    _, _, _, coordinator = rig
+    coordinator._reason_clock = lambda: 321.5
+    assert coordinator.reason_clock() == 321.5
+
+
 async def test_failed_prompt_never_opens_capture(rig):
     queue, _, channel, coordinator = rig
     channel.request_decision_reason.side_effect = RuntimeError('offline')

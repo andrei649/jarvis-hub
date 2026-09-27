@@ -214,6 +214,12 @@ class TelegramChannel(ChannelAdapter):
         # never with the hook; with none wired it claims nothing, and the hook then sees
         # only replies read while a reason prompt is still being posted to their chat.
         self.decision_reason_pending: Optional[Callable] = None
+        # H117: decision_reason_clock() reads the decision inbox's own clock
+        # (AutonomyCoordinator.reason_clock). The poll loop reads it when it claims a reply
+        # and hands the reading to on_decision_reason as ``received_at``, so the reason
+        # window is judged by when the reply arrived, not when the chat's lane reached it.
+        # With none wired the hook is called without it and judges the reply when it runs.
+        self.decision_reason_clock: Optional[Callable] = None
         # H487 x H117: chats a decision-reason prompt is being posted to, with how many.
         # Until Telegram answers, the prompt's message id is unknown, so a reply in that
         # chat may be answering it and is classified behind it (see _handle_update).
@@ -303,7 +309,9 @@ class TelegramChannel(ChannelAdapter):
             if not sent:
                 return False
         # The words are delivered; a voice note follows only if this chat asked.
-        # `voice=False` marks a service line (a transcript echo) that is never spoken.
+        # `voice=False` marks a service line (a transcript echo, an unreadable-attachment
+        # notice, a pairing reply, a reason acknowledgement) that is never spoken and
+        # never takes the voice mark of a voice-note turn running in the chat.
         await self._after_reply(cid, str(message or ""), speak=kwargs.get("voice", True))
         return True
 
@@ -531,10 +539,13 @@ class TelegramChannel(ChannelAdapter):
                 # lane: what the chat said before it goes first, a tap read before it runs
                 # before it (so a superseded prompt is refused), its acknowledgement keeps the
                 # chat's order and voice marks, and polling and other chats never wait on it.
+                # Its arrival is read now, before it can wait in the lane: the reason window
+                # is judged by when the owner replied, not by how long the chat was busy.
+                received_at = self._reason_arrival()
                 await self._flush_chat_turns(chat_id)
 
                 async def handle_reply():
-                    if await self._consumed_as_reason(text, chat_id, uid, reply_id):
+                    if await self._consumed_as_reason(text, chat_id, uid, reply_id, received_at):
                         return
                     await self._handle_message_content(
                         msg, uid, chat_id, text, attachment, inline=True,
@@ -559,14 +570,30 @@ class TelegramChannel(ChannelAdapter):
                            exc_info=True)
             return False
 
-    async def _consumed_as_reason(self, text, chat_id, uid, reply_id) -> bool:
+    def _reason_arrival(self):
+        """When a claimed reply arrived: ``decision_reason_clock()``, read in the poll loop as
+        the reply is claimed. None when no clock is wired or it fails; the hook is then called
+        without ``received_at`` and judges the reply when it runs."""
+        clock = self.decision_reason_clock
+        if clock is None:
+            return None
+        try:
+            return clock()
+        except Exception:
+            logger.warning("Telegram decision-reason clock failed; the reply is judged when it runs",
+                           exc_info=True)
+            return None
+
+    async def _consumed_as_reason(self, text, chat_id, uid, reply_id, received_at=None) -> bool:
         """In the chat's lane: let the decision-reason hook save and acknowledge the reason.
         A decline runs the reply as a turn, and so does a hook that raises: the inbox can
         raise only before it has saved anything (never after the save), so a reply is never
-        lost and a saved reason never also becomes a chat turn."""
+        lost and a saved reason never also becomes a chat turn. ``received_at`` (when the
+        reply arrived) is passed only when there is one, so a hook that takes none still works."""
+        arrival = {} if received_at is None else {"received_at": received_at}
         try:
             return bool(await self.on_decision_reason(
-                text, chat_id=chat_id, user_id=uid, reply_to_message_id=reply_id,
+                text, chat_id=chat_id, user_id=uid, reply_to_message_id=reply_id, **arrival,
             ))
         except Exception:
             logger.warning("Telegram decision-reason hook failed; the reply is handled as a message",
@@ -624,7 +651,9 @@ class TelegramChannel(ChannelAdapter):
                 # answering about a file nobody opened — and rather
                 # than arriving into silence, which is what this
                 # whole path exists to stop.
-                await self.send(describe(attachment, note=why), chat_id=chat_id)
+                # A service line: text only, never spoken, and it never takes the voice
+                # mark of a voice-note turn still running in this chat.
+                await self.send(describe(attachment, note=why), chat_id=chat_id, voice=False)
         # Pass the sender id so the gateway's H12.19 pairing gate can
         # hold unknown senders for approval (no-op unless enabled). H117: the
         # piece is held so a burst from this sender becomes one turn.
@@ -658,7 +687,11 @@ class TelegramChannel(ChannelAdapter):
             await self._flush_turn(key)
 
     async def _flush_chat_turns(self, chat_id) -> None:
-        """Hand over every batch held for *chat_id*, oldest first (any sender)."""
+        """Hand over every batch held for *chat_id*, oldest first (any sender).
+
+        Every sender's held pieces in that chat, on purpose: a claimed reason reply must wait
+        behind everything the chat said before it. The cost is that in a group owner chat
+        another member's burst held at that moment is split in two turns."""
         for key in self._batch.held_keys():
             if key[0] == chat_id:
                 await self._flush_turn(key)
@@ -703,7 +736,9 @@ class TelegramChannel(ChannelAdapter):
 
         The reply is the same length either way — "paired" or "that link is not
         valid" — and never says *why* a token failed. Wrong, spent and expired are
-        indistinguishable from outside on purpose.
+        indistinguishable from outside on purpose. Either is a service line
+        (``voice=False``): never spoken, and it never takes the voice mark of a
+        voice-note turn still running in the chat.
         """
         stripped = str(text or "").strip()
         if not stripped.startswith("/start"):
@@ -718,7 +753,7 @@ class TelegramChannel(ChannelAdapter):
             # exists to prevent — see ``__init__`` — so refuse instead, in the same
             # words as a bad token: the sender learns nothing, and the log says why.
             logger.warning("Telegram deeplink pairing refused: no shared pairing store is wired")
-            await self.send("That pairing link is not valid.", chat_id=chat_id)
+            await self.send("That pairing link is not valid.", chat_id=chat_id, voice=False)
             return True
         try:
             result = pairing.redeem_deeplink(token, "telegram", str(uid))
@@ -728,9 +763,9 @@ class TelegramChannel(ChannelAdapter):
             result = {"ok": False}
         if result.get("ok"):
             logger.info("Telegram sender paired by deeplink: %s", log_safe(uid))
-            await self.send("Paired. This device can now talk to Nerva.", chat_id=chat_id)
+            await self.send("Paired. This device can now talk to Nerva.", chat_id=chat_id, voice=False)
         else:
-            await self.send("That pairing link is not valid.", chat_id=chat_id)
+            await self.send("That pairing link is not valid.", chat_id=chat_id, voice=False)
         return True
 
     async def _handle_callback(self, cb: dict):

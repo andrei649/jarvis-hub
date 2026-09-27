@@ -6,8 +6,9 @@ was already going out as text. What is pinned: off by default; `voice` speaks
 only the reply to a voice note and forgets the mark after a silent turn;
 `always` speaks every delivered reply; a failed synthesis or a refused upload
 costs the clip and never the text; Telegram's 400 on the clip falls back to an
-audio file once; the transcript echo is a service line that is never spoken
-and never spends the mark.
+audio file once; the transcript echo, the notice that an attachment could not be
+read and the deeplink pairing replies are service lines that are never spoken and
+never spend the mark.
 
 Hermetic: a recording HTTP client, an in-memory mode store, an injected
 synthesizer and transcriber, no Telegram and no speech stack.
@@ -15,12 +16,15 @@ synthesizer and transcriber, no Telegram and no speech stack.
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 
 import pytest
 
 from agents.core.channels import telegram as telegram_module
 from agents.core.channels.inbound_voice import InboundVoiceReader
+from agents.core.channels.media_reader import InboundImageReader
+from agents.core.channels.pairing import SenderPairing
 from agents.core.channels.render import to_telegram_html
 from agents.core.channels.spoken_reply import SpokenReply
 from agents.core.channels.telegram import TelegramChannel, TelegramDraft
@@ -302,6 +306,66 @@ async def test_the_echo_says_what_was_heard_before_the_answer_and_is_never_spoke
     texts = [c["json"]["text"] for m, c in client.calls if m == "sendMessage"]
     assert texts[0] == f"🎙️ I heard: “{SAID}”"
     assert synth.seen == [(SPOKEN, "ro")], "the echo spent neither the mark nor the engine"
+
+
+# ── service lines are never spoken ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_photo_during_a_voice_turn_is_a_text_notice_and_the_note_keeps_its_voice(tmp_path):
+    """/voice voice: while the answer to a voice note is still being worked out, the sender
+    sends a photo that cannot be read (no local vision model). The notice saying so is a
+    service line: it is not spoken and does not take the note's voice mark, so the note's own
+    answer is the one spoken. (It used to be the notice that was spoken, and the answer not.)"""
+    ch, client, synth = _channel(tmp_path, VOICE)
+    ch._image_reader = InboundImageReader()             # no vision model: every photo is refused
+    running, release = asyncio.Event(), asyncio.Event()
+
+    async def handler(text, channel="telegram", **kwargs):
+        running.set()
+        await release.wait()
+        await ch.send(REPLY, chat_id=kwargs["chat_id"])
+        return REPLY
+
+    ch.handler = handler
+    photo = _update(photo=[{"file_id": "p", "file_unique_id": "u", "width": 1, "height": 1}])
+    pages = [(None, [_update(**VOICE_NOTE)]), (running.wait, [photo])]
+
+    async def fake_updates(timeout=25):
+        if pages:
+            before, page = pages.pop(0)
+            if before is not None:
+                await asyncio.wait_for(before(), 5)
+            return page
+        release.set()                                   # the note's turn ends after the photo
+        ch._running = False
+        return []
+
+    ch._get_updates = fake_updates
+    ch._running = True
+    await asyncio.wait_for(ch._poll_loop(), 10)
+    texts = [c["json"]["text"] for m, c in client.calls if m == "sendMessage"]
+    assert texts[0].startswith("I can see you sent a photo, but ")
+    assert texts[1:] == [to_telegram_html(REPLY)]
+    assert synth.seen == [(SPOKEN, "ro")], "the note's answer is spoken, the notice is not"
+    assert client.methods().count("sendVoice") == 1
+    assert ch._voice_turns == set() and ch._voice_pending == set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["paired", "invalid", "unwired"])
+async def test_a_deeplink_pairing_reply_is_a_service_line_that_is_never_spoken(tmp_path, case):
+    """/voice always speaks every reply, but "Paired." and "That pairing link is not valid."
+    are service lines sent from the poll loop: text only."""
+    ch, client, synth = _channel(tmp_path, ALWAYS)
+    ch._pairing = None if case == "unwired" else SenderPairing(tmp_path / "pairing.json")
+    token = ch._pairing.mint_deeplink()["token"] if case == "paired" else "not-a-real-token"
+    await _drain(ch, [_update(text=f"/start {token}")])
+    texts = [c["json"]["text"] for m, c in client.calls if m == "sendMessage"]
+    assert texts == ["Paired. This device can now talk to Nerva." if case == "paired"
+                     else "That pairing link is not valid."]
+    assert client.methods() == ["sendMessage"]
+    assert synth.seen == []
 
 
 # ── the streaming draft ─────────────────────────────────────────────────────
