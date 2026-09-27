@@ -1735,3 +1735,160 @@ async def test_n3_local_only_still_tries_another_piper_model_after_a_missing_one
     assert path and path.endswith(".wav")
     [rec] = _records(env.tmp)
     assert any("ro_RO-y-medium" in arg for arg in rec["argv"])
+
+
+# ── mutation round: cases for the survivors ───────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_timeout_kills_the_child_where_there_are_no_process_groups(armed, monkeypatch):
+    env = armed
+    exe = _fake(env.tmp / "opt" / "stt-bin", env.tmp)
+    await _approve(env, "stt", _stt_argv(exe))
+    _mode(env.tmp, "sleep")
+    monkeypatch.setattr(lp, "_GROUPS", False)
+    monkeypatch.setattr(lp, "STT_TIMEOUT_S", 1)
+    start = time.monotonic()
+    assert await lp.transcribe_command(OGG, "en", temp_dir=env.temp) == "[STT error: command timed out]"
+    assert time.monotonic() - start < 4
+    [rec] = _records(env.tmp)
+    assert not _alive(rec["pid"])
+
+
+@pytest.mark.asyncio
+async def test_the_temp_root_is_made_private(env):
+    env.temp.mkdir(parents=True, exist_ok=True)
+    env.temp.chmod(0o755)
+    async with lp.private_workdir(env.temp) as workdir:
+        assert workdir is not None
+        assert stat.S_IMODE(env.temp.stat().st_mode) == 0o700
+        assert stat.S_IMODE(workdir.stat().st_mode) == 0o700
+
+
+def test_claim_output_refuses_a_symlink_and_a_file_outside_the_run_dir(env):
+    workdir = env.tmp / "run-x"
+    workdir.mkdir()
+    outside = env.tmp / "outside" / "stolen.wav"
+    outside.write_bytes(WAV)
+    link = workdir / "out.wav"
+    link.symlink_to(outside)
+    assert lp.claim_output(link, workdir, env.tmp, "tts") == (None, "not_a_regular_file")
+    assert lp.claim_output(outside, workdir, env.tmp, "tts") == (None, "output_outside_run_dir")
+
+
+def test_a_program_in_a_sticky_world_writable_directory_is_refused(env):
+    shared = env.tmp / "sticky"
+    exe = _fake(shared / "say-wav", env.tmp)
+    shared.chmod(0o1777)
+    try:
+        problems = lp.validate_command(_tts_argv(exe), "tts")[0]
+        assert any("writable by every user" in p for p in problems), problems
+    finally:
+        shared.chmod(0o755)
+
+
+def test_stt_never_chooses_a_command_that_is_not_ready(env):
+    engine = stt_module.STTEngine()
+    engine._model = None
+    assert lp.stt_mode() == "auto"
+    assert engine._choice() == "whisper" and not engine._use_command()   # Whisper says it is unavailable
+    settings_db.put_category("voice", {"stt_engine": "command"})
+    assert engine._choice() is None and not engine._use_command()
+
+
+def test_export_names_why_a_voice_command_is_left_out(env):
+    doc = settings_db.export_settings()
+    reasons = {row["setting"]: row["reason"] for row in doc["excluded"]}
+    for key in ("voice.tts_command", "voice.stt_command"):
+        assert "POST /api/admin/voice/commands" in reasons[key], reasons.get(key)
+
+
+async def _request_then_accept(env, side: str, argv: list[str], between=None) -> dict:
+    """Request (the card), run *between* while it waits, then a human accepts it."""
+    orch = _queue_orch()
+    status, body = await command_settings.request(orch, side, argv)
+    assert status == 202, body
+    if between is not None:
+        between()
+    task = SimpleNamespace(id=body["pending"], kind=command_settings.APPROVAL_KIND, decided_by="owner",
+                           decision="accept", payload=orch.tasks[body["pending"]]["payload"])
+    return await irreversible.execute(task, orch=None)
+
+
+def test_a_model_name_with_dot_dot_is_refused():
+    assert lp.valid_model_name("ro_RO-mihai-medium")
+    assert not lp.valid_model_name("ro_RO..mihai") and not lp.valid_model_name("a..b")
+
+
+def test_audio_is_recognised_by_its_magic_bytes():
+    assert lp.sniff_audio(b"fLaC" + b"\0" * 12) == ".flac"
+    assert lp.sniff_audio(b"OggS" + b"\0" * 12) == ".ogg"
+    assert lp.sniff_audio(WAV[:16]) == ".wav"
+    assert lp.sniff_audio(b"hello, not audio") is None
+
+
+@pytest.mark.asyncio
+async def test_a_stored_argv_that_is_not_the_approved_one_never_runs(armed):
+    env = armed
+    exe = _fake(env.tmp / "opt" / "say-wav", env.tmp)
+    await _approve(env, "tts", _tts_argv(exe))
+    stored = dict(lp.stored_command("tts"))
+    stored["argv"] = stored["argv"] + ["--quiet"]
+    settings_db.put_category("voice", {"tts_command": stored})
+    assert lp.command_ready("tts").reason == lp.FINGERPRINT_MISMATCH
+
+
+@pytest.mark.asyncio
+async def test_a_request_names_why_the_command_is_refused(armed):
+    status, body = await command_settings.request(_queue_orch(), "tts", ["/bin/sh", "-c", "say", "{output}"])
+    assert status == 422 and any("shell" in p for p in body["problems"]), body
+
+
+@pytest.mark.asyncio
+async def test_accept_is_refused_once_unarmed_or_in_safe_mode(armed, monkeypatch):
+    env = armed
+    exe = _fake(env.tmp / "opt" / "say-wav", env.tmp)
+    done = await _request_then_accept(env, "tts", _tts_argv(exe),
+                                      between=lambda: monkeypatch.delenv("JARVIS_VOICE_COMMANDS"))
+    assert done.get("reason") == "not_armed", done
+    monkeypatch.setenv("JARVIS_VOICE_COMMANDS", "1")
+    done = await _request_then_accept(env, "tts", _tts_argv(exe),
+                                      between=lambda: monkeypatch.setenv("JARVIS_SAFE_MODE", "1"))
+    assert done.get("reason") == "safe_mode", done
+    assert lp.stored_command("tts") == {}
+
+
+@pytest.mark.asyncio
+async def test_accept_is_refused_when_the_script_changed_while_the_card_waited(armed):
+    env = armed
+    marker = env.tmp / "marker"
+    script = _script(env, PY_SAY.format(wav=WAV, marker=str(marker), tag="good"))
+    argv = [sys.executable, str(script), "{output}"]
+    done = await _request_then_accept(
+        env, "tts", argv,
+        between=lambda: script.write_text(PY_SAY.format(wav=WAV, marker=str(marker), tag="EVIL"), encoding="utf-8"))
+    assert done.get("reason") == "changed_since_request", done
+    assert lp.stored_command("tts") == {}
+
+
+@pytest.mark.asyncio
+async def test_n3_local_only_tries_a_failing_bare_piper_once(env, monkeypatch):
+    _piper(env, "ro_RO-x-medium")
+    _mode(env.tmp, "fail")
+    monkeypatch.setattr(tts_module, "HAS_KOKORO", False)
+    settings_db.put_category("voice", {"local_only": True})
+    assert await _engine().speak("Salut", voice="piper", lang="ro") is None
+    assert len(_records(env.tmp)) == 1
+
+
+def test_an_ancestor_that_cannot_be_read_counts_as_loose(env, monkeypatch):
+    exe = _fake(env.tmp / "opt" / "deep" / "say-wav", env.tmp)
+    blocked = exe.parent.parent
+    real_stat = os.stat
+
+    def fake_stat(path, *a, **kw):
+        if Path(path) == blocked:
+            raise PermissionError(13, "denied")
+        return real_stat(path, *a, **kw)
+
+    monkeypatch.setattr(lp.os, "stat", fake_stat)
+    assert lp._loose_ancestor(exe) == blocked
