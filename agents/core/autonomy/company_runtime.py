@@ -18,8 +18,12 @@ all*, and the answers to that are deliberate:
   a night of autonomous work should not begin because a config file changed while
   nobody was looking. The asymmetry is the point: stopping is always easy, and
   starting is always deliberate.
-* **The planner is a checklist, from the approved goal, by default.** The plan
-  the owner read on the card is the plan that runs. A model planner is available
+* **The planner is a checklist, from the approved goal, by default** — read
+  back from the goal's own approval task (H464b): the task named in the run's
+  ``approved_by`` is re-read from the durable queue, re-checked (a human accepted
+  it, and its payload still fingerprints to what was approved) and bound to this
+  run (same approval, title, deadline and budget). Any doubt is an EMPTY plan.
+  The plan the owner read on the card is the plan that runs. A model planner is available
   and must be passed in explicitly: "let a model decide what to do all night" is
   precisely the thing that has to be opted into rather than defaulted to.
 * **A goal approved with no plan proposes nothing** and goes straight to grading.
@@ -32,7 +36,9 @@ all*, and the answers to that are deliberate:
 * **A parked run is skipped, not poked (H464).** One :class:`RunBarriers` is built
   over the ledger, the task reader and the webhook store, and its check is handed
   to both the scheduler and the supervisor. It is not an orchestrator slot: it
-  lives here, on :class:`RuntimeParts`, with the rest of the chain.
+  lives here, on :class:`RuntimeParts`, with the rest of the chain. With the
+  orchestrator's own queue as its reader (H464b), a finished plan waits on its
+  own approved tasks that are still running before it is graded.
 
 Nothing here can authorise. The supervisor hands every effect to the governed
 intake, the reconciler can only unblock a run, and opening a run still requires
@@ -41,7 +47,9 @@ an owner-approved goal decided in the inbox.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -54,6 +62,9 @@ from agents.core.autonomy.schedule_runtime import ScheduleConfig, ScheduleRuntim
 from agents.core.autonomy.work_runs import FLAG, WorkRunLedger
 
 logger = logging.getLogger("jarvis.company_runtime")
+
+# ``approved_by`` as ``approve_from_task`` writes it: ``task:<id>:<decider>``.
+_APPROVED_BY_TASK = re.compile(r"^task:(\d+):(.+)$")
 
 __all__ = ["CompanyRuntime", "RuntimeParts", "build_company_runtime", "flag_enabled"]
 
@@ -142,18 +153,112 @@ def _webhook_store() -> Any:
     return _get_webhook_store()
 
 
-def _plan_for(ledger: Any, run: Any, goals: Any) -> ChecklistPlanner:
+def _first_callable(*candidates: Any) -> Callable[..., Any] | None:
+    """The first candidate that is present (``is not None``) and callable."""
+    for candidate in candidates:
+        if candidate is not None and callable(candidate):
+            return candidate
+    return None
+
+
+def _queue_reader(orch: Any, read_task: Any) -> Callable[[int], Any] | None:
+    """The durable queue reader: the explicit one, else the orchestrator's queue.
+
+    The shipped orchestrator names its queue ``autonomy_queue`` (orchestrator.py);
+    ``task_queue`` and ``queue`` are the names older wiring and tests use. Each is
+    tested for presence, never truthiness: an empty queue is still a queue.
+    """
+    candidates = [read_task]
+    for name in ("task_queue", "queue", "autonomy_queue"):
+        queue = getattr(orch, name, None)
+        candidates.append(getattr(queue, "get", None) if queue is not None else None)
+    return _first_callable(*candidates)
+
+
+def _governed_intake(orch: Any, enqueue: Any) -> Callable[..., Any] | None:
+    """The governed intake: the explicit one, else the orchestrator's own.
+
+    In the shipped product it is the autonomy worker's ``govern_enqueue``
+    (``orch.autonomy``, worker.py). Whichever is found, it is the same governed
+    door: the policy decides, the caller's level is a floor, and the effective
+    origin applies — nothing here widens what a step may do.
+    """
+    autonomy = getattr(orch, "autonomy", None)
+    return _first_callable(
+        enqueue,
+        getattr(orch, "govern_enqueue", None),
+        getattr(autonomy, "govern_enqueue", None) if autonomy is not None else None,
+    )
+
+
+def _approved_goal_for(run: Any, read_task: Callable[[int], Any] | None) -> Any:
+    """The goal this run was opened for, read back from its own approval task.
+
+    The runs table keeps no plan: only ``approved_by = "task:<id>:<decider>"``.
+    So the approval task is re-read from the durable queue and re-minted through
+    :func:`approve_from_task`, which re-checks that a human accepted this very
+    task and that its payload still fingerprints to what was approved. The goal
+    is then bound to THIS run — the same approval, title, deadline and budget —
+    and given the run's own ``goal_id`` (``approve_from_task`` mints a random one,
+    and the judge's goal-identity rule needs the run's).
+
+    ``None`` on any doubt: a run opened outside the goal contract, no reader, a
+    task that cannot be read or is gone (H262 retention may have purged it), a
+    policy decision, an edited payload, or a goal that belongs to another run.
+    The caller turns ``None`` into an EMPTY checklist, never an open one.
+    """
+    from agents.core.autonomy.goal_contract import GoalContractError, approve_from_task
+
+    match = _APPROVED_BY_TASK.match(str(getattr(run, "approved_by", "") or ""))
+    if match is None or read_task is None:
+        return None
+    task_id = int(match.group(1))
+    try:
+        task = read_task(task_id)
+    except Exception:
+        logger.warning("could not read the approval task %s for run %s", task_id,
+                       getattr(run, "id", "?"), exc_info=True)
+        return None
+    if task is None:
+        return None
+    try:
+        goal = approve_from_task(task)
+    except GoalContractError as exc:
+        logger.info("approval task %s cannot drive run %s: %s", task_id,
+                    getattr(run, "id", "?"), exc.reason)
+        return None
+    try:
+        bound = (
+            goal.approved_by == run.approved_by
+            and goal.title == run.title
+            and float(goal.deadline_at) == float(run.deadline_at)
+            and goal.budget.as_dict() == run.budget.as_dict()
+        )
+    except Exception:
+        bound = False
+    if not bound:
+        logger.warning("approved goal does not match run %s (approval task %s)",
+                       getattr(run, "id", "?"), task_id)
+        return None
+    return dataclasses.replace(goal, goal_id=run.goal_id)
+
+
+def _plan_for(
+    ledger: Any, run: Any, goals: Any, read_task: Callable[[int], Any] | None = None
+) -> ChecklistPlanner:
     """The planner for one run: the checklist the owner approved, and no more.
 
-    An unreadable or missing goal yields an EMPTY checklist rather than an
-    unrestricted one. A planner that proposes nothing wastes a night; a planner
-    that proposes anything, because it could not read what it was allowed to do,
-    is the failure this whole chain exists to prevent.
+    ``goals`` wins when it is given; otherwise the goal is read back from its own
+    approval task (:func:`_approved_goal_for`). An unreadable or missing goal
+    yields an EMPTY checklist rather than an unrestricted one. A planner that
+    proposes nothing wastes a night; a planner that proposes anything, because it
+    could not read what it was allowed to do, is the failure this whole chain
+    exists to prevent.
     """
     steps: list[Any] = []
     scope: frozenset[str] = frozenset()
     try:
-        goal = goals(run.goal_id) if callable(goals) else None
+        goal = goals(run.goal_id) if callable(goals) else _approved_goal_for(run, read_task)
     except Exception:
         logger.warning("could not read the approved goal for %s", run.goal_id, exc_info=True)
         goal = None
@@ -195,8 +300,7 @@ def build_company_runtime(
         logger.warning("company mode is on but no work-run ledger is bound; nothing will run")
         return None
 
-    queue = getattr(orch, "task_queue", None) or getattr(orch, "queue", None)
-    reader = read_task or (getattr(queue, "get", None) if queue is not None else None)
+    reader = _queue_reader(orch, read_task)
     ledger.bind_approval_task_reader(reader)
     reasons: list[str] = []
     if reader is None:
@@ -208,7 +312,7 @@ def build_company_runtime(
     else:
         reconciler = PendingRequests(ledger, read_task=reader)
 
-    intake = enqueue or getattr(orch, "govern_enqueue", None)
+    intake = _governed_intake(orch, enqueue)
     if intake is None:
         logger.warning("company mode is on but no governed intake is bound; nothing will run")
         return None
@@ -218,7 +322,7 @@ def build_company_runtime(
         run = ledger.get(run_id) if run_id else None
         if run is None:
             return None
-        chosen = planner or _plan_for(ledger, run, goals)
+        chosen = planner or _plan_for(ledger, run, goals, reader)
         return chosen(context)
 
     # Without a queue reader a task trigger is refused rather than guessed; the

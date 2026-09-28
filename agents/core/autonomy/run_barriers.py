@@ -111,6 +111,11 @@ WAIT_CHECK_FAILED = frozenset({"trigger_unavailable", "probe_failed"})
 # the work itself ("hub") is not a model second-guessing the owner.
 _MODEL_SOURCES = frozenset({"planner", "judge"})
 
+# A task this run queued that was decided yes and has not finished (H464b): what
+# the hub parks a finished plan on before grading. An undecided ask keeps the run
+# ``blocked`` instead, and a terminal status means the work is done.
+IN_FLIGHT_TASK_STATUSES = frozenset({"approved", "running"})
+
 
 class RunBarriersError(WorkRunError):
     """A refused barrier request. ``reason`` is a bounded, public code.
@@ -298,7 +303,8 @@ class RunBarriers:
             raise WorkRunError("unknown_run")
         if run.status not in _PARKABLE:
             raise RunBarriersError("run_not_parkable")
-        if self._ledger.budget_state(run_id)["exceeded"]:
+        budget = self._ledger.budget_state(run_id)
+        if budget["exceeded"]:
             raise RunBarriersError("budget_spent")
         if not isinstance(raw, Mapping):
             raise RunBarriersError("malformed_barrier")
@@ -315,13 +321,14 @@ class RunBarriers:
             max_wait = wanted
         now = self._now()
         # A deadline carries its own end, so its own wait is the furthest any
-        # barrier may reach; the run's deadline and wall-clock budget cap it either
-        # way, silently — the budget check then ends the run honestly.
+        # barrier may reach; the run's deadline and the time its budget has left
+        # (H487: approval waits are credited back) cap it either way, silently —
+        # the budget check then ends the run honestly.
         own = MAX_BARRIER_SECONDS if kind == "deadline" else max_wait
         cap_at = min(
             now + own,
             run.deadline_at or math.inf,
-            run.started_at + run.budget.max_seconds,
+            now + float(budget["seconds_left"]),
         )
         if cap_at <= now:
             raise RunBarriersError("no_time_left")
@@ -344,6 +351,61 @@ class RunBarriers:
             raise RunBarriersError("owner_cleared")
         self._ledger.set_barrier(run_id, record)
         return self.state(run_id) or {}
+
+    def park_in_flight(self, run_id: str) -> dict[str, Any] | None:
+        """Park the run on the oldest task it queued that is still in flight (H464b).
+
+        The checklist moves on as soon as a step's task is *approved*, so a plan can
+        finish while that task is still executing; grading then would spend the
+        run's single verdict on work that has not landed. The hub waits on it
+        instead: a ``task:<id>`` trigger, ``source="hub"``, with the default wait
+        (capped by the run's deadline and the time its budget has left).
+
+        Returns :meth:`state`, or None when there is nothing to wait on — no reader
+        bound, no task of this run in flight, or every in-flight task already used.
+        The hub waits on a task **at most once per run** (a wait that hit its cap is
+        never renewed), and never on a task the owner let the run go from, whoever
+        set that wait. A reader that raises is ``trigger_unavailable``; a task that
+        finished between the two reads is skipped; any other refusal is raised for
+        the caller, which falls through to grading. Only a fixed template with the
+        task's integer id enters the barrier — no title, payload or result text.
+        """
+        if self._read_task is None:
+            return None
+        excluded = {s.get("target") for s in self._ledger.barrier_sets(run_id, source="hub")}
+        excluded |= {
+            c.get("target") for c in self._ledger.owner_cleared(run_id)
+            if c.get("kind") == "trigger"
+        }
+        seen: list[int] = []
+        for step in self._ledger.steps(run_id):
+            task_id = step.task_id
+            if isinstance(task_id, bool) or not isinstance(task_id, int) or task_id <= 0:
+                continue
+            if task_id not in seen:
+                seen.append(task_id)
+        for task_id in seen:
+            target = f"task:{task_id}"
+            if target in excluded:
+                continue
+            try:
+                task = self._read_task(task_id)
+            except Exception:
+                logger.warning("could not read task %s while checking run %s for work "
+                               "in flight", task_id, run_id, exc_info=True)
+                raise RunBarriersError("trigger_unavailable") from None
+            if task is None or _task_status(task) not in IN_FLIGHT_TASK_STATUSES:
+                continue
+            try:
+                return self.request(run_id, {
+                    "kind": "trigger", "target": target,
+                    "reason": f"task {task_id} is still running",
+                }, source="hub")
+            except RunBarriersError as exc:
+                if exc.reason == "trigger_already_fired":
+                    continue      # it finished between the two reads
+                raise
+        return None
 
     def _owner_let_go(self, run_id: str, kind: str, target: Any, start: Any = "") -> bool:
         """Whether the owner already cleared this same wait on this run.
@@ -651,6 +713,7 @@ class RunBarriers:
 __all__ = [
     "BARRIER_KINDS",
     "DEFAULT_WAIT_SECONDS",
+    "IN_FLIGHT_TASK_STATUSES",
     "MAX_BACKGROUND",
     "MAX_BARRIERS_PER_RUN",
     "MAX_BARRIER_SECONDS",

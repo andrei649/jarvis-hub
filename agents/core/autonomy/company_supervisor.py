@@ -44,6 +44,14 @@ The rules it enforces, none of which the planner or the model can talk it out of
   planner that keeps asking. A malformed or forbidden wait is a failed ``plan``
   step at once.
 
+  When the plan is done but a task this run queued was approved and is still
+  executing, the hub parks the run on it (``task:<id>``, source ``hub``) BEFORE
+  any grader is asked — the checklist moves on when a task is approved, not when
+  it finishes, and grading then would spend the run's only verdicts on work that
+  has not landed (H464b). At most once per task per run, never on a task the
+  owner let the run go from, and any failure to check or set it falls through to
+  grading exactly as before.
+
 The planner is injected (``plan_next``) and returns either an :class:`Action` or
 ``None`` meaning "nothing left to do" — at which point the run goes to grading.
 """
@@ -452,7 +460,16 @@ class CompanySupervisor:
         return TickResult("idle", reason, run_id)
 
     async def _grade(self, run_id: str) -> TickResult:
-        """No work left: verify, then judge. The supervisor never decides itself."""
+        """No work left: wait for this run's own in-flight tasks, then verify, then
+        judge. The supervisor never decides itself.
+
+        The hub's park comes first — before the "no grader is wired" answer and
+        before the judge is asked whether to wait — so a task that is still running
+        is waited on whatever graders are (or are not) wired.
+        """
+        parked = self._hub_parks(run_id)
+        if parked is not None:
+            return parked
         if self._verify is None or self._judge is None:
             return TickResult(
                 "idle", "no work left, and no grader is wired to settle the run", run_id
@@ -470,8 +487,36 @@ class CompanySupervisor:
         return TickResult("graded", detail, run_id)
 
 
+    def _hub_parks(self, run_id: str) -> TickResult | None:
+        """Park a finished plan on its own in-flight task, or None (H464b).
+
+        ``RunBarriers.park_in_flight`` picks the oldest task this run queued that
+        was approved and has not finished, at most once per task and never one the
+        owner let the run go from. The park is an event, not a step: no budget, no
+        plan, no verdict. Anything it refuses (a spent budget, no time left, the
+        barrier limit, a queue that cannot be read) or raises reads as "not
+        waiting", and the run goes on to grading exactly as it did before — a check
+        that cannot answer never wedges a run.
+        """
+        park = getattr(self._barriers, "park_in_flight", None)
+        if self._barriers is None or not callable(park):
+            return None
+        try:
+            state = park(run_id)
+        except WorkRunError as exc:
+            logger.info("run %s: no hub park (%s); grading", run_id, exc.reason)
+            return None
+        except Exception:
+            logger.warning("the hub park failed on run %s; grading", run_id, exc_info=True)
+            return None
+        if not state:
+            return None
+        return TickResult("waiting", f"parked: {state.get('waiting_on') or 'a barrier'}", run_id)
+
     async def _judge_parks(self, run_id: str) -> TickResult | None:
-        """Ask the judge whether to wait, BEFORE any verdict is spent.
+        """Ask the judge whether to wait, BEFORE any verdict is spent — and only
+        after the hub's own park on in-flight tasks (:meth:`_hub_parks`) found
+        nothing to wait on.
 
         The ledger takes one verdict per role per run, so a wait decided after
         ``verify`` would have burned the verifier's only verdict on stale evidence.

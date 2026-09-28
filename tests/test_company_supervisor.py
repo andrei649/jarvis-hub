@@ -1107,3 +1107,171 @@ async def test_a_malformed_planner_wait_is_still_a_failed_step_at_once(ledger, c
                             barriers=_barriers(ledger, clock), config=ON)
     assert (await sup.tick(run.id)).outcome == "stepped"
     assert ledger.steps(run.id)[-1].detail["reason"] == "invalid wait: unknown_kind"
+
+
+# ── H464b C4: a finished plan waits on its own in-flight tasks before grading ──
+
+class _Statuses:
+    """A task reader over a mutable id -> status map."""
+
+    def __init__(self, **statuses) -> None:
+        self.statuses = {int(k.removeprefix("t")): v for k, v in statuses.items()}
+        self.reads = 0
+
+    def __call__(self, task_id):
+        self.reads += 1
+        status = self.statuses.get(int(task_id))
+        return None if status is None else types.SimpleNamespace(id=task_id, status=status)
+
+
+def _finished_plan(ledger, *task_ids):
+    """A run whose checklist is done: each row's task approved, the run resumed."""
+    run = ledger.open_run(_goal())
+    for n, task_id in enumerate(task_ids, 1):
+        ledger.record_step(run.id, kind="research", summary=f"row {n}", outcome="ok",
+                           task_id=task_id)
+    return run
+
+
+async def test_a_finished_plan_parks_on_its_own_running_task_before_grading(ledger, clock):
+    """The checklist moved on when task 7 was approved; grading now would spend the
+    run's only verdicts on work that has not landed. The hub waits on it first."""
+    run = _finished_plan(ledger, 7)
+    tasks = _Statuses(t7="running")
+    verify, judge = _graders(ledger)
+    sup = CompanySupervisor(
+        ledger, enqueue=_Intake(), plan_next=_plan(), verify=verify, judge=judge,
+        barriers=_task_barriers(ledger, clock, tasks), config=ON,
+    )
+    steps_used = ledger.get(run.id).steps_used
+    first = await sup.tick(run.id)
+    assert (first.outcome, first.detail) == ("waiting", "parked: task 7 to finish")
+    assert first.step_seq is None
+    assert ledger.verdicts(run.id) == []
+    barrier = ledger.get(run.id).barrier
+    assert (barrier["source"], barrier["target"]) == ("hub", "task:7")
+    assert (await sup.tick(run.id)).outcome == "waiting"          # still running
+    assert ledger.get(run.id).steps_used == steps_used
+    tasks.statuses[7] = "done"
+    graded = await sup.tick(run.id)
+    assert graded.outcome == "graded" and graded.detail.startswith("met:")
+    assert ledger.get(run.id).status == "succeeded"
+    assert len(ledger.barrier_sets(run.id, source="hub")) == 1
+
+
+async def test_a_hub_park_happens_with_no_grader_wired(ledger, clock):
+    """Production wires no grader yet: the park must not sit behind that check."""
+    run = _finished_plan(ledger, 7)
+    sup = CompanySupervisor(
+        ledger, enqueue=_Intake(), plan_next=_plan(),
+        barriers=_task_barriers(ledger, clock, _Statuses(t7="approved")), config=ON,
+    )
+    result = await sup.tick(run.id)
+    assert (result.outcome, result.detail) == ("waiting", "parked: task 7 to finish")
+    assert ledger.get(run.id).barrier["source"] == "hub"
+
+
+async def test_the_hub_park_comes_before_the_judge_is_asked_to_wait(ledger, clock):
+    run = _finished_plan(ledger, 7)
+    tasks = _Statuses(t7="running")
+    asked = []
+
+    def _judge_wait(rid):
+        asked.append(rid)
+        return {"kind": "deadline", "target": {"in_seconds": 60}}
+
+    verify, judge = _graders(ledger)
+    sup = CompanySupervisor(
+        ledger, enqueue=_Intake(), plan_next=_plan(), verify=verify, judge=judge,
+        barriers=_task_barriers(ledger, clock, tasks), judge_wait=_judge_wait, config=ON,
+    )
+    assert (await sup.tick(run.id)).detail == "parked: task 7 to finish"
+    assert asked == []
+    assert (await sup.tick(run.id)).outcome == "waiting"
+    assert asked == []
+    tasks.statuses[7] = "done"
+    after = await sup.tick(run.id)
+    assert after.detail.startswith("the judge asked to wait: ")
+    assert asked == [run.id]
+    assert ledger.verdicts(run.id) == []
+
+
+@pytest.mark.parametrize("why", ["cap", "owner"])
+async def test_the_hub_does_not_re_park_after_the_cap_or_the_owner_s_clear(ledger, clock, why):
+    """At most one hub wait per task: a capped wait is not renewed, and the owner's
+    "stop waiting" sticks — the next tick grades even though the task still runs."""
+    from agents.core.autonomy.run_barriers import DEFAULT_WAIT_SECONDS
+
+    run = _finished_plan(ledger, 7)
+    barriers = _task_barriers(ledger, clock, _Statuses(t7="running"))
+    verify, judge = _graders(ledger)
+    sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=_plan(), verify=verify,
+                            judge=judge, barriers=barriers, config=ON)
+    assert (await sup.tick(run.id)).outcome == "waiting"
+    if why == "cap":
+        clock.advance(DEFAULT_WAIT_SECONDS)
+    else:
+        assert barriers.clear(run.id)[0] is True
+    assert (await sup.tick(run.id)).outcome == "graded"
+    assert len(ledger.barrier_sets(run.id, source="hub")) == 1
+    cleared = [e["detail"]["why"] for e in ledger.events(run.id) if e["kind"] == "barrier.cleared"]
+    assert cleared == [why]
+
+
+class _RefusingPark:
+    """A barriers object whose hub park refuses or breaks."""
+
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+        self.parks = 0
+
+    def active(self, _run_id):
+        return False
+
+    def state(self, _run_id):
+        return None
+
+    def park_in_flight(self, _run_id):
+        self.parks += 1
+        raise self.exc
+
+
+def _fill_barrier_sets(ledger, clock, run_id):
+    from agents.core.autonomy.run_barriers import MAX_BARRIERS_PER_RUN
+
+    for n in range(MAX_BARRIERS_PER_RUN):
+        ledger.set_barrier(run_id, {
+            "id": f"b-{n}", "kind": "deadline", "target": clock.now + 60,
+            "cap_at": clock.now + 60, "source": "planner", "reason": "filler",
+        })
+    ledger.clear_barrier(run_id, why="elapsed", by="check")
+
+
+@pytest.mark.parametrize("case", ["reader_raises", "barrier_limit", "no_time_left", "raises"])
+async def test_a_refused_or_failing_hub_park_falls_through_to_grading(ledger, clock, case):
+    """Fail open to what happened before H464b, never wedge: a park that cannot be
+    checked or set is "not waiting", and the run is graded."""
+    from agents.core.autonomy.work_runs import WorkRunError
+
+    run = _finished_plan(ledger, 7)
+    if case == "reader_raises":
+        def _locked(_task_id):
+            raise RuntimeError("database is locked")
+
+        barriers = _task_barriers(ledger, clock, _locked)
+    elif case == "barrier_limit":
+        _fill_barrier_sets(ledger, clock, run.id)
+        barriers = _task_barriers(ledger, clock, _Statuses(t7="running"))
+    elif case == "no_time_left":
+        barriers = _RefusingPark(WorkRunError("no_time_left"))
+    else:
+        barriers = _RefusingPark(RuntimeError("boom"))
+    verify, judge = _graders(ledger)
+    sup = CompanySupervisor(ledger, enqueue=_Intake(), plan_next=_plan(), verify=verify,
+                            judge=judge, barriers=barriers, config=ON)
+    result = await sup.tick(run.id)
+    assert result.outcome == "graded"
+    assert ledger.get(run.id).barrier is None
+    assert ledger.barrier_sets(run.id, source="hub") == []
+    if isinstance(barriers, _RefusingPark):
+        assert barriers.parks == 1

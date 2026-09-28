@@ -1482,6 +1482,23 @@ class WorkRunLedger:
             ).fetchall()
         return sum(1 for row in rows if _load(row["detail"]).get("source") == source)
 
+    def barrier_sets(self, run_id: str, *, source: str | None = None) -> list[dict[str, Any]]:
+        """Every ``barrier.set`` this run was parked with, oldest first, as its event
+        recorded it (``id``, ``kind``, ``target``, ``cap_at``, ``source``, ``reason``),
+        optionally only those from ``source``. Read from the append-only audit, so
+        it outlives a restart: the hub's "at most one wait per task" rests on it
+        (H464b)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT detail FROM run_events WHERE run_id = ? AND kind = 'barrier.set' "
+                "ORDER BY seq",
+                (run_id,),
+            ).fetchall()
+        sets = [_load(row["detail"]) for row in rows]
+        if source is None:
+            return sets
+        return [detail for detail in sets if detail.get("source") == source]
+
     def events(self, run_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
         """The run's barrier audit, newest first. Append-only: there is no API to
         rewrite or delete an event."""
