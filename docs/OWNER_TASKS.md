@@ -1396,8 +1396,9 @@ and add a read path from recall / `session_search`.
 H464b made one park path real in the shipped product: with `JARVIS_COMPANY_MODE` set at
 boot, the company runtime builds from the orchestrator's own queue and intake, walks the
 checklist you approved (read back from its own approval task), and parks a finished plan on
-its own approved tasks that are still running — at no cost, at most once per task, and your
-"stop waiting" sticks. The row stays **partial**: what is left needs you.
+its own approved tasks that are still running — no step and no verdict (only wall-clock time,
+stopping a grading margin short of the run's end since H464c), at most once per task, and
+your "stop waiting" sticks. The row stays **partial**: what is left needs you.
 
 ### P31.1 — H464: must a pid wait be reachable for "equivalent"?
 
@@ -1420,9 +1421,9 @@ until its budget ends). Running a model unattended falls under the H513 data-han
 Decide whether a local model may act as the company judge's rubric, and optionally as the
 planner, without you watching — and if so, which model and provider (strict-local, under
 `auxiliary_request_scope`, with `security.data_training_ack` where it applies), behind opt-in
-settings forced off in safe mode. A model planner also needs the intake arguments clamped
-first: today only the action kind is scope-checked, and the model's task reaches the intake
-unchanged.
+settings forced off in safe mode. A model planner also needs the rest of the intake
+arguments clamped first: since H464c the task's kind is scope-checked as well as the action's,
+but the task's agent, title and payload still reach the intake unchanged.
 
 ### P31.3 — H464: should you be able to park a run by hand?
 
