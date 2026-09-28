@@ -146,6 +146,26 @@
 
   Reviewed adversarially (4 lenses): 21 findings confirmed (6 MAJOR, 11 MINOR, 4 NIT), closed in a verified fix round; the verification found 3 more (1 MINOR, 2 NIT), closed red-first. 72 mutants, all killed (16 by cases added after a first pass). Test manual: CHN-189, CHN-190.
   Tests: backend 18,150 → 18,269; vitest 1,772 → 1,783.
+- 2026-09-28 H464c + H464d, review rounds 2 and 3 of the shipped company runtime (round 1 is the H464b entry below): the checklist is bound to the exact plan the owner approved, a run is graded after its work lands at any sweep cadence, and a run that cannot go on says why (partial, still; headline 190/697).
+
+  Round 2 (H464c) bound the chain to what the owner approved:
+  - **The approved plan is pinned.** A run records the approved goal's fingerprint when it opens (work_runs migration v5); every sweep re-reads the approval task and checks it against the pin, so an edit after approval drives nothing.
+  - **One approval, one run.** A retried `goal.approve` gets the run it already opened (one transaction, rolled back on any failure; closes known gap 1 of the Codex review).
+  - **Safe mode leaves company mode out**, at boot and at every sweep.
+  - **Doubt is never "done".** A read that fails just now holds the run (no step, park or grade); a goal that provably does not bind stops it with the reason. A row's queued task kind must be inside the goal's scope.
+  - **The report routes are read-only** (1,250 queue reads per list → 0).
+
+  Round 3 (H464d) made the grading margin exact and the rest honest:
+  - **Graded after the task lands, at any cadence.** The hub's wait before grading stops exactly the room grading needs — the next sweep on which the run is due again, given the sweep cadence and the scheduler's 300 s per-run interval, plus a minute (360 s by default) — never a tenth of the budget, which graded an 8 h run over a task still running with 48 minutes to go. Pinned at 60, 120, 200, 300 and 1,200 s cadences through the real interval gate; a sweep a moment early (timer jitter) still counts.
+  - **Approval-wait credit does not depend on the HUD.** The sweep's reconcile records each still-open ask on every pass, so an ask the owner edited is credited the same whether or not anyone polled the report.
+  - **A held run is visible and bounded.** One `hold.start` event per hold (and `hold.end`), "held — …" with the reason in the brief; a run whose budget is spent is settled by the sweep ("ran out of budget"), where before it stayed open for ever.
+  - **A transient failure never skips or repeats a row.** A step the intake failed is retried (at most 3 attempts, then the run stops naming the row); a failed read of the run's steps holds instead of asking for row 1 again. Anything re-minting the approval raises stops the run with the reason, never a failing tick.
+  - **Plain words.** Dotted scope kinds (`file.write.append` under `file.write`); "approved row refused by scope: …"; the brief says why the hub stopped a run; UPGRADE.md explains that runs in flight at the upgrade stop once and how to rerun them.
+
+  Still partial (see H464): no process producer (owner decision 1, blocked on H302), no model rubric or planner for judge/planner waits (owner decision 2), no graders wired in production; a blocked run whose budget runs out is still not settled.
+
+  40 + 43 mutants, all killed. Test manual: GOV-297.
+  Tests: backend 19,879 → 19,911 → 19,943; vitest 1,835 (unchanged).
 - 2026-09-28 H464b the shipped company runtime parks a finished plan on its own running tasks: company mode builds in production at last, walks the checklist the owner approved, and waits on work that has not landed before grading (partial, still; headline 190/697).
 
   With `JARVIS_COMPANY_MODE` set at boot, none of this happened in production: the runtime looked for a `task_queue` and a `govern_enqueue` the orchestrator never had, so it never built and no sweep ran. Now:
