@@ -286,7 +286,10 @@ restart** — a capability that can start a night of autonomous work should not 
 because a config file changed while nobody was looking. Nothing is registered if the
 chain cannot be built, and every refusal is named in the log: no work-run ledger, no
 governed intake. A missing task queue is reported rather than fatal — the runtime
-builds, but a blocked run could never be resumed, so it says so.
+builds, but a blocked run could never be resumed, so it says so. The runtime is
+built from the **orchestrator's own queue and intake** (`autonomy_queue`,
+`autonomy.govern_enqueue`; H464b — before that it looked for names the orchestrator
+never had, so in production it never built and no sweep ran).
 
 **What it will actually do.** The planner is the **checklist the owner read on the
 approval card** (`GoalDraft.plan`, inside the payload fingerprint, so editing it
@@ -294,7 +297,19 @@ invalidates the approval). A goal approved with **no** plan and no explicitly-pa
 model planner **proposes nothing** and goes straight to grading: "you approved a goal
 with no plan, so nothing happened" is a better outcome than a model improvising a
 night's work from a one-line title. A goal that cannot be read yields an *empty*
-plan, never an unrestricted one.
+plan, never an unrestricted one. The checklist is **read back from the goal's own
+approval task** (the task in the run's `approved_by`): a human must have accepted
+that very task, its payload must still fingerprint to what was approved, and the
+goal must match the run (approval, title, deadline, budget) — **any mismatch gives
+an empty plan**.
+
+**When the checklist is done.** A step's task counts as done for the checklist once
+it is *approved*, so the plan can finish while that work is still running. A
+finished plan then **waits, at no cost, on its own approved tasks that are still
+running** (at most once per task, capped at 6 h and the budget left; "stop waiting"
+sticks): the run is parked on `task:<id>` and resumes on the first sweep after the
+task finishes. Production still has **no grader wired**, so after that the run idles
+("no work left, and no grader is wired") until its budget ends.
 
 **Cost:** an active run consumes its own budget — steps, elapsed seconds, deadline and
 a hard cap on how many times it may interrupt you. With the runtime's authoritative
