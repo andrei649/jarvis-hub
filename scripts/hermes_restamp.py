@@ -102,7 +102,7 @@ class _Blob:
 def blob_text(data: bytes) -> str | None:
     """The blob as hermes_status reads a file, or None when it is not UTF-8."""
     try:
-        return _Blob(data).read_text()
+        return _Blob(data).read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return None
 
