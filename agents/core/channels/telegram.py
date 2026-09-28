@@ -558,8 +558,11 @@ class TelegramChannel(ChannelAdapter):
                     # Handling this page raised before every update in it was handled. The
                     # updates after the failing one come again on the next page; this page
                     # already carried them, so it is no lower bound for them: the next page's
-                    # previous page stays the one before this.
-                    self._last_page_at = cut_short.previous
+                    # previous page stays the one before this. With none before it (the first
+                    # page, or one whose reading failed) this page's own instant is still a true
+                    # lower bound for what comes again, and it is kept.
+                    self._last_page_at = (cut_short.previous if cut_short.previous is not None
+                                          else cut_short.now)
                 # Nothing can join a held batch during the back-off, three times the hard
                 # cap: what is held goes out now rather than when a poll next succeeds.
                 await self._flush_all_turns()

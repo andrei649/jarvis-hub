@@ -1195,3 +1195,62 @@ async def test_an_update_handled_outside_the_poll_loop_after_pages_gets_no_credi
     clock[0] = 600.0
     await channel._handle_update(_msg("Use staging", date=WALL + 550, **_reply(PROMPT)))
     assert stamps == [600.0]
+
+
+# --- H117 round 5 check (R1): a cut-short page with no previous page keeps its own instant ---------
+
+
+def _raising_read(monkeypatch, channel):
+    async def read(attachment, spoken, chat_id, uid):
+        raise RuntimeError("vision backend misconfigured")
+    monkeypatch.setattr(channel, "_read_attachment", read)
+
+
+async def test_a_first_page_cut_short_keeps_its_own_instant_for_what_comes_again(monkeypatch):
+    """The channel's first page is cut short by a photo whose reading raises; the reply behind it
+    comes again on the next page. It is stamped when its first page came back, not later."""
+    channel, _ = _channel(monkeypatch)
+    clock, stamps = [0.0], []
+    _stamped(channel, stamps)
+    channel.decision_reason_clock = lambda: clock[0]
+    channel._wall_clock = lambda: WALL + clock[0]
+    _raising_read(monkeypatch, channel)
+    reply = _msg("Use staging", uid=OWNER, date=WALL + 1100, **_reply(PROMPT))
+    await _run(channel, [(_at(clock, 1118.0), [_photo(), reply]), (_at(clock, 1121.0), [reply])])
+    assert stamps == [1118.0]
+
+
+async def test_a_reason_behind_a_failing_update_on_a_page_without_a_previous_page_is_saved(
+        monkeypatch, tmp_path):
+    """Window 1000..1120. The page before the reply's page had a failed clock reading, so the
+    reply's page (back at 1118) has no previous page; a photo ahead of the reply raises and the
+    reply comes again at 1121. The reason was sent in time and is saved."""
+    channel, _received = _channel(monkeypatch)
+    clock = [1000.0]
+
+    def reading():
+        if clock[0] is None:
+            raise RuntimeError("clock offline")
+        return clock[0]
+
+    channel._wall_clock = lambda: WALL + (clock[0] or 0.0)
+    async with _Inbox(channel, tmp_path, 42) as inbox:
+        inbox.coordinator._reason_clock = reading
+        hook, stamps = channel.on_decision_reason, []
+
+        async def stamped(text, **kwargs):
+            stamps.append(kwargs.get("received_at"))
+            return await hook(text, **kwargs)
+
+        channel.on_decision_reason = stamped
+        task_id = await inbox.task()
+        _raising_read(monkeypatch, channel)
+        reply = _msg("Use staging", uid=OWNER, date=WALL + 1100, **_reply(PROMPT))
+        await _run(channel, [(0, [_tap(task_id)]), (inbox.registered, []),
+                             (_at(clock, None), []),
+                             (_at(clock, 1118.0), [_photo(), reply]),
+                             (_at(clock, 1121.0), [reply]), (0.2, [])])
+        saved = inbox.queue.get(task_id).human_decision.get("reason")
+    assert stamps == [1118.0]
+    assert saved == "Use staging"
+    assert EXPIRED not in inbox.posted
