@@ -73,9 +73,12 @@ Security-critical changes may move faster; those are documented in
 ### Upgrade notes
 
 Per-version migration notes (breaking changes, required actions) live in the
-release notes and the forthcoming `UPGRADE.md` (H23.18). On-disk schema changes are
-applied forward automatically on startup by the migration framework (H23.7); the
-pre-upgrade backup (H23.8) is your rollback.
+release notes and [`UPGRADE.md`](UPGRADE.md#version-notes) (H23.18). On-disk schema
+changes are applied forward automatically on startup by the migration framework
+(H23.7); the pre-upgrade backup (H23.8) is your rollback. For example, company-mode
+runs in flight when you upgrade to the version that pins each run's approved plan
+stop once with a plain reason, and older code rolled back over that database reads
+those runs as tampered — see [`UPGRADE.md`](UPGRADE.md#company-mode-runs-in-flight-when-you-upgrade-h464ch464d).
 
 ## Platform matrix
 

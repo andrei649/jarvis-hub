@@ -24,10 +24,12 @@ all*, and the answers to that are deliberate:
   it) and bound to this run (same approval, title, deadline and budget, and — H464c
   — the very fingerprint the run pinned when it opened, never the one the payload
   now carries about itself). A read that fails just now HOLDS the run (no step, no
-  park, no grade; the next sweep reads again); a goal that provably does not bind —
-  a policy decision, an edit, another run's goal, a run opened with no pin — STOPS
-  it with the reason on its record, and so does an approved row the planner has to
-  refuse. Neither is ever graded as a finished checklist.
+  park, no grade; the next sweep reads again; the hold is on the run's record, H464d);
+  a goal that provably does not bind — a policy decision, an edit, another run's
+  goal, a run opened with no pin, a task that cannot be minted into a goal at all —
+  STOPS it with the reason on its record, and so does an approved row the planner
+  has to refuse (by scope, or after it failed ``MAX_ROW_ATTEMPTS`` times). Neither is
+  ever graded as a finished checklist.
   The plan the owner read on the card is the plan that runs. A model planner is available
   and must be passed in explicitly: "let a model decide what to do all night" is
   precisely the thing that has to be opted into rather than defaulted to.
@@ -45,7 +47,10 @@ all*, and the answers to that are deliberate:
   to both the scheduler and the supervisor. It is not an orchestrator slot: it
   lives here, on :class:`RuntimeParts`, with the rest of the chain. With the
   orchestrator's own queue as its reader (H464b), a finished plan waits on its
-  own approved tasks that are still running before it is graded.
+  own approved tasks that are still running before it is graded — until exactly the
+  room grading needs is left (H464d: the next sweep the run is due on, plus a minute).
+* **A spent run is settled.** The scheduler hands a run it skips as
+  ``budget_spent`` to the supervisor's ``settle_spent`` (H464d).
 
 Nothing here can authorise. The supervisor hands every effect to the governed
 intake, the reconciler can only unblock a run, and opening a run still requires
@@ -65,7 +70,11 @@ from agents.core.autonomy.company_planner import ChecklistPlanner
 from agents.core.autonomy.company_supervisor import CompanySupervisor, Hold, SupervisorConfig
 from agents.core.autonomy.pending_requests import PendingRequests
 from agents.core.autonomy.run_barriers import GRADE_MARGIN_SECONDS, RunBarriers
-from agents.core.autonomy.schedule_runtime import ScheduleConfig, ScheduleRuntime
+from agents.core.autonomy.schedule_runtime import (
+    ScheduleConfig,
+    ScheduleRuntime,
+    next_due_after_tick,
+)
 from agents.core.autonomy.work_runs import FLAG, WorkRunLedger
 
 logger = logging.getLogger("jarvis.company_runtime")
@@ -232,9 +241,14 @@ def _read_back(run: Any, read_task: Callable[[int], Any] | None) -> _ReadBack:
     Transient — the run holds: no reader bound, or a read that raised. Provable —
     the run is stopped: a run not opened from a goal card, a run with no pin (opened
     before it existed), a task that is gone (H262 retention may have purged it), a
-    policy decision, an edited payload, or a goal that belongs to another run.
+    policy decision, an edited payload, a goal that belongs to another run — and
+    anything at all that re-minting the task raises (H464d): the task was read, so
+    what it says is the fact, and a payload that cannot be minted (a budget edited
+    to zero steps raises ``WorkRunError``, not ``GoalContractError``) provably does
+    not bind. Only the READ is ever transient; nothing re-minting raises escapes.
     """
-    from agents.core.autonomy.goal_contract import GoalContractError, approve_from_task
+    from agents.core.autonomy import goal_contract
+    from agents.core.autonomy.work_runs import WorkRunError
 
     match = _APPROVED_BY_TASK.match(str(getattr(run, "approved_by", "") or ""))
     if match is None:
@@ -254,11 +268,15 @@ def _read_back(run: Any, read_task: Callable[[int], Any] | None) -> _ReadBack:
     if task is None:
         return _ReadBack(reason="approval_task_gone")
     try:
-        goal = approve_from_task(task)
-    except GoalContractError as exc:
+        goal = goal_contract.approve_from_task(task)
+    except (goal_contract.GoalContractError, WorkRunError) as exc:
         logger.info("approval task %s cannot drive run %s: %s", task_id,
                     getattr(run, "id", "?"), exc.reason)
         return _ReadBack(reason=exc.reason)
+    except Exception as exc:
+        logger.warning("approval task %s cannot be minted for run %s (%s)", task_id,
+                       getattr(run, "id", "?"), exc.__class__.__name__)
+        return _ReadBack(reason="approved_goal_invalid")
     try:
         bound = (
             goal.approved_by == run.approved_by
@@ -316,17 +334,27 @@ def _plan_for(ledger: Any, run: Any, goals: Any) -> ChecklistPlanner:
 
 
 async def _walk(checklist: ChecklistPlanner, context: Any) -> Any:
-    """The next approved row — or, when the planner has to refuse one, a stop.
+    """The next approved row — or, when the checklist cannot say, a hold or a stop.
 
+    None from the checklist means "nothing left to do" only when it refused nothing.
     An approved row outside the goal's scope (its kind, or the kind of the task it
-    would queue) can never run, so the checklist can never be finished: that is not
-    "nothing left to do", and grading it as such would call a half-run plan done
-    (H464c). The run is stopped with the refusal on its record instead.
+    would queue) can never run, and neither can a row the intake has failed
+    ``MAX_ROW_ATTEMPTS`` times: the checklist can never be finished, and grading it
+    would call a half-run plan done (H464c, H464d). The run is stopped with the
+    refusal on its record, named for what it is. A read of the run's own steps that
+    failed just now says nothing about how far the plan has got, so the tick holds
+    (H464d) instead of starting the checklist again from row 1.
     """
     action = await checklist(context)
     decision = checklist.last
-    if action is None and decision is not None and decision.refusal == "out_of_scope":
-        return Hold(f"approved row refused: {decision.detail}", stop=True)
+    if action is not None or decision is None:
+        return action
+    if decision.refusal == "out_of_scope":
+        return Hold(decision.detail, stop=True, cause="approved row refused by scope")
+    if decision.refusal == "row_failed":
+        return Hold(decision.detail, stop=True, cause="approved row kept failing")
+    if decision.refusal == "steps_unreadable":
+        return Hold("run_steps_unreadable")
     return action
 
 
@@ -351,9 +379,11 @@ def build_company_runtime(
     "company mode did nothing last night" is a question that has to be answerable.
 
     ``sweep_seconds`` is how often the scheduler will call :meth:`CompanyRuntime.sweep`
-    (the per-run interval when not given): the hub's park before grading stops at
-    least one sweep and a minute short of the run's end, so the sweep after it can
-    still grade the run (H464c).
+    (the per-run interval when not given). The hub's park before grading stops the
+    time from a tick to the next sweep on which the run is due again — the sweep and
+    the scheduler's per-run interval together, ``next_due_after_tick`` — plus a
+    minute short of the run's end, so a later sweep still grades the run at any
+    cadence (H464c, H464d).
     """
     if not flag_enabled():
         logger.debug("company mode is off; no runtime built")
@@ -400,10 +430,12 @@ def build_company_runtime(
 
     # Without a queue reader a task trigger is refused rather than guessed; the
     # webhook store is resolved only when a hook trigger is actually used. The
-    # hub's park leaves at least one sweep (and a minute) to grade in (H464c).
+    # hub's park leaves the run room to be due again and graded (H464c, H464d).
+    grade_floor = next_due_after_tick(
+        float(sweep_seconds or schedule.interval_seconds), schedule.interval_seconds,
+    ) + GRADE_MARGIN_SECONDS
     barriers = RunBarriers(
-        ledger, read_task=reader, hooks=_webhook_store,
-        grade_floor=float(sweep_seconds or schedule.interval_seconds) + GRADE_MARGIN_SECONDS,
+        ledger, read_task=reader, hooks=_webhook_store, grade_floor=grade_floor,
     )
     supervisor = CompanySupervisor(
         ledger,
@@ -421,6 +453,7 @@ def build_company_runtime(
         reconcile=(reconciler.sweep if reconciler is not None else None),
         config=schedule,
         barrier_active=barriers.active,
+        settle_spent=supervisor.settle_spent,
     )
     if planner is not None:
         reasons.append("a planner was supplied explicitly; the approved checklist is not in use")

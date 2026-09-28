@@ -305,13 +305,22 @@ its payload must fingerprint to **the fingerprint the run pinned when it opened*
 (H464c) — never merely to the one the payload now carries about itself. **One
 approval task opens one run**: a retried `goal.approve` gets the run it already
 opened. A read that **fails just now holds** the run (no step, no park, no grade —
-the next sweep reads again); a goal that **provably does not bind** (a policy
-decision, an edit, another run's goal, a run opened before the pin existed) **stops**
-the run with the reason on its record (`stopped (plan not bound to its approval: …)`),
-and so does an approved row the planner must refuse — neither is ever graded as a
-finished checklist. A row's queued task kind must be inside the goal's scope (it is
-a scope kind or sits under one: `research.collect` under `research`), or the card is
-refused.
+the next sweep reads again); the first held tick writes a `hold.start` event (one
+per hold, not one per sweep), the tick that can plan again writes `hold.end`, and
+the brief says `held — …` with the reason meanwhile (H464d). A goal that **provably
+does not bind** (a policy decision, an edit, another run's goal, a run opened before
+the pin existed, an approval task that can no longer be minted into a goal at all)
+**stops** the run with the reason on its record
+(`plan not bound to its approval: …`, shown in plain words in the brief); an
+approved row the scope refuses stops it too (`approved row refused by scope: …`) —
+neither is ever graded as a finished checklist. A row's queued task kind must be
+inside the goal's scope (it is a scope kind or sits under a whole one, then a dot:
+`research.collect` under `research`, `file.write.append` under `file.write`), or the
+card is refused. A row whose step **failed** (the governed intake raised or returned
+no task, or its task vanished) is not done: it is tried again on a later sweep, at
+most 3 times in all, then the run stops with `approved row kept failing: <row>` —
+and a read of the run's own steps that fails holds the tick rather than asking for
+row 1 again (H464d).
 
 **When the checklist is done.** A step's task counts as done for the checklist once
 it is *approved*, so the plan can finish while that work is still running. A
@@ -319,10 +328,19 @@ finished plan then **waits on its own approved tasks that are still running** �
 step and no verdict, only wall-clock time (at most once per task; "stop waiting"
 sticks): the run is parked on `task:<id>` and resumes on the first sweep after the
 task finishes. The wait is capped at 6 h and at the time left **less a grading
-margin** (H464c: the longest of one sweep interval plus a minute and a tenth of the
-budget), so the run can still be graded when it runs out; with no time to spare past
-the margin it does not wait at all. Production still has **no grader wired**, so after that the run idles
-("no work left, and no grader is wired") until its budget ends.
+margin**, the same before a deadline as before the end of the budget (H464d: exactly
+what grading needs — the time from a tick to the next sweep on which the run is due
+again, given the sweep cadence `autonomy.company_tick_seconds` and the scheduler's
+per-run interval of 300 s, plus a minute: 360 s at the default 300 s cadence, 360 s
+at 60 s, 420 s at 120 s, 1,260 s at 1,200 s; never a share of the budget), so the run
+is still due, and graded, on a sweep before it runs out at any cadence; with no time
+to spare past the margin it does not wait at all. A run with more time left than that
+waits for its task and is graded on the finished work. A sweep that starts a moment
+early (the timer's own jitter, up to 1 s) still counts as one interval since the
+run's last tick. Production still has **no grader wired**, so after that the run idles
+("no work left, and no grader is wired") until its budget ends — and then the sweep
+**settles it** like any spent run (`stopped`, `budget:<limit>`, "ran out of budget"
+in the brief), where before it was skipped and left open for ever (H464d).
 
 **Cost:** an active run consumes its own budget — steps, elapsed seconds, deadline and
 a hard cap on how many times it may interrupt you. With the runtime's authoritative
@@ -330,7 +348,10 @@ task reader, a proven pending human approval excludes up to 360 seconds per
 approval-block interval from elapsed-seconds accounting. Overlapping asks share
 that cap; a task deadline can shorten it. Auto-approved tasks and unproven waits
 receive no credit. The first durable human decision ends the interval, including
-defer followed by a later approval. This does not create an approval timeout or
+defer followed by a later approval. An ask the owner edits before deciding cannot use
+its decision time and is credited up to the last sweep that saw it still open: the
+sweep's reconcile records the open wait on every pass (H464d), so that credit is the
+same whether or not anyone opened the HUD — the report routes only read it. This does not create an approval timeout or
 extend the absolute goal deadline. Budget diagnostics separately report raw wall
 time and excluded human-wait time. Running out of interrupts
 blocks the run rather than ending it, so the work waits instead of nagging.

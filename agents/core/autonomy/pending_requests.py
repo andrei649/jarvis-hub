@@ -41,6 +41,13 @@ Every rule below exists against a specific way of faking an approval:
 * **A stop outranks an answer.** A resolution never resumes a run that is
   stopping or already terminal: the asks are still closed (the record should say
   what the answer was) but the run does not move.
+* **A wait still open is observed here (H464d).** H487 credits the time the owner
+  took to decide, and for an ask whose decision stamp cannot be used (the owner
+  edited it before approving) only up to the last time the open wait was observed
+  on the record. The report routes are read-only, so this reconcile — which reads
+  every blocked run's asks on each sweep anyway — is the observer: a run still
+  waiting gets one settling budget read, and the credit is the same whether or not
+  anyone looked at the HUD.
 
 Nothing here reads the environment and nothing here authorises: the reconciler
 can unblock a run, which is strictly less than being able to start one.
@@ -270,6 +277,7 @@ class PendingRequests:
             )
         if any(o.resolution == "waiting" for o in outcomes):
             waiting = sum(1 for o in outcomes if o.resolution == "waiting")
+            self._observe_wait(run_id)
             return ReconcileResult(
                 run_id, outcomes,
                 note=f"still waiting on {waiting} decision(s)",
@@ -295,6 +303,22 @@ class PendingRequests:
         except WorkRunError as exc:
             return ReconcileResult(run_id, outcomes, note=f"resume refused: {exc.reason}")
         return ReconcileResult(run_id, outcomes, resumed=True, note="every ask is answered")
+
+    def _observe_wait(self, run_id: str) -> None:
+        """Record, durably, that the run's approval wait is still open (H464d).
+
+        The ledger's settling budget read extends each open wait source to now when
+        — and only when — its task is still blocked on the owner with the intent it
+        was queued with; a decided, edited or expired task is never extended. Best
+        effort: a failed observation costs credit, never the reconcile."""
+        observe = getattr(self._ledger, "budget_state", None)
+        if not callable(observe):
+            return
+        try:
+            observe(run_id)
+        except Exception:
+            logger.debug("could not observe the open approval wait of %s", run_id,
+                         exc_info=True)
 
     def _unmarked_block(self, run_id: str) -> bool:
         """Whether the run's block carries no ``approval_block_seq`` (a pre-v3 block).

@@ -15,6 +15,15 @@ hardest ones to leave out:
   while the barrier is in force, though: past its cap (or, for a clock, past its
   time) the run reads as it would without one, even when no sweep has run to
   clear the stale record. That is a plain clock comparison, never a probe.
+* **A held run says so, and why (H464d).** A run whose plan cannot be read just
+  now is held — no step, no grade — and the brief says "held — …" in plain words
+  with the time it started, from the hold the ledger recorded, rather than leaving
+  it to read as "opened, no work started yet" all night.
+* **The hub's own stops read as what they are.** A run the hub stopped — a spent
+  budget settled by the sweep, a plan that no longer binds to its approval, an
+  approved row it had to refuse — is not "you stopped it"; its reason is given in
+  plain words (``no_approved_fingerprint`` is "opened before this version tied a
+  run to the plan you approved").
 * **Nothing is inferred.** Every number comes from the ledger. When the ledger
   has nothing — no runs at all — the brief says so rather than rendering a row
   of zeros under a confident heading.
@@ -59,6 +68,33 @@ _BUDGET_TEXT: Mapping[str, str] = {
     "interrupts": "it had no interruptions left",
 }
 
+# A hold's reason, as a person reads it (H464d). An unknown code is shown as is.
+_HOLD_TEXT: Mapping[str, str] = {
+    "approval_task_unreadable": "its approval could not be read",
+    "no_task_queue": "no task queue is bound to read its approval",
+    "run_steps_unreadable": "its own steps could not be read",
+}
+
+# Why the hub stopped a run whose plan does not bind to its approval
+# (``plan not bound to its approval: <code>``), as a person reads it.
+_UNBOUND_PREFIX = "plan not bound to its approval: "
+_UNBOUND_TEXT: Mapping[str, str] = {
+    "no_approved_fingerprint": (
+        "it was opened before this version tied a run to the plan you approved; "
+        "approve the goal again to run it"),
+    "approved_goal_changed": "its approval was edited after you approved it",
+    "payload_changed_after_approval": "its approval was edited after you approved it",
+    "not_decided_by_a_human": "its goal was approved by a policy, not by you",
+    "approval_task_gone": "its approval no longer exists",
+    "goal_does_not_match_run": "its approval belongs to another run",
+    "not_opened_from_a_goal_card": "it was not opened from a goal you approved",
+    "plan_task_out_of_scope": "a row of its plan queues work outside the goal's scope",
+    "approved_goal_invalid": "its approval can no longer be read as a goal",
+}
+# Stops the hub makes itself: shown as "stopped — <reason>", never "you stopped it".
+_HUB_STOPS = (_UNBOUND_PREFIX, "approved row refused by scope:",
+              "approved row kept failing:", "stuck:")
+
 _MAX_LINE = 300
 
 
@@ -100,6 +136,27 @@ def _waiting_on(run: Mapping[str, Any], now: float) -> str | None:
     return describe(barrier)
 
 
+def _held(snapshot: Mapping[str, Any]) -> str | None:
+    """What a live run is held on, in plain words, or None (H464d). Only for a run
+    that is planning or working: a finished one is not held any more."""
+    hold = snapshot.get("hold")
+    run = dict(snapshot.get("run") or {})
+    if not isinstance(hold, Mapping) or run.get("status") not in {"planning", "working"}:
+        return None
+    reason = str(hold.get("reason") or "").strip()
+    return _HOLD_TEXT.get(reason, reason or "its plan cannot be read just now")
+
+
+def _hub_stop(reason: str) -> str | None:
+    """A stop reason the hub wrote, in plain words; None for the owner's own."""
+    if reason.startswith(_UNBOUND_PREFIX):
+        code = reason[len(_UNBOUND_PREFIX):].strip()
+        return _UNBOUND_TEXT.get(code, reason)
+    if reason.startswith(_HUB_STOPS):
+        return reason
+    return None
+
+
 def _run_headline(snapshot: Mapping[str, Any], now: float) -> str:
     """One sentence: what happened to this run, worst news first."""
     run = dict(snapshot.get("run") or {})
@@ -119,13 +176,25 @@ def _run_headline(snapshot: Mapping[str, Any], now: float) -> str:
         # when capped earlier, contradict it.
         cap = until(run.get("barrier")) if run["barrier"].get("kind") != "deadline" else ""
         return f"parked — waiting on {waiting_on}" + (f" (at most until {cap})" if cap else "")
+    held = _held(snapshot)
+    if held:
+        since = _finite(dict(snapshot.get("hold") or {}).get("since"))
+        at = f" since {time.strftime('%H:%M', time.localtime(since))}" if since else ""
+        return f"held — {held}{at}; it reads again on the next sweep"
     text = _STATUS_TEXT.get(status, status or "in an unknown state")
-    if status == "exhausted":
-        limit = str(run.get("stop_reason") or "").removeprefix("budget:")
+    stop_reason = str(run.get("stop_reason") or "")
+    if status == "exhausted" or (status == "stopped" and stop_reason.startswith("budget:")):
+        # The sweep and the supervisor settle a spent run as stopped with
+        # ``budget:<limit>``; it ran out of budget either way (H464d).
+        limit = stop_reason.removeprefix("budget:")
         detail = _BUDGET_TEXT.get(limit)
+        text = _STATUS_TEXT["exhausted"]
         return f"{text} — {detail}" if detail else text
-    if status == "stopped" and run.get("stop_reason"):
-        return f"{text} ({_clip(run['stop_reason'], 120)})"
+    if status == "stopped" and stop_reason:
+        hub = _hub_stop(stop_reason)
+        if hub is not None:
+            return f"stopped — {_clip(hub, 200)}"
+        return f"{text} ({_clip(stop_reason, 120)})"
     return text
 
 
@@ -168,7 +237,10 @@ def build_run_summary(
         "title": _clip(run.get("title")),
         "status": run.get("status"),
         "headline": _run_headline(snapshot, now),
+        # The stop reason as recorded, beside the headline's plain words (H464d).
+        "stop_reason": _clip(run.get("stop_reason"), 200),
         "waiting_on": _waiting_on(run, now),
+        "held": _held(snapshot),
         "steps": len(steps),
         "outcomes": outcomes,
         "steps_left": budget.get("steps_left"),
@@ -221,6 +293,8 @@ def build_company_brief(
         "needs_you": [r["run_id"] for r in needs_you],
         # Parked on real async work (H464): not stuck, not needing you — waiting.
         "parked": [r["run_id"] for r in runs if r.get("waiting_on")],
+        # Held (H464d): its plan could not be read just now; it reads again.
+        "held": [r["run_id"] for r in runs if r.get("held")],
         "unauthorised": [r["run_id"] for r in unauthorised],
         "runs": runs,
     }
@@ -248,6 +322,10 @@ def render_company_brief(brief: Mapping[str, Any]) -> str:
     parked = [r for r in brief.get("runs") or () if r.get("waiting_on")]
     if parked:
         lines += [f"⏸ {r['title']} is parked, waiting on {r['waiting_on']}." for r in parked]
+        lines.append("")
+    held = [r for r in brief.get("runs") or () if r.get("held")]
+    if held:
+        lines += [f"⏸ {r['title']} is held: {r['held']}." for r in held]
         lines.append("")
 
     for run in brief.get("runs") or ():

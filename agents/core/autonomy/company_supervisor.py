@@ -62,6 +62,13 @@ park, no grade; the next tick asks again), and one that provably cannot be run �
 its approval does not bind, or an approved row is refused — stops the run with the
 reason on its record, the way a stuck run is stopped, rather than grading a
 checklist nobody can prove was finished.
+
+A hold is on the record (H464d): the tick that starts one writes a ``hold.start``
+run event with its reason — one per hold, never one per sweep — and the first tick
+that can plan again writes ``hold.end``, so the brief can say the run is held and
+why. A held run still spends wall-clock time, and when its budget is spent the
+scheduler settles it through :meth:`CompanySupervisor.settle_spent`, like any
+spent run.
 """
 
 from __future__ import annotations
@@ -149,6 +156,10 @@ class Action:
         return self.barrier is not None
 
 
+#: The cause a stop on a goal that does not bind to its approval is recorded with.
+UNBOUND_CAUSE = "plan not bound to its approval"
+
+
 @dataclass(frozen=True)
 class Hold:
     """The planner cannot say what the run should do next (H464c).
@@ -163,6 +174,8 @@ class Hold:
 
     reason: str
     stop: bool = False
+    # What a stop is recorded as, before the reason: ``<cause>: <reason>`` (H464d).
+    cause: str = UNBOUND_CAUSE
 
 
 @dataclass(frozen=True)
@@ -297,6 +310,7 @@ class CompanySupervisor:
         action = await _maybe_await(self._plan_next(context))
         if isinstance(action, Hold):
             return self._hold(run_id, action)
+        self._end_hold(run_id)
         if action is None:
             self._reset_free_refusals(run_id)
             return await self._grade(run_id)
@@ -393,20 +407,42 @@ class CompanySupervisor:
 
     def _hold(self, run_id: str, hold: Hold) -> TickResult:
         """The planner cannot say what is next: do nothing now, or end the run with
-        the reason — never grade it (H464c)."""
+        the reason — never grade it (H464c). A hold that starts is written to the
+        run's record once (H464d); the ledger drops a repeat of the open one."""
         reason = str(hold.reason or "the plan cannot be read")[:160]
         if not hold.stop:
             logger.info("run %s held: %s", run_id, reason)
+            note = getattr(self._ledger, "note_hold", None)
+            if callable(note):
+                try:
+                    note(run_id, reason)
+                except Exception:
+                    logger.warning("could not record the hold on run %s", run_id,
+                                   exc_info=True)
             return TickResult("idle", f"held: {reason}", run_id)
         self._streaks.pop(run_id, None)
         self._reset_free_refusals(run_id)
+        cause = str(hold.cause or UNBOUND_CAUSE)
         try:
-            self._ledger.request_stop(run_id, reason=f"plan not bound to its approval: {reason}")
+            self._ledger.request_stop(run_id, reason=f"{cause}: {reason}")
             self._ledger.settle_stop(run_id)
         except WorkRunError as exc:
             return TickResult("idle", f"stop refused: {exc.reason}", run_id)
-        logger.warning("run %s stopped: its plan cannot be proven (%s)", run_id, reason)
-        return TickResult("stopped", f"the approved plan cannot be proven: {reason}", run_id)
+        logger.warning("run %s stopped: %s (%s)", run_id, cause, reason)
+        if cause == UNBOUND_CAUSE:
+            return TickResult("stopped", f"the approved plan cannot be proven: {reason}", run_id)
+        return TickResult("stopped", f"{cause}: {reason}", run_id)
+
+    def _end_hold(self, run_id: str) -> None:
+        """The planner could say what is next: a hold on the record ends (H464d)."""
+        end = getattr(self._ledger, "end_hold", None)
+        if not callable(end):
+            return
+        try:
+            end(run_id)
+        except Exception:
+            logger.warning("could not record the end of a hold on run %s", run_id,
+                           exc_info=True)
 
     def _free_refusal(self, run_id: str, reason: str) -> TickResult:
         """A planner wait refused for a reason that is not the planner's fault: free,
@@ -480,6 +516,21 @@ class CompanySupervisor:
         except WorkRunError as exc:
             return TickResult("idle", f"stop refused: {exc.reason}", run_id)
         return TickResult("stopped", "the owner stopped the run", run_id)
+
+    def settle_spent(self, run_id: str) -> TickResult | None:
+        """Settle a run whose budget is spent, the way a tick settles one (H464d).
+
+        For the scheduler, which never ticks a spent run, so without this nothing
+        ever settled it. The budget is re-read here: a run whose budget merely could
+        not be read raises out of this (the caller logs it and leaves the run), and
+        one that is not spent, not open or already settling is left alone (None)."""
+        run = self._ledger.get(run_id)
+        if run is None or run.terminal or run.status == "stopping":
+            return None
+        limit = self._ledger.budget_state(run_id)["exceeded"]
+        if not limit:
+            return None
+        return self._settle_exhausted(run_id, limit)
 
     def _settle_exhausted(self, run_id: str, limit: str) -> TickResult:
         """A spent budget ends the run. The ledger already moves it on the next
@@ -600,6 +651,7 @@ __all__ = [
     "FLAG",
     "MAX_FREE_WAIT_REFUSALS",
     "TICK_OUTCOMES",
+    "UNBOUND_CAUSE",
     "Action",
     "CompanySupervisor",
     "Hold",

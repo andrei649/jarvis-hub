@@ -243,16 +243,17 @@ async def test_a_v4_database_gains_the_pin_column_and_its_runs_read_as_unpinned(
     path = tmp_path / "old.db"
     conn = sqlite3.connect(path)
     apply_migrations(conn, work_runs.MIGRATIONS[:4], name="work_runs")
-    # A row written before the pin existed, fingerprinted over the identity it had then.
-    run = work_runs.WorkRun(id="r1", goal_id="g", title="t", status="planning",
-                            approved_by="task:5:owner", budget=Budget(max_steps=5),
-                            started_at=1_000.0, updated_at=1_000.0)
+    # A row written before the pin existed, fingerprinted over the identity it had then
+    # — written out by hand, never through today's identity() (H464d, mutant M05: a
+    # pin always in the identity read every legacy run as tampered, unseen here).
+    budget = Budget(max_steps=5).as_dict()
+    v4_identity = {"id": "r1", "goal_id": "g", "title": "t", "approved_by": "task:5:owner",
+                   "budget": budget, "started_at": 1_000.0, "deadline_at": 0.0}
     conn.execute(
         "INSERT INTO runs (id, goal_id, title, status, approved_by, budget, started_at, "
         "updated_at, deadline_at, fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (run.id, run.goal_id, run.title, run.status, run.approved_by,
-         work_runs._canonical(run.budget.as_dict()), 1_000.0, 1_000.0, 0.0,
-         work_runs._fingerprint(run.identity())),
+        ("r1", "g", "t", "planning", "task:5:owner", work_runs._canonical(budget),
+         1_000.0, 1_000.0, 0.0, work_runs._fingerprint(v4_identity)),
     )
     conn.commit()
     conn.close()
@@ -261,6 +262,7 @@ async def test_a_v4_database_gains_the_pin_column_and_its_runs_read_as_unpinned(
         try:
             assert led.get("r1").approved_fingerprint == ""
             assert led.tampered("r1") is False
+            assert led.snapshot("r1")["tampered"] is False
         finally:
             led.close()
     with sqlite3.connect(path) as check:
@@ -391,6 +393,7 @@ async def test_the_hub_park_ends_early_enough_for_the_run_to_be_graded(world, bo
     """The park's cap used to be the exact end of the budget (or the deadline): a task
     approved but never started ate the time left and the run was never graded."""
     from agents.core.autonomy.run_barriers import GRADE_MARGIN_SECONDS, grade_margin
+    from agents.core.autonomy.schedule_runtime import next_due_after_tick
 
     if bound == "budget":
         draft = _draft(plan=[_ROW], budget=Budget(max_seconds=3_600.0))
@@ -414,8 +417,10 @@ async def test_the_hub_park_ends_early_enough_for_the_run_to_be_graded(world, bo
     await _sweep(runtime)
     parked = world.ledger.get(run.id).barrier
     assert parked is not None and parked["source"] == "hub"
-    margin = grade_margin(draft.budget.max_seconds, cadence + GRADE_MARGIN_SECONDS)
-    assert margin == max(cadence + 60.0, 0.1 * draft.budget.max_seconds)
+    # H464d: the next sweep the run is due on plus a minute — no share of the budget
+    margin = grade_margin(next_due_after_tick(cadence, config.interval_seconds)
+                          + GRADE_MARGIN_SECONDS)
+    assert margin == cadence + 60.0
     if bound == "budget":
         left = world.ledger.budget_state(run.id)["seconds_left"]
         assert parked["cap_at"] == pytest.approx(world.clock[0] + left - margin)
@@ -435,8 +440,10 @@ async def test_the_hub_park_ends_early_enough_for_the_run_to_be_graded(world, bo
 
 
 async def test_no_park_when_the_time_left_is_all_needed_to_grade(world):
-    """Nothing to spare past the grading margin: the hub does not park at all."""
-    draft = _draft(plan=[_ROW], deadline=T0 + 400.0)
+    """Nothing to spare past the grading margin: the hub does not park at all. The
+    park is asked for 30 s in, with exactly the margin (H464d: 360 s at the default
+    cadence, no share of the budget) left before the deadline."""
+    draft = _draft(plan=[_ROW], deadline=T0 + 30.0 + 360.0)
     tid = _goal_task(world.q, draft)
     run = _open(world, tid)
     _finish(world.q, tid)
@@ -456,14 +463,15 @@ async def test_no_park_when_the_time_left_is_all_needed_to_grade(world):
     assert world.ledger.barrier_sets(run.id, source="hub") == []
 
 
-async def test_the_grading_margin_is_a_tenth_of_the_budget_or_the_floor():
+async def test_the_grading_margin_is_the_floor_and_at_least_a_minute():
+    """H464d: no tenth of the budget — the margin is the floor the runtime passes."""
     from agents.core.autonomy.run_barriers import GRADE_MARGIN_SECONDS, grade_margin
 
     assert GRADE_MARGIN_SECONDS == 60.0
-    assert grade_margin(100.0) == 60.0
-    assert grade_margin(3_600.0) == 360.0
-    assert grade_margin(3_600.0, 300.0) == 360.0
-    assert grade_margin(600.0, 300.0) == 300.0
+    assert grade_margin() == 60.0
+    assert grade_margin(30.0) == 60.0
+    assert grade_margin(360.0) == 360.0
+    assert grade_margin(1_260.0) == 1_260.0
 
 
 # ── M4: safe mode leaves the company sweep out ───────────────────────────────
@@ -730,7 +738,8 @@ async def test_the_runtime_stops_a_run_whose_approved_row_the_planner_refuses(wo
     assert orch.calls == [] and graded == []
     after = world.ledger.get(run.id)
     assert after.status == "stopped"
-    assert after.stop_reason.startswith("plan not bound to its approval: approved row refused")
+    # H464d (C4): the plan IS bound; the row is refused by the scope, and says so
+    assert after.stop_reason.startswith("approved row refused by scope: ")
     assert "file.write" in after.stop_reason
 
 

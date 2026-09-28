@@ -29,6 +29,17 @@ Waking is not a licence, so the rules are about restraint, not throughput:
 * **One run at a time by default.** ``max_concurrent`` bounds how many runs the
   scheduler is willing to advance per sweep, so enabling company mode on a box
   with ten open goals does not mean ten simultaneous agents.
+* **A spent run is settled, not forgotten (H464d).** A run whose budget is spent is
+  never ticked, so the supervisor's own settle never reached it and it stayed open —
+  ``planning`` or ``working``, no reason — for ever. The sweep hands it to
+  ``settle_spent`` (the supervisor's), which re-reads the budget and settles it the
+  way any spent run is settled; a budget that merely could not be read is skipped as
+  ``budget_spent`` but never settled on that account.
+* **A sweep a moment early is the same sweep.** The timer fires on a fixed schedule
+  and each sweep reads the clock a few milliseconds late, so "one interval since the
+  last tick" allows :data:`DUE_SLACK_SECONDS` of slack (at most 1 % of the interval);
+  without it a run is skipped on every sweep that happens to start earlier than the
+  one before (H464d).
 * **Nothing here retries.** A tick that failed is the supervisor's business; the
   scheduler simply comes back at the next interval. A scheduler with its own retry
   loop would multiply the supervisor's failure budget behind its back.
@@ -43,6 +54,7 @@ and the caller checks ``JARVIS_COMPANY_MODE`` before constructing one.
 from __future__ import annotations
 
 import logging
+import math
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -53,6 +65,11 @@ from agents.core.autonomy.work_runs import TERMINAL_STATUSES
 logger = logging.getLogger("jarvis.schedule_runtime")
 
 FLAG = "JARVIS_COMPANY_MODE"
+
+# How early a sweep may start and still count as one interval after a run's last
+# tick (capped at 1 % of the interval): the timer's own jitter, never a real early
+# sweep (H464d).
+DUE_SLACK_SECONDS = 1.0
 
 # Why a run was not advanced this sweep. Every skip is reported: a silently
 # skipped run looks identical to one that had nothing to do.
@@ -88,6 +105,29 @@ class ScheduleConfig:
         for hour in (self.night_start, self.night_end):
             if not 0 <= int(hour) <= 23:
                 raise ValueError("night window hours must be 0-23")
+
+
+def due_slack(interval_seconds: float) -> float:
+    """The slack :meth:`ScheduleRuntime.due` allows on the per-run interval."""
+    return min(DUE_SLACK_SECONDS, 0.01 * float(interval_seconds))
+
+
+def next_due_after_tick(sweep_seconds: float, interval_seconds: float) -> float:
+    """Seconds from a run's tick to the first later sweep on which it is due again.
+
+    Sweeps come every ``sweep_seconds``; a run is due once ``interval_seconds``
+    (less :func:`due_slack`) have passed since its last tick. So it is due on the
+    first sweep that far on: one sweep when the sweep is at least the interval, else
+    the first multiple of the sweep past the interval — 360 s for a 120 s sweep and a
+    300 s interval, 400 s for a 200 s sweep. The hub's park before grading stops this
+    much (and a minute) short of the run's end, so the run is still due, and graded,
+    on a sweep before its time runs out (H464d).
+    """
+    sweep, interval = float(sweep_seconds), float(interval_seconds)
+    if not (math.isfinite(sweep) and sweep > 0):
+        return interval
+    sweeps = max(1, math.ceil((interval - due_slack(interval)) / sweep))
+    return sweep * sweeps
 
 
 @dataclass(frozen=True)
@@ -153,9 +193,14 @@ class ScheduleRuntime:
         clock: Callable[[], float] = time.time,
         local_hour: Callable[[], int] | None = None,
         barrier_active: Callable[[str], bool] | None = None,
+        settle_spent: Callable[[str], Any] | None = None,
     ) -> None:
         self._ledger = ledger
         self._tick = tick
+        # H464d: settles a run the sweep skips as budget_spent (the supervisor's
+        # ``settle_spent``). Optional, so a scheduler built without one behaves
+        # exactly as before.
+        self._settle_spent = settle_spent
         # Reading the answers to outstanding asks. Optional so a scheduler built
         # without one behaves exactly as before; wired, it runs BEFORE the runs are
         # listed, so a run whose ask was answered overnight is eligible in this
@@ -200,7 +245,8 @@ class ScheduleRuntime:
                 # A broken check must not park a run forever: tick it normally.
                 logger.debug("barrier check failed; ticking normally", exc_info=True)
         last = self._last.get(run.id)
-        if last is not None and (now - last) < self.config.interval_seconds:
+        interval = self.config.interval_seconds
+        if last is not None and (now - last) < interval - due_slack(interval):
             return "not_due"
         return ""
 
@@ -219,6 +265,19 @@ class ScheduleRuntime:
             )
         except Exception:
             logger.debug("scheduler could not clear a spent run's barrier", exc_info=True)
+
+    def _settle(self, run: Any) -> str:
+        """Settle a run skipped as ``budget_spent`` (H464d). The hook re-reads the
+        budget, so a read that failed here settles nothing. Best effort: a failure
+        leaves the run where it was, to be tried again on the next sweep."""
+        if self._settle_spent is None:
+            return ""
+        try:
+            result = self._settle_spent(run.id)
+        except Exception:
+            logger.warning("scheduler could not settle spent run %s", run.id, exc_info=True)
+            return ""
+        return str(getattr(result, "outcome", "") or "")
 
     def quiet_hours(self) -> bool:
         """True when a step that would interrupt the owner should wait.
@@ -263,10 +322,12 @@ class ScheduleRuntime:
         for run in runs:
             reason = self.due(run, now=now)
             if reason:
+                outcome = ""
                 if reason == "budget_spent":
                     # Only the sweep writes this, never a status read (snapshot).
                     self._clear_spent_barrier(run)
-                entries.append(SweepEntry(run.id, False, reason))
+                    outcome = self._settle(run)
+                entries.append(SweepEntry(run.id, False, reason, outcome))
                 continue
             if advanced >= self.config.max_concurrent:
                 # Not an error: the next sweep picks it up. Reported so a run that
@@ -333,13 +394,16 @@ def sweep_summary(results: Sequence[SweepResult]) -> dict[str, Any]:
 
 
 __all__ = [
+    "DUE_SLACK_SECONDS",
     "FLAG",
     "SKIP_REASONS",
     "ScheduleConfig",
     "ScheduleRuntime",
     "SweepEntry",
     "SweepResult",
+    "due_slack",
     "is_night",
+    "next_due_after_tick",
     "next_due_at",
     "sweep_summary",
 ]

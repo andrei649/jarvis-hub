@@ -93,16 +93,22 @@ def task_kind_in_scope(task_kind: Any, scope_kinds: Any) -> bool:
 
     The scope names step kinds, and a row's task is what actually reaches the
     governed intake, so the task's kind is held to the same scope: it must BE one
-    of the scope kinds, or sit under one (``research.collect`` under ``research``).
-    ``file.write`` is not inside ``research``, and a kind that is not a string is
-    inside nothing. An empty scope is the explicitly unrestricted goal.
+    of the scope kinds, or sit under one — the whole scope kind, then a dot
+    (``research.collect`` under ``research``, ``file.write.append`` under
+    ``file.write``; H464d: not just under its first segment). ``file.write`` is not
+    inside ``research``, ``file.writer`` is not inside ``file.write``, and a kind
+    that is not a string is inside nothing. An empty scope is the explicitly
+    unrestricted goal.
     """
     scope = frozenset(scope_kinds or ())
     if not scope:
         return True
     if not isinstance(task_kind, str):
         return False
-    return task_kind in scope or task_kind.split(".", 1)[0] in scope
+    return any(
+        isinstance(kind, str) and kind and (task_kind == kind or task_kind.startswith(kind + "."))
+        for kind in scope
+    )
 
 
 @dataclass(frozen=True)

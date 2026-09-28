@@ -36,6 +36,15 @@ Two proposers ship. :class:`ChecklistPlanner` walks a fixed list written when th
 goal was approved — fully deterministic, and the one to use when the owner wants
 the run to do a known thing. :class:`ModelPlanner` wraps an injected async
 callable (an LLM) behind the same clamps.
+
+The checklist reads its position from the ledger (H464d): a row is done once a step
+for it was queued, ran or was answered — a step that *failed* (the governed intake
+raised, returned no task, or the task vanished) did not do the row, so the row is
+proposed again on a later tick, at most ``MAX_ROW_ATTEMPTS`` times in all; after
+that the checklist refuses it (``row_failed``) and the runtime stops the run with
+the row named. A read of the run's steps that fails says nothing about how far the
+plan has got, so the checklist refuses (``steps_unreadable``) and the runtime holds
+the tick, rather than reading "nothing done" and asking for row 1 again.
 """
 
 from __future__ import annotations
@@ -59,7 +68,22 @@ REFUSALS = (
     "malformed",
     "proposer_failed",
     "budget_spent",
+    "row_failed",          # a checklist row failed MAX_ROW_ATTEMPTS times (H464d)
+    "steps_unreadable",    # the run's own steps could not be read just now (H464d)
 )
+
+# Attempts at one checklist row — the first and its retries — before the checklist
+# refuses it as ``row_failed`` (H464d).
+MAX_ROW_ATTEMPTS = 3
+
+
+class _Refused(Exception):
+    """A proposer's own refusal, carried out of ``_propose`` as a decision."""
+
+    def __init__(self, refusal: str, detail: str) -> None:
+        super().__init__(refusal)
+        self.refusal = refusal
+        self.detail = detail
 
 _MAX_SUMMARY = 500
 
@@ -139,6 +163,8 @@ class _ClampedPlanner:
 
         try:
             proposed = await self._propose(context)
+        except _Refused as refused:
+            return PlanDecision(None, refused.refusal, refused.detail)
         except Exception as exc:
             logger.warning("planner proposer failed", exc_info=True)
             return PlanDecision(None, "proposer_failed", exc.__class__.__name__)
@@ -164,8 +190,11 @@ class _ClampedPlanner:
                 f"task kind {str(action.task['kind'])[:64]} is not in "
                 f"{sorted(self.scope_kinds)}",
             )
-        if self._already_done(context, action):
-            return PlanDecision(None, "already_done", action.summary[:120])
+        try:
+            if self._already_done(context, action):
+                return PlanDecision(None, "already_done", action.summary[:120])
+        except _Refused as refused:
+            return PlanDecision(None, refused.refusal, refused.detail)
         return PlanDecision(action)
 
     async def _propose(self, context: Mapping[str, Any]) -> Any:  # pragma: no cover - abstract
@@ -241,27 +270,44 @@ class ChecklistPlanner(_ClampedPlanner):
         self._steps = list(steps)
 
     async def _propose(self, context: Mapping[str, Any]) -> Any:
-        """The first step this run has not taken yet, else None.
+        """The first row this run has not done yet, else None.
 
         Position is derived from the ledger rather than from a counter, so a
         planner rebuilt after a restart resumes where the run actually is instead
-        of starting the checklist again.
+        of starting the checklist again. A row is done once one of its steps did
+        not fail (H464d); a row with only failed steps is proposed again, until it
+        has failed ``MAX_ROW_ATTEMPTS`` times.
         """
-        done = self._done_fingerprints(context)
-        for step in self._steps:
-            if _fingerprint(step.kind, step.summary) not in done:
-                return step
+        steps = self._run_steps(context)
+        for row in self._steps:
+            want = _fingerprint(row.kind, row.summary)
+            tried = [s for s in steps if _fingerprint(s.kind, s.summary) == want]
+            if any(s.outcome != "failed" for s in tried):
+                continue
+            if len(tried) >= MAX_ROW_ATTEMPTS:
+                raise _Refused("row_failed",
+                               f"{row.summary[:120]} ({len(tried)} attempts)")
+            return row
         return None
 
-    def _done_fingerprints(self, context: Mapping[str, Any]) -> set[str]:
+    def _already_done(self, context: Mapping[str, Any], action: Action) -> bool:
+        """The repeat clamp, for a checklist: a row a step already did — one that did
+        not fail — is not proposed again; a failed one may be retried (H464d)."""
+        want = _fingerprint(action.kind, action.summary)
+        return any(_fingerprint(s.kind, s.summary) == want and s.outcome != "failed"
+                   for s in self._run_steps(context))
+
+    def _run_steps(self, context: Mapping[str, Any]) -> list[Any]:
+        """The run's steps. A read that fails is a refusal the runtime holds on, never
+        "nothing done" (H464d)."""
         run_id = dict(context.get("run") or {}).get("id")
         if self._ledger is None or not run_id:
-            return set()
+            return []
         try:
-            return {_fingerprint(s.kind, s.summary) for s in self._ledger.steps(run_id)}
-        except Exception:
-            logger.debug("planner could not read prior steps", exc_info=True)
-            return set()
+            return list(self._ledger.steps(run_id))
+        except Exception as exc:
+            logger.warning("planner could not read the run's steps", exc_info=True)
+            raise _Refused("steps_unreadable", exc.__class__.__name__) from None
 
 
 class ModelPlanner(_ClampedPlanner):
@@ -290,6 +336,7 @@ class ModelPlanner(_ClampedPlanner):
 
 
 __all__ = [
+    "MAX_ROW_ATTEMPTS",
     "REFUSALS",
     "ChecklistPlanner",
     "ModelPlanner",

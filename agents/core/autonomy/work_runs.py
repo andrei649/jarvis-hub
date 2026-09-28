@@ -1619,9 +1619,54 @@ class WorkRunLedger:
             return sets
         return [detail for detail in sets if detail.get("source") == source]
 
+    # ── holds (H464d) ────────────────────────────────────────────────────
+
+    def _last_hold_locked(self, run_id: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT kind, at, detail FROM run_events WHERE run_id = ? "
+            "AND kind IN ('hold.start', 'hold.end') ORDER BY seq DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+
+    def note_hold(self, run_id: str, reason: str) -> bool:
+        """Record that the run is held — its plan cannot be read just now — as a
+        ``hold.start`` event. Once per hold: while the same hold is open a repeat is
+        dropped (a held run is ticked, and held, on every sweep), and only a new
+        reason starts a new one. An event, never a step: it spends nothing. Returns
+        whether an event was written."""
+        reason = _text(reason, "reason", max_chars=160)
+        with self._lock:
+            self._run_locked(run_id)
+            last = self._last_hold_locked(run_id)
+            if (last is not None and last["kind"] == "hold.start"
+                    and _load(last["detail"]).get("reason") == reason):
+                return False
+            self._event_locked(run_id, "hold.start", self._now(), {"reason": reason})
+            self._conn.commit()
+        return True
+
+    def end_hold(self, run_id: str) -> bool:
+        """Record ``hold.end`` when the run's last hold is still open: its plan could
+        be read again. A no-op otherwise, so it is safe on every tick."""
+        with self._lock:
+            last = self._last_hold_locked(run_id)
+            if last is None or last["kind"] != "hold.start":
+                return False
+            self._event_locked(run_id, "hold.end", self._now(), {})
+            self._conn.commit()
+        return True
+
+    def hold_state(self, run_id: str) -> dict[str, Any] | None:
+        """The run's open hold — ``{"reason", "since"}`` — or None. Read-only."""
+        with self._lock:
+            last = self._last_hold_locked(run_id)
+        if last is None or last["kind"] != "hold.start":
+            return None
+        return {"reason": str(_load(last["detail"]).get("reason") or ""), "since": last["at"]}
+
     def events(self, run_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
-        """The run's barrier audit, newest first. Append-only: there is no API to
-        rewrite or delete an event."""
+        """The run's audit — barrier sets and clears, and holds (H464d) — newest
+        first. Append-only: there is no API to rewrite or delete an event."""
         limit = max(1, min(int(limit), 500))
         with self._lock:
             rows = self._conn.execute(
@@ -1749,6 +1794,9 @@ class WorkRunLedger:
             # H464: the barrier audit. Events are not steps, so they never count
             # toward budget or toward the unauthorised list below.
             "events": self.events(run_id),
+            # H464d: the hold the run is in, if any — its plan cannot be read just
+            # now — so the brief can say it is held and why.
+            "hold": self.hold_state(run_id),
             # A run is only "authorised throughout" when every step that changed
             # something names the durable task that was approved to change it.
             "unauthorised_steps": [

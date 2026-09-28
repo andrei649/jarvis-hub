@@ -117,22 +117,27 @@ _MODEL_SOURCES = frozenset({"planner", "judge"})
 IN_FLIGHT_TASK_STATUSES = frozenset({"approved", "running"})
 
 # The room a hub park leaves at the end of a run's time so the run can still be
-# graded (H464c): the park is taken BEFORE grading, and a park that ran to the very
-# end of the budget or the deadline left no tick in which to grade — the run ended
-# spent with no verdict. The margin is the longest of a minute, a tenth of the
-# run's wall-clock budget, and the floor the runtime passes (one sweep interval
-# plus a minute, so the sweep after the cap still falls inside the run's time and
-# grades it). When the time left is not more
-# than the margin the hub does not park at all (``no_time_left``), and the run is
-# graded now. Only the hub's own park reserves it: a planner's or judge's wait is
-# the model's choice and stays capped by the budget as before.
+# graded (H464c, sized exactly in H464d): the park is taken BEFORE grading, and a
+# park that ran to the very end of the budget or the deadline left no tick in which
+# to grade — the run ended spent with no verdict. The margin is exactly what grading
+# needs: the floor the runtime passes — the time from a tick to the next sweep on
+# which the scheduler's per-run interval lets the run be due again
+# (``schedule_runtime.next_due_after_tick``), plus a minute — and never less than a
+# minute. It is NOT a share of the budget: a run with time to spare past the margin
+# waits for its task, and is graded on the work that landed (a tenth of an 8 h
+# budget, 48 minutes, graded a run over a task still running). The same margin
+# applies before a deadline. When the time left is not more than the margin the hub
+# does not park at all (``no_time_left``) and the run is graded now. Only the hub's
+# own park reserves it: a planner's or judge's wait is the model's choice and stays
+# capped by the budget as before.
 GRADE_MARGIN_SECONDS = 60.0
-GRADE_MARGIN_SHARE = 0.10
 
 
-def grade_margin(max_seconds: float, floor: float = GRADE_MARGIN_SECONDS) -> float:
-    """Seconds a hub park leaves before the end of the run's time (H464c)."""
-    return max(float(floor), GRADE_MARGIN_SHARE * float(max_seconds))
+def grade_margin(floor: float = GRADE_MARGIN_SECONDS) -> float:
+    """Seconds a hub park leaves before the end of the run's time: the floor, and at
+    least a minute (a floor that is not a number reads as the minute) (H464d)."""
+    floor = float(floor)
+    return max(GRADE_MARGIN_SECONDS, floor) if math.isfinite(floor) else GRADE_MARGIN_SECONDS
 
 
 class RunBarriersError(WorkRunError):
@@ -296,7 +301,7 @@ class RunBarriers:
         self._ledger = ledger
         self._read_task = read_task
         self._hooks = hooks
-        self._grade_floor = max(GRADE_MARGIN_SECONDS, float(grade_floor))
+        self._grade_floor = grade_margin(grade_floor)
         self._clock = clock or getattr(ledger, "_clock", None) or time.time
         self._pid_probe = pid_probe or default_pid_probe
         self._proc_identity = proc_identity or default_proc_identity
@@ -346,9 +351,7 @@ class RunBarriers:
         # the budget check then ends the run honestly. The hub's park, taken just
         # before grading, stops the grading margin short of both (H464c).
         own = MAX_BARRIER_SECONDS if kind == "deadline" else max_wait
-        reserve = (
-            grade_margin(run.budget.max_seconds, self._grade_floor) if source == "hub" else 0.0
-        )
+        reserve = self._grade_floor if source == "hub" else 0.0
         cap_at = min(
             now + own,
             (run.deadline_at or math.inf) - reserve,
@@ -386,7 +389,7 @@ class RunBarriers:
         (capped by the run's deadline and the time its budget has left, each less
         the grading margin — :func:`grade_margin` — so the run can still be graded
         when the wait runs out; with no time to spare past the margin it is refused
-        ``no_time_left`` and the caller grades now, H464c).
+        ``no_time_left`` and the caller grades now, H464c/H464d).
 
         Returns :meth:`state`, or None when there is nothing to wait on — no reader
         bound, no task of this run in flight, or every in-flight task already used.
@@ -741,7 +744,6 @@ __all__ = [
     "BARRIER_KINDS",
     "DEFAULT_WAIT_SECONDS",
     "GRADE_MARGIN_SECONDS",
-    "GRADE_MARGIN_SHARE",
     "IN_FLIGHT_TASK_STATUSES",
     "MAX_BACKGROUND",
     "MAX_BARRIERS_PER_RUN",
