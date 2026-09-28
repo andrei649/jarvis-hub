@@ -1,30 +1,50 @@
-# H464 round 3: open findings (brief for whoever lands it)
+# H464 round 3: brief and residuals
 
-**Status at handover (2026-09-28):** the previous session was still fixing these on its local branch.
+**Landed on 2026-09-28** in `b06fbaf0` ("fix(H464): grade after the task lands at any cadence, credit without polling,
+visible holds, retried intake") and `a54bb4d5` (records).
+- Items 1–7 below are all done, red-first. The new test file failed 29 of 32 cases on the old code.
+- 43/43 mutants were killed.
+- A closure verifier confirmed each item on the production path: real queue, worker, ledger and scheduler job; 25 of 25
+  reverts caught by named tests; 1,728-case cadence grid.
+- An adversarial hunter found no MAJOR.
+- H464 stays **partial**. The owner decisions P31.1–3 are in `docs/OWNER_TASKS.md`.
 
-- **Landed?** Check with
-  `git log origin/claude/cto-session-recovery-qinvkg --oneline -i --grep "grade after the task lands"`.
-  Whoever lands this puts that phrase in the commit subject.
-  If that commit is on the branch, this brief is done. Read its report in the commit body and move on.
-- **Otherwise,** build these items red-first, with a closure check and an adversarial hunt after.
+The margin rule differs from item 1 as written below: the floor is the next due sweep after a tick, plus 60 s, not
+`max(cadence, interval) + 60 s`. That is because a 200 s cadence is next due 400 s after a tick. `due()` also allows
+min(1 s, 1 %) of timer slack.
 
-**Base:** H464 rounds 1–2 are on the branch; they landed with the handover push.
-- `0825ba33`: the shipped Company Mode runtime builds from the real orchestrator. It reads the approved checklist back from
-  its `goal.approve` task, and the hub parks a finished plan on its own in-flight tasks.
-- `1b7afa8c`: the checklist is bound to the approved goal's fingerprint, pinned at `open_run` (ledger `_v5`).
-  - One run per approval.
-  - A grading margin.
-  - Safe mode builds nothing.
-  - Scope-checked rows.
-  - Hold versus stop.
-  - A read-only report path.
+## Residuals after round 3 (known gaps; not yet fixed)
 
-H464 stays **partial**. The owner decisions P31.1–3 are in `docs/OWNER_TASKS.md`.
+Company mode is off unless `JARVIS_COMPANY_MODE` is set, and production wires no grader. So M1 is latent, and M2 is rare
+and bounded.
 
-**Production exposure:**
-- Company mode is off unless `JARVIS_COMPANY_MODE` is set (`scheduler_service.py`).
-- With it on, production still wires no grader: `_grade` idles with "no grader is wired". That neutralises item 1
-  only. Items 2, 4 and 5 apply whenever company mode is on.
+- **M1 (MINOR, latent): the grading margin cannot absorb one dropped sweep.**
+  - The sweep job is registered with APScheduler's defaults: `misfire_grace_time=1`, `max_instances=1`. A fire delayed
+    more than 1 s is dropped, and with it a parked run's only grading sweep.
+  - Fix: add one cadence of tolerance to the margin, or register the job with `misfire_grace_time` ≥ 60 s and
+    `coalesce=True`, and widen `due()`'s slack to match.
+- **M2 (MINOR, bounded by the 360 s cap per approval block): one transient queue read error cuts approval-wait credit.**
+  - This happens during the reconciler's per-sweep observation of an open wait: the wait source closes at its last
+    observation.
+  - Fix: treat a read that raised as "no observation" and leave the source open.
+- **NITs:**
+  - A hold still open when the run stops never gets `hold.end`, so `GET /api/company/runs/{id}` still shows it. The
+    brief filters it out.
+  - An ask that expired unanswered becomes a failed step and is re-asked up to 3 times. This can't happen yet: company
+    asks carry no approval deadline.
+  - `docs/UPGRADE.md` and the brief tell the owner to "approve the goal again". The old card can't be re-approved, so
+    only a new card works. Reword it.
+  - B1 stop codes (`invalid_max_steps`, `invalid_payload`) still read as jargon in the brief. Add them to the
+    plain-words map.
+- **Test gaps (surviving mutants):**
+  - `settle_spent` must re-check the budget: a failed budget read must not stop a healthy run.
+  - With 3 rows and a middle row retried, row 3 must still be queued.
+  - A second failed steps read must hold, not `tick_failed`.
+  - The hold dedupe must update a changed reason.
+- **Pre-existing, not counted:** a row kind longer than 64 characters is stored truncated, so it never matches its own
+  step and is asked again every sweep.
+
+The original round-3 brief follows, for reference.
 
 ## Items
 

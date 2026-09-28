@@ -114,7 +114,8 @@ Run:
   2. a closure verifier and an adversarial hunter in parallel;
   3. fix rounds until no MAJOR or MINOR regression remains;
   4. records, push, then CI.
-- **If it prints a commit:** read that commit's message and skip this step.
+- **If it prints a commit:** read that commit's message and the "Residuals after round 3" list at the top of the brief.
+  Fix them only when you are already working in company-mode code; otherwise leave them as the recorded known gaps.
 
 ## 5. Then: the buckets, one at a time
 Run them in this order, following each prompt's own procedure exactly:

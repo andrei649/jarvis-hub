@@ -21,8 +21,8 @@ Branch `claude/cto-session-recovery-qinvkg`, **draft** PR #1207, synced with `ma
   - **Four bucket prompts** written.
   - Details are in [the Codex review note](../2026-09-28-codex-review/README.md), `BACKLOG.md` (Hermes sprint section) and
     the PR body.
-- **In flight at handover:** H464 round 3, see [h464-round3-brief.md](h464-round3-brief.md). Its first lines say how to
-  tell whether it landed.
+- **H464 round 3** landed in `b06fbaf0`. Its latent and bounded residuals (two MINOR, NITs, test gaps) are listed at the
+  top of [h464-round3-brief.md](h464-round3-brief.md).
 - **CI:**
   - The heads pushed this session (`788fc05f`, `8d256171`) passed every check.
   - `github-advanced-security` did not report on them. It is a repository setting and yours (P29).
