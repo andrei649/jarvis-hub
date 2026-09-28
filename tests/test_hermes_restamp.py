@@ -384,15 +384,29 @@ def test_cite_prints_only_the_diff_hunks_that_touch_cited_lines(repo, capsys):
     assert "example.py:3-4 -> example.py:14-15 (neighbours differ: confirm by reading)" in out
 
 
-@pytest.mark.parametrize("line,shown", [(30, False), (31, True)])
-def test_a_hunk_is_shown_exactly_when_it_reaches_a_cited_line(repo, line, shown):
-    # v3 changed only pinned line 34, so git's hunk (3 lines of context) covers 31-34.
+@pytest.mark.parametrize("lines,shown", [("30", False), ("31", True), ("25-30", False), ("25-31", True)])
+def test_a_hunk_is_shown_exactly_when_it_reaches_a_cited_line(repo, lines, shown):
+    # v3 changed only pinned line 34, so git's hunk (3 lines of context) covers 31-34; a
+    # range reaches it by its last line alone.
     data = hs.load(repo.root)[1]
     next(r for r in data["reviews"] if r["id"] == "H002")["summary"] = (
-        f"Only the constant at agents/core/example.py:{line} is cited.")
+        f"Only the constants at agents/core/example.py:{lines} are cited.")
     save(repo.root, data)
     hunks = hr.cite(repo.root, "H002")["files"][EXAMPLE]["hunks"]
     assert ("+CONSTANT_11 = 110" in "\n".join(hunks)) is shown
+
+
+def test_a_citation_that_never_resolved_in_a_drifted_file_is_reported_invalid(repo, capsys):
+    # Past the pinned file's end, or on a blank line of it: hermes_status rejects both.
+    data = hs.load(repo.root)[1]
+    next(r for r in data["reviews"] if r["id"] == "H002")["summary"] = (
+        "Beyond the pinned end: agents/core/example.py:999; blank: agents/core/example.py:2.")
+    save(repo.root, data)
+    report = hr.cite(repo.root, "H002")
+    assert {c["citation"]: (c["class"], c["now"]) for c in report["citations"]} == {
+        "agents/core/example.py:999": ("invalid", None), "agents/core/example.py:2": ("invalid", None)}
+    assert hr.main(["--root", str(repo.root), "cite", "H002"]) == 0
+    assert "[invalid] agents/core/example.py:999" in capsys.readouterr().out
 
 
 def test_a_crlf_working_tree_shows_only_the_hunks_that_changed(repo):
@@ -522,12 +536,34 @@ def test_a_block_rewritten_in_place_is_ambiguous_not_deleted():
     assert result["class"] == "ambiguous" and result["candidates"] == [[7, 19], [27, 32]]
 
 
+def test_every_copy_of_a_rewritten_block_that_scores_within_tie_is_a_candidate():
+    head, tail = [f"HEADER_{i} = {i}" for i in range(5)], [f"TRAILER_{i} = {i}" for i in range(5)]
+    pinned = [*head, "def f():", "    a = 1", "    b = 2", "    c = 3", "def g():", *tail]
+    rewritten = ["def f():", "    with lock:", "        prepare_everything_first()", "        b = 2",
+                 "        finalize_the_whole_thing()", "def g():"]
+    copies = ["def f_old():", "    a = 1", "    b = 2", "    c = 30", "",
+              "def f_older():", "    a = 1", "    b = 2", "    c = 3000"]   # 0.98 and 0.95: a tie
+    result = hr.classify(pinned, 7, 9, [*head, *rewritten, *tail, *copies])
+    assert result["class"] == "ambiguous" and result["now"] is None
+    assert result["candidates"] == [[7, 10], [18, 20], [23, 25]]
+
+
 def test_an_unchanged_file_places_every_citation_where_it_was():
     # The pin holds: repeated lines with identical neighbours are no reason to doubt it.
     same = ["def test_x(client):", "    r = client.get('/a')", "    assert r.ok", "    r = client.get('/a')",
             "    assert r.ok", "    r = client.get('/a')", "    assert r.ok"]
     result = hr.classify(same, 3, 3, list(same))
     assert (result["class"], result["now"], result["candidates"]) == ("unchanged", [3, 3], [])
+    assert result["anchored"] is True   # every neighbour is where it was
+
+
+@pytest.mark.parametrize("scored,chosen", [
+    ([(0.8, 4, 3), (0.8, 5, 2)], [(0.8, 5, 2)]),   # an exact tie: the window of the cited length
+    ([(0.8, 4, 2), (0.8, 3, 2)], [(0.8, 3, 2)]),   # then the earlier window
+    ([(0.8, 3, 2), (0.9, 4, 2), (0.7, 6, 2)], [(0.9, 4, 2), (0.7, 6, 2)]),   # best first, overlaps dropped
+])
+def test_spots_break_exact_ties_by_the_cited_length_then_the_earlier_window(scored, chosen):
+    assert hr._spots(scored, 2) == chosen
 
 
 MOVED_V1 = ["def a():", "    return 1", "", "def b(value):", "    total = compute(value, mode='fast')",
@@ -585,6 +621,140 @@ def test_a_unique_copy_is_not_placed_over_an_edit_where_the_line_was():
     both = ["import os", "", "def gamma():", "    return None", "", "def omega():", "    return 'omega'"]
     result = hr.classify(pinned, 2, 2, both)
     assert (result["class"], result["now"], result["anchored"]) == ("moved", [4, 4], True)
+
+
+@pytest.mark.parametrize("pinned,first,last,current", [
+    (["def f():", "    x = 1", "    return x"], 2, 2,
+     ["def f():", "    x = 1", "    y = 2", "    return x"]),
+    (["import os", "import sys", "", "def f():"], 2, 2,
+     ["import os", "import sys", "import json", "", "def f():"]),
+    (["ROUTES = {", '    "/a": a,', "}"], 2, 2,
+     ["ROUTES = {", '    "/a": a,', '    "/b": b,', "}"]),
+    (["def test_x(r):", "    assert r.status == 200", "", "def test_y():"], 2, 2,
+     ["def test_x(r):", "    assert r.status == 200", '    assert r.body == "ok"', "", "def test_y():"]),
+    (["def f():", "    a = load(1)", "    b = load(2)", "    return a + b"], 2, 3,
+     ["def f():", "    a = load(1)", "    b = load(2)", "    c = load(3)", "    return a + b"]),
+    # Both neighbours edited around it, or one edited and a look-alike added below it.
+    (["CONFIG = {", '    "alpha": 1,', '    "beta": 2,', '    "gamma": 3,', "}"], 3, 3,
+     ["CONFIG = {", '    "alpha": 10,', '    "beta": 2,', '    "gamma": 30,', "}"]),
+    (["def f():", "    x = 1", "    y = 2", "def g():"], 3, 3,
+     ["def f():", "    x = 10", "    y = 2", "    z = 3", "def g():"]),
+], ids=["assignment", "import", "dict entry", "assert", "two lines", "dict, both edited", "edited and added"])
+def test_lines_still_at_their_numbers_stay_unchanged_whatever_was_added_beside_them(pinned, first, last, current):
+    # The cited text still sits at the cited numbers, so nothing needs remapping: a look-alike
+    # beside it is no rival for "where the lines were".
+    assert current[first - 1:last] == pinned[first - 1:last]
+    result = hr.classify(pinned, first, last, current)
+    assert (result["class"], result["now"], result["candidates"]) == ("unchanged", [first, last], [])
+
+
+def test_a_look_alike_inserted_right_above_a_line_is_ambiguous_by_design():
+    # A known, conservative outcome: "/z" inserted above "/a" reads exactly like "/a" edited
+    # into "/z" with a fresh "/a" added below it, so the line is not guessed to have moved.
+    # (It also pins the skip window: a rival that touches the exact copy is still a rival.)
+    pinned = ["ROUTES = {", '    "/a": a,', "}"]
+    current = ["ROUTES = {", '    "/z": z,', '    "/a": a,', "}"]
+    result = hr.classify(pinned, 2, 2, current)
+    assert result["class"] == "ambiguous" and result["candidates"] == [[2, 2], [3, 3]]
+    assert result["now"] is None
+
+
+def test_every_place_between_the_anchors_is_scored_not_only_the_best_so_far():
+    # Two edits between f()'s anchors, each flanked as well as the exact copy in h(): one
+    # scores 0.97, the later one far less. Both are rivals, so a scan that stopped scoring
+    # windows below the best so far would lose the second.
+    pinned = ["def f():", "    value = compute(alpha, beta)", "def g():", "    return 1"]
+    current = ["def f():", "    value = compute(alpha, betx)", "    more()", "    value = compute(gamma, delta)",
+               "def g():", "    return 1", "", "def h():", "    value = compute(alpha, beta)", "def g():"]
+    result = hr.classify(pinned, 2, 2, current)
+    assert result["class"] == "ambiguous" and result["candidates"] == [[2, 2], [4, 4], [9, 9]]
+
+
+def test_an_exact_copy_is_not_placed_when_the_lines_between_its_anchors_are_too_many_to_search():
+    # 450 lines now sit where the cited line was, and one of them is its edit; the exact copy
+    # far away keeps neither neighbour. A region wider than MAX_REGION is a rewrite, as in
+    # _nearest: it is not searched, and all of it stays a candidate beside the copy.
+    pinned = ["def top():", "    value = compute(alpha, beta)", "def bottom():", "", "def tail():", "    pass"]
+    steps = [f"    step_{i}()" for i in range(hr.MAX_REGION + 50)]
+    current = ["def top():", *steps[:200], "    value = compute(alpha, gamma)", *steps[200:], "def bottom():",
+               "", "def tail():", "    pass", "", "def moved():", "    value = compute(alpha, beta)"]
+    result = hr.classify(pinned, 2, 2, current)
+    assert result["class"] == "ambiguous" and result["now"] is None
+    assert result["candidates"] == [[2, len(steps) + 2], [len(current), len(current)]]
+
+
+def test_a_copy_that_kept_a_neighbour_is_searched_around_between_anchors_of_any_width():
+    # The shape of H472's worker.py:44 on the real repository: the imports above grew, so the
+    # constant moved down, still under its logger line, and 400+ lines were added below it
+    # (the alignment anchors it between its logger line and the blank line above the tail).
+    # Only windows flanked as well as the copy compete, so any width is cheap to search.
+    tail = ["# executor(task) -> dict", "Executor = Callable", "Notifier = Callable", "", "", "class Worker:",
+            "    def run(self):", "        return self.step()"]
+    pinned = ["from .queue import Task, TaskQueue", "", "logger = get_logger()", "", "BUDGET = 4", "", *tail]
+    added = [f"    step_{i}()" for i in range(hr.MAX_REGION + 10)]
+    current = ["from .queue import (", "    Task,", "    TaskQueue,", ")", "", "logger = get_logger()", "",
+               "BUDGET = 4", "", "# refusal vocabulary", "def refuse():", *added, "", *tail]
+    lo, hi, _ = hr._region(pinned, 4, 5, current)
+    assert hi - lo > hr.MAX_REGION
+    result = hr.classify(pinned, 5, 5, current)
+    assert (result["class"], result["now"], result["anchored"]) == ("moved", [8, 8], False)
+    # An edit that the executor comment still flanks, however far down, is a rival.
+    edited = [*current[:-len(tail) - 1], "BUDGET = 40", "", *tail]
+    result = hr.classify(pinned, 5, 5, edited)
+    assert result["class"] == "ambiguous" and result["candidates"] == [[8, 8], [422, 422]]
+    assert edited[421] == "BUDGET = 40"
+
+
+def test_a_flanked_window_is_a_rival_even_where_an_unflanked_one_scores_higher():
+    # f()'s line was edited in place and more() added after it: the one-line window scores
+    # best but nothing flanks it, while the two-line window keeps g() below it, as the exact
+    # copy in h() does. Flanking is judged before places are chosen, so the edit competes.
+    pinned = ["def f():", "    value = compute(alpha, beta)", "def g():", "    return 1"]
+    current = ["def f():", "    other()", "    value = compute(alpha, betx)", "    more()", "def g():",
+               "    return 1", "", "def h():", "    value = compute(alpha, beta)", "def g():"]
+    result = hr.classify(pinned, 2, 2, current)
+    assert result["class"] == "ambiguous" and result["candidates"] == [[3, 4], [9, 9]]
+
+
+@pytest.mark.parametrize("pinned,first,last,current", [
+    # TypeScript: load()'s guard is gone; save() keeps one of the very same shape.
+    (["export function load(ok: boolean) {", "  if (!ok) {", "    return null;", "  }", "  return fetchAll();", "}",
+      "", "export function save(valid: boolean) {", "  if (!valid) {", "    return null;", "  }",
+      "  return store();", "}"], 2, 4,
+     ["export function load() {", "  return fetchAll();", "}", "", "export function save(valid: boolean) {",
+      "  if (!valid) {", "    return null;", "  }", "  return store();", "}"]),
+    # Python: start()'s warm-up is gone; stop() keeps a try/except/pass of the same shape.
+    (["def start():", "    try:", "        warm_cache()", "    except Exception:", "        pass", "    serve()", "",
+      "def stop():", "    try:", "        flush()", "    except Exception:", "        pass"], 2, 5,
+     ["def start():", "    serve()", "", "def stop():", "    try:", "        flush()", "    except Exception:",
+      "        pass"]),
+    # One line, deleted: stop()'s warning resembles it and sits between the same generic
+    # neighbours (`except Exception:` above, `raise` below), which vouch for nothing.
+    (["def start():", "    try:", "        warm_cache()", "    except Exception:",
+      '        log.warning("start: cache cold")', "        raise", "", "def stop():", "    try:", "        flush()",
+      "    except Exception:", '        log.warning("stop: flush failed")', "        raise"], 5, 5,
+     ["def start():", "    serve()", "", "def stop():", "    try:", "        flush()", "    except Exception:",
+      '        log.warning("stop: flush failed")', "        raise"]),
+], ids=["braces", "try-except", "generic neighbours"])
+def test_generic_lines_never_vouch_for_a_place_away_from_the_anchors(pinned, first, last, current):
+    # `}`, `return null;`, `try:` and `pass` occur more than once in the pinned file: finding
+    # them again proves nothing, so a same-shaped block elsewhere is not where these lines went.
+    result = hr.classify(pinned, first, last, current)
+    assert (result["class"], result["now"]) == ("deleted", None)
+
+
+def test_only_non_blank_text_that_occurs_once_in_the_pinned_file_can_vouch():
+    lines = ["def f():", "    pass", "", "def g():", "    pass", "  }", "  }"]   # one blank line, too
+    assert hr._distinct(lines) == {"def f():", "def g():"}
+
+
+def test_one_unchanged_line_and_one_neighbour_vouch_together_even_reindented():
+    # c()'s tail moved into a class above it and was re-indented: "y = 2" is still there, and
+    # "return self.v" still sits above it. Two distinct unchanged lines vouch for the place.
+    pinned = ["def c():", "    return total", "        return self.v", "    y = 2"]
+    current = ["        return self.v", "        y = 2", "def c():", "    return total"]
+    result = hr.classify(pinned, 4, 4, current)
+    assert (result["class"], result["now"], result["anchored"]) == ("edited", [2, 2], False)
 
 
 def test_two_edits_scoring_alike_are_ambiguous():
@@ -775,6 +945,7 @@ def test_stamp_refuses_uncommitted_evidence_unless_told_to_allow_it(repo, capsys
     assert stamp(repo, items, "--allow-uncommitted", "--dry-run") == 0
     out = capsys.readouterr().out
     assert f"UNCOMMITTED {name}" in out and "would stamp H002" in out
+    assert out.index("WARNING: base_sha") < out.index(f"UNCOMMITTED {name}")   # a header says why
     assert out.index(f"UNCOMMITTED {name}") < out.index("@@")   # listed ahead of the diff
     assert target.read_bytes() == before
     assert stamp(repo, items, "--allow-uncommitted") == 0
@@ -807,6 +978,27 @@ def test_stamp_refuses_a_base_sha_that_does_not_hold_the_evidence(repo, capsys, 
     assert stamp(repo, [reread_h002()], "--base-sha", sha) == 1
     err = capsys.readouterr().err
     assert "uncommitted" in err and EXAMPLE in err and sha[:12] in err
+    assert target.read_bytes() == before
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+@pytest.mark.parametrize("link,name", [
+    ("agents/core/example_link.py", "agents/core/example_link.py"),   # the file is a link
+    ("agents/linked", "agents/linked/example.py"),                    # a directory on its path is
+])
+def test_stamp_refuses_evidence_reached_through_a_symlink_and_names_the_link(repo, capsys, link, name):
+    # hermes_status hashes the target's text, git holds the link (its target's path), and a
+    # checkout without symlinks writes the link as a text file: no pin through it can hold.
+    (repo.root / link).symlink_to("example.py" if link.endswith(".py") else "core")
+    commit(repo.root, "a committed, clean symlink")
+    assert git(repo.root, "status", "--porcelain") == ""
+    target = repo.root / hs.ASSESSMENT
+    before = target.read_bytes()
+    for extra in ((), ("--allow-uncommitted",)):
+        assert stamp(repo, [reread_h002(evidence=[EXAMPLE, "tests/test_example.py", name])], *extra) == 1
+        err = capsys.readouterr().err
+        assert f"symlink {link}" in err and "pin the file it points to" in err, err
+        assert "uncommitted" not in err and "untracked" not in err, err
     assert target.read_bytes() == before
 
 

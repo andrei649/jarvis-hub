@@ -18,6 +18,9 @@ patched row current, or nothing is written. A hash-only restamp stays forbidden
 
 cite and stamp read the working tree, as hermes_status does. So a stamp also refuses
 evidence that only this checkout holds, which every other checkout would read as stale:
+  - evidence reached through a symlink, file or directory (always): hs hashes the target's
+    text, git holds the link, and a checkout without symlinks holds a text file there;
+    pin the file it points to instead;
   - evidence that is untracked or gitignored (always);
   - evidence whose bytes the recorded base_sha does not hold (an uncommitted edit, a
     staged new file, a --base-sha older than the file), unless --allow-uncommitted is
@@ -29,6 +32,9 @@ cite numbers lines as hermes_status does (str.splitlines, which also breaks at U
 friends) and moves each cited range onto git's \\n-only numbering before it meets a hunk.
 A place it finds away from the lines that anchored a citation (moved and edited), or a
 unique copy only one unchanged neighbour vouches for, is flagged "confirm by reading".
+Cited text still at its own line numbers is unchanged, whatever was added beside it; a
+look-alike inserted right above it is, by design, a rival (ambiguous), since it reads
+exactly like the line edited in place with a copy added below.
 
 Exit codes: 0 done; 1 refused or unknown row; 2 error (unreadable records, git failure).
 """
@@ -46,6 +52,8 @@ import stat
 import subprocess  # nosec B404  # fixed git argv lists only, never a shell
 import sys
 import tempfile
+from collections import Counter
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -380,17 +388,24 @@ def _agreement(context: tuple[str | None, str | None], current: list[str], j: in
 def classify(pinned: list[str], first: int, last: int, current: list[str]) -> dict[str, Any]:
     """Where pinned lines first..last (1-based, inclusive) sit in `current`, by content only.
 
-    A file that did not change places every citation where it was. An exact unique copy
-    wins when both unchanged neighbours still flank it; with fewer, an edit where the
-    lines were, flanked at least as well, makes it ambiguous, and a copy with no such
-    rival is placed but flagged (anchored False). Several exact copies are told apart only
-    by unchanged neighbours on both sides; otherwise the citation is ambiguous. With no
-    exact copy, the whole-file alignment bounds where the text can be, and a difflib
-    ratio inside those bounds finds it (edited). When nothing there resembles it, the
-    whole file is searched, since the block may have moved as well as changed (edited,
-    flagged). When nothing anywhere resembles it, it is deleted, unless a third of its
-    lines still sit between the same anchors: then it was rewritten in place and the
-    whole region is the (ambiguous) answer. Nothing is ever guessed.
+    A file that did not change places every citation where it was. So does a unique exact
+    copy still at the cited numbers, whatever changed or was added around it: the citation
+    still names that very text (anchored says whether both neighbours stayed too). An exact
+    unique copy elsewhere wins when both unchanged neighbours still flank it; with fewer,
+    an edit where the lines were, flanked at least as well, makes it ambiguous, as does,
+    for a copy that kept neither neighbour, a region between the anchors too wide to
+    search (MAX_REGION); a copy with no such rival is placed but flagged (anchored
+    False). A look-alike inserted right above a line is such a rival: it reads exactly
+    like the line edited in place with a copy added below, so that case stays ambiguous
+    by design. Several exact copies are told apart only by unchanged neighbours on both
+    sides; otherwise the citation is ambiguous. With no exact copy, the whole-file
+    alignment bounds where the text can be, and a difflib ratio inside those bounds finds
+    it (edited). When nothing there resembles it, the whole file is searched, since the
+    block may have moved as well as changed (edited, flagged); a place there needs
+    VOUCHED distinct unchanged lines vouching for it. When nothing anywhere resembles it,
+    it is deleted, unless a third of its lines still sit between the same anchors: then
+    it was rewritten in place and the whole region is the (ambiguous) answer. Nothing is
+    ever guessed.
     """
     start, end = first - 1, last
     if pinned == current:   # the pin holds: every line is where it was, repeated or not
@@ -406,9 +421,8 @@ def classify(pinned: list[str], first: int, last: int, current: list[str]) -> di
     if len(hits) == 1:
         hit = hits[0]
         agree = _agreement(context, current, hit, size)
-        if agree < 2:
-            rivals = [[j + 1, j + n] for j, n in _in_place(pinned, start, end, current, (hit, hit + size))
-                      if _agreement(context, current, j, n) >= agree]
+        if agree < 2 and hit != start:   # at the cited numbers, nothing else was "where it was"
+            rivals = _in_place(pinned, start, end, current, (hit, hit + size), agree)
             if rivals:
                 return _result("ambiguous", candidates=sorted([[hit + 1, hit + size], *rivals]))
         return at(hit, agree == 2)
@@ -435,12 +449,13 @@ def _region(pinned: list[str], start: int, end: int, current: list[str]) -> tupl
 
 
 def _scan(block: list[str], current: list[str], lo: int, hi: int, *, rising: bool = True,
-          skip: tuple[int, int] | None = None) -> list[tuple[float, int, int]]:
+          skip: tuple[int, int] | None = None,
+          keep: Callable[[int, int], bool] | None = None) -> list[tuple[float, int, int]]:
     """(ratio, first index, length) of the windows of current[lo:hi] that resemble `block`.
 
     With `rising`, a window must also come within TIE of the best one seen so far, which
     only prunes windows that could never tie with the best. Windows overlapping `skip`
-    (a [first, end) index pair) are not scored.
+    (a [first, end) index pair), or that `keep(first, length)` rejects, are not scored.
     """
     size = len(block)
     # A few lines compare as characters, so a one-line edit still resembles itself; a longer
@@ -457,7 +472,8 @@ def _scan(block: list[str], current: list[str], lo: int, hi: int, *, rising: boo
     for length in sorted({max(1, size - 1), size, size + 1}):
         for j in range(lo, max(lo, hi - length) + 1):
             window = current[j:min(j + length, hi)]
-            if not window or (skip and j < skip[1] and j + len(window) > skip[0]):
+            if not window or (skip and j < skip[1] and j + len(window) > skip[0]) \
+                    or (keep and not keep(j, len(window))):
                 continue
             matcher = difflib.SequenceMatcher(None, target, shape(window), autojunk=False)
             if matcher.real_quick_ratio() < floor or matcher.quick_ratio() < floor:
@@ -492,23 +508,42 @@ def _choose(scored: list[tuple[float, int, int]], size: int, anchored: bool) -> 
 
 
 def _in_place(pinned: list[str], start: int, end: int, current: list[str],
-              skip: tuple[int, int]) -> list[tuple[int, int]]:
-    """Places between the cited lines' anchors that resemble them, other than `skip`:
-    where an in-place edit would be. A region wider than MAX_REGION is no place."""
+              skip: tuple[int, int], agree: int) -> list[list[int]]:
+    """Where an in-place edit of pinned[start:end] could be (1-based [first, last] pairs):
+    the places between its anchors that resemble it, other than the exact copy at `skip`,
+    that its pinned neighbours flank at least as well as they flank that copy (`agree`).
+
+    Only windows flanked that well are scored, and all of them (no rising floor): the
+    best-scoring window at a place may be flanked worse than a weaker one. So a copy that
+    kept a neighbour is checked cheaply between anchors of any width. A copy that kept
+    neither makes every window a candidate: a region wider than MAX_REGION is then a
+    rewrite, as in _nearest, not searched, and all of it is the answer.
+    """
     lo, hi, _ = _region(pinned, start, end, current)
-    if hi - lo > MAX_REGION:
-        return []
-    scored = _scan(pinned[start:end], current, lo, hi, rising=False, skip=skip)
-    return [(j, n) for _, j, n in _spots(scored, end - start)]
+    if not agree and hi - lo > MAX_REGION:
+        return [[lo + 1, hi]]
+    context = _neighbours(pinned, start, end)
+    scored = _scan(pinned[start:end], current, lo, hi, rising=False, skip=skip,
+                   keep=lambda j, n: _agreement(context, current, j, n) >= agree)
+    return [[j + 1, j + n] for _, j, n in _spots(scored, end - start)]
 
 
-def _vouched(pinned: list[str], start: int, end: int, current: list[str], j: int, n: int) -> int:
+def _distinct(pinned: list[str]) -> set[str]:
+    """The non-blank texts (whitespace-stripped) that occur exactly once in `pinned`."""
+    counts = Counter(line.strip() for line in pinned)
+    return {text for text, count in counts.items() if count == 1 and text}
+
+
+def _vouched(pinned: list[str], start: int, end: int, current: list[str], j: int, n: int,
+             distinct: set[str]) -> int:
     """Unchanged lines vouching for current[j:j + n] as the new place of pinned[start:end]:
-    the block's own non-blank lines found verbatim in it, plus the pinned neighbours that
-    still flank it."""
+    the block's own lines found in it (whitespace aside), plus the pinned neighbours that
+    still flank it. Only a line whose text is `distinct` (once in the pinned file) vouches:
+    `}`, `return null;`, `try:` or `pass` turn up in every block of the same shape."""
     lines = {line.strip() for line in current[j:j + n]}
-    own = {line.strip() for line in pinned[start:end] if line.strip()}
-    return len(own & lines) + _agreement(_neighbours(pinned, start, end), current, j, n)
+    own = {line.strip() for line in pinned[start:end]} & distinct
+    flank = zip(_neighbours(pinned, start, end), _neighbours(current, j, j + n), strict=True)
+    return len(own & lines) + sum(a == b and a.strip() in distinct for a, b in flank if a is not None)
 
 
 def _nearest(pinned: list[str], start: int, end: int, current: list[str]) -> dict[str, Any]:
@@ -521,10 +556,11 @@ def _nearest(pinned: list[str], start: int, end: int, current: list[str]) -> dic
         return _choose(scored, len(block), anchored)
     # Nothing between the anchors resembles it: it may have moved as well as changed. Away
     # from its anchors a look-alike is cheap (every `def x():\n    return y` resembles every
-    # other), so a place there also needs two unchanged lines vouching for it.
+    # other), so a place there also needs two distinct unchanged lines vouching for it.
+    distinct = _distinct(pinned)
     far = [] if (lo, hi) == (0, len(current)) else [
         spot for spot in _scan(block, current, 0, len(current), rising=False)
-        if _vouched(pinned, start, end, current, spot[1], spot[2]) >= VOUCHED]
+        if _vouched(pinned, start, end, current, spot[1], spot[2], distinct) >= VOUCHED]
     region = {line.strip() for line in current[lo:hi]}
     lines = [line.strip() for line in block if line.strip()]
     rewritten = bool(lines) and 3 * sum(line in region for line in lines) >= len(lines)
@@ -720,14 +756,35 @@ def _generated(root: Path, reviews: dict[str, dict], rows: list[dict], result: d
                               "`hermes_status.py write`), so its pin would be stale on arrival")
 
 
+def _symlink(root: Path, name: str) -> str:
+    """The first leading part of the repository path `name` that is a symlink, or ""."""
+    parts = name.split("/")
+    return next(("/".join(parts[:k]) for k in range(1, len(parts) + 1)
+                 if root.joinpath(*parts[:k]).is_symlink()), "")
+
+
 def _uncommitted(root: Path, base: str, reviews: dict[str, dict]) -> list[str]:
     """Evidence whose pinned bytes the commit `base` does not hold at that path.
 
-    Untracked or gitignored evidence refuses outright: no commit can hold it. What comes
-    back (an uncommitted edit, a staged new file, a base_sha that predates the file) reads
-    stale on every checkout but this one, so the caller refuses it unless told otherwise.
+    Evidence reached through a symlink, untracked or gitignored refuses outright: git holds
+    a link's target path, not the text hermes_status hashes (and a checkout without
+    symlinks writes the link as a text file), and no commit can hold an untracked file.
+    What comes back (an uncommitted edit, a staged new file, a base_sha that predates the
+    file) reads stale on every checkout but this one, so the caller refuses it unless told
+    otherwise.
     """
     names = list(dict.fromkeys(entry["path"] for review in reviews.values() for entry in review["evidence"]))
+
+    def owner(name: str) -> str:
+        return next(ident for ident, review in reviews.items()
+                    if any(entry["path"] == name for entry in review["evidence"]))
+
+    for name in names:
+        link = _symlink(root, name)
+        if link:
+            raise Refused(f"{owner(name)}: evidence {name} is reached through the symlink {link}: "
+                          "git holds the link, not the text hermes_status hashes, so no pin through it "
+                          "can hold on another checkout; pin the file it points to instead")
 
     def listed(*flags: str) -> set[str]:   # (check-ignore would reject --literal-pathspecs)
         return set(git(root, "ls-files", "-z", *flags, "--", *names).stdout.decode("utf-8", "replace").split("\0"))
@@ -737,9 +794,8 @@ def _uncommitted(root: Path, base: str, reviews: dict[str, dict]) -> list[str]:
     held: dict[str, str | None] = {}
     for name in names:
         if name not in tracked:
-            owner = next(ident for ident, review in reviews.items()
-                         if any(entry["path"] == name for entry in review["evidence"]))
-            raise Refused(f"{owner}: evidence {name} is {'gitignored' if name in ignored else 'untracked'}: "
+            raise Refused(f"{owner(name)}: evidence {name} is "
+                          f"{'gitignored' if name in ignored else 'untracked'}: "
                           "no commit holds it, so every other checkout would read the row stale")
         blob = git(root, "rev-parse", "--verify", "--quiet", f"{base}:{name}",
                    ok=(0, 1, 128)).stdout.decode("utf-8", "replace").strip()
