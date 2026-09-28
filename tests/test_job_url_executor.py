@@ -186,7 +186,9 @@ async def test_overall_deadline_does_not_retry(rig, monkeypatch):
 
     from agents.core.autonomy import jobs_url
     original_timeout=asyncio.timeout
-    monkeypatch.setattr(jobs_url.asyncio, 'timeout', lambda seconds: original_timeout(.01))
+    # 0.5 s, not 10 ms: the stream blocks forever, so the deadline still ends the attempt, and
+    # a loaded runner cannot let it fire before the one request is sent.
+    monkeypatch.setattr(jobs_url.asyncio, 'timeout', lambda seconds: original_timeout(.5))
     class Blocking(httpx.AsyncByteStream):
         async def __aiter__(self):
             await asyncio.Future()

@@ -44,7 +44,7 @@ _LexicalSymbol = str | tuple[object | None, ...] | frozenset[object | None]
 # unrelated domain object. Keep the exception exact so a moved or duplicated write
 # must be reviewed instead of broadening the receiver-name heuristics.
 _UNRELATED_EXTERNAL_BINDING_WRITES = {
-    ("agents/core/acquisition/promotion.py", 359, 8, "tool_rpc"),
+    ("agents/core/acquisition/promotion.py", 378, 8, "tool_rpc"),
 }
 
 
