@@ -359,12 +359,13 @@ async def _walk(checklist: ChecklistPlanner, context: Any) -> Any:
     An approved row outside the goal's scope (its kind, or the kind of the task it
     would queue) can never run, so the checklist can never be finished: that is not
     "nothing left to do", and grading it as such would call a half-run plan done
-    (H464c). The run is stopped with the refusal on its record instead.
+    (H464c). The run is stopped with the refusal on its record instead, named as a
+    scope refusal (H464d): the approval did bind, the goal's own scope refused the row.
     """
     action = await checklist(context)
     decision = checklist.last
     if action is None and decision is not None and decision.refusal == "out_of_scope":
-        return Hold(f"approved row refused: {decision.detail}", stop=True)
+        return Hold(decision.detail, stop=True, cause="scope")
     return action
 
 

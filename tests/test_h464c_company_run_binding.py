@@ -749,7 +749,7 @@ async def test_the_runtime_stops_a_run_whose_approved_row_the_planner_refuses(wo
     assert orch.calls == [] and graded == []
     after = world.ledger.get(run.id)
     assert after.status == "stopped"
-    assert after.stop_reason.startswith("plan not bound to its approval: approved row refused")
+    assert after.stop_reason.startswith("approved row refused by scope: ")
     assert "file.write" in after.stop_reason
 
 
