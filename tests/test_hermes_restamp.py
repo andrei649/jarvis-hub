@@ -1276,3 +1276,34 @@ def test_the_script_runs_standalone(repo):
                           capture_output=True, text=True, encoding="utf-8")
     assert proc.returncode == 0, proc.stderr
     assert "H002" in proc.stdout and "drifted" in proc.stdout
+
+
+# ── review round 4: file edges and a mirror whose copy holds the alignment ────
+
+
+def test_file_edges_count_as_agreeing_neighbours():
+    # A missing neighbour at the file edge agrees with a missing one: the mirror whose cited
+    # line ends the file stays ambiguous, and a last line moved down keeps its anchor.
+    result = hr.classify(["def f():", "    return compute(1)"], 2, 2,
+                         ["def f_new():", "    return compute(1)", "", "def f():", "    return compute(2)"])
+    assert (result["class"], result["candidates"]) == ("ambiguous", [[2, 2], [5, 5]])
+    moved = hr.classify(["import os", "", "def f():", "    return compute(1)"], 4, 4,
+                        ["import os", "import sys", "", "def g():", "    pass", "", "def f():", "    return compute(1)"])
+    assert (moved["class"], moved["now"], moved["anchored"]) == ("moved", [8, 8], True)
+
+
+@pytest.mark.parametrize("pinned,first,current,rival", [
+    (["class T:", "    def test_a(self):", "        assert run() == 1", "        assert run2() == 2",
+      "        assert run3() == 3"], 3,
+     ["class T:", "    def test_new(self):", "        assert run() == 1", "        assert run2() == 2",
+      "        assert run3() == 3", "", "    def test_a(self):", "        assert run() == 10",
+      "        assert run2() == 2", "        assert run3() == 3"], [8, 8]),
+    (["def test_a():", "    assert run() == 1", "    assert other() == 3"], 2,
+     ["def test_new():", "    assert run() == 1", "    assert other() == 3", "", "def test_a():",
+      "    assert run() == 10", "    assert other() == 3"], [6, 6]),
+], ids=["class method last in file", "function last in file"])
+def test_mirror_whose_copy_holds_the_alignment(pinned, first, current, rival):
+    # difflib aligns the pinned tail with the copy above, so the anchored region misses the
+    # edit both pinned neighbours still flank; that edit must still rival the copy.
+    result = hr.classify(pinned, first, first, current)
+    assert (result["class"], result["candidates"]) == ("ambiguous", [[first, first], rival])

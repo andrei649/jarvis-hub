@@ -39,7 +39,9 @@ lines were (a function copied above itself, then the original edited): the copy 
 taken the cited numbers, so both places are candidates (ambiguous). A look-alike inserted
 right above a line is, by design, such a rival too, since it reads exactly like the line
 edited in place with a copy added below. A file renamed to several files is never
-followed to one of them.
+followed to one of them. Known gap: a committed symlink replaced by a regular file and
+not yet staged is still refused as a link, even with --allow-uncommitted; stage the
+typechange (`git add`) and it is treated as an ordinary uncommitted edit.
 
 Exit codes: 0 done; 1 refused or unknown row; 2 error (unreadable records, git failure).
 """
@@ -529,8 +531,14 @@ def _in_place(pinned: list[str], start: int, end: int, current: list[str],
     must keep a neighbour is checked cheaply between anchors of any width. With need 0
     every window is a candidate: a region wider than MAX_REGION is then a rewrite, as in
     _nearest, not searched, and all of it is the answer.
+
+    With need 2 the whole file is searched: only windows both pinned neighbours flank
+    count, and difflib may have aligned the pinned lines with a copy elsewhere, leaving
+    the flanked edit outside the anchored region.
     """
     lo, hi, _ = _region(pinned, start, end, current)
+    if need == 2:
+        lo, hi = 0, len(current)
     if not need and hi - lo > MAX_REGION:
         return [[lo + 1, hi]]
     context = _neighbours(pinned, start, end)
