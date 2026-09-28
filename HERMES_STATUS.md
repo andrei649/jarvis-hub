@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**190 / 697 = 27.3% echivalente complet în evaluarea documentată.**
+**189 / 697 = 27.1% echivalente complet în evaluarea documentată.**
 
-Din acestea, **82** au fost reevaluate pe cod în această livrare; **108** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **81** au fost reevaluate pe cod în această livrare; **108** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,15 +10,15 @@ Din acestea, **82** au fost reevaluate pe cod în această livrare; **108** păs
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 190 | 27.3% |
+| Echivalent | 189 | 27.1% |
 | Parțial | 254 | 36.4% |
 | Lipsă | 64 | 9.2% |
 | Exclus intenționat | 0 | 0.0% |
-| De reverificat | 189 | 27.1% |
+| De reverificat | 190 | 27.3% |
 
-**Ținta acceptată în produs:** 697 rânduri; progres 190/697 = **27.3%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
+**Ținta acceptată în produs:** 697 rânduri; progres 189/697 = **27.1%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
 
-**Acoperirea reevaluării curente:** 143/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 142/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -30,7 +30,7 @@ Din acestea, **82** au fost reevaluate pe cod în această livrare; **108** păs
 | gateway | 33 | 5 | 9 | 5 | 0 | 14 |
 | platforms | 39 | 6 | 19 | 3 | 0 | 11 |
 | web | 40 | 16 | 11 | 3 | 0 | 10 |
-| desktop | 54 | 10 | 27 | 6 | 0 | 11 |
+| desktop | 54 | 9 | 27 | 6 | 0 | 12 |
 | tui | 25 | 4 | 9 | 2 | 0 | 10 |
 | config | 18 | 6 | 7 | 3 | 0 | 2 |
 | env | 28 | 6 | 11 | 1 | 0 | 10 |
