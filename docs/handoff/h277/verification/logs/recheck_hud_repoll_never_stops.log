@@ -1,0 +1,38 @@
+COMMAND ["/Users/andrei649/.local/bin/node", "node_modules/vitest/vitest.mjs", "run", "tests/frontend/tools.test.js"]
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.js:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.0 /private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/h277-mutation-rvs2us1l
+
+ ❯ tests/frontend/tools.test.js (35 tests | 1 failed) 1259ms
+   ❯ Action Approvals — model opinion (H277) (14)
+     × does not poll when a throttled timer wakes after its hard deadline 41ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend/tools.test.js > Action Approvals — model opinion (H277) > does not poll when a throttled timer wakes after its hard deadline
+AssertionError: expected 3 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 3
+
+ ❯ tests/frontend/tools.test.js:579:27
+    577|     const before = calls.pending;
+    578|     await polls.fireDelayed(30000);
+    579|     expect(calls.pending).toBe(before);
+       |                           ^
+    580|     expect(polls.active()).toBe(0);
+    581|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 34 passed (35)
+   Start at  11:55:44
+   Duration  1.86s (tests 70%, import 28%, transform 1%)
+

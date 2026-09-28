@@ -1,0 +1,26 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+....F................................................................... [ 43%]
+........................................................................ [ 86%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+___________________ test_audit_rows_carry_the_judge_identity ___________________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-65/test_audit_rows_carry_the_judg0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10da5b980>
+
+    async def test_audit_rows_carry_the_judge_identity(tmp_path, monkeypatch):
+        audit = FakeIntentLog()
+        q = queue(tmp_path, local_judge(monkeypatch, FakeBackend()), audit)
+        item = q.request(ACTION)
+        await drain(q)
+        [judged] = audit.of("action_approval.judged")
+        assert judged["actor"] == "approval_judge"
+        assert judged["cause"] == f"action_approval:{item['id']}"
+        meta = judged["metadata"]
+>       assert meta["judge"] == {"provider": "lm-studio", "model": "judge-m", "local": True}
+E       AssertionError: assert None == {'provider': 'lm-studio', 'model': 'judge-m', 'local': True}
+
+tests/test_h277_approval_judge.py:222: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity
+1 failed, 165 passed in 2.60s

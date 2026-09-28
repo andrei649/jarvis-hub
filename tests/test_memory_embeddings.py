@@ -10,7 +10,10 @@ Covers:
 
 All offline (hash backend / injected client, InMemoryVectorStore + InMemoryGraph).
 """
+import json
 import sys
+
+import httpx
 from pathlib import Path
 
 import pytest
@@ -25,32 +28,21 @@ from agents.core.memory.manager import MemoryManager
 
 # ── Injected LM Studio client doubles ─────────────────────────────────────────
 
-class _Resp:
-    def __init__(self, payload):
-        self._payload = payload
-
-    def raise_for_status(self):
-        return None
-
-    def json(self):
-        return self._payload
-
-
-class FakeLMStudioClient:
-    """Mimics httpx.Client.post for /v1/embeddings."""
-
+class FakeLMStudioClient(httpx.Client):
+    """Real sync request hooks and transport; synthetic OpenAI embedding response."""
     def __init__(self, vector):
-        self._vector = vector
         self.calls = []
+        def handler(request):
+            self.calls.append((request.url.path, json.loads(request.content)))
+            return httpx.Response(200, json={"data": [{"embedding": list(vector)}]})
+        super().__init__(base_url="http://localhost:1234", transport=httpx.MockTransport(handler))
 
-    def post(self, url, json=None):
-        self.calls.append((url, json))
-        return _Resp({"data": [{"embedding": list(self._vector)}]})
 
-
-class BoomClient:
-    def post(self, url, json=None):
-        raise RuntimeError("connection refused")
+class BoomClient(httpx.Client):
+    def __init__(self):
+        def handler(request):
+            raise RuntimeError("connection refused")
+        super().__init__(base_url="http://localhost:1234", transport=httpx.MockTransport(handler))
 
 
 # ── Embedder: LM Studio backend ───────────────────────────────────────────────
@@ -76,9 +68,10 @@ def test_lmstudio_backend_degrades_to_hash_on_failure():
 
 
 def test_lmstudio_empty_embedding_falls_back():
-    class EmptyClient:
-        def post(self, url, json=None):
-            return _Resp({"data": [{"embedding": []}]})
+    class EmptyClient(httpx.Client):
+        def __init__(self):
+            super().__init__(base_url="http://localhost:1234", transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json={"data": [{"embedding": []}]})))
 
     emb = Embedder(backend="lmstudio", model="m", http_client=EmptyClient(),
                    max_retries=0)
@@ -160,6 +153,7 @@ async def test_add_turn_embeds_when_enabled():
     mm.embed_turns = True
     sid = await mm.new_session()
     await mm.add_turn(sid, "user", "remember that I like espresso")
+    await mm.flush_embeddings()  # H428: turn embeddings are written in the background
     assert len(mm.vectors) == 1
 
 

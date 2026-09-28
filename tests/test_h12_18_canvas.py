@@ -114,6 +114,8 @@ def test_all_allowed_types_have_a_validator():
         "text": {"body": "b"}, "markdown": {"body": "b"}, "list": {"items": ["a"]},
         "link": {"url": "https://x"}, "metric": {"label": "L"},
         "table": {"columns": ["c"]}, "image_ref": {"src": "https://x/a.png"},
+        "tip": {"target": "console", "caption": "c"},                          # H309
+        "tour": {"steps": [{"target": "console", "caption": "c"}]},
     }
     for t in ALLOWED_TYPES:
         assert _sanitize(t, samples[t])          # no raise

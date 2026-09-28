@@ -255,6 +255,21 @@ class BinaryArtifactStore:
                             deleted.append(row['id'])
         return {'deleted': deleted}
 
+    def vacuum(self):
+        """H262 — compact artifacts.db after a prune deleted rows. A fresh connection with
+        no ``BEGIN IMMEDIATE`` (a VACUUM runs outside a transaction), under the upload
+        lock: a busy store raises ``artifact_store_busy`` and is compacted another time."""
+        self._safe_root()
+        if not self.index.exists():
+            return True
+        with self._upload_lock():
+            conn = sqlite3.connect(self.index, timeout=10)
+            try:
+                conn.execute('VACUUM')
+            finally:
+                conn.close()
+        return True
+
     def export(self):
         items, missing = [], []
         for row in self.all():

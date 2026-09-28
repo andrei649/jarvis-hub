@@ -285,3 +285,34 @@ async def test_the_supervisor_drives_a_checklist_to_grading(ledger, run):
     assert (await sup.tick(run.id)).outcome == "graded"
     assert [g[0] for g in graded] == ["verify", "judge"]
     assert [s.summary for s in ledger.steps(run.id)] == ["one", "two"]
+
+
+# ── H464: a model may ask to wait ────────────────────────────────────────────
+
+_WAIT = {"kind": "wait", "summary": "wait for the build",
+         "barrier": {"kind": "trigger", "target": "task:4"}}
+
+
+async def test_a_model_may_propose_a_wait_outside_the_step_scope(ledger, run):
+    """A wait is not a step kind: it never becomes a step row, so the scope clamp
+    (which is about what a run DOES) does not apply to it."""
+    planner = ModelPlanner(lambda _c: dict(_WAIT), scope_kinds=SCOPE, ledger=ledger)
+    action = await planner(_ctx(run, ledger))
+    assert action.kind == "wait"
+    assert action.barrier == {"kind": "trigger", "target": "task:4"}
+    assert action.task == {}
+
+
+async def test_a_wait_with_no_barrier_is_malformed(ledger, run):
+    planner = ModelPlanner(lambda _c: {"kind": "wait", "summary": "wait"}, ledger=ledger)
+    assert await planner(_ctx(run, ledger)) is None
+    assert planner.last.refusal == "malformed"
+
+
+async def test_only_a_wait_proposal_may_carry_a_barrier(ledger, run):
+    planner = ModelPlanner(
+        lambda _c: {"kind": "research", "summary": "x", "barrier": {"kind": "deadline"}},
+        ledger=ledger,
+    )
+    assert await planner(_ctx(run, ledger)) is None
+    assert planner.last.refusal == "malformed"

@@ -1,10 +1,6 @@
 // @ts-nocheck
-/* DRA-29 — the VLM *input* leg. Before this panel the HUD could read
-   `GET /api/vlm/status` (LOCAL MODELS renders the config line) but nothing in the
-   product ever called `POST /api/vlm/describe`: the multimodal surface was
-   output-only. These tests pin the wiring AND the egress disclosure — the route
-   has no is_local gate, so a non-loopback VLM must never receive owner-picked
-   images without an explicit, per-session acknowledgement. */
+/* This authenticated route is strict loopback; optional policy warnings stay
+   visible before upload and after successful inference. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
@@ -87,24 +83,60 @@ describe('VlmDescribePanel — the VLM input leg is really wired', () => {
     expect(screen.queryByText('a cat on a desk')).toBeNull();
   });
 
-  it('refuses to upload to a non-loopback VLM until the destination is acknowledged', async () => {
+  it('refuses a non-loopback destination with no remote checkbox or POST', async () => {
     const fn = mockFetch({
-      '/api/vlm/status': { payload: { configured: true, backend: 'custom', base_url: 'https://vision.example.com/v1', default_model: 'gpt-vision', local: false } },
-      '/api/vlm/describe': { payload: { ok: true, model: 'gpt-vision', response: 'a cat on a desk' } },
+      '/api/vlm/status': { payload: { configured: true, backend: 'custom', base_url: 'https://vision.example.com', default_model: 'gpt-vision', local: false } },
+      '/api/vlm/describe': { payload: { ok: true, response: 'must not appear' } },
     });
     render(<VlmDescribePanel />);
-    // the destination host is named verbatim, not hidden behind "remote"
-    await waitFor(() => expect(screen.getByText(/https:\/\/vision\.example\.com\/v1/)).toBeTruthy());
-    await pick();
-    typePrompt();
-    fireEvent.click(screen.getByRole('button', { name: 'describe' }));
-    await waitFor(() => expect(screen.getByText(/refused/)).toBeTruthy());
-    expect(describeCalls(fn).length).toBe(0);   // not one byte left the host
+    await waitFor(() => expect(screen.getByText(/vision.example.com/)).toBeTruthy());
+    await pick(); typePrompt();
+    const submit = screen.getByRole('button', { name: 'describe' });
+    expect(submit.disabled).toBe(true);
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.getByText(/refused/i)).toBeTruthy();
+    fireEvent.click(submit);
+    expect(describeCalls(fn)).toHaveLength(0);
+  });
 
-    fireEvent.click(screen.getByLabelText(/acknowledge/i));
+  it('shows status policy warnings before upload and retains response warnings after success', async () => {
+    mockFetch({
+      '/api/vlm/status': { payload: { configured: true, backend: 'custom', base_url: 'http://localhost:1234', local: true,
+        data_policy: 'unknown', data_policy_note: 'Custom model policy is unknown.', warning: 'Review inputs before sending.' } },
+      '/api/vlm/describe': { payload: { ok: true, response: 'a local answer', warning: 'This request used an unknown-policy model.' } },
+    });
+    render(<VlmDescribePanel />);
+    await waitFor(() => expect(screen.getByText('Review inputs before sending.')).toBeTruthy());
+    expect(screen.getByText('Custom model policy is unknown.')).toBeTruthy();
+    await pick(); typePrompt();
     fireEvent.click(screen.getByRole('button', { name: 'describe' }));
-    await waitFor(() => expect(screen.getByText('a cat on a desk')).toBeTruthy());
-    expect(describeCalls(fn).length).toBe(1);
+    await waitFor(() => expect(screen.getByText('a local answer')).toBeTruthy());
+    expect(screen.getByText('This request used an unknown-policy model.')).toBeTruthy();
+    expect(screen.getByText('Review inputs before sending.')).toBeTruthy();
+  });
+
+  it('shows a 200 ok:false refusal and suppresses its fabricated response', async () => {
+    mockFetch({
+      '/api/vlm/status': { payload: { configured: true, backend: 'lmstudio', local: true } },
+      '/api/vlm/describe': { payload: { ok: false, error: 'inference did not complete', response: 'must not appear' } },
+    });
+    render(<VlmDescribePanel />);
+    await pick(); typePrompt();
+    fireEvent.click(screen.getByRole('button', { name: 'describe' }));
+    await waitFor(() => expect(screen.getByText(/inference did not complete/)).toBeTruthy());
+    expect(screen.queryByText('must not appear')).toBeNull();
+  });
+
+  it('does not present an empty ok:true response as an answer', async () => {
+    mockFetch({
+      '/api/vlm/status': { payload: { configured: true, backend: 'lmstudio', local: true } },
+      '/api/vlm/describe': { payload: { ok: true, model: 'false-success-model', response: '' } },
+    });
+    render(<VlmDescribePanel />);
+    await pick(); typePrompt();
+    fireEvent.click(screen.getByRole('button', { name: 'describe' }));
+    await waitFor(() => expect(screen.getByText(/describe failed/)).toBeTruthy());
+    expect(screen.queryByText(/model · false-success-model/)).toBeNull();
   });
 
   it('keeps a loopback VLM free of the acknowledgement gate', async () => {

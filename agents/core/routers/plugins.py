@@ -8,7 +8,9 @@ time via `get_orch()` (late binding to `web.orch`), matching the other extracted
 routers. Behavior is unchanged — no singleton lives here.
 """
 
+import asyncio
 import logging
+import time
 
 from core.log_safe import log_safe
 from fastapi import APIRouter, Depends, HTTPException
@@ -82,7 +84,15 @@ async def list_plugins():
         # At-a-glance honesty rollup for the HUD: how many plugins are actually
         # live vs still running in a mock/degraded fallback awaiting config.
         "honesty_summary": {"live": live, "needs_config": len(plugins) - live},
+        # H285: the plugins the owner's load set switched off at boot.
+        "load_set": _load_set_status(),
     })
+
+
+def _load_set_status() -> dict:
+    from agents.core import load_set
+
+    return load_set.status("plugins")
 
 
 @router.put("/plugins/{plugin_id}/toggle", dependencies=[Depends(admin_guard)])
@@ -92,14 +102,64 @@ async def toggle_plugin(plugin_id: str):
     manifest = orch.permission_gate.plugins.get(plugin_id)
     if not manifest:
         raise HTTPException(status_code=404, detail=f"Plugin '{plugin_id}' not found")
+    from agents.core import safe_mode
+
+    if safe_mode.enabled():
+        # H490: plugins stay off in safe mode, and the saved choice is not rewritten.
+        return nocache_json({"id": plugin_id, "error": safe_mode.REASON,
+                             "message": "plugins cannot be switched in safe mode; restart normally first"},
+                            status_code=409)
     if manifest.enabled:
         orch.permission_gate.disable(plugin_id)
         action = "disabled"
     else:
         orch.permission_gate.enable(plugin_id)
         action = "enabled"
+    # H285: kept across a restart, in the owner's load set.
+    from agents.core import load_set
+
+    try:
+        changed = load_set.persist_plugin(plugin_id, manifest.enabled)
+    except Exception:  # noqa: BLE001 - the live toggle stands; say it was not kept
+        logger.warning("Plugin %s toggle not persisted", log_safe(plugin_id), exc_info=True)
+        changed = []
+    if not await _audit_toggle(plugin_id, action, changed) and manifest.enabled:
+        # Never widened unrecorded (as the H329 skill switch): back off, live and kept.
+        orch.permission_gate.disable(plugin_id)
+        try:
+            restored = bool(load_set.persist_plugin(plugin_id, False))
+        except Exception:  # noqa: BLE001
+            logger.warning("Plugin %s toggle not restored", log_safe(plugin_id), exc_info=True)
+            restored = False
+        return nocache_json({"id": plugin_id, "enabled": False, "reason": "audit_failed", "restored": restored,
+                             "error": "switching a plugin back on is recorded in the audit log, "
+                                      "which could not be written; it was not switched on"}, status_code=503)
     logger.info("Plugin %s %s", log_safe(plugin_id), action)
-    return nocache_json({"id": plugin_id, "enabled": manifest.enabled, "action": action})
+    return nocache_json({"id": plugin_id, "enabled": manifest.enabled, "action": action,
+                         "persisted": bool(changed)})
+
+
+async def _audit_toggle(plugin_id: str, action: str, changed: list[str]) -> bool:
+    """H285 review: the toggle writes durable settings, so it leaves a SETTINGS_CHANGE
+    row naming the plugin and the keys it kept the choice in (as AUD-8 does for the
+    settings page). Whether the row was written."""
+    orch = get_orch()
+    audit = getattr(orch, "audit", None) if orch else None
+    if audit is None:
+        return False
+    from agents.core.security.types import SecurityEvent, SecurityEventType
+
+    try:
+        await asyncio.to_thread(audit.log, SecurityEvent(
+            event_type=SecurityEventType.SETTINGS_CHANGE,
+            timestamp=time.time(),
+            content_preview=f"plugin {plugin_id} {action}; kept in: {sorted(changed) or 'nothing (not persisted)'}",
+            action_taken=f"plugin_{action}",
+        ))
+    except Exception:  # noqa: BLE001
+        logger.warning("Plugin %s toggle: the audit row could not be written", log_safe(plugin_id), exc_info=True)
+        return False
+    return True
 
 
 @router.get("/api/plugins/extensions", dependencies=[Depends(user_guard)])

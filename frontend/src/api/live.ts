@@ -108,6 +108,40 @@ function workflowToCanvas(workflow: any) {
   };
 }
 
+/** Build the INTEROP view from the four admin-only sources, never borrowing the
+ * demo seed (H200 review). Once one source answers the mode is marked LIVE, so a
+ * section whose source failed is empty and listed in `unavailable` (the mode says
+ * "not connected" there), never the seed's peers, servers or widgets. Returns null
+ * when no source answered. Exported so the shipped path is what the tests run.
+ */
+/** H153 review — the webhook receiver switch as the hub reads it: only a literal true
+    is on; a settings answer without the row, or no answer, is "not read". */
+export function receiverState(settings: any): 'on' | 'off' | 'not read' {
+  const rows = arr(settings, 'webhooks');
+  const row = rows ? rows.find((r: any) => r && r.key === 'receiver_enabled') : undefined;
+  if (!row) return 'not read';
+  return row.value === true ? 'on' : 'off';
+}
+
+export function hydrateInterop(a2a: any, mcp: any, widgets: any, webhooks: any, receiver?: any) {
+  const ap = arr(a2a, 'peers');
+  const ms = arr(mcp, 'servers');
+  const wd = arr(widgets, 'widgets');
+  const wh = arr(webhooks, 'webhooks');
+  if (!ap && !ms && !wd && !wh) return null;
+  // A hook switched on is not "active" while the receiver refuses every delivery.
+  const rx = receiverState(receiver);
+  return {
+    a2a: (ap || []).map((p: any) => ({ peer: p.peer || p.name || p.id, protocol: p.protocol || 'A2A', status: p.status || (p.connected ? 'connected' : 'idle'), agents: p.agents || [] })),
+    mcp: (ms || []).map((s: any) => ({ server: s.name || s.server, tools: (s.tools && s.tools.length) || s.tool_count || 0, status: s.status || (s.connected ? 'up' : 'down'), scope: s.scope || '' })),
+    widgets: (wd || []).map((w: any) => ({ name: w.title || w.name || 'widget', surface: w.surface || w.token || '', enabled: w.enabled !== false })),
+    webhooks: (wh || []).map((w: any) => ({ event: w.name || w.id, dir: 'in', url: w.target_type ? `${w.target_type}:${w.target}` : (w.target || ''),
+      status: w.enabled === false ? 'off' : rx === 'off' ? 'receiver off' : 'active' })),
+    receiver: rx,
+    unavailable: { a2a: !ap, mcp: !ms, widgets: !wd, webhooks: !wh },
+  };
+}
+
 /** Build the OBSERVE view from the live payloads, never borrowing the demo seed.
  *
  * Exported so its behaviour is tested directly — a test that re-implements this
@@ -168,12 +202,28 @@ export function hydrateObserve(bench: any, quality: any, resil: any, seed: any) 
  * We only know a key is SET — never claim validity or rotation age. */
 const SECRET_NAME_HINTS = ['key', 'token', 'secret', 'password', 'passwd', 'pass', 'client_id'];
 
-export function hydrateAdminKeys(env: any) {
+export function hydrateAdminKeys(env: any, sources?: any) {
   if (!env || typeof env !== 'object' || Array.isArray(env)) return [];
+  /* H273 — /api/admin/env/sources names the layer each key came from (process
+     environment, repo .env, data-home .env): names and layers, never values. */
+  const layer: Record<string, string> = {};
+  const LAYER_LABELS: Record<string, string> = { process: 'process environment', repo_env: 'repo .env', user_env: 'data-home .env' };
+  for (const row of (sources && Array.isArray(sources.sources) ? sources.sources : [])) {
+    if (!row || typeof row.key !== 'string' || typeof row.label !== 'string') continue;
+    // "why is my .env value not the one in use?": name the layers this one overrides
+    const over = (Array.isArray(row.shadowed) ? row.shadowed : [])
+      .map((id: any) => LAYER_LABELS[String(id)]).filter(Boolean);
+    const named = over.length ? `${row.label}, overriding ${over.join(' and ')}` : row.label;
+    // H273 third review: a .env value the hub read before its files were loaded is not in
+    // effect, and the row must say so rather than name the layer alone.
+    const note = typeof row.note === 'string' && row.note.trim() ? row.note.trim() : '';
+    layer[row.key] = note ? `${named} (${note})` : named;
+  }
   return Object.entries(env)
     .filter(([name]) => SECRET_NAME_HINTS.some((h) => name.toLowerCase().includes(h)))
     .slice(0, 8)
-    .map(([name, value]) => ({ name, masked: text(value as any, ''), status: 'set', rotated: '' }));
+    .map(([name, value]) => ({ name, masked: text(value as any, ''), status: 'set', rotated: '',
+      ...(layer[name] ? { source: layer[name] } : {}) }));
 }
 
 /* /api/admin/agents/stats → OBSERVE's "LATENCY BY AGENT" meters. latency_ms
@@ -391,20 +441,18 @@ export function useLiveModes(): LiveModes {
         if (observeEvidence(bench, quality, resil, al, tl)) mark('OBSERVE');
       }).catch(() => {});
 
-      // INTEROP — a2a peers / mcp servers / widgets / webhooks
+      // INTEROP — a2a peers / mcp servers / widgets / webhooks. All four are
+      // admin-only routes. When nothing answers, the corpus is left alone: the mode
+      // stays "Not connected", and DEMO keeps its seed.
       await Promise.all([
-        apiGet('/api/a2a/peers').catch(() => null),
-        apiGet('/api/admin/mcp').catch(() => null),
-        apiGet('/api/admin/widgets').catch(() => null),
-        apiGet('/api/webhooks').catch(() => null),
-      ]).then(([a2a, mcp, widgets, webhooks]: any[]) => {
-        const I = { ...V2.INTEROP };
-        const ap = arr(a2a, 'peers'); if (ap) I.a2a = ap.map((p: any) => ({ peer: p.peer || p.name || p.id, protocol: p.protocol || 'A2A', status: p.status || (p.connected ? 'connected' : 'idle'), agents: p.agents || [] }));
-        const ms = arr(mcp, 'servers'); if (ms) I.mcp = ms.map((s: any) => ({ server: s.name || s.server, tools: (s.tools && s.tools.length) || s.tool_count || 0, status: s.status || (s.connected ? 'up' : 'down'), scope: s.scope || '' }));
-        const wd = arr(widgets, 'widgets'); if (wd) I.widgets = wd.map((w: any) => ({ name: w.title || w.name || 'widget', surface: w.surface || w.token || '', enabled: w.enabled !== false }));
-        const wh = arr(webhooks, 'webhooks'); if (wh) I.webhooks = wh.map((w: any) => ({ event: w.event || w.id, dir: w.dir || 'in', url: w.url || w.target || '', status: w.status || 'active' }));
-        set('INTEROP', I);
-        if (ap || ms || wd || wh) mark('INTEROP');
+        apiGet('/api/a2a/peers', { admin: true }).catch(() => null),
+        apiGet('/api/admin/mcp', { admin: true }).catch(() => null),
+        apiGet('/api/admin/widgets', { admin: true }).catch(() => null),
+        apiGet('/api/webhooks', { admin: true }).catch(() => null),
+        apiGet('/api/admin/settings/webhooks', { admin: true }).catch(() => null),
+      ]).then(([a2a, mcp, widgets, webhooks, receiver]: any[]) => {
+        const I = hydrateInterop(a2a, mcp, widgets, webhooks, receiver);
+        if (I) { set('INTEROP', I); mark('INTEROP'); }
       }).catch(() => {});
 
       // AUTONOMY — morning brief + observer log
@@ -465,9 +513,12 @@ export function useLiveModes(): LiveModes {
       // API KEYS & SECRETS — what the server actually has in its environment,
       // already masked server-side. Absent or empty → the panel stays "not
       // connected" rather than showing keys that were never configured.
-      await apiGet('/api/admin/env', { admin: true }).then((env: any) => {
+      await Promise.all([
+        apiGet('/api/admin/env', { admin: true }),
+        apiGet('/api/admin/env/sources', { admin: true }).catch(() => null),
+      ]).then(([env, sources]: any[]) => {
         if (!alive || loadId !== loadGeneration) return;
-        const keys = hydrateAdminKeys(env);
+        const keys = hydrateAdminKeys(env, sources);
         set('ADMIN', { ...V2.ADMIN, keys });
         if (keys.length) mark('ADMIN');
       }).catch(() => {});

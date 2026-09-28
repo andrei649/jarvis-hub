@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from fnmatch import fnmatchcase
 from types import MappingProxyType
 
 from ..model_config import DEFAULT_CLAUDE_MODEL
@@ -22,6 +23,11 @@ from ..reasoning_effort import (
     supported_reasoning_efforts,
     vendor_efforts,
 )
+
+#: H378 — what a vendor does with the prompts it is sent, as its published API terms say.
+#: ``local`` never leaves the machine; ``trains-on-inputs`` needs the owner's
+#: acknowledgement before it is chosen (agents/core/llm/selection_guards.py).
+DATA_POLICIES = ("local", "no-training", "trains-on-inputs", "unknown")
 
 
 @dataclass(frozen=True)
@@ -48,12 +54,21 @@ class ProviderProfile:
     reasoning_declarations: Mapping[str, tuple[str, ...]] | None = field(
         default=None, repr=False, compare=False,
     )
+    # H378 — one of DATA_POLICIES for the provider, with a note that says why, and
+    # (pattern, policy, note) rows for models the provider serves differently: an
+    # OpenRouter ``:free`` variant is served by providers that may train on prompts.
+    data_policy: str = "unknown"
+    data_policy_note: str = ""
+    data_policy_models: tuple[tuple[str, str, str], ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", self.id.strip().lower())
         object.__setattr__(self, "capabilities", frozenset(self.capabilities))
         object.__setattr__(self, "fallback_models", tuple(self.fallback_models))
         object.__setattr__(self, "reasoning_efforts", tuple(self.reasoning_efforts))
+        object.__setattr__(self, "data_policy_models", tuple(tuple(row) for row in self.data_policy_models))
+        if self.data_policy not in DATA_POLICIES or any(row[1] not in DATA_POLICIES for row in self.data_policy_models):
+            raise ValueError(f"provider profile data_policy must be one of {DATA_POLICIES}")
         if self.reasoning_declarations is not None:
             object.__setattr__(self, "reasoning_declarations", MappingProxyType({
                 _model_key(model): normalize_efforts(levels)
@@ -65,6 +80,15 @@ class ProviderProfile:
             raise ValueError("provider profile display_name is required")
         if not self.backend_kind:
             raise ValueError("provider profile backend_kind is required")
+
+    def data_policy_for(self, model: str) -> tuple[str, str]:
+        """``(policy, note)`` for *model* under this provider: the first matching model
+        row (case-insensitive glob), else the provider's own."""
+        name = str(model or "").strip().lower()
+        for pattern, policy, note in self.data_policy_models:
+            if name and fnmatchcase(name, pattern.lower()):
+                return policy, note
+        return self.data_policy, self.data_policy_note
 
     @property
     def supports_prompt_cache_key(self) -> bool:
@@ -128,6 +152,8 @@ class ProviderProfile:
             "fallback_models": list(self.fallback_models),
             "reasoning_efforts": list(self.reasoning_efforts),
             "supports_prompt_cache_key": self.supports_prompt_cache_key,
+            "data_policy": {"policy": self.data_policy, "note": self.data_policy_note,
+                            "models": [{"pattern": p, "policy": pol, "note": n} for p, pol, n in self.data_policy_models]},
         }
 
 
@@ -168,6 +194,7 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         default_base_url="http://localhost:1234",
         base_url_env="JARVIS_LM_STUDIO_URL",
         capabilities=frozenset({"chat", "streaming", "local"}),
+        data_policy="local", data_policy_note="runs on this machine; prompts never leave it",
     ),
     ProviderProfile(
         id="ollama",
@@ -176,6 +203,7 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         default_base_url="http://localhost:11434",
         base_url_env="JARVIS_OLLAMA_URL",
         capabilities=frozenset({"chat", "streaming", "local"}),
+        data_policy="local", data_policy_note="runs on this machine; prompts never leave it",
     ),
     ProviderProfile(
         id="gemini",
@@ -185,6 +213,8 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         auth_env="GEMINI_API_KEY",
         capabilities=frozenset({"chat", "long-context", "cloud"}),
         fallback_models=("gemini-2.5-flash", "gemini-2.5-pro"),
+        data_policy_note=("depends on the key: Google may use prompts sent with an unbilled (free-tier) "
+                          "Gemini API key to improve its products; a billed key's are not"),
     ),
     ProviderProfile(
         id="anthropic",
@@ -197,6 +227,7 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         # Read from the same table the request path uses, so the profile cannot
         # advertise a rung the wire would reject.
         reasoning_efforts=vendor_efforts("anthropic"),
+        data_policy="no-training", data_policy_note="Anthropic's API terms: prompts are not used for training by default",
     ),
     ProviderProfile(
         id="openrouter",
@@ -207,6 +238,10 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         default_base_url="https://openrouter.ai/api/v1",
         base_url_env="OPENROUTER_BASE_URL",
         capabilities=frozenset({"chat", "model-catalog", "cloud"}),
+        data_policy_note=("depends on the upstream provider; llm.openrouter_data_collection=deny (the default) "
+                          "keeps requests off providers that store or train on prompts"),
+        data_policy_models=(("*:free", "trains-on-inputs",
+                             "OpenRouter's free variants are served by providers that may log and train on prompts"),),
     ),
     ProviderProfile(
         id="xai", display_name="xAI Grok (Responses)", backend_kind="xai-responses",
@@ -222,6 +257,7 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         default_base_url="https://api.openai.com/v1",
         capabilities=frozenset({"chat", "streaming", "cloud", "prompt-cache-key"}),
         reasoning_declarations={"gpt-4.1": (), "gpt-4.1-2025-04-14": ()},
+        data_policy="no-training", data_policy_note="OpenAI's API terms: API inputs are not used for training by default",
     ),
     ProviderProfile(
         id="openai-compatible",
@@ -232,6 +268,7 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         default_base_url="https://api.openai.com/v1",
         base_url_env="OPENAI_BASE_URL",
         capabilities=frozenset({"chat", "streaming", "cloud"}),
+        data_policy_note="depends on the endpoint it is pointed at",
     ),
 )
 
@@ -253,6 +290,7 @@ def provider_catalog(environ: Mapping[str, str] | None = None) -> list[dict]:
 
 __all__ = [
     "BUILTIN_PROFILES",
+    "DATA_POLICIES",
     "BUILTIN_PROVIDER_IDS",
     "DEFAULT_REGISTRY",
     "ProviderProfile",

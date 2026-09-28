@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T14:03:58.310333+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "H513 unattended native Telegram image descriptions, separate role acknowledgment and responsive Trust controls; full H513 remains partial",
+  "coordination": {
+    "implementers": 2,
+    "model": "gpt-6-sol",
+    "reasoning": "high",
+    "ownership": "one backend writer, one frontend writer, coordinator integration and bounded independent review"
+  },
+  "verification": [
+    {
+      "path": "/tmp/h513-media-red.xml",
+      "tests": 10,
+      "failures": 10,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "seconds": 0.875,
+      "sha256": "c6d2d408092aa0ffcade85e2c4834bbec785358413e7c1e157420fd35e93dab8"
+    },
+    {
+      "path": "/tmp/h513-media-notice-red.xml",
+      "tests": 30,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 29,
+      "seconds": 1.016,
+      "sha256": "e59f1e6fb631fc7343ffe166deb91a09263f51de9ef3a27baba64a6713b1e97c"
+    },
+    {
+      "path": "/tmp/h513-media-predownload-red.xml",
+      "tests": 34,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 33,
+      "seconds": 1.211,
+      "sha256": "33fec2c23152cbcae473b84ffbc4e4e7b0f12091e135c01d714011a5d08cd7e8"
+    },
+    {
+      "path": "/tmp/h513-unattended-media-final.xml",
+      "tests": 285,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 285,
+      "seconds": 3.661,
+      "sha256": "85a66fc44105ba61d924aa64cfeb5830b0dd386890ed030113c0fa8836c8724c"
+    },
+    {
+      "path": "/tmp/nerva-h513-media-hud.xml",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 15,
+      "seconds": 0.276941417,
+      "sha256": "2e86eb85a7e4c7b915e11dbc06be5fc2801b44ffef4dfe9a0cebcace41b0a9f5"
+    },
+    {
+      "path": "/tmp/nerva-h513-media-integration.xml",
+      "tests": 221,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 221,
+      "seconds": 3.996,
+      "sha256": "5810cced455e6889135402ca7ff3865495e52fbf898b00d8755894cb94497c82"
+    },
+    {
+      "path": "/tmp/nerva-h513-media-backend.xml",
+      "tests": 19191,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 19156,
+      "seconds": 250.802,
+      "sha256": "286121813ff9db69379712d1601004316deacf3365237c60ebbe8a0e3dfcf294"
+    }
+  ],
+  "full_backend_command": ".venv/bin/python -m pytest tests/ -n 3 --dist loadfile --timeout=90 -q --tb=short --junitxml=/tmp/nerva-h513-media-backend.xml",
+  "frontend": {
+    "path": "/tmp/nerva-h513-media-frontend.json",
+    "sha256": "ecca743ecbf4f92d39a8da5e1175375362eccc35f39f04ab42823121c354b0e1",
+    "passed": 1819,
+    "total": 1819,
+    "failed": 0,
+    "typecheck": "passed after OpenAPI generation",
+    "build": "passed; existing chunk-size warning",
+    "openapi_change": "finite role target enum adds role:telegram_media_reader"
+  },
+  "source_sha256": {
+    "agents/core/llm/data_handling.py": "23145c5c6640df3773d1b5a2c52db3a11c7dde3d3eb3c284a8d21d4325a888c4",
+    "agents/core/llm/vision_policy.py": "ddaebb9233c7c96f0cdb77c32244a76a9246470cea6a02f9023145b6496fa34a",
+    "agents/core/channels/media_reader.py": "2f861fd5afa984b9929c74e8deca63826583b5fc6aa94b7af4b9618915f806fc",
+    "agents/core/routers/security.py": "f08e1a6d9f1e79df30e39a940ebcefffe77cfa700ded7d1cb56e9b15029eedb9",
+    "agents/core/settings_db.py": "924948f699a0844224cb61b08e7b2f1dee011c5f9200cf617b59dabdde51397a",
+    "tests/test_h513_unattended_media_reader.py": "1ca1619a81c9ebb0525dec82793704d9d3cd73e5dbd3f1098160108ad2c481bf",
+    "tests/test_inbound_media_read.py": "6147c7a5d6529ccfcc9b873806707bcacb9577a8eb0ad740504f7c326ea18f6c",
+    "frontend/src/panels/data-handling.tsx": "6def73b982546bfd97a5be381c9b861c04ae284d8f325c75804e6fe92765bc76",
+    "frontend/src/test/governance-posture-panel.test.tsx": "df87a2f10fe01b633c39866582f5b1418028017da6fc11417b5205b69c421814",
+    "frontend/src/api/schema.gen.ts": "62ecd271070acb869269058521c98badc8c2b6627d84dce49ca635a43e72044f",
+    "agents/web/v2/index.html": "fcfdefa8db6bb6a4ddfa7bc4c95351912c9e32207d266ca3e001614f0d5dd4c6",
+    "agents/web/v2/sw-v2.js": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c",
+    "agents/web/v2/manifest.webmanifest": "c2d642afdc2d01e79fe147118fc92dfbefa66b7c503406efb5e5479f7c101c69",
+    "agents/web/v2/assets/modes_world-wt-I8Rqt.js": "0f114634fbd4ee89e1dbc77a33624f15d78813b6a0d8f40ba49dbcddae8de7cb",
+    "agents/web/v2/assets/modes-CPgV5zy9.js": "b78fb4e469bcfe4b6fddbd1f41384651509c32049102655211af274fcfff4ff9",
+    "agents/web/v2/assets/soul-edit-BVVaOyCV.js": "8221c9fab9d7ec43cba6e0c17868a3ee899eba2abfb2d29b69f85bdf0331ee83",
+    "agents/web/v2/assets/gap-zJ_DXb28.js": "3b3b5c18623433a7e72b8195d81c37cdbf2e56780ffb9db2cfae04a65b6348ff",
+    "agents/web/v2/assets/jobs-UvrJfY-6.js": "4668f31d287655bbda0e26b1b0e154e854a2277c1cd6a6b93f414149be7e921c",
+    "agents/web/v2/assets/jetbrains-mono-latin-var-B9CIFXIH.woff2": "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e",
+    "agents/web/v2/assets/modes2-W5V7GhkD.js": "da06b3d4d7f0115d31e21099d867be8c5c1744b172551657be3c3c6bff375e80",
+    "agents/web/v2/assets/modes3-2YLVA7lN.js": "adcde755e8ecaf3abb9358f4105bdd0072c7775b77c49433dc84832c1dd86a48",
+    "agents/web/v2/assets/index-ldxH5Xm9.css": "a4851f9c57ea8630fad9196f3eb2c84181e4286232c396ede73290e4b272bbd1",
+    "agents/web/v2/assets/space-grotesk-latin-var-BhU9QXUp.woff2": "0640890476fc1198ab4de571fb658de443c4d85b66466ec09534a8737ab1ce9d",
+    "agents/web/v2/assets/modes4-H8nMJR6D.js": "20bcf1ea896a561dfc431f9cfe876bd0981ea956b3b8f619abaf92b6358d41d3",
+    "agents/web/v2/assets/index-We1EVhIQ.js": "eeb80350dcb33a4ef91058b1a07a99f02afb4c06cedffefe0e325c056c31d1f4",
+    "agents/web/v2/assets/panel-kit-gf7swuoi.js": "ca4602b0da8dd2cd9c694b306cbffd87257b759a4d8b20772fbdebc25a3e819f",
+    "agents/web/v2/assets/client-C3wAcB0V.js": "40c77894e27ed04d3fb085a9e3840df283c0c404e29ccabfd52f980c67e1cbca"
+  },
+  "security": {
+    "bandit": {
+      "exit_code": 0,
+      "scope": "agents/scripts against existing baseline",
+      "log": "/tmp/nerva-h513-media-bandit.log"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "files": 27,
+      "snapshot": "/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/nerva-h513-media-source-t_8iyjec",
+      "log": "/tmp/nerva-h513-media-gitleaks.log"
+    }
+  },
+  "graft": {
+    "check": "passed",
+    "scope": [
+      "agents/core/autonomy",
+      "agents/core/llm",
+      "agents/core/kernel",
+      "agents/core/acquisition",
+      "agents/core/house",
+      "agents/core/ingestion",
+      "agents/core/routers",
+      "agents/core/channels"
+    ],
+    "deep_index": false,
+    "log": "/tmp/nerva-h513-media-graft-check.log"
+  },
+  "review_corrections": [
+    "Unknown/training policies need their own role acknowledgment; known-local profiles do not gain an unnecessary consent requirement.",
+    "Factored native scope now attributes Telegram warnings to its own role rather than composer vision.",
+    "Selection refusal is checked before a Telegram download, and owned clients close even when scope entry refuses."
+  ],
+  "limitations": [
+    "No live Telegram, model-provider, camera or native-mobile acceptance; suite socket restrictions remained enabled and blocked legacy fixture connection attempts.",
+    "Production media reader has no model-router handle, so role last_used stays unavailable rather than invented.",
+    "Custom loopback endpoint data handling remains unknown; declared metadata does not attest the internal behavior of model servers.",
+    "Camera dispatch remains a separate slice; standalone native screen-locator builder is not wired to a production caller.",
+    "Remote embeddings, stored-vector migration, native warning/consent controls and remaining Hermes parity are unfinished.",
+    "No new H277 mutation campaign, commit, push, merge or deployment."
+  ],
+  "final_documentation_verification": {
+    "tests": 92,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "path": "/tmp/nerva-h513-media-final-docs.xml",
+    "sha256": "5ab502a1e82ddf3c13749bf8d0f2ccfb590e807e65126e32790f2aad9cc265fa",
+    "status_sync": "in_sync backend=19191 frontend=1819 mobile=142"
+  }
+}

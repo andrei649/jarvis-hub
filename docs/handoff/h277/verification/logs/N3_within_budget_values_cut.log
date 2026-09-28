@@ -1,0 +1,18 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+........................................................................ [ 43%]
+.................................................F...................... [ 86%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+__________________ test_round2_small_long_value_is_sent_whole __________________
+
+    def test_round2_small_long_value_is_sent_whole():
+        body = "x" * 1600
+        prompt, flags, truncated = aj.build_prompt(dict(ACTION, args={"path": "a", "text": body}))
+        assert body in prompt
+>       assert truncated is False and flags == []
+E       assert (True is False)
+
+tests/test_h277_approval_judge.py:1118: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_round2_small_long_value_is_sent_whole
+1 failed, 165 passed in 2.77s

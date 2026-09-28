@@ -25,6 +25,7 @@ from typing import Any, Optional
 from ..log_safe import log_safe
 from .base import LLMBackend, cloud_cap, strip_thinking
 from .egress import llm_async_client
+from .provider_errors import note_provider_failure
 from .provider_routing import SETTINGS_KEYS, build_provider_block
 from .tool_dialects import compatible_usage
 from .tool_protocol import TokenUsage, ToolSpec, ToolTurn, parse_openai_tool_calls
@@ -117,9 +118,13 @@ class OpenRouterBackend(LLMBackend):
             pass
 
     def _shape(self, payload: dict, block: dict | None) -> dict:
-        """Add the per-request extras: reasoning / cache parameters, then routing."""
+        """Add the per-request extras: reasoning / cache parameters, a delegated child's
+        ``extra_body`` (H681, never over a key the hub owns), then routing."""
         from .provider_request import compatible_parameters
+        from .request_context import merge_extra_body, reconcile_payload
         payload.update(compatible_parameters(self.profile, payload["model"], self.reasoning_effort))
+        merge_extra_body(payload)
+        reconcile_payload(payload)
         if block:
             payload["provider"] = block
         return payload
@@ -176,6 +181,7 @@ class OpenRouterBackend(LLMBackend):
             return answer
         except Exception as e:
             logger.warning("OpenRouter generate failed: %s", e)
+            note_provider_failure(self.profile.id, model, e)
             return _ERROR
 
     async def generate_tool_turn(
@@ -218,6 +224,7 @@ class OpenRouterBackend(LLMBackend):
             )
         except Exception as e:
             logger.warning("OpenRouter tool turn failed: %s", e)
+            note_provider_failure(self.profile.id, model, e)
             return ToolTurn(content=_ERROR)
 
 

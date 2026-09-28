@@ -1,0 +1,305 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_model_roles.py", "tests/test_doctor.py"]
+...........................................................FF.......F..F [ 45%]
+..FF.F..F.F.FFF......................................................... [ 90%]
+................                                                         [100%]
+=================================== FAILURES ===================================
+_____________ test_doctor_model_roles_row_warns_on_a_bad_provider ______________
+
+    def test_doctor_model_roles_row_warns_on_a_bad_provider():
+        from scripts import doctor
+    
+        check = doctor.check_model_roles({"JARVIS_ROLE_VISION_PROVIDER": "lmstudio"})
+>       assert check.status == doctor.WARN
+E       AssertionError: assert 'ok' == 'warn'
+E         
+E         - warn
+E         + ok
+
+tests/test_h277_model_roles.py:365: AssertionError
+________ test_doctor_model_roles_row_warns_on_an_ignored_main_variable _________
+
+    def test_doctor_model_roles_row_warns_on_an_ignored_main_variable():
+        from scripts import doctor
+    
+        check = doctor.check_model_roles({"JARVIS_ROLE_MAIN_MODEL": "x"})
+>       assert check.status == doctor.WARN and "JARVIS_ROLE_MAIN_MODEL" in check.detail
+E       AssertionError: assert ('ok' == 'warn'
+E         
+E         - warn
+E         + ok)
+
+tests/test_h277_model_roles.py:373: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[6] _____________
+
+env = {'JARVIS_VLM_BACKEND': 'custom'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+        vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+        if runtime[0] == "refused":
+            reason = runtime[1]
+            assert (role if isinstance(role, str) else role.reason) == reason
+            if not isinstance(role, str):
+                assert role.configured is False
+            assert vision.startswith(f"vision: off ({reason}")
+            if reason != "vlm_disabled":
+>               assert check.status == doctor.WARN
+E               AssertionError: assert 'ok' == 'warn'
+E                 
+E                 - warn
+E                 + ok
+
+tests/test_h277_model_roles.py:424: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[9] _____________
+
+env = {'JARVIS_VLM_BACKEND': 'lmstudio'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+        vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+        if runtime[0] == "refused":
+            reason = runtime[1]
+            assert (role if isinstance(role, str) else role.reason) == reason
+            if not isinstance(role, str):
+                assert role.configured is False
+            assert vision.startswith(f"vision: off ({reason}")
+            if reason != "vlm_disabled":
+>               assert check.status == doctor.WARN
+E               AssertionError: assert 'ok' == 'warn'
+E                 
+E                 - warn
+E                 + ok
+
+tests/test_h277_model_roles.py:424: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[12] ____________
+
+env = {'JARVIS_VLM_BACKEND': 'vllm', 'JARVIS_VLM_URL': 'http://127.0.0.1:8000/v1'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+        vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+        if runtime[0] == "refused":
+            reason = runtime[1]
+            assert (role if isinstance(role, str) else role.reason) == reason
+            if not isinstance(role, str):
+                assert role.configured is False
+            assert vision.startswith(f"vision: off ({reason}")
+            if reason != "vlm_disabled":
+>               assert check.status == doctor.WARN
+E               AssertionError: assert 'ok' == 'warn'
+E                 
+E                 - warn
+E                 + ok
+
+tests/test_h277_model_roles.py:424: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[13] ____________
+
+env = {'JARVIS_VLM_BACKEND': 'lmstudio', 'JARVIS_VLM_PRESET': 'qwen3-vl-8b'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+        vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+        if runtime[0] == "refused":
+            reason = runtime[1]
+            assert (role if isinstance(role, str) else role.reason) == reason
+            if not isinstance(role, str):
+                assert role.configured is False
+            assert vision.startswith(f"vision: off ({reason}")
+            if reason != "vlm_disabled":
+>               assert check.status == doctor.WARN
+E               AssertionError: assert 'ok' == 'warn'
+E                 
+E                 - warn
+E                 + ok
+
+tests/test_h277_model_roles.py:424: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[15] ____________
+
+env = {'JARVIS_VLM_BACKEND': 'lmstudio', 'JARVIS_VLM_PRESET': 'nope', 'JARVIS_VLM_MODEL': 'm'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+        vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+        if runtime[0] == "refused":
+            reason = runtime[1]
+            assert (role if isinstance(role, str) else role.reason) == reason
+            if not isinstance(role, str):
+                assert role.configured is False
+            assert vision.startswith(f"vision: off ({reason}")
+            if reason != "vlm_disabled":
+>               assert check.status == doctor.WARN
+E               AssertionError: assert 'ok' == 'warn'
+E                 
+E                 - warn
+E                 + ok
+
+tests/test_h277_model_roles.py:424: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[18] ____________
+
+env = {'JARVIS_ROLE_VISION_PROVIDER': 'openai-compatible'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+        vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+        if runtime[0] == "refused":
+            reason = runtime[1]
+            assert (role if isinstance(role, str) else role.reason) == reason
+            if not isinstance(role, str):
+                assert role.configured is False
+            assert vision.startswith(f"vision: off ({reason}")
+            if reason != "vlm_disabled":
+>               assert check.status == doctor.WARN
+E               AssertionError: assert 'ok' == 'warn'
+E                 
+E                 - warn
+E                 + ok
+
+tests/test_h277_model_roles.py:424: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[20] ____________
+
+env = {'JARVIS_ROLE_VISION_PROVIDER': 'lm-studio'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+        vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+        if runtime[0] == "refused":
+            reason = runtime[1]
+            assert (role if isinstance(role, str) else role.reason) == reason
+            if not isinstance(role, str):
+                assert role.configured is False
+            assert vision.startswith(f"vision: off ({reason}")
+            if reason != "vlm_disabled":
+>               assert check.status == doctor.WARN
+E               AssertionError: assert 'ok' == 'warn'
+E                 
+E                 - warn
+E                 + ok
+
+tests/test_h277_model_roles.py:424: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[22] ____________
+
+env = {'JARVIS_ROLE_VISION_PROVIDER': 'nope'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+        vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+        if runtime[0] == "refused":
+            reason = runtime[1]
+            assert (role if isinstance(role, str) else role.reason) == reason
+            if not isinstance(role, str):
+                assert role.configured is False
+            assert vision.startswith(f"vision: off ({reason}")
+            if reason != "vlm_disabled":
+>               assert check.status == doctor.WARN
+E               AssertionError: assert 'ok' == 'warn'
+E                 
+E                 - warn
+E                 + ok
+
+tests/test_h277_model_roles.py:424: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[23] ____________
+
+env = {'JARVIS_ROLE_VISION_PROVIDER': 'anthropic'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+        vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+        if runtime[0] == "refused":
+            reason = runtime[1]
+            assert (role if isinstance(role, str) else role.reason) == reason
+            if not isinstance(role, str):
+                assert role.configured is False
+            assert vision.startswith(f"vision: off ({reason}")
+            if reason != "vlm_disabled":
+>               assert check.status == doctor.WARN
+E               AssertionError: assert 'ok' == 'warn'
+E                 
+E                 - warn
+E                 + ok
+
+tests/test_h277_model_roles.py:424: AssertionError
+____________ test_the_vision_row_agrees_with_resolve_vlm_config[24] ____________
+
+env = {'JARVIS_VLM_BACKEND': 'lmstudio', 'JARVIS_VLM_MODEL': 'q', 'JARVIS_VLM_PRESET': 'nope'}
+
+    @pytest.mark.parametrize("env", AGREEMENT_MATRIX, ids=[str(i) for i in range(len(AGREEMENT_MATRIX))])
+    def test_the_vision_row_agrees_with_resolve_vlm_config(env):
+        from scripts import doctor
+    
+        runtime = _outcome(lambda e: resolve_vlm_config(env=e), env)
+        role = _role_outcome(env)
+        check = doctor.check_model_roles(env)
+        vision = next(line for line in check.detail.split("; ") if line.startswith("vision:"))
+        if runtime[0] == "refused":
+            reason = runtime[1]
+            assert (role if isinstance(role, str) else role.reason) == reason
+            if not isinstance(role, str):
+                assert role.configured is False
+            assert vision.startswith(f"vision: off ({reason}")
+            if reason != "vlm_disabled":
+>               assert check.status == doctor.WARN
+E               AssertionError: assert 'ok' == 'warn'
+E                 
+E                 - warn
+E                 + ok
+
+tests/test_h277_model_roles.py:424: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_a_bad_provider
+FAILED tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_an_ignored_main_variable
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[6]
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[9]
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[12]
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[13]
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[15]
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[18]
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[20]
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[22]
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[23]
+FAILED tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[24]
+12 failed, 148 passed in 11.31s

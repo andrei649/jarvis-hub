@@ -1,0 +1,13 @@
+COMMAND ["/Users/andrei649/.local/bin/node", "node_modules/vitest/vitest.mjs", "run", "tests/frontend/tools.test.js"]
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.js:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.0 /private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/h277-mutation-rvs2us1l
+
+
+ Test Files  1 passed (1)
+      Tests  34 passed (34)
+   Start at  11:49:33
+   Duration  1.91s (tests 67%, import 32%, transform 2%)
+

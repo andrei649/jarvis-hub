@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, datetime
 
 from .conversation_clock import ClockSnapshot, parse_started_at
+from .memory.conversation import _tool_names
 from .validation import is_valid_session_id
 
 MAX_SEED_BYTES = 512 * 1024
@@ -104,15 +105,17 @@ def seed_json(turns):
             or count < 0
         ):
             raise ContinuationRefused("invalid_history")
-        result.append(
-            {
-                "role": turn["role"],
-                "content": content,
-                "agent_id": agent,
-                "timestamp": timestamp,
-                "token_count": count,
-            }
-        )
+        carried = {
+            "role": turn["role"],
+            "content": content,
+            "agent_id": agent,
+            "timestamp": timestamp,
+            "token_count": count,
+        }
+        tools = _tool_names(turn.get("tools"))   # H441: names only, absent when none
+        if tools:
+            carried["tools"] = tools
+        result.append(carried)
     try:
         value = json.dumps(result, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
         if len(value.encode("utf-8")) > MAX_SEED_BYTES:
@@ -319,7 +322,8 @@ def _load_locked(orch, sid):
     restored = []
     for value in turns:
         turn = Turn(
-            value["role"], value["content"], value.get("agent_id"), value.get("token_count", 0)
+            value["role"], value["content"], value.get("agent_id"), value.get("token_count", 0),
+            tools=value.get("tools"),
         )
         turn.timestamp = value["timestamp"]
         restored.append(turn)

@@ -1337,6 +1337,15 @@ function ChartsPage() {
   );
 }
 
+/* H262 review round 2 — the order a settings save sends its categories in: `retention`
+   before `memory`, the rest after in the order they came. The hub judges each write
+   against what is stored (never a waiting approval card), so a memory write (archiving on)
+   that goes to Approvals must follow the retention write it depends on. */
+function settingsSaveOrder(cats) {
+  const rank = c => (c === 'retention' ? 0 : c === 'memory' ? 1 : 2);
+  return cats.map((c, i) => [c, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([c]) => c);
+}
+
 function AdminApp() {
   const [active, setActive] = useState('charts');
   const [settings, setSettings] = useState({});
@@ -1389,20 +1398,53 @@ function AdminApp() {
       byCategory[foundCat][k] = dirty[k];
     });
 
-    // Make PUT requests for each category in parallel
-    const promises = Object.entries(byCategory).map(([cat, values]) => {
-      return afetch(`/api/admin/settings/${cat}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values }),
-      }).then(r => r.json());
-    });
+    // PUT each category: `retention` first and on its own, then the rest in parallel
+    // (settingsSaveOrder — H262 review round 2).
+    const put = (cat, values, flags) => afetch(`/api/admin/settings/${cat}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values, ...flags }),
+    }).then(r => r.json().then(body => ({ status: r.status, body })));
+    const saveOne = ([cat, values]) => put(cat, values, {}).then(({ status, body }) => {
+      // H378 — the hub asks before a very expensive model or a vendor that may train on the
+      // prompts; the owner's yes is sent back as the flags the hub named.
+      if (status === 409 && body && body.error === 'selection_guard') {
+        const guards = Array.isArray(body.guards) ? body.guards : [];
+        const lines = guards.map(g => '• ' + g.message).join('\n');
+        if (!window.confirm(`Această alegere de model cere acordul tău:\n${lines}\n\nO alegi totuși?`)) return { cat, values, body: { updated: 0 } };
+        const flags = {};
+        guards.forEach(g => { flags[g.needs] = true; });
+        return put(cat, values, flags).then(({ body: saved }) => ({ cat, values, body: saved }));
+      }
+      return { cat, values, body };
+    }).catch(() => ({ cat, values, body: null }));
+    const ordered = settingsSaveOrder(Object.keys(byCategory)).map(c => [c, byCategory[c]]);
+    const first = ordered.filter(([c]) => c === 'retention');
+    const rest = ordered.filter(([c]) => c !== 'retention');
 
-    Promise.all(promises)
+    Promise.all(first.map(saveOne))
+      .then(done => Promise.all(rest.map(saveOne)).then(more => done.concat(more)))
       .then(results => {
-        const totalUpdated = results.reduce((sum, r) => sum + (r.updated || 0), 0);
-        setDirty({});
-        showToast(`Parametri salvați cu succes! Am actualizat ${totalUpdated} setări.`);
+        const saved = results.filter(r => r.body && typeof r.body.updated === 'number');
+        const totalUpdated = saved.reduce((sum, r) => sum + (r.body.updated || 0), 0);
+        // H262 — a retention change that deletes deeper than approved is not saved: the hub
+        // sends it to Approvals (202, `gated`).
+        const gated = saved.filter(r => r.body.pending != null).flatMap(r => r.body.gated || []);
+        // H262 review — a category the hub answered without `updated` (a 503, a 422, any
+        // error) wrote nothing: every one of its edits stays dirty and is named as not saved,
+        // with the hub's reason (its `reason`, then its `error`).
+        const failed = results.filter(r => !(r.body && typeof r.body.updated === 'number'));
+        const kept = {};
+        const notSaved = [];
+        failed.forEach(r => {
+          const why = (r.body && (r.body.reason || r.body.error)) || 'eroare';
+          Object.keys(r.values).forEach(k => { kept[k] = r.values[k]; });
+          notSaved.push(`${Object.keys(r.values).map(k => `${r.cat}.${k}`).join(', ')} (${why})`);
+        });
+        setDirty(kept);
+        showToast((failed.length ? `Am actualizat ${totalUpdated} setări.` : `Parametri salvați cu succes! Am actualizat ${totalUpdated} setări.`)
+          + (gated.length ? ` Trimise spre aprobare (Approvals): ${gated.join(', ')}.` : '')
+          + (notSaved.length ? ` Nesalvate: ${notSaved.join('; ')}.` : ''));
         afetch('/api/admin/settings').then(r=>r.json()).then(s=>setSettings(s));
       })
       .catch(() => showToast('Eroare la salvarea setărilor globale.'));
@@ -1473,8 +1515,9 @@ function AdminApp() {
       active === 'system' && h('div',{style:{marginTop:20}},
         h('button',{className:'admin-btn is-warning',
           onClick:()=>{
-            if (!confirm('Reinițializați toate setările la valorile implicite? Modificările custom vor fi pierdute.')) return;
-            afetch('/api/admin/settings/reseed',{method:'POST'}).then(r=>r.json()).then(d=>{
+            if (!confirm('Reinițializați toate setările la valorile implicite? Secretele se păstrează, iar resetarea se poate anula din consolă.')) return;
+            // H259: a JSON request (secrets are kept; the reset can be undone)
+            afetch('/api/admin/settings/reseed',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json()).then(d=>{
               showToast(d.message||'Reseeded');
               setDirty({});
               setRefreshKey(k=>k+1);

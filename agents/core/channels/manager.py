@@ -118,8 +118,12 @@ class ChannelManager:
                 log_error(logger, E_CHANNEL_START_FAIL, name=cid, detail=str(e))
 
     async def stop_all(self) -> None:
-        for cid, ch in self.channels.items():
-            await ch.stop()
+        """Stop every channel, each within CHANNEL_STOP_BUDGET (H677): one that hangs is
+        named and left behind, never allowed to hold the rest of shutdown."""
+        from agents.core.lifecycle_budget import CHANNEL_STOP_BUDGET, bounded
+
+        for cid, ch in list(self.channels.items()):
+            await bounded(ch.stop(), CHANNEL_STOP_BUDGET, f"channel {cid} stop")
 
     async def send(self, channel: str, response, **kwargs) -> bool:
         """Dispatch a generic response on a direct-send channel.

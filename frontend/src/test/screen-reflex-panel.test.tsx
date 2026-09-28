@@ -47,7 +47,7 @@ describe('ScreenReflexPanel (DRA-06)', () => {
     await waitFor(() => expect(screen.getByLabelText('screenshot image file')).toBeTruthy());
     expect(screen.queryByRole('button', { name: /capture screen/i })).toBeNull();
     // the honest posture is stated, not implied
-    expect(screen.getByText(/held in memory and sent only to the loopback VLM/i)).toBeTruthy();
+    expect(screen.getByText(/held in memory and sent to the local VLM on the Nerva server/i)).toBeTruthy();
     expect(screen.getByText(/global hotkey/i)).toBeTruthy();
   });
 
@@ -112,6 +112,44 @@ describe('ScreenReflexPanel (DRA-06)', () => {
       : response({ ...vlmStatus, local: false, base_url: 'http://gpu-box.lan:8000/v1' })));
     render(<ScreenReflexPanel />);
     await waitFor(() => expect(screen.getByText(/not loopback/i)).toBeTruthy());
+  });
+
+  it('shows policy warnings before observe and keeps success response warnings', async () => {
+    global.fetch = vi.fn((url) => String(url).includes('/api/screen/reflex')
+      ? response({ ...reflex, warning: 'This observation used an unknown-policy model.' })
+      : response({ ...vlmStatus, data_policy: 'unknown', data_policy_note: 'Custom VLM policy is unknown.', warning: 'Review screenshot contents.' }));
+    render(<ScreenReflexPanel />);
+    await waitFor(() => expect(screen.getByText('Review screenshot contents.')).toBeTruthy());
+    expect(screen.getByText('Custom VLM policy is unknown.')).toBeTruthy();
+    await pickAFile();
+    fireEvent.click(screen.getByRole('button', { name: /observe screen/i }));
+    await waitFor(() => expect(screen.getByText('A settings window is open.')).toBeTruthy());
+    expect(screen.getByText('This observation used an unknown-policy model.')).toBeTruthy();
+    expect(screen.getByText('Review screenshot contents.')).toBeTruthy();
+  });
+
+  it('never POSTs screenshot bytes to a non-loopback destination', async () => {
+    global.fetch = vi.fn((url) => String(url).includes('/api/screen/reflex')
+      ? response(reflex)
+      : response({ ...vlmStatus, local: false, base_url: 'http://gpu-box.lan:8000' }));
+    render(<ScreenReflexPanel />);
+    await waitFor(() => expect(screen.getByText(/not loopback/i)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('screenshot image file'), { target: { files: [new File(['image'], 'shot.png', {type:'image/png'})] } });
+    await waitFor(() => expect(screen.getByText('loaded · shot.png')).toBeTruthy());
+    const submit = screen.getByRole('button', { name: /observe screen/i });
+    expect(submit.disabled).toBe(true);
+    fireEvent.click(submit);
+    expect(vi.mocked(global.fetch).mock.calls.filter(([u]) => String(u).includes('/api/screen/reflex'))).toHaveLength(0);
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+
+  it('renders an ok:true generated:false result as no answer instead of silent success', async () => {
+    reflex = { ok: true, generated: false, reason: 'inference did not complete', answer: 'must not appear' };
+    render(<ScreenReflexPanel />);
+    await pickAFile();
+    fireEvent.click(screen.getByRole('button', { name: /observe screen/i }));
+    await waitFor(() => expect(screen.getByText('inference did not complete')).toBeTruthy());
+    expect(screen.queryByText('must not appear')).toBeNull();
   });
 
   it('offers capture screen when getDisplayMedia exists and surfaces a denial', async () => {

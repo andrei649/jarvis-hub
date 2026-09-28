@@ -1,0 +1,343 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+........................................................................ [ 43%]
+..........................................FFFFFF........................ [ 86%]
+...............FFF....                                                   [100%]
+=================================== FAILURES ===================================
+__________ test_waiting_judgement_rechecks_live_policy[allow_remote] ___________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-75/test_waiting_judgement_recheck0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6cd3a0>
+revoke = 'allow_remote'
+
+    @pytest.mark.parametrize("revoke", ["allow_remote", "fallback", "safe_mode", "decide", "strict_local", "taint"])
+    async def test_waiting_judgement_rechecks_live_policy(tmp_path, monkeypatch, revoke):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        backend = FakeBackend(gate=release)
+        backend.probe = lambda: occupied.set() if len(backend.calls) == 2 else None
+        policy = {"fallback": "on-demand"}
+        judge = remote_judge(monkeypatch, backend, settings=lambda *a: policy["fallback"])
+        q = queue(tmp_path, judge)
+        items = [q.request(dict(json.loads(json.dumps(ACTION)), summary=str(i))) for i in range(4)]
+        await asyncio.wait_for(occupied.wait(), 2)
+        if revoke == "allow_remote":
+            monkeypatch.delenv("JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE")
+        elif revoke == "fallback":
+            policy["fallback"] = "never"
+        elif revoke == "safe_mode":
+            monkeypatch.setenv("JARVIS_SAFE_MODE", "1")
+        elif revoke == "strict_local":
+            monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+        elif revoke == "decide":
+            for item in items[2:]:
+                q.decide(item["id"], False)
+        else:
+            with q._lock:
+                for item in items[2:]:
+                    q._items[item["id"]]["args"]["tainted"] = True
+                q._save()
+        release.set()
+        await drain(q)
+        assert len(backend.calls) == 2
+>       assert q.judge_status_public()["skipped_revoked"] == 2
+E       assert 0 == 2
+
+tests/test_h277_approval_judge.py:1091: AssertionError
+____________ test_waiting_judgement_rechecks_live_policy[fallback] _____________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-75/test_waiting_judgement_recheck1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6b5310>
+revoke = 'fallback'
+
+    @pytest.mark.parametrize("revoke", ["allow_remote", "fallback", "safe_mode", "decide", "strict_local", "taint"])
+    async def test_waiting_judgement_rechecks_live_policy(tmp_path, monkeypatch, revoke):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        backend = FakeBackend(gate=release)
+        backend.probe = lambda: occupied.set() if len(backend.calls) == 2 else None
+        policy = {"fallback": "on-demand"}
+        judge = remote_judge(monkeypatch, backend, settings=lambda *a: policy["fallback"])
+        q = queue(tmp_path, judge)
+        items = [q.request(dict(json.loads(json.dumps(ACTION)), summary=str(i))) for i in range(4)]
+        await asyncio.wait_for(occupied.wait(), 2)
+        if revoke == "allow_remote":
+            monkeypatch.delenv("JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE")
+        elif revoke == "fallback":
+            policy["fallback"] = "never"
+        elif revoke == "safe_mode":
+            monkeypatch.setenv("JARVIS_SAFE_MODE", "1")
+        elif revoke == "strict_local":
+            monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+        elif revoke == "decide":
+            for item in items[2:]:
+                q.decide(item["id"], False)
+        else:
+            with q._lock:
+                for item in items[2:]:
+                    q._items[item["id"]]["args"]["tainted"] = True
+                q._save()
+        release.set()
+        await drain(q)
+        assert len(backend.calls) == 2
+>       assert q.judge_status_public()["skipped_revoked"] == 2
+E       assert 0 == 2
+
+tests/test_h277_approval_judge.py:1091: AssertionError
+____________ test_waiting_judgement_rechecks_live_policy[safe_mode] ____________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-75/test_waiting_judgement_recheck2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6cd280>
+revoke = 'safe_mode'
+
+    @pytest.mark.parametrize("revoke", ["allow_remote", "fallback", "safe_mode", "decide", "strict_local", "taint"])
+    async def test_waiting_judgement_rechecks_live_policy(tmp_path, monkeypatch, revoke):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        backend = FakeBackend(gate=release)
+        backend.probe = lambda: occupied.set() if len(backend.calls) == 2 else None
+        policy = {"fallback": "on-demand"}
+        judge = remote_judge(monkeypatch, backend, settings=lambda *a: policy["fallback"])
+        q = queue(tmp_path, judge)
+        items = [q.request(dict(json.loads(json.dumps(ACTION)), summary=str(i))) for i in range(4)]
+        await asyncio.wait_for(occupied.wait(), 2)
+        if revoke == "allow_remote":
+            monkeypatch.delenv("JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE")
+        elif revoke == "fallback":
+            policy["fallback"] = "never"
+        elif revoke == "safe_mode":
+            monkeypatch.setenv("JARVIS_SAFE_MODE", "1")
+        elif revoke == "strict_local":
+            monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+        elif revoke == "decide":
+            for item in items[2:]:
+                q.decide(item["id"], False)
+        else:
+            with q._lock:
+                for item in items[2:]:
+                    q._items[item["id"]]["args"]["tainted"] = True
+                q._save()
+        release.set()
+        await drain(q)
+        assert len(backend.calls) == 2
+>       assert q.judge_status_public()["skipped_revoked"] == 2
+E       assert 0 == 2
+
+tests/test_h277_approval_judge.py:1091: AssertionError
+_____________ test_waiting_judgement_rechecks_live_policy[decide] ______________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-75/test_waiting_judgement_recheck3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6ee0f0>
+revoke = 'decide'
+
+    @pytest.mark.parametrize("revoke", ["allow_remote", "fallback", "safe_mode", "decide", "strict_local", "taint"])
+    async def test_waiting_judgement_rechecks_live_policy(tmp_path, monkeypatch, revoke):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        backend = FakeBackend(gate=release)
+        backend.probe = lambda: occupied.set() if len(backend.calls) == 2 else None
+        policy = {"fallback": "on-demand"}
+        judge = remote_judge(monkeypatch, backend, settings=lambda *a: policy["fallback"])
+        q = queue(tmp_path, judge)
+        items = [q.request(dict(json.loads(json.dumps(ACTION)), summary=str(i))) for i in range(4)]
+        await asyncio.wait_for(occupied.wait(), 2)
+        if revoke == "allow_remote":
+            monkeypatch.delenv("JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE")
+        elif revoke == "fallback":
+            policy["fallback"] = "never"
+        elif revoke == "safe_mode":
+            monkeypatch.setenv("JARVIS_SAFE_MODE", "1")
+        elif revoke == "strict_local":
+            monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+        elif revoke == "decide":
+            for item in items[2:]:
+                q.decide(item["id"], False)
+        else:
+            with q._lock:
+                for item in items[2:]:
+                    q._items[item["id"]]["args"]["tainted"] = True
+                q._save()
+        release.set()
+        await drain(q)
+        assert len(backend.calls) == 2
+>       assert q.judge_status_public()["skipped_revoked"] == 2
+E       assert 0 == 2
+
+tests/test_h277_approval_judge.py:1091: AssertionError
+__________ test_waiting_judgement_rechecks_live_policy[strict_local] ___________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-75/test_waiting_judgement_recheck4')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6ef5f0>
+revoke = 'strict_local'
+
+    @pytest.mark.parametrize("revoke", ["allow_remote", "fallback", "safe_mode", "decide", "strict_local", "taint"])
+    async def test_waiting_judgement_rechecks_live_policy(tmp_path, monkeypatch, revoke):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        backend = FakeBackend(gate=release)
+        backend.probe = lambda: occupied.set() if len(backend.calls) == 2 else None
+        policy = {"fallback": "on-demand"}
+        judge = remote_judge(monkeypatch, backend, settings=lambda *a: policy["fallback"])
+        q = queue(tmp_path, judge)
+        items = [q.request(dict(json.loads(json.dumps(ACTION)), summary=str(i))) for i in range(4)]
+        await asyncio.wait_for(occupied.wait(), 2)
+        if revoke == "allow_remote":
+            monkeypatch.delenv("JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE")
+        elif revoke == "fallback":
+            policy["fallback"] = "never"
+        elif revoke == "safe_mode":
+            monkeypatch.setenv("JARVIS_SAFE_MODE", "1")
+        elif revoke == "strict_local":
+            monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+        elif revoke == "decide":
+            for item in items[2:]:
+                q.decide(item["id"], False)
+        else:
+            with q._lock:
+                for item in items[2:]:
+                    q._items[item["id"]]["args"]["tainted"] = True
+                q._save()
+        release.set()
+        await drain(q)
+        assert len(backend.calls) == 2
+>       assert q.judge_status_public()["skipped_revoked"] == 2
+E       assert 0 == 2
+
+tests/test_h277_approval_judge.py:1091: AssertionError
+______________ test_waiting_judgement_rechecks_live_policy[taint] ______________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-75/test_waiting_judgement_recheck5')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f6eca40>
+revoke = 'taint'
+
+    @pytest.mark.parametrize("revoke", ["allow_remote", "fallback", "safe_mode", "decide", "strict_local", "taint"])
+    async def test_waiting_judgement_rechecks_live_policy(tmp_path, monkeypatch, revoke):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        backend = FakeBackend(gate=release)
+        backend.probe = lambda: occupied.set() if len(backend.calls) == 2 else None
+        policy = {"fallback": "on-demand"}
+        judge = remote_judge(monkeypatch, backend, settings=lambda *a: policy["fallback"])
+        q = queue(tmp_path, judge)
+        items = [q.request(dict(json.loads(json.dumps(ACTION)), summary=str(i))) for i in range(4)]
+        await asyncio.wait_for(occupied.wait(), 2)
+        if revoke == "allow_remote":
+            monkeypatch.delenv("JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE")
+        elif revoke == "fallback":
+            policy["fallback"] = "never"
+        elif revoke == "safe_mode":
+            monkeypatch.setenv("JARVIS_SAFE_MODE", "1")
+        elif revoke == "strict_local":
+            monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+        elif revoke == "decide":
+            for item in items[2:]:
+                q.decide(item["id"], False)
+        else:
+            with q._lock:
+                for item in items[2:]:
+                    q._items[item["id"]]["args"]["tainted"] = True
+                q._save()
+        release.set()
+        await drain(q)
+        assert len(backend.calls) == 2
+>       assert q.judge_status_public()["skipped_revoked"] == 2
+E       assert 0 == 2
+
+tests/test_h277_approval_judge.py:1091: AssertionError
+_________ test_round2_dispatch_checks_persisted_pending_state[decided] _________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-75/test_round2_dispatch_checks_pe0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f7402f0>
+disk_state = 'decided'
+
+    @pytest.mark.parametrize("disk_state", ["decided", "missing", "corrupt"])
+    async def test_round2_dispatch_checks_persisted_pending_state(tmp_path, monkeypatch, disk_state):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        # No annotation writes from the active calls may overwrite the external disk edit.
+        backend = FakeBackend(reply="not a verdict", gate=release)
+        backend.probe = lambda: occupied.set() if len(backend.calls) == 2 else None
+        q = queue(tmp_path, remote_judge(monkeypatch, backend))
+        items = [q.request(dict(ACTION, summary=str(i))) for i in range(3)]
+        await asyncio.wait_for(occupied.wait(), 2)
+        path = tmp_path / "action_approvals.json"
+        if disk_state == "decided":
+            persisted = json.loads(path.read_text())
+            persisted[items[2]["id"]]["status"] = "rejected"
+            path.write_text(json.dumps(persisted))
+        elif disk_state == "missing":
+            path.unlink()
+        else:
+            path.write_text("{broken")
+        release.set()
+        await drain(q)
+        assert len(backend.calls) == 2
+>       assert q.judge_status_public()["skipped_revoked"] == 1
+E       assert 0 == 1
+
+tests/test_h277_approval_judge.py:1228: AssertionError
+_________ test_round2_dispatch_checks_persisted_pending_state[missing] _________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-75/test_round2_dispatch_checks_pe1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f77b9e0>
+disk_state = 'missing'
+
+    @pytest.mark.parametrize("disk_state", ["decided", "missing", "corrupt"])
+    async def test_round2_dispatch_checks_persisted_pending_state(tmp_path, monkeypatch, disk_state):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        # No annotation writes from the active calls may overwrite the external disk edit.
+        backend = FakeBackend(reply="not a verdict", gate=release)
+        backend.probe = lambda: occupied.set() if len(backend.calls) == 2 else None
+        q = queue(tmp_path, remote_judge(monkeypatch, backend))
+        items = [q.request(dict(ACTION, summary=str(i))) for i in range(3)]
+        await asyncio.wait_for(occupied.wait(), 2)
+        path = tmp_path / "action_approvals.json"
+        if disk_state == "decided":
+            persisted = json.loads(path.read_text())
+            persisted[items[2]["id"]]["status"] = "rejected"
+            path.write_text(json.dumps(persisted))
+        elif disk_state == "missing":
+            path.unlink()
+        else:
+            path.write_text("{broken")
+        release.set()
+        await drain(q)
+        assert len(backend.calls) == 2
+>       assert q.judge_status_public()["skipped_revoked"] == 1
+E       assert 0 == 1
+
+tests/test_h277_approval_judge.py:1228: AssertionError
+_________ test_round2_dispatch_checks_persisted_pending_state[corrupt] _________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-75/test_round2_dispatch_checks_pe2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f742ab0>
+disk_state = 'corrupt'
+
+    @pytest.mark.parametrize("disk_state", ["decided", "missing", "corrupt"])
+    async def test_round2_dispatch_checks_persisted_pending_state(tmp_path, monkeypatch, disk_state):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        # No annotation writes from the active calls may overwrite the external disk edit.
+        backend = FakeBackend(reply="not a verdict", gate=release)
+        backend.probe = lambda: occupied.set() if len(backend.calls) == 2 else None
+        q = queue(tmp_path, remote_judge(monkeypatch, backend))
+        items = [q.request(dict(ACTION, summary=str(i))) for i in range(3)]
+        await asyncio.wait_for(occupied.wait(), 2)
+        path = tmp_path / "action_approvals.json"
+        if disk_state == "decided":
+            persisted = json.loads(path.read_text())
+            persisted[items[2]["id"]]["status"] = "rejected"
+            path.write_text(json.dumps(persisted))
+        elif disk_state == "missing":
+            path.unlink()
+        else:
+            path.write_text("{broken")
+        release.set()
+        await drain(q)
+        assert len(backend.calls) == 2
+>       assert q.judge_status_public()["skipped_revoked"] == 1
+E       assert 0 == 1
+
+tests/test_h277_approval_judge.py:1228: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[allow_remote]
+FAILED tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[fallback]
+FAILED tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[safe_mode]
+FAILED tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[decide]
+FAILED tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[strict_local]
+FAILED tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[taint]
+FAILED tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[decided]
+FAILED tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[missing]
+FAILED tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[corrupt]
+9 failed, 157 passed in 2.56s

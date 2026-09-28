@@ -96,6 +96,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agents.core import project_context
 from agents.core.automation_contracts import ContractTemplate, predicate
 from agents.core.env_config import env_flag, env_int, env_list
 from agents.core.environments import SECRET_ENV_SUBSTRINGS
@@ -103,7 +104,7 @@ from agents.core.local_docs import DOC_EXTS, extract_text
 from agents.core.paths import data_path
 from agents.core.tool_result_store import SPILL_DIRNAME as _SPILL_DIRNAME
 from agents.core.tool_result_store import is_reference as _is_spill_reference
-from agents.core.tool_rpc import ToolRPCValidationError
+from agents.core.tool_rpc import ToolRPCValidationError, current_tool_turn
 
 logger = logging.getLogger("jarvis.file_tools")
 
@@ -257,6 +258,9 @@ def _has_secret_part(relative_parts: Sequence[str]) -> bool:
 # with the title of a scratch note.
 INSTRUCTION_BASE_NAMES = frozenset({
     "soul.md", "agents.md", "claude.md", "gemini.md", ".cursorrules", "heartbeat.md",
+    # H670: the shared behaviour contract every agent's system prompt starts with
+    # (``Agent.identity_path``), and with it ``identity.local.md``, the per-install override.
+    "identity.md",
 })
 
 
@@ -585,6 +589,16 @@ def _valid_offset(value: object) -> bool:
             and 0 <= value <= MAX_OFFSET)
 
 
+async def _with_project_context(result: dict, target: Path) -> dict:
+    """H594 — a read tool's result carries the convention files of *target*'s directory
+    chain the turn has not been given (tainted, so the loop fences it); off the loop. A
+    script's call (no tool turn) gets none: the model sees only what the script prints, so
+    the files stay due for the model's own reads."""
+    if project_context.current() is None or current_tool_turn() is None:
+        return result
+    return await asyncio.to_thread(project_context.attach, result, target)
+
+
 class FileTools:
     """Scope-bound file handlers. ``authorizer`` is the injected kernel hook."""
 
@@ -758,7 +772,7 @@ class FileTools:
         except (OSError, ValueError, OverflowError) as exc:
             return {"ok": False, "reason": "io_error", "detail": exc.__class__.__name__}
         self._record("file.read", str(target), ok=result.get("ok") is True)
-        return result
+        return await _with_project_context(result, target)   # H594
 
     async def list_dir(self, args: Mapping[str, Any]) -> dict:
         raw_path = args.get("path")
@@ -814,7 +828,7 @@ class FileTools:
         except OSError as exc:
             return {"ok": False, "reason": "io_error", "detail": exc.__class__.__name__}
         self._record("file.list", str(target), ok=result.get("ok") is True)
-        return result
+        return await _with_project_context(result, target)   # H594
 
     async def search_files(self, args: Mapping[str, Any]) -> dict:
         """Find lines containing *pattern* under *path* (a directory, or one file).
@@ -937,7 +951,7 @@ class FileTools:
             "file.search", f"{target}: {pattern[:120]}", ok=result.get("ok") is True,
             matches=len(result.get("matches") or ()),
         )
-        return result
+        return await _with_project_context(result, target)   # H594
 
     # ── gated (reversible by construction) ───────────────────────────────────
 
@@ -953,7 +967,16 @@ class FileTools:
         data = content.encode("utf-8")
         if len(data) > self.max_bytes:
             return {"ok": False, "reason": "too_large"}
-        return await self._mutate(args.get("path"), "write", data, approved=approved)
+        result = await self._mutate(args.get("path"), "write", data, approved=approved)
+        if result.get("ok") is True:
+            # H507: warn-only — the model reads what it just wrote that looks dangerous.
+            from .code_guidance import result_fields
+
+            try:
+                result.update(result_fields(str(result.get("path") or args.get("path") or ""), content))
+            except Exception:
+                logger.warning("code guidance for a file write failed", exc_info=True)
+        return result
 
     async def delete_file(self, args: Mapping[str, Any], *, approved: bool = False) -> dict:
         return await self._mutate(args.get("path"), "delete", b"", approved=approved)
@@ -1147,11 +1170,29 @@ class FileTools:
         """
         raw_path = (args or {}).get("path")
         names: list[object] = [_requested_name(raw_path)]
+        resolved: list[str] = []
         # An unresolvable path is the preflight's refusal to make, not ours — but the
         # spelled name has already been checked, so nothing in the class slips past.
         with contextlib.suppress(FileScopeError, OSError, ValueError):
-            names.append(self.scope.resolve(raw_path).name)
-        return instruction_labels(*names)
+            target = self.scope.resolve(raw_path)
+            names.append(target.name)
+            resolved.append(str(target))
+        classed = instruction_labels(*names)
+        # H507: code-pattern warnings ride on the same card. They never set a class, so
+        # the approval stays bound to what H506 classes the write as. The file the write
+        # lands on is scanned too, as the write result scans it (review-H507 F4).
+        content = (args or {}).get("content")
+        if not isinstance(raw_path, str) or not isinstance(content, str):
+            return classed
+        from .code_guidance import labels as code_labels
+
+        warned = code_labels(raw_path, content, *resolved)
+        if warned is None:
+            return classed
+        if classed is None:
+            return warned
+        notice = f"{classed['notice']}; {warned['notice']}"[:200]
+        return {**warned, **classed, "notice": notice}
 
     def preflight(self, name: str) -> Callable[[dict], Mapping]:
         spec = FILE_TOOL_SPECS[name]

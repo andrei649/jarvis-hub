@@ -26,6 +26,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.llm.base import LLMBackend  # noqa: E402
+from agents.core.llm.providers import get_profile  # noqa: E402
 
 REPLY = (
     "Noted, sir — Mara's flight lands Friday at 18:40; I'll keep that evening "
@@ -37,6 +38,8 @@ class FakeBackend(LLMBackend):
     """The generate() seam — deterministic reply, streamed token-by-token."""
 
     def __init__(self):
+        self.profile = get_profile("lm-studio")
+        self.base_url = "http://127.0.0.1:1234/v1"
         self.calls = 0
 
     async def generate(self, model, prompt, system="", max_tokens=0, temperature=0.7, **kw):

@@ -143,6 +143,8 @@ async def prepare_route(router, agent_id, prompt, max_tokens, temperature, sessi
     capacity = window.tokens or window_for(model)
     if pinned is not None:
         max_tokens = min(max_tokens, pinned // 4) if max_tokens > 0 else pinned // 4
+        from .llm.request_context import note_sent
+        note_sent("max_tokens", max_tokens)          # H681: a child's budget clamped here
     reserve = (
         (max_tokens if max_tokens > 0 else None)
         if route.startswith(("local", "ollama"))

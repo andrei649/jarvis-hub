@@ -1,0 +1,58 @@
+COMMAND ["/Users/andrei649/.local/bin/node", "node_modules/vitest/vitest.mjs", "run", "tests/frontend/tools.test.js"]
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.js:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.0 /private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/h277-mutation-rvs2us1l
+
+ ❯ tests/frontend/tools.test.js (34 tests | 2 failed) 1134ms
+   ❯ Action Approvals — model opinion (H277) (13)
+     × shows a late queued opinion after the old timeout plus 5 s window 41ms
+     × gives staggered cards independent deadlines and clears removed card state 43ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend/tools.test.js > Action Approvals — model opinion (H277) > shows a late queued opinion after the old timeout plus 5 s window
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ tests/frontend/tools.test.js:540:28
+    538|     await polls.advance(6000);
+    539|     expect(card(c, 'waiting card').textContent).toContain('pending…');
+    540|     expect(polls.active()).toBe(1);
+       |                            ^
+    541|     await polls.advance(3000);
+    542|     expect(calls.pending).toBe(before + 3);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/frontend/tools.test.js > Action Approvals — model opinion (H277) > gives staggered cards independent deadlines and clears removed card state
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ tests/frontend/tools.test.js:577:28
+    575|     await polls.advance(3000);             // B first seen at 15 s: de…
+    576|     await polls.advance(9000);             // A expired; B still polls
+    577|     expect(polls.active()).toBe(1);
+       |                            ^
+    578|     first = false;
+    579|     await polls.advance(3000);             // A removal observed at 27…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 32 passed (34)
+   Start at  11:53:29
+   Duration  1.74s (tests 68%, import 30%, transform 2%)
+

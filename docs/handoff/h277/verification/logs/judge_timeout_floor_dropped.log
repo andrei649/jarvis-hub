@@ -1,0 +1,81 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+..................................F..................................... [ 43%]
+...............................FFF...................................... [ 86%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+_____________________ test_the_default_timeout_is_bounded ______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e48d160>
+
+    def test_the_default_timeout_is_bounded(monkeypatch):
+        monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_MODEL", "judge-m")
+        assert aj.approval_judge_status(settings=settings_of()).timeout == 20.0
+        monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_TIMEOUT", "0.001")   # below the floor → default
+>       assert aj.approval_judge_status(settings=settings_of()).timeout == 20.0
+E       AssertionError: assert 0.001 == 20.0
+E        +  where 0.001 = JudgeStatus(configured=True, reason='', provider='lm-studio', model='judge-m', base_url='http://localhost:1234', local=True, data_policy='local', timeout=0.001).timeout
+E        +    where JudgeStatus(configured=True, reason='', provider='lm-studio', model='judge-m', base_url='http://localhost:1234', local=True, data_policy='local', timeout=0.001) = <function approval_judge_status at 0x10c3e7240>(settings=<function settings_of.<locals>._get at 0x10e4fe660>)
+E        +      where <function approval_judge_status at 0x10c3e7240> = aj.approval_judge_status
+E        +      and   <function settings_of.<locals>._get at 0x10e4fe660> = settings_of()
+
+tests/test_h277_approval_judge.py:415: AssertionError
+____________________ test_the_timeout_is_clamped[0.5-20.0] _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e4c8e90>
+raw = '0.5', expected = 20.0
+
+    @pytest.mark.parametrize("raw, expected", [
+        ("", 20.0), ("abc", 20.0), ("0.5", 20.0), ("0", 20.0), ("-5", 20.0), ("nan", 20.0),
+        ("1", 1.0), ("30", 30.0), ("60", 60.0), ("61", 60.0), ("3600", 60.0), ("inf", 60.0),
+    ])
+    def test_the_timeout_is_clamped(monkeypatch, raw, expected):
+        monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_MODEL", "judge-m")
+        monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_TIMEOUT", raw)
+        status = aj.approval_judge_status(settings=settings_of())
+>       assert status.timeout == expected
+E       AssertionError: assert 0.5 == 20.0
+E        +  where 0.5 = JudgeStatus(configured=True, reason='', provider='lm-studio', model='judge-m', base_url='http://localhost:1234', local=True, data_policy='local', timeout=0.5).timeout
+
+tests/test_h277_approval_judge.py:1050: AssertionError
+_____________________ test_the_timeout_is_clamped[0-20.0] ______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e595970>, raw = '0'
+expected = 20.0
+
+    @pytest.mark.parametrize("raw, expected", [
+        ("", 20.0), ("abc", 20.0), ("0.5", 20.0), ("0", 20.0), ("-5", 20.0), ("nan", 20.0),
+        ("1", 1.0), ("30", 30.0), ("60", 60.0), ("61", 60.0), ("3600", 60.0), ("inf", 60.0),
+    ])
+    def test_the_timeout_is_clamped(monkeypatch, raw, expected):
+        monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_MODEL", "judge-m")
+        monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_TIMEOUT", raw)
+        status = aj.approval_judge_status(settings=settings_of())
+>       assert status.timeout == expected
+E       AssertionError: assert 0.0 == 20.0
+E        +  where 0.0 = JudgeStatus(configured=True, reason='', provider='lm-studio', model='judge-m', base_url='http://localhost:1234', local=True, data_policy='local', timeout=0.0).timeout
+
+tests/test_h277_approval_judge.py:1050: AssertionError
+_____________________ test_the_timeout_is_clamped[-5-20.0] _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e8a69f0>
+raw = '-5', expected = 20.0
+
+    @pytest.mark.parametrize("raw, expected", [
+        ("", 20.0), ("abc", 20.0), ("0.5", 20.0), ("0", 20.0), ("-5", 20.0), ("nan", 20.0),
+        ("1", 1.0), ("30", 30.0), ("60", 60.0), ("61", 60.0), ("3600", 60.0), ("inf", 60.0),
+    ])
+    def test_the_timeout_is_clamped(monkeypatch, raw, expected):
+        monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_MODEL", "judge-m")
+        monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_TIMEOUT", raw)
+        status = aj.approval_judge_status(settings=settings_of())
+>       assert status.timeout == expected
+E       AssertionError: assert -5.0 == 20.0
+E        +  where -5.0 = JudgeStatus(configured=True, reason='', provider='lm-studio', model='judge-m', base_url='http://localhost:1234', local=True, data_policy='local', timeout=-5.0).timeout
+
+tests/test_h277_approval_judge.py:1050: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_the_default_timeout_is_bounded
+FAILED tests/test_h277_approval_judge.py::test_the_timeout_is_clamped[0.5-20.0]
+FAILED tests/test_h277_approval_judge.py::test_the_timeout_is_clamped[0-20.0]
+FAILED tests/test_h277_approval_judge.py::test_the_timeout_is_clamped[-5-20.0]
+4 failed, 162 passed in 2.54s

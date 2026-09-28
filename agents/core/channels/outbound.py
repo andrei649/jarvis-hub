@@ -85,6 +85,10 @@ def resolve_destination(orch: Any, channel: str) -> tuple[dict[str, Any] | None,
     adapter = (getattr(orch, "channels", None) or {}).get(name)
     if adapter is None:
         return None, f"{name} is not connected on this hub"
+    if name == "web" and not getattr(adapter, "clients", None):
+        # The web channel reaches only a client connected to it, and the HUD does not
+        # connect one: a send would reach nobody, so it is not ready.
+        return None, "web has no connected client: nothing would receive it"
     if name != "telegram":
         return {}, ""
     owner = _owner_chat_id(orch)
@@ -165,14 +169,26 @@ def _with_subject(name: str, body: str, subject: str, kwargs: dict[str, Any]) ->
 
 
 async def send_to_target(orch: Any, channel: str, text: str, *, subject: str = "",
-                         source: str = "api") -> dict:
+                         source: str = "api", plain: bool = False) -> dict:
     """Send *text* to a configured destination. Never raises; every outcome is a dict.
 
     ``{"ok": True, "channel": …, "audited": bool}`` or
     ``{"ok": False, "reason": …}``. ``audited`` is reported rather than assumed: an
     unaudited send is a real (small) governance gap and the caller should be able to see
     it, not discover it later from an empty log. *subject* is optional and one line.
+
+    *plain* marks a notice whose text came from outside (a webhook's sender, or a turn
+    it steered): Telegram and ntfy show it as it is, with no markup rendered and nothing
+    rewritten (Telegram with no link preview and no voice note, which would also take
+    the chat's pending voice turn). Voice speaks the words without the markup, because
+    a symbol read aloud is noise; the text is bounded here, so that render is cheap.
     """
+    from agents.core import safe_mode
+
+    if safe_mode.enabled():
+        # H490: no proactive send to the owner's configured destinations in safe mode.
+        safe_mode.note("outbound_webhooks")
+        return {"ok": False, "reason": "outbound sends are off in safe mode"}
     body = str(text or "").strip()
     if not body:
         return {"ok": False, "reason": "the message is empty"}
@@ -184,7 +200,15 @@ async def send_to_target(orch: Any, channel: str, text: str, *, subject: str = "
     kwargs, reason = resolve_destination(orch, name)
     if kwargs is None:
         return {"ok": False, "reason": reason}
+    if plain and name == "voice" and len(body) <= MAX_TEXT_CHARS:
+        from agents.core.channels.render import to_plain
+
+        body = to_plain(body)
     body, kwargs = _with_subject(name, body, title, kwargs)
+    if plain and name == "telegram":
+        kwargs = {**kwargs, "plain": True, "voice": False}
+    elif plain and name == "ntfy":
+        kwargs = {**kwargs, "plain": True}
     if len(body) > MAX_TEXT_CHARS:
         return {"ok": False, "reason": f"the message is longer than {MAX_TEXT_CHARS} characters"}
 

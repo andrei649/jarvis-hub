@@ -26,9 +26,11 @@ Nothing here is a funnel: the wizard's own steps live in the onboarding surface.
 This records one moment and refuses to embellish it.
 
 Persistence: a small JSON file at ``data_path('activation.json')`` — one record,
-written once, never rewritten. It survives restarts because the number it holds
-would otherwise reset every time the process did, which would make it useless
-exactly where it matters most.
+written once, never rewritten (a clock older than the durable install id takes
+that id on, H689; nothing else in it changes). It survives restarts because the
+number it holds would otherwise reset every time the process did, which would make
+it useless exactly where it matters most. A forget resets it to ``{}``: no clock,
+so the next one starts afresh.
 """
 
 from __future__ import annotations
@@ -36,7 +38,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-import uuid
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -105,6 +106,28 @@ def _write(path: Path, payload: Mapping[str, Any]) -> None:
     tmp.replace(path)
 
 
+def _emptied(path: Path) -> bool:
+    """The ``{}`` a forget leaves behind: no clock at all, not an unreadable one."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) == {}
+    except (OSError, ValueError):
+        return False
+
+
+def _adopt_install_id(record: dict[str, Any]) -> bool:
+    """H689: a clock started before the durable install id (a 16-hex id), or while it
+    was unavailable (null), takes it on. True when the record changed."""
+    from agents.core.install_identity import ID_RE, install_id
+
+    if ID_RE.match(str(record.get("install_id") or "")):
+        return False
+    current = install_id()
+    if current is None:
+        return False
+    record["install_id"] = current
+    return True
+
+
 def mark_installed(
     path: str | Path | None = None, *, now: float | None = None
 ) -> dict[str, Any]:
@@ -119,11 +142,21 @@ def mark_installed(
     target = store_path(path)
     existing = _read(target)
     if existing is not None:
+        if _adopt_install_id(existing):
+            _write(target, existing)
         return existing
+    from agents.core.install_identity import install_id
+
+    if target.exists() and not _emptied(target):
+        # H689: a record that cannot be read is kept, never re-minted over: the clock
+        # it holds is the owner's, and a new one would restart it under a new id.
+        logger.warning("activation clock at %s is unreadable; left as it is", target)
+        return {"schema": SCHEMA, "install_id": install_id(), "installed_at": None,
+                "inferred_at_boot": False, "activated": None, "unreadable": True}
     moment = time.time() if now is None else float(now)
     record = {
         "schema": SCHEMA,
-        "install_id": uuid.uuid4().hex[:16],
+        "install_id": install_id(),   # H689: the durable install id (None when unavailable)
         "installed_at": moment,
         "inferred_at_boot": False,
         "activated": None,
@@ -142,6 +175,8 @@ def infer_install_at_boot(
     if existing is not None:
         return existing
     record = mark_installed(target, now=now)
+    if record.get("unreadable"):
+        return record
     record["inferred_at_boot"] = True
     _write(target, record)
     return record
@@ -173,6 +208,10 @@ def record_first_action(
         # clock now and mark it inferred — the elapsed time will read as ~0, which
         # is visibly wrong in the honest direction and is flagged as inferred.
         record = infer_install_at_boot(target, now=now)
+    if record.get("unreadable"):
+        return None   # H689: never write over a record that cannot be read
+    if _adopt_install_id(record):
+        _write(target, record)
     if record.get("activated"):
         return None  # the first is the first
 

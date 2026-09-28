@@ -7,12 +7,14 @@
 (function () {
 
   /* ── shared hooks/widgets ──────────────────────────────────────────────── */
-  function useApi(url, auto) {
+  function useApi(url, auto, admin) {
     const _s = useState({ loading: !!auto }), s = _s[0], set = _s[1];
-    const reload = useCallback(function () {
-      set({ loading: true });
-      api(url).then(function (d) { set({ data: d }); }).catch(function (e) { set({ err: String(e) }); });
-    }, [url]);
+    // reload(true) is a quiet re-read (H277 re-poll): the panel keeps what it shows while it
+    // asks, and a failed quiet read leaves it as it was.
+    const reload = useCallback(function (quiet) {
+      if (quiet !== true) set({ loading: true });
+      (admin ? adminFetch : api)(url).then(function (d) { set({ data: d }); }).catch(function (e) { if (quiet !== true) set({ err: String(e) }); });
+    }, [url, admin]);
     useEffect(function () { if (auto) reload(); }, [url]);
     return [s, reload];
   }
@@ -75,19 +77,148 @@
     return Tool('Human Review Queue', 'Flagged traces → rubric vote → dataset', body, Btn('↻', reload));
   }
 
+  // H277 — the approval judge's opinion: a separate, muted, clearly-labelled line under the
+  // summary, never beside the buttons. Asymmetric on purpose: a high score is flagged, a low
+  // one is plain text — never green, never a check mark, never "safe". The buttons never
+  // read it. The text is a model's output from untrusted arguments; React escapes it, and it
+  // sits in its own italic span between typographic quotes the hub strips from it, so it can
+  // never close the quote and continue in the HUD's own voice (review F1).
+  const JUDGE_POLL_MS = 3000;
+  const JUDGE_HIGH = 70;
+  const JUDGE_FLAGGED = '⚠ the arguments contain instruction-like text — the model opinion below may have been manipulated';
+  function judgeLines(a, status) {
+    const muted = { opacity: 0.7, fontSize: '12px' };
+    const warn = { color: 'var(--amber-warn)', fontSize: '12px' };
+    const j = a.judge;
+    if (!j) {
+      if (!status || !status.configured || a.tool === 'skill.patch_proposal') return null;
+      const waiting = a.judge_pending === true;
+      return h('div', { className: 'tool-card-text judge-opinion', style: muted }, waiting ? 'Model opinion: pending…' : 'Model opinion: not available');
+    }
+    const who = j.judge || {};
+    const high = Number(j.score) >= JUDGE_HIGH;
+    return h('div', { className: 'judge-opinion' },
+      (j.flags && j.flags.length) ? h('div', { className: 'tool-card-text judge-flag', style: warn }, JUDGE_FLAGGED) : null,
+      h('div', { className: 'tool-card-text judge-score' + (high ? ' judge-high' : ''), style: high ? warn : muted },
+        'Model opinion (' + (who.provider || '?') + ' · ' + (who.model || '?') + ', ' + (who.local ? 'local' : 'remote') + ') — risk ' + j.score + '/100' +
+          (j.truncated ? ' (judged on a shortened copy)' : '') + ': “',
+        h('span', { className: 'judge-why', style: { fontStyle: 'italic' } }, j.rationale || ''),
+        '” · advisory only, it decides nothing'));
+  }
+
   function ActionsPanel() {
     const _ = useApi('/api/actions/pending', true), s = _[0], reload = _[1];
+    const _r = useState({}), reasons = _r[0], setReasons = _r[1];
+    // The per-item runtime flag covers both queued and running judgements. Give each card
+    // the full 32-item/two-slot queue budget, measured from its first pending observation.
+    // Retain deadlines through refresh/loading and pending-state changes; only removal resets.
+    const polls = useRef({});   // card id -> wall-clock deadline
+    useEffect(function () {
+      const d = s.data;
+      if (!d) return undefined; // an unrelated non-quiet refresh must not restart budgets
+      const js = d.judge, seen = polls.current, next = {};
+      const timeout = Number(js && js.timeout);
+      const budget = (17 * (timeout > 0 && Number.isFinite(timeout) ? timeout : 20) + 5) * 1000;
+      const now = Date.now();
+      const waiting = [];
+      (d.actions || []).forEach(function (a) {
+        if (Object.prototype.hasOwnProperty.call(seen, a.id)) next[a.id] = seen[a.id];
+        if (a.judge_pending === true && !a.judge && a.tool !== 'skill.patch_proposal') {
+          if (!Object.prototype.hasOwnProperty.call(next, a.id)) next[a.id] = now + budget;
+          if (next[a.id] > now) waiting.push(a.id);
+        }
+      });
+      polls.current = next;
+      if (!js || !js.configured || !waiting.length) return undefined;
+      const remaining = Math.max.apply(null, waiting.map(function (id) { return next[id] - now; }));
+      const t = setTimeout(function () {
+        // A timer delayed by browser throttling must not send a read past the hard cap.
+        if (waiting.some(function (id) { return polls.current[id] > Date.now(); })) reload(true);
+      }, Math.min(JUDGE_POLL_MS, remaining));
+      return function () { clearTimeout(t); };
+    }, [s.data]);
+    // H318 (review-H318b M-2): a skill change is shown with its whole diff, built by the hub
+    // from the proposal ledger (never from the card's own args), before Approve.
+    const _c = useApi('/api/skills/proposals', true, true), changes = _c[0], reloadChanges = _c[1];
+    const byCard = {}, owned = {};
+    ((changes.data && changes.data.proposals) || []).forEach(function (p) { if (p.card) byCard[p.card] = p; });
+    // Every pending proposal's card, the page's and beyond it (review-H318d m-4).
+    ((changes.data && changes.data.cards) || []).forEach(function (c) { owned[c] = true; });
     function decide(id, ok) {
-      adminFetch('/api/actions/' + id + '/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved: ok }) }).then(reload).catch(function (e) { alert(e.message); });
+      const body = { approved: ok }, reason = (reasons[id] || '').trim();
+      if (reason) body.reason = reason;
+      adminFetch('/api/actions/' + id + '/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(function () {
+        setReasons(function (previous) { const next = Object.assign({}, previous); delete next[id]; return next; });
+        reload(); reloadChanges();
+      }).catch(function (e) { alert(e.message); });
+    }
+    function rejectGroup(group) {
+      const body = { snapshot: group.snapshot, member_ids: group.member_ids };
+      const reason = (reasons[group.leader_id] || '').trim();
+      if (reason) body.reason = reason;
+      adminFetch('/api/actions/groups/' + encodeURIComponent(group.id) + '/reject', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      }).then(function () {
+        setReasons(function (previous) {
+          const next = Object.assign({}, previous);
+          group.member_ids.forEach(function (id) { delete next[id]; });
+          return next;
+        });
+        reload(); reloadChanges();
+      }).catch(function (e) { alert(e.message); });
+    }
+    // Only once the proposals answered can a card be said not to be one's own: while they
+    // load, or when the fetch failed, the panel says so and Approve waits (review-H318c m-2).
+    function unknownYet() { return changes.loading || !!changes.err || !changes.data; }
+    // The proposals call may re-bind a lost card: the action list is re-read once it answers,
+    // so the new card shows and a withdrawn one goes (review-H318d n-6).
+    const seenChanges = useRef(null);
+    useEffect(function () { if (changes.data && seenChanges.current !== changes.data) { seenChanges.current = changes.data; reload(); } }, [changes.data]);
+    // A change the hub will refuse (a bundled skill, a rename) offers Reject only (n-7).
+    function refused(p) { return (p.flags || []).some(function (f) { return /bundled skill|renames the skill/.test(f); }); }
+    function skillChange(a) {
+      if (a.tool !== 'skill.patch_proposal') return null;
+      if (unknownYet()) return h('div', { className: 'tool-card-text' }, changes.err ? '⚠ the proposed change could not be loaded: ' + changes.err : 'Loading the proposed change…');
+      const p = byCard[a.id];
+      if (!p && owned[a.id]) return h('div', { className: 'tool-card-text' }, 'This change is beyond the page loaded here: decide the ones above first, then reload to read it.');
+      if (!p) return h('div', { className: 'tool-card-text' }, 'No change is shown for this card here, so it cannot be approved from this panel; reject it, or reload to read it.');
+      return h('div', null,
+        (p.flags || []).concat(p.drifted ? ['the skill changed since: approving applies nothing'] : []).map(function (f) { return h('div', { key: f, className: 'tool-card-text' }, '⚠ ' + f); }),
+        h('pre', { className: 'tool-diff', style: { whiteSpace: 'pre-wrap', maxHeight: '320px', overflow: 'auto' } }, p.diff || '(no change)'));
     }
     let body;
     if (s.err) body = Err(s.err); else if (s.loading) body = Empty('Loading…');
-    else { const acts = (s.data.actions || []); body = acts.length ? acts.map(function (a) {
+    else {
+      const acts = (s.data.actions || []), leaders = {}, followers = {}, ids = new Set(acts.map(function (a) { return a.id; }));
+      (s.data.groups || []).forEach(function (group) {
+        const members = group.member_ids;
+        // An incomplete projection must never hide a card the owner can still decide.
+        if (!Array.isArray(members) || members.length < 2 || members.length !== group.count
+            || new Set(members).size !== members.length || !members.includes(group.leader_id)
+            || !members.every(function (id) { return ids.has(id); })) return;
+        leaders[group.leader_id] = group;
+        members.forEach(function (id) { if (id !== group.leader_id) followers[id] = true; });
+      });
+      body = acts.length ? acts.filter(function (a) { return !followers[a.id]; }).map(function (a) {
+      const group = leaders[a.id];
       return h('div', { key: a.id, className: 'tool-card' },
         h('div', { className: 'tool-card-text' }, (a.summary || a.tool) + (a.preview && a.preview.irreversible ? ' · ⚠ irreversible' : '')),
-        h('div', { className: 'tool-actions' }, Btn('Approve', function () { decide(a.id, true); }, 'ok'), Btn('Reject', function () { decide(a.id, false); }, 'bad')));
+        group && h('div', { className: 'tool-card-text' }, group.count + ' matching requests · approval applies only to this request; the next remains pending.'),
+        judgeLines(a, s.data.judge),
+        skillChange(a),
+        h('textarea', { 'aria-label': 'Your decision reason for ' + (a.summary || a.tool),
+          placeholder: 'Your decision reason (optional)', maxLength: 280, value: reasons[a.id] || '',
+          onChange: function (event) { const value = event.target.value; setReasons(function (previous) {
+            return Object.assign({}, previous, { [a.id]: value });
+          }); } }),
+        h('div', { className: 'tool-actions' },
+          (a.tool === 'skill.patch_proposal' && (unknownYet() || !byCard[a.id] || refused(byCard[a.id])))
+            ? h('button', { className: 'tool-btn ok', disabled: true }, 'Approve')
+            : Btn(group ? 'Approve once' : 'Approve', function () { decide(a.id, true); }, 'ok'),
+          Btn('Reject', function () { decide(a.id, false); }, 'bad'),
+          group && Btn('Reject group', function () { rejectGroup(group); }, 'bad')));
     }) : Empty('No pending tool-calls.'); }
-    return Tool('Action Approvals', 'Pending tool-calls (admin)', body, Btn('↻', reload));
+    return Tool('Action Approvals', 'Pending tool-calls (admin)', body, Btn('↻', function () { reload(); reloadChanges(); }));
   }
 
   /* ── Arena ─────────────────────────────────────────────────────────────── */
@@ -308,20 +439,44 @@
   }
 
   function WebhooksPanel() {
-    const _ = useApi('/api/webhooks', true), s = _[0], reload = _[1];
+    /* The hook routes are admin-only (SEC-1): every call carries the admin token, or
+       the panel only worked in the no-admin-token localhost posture (H153). A refused
+       list says why instead of reading as "No webhooks." (a missing admin token is
+       the usual cause), and a new hook shows the one credential its sender uses (the
+       signing secret of a signed hook, the token otherwise) until it is dismissed. */
+    const _s = useState({ loading: true }), s = _s[0], setS = _s[1];
+    // H153 review — the receiver switch as the hub reads it (only a literal true is
+    // on): while it is off no hook is live, whatever its own switch says.
+    const _rx = useState('not read'), rx = _rx[0], setRx = _rx[1];
+    const reload = useCallback(function () {
+      setS({ loading: true });
+      adminFetch('/api/webhooks').then(function (d) { setS({ data: d }); }).catch(function (e) { setS({ err: (e && e.message) || String(e) }); });
+      adminFetch('/api/admin/settings/webhooks').then(function (d) {
+        const row = ((d && d.webhooks) || []).filter(function (r) { return r && r.key === 'receiver_enabled'; })[0];
+        setRx(row ? (row.value === true ? 'on' : 'off') : 'not read');
+      }).catch(function () { setRx('not read'); });
+    }, []);
+    useEffect(function () { reload(); }, []);
     const _t = useState('jarvis'), target = _t[0], setTarget = _t[1];
     const _sg = useState(false), signed = _sg[0], setSigned = _sg[1];
     const _c = useState(null), created = _c[0], setCreated = _c[1];
-    function create() { api('/api/webhooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: target, signed: signed }) }).then(function (d) { setCreated(d); reload(); }).catch(function (e) { alert(e); }); }
-    function del(id) { fetch('/api/webhooks/' + id, { method: 'DELETE' }).then(reload).catch(function () {}); }
+    function create() { adminFetch('/api/webhooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: target, signed: signed }) }).then(function (d) { setCreated(d); reload(); }).catch(function (e) { alert(e.message); }); }
+    function del(id) { if (!confirm('Delete this webhook? Its token stops working.')) return; adminFetch('/api/webhooks/' + encodeURIComponent(id), { method: 'DELETE' }).then(reload).catch(function (e) { alert(e.message); }); }
     const hooks = s.data ? (s.data.webhooks || []) : [];
+    const credential = created && (created.signed ? 'signing secret: ' + (created.signing_secret || '') : 'token: ' + (created.token || ''));
+    const list = s.err ? Err(s.err)
+      : s.loading ? Empty('Loading…')
+        : hooks.length ? hooks.map(function (w) { return h('div', { key: w.id, className: 'tool-card' }, h('span', { className: 'tool-card-text' }, (w.name || w.target) + ' → POST /api/webhooks/' + w.id + (w.signed ? ' 🔏' : '') + (w.enabled === false ? ' (off)' : rx === 'off' ? ' (receiver off)' : '') + (w.deliver && w.deliver !== 'log' ? ' · deliver to ' + w.deliver + (w.deliver_only ? ' only' : '') : '')), Btn('Delete', function () { del(w.id); }, 'bad')); })
+          : Empty('No webhooks.');
     const body = h('div', null,
+      h('div', { className: rx === 'off' ? 'tool-stat bad' : 'tool-hint' },
+        rx === 'off' ? 'Receiver off: every delivery is refused (Console → Webhooks switches it back on).' : 'Receiver: ' + rx),
       h('div', { className: 'tool-form' },
         h('input', { className: 'tool-input', placeholder: 'target agent', value: target, onChange: function (e) { setTarget(e.target.value); } }),
         h('label', { className: 'tool-hint' }, h('input', { type: 'checkbox', checked: signed, onChange: function (e) { setSigned(e.target.checked); } }), ' HMAC signed'),
         Btn('Create', create, 'ok')),
-      created && h('div', { className: 'tool-card' }, 'token: ' + (created.token || '') + (created.signing_secret ? (' · secret: ' + created.signing_secret) : ''), h('div', { className: 'tool-hint' }, '(shown once)')),
-      hooks.length ? hooks.map(function (w) { return h('div', { key: w.id, className: 'tool-card' }, h('span', { className: 'tool-card-text' }, (w.name || w.target) + ' → POST /api/webhooks/' + w.id + (w.signed ? ' 🔏' : '')), Btn('Delete', function () { del(w.id); }, 'bad')); }) : Empty('No webhooks.'));
+      created && h('div', { className: 'tool-card webhook-created' }, h('span', { className: 'tool-card-text' }, credential), h('div', { className: 'tool-hint' }, '(shown once: save it now)'), Btn('I have saved it', function () { setCreated(null); })),
+      list);
     return Tool('Webhooks', 'Inbound triggers (optionally HMAC-signed)', body, Btn('↻', reload));
   }
 

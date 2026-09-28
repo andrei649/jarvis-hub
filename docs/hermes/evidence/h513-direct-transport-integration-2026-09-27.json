@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T13:20:43.283603+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "H513 direct native HTTPX routing for composer vision and approval judging; H513 and H277 remain partial",
+  "coordination": {
+    "implementers": 2,
+    "model": "gpt-6-sol",
+    "reasoning": "high",
+    "ownership": "single writer per file; frozen shared helper; coordinator and bounded independent review"
+  },
+  "verification": [
+    {
+      "path": "/tmp/h513-direct-composer-final.xml",
+      "tests": 191,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 191,
+      "seconds": 3.256,
+      "sha256": "90e9aeac57d2d4330bf753adb225c226d576d6232259b8b89a76d38af1c31ce2"
+    },
+    {
+      "path": "/tmp/nerva-h513-judge-direct-focused.xml",
+      "tests": 270,
+      "failures": 64,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 206,
+      "seconds": 39.358,
+      "sha256": "aa60f94c515fafc4249ab3c9e0520453f55eea00a87775399dcfd3355fe4d36f"
+    },
+    {
+      "path": "/tmp/nerva-h513-judge-direct-final.xml",
+      "tests": 353,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 353,
+      "seconds": 6.219,
+      "sha256": "88b0d53bd18e3dd9fa272e8634dcc2470953542b9b7e514da01a01d86ba5a34a"
+    },
+    {
+      "path": "/tmp/nerva-h513-direct-transport-integration.xml",
+      "tests": 420,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 420,
+      "seconds": 7.122,
+      "sha256": "95d13f79ac4cc48ed569457ed1b97ae8a2fad70c1edd01221aa4050d56e29879"
+    },
+    {
+      "path": "/tmp/nerva-h513-direct-transport-backend.xml",
+      "tests": 19123,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 19088,
+      "seconds": 247.26,
+      "sha256": "501711ad1c6992e86c4f6d3612974196109eacce8eca437029ea7716bbd79a60"
+    }
+  ],
+  "full_backend_command": ".venv/bin/python -m pytest tests/ -n 3 --dist loadfile --timeout=90 -q --tb=short --junitxml=/tmp/nerva-h513-direct-transport-backend.xml",
+  "frontend": {
+    "rerun": false,
+    "reason": "No frontend/OpenAPI change in this transport slice. Previous verified 1809-test/typecheck/build snapshot remains separate.",
+    "previous_evidence": "docs/hermes/evidence/h487-task-expiry-integration-2026-09-27.json"
+  },
+  "source_sha256": {
+    "agents/core/llm/direct_transport.py": "213b9d9f84f27b05888b71e8b8872f48120449ee9a05ac1027e74a86f459dafe",
+    "agents/core/llm/vision_policy.py": "089b44b36d2e73d6ece822ad753c790da9a44794f4694ebeb93718ad2803df21",
+    "agents/core/llm/vlm.py": "37492d41bef7b38f06e5b2fc0c4b78c784dbdaaca55cf1c14380c4c8393ee8d6",
+    "agents/core/llm/base.py": "bd4974f2023cac88852a72f6aa06a30c001690a552592ac1f1cb9ad3968d8955",
+    "agents/core/autonomy/approval_judge.py": "47cbe6be2bfdb5032d2716b86b298dd1b0c128df51e66ed2f2db98058acf7e9e",
+    "tests/test_h513_direct_transport.py": "b2c78fc2f8c42bfb51631ad4d9adc56716b3852210e8f09ad8591fcd28bb338f",
+    "tests/test_h513_judge_direct_transport.py": "05185e70b9a3975f63e01bd3c996d4b6f8d82eeea73f7253dacd01fbd4aa0d2f",
+    "tests/test_h513_composer_vision_policy.py": "b817e61dc733cfbe7b981abc2fe8114f2921c1e06fea37fec038e3d30d127a71",
+    "tests/test_h277_approval_judge.py": "e5f32cad56d50bf5f61ed8de43d21ef3397f078b6ecdef230ddbaaca90b51d5e",
+    "tests/test_h277_task_judge.py": "0bc63b1577e35f33a9ab0e2bd30dddaee29f299a554c4a314be5022eb22be023",
+    "docs/hermes/h513-direct-transport-plan.md": "8b25a7f46d54293e2698e971e74f3343544a3a6f2d01e9932c81e83c86d15f09",
+    "docs/test-manual/08-security-privacy.md": "8d06d96cd721edf4c00ddd9e988e515b4eca7168b1ea47d54158c423122ce95c"
+  },
+  "security": {
+    "bandit": {
+      "exit_code": 0,
+      "scope": "agents/scripts against existing baseline",
+      "log": "/tmp/nerva-h513-direct-transport-bandit.log"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "files": 12,
+      "snapshot": "/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/nerva-h513-direct-transport-source-t0ichr7h",
+      "log": "/tmp/nerva-h513-direct-transport-gitleaks.log"
+    }
+  },
+  "graft": {
+    "check": "passed",
+    "scope": [
+      "agents/core/autonomy",
+      "agents/core/llm",
+      "agents/core/kernel",
+      "agents/core/acquisition",
+      "agents/core/house",
+      "agents/core/ingestion"
+    ],
+    "log": "/tmp/nerva-h513-direct-transport-graft.log",
+    "deep_index": false
+  },
+  "review_corrections": [
+    "Native client and route-selector references are captured at module import, with exact client type and bound selector identity checks.",
+    "The actual selected mount is checked; safe direct mounts are supported while proxy pools and opaque transports refuse.",
+    "Owned composer/judge construction disables environment proxy routing without changing generic backend defaults.",
+    "ACTIVE judge clients remain untouched and open; effective NO_PROXY direct routing remains usable.",
+    "The transitional focused suite exposed two fake-client fixture declarations and one remote-disabled synthetic compatible fixture; native offline fixtures preserve prior assertions."
+  ],
+  "limitations": [
+    "This verifies native HTTPX routing configuration, not isolation from arbitrary code running inside the same process.",
+    "Unsupported custom clients/transports and proxy routes fail closed; explicit proxy authorization requires a separate policy design.",
+    "Independent media reader, screen/reflex, camera and legacy VLM policy integration remains open.",
+    "No live provider/channel/native-mobile acceptance, mutation campaign, commit, push, merge or deployment.",
+    "Remote embedding consent, durable stored-vector provenance/migration and production presence caller remain open."
+  ],
+  "final_documentation_verification": {
+    "path": "/tmp/nerva-h513-direct-transport-final-docs.xml",
+    "tests": 92,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "sha256": "4b2742e0db49739dadc6e9eaf4500b39a7290a64f49d8fd9d3921b2fe32663a4"
+  }
+}

@@ -10,7 +10,6 @@ so the route test does not re-test compute_north_star.
 
 import json
 import sys
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -92,7 +91,10 @@ def client(monkeypatch, tmp_path):
     # straddle a second boundary differ — which the export-then-read comparison below did
     # under a loaded parallel run. Freeze the report's clock at the fixture's own "now" so
     # the task timestamps above stay inside the day window and every build is identical.
-    frozen = time.time()
+    # NOW, not time.time(): NOW is taken at import, and a suite that started before
+    # midnight reached this fixture after it, which put the report in the next day with
+    # the tasks in the previous one (CI at 00:01 UTC).
+    frozen = NOW.timestamp()
     monkeypatch.setattr(dr, "time", SimpleNamespace(time=lambda: frozen))
     monkeypatch.setattr(report, "get_orch", lambda: state["orch"])
     monkeypatch.setattr(_component, "get_orch", lambda: state["orch"])

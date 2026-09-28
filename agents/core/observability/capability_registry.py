@@ -30,6 +30,7 @@ import logging
 from dataclasses import asdict, dataclass, field
 
 from agents.core.capability_manifests import RollbackContract
+from agents.core.tool_profiles import SESSION_SCOPED_TOOLS
 
 logger = logging.getLogger("jarvis.capabilities")
 
@@ -127,9 +128,10 @@ def _plugin_records(orch=None) -> list[CapabilityRecord]:
     """Derive plugin capabilities from the static manifest registry.
 
     ``orch`` is optional — the manifest-derived fields (state, policy) need no
-    orchestrator. When one is given, this also resolves each plugin's *live*
-    runtime honesty (Live-vs-Plumbing: is it actually live right now, or a mock/
-    degraded fallback awaiting config?) into ``detail``, mirroring the same
+    orchestrator. When one is given, the state follows its gate's switch (H285),
+    and this also resolves each plugin's *live* runtime honesty (Live-vs-Plumbing:
+    is it actually live right now, or a mock/degraded fallback awaiting config?)
+    into ``detail``, mirroring the same
     verdict the `/plugins` HUD listing renders — so the canonical capability
     board (`/api/capabilities`) doesn't imply a plugin is real when it's a mock.
     """
@@ -144,6 +146,9 @@ def _plugin_records(orch=None) -> list[CapabilityRecord]:
         live_plugin_for,
         runtime_configuration,
     )
+    # H285: the live gate holds its own manifests, which a toggle and the load set switch.
+    live = getattr(getattr(orch, "permission_gate", None), "plugins", None)
+    live = live if isinstance(live, dict) else {}
     out = []
     for pid, m in sorted(BUILTIN_PLUGINS.items()):
         cap = plugin_capability_manifest(m)
@@ -168,7 +173,7 @@ def _plugin_records(orch=None) -> list[CapabilityRecord]:
             CapabilityRecord(
                 id=f"plugin:{pid}",
                 kind="plugin",
-                state=WIRED if getattr(m, "enabled", True) else SEAM,
+                state=WIRED if getattr(live.get(pid, m), "enabled", True) else SEAM,
                 owner_agent=(m.agents_served[0] if getattr(m, "agents_served", None) else ""),
                 description=cap.description,
                 inputs=cap.inputs,
@@ -279,8 +284,36 @@ def _action_records(orch=None) -> list[CapabilityRecord]:
     return records
 
 
-def _tool_records(orch) -> list[CapabilityRecord]:
-    """Derive live ToolRPC capabilities only when registration declares identity."""
+def _session_state_record(tool: dict, capability_id: str, name: str, verification) -> CapabilityRecord:
+    """H315 review: a session-scoped tool (``todo``) is ungated but not read-only. It
+    writes the session's own state in memory. What a call replaced is put back by a
+    compensating call: every answer carries the whole list, and the answer stays in the
+    transcript (H315 second review: "none" contradicted "reversible")."""
+    return CapabilityRecord(
+        id=capability_id,
+        kind="tool",
+        state=WIRED,
+        description=str(tool.get("description", "")),
+        inputs=tool.get("input_schema") or {"type": "object"},
+        risk="reversible",
+        requires=("tool-rpc.registered",),
+        supports=("tool-rpc", "inline"),
+        verification=verification,
+        rollback=RollbackContract(
+            mode="compensate",
+            description=("It writes only this session's in-memory state. Every answer carries "
+                         "the whole list, so a later call can write back what a call replaced; "
+                         "the tool keeps no copy of it."),
+        ),
+        confidence=0.0,
+        implementation=f"agents.core.tool_rpc:{name}",
+        detail={"tool": name, "gated": False, "session_scoped": True},
+    )
+
+
+def _tool_records(orch, *, live_schemas: bool = True) -> list[CapabilityRecord]:
+    """Derive live ToolRPC capabilities only when registration declares identity.
+    ``live_schemas=False`` takes each tool's static schema, not its H296 override."""
     server = getattr(orch, "tool_rpc", None)
     project = getattr(server, "tools", None)
     if not callable(project):
@@ -288,12 +321,15 @@ def _tool_records(orch) -> list[CapabilityRecord]:
     from agents.core.capability_verification import tool_verification_ref
 
     out = []
-    for tool in project():
+    for tool in (project() if live_schemas else project(live=False)):
         capability_id = tool.get("capability_id") if isinstance(tool, dict) else None
         if not isinstance(capability_id, str) or not capability_id:
             continue
         name = str(tool.get("name", ""))
         gated = bool(tool.get("gated"))
+        if not gated and name in SESSION_SCOPED_TOOLS:
+            out.append(_session_state_record(tool, capability_id, name, tool_verification_ref(name)))
+            continue
         out.append(
             CapabilityRecord(
                 id=capability_id,
@@ -441,18 +477,19 @@ def _acquired_records(orch) -> list[CapabilityRecord]:
     return out
 
 
-def build_records(orch=None) -> list[CapabilityRecord]:
+def build_records(orch=None, *, live_schemas: bool = True) -> list[CapabilityRecord]:
     """All capability records, overrides applied. Plugins derive statically (their
     lifecycle *state*/policy needs no orchestrator; their live honesty verdict does
     and is omitted when *orch* is None); components and skills need a live
     orchestrator outright (omitted when *orch* is None). Each source is isolated so
-    one failing registry can't blank the whole board."""
+    one failing registry can't blank the whole board. ``live_schemas=False`` gives
+    tools their static schema (see :func:`_tool_records`)."""
     records: list[CapabilityRecord] = []
     for source in (lambda: _missing_records(orch) if orch is not None else [],
                    lambda: _plugin_records(orch),
                    lambda: _action_records(orch),
                    lambda: _acquired_records(orch) if orch is not None else [],
-                   lambda: _tool_records(orch) if orch is not None else [],
+                   lambda: _tool_records(orch, live_schemas=live_schemas) if orch is not None else [],
                    lambda: _component_records(orch) if orch is not None else [],
                    lambda: _skill_records(orch) if orch is not None else []):
         try:
@@ -469,13 +506,14 @@ def build_records(orch=None) -> list[CapabilityRecord]:
     return [_apply_override(_apply_verification(r)) for r in unique.values()]
 
 
-def snapshot(orch=None) -> dict:
+def snapshot(orch=None, *, live_schemas: bool = True) -> dict:
     """Board-ready view: records + roll-ups + the honest ``harness_pending`` flag.
 
     ``by_state`` / ``by_kind`` are counts; ``harness_pending`` is True while no capability
     is VERIFIED (i.e. the V1 reality harness has yet to promote anything) — the board renders
-    that as "wired, not yet proven" rather than implying verification we can't back."""
-    records = build_records(orch)
+    that as "wired, not yet proven" rather than implying verification we can't back.
+    A surface that answers without a token passes ``live_schemas=False`` (H296)."""
+    records = build_records(orch, live_schemas=live_schemas)
     by_state: dict[str, int] = dict.fromkeys(_ORDER, 0)
     by_kind: dict[str, int] = {}
     for r in records:

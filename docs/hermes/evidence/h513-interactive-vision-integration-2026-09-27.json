@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T13:43:07.913905+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "H513 independent authenticated local image-description/screen-reflex dispatch and responsive policy warnings; full H513 remains partial",
+  "coordination": {
+    "implementers": 2,
+    "model": "gpt-6-sol",
+    "reasoning": "high",
+    "ownership": "one backend writer, one frontend writer, coordinator integration and bounded independent review"
+  },
+  "verification": [
+    {
+      "path": "/tmp/h513-interactive-vision-red.xml",
+      "tests": 26,
+      "failures": 22,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 4,
+      "seconds": 1.021,
+      "sha256": "e0f826e7f2869a77b23eb62a5aaafe0eb774e67b076a798ea4daf375550ce267"
+    },
+    {
+      "path": "/tmp/h513-interactive-unavailable-red.xml",
+      "tests": 3,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "seconds": 0.823,
+      "sha256": "60449a8bfe542ccafb103f9aa30bafb19e3c8ba5af0faca7954a1a3ea9ab9b4d"
+    },
+    {
+      "path": "/tmp/h513-interactive-local-vision-final.xml",
+      "tests": 207,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 207,
+      "seconds": 3.803,
+      "sha256": "ce868e5c67f9f795cab89443f6f74fb2734c14d69baafcafbd2148da7f8825bd"
+    },
+    {
+      "path": "/tmp/nerva-h513-interactive-vision-hud.xml",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 18,
+      "seconds": 0.4064765,
+      "sha256": "6dd49974599dbe7a90d4797a6fe11af0c3b685d549eac19e7efc1ab87e970b1a"
+    },
+    {
+      "path": "/tmp/nerva-h513-interactive-vision-integration.xml",
+      "tests": 221,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 220,
+      "seconds": 5.217,
+      "sha256": "27525912f815dad9a546472c7f77f604922c1d172a084943a2da6e0d637fe278"
+    },
+    {
+      "path": "/tmp/nerva-h513-interactive-vision-docs-green.xml",
+      "tests": 92,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 92,
+      "seconds": 2.88,
+      "sha256": "8d5ab19dba62e65bcb1efee746385ea6d29765973315bc50b1a85ec399b5cf53"
+    },
+    {
+      "path": "/tmp/nerva-h513-interactive-vision-backend.xml",
+      "tests": 19157,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 19122,
+      "seconds": 250.915,
+      "sha256": "0d6004085aca08f71cce5189b4c2dfa7badeb10f1523a78bdf12c69c4c0ecdc2"
+    }
+  ],
+  "full_backend_command": ".venv/bin/python -m pytest tests/ -n 3 --dist loadfile --timeout=90 -q --tb=short --junitxml=/tmp/nerva-h513-interactive-vision-backend.xml",
+  "frontend": {
+    "path": "/tmp/nerva-h513-interactive-vision-frontend.json",
+    "sha256": "3e0223affd666c8a65c118a6aa3b9a2e99313a863514d49222c1427cc3623a15",
+    "passed": 1815,
+    "total": 1815,
+    "failed": 0,
+    "typecheck": "passed including post-OpenAPI generation",
+    "build": "passed; existing chunk-size warning",
+    "openapi_change": "generated comments only; request/response type shapes unchanged"
+  },
+  "source_sha256": {
+    "agents/core/llm/vision_policy.py": "18215bef075594d0a8bea519891b7ef049077d98b3123d9a31aa757ffcc4882b",
+    "agents/core/routers/multimodal.py": "397c72607fae07e7d7275c521b0de858ad80792b2b2cc8b7b775e0727bfd6306",
+    "tests/test_h513_interactive_local_vision.py": "3a7bc43c4865301e33d8fe1c1ec966d61d01d75e7d74f5c3368938dbd8433a22",
+    "tests/test_h277_role_routes.py": "1deb6aff521474ce1d767e1316a2d00417954b45e5a125705071fe3cfc786f72",
+    "tests/test_screen_reflex_route.py": "c2b0e3b2b41a635335b97c4938fdf3875fe5eae227755cb73be21933b6255a77",
+    "tests/test_vlm_h13_1.py": "58b1914aa11c975479d2d690c4d2f91b81fd7c72ab51ac723ecbc483bf443f8b",
+    "frontend/src/gap.tsx": "4a5e5c2eb33d4a45f3e44f25dfaa6e72fdf5cb81f02e82b1a940d42a9ccef02e",
+    "frontend/src/api/schema.gen.ts": "a8d236270a55ff6d57489d5e47f9c1b91bc49b4a348aec56d8ea015072bb64cc",
+    "frontend/src/test/vlm-describe-panel.test.tsx": "50c0a6bac542be2468c445feb8b4c2af1a4090202001245667c6efea10661d96",
+    "frontend/src/test/screen-reflex-panel.test.tsx": "65a1d67b8580d9ab1fab85d500aaf1754fbbb2be8ec167e1c55d47453d2dc88e",
+    "docs/hermes/h513-interactive-local-vision-plan.md": "b23423b96ad4c6a900cda146a46e30d8ba7386e20009bdf78dd446f0b635e0e3",
+    "docs/test-manual/08-security-privacy.md": "d9b4370f2f1b11fedfecd26e45fe50a4519471f1fc9abf345d1a99655bf9d890",
+    "mobile/PARITY.md": "4c6390a62cf5d45895b2c56cbe25a1b7d1036003d55a599b1c20ba68a784b7a2",
+    "docs/design/HUD_V2_REMAINING.md": "4f05539a05507d1298822913e1c7a9e5571ba4ea56eb53461c33059a6f5cb2e2",
+    "agents/web/v2/index.html": "a93189c7898f3bca72163f2dfd3c89bf8d80767a599af54b77e08cd9cf8b79e2",
+    "agents/web/v2/sw-v2.js": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c",
+    "agents/web/v2/manifest.webmanifest": "c2d642afdc2d01e79fe147118fc92dfbefa66b7c503406efb5e5479f7c101c69",
+    "agents/web/v2/assets/index-D7mN8Q5e.js": "5ba0fb334df5d3e5a7f0c507e9fc92ffd8813d9650eb898e1334b3af488658d9",
+    "agents/web/v2/assets/modes2-BZdZL3Sv.js": "9a5be1236ca648a88b22b62f38985eabc68c12ba991410ecb494a50f4b860b02",
+    "agents/web/v2/assets/modes4-BPkucH3g.js": "9fcdb4a404750e3445197a41bb149da1c009a81d6ce0760d051aea2858bb301e",
+    "agents/web/v2/assets/soul-edit-BVVaOyCV.js": "8221c9fab9d7ec43cba6e0c17868a3ee899eba2abfb2d29b69f85bdf0331ee83",
+    "agents/web/v2/assets/modes-Ccs9sNH2.js": "58473143270e1abeff56467afe3b34ed73b872cc4b950dc5b8c8f5c3e1976e35",
+    "agents/web/v2/assets/jobs-UvrJfY-6.js": "4668f31d287655bbda0e26b1b0e154e854a2277c1cd6a6b93f414149be7e921c",
+    "agents/web/v2/assets/jetbrains-mono-latin-var-B9CIFXIH.woff2": "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e",
+    "agents/web/v2/assets/modes3-F97MHt2e.js": "ffe26c2aabdbf6fea2881940b73302c907675370c3efa3d16cd67e6892091362",
+    "agents/web/v2/assets/index-ldxH5Xm9.css": "a4851f9c57ea8630fad9196f3eb2c84181e4286232c396ede73290e4b272bbd1",
+    "agents/web/v2/assets/space-grotesk-latin-var-BhU9QXUp.woff2": "0640890476fc1198ab4de571fb658de443c4d85b66466ec09534a8737ab1ce9d",
+    "agents/web/v2/assets/gap-D1xeKMDD.js": "2222938b4623f6760ed57f73055b2676fcd5287ecfd076b78f0de42f47d117cb",
+    "agents/web/v2/assets/modes_world-C9yeAP67.js": "7c1329b56f67f28e394a74cad4fca68837a9cfc4ee5ca936a8928e587aa51956",
+    "agents/web/v2/assets/panel-kit-gf7swuoi.js": "ca4602b0da8dd2cd9c694b306cbffd87257b759a4d8b20772fbdebc25a3e819f",
+    "agents/web/v2/assets/client-C3wAcB0V.js": "40c77894e27ed04d3fb085a9e3840df283c0c404e29ccabfd52f980c67e1cbca"
+  },
+  "security": {
+    "bandit": {
+      "exit_code": 0,
+      "scope": "agents/scripts against existing baseline",
+      "log": "/tmp/nerva-h513-interactive-vision-bandit.log"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "files": 31,
+      "snapshot": "/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/nerva-h513-interactive-vision-source-3ds18xe7",
+      "log": "/tmp/nerva-h513-interactive-vision-gitleaks.log"
+    }
+  },
+  "graft": {
+    "check": "passed",
+    "scope": [
+      "agents/core/autonomy",
+      "agents/core/llm",
+      "agents/core/kernel",
+      "agents/core/acquisition",
+      "agents/core/house",
+      "agents/core/ingestion",
+      "agents/core/routers"
+    ],
+    "deep_index": false,
+    "log": "/tmp/nerva-h513-interactive-vision-graft.log"
+  },
+  "review_corrections": [
+    "Legacy describe remote acknowledgment contradicted existing backend refusal; both controls now require server-loopback VLM.",
+    "Describe inference error/empty output never becomes ok:true; existing screen validation and grounding remain intact.",
+    "Public status excludes credentials, query, fragment and private path; it makes no probe or client.",
+    "Malformed/unreadable policy and late configuration/transport changes fail with bounded errors across awaited cleanup.",
+    "The first integration gate found stale H598 evidence for the shared router. Only reviewed unchanged media-handler evidence was refreshed; no new image-parity credit."
+  ],
+  "limitations": [
+    "No live model, host capture, native-mobile, camera or channel acceptance.",
+    "The two HTTP routes authorize explicit user requests only; no unattended vision consent was added.",
+    "Media reader, camera and standalone screen-locator/legacy VLM consumers remain separate work.",
+    "Backend policy is declared metadata; this does not attest what a configured model server does internally.",
+    "No new H277 mutation campaign, commit, push, merge or deployment."
+  ],
+  "final_documentation_verification": {
+    "junit_path": "/tmp/nerva-h513-interactive-vision-final-docs.xml",
+    "sha256": "9f68199ef8a2fbec9c22e560010057f1d846f9c2ee6cd0a61f012704e84358e4",
+    "tests": 92,
+    "failures": 0,
+    "errors": 0,
+    "status_sync": "in_sync backend=19157 frontend=1815 mobile=142"
+  }
+}

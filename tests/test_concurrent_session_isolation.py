@@ -159,6 +159,11 @@ async def test_two_concurrent_stream_turns_keep_separate_histories(orch):
         return {}
 
     class _FakeBackend:
+        from agents.core.llm.providers import get_profile
+
+        profile = get_profile("lm-studio")
+        base_url = "http://127.0.0.1:1234/v1"
+
         async def generate_stream(self, *, model, prompt, system, max_tokens,
                                   temperature, on_token):
             started["n"] += 1

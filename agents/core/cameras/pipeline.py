@@ -92,7 +92,8 @@ class CameraPipeline:
             self._privacy.recheck(lease, "fetch")
             frame = await self._snapshots.fetch_masked(lease, outcome.event.event_id)
             self._privacy.recheck(lease, "inference")
-            description = await self._vlm.describe(frame, outcome.event)
+            description = await self._vlm.describe(frame, outcome.event,
+                privacy_check=lambda: self._privacy.recheck(lease, "inference"))
             self._privacy.recheck(lease, "inference")
 
             self._privacy.recheck(lease, "publish")

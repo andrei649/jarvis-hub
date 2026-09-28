@@ -1,0 +1,35 @@
+COMMAND ["/Users/andrei649/.local/bin/node", "node_modules/vitest/vitest.mjs", "run", "tests/frontend/tools.test.js"]
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.js:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.0 /private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/h277-mutation-rvs2us1l
+
+ ❯ tests/frontend/tools.test.js (34 tests | 1 failed) 1217ms
+   ❯ Action Approvals — model opinion (H277) (13)
+     × never shows an opinion line on a skill-change card 32ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend/tools.test.js > Action Approvals — model opinion (H277) > never shows an opinion line on a skill-change card
+AssertionError: expected 'skill changeModel opinion: not availa…' not to contain 'Model opinion'
+
+Expected: "Model opinion"
+Received: "skill changeModel opinion: not availableNo change is shown for this card here, so it cannot be approved from this panel; reject it, or reload to read it.ApproveReject"
+
+ ❯ tests/frontend/tools.test.js:477:53
+    475|     boot({ actions: [{ id: 's1', tool: 'skill.patch_proposal', summary…
+    476|     const c = await open();
+    477|     expect(card(c, 'skill change').textContent).not.toContain('Model o…
+       |                                                     ^
+    478|   });
+    479|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 33 passed (34)
+   Start at  11:53:01
+   Duration  1.84s (tests 69%, import 30%, transform 2%)
+

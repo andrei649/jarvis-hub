@@ -192,6 +192,8 @@ class WindowsDesktopDriver:
     """Bounded accessibility-first host driver for an isolated Windows desktop."""
 
     requires_kernel = True
+    #: What :meth:`perform` accepts; desktop_run advertises it (H296).
+    supported_actions = _OBSERVE_ACTIONS | _MUTATE_ACTIONS
 
     def __init__(
         self,

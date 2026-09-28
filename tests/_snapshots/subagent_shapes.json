@@ -9,6 +9,7 @@
     "output_schema",
     "parent",
     "result",
+    "selection",
     "session_id",
     "status",
     "steerable",
@@ -31,6 +32,7 @@
     "id",
     "ok",
     "result",
+    "selection",
     "session_id",
     "status"
   ],

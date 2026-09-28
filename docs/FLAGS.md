@@ -197,6 +197,51 @@ mandatory — without it the backend refuses `kernel_unavailable`.
 — shell effects are not automatically reversible, and the contract says so.
 **Revert:** unset + restart.
 
+### `JARVIS_VOICE_COMMANDS` · `JARVIS_VOICE_COMMAND_TIMEOUT_S`
+
+**Defaults: OFF · `30`s for TTS, `120`s for STT (an override is clamped to 1–600).**
+
+**OFF:** the owner's TTS/STT command providers (`voice.tts_command`,
+`voice.stt_command`, H613) never run, and `POST /api/admin/voice/commands` refuses to
+ask for one (`409 not_armed`); clearing one still works.
+**ON:** an approved command runs: argv-only (never a shell), in a private 0700 run
+directory, scrubbed environment, one deadline, capped stdout/stderr; only audio (or a
+transcript) it writes inside that directory is read back.
+**What stays gated anyway:** the two settings are ROUTE_ONLY — a generic settings write,
+an import, a reset, an undo and `nerva config set` cannot touch them — and setting one
+waits for a human in the Decision Inbox (irreversible tier, kind
+`settings.voice_command`); the card names every file that runs (the program and, for an
+interpreter, its script, each with its size and sha256), the full argv and who it runs
+as, and only a plain accept of that card writes it. Every spawn re-validates the argv
+(absolute program that exists, not a shell or a launcher — nor a program that runs code
+from its arguments, such as the dynamic loader, `find`, `awk`, `git`, an editor — no
+inline-code interpreter, hardline denylist, no credential in the line) and checks every
+bound file's identity (device, inode, size, mtime, sha256) against the approval, once more
+right before the spawn: a replaced, rewritten or upgraded file needs approving again. A
+bound file may not sit under a directory another user can write (group- or
+world-writable without the sticky bit). A timeout ends the command's whole process group.
+For whisper.cpp, its `[00:00:00.000 --> …]` timestamps are stripped (or pass `-nt`). Off
+in safe mode.
+In task-mediation `enforce` mode, command registration requires signed kernel
+authority and still waits for a human; `hold` refuses registration. The worker
+validates the recorded decision, current policy/scope and halt state at execution.
+A speech call waiting for a process slot keeps its original approval and bound
+file identities: reapproving even identical argv does not authorize that old call.
+Named commands use the same gate: the admin route accepts an optional `provider_id`,
+and Settings → Voice lists independent TTS/STT providers. Choose `provider:<id>` as
+the TTS voice or set `voice.stt_command_provider` for command STT (empty keeps the
+legacy slot). Invalid or absent named selections never select the legacy command.
+Names are lowercase, at most 32 characters, and cannot replace built-in providers.
+The separate settings-database table retains revisions and cleared-name tombstones:
+16 active and 128 historical names per side. Clear invalidates pending approvals
+and waiting calls for that name; it does not terminate a program already running.
+Generic settings reset/import/undo cannot install or erase named command authority.
+**Cost:** an approved program runs as the hub's user, with that user's permissions.
+**Revert:** unset + restart, or clear the command in Console → Admin → Settings → Voice → Command providers.
+**`voice.local_only`:** keeps speech on this machine — only Piper, Kokoro or XTTS speak. It never
+runs the TTS command: a command is the escape hatch for any provider (a cloud one included), and
+the hub cannot check where it sends the text, so availability reports never count it as local.
+
 ### `JARVIS_BROWSER_ALLOW_PRIVATE_URLS`
 
 **Default: OFF.** Read by `PlaywrightBrowserDriver.from_env` and
@@ -241,18 +286,74 @@ restart** — a capability that can start a night of autonomous work should not 
 because a config file changed while nobody was looking. Nothing is registered if the
 chain cannot be built, and every refusal is named in the log: no work-run ledger, no
 governed intake. A missing task queue is reported rather than fatal — the runtime
-builds, but a blocked run could never be resumed, so it says so.
+builds, but a blocked run could never be resumed, so it says so. The runtime is
+built from the **orchestrator's own queue and intake** (`autonomy_queue`,
+`autonomy.govern_enqueue`; H464b — before that it looked for names the orchestrator
+never had, so in production it never built and no sweep ran). **Safe mode leaves it
+out** (H464c): no runtime is built and no sweep is scheduled, and a sweep that finds
+safe mode on does nothing.
 
 **What it will actually do.** The planner is the **checklist the owner read on the
 approval card** (`GoalDraft.plan`, inside the payload fingerprint, so editing it
 invalidates the approval). A goal approved with **no** plan and no explicitly-passed
 model planner **proposes nothing** and goes straight to grading: "you approved a goal
 with no plan, so nothing happened" is a better outcome than a model improvising a
-night's work from a one-line title. A goal that cannot be read yields an *empty*
-plan, never an unrestricted one.
+night's work from a one-line title. The checklist is **read back from the goal's own
+approval task** (the task in the run's `approved_by`): a human must have accepted
+that very task, the goal must match the run (approval, title, deadline, budget), and
+its payload must fingerprint to **the fingerprint the run pinned when it opened**
+(H464c) — never merely to the one the payload now carries about itself. **One
+approval task opens one run**: a retried `goal.approve` gets the run it already
+opened. A read that **fails just now holds** the run (no step, no park, no grade —
+the next sweep reads again); the first held tick writes a `hold.start` event (one
+per hold, not one per sweep), the tick that can plan again writes `hold.end`, and
+the brief says `held — …` with the reason meanwhile (H464d). A goal that **provably
+does not bind** (a policy decision, an edit, another run's goal, a run opened before
+the pin existed, an approval task that can no longer be minted into a goal at all)
+**stops** the run with the reason on its record
+(`plan not bound to its approval: …`, shown in plain words in the brief); an
+approved row the scope refuses stops it too (`approved row refused by scope: …`) —
+neither is ever graded as a finished checklist. A row's queued task kind must be
+inside the goal's scope (it is a scope kind or sits under a whole one, then a dot:
+`research.collect` under `research`, `file.write.append` under `file.write`), or the
+card is refused. A row whose step **failed** (the governed intake raised or returned
+no task, or its task vanished) is not done: it is tried again on a later sweep, at
+most 3 times in all, then the run stops with `approved row kept failing: <row>` —
+and a read of the run's own steps that fails holds the tick rather than asking for
+row 1 again (H464d).
 
-**Cost:** an active run consumes its own budget — steps, wall-clock, deadline and
-a hard cap on how many times it may interrupt you. Running out of interrupts
+**When the checklist is done.** A step's task counts as done for the checklist once
+it is *approved*, so the plan can finish while that work is still running. A
+finished plan then **waits on its own approved tasks that are still running** — no
+step and no verdict, only wall-clock time (at most once per task; "stop waiting"
+sticks): the run is parked on `task:<id>` and resumes on the first sweep after the
+task finishes. The wait is capped at 6 h and at the time left **less a grading
+margin**, the same before a deadline as before the end of the budget (H464d: exactly
+what grading needs — the time from a tick to the next sweep on which the run is due
+again, given the sweep cadence `autonomy.company_tick_seconds` and the scheduler's
+per-run interval of 300 s, plus a minute: 360 s at the default 300 s cadence, 360 s
+at 60 s, 420 s at 120 s, 1,260 s at 1,200 s; never a share of the budget), so the run
+is still due, and graded, on a sweep before it runs out at any cadence; with no time
+to spare past the margin it does not wait at all. A run with more time left than that
+waits for its task and is graded on the finished work. A sweep that starts a moment
+early (the timer's own jitter, up to 1 s) still counts as one interval since the
+run's last tick. Production still has **no grader wired**, so after that the run idles
+("no work left, and no grader is wired") until its budget ends — and then the sweep
+**settles it** like any spent run (`stopped`, `budget:<limit>`, "ran out of budget"
+in the brief), where before it was skipped and left open for ever (H464d).
+
+**Cost:** an active run consumes its own budget — steps, elapsed seconds, deadline and
+a hard cap on how many times it may interrupt you. With the runtime's authoritative
+task reader, a proven pending human approval excludes up to 360 seconds per
+approval-block interval from elapsed-seconds accounting. Overlapping asks share
+that cap; a task deadline can shorten it. Auto-approved tasks and unproven waits
+receive no credit. The first durable human decision ends the interval, including
+defer followed by a later approval. An ask the owner edits before deciding cannot use
+its decision time and is credited up to the last sweep that saw it still open: the
+sweep's reconcile records the open wait on every pass (H464d), so that credit is the
+same whether or not anyone opened the HUD — the report routes only read it. This does not create an approval timeout or
+extend the absolute goal deadline. Budget diagnostics separately report raw wall
+time and excluded human-wait time. Running out of interrupts
 blocks the run rather than ending it, so the work waits instead of nagging.
 **Revert:** unset; the next sweep answers `company mode is off`, every tick answers
 `disabled` and no run is opened. Existing run rows stay in `work_runs.db` as a
@@ -389,6 +490,151 @@ Still requires `JARVIS_VLM_MODEL` (refuses `vlm_model_unset`); an unknown id ref
 the **wrong** preset mis-clicks — which is exactly why it is explicit rather than
 guessed.
 
+### `security.data_training_ack` (H513 unattended provider consent)
+
+**Default: empty.** This route-only setting is changed through Security Posture
+or admin `POST /api/security/data-handling/ack`, using the current opaque `scope`
+returned by posture. Generic settings writes, imports and reset undo cannot grant
+this permission. A successful consent audit precedes a durable grant.
+
+**What acknowledgment changes:** routed internal work may use a configured provider
+whose effective policy is `unknown` or `trains-on-inputs`. Owner-started builder
+and workflow work still count as internal. Interactive use continues to warn;
+acknowledged unattended use also continues to warn. Consent is scoped to the actual
+provider configuration, credentials and effective policy. A changed configuration
+requires a fresh acknowledgment; an ambiguous provider/account cannot be granted
+from a stale or incomplete posture row.
+
+**Cost:** prompts can leave the machine under the provider's terms and may be used
+for training. Existing profile policy labels are declarations, not a verification
+of the owner's account contract. No provider calls are made by inspecting posture.
+Local routes do not acquire a cloud fallback through this setting.
+
+**Rollback:** revoke in Security Posture. Fresh dispatch checks block unacknowledged
+internal requests, including subsequent tool-loop requests. Revocation cannot
+recall bytes already sent. Independent direct backend clients are outside this
+router boundary and retain their own controls; this is not universal cloud egress
+protection. See `agents/core/llm/data_handling.py` and the reported posture coverage.
+
+### `security.data_training_role_ack` (H513 independent role consent)
+
+**Default: empty.** Admin Security Posture controls acknowledge one exact configured
+role: approval judge, Telegram image descriptions or camera descriptions. The
+finite `target` is added to the same audited acknowledgment API; provider grants
+and grants for another role never substitute for it. Generic settings/import/reset
+cannot create this permission. Unknown or training policies require acknowledgment;
+known-local policies do not. Warnings remain visible after a grant.
+
+**Risk and scope:** granting does not enable remote judging, remote image delivery,
+camera capture, event descriptions or household consent. Telegram and camera native
+VLM requests stay strictly on loopback. Custom camera endpoints remain unknown;
+locality does not establish the server's data practices. Posture is pure metadata,
+not a probe or verification of provider terms. Unconfigured/disabled camera targets
+are omitted; camera provisioning remains separate H31 work.
+
+**Revocation:** the role is checked before actual sends/retries and through awaited
+cleanup. The original household camera privacy lease is checked independently.
+Camera configuration uses the effective orchestrator settings view; changes become
+visible after its settings refresh, and an old cached runtime refuses changed
+configuration until rebuilt. Role revocation reads its durable store at dispatch.
+Neither mechanism recalls data already sent. Pure injected library adapters are
+not claimed to be universally mediated. See posture's current coverage statement.
+
+### `JARVIS_ROLE_<NAME>_PROVIDER` · `_MODEL` · `_BASE_URL` (H277 model roles)
+
+**Default: unset** — every role behaves exactly as before. `agents/core/llm/model_roles.py`
+is a frozen table of five roles; the new names win when set, the old ones are fallbacks:
+
+| Role | New names | Fallback | Providers | Read by |
+|---|---|---|---|---|
+| `main` | none (`JARVIS_ROLE_MAIN_*` is **ignored**, the doctor says so) | settings `llm.*` | not env-selectable: the main model is chosen on the H378-guarded settings surfaces | the router |
+| `deep` | `JARVIS_ROLE_DEEP_MODEL` | `JARVIS_DEEP_MODEL`, then `deepseek-r1-distill-qwen-32b` | none (the router's local backend; `_PROVIDER`/`_BASE_URL` ignored) | the deep slot |
+| `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_MODEL` / `_BASE_URL` | `JARVIS_VLM_BACKEND` / `JARVIS_VLM_MODEL` / `JARVIS_VLM_URL` | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`) | `resolve_vlm_config` and all its consumers |
+| `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio`, `ollama`, `openai-compatible` | **nothing**: declared; nothing reads video yet |
+| `approval_judge` | `JARVIS_ROLE_APPROVAL_JUDGE_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio` (default), `ollama`, `openai-compatible` | `autonomy/approval_judge.py` |
+
+A provider value is a ProviderProfile id: an unknown one refuses `role_provider_unknown`
+(vision: `VLMNotConfigured("role_provider_unknown")`), a real one the role cannot speak to
+(`anthropic` for vision) refuses `role_provider_unsupported`. **Keys never follow an
+address they were not issued for.** `JARVIS_VLM_KEY` works exactly as before for
+`JARVIS_VLM_URL` (or LM Studio's default); a `JARVIS_ROLE_VISION_BASE_URL` receives it only
+when its scheme, host and port equal that address's, and otherwise only the dedicated
+`JARVIS_ROLE_VISION_KEY` (optional; ignored without a role base URL). The judge's only
+dedicated credential is `JARVIS_ROLE_APPROVAL_JUDGE_KEY` (optional): with it set, that key
+and no other goes to the judge's address; without it, an `lm-studio` / `ollama` judge gets
+no key, and an `openai-compatible` judge gets `OPENAI_API_KEY` only when its base URL has
+the scheme, host and port of `OPENAI_BASE_URL` (else of `https://api.openai.com/v1`).
+Base URLs: vision keeps the VLM `/v1` convention (LM Studio default
+`http://localhost:1234/v1`, never `JARVIS_LM_STUDIO_URL`); the judge and video use the
+provider profile's address (`JARVIS_LM_STUDIO_URL` / `JARVIS_OLLAMA_URL` / `OPENAI_BASE_URL`,
+else `http://localhost:1234` / `http://localhost:11434` / `https://api.openai.com/v1`).
+`python scripts/doctor.py` lists every role (row `model_roles`) and warns on a bad
+provider id, a shadowed legacy name (compared exactly; only the provider selector ignores
+case) or an ignored variable. Its vision line is `resolve_vlm_config`'s own verdict: a
+setup every vision consumer refuses (`vlm_model_unset`, `vlm_url_unset`,
+`vlm_preset_unknown`, …) shows `off (<reason>)` and warns, and its local/remote label is
+`VLMConfig.is_local` (a loopback custom VLM is local).
+Local addresses in doctor/judge status expose only the loopback HTTP origin;
+userinfo, path, query and fragment are never displayed. The roles API omits URLs entirely.
+
+**The approval judge** (`JARVIS_ROLE_APPROVAL_JUDGE_MODEL` set): each tool call queued on
+the action-approval queue is shown to that model **after** the card exists; its risk
+score (0–100) and one-line reason appear on the card as a labelled *model opinion*, with
+the judge's provider and model on the item and in the signed audit rows
+(`action_approval.judged`, `action_approval.decided`). It never changes the status, never
+approves, never blocks, and the request never waits for it. Skill-change cards are not
+judged. `JARVIS_ROLE_APPROVAL_JUDGE_MODEL=active` reuses the model LM Studio / Ollama
+already has loaded (no second model on the GPU; any other LM Studio model may load one
+next to the main one).
+
+Blocked Decision Inbox tasks use the same optional judge and shared capacity
+(two concurrent calls, at most 32 queued/running opinions). Task annotations live
+in separate SQLite tables, outside signed payloads and receipts; edits invalidate
+the previous opinion. Notification delivery does not. The HUD keeps decisions
+available while waiting and stops polling each card after `17 * timeout + 5`
+seconds. An opinion is never an approval or an execution receipt.
+
+`GET /api/llm/roles` requires user authentication and returns configuration only:
+all base URLs are omitted and `reachable` is null. `/api/vlm/describe` refuses
+non-loopback endpoints and selection-guard findings before creating a client,
+including when its request selects a model override.
+
+**Where the text goes.** For each queued approval, its tool name, agent, summary and
+arguments (fenced as untrusted data, invisible characters stripped, capped only when the
+whole snapshot exceeds 4000 characters, cutting the largest values first so every key
+stays visible) are sent to the judge model.
+When anything was cut the judge is told to score the call as high risk, the item and the
+audit row carry `truncated: true`, and the card says "judged on a shortened copy".
+Snapshots beyond the scan depth fail closed with `nesting_too_deep` and `truncated: true`;
+a remote judge refuses them. If keys alone cannot fit the budget, no judgement is
+dispatched. By default there is no judge. A local judge
+(`lm-studio` / `ollama` on a loopback address) keeps the text on this machine (still an
+`llm:<provider>` row in the egress ledger). Any other judge — a LAN LM Studio, or any
+`openai-compatible` endpoint, even on loopback — sends that text to its base URL and runs
+only with `JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE=1`; it is off under
+`JARVIS_STRICT_LOCAL=1`, `llm.cloud_fallback=never`, and safe mode (safe mode turns off
+even a local judge), and never sees an item from a local-policy agent or a tainted one: a
+`tainted` mark on the action, its metadata or anywhere in its arguments, or a queue from a
+turn with an untrusted origin (with a configured judge, the item is stored with
+`tainted: true`). Queued and running cards expose runtime-only `judge_pending: true`;
+dispatch re-checks live privacy policy and pending state after its slot wait, counting
+revocations as `skipped_revoked`. A model the H378 guards flag (trains on inputs, or over
+the cost line) keeps
+the judge off (`judge_trains_on_inputs` / `judge_over_cost_line`): an env choice cannot
+carry the acknowledgement the settings surfaces ask for. The judge's state and reason are
+on `GET /api/actions/pending` as `judge`.
+
+`JARVIS_ROLE_APPROVAL_JUDGE_TIMEOUT` (default `20` s) bounds each judgement: a value
+below 1 s or unparsable falls back to 20 s, and a value above 60 s is 60 s. A timeout, an
+error or a reply that is not exactly `{"risk", "why"}` stores nothing. At most 2 judge
+calls run at once and at most 32 are in flight or waiting; past that a queued item is not
+judged (its card says "not available"; `judge.skipped_busy` on `/api/actions/pending`
+counts them). Injection flags are computed over every string in the call (keys and values,
+at any depth), so a newline or tab between the words does not hide them.
+**Cost/benefit:** a second opinion on each queued call for one small-model call each, at
+the price of sending the call's text to the judge (local by default). **Revert:** unset
+`JARVIS_ROLE_APPROVAL_JUDGE_MODEL`; stored opinions stay on their items.
+
 ### `JARVIS_FAULT_INJECT` (test lane only)
 
 **Default: OFF.** Arms the in-process failure-injection harness
@@ -434,17 +680,37 @@ at once — there is no per-channel form; set it only on a box that talks to nob
 
 ### `JARVIS_CA_BUNDLE`
 
-**Default: unset** (`agents/core/http_client.py`). A PEM file of extra certificate
-authorities to trust for plugin egress. Every plugin client is built `trust_env=False` — so a
-hostile environment cannot silently redirect egress through a proxy nobody chose — and
-therefore verifies against certifi alone. Behind a TLS-inspecting proxy or a private CA that
-means every outbound call fails, the search backend swallows the error, and `web_search`
-answers `count: 0`: indistinguishable from "nothing found". Point this at the inspecting
-proxy's root and it works and stays verified. `SSL_CERT_FILE` is honoured as a second
-spelling. **It can only ADD.** There is no value of either variable that turns certificate
-checking off, and none that removes an anchor the box already trusted; a path that does not
-exist, or a bundle that will not load, degrades to the default store with a warning — the
-stricter side of the mistake. On a home LAN you will never need it.
+**Default: unset** (`agents/core/tls_trust.py`, re-exported by `agents/core/http_client.py`).
+A PEM file of extra certificate authorities to trust for plugin **and model** egress. Every
+plugin client is built `trust_env=False` — so a hostile environment cannot silently redirect
+egress through a proxy nobody chose — and therefore verified against certifi alone. Behind a
+TLS-inspecting proxy or a private CA that meant every outbound call failed, the search backend
+swallowed the error, and `web_search` answered `count: 0`: indistinguishable from "nothing
+found". Point this at the inspecting proxy's root and it works and stays verified. Since H504
+every model backend's client (`llm_async_client`: Anthropic, Gemini, OpenRouter, OpenAI
+Responses, xAI, LM Studio, Ollama, the VLM) verifies against the same anchor, always as an
+explicit SSLContext, so httpx never reads `SSL_CERT_FILE` on its own. `SSL_CERT_FILE` is
+honoured as a second spelling. **It can only ADD.** There is no value of either variable that
+turns certificate checking off, and none that removes an anchor the box already trusted.
+
+**At start (H504) a broken value stops the hub.** The lifespan checks every CA variable that is
+set — `JARVIS_CA_BUNDLE`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` (each must be
+a file that loads and holds at least one certificate; a pinned self-signed server certificate
+counts) and `SSL_CERT_DIR` (each entry a directory) — and certifi itself. A problem is printed
+with the variable, its value, what is wrong, a command that repairs it for this shell (and the
+`.env` file that set it, when one did), instead of an unnamed `FileNotFoundError` on the first
+model call. On a home LAN you will never need any of this.
+
+### `JARVIS_TLS_INSECURE_TARGETS`
+
+**Default: unset** (`agents/core/tls_trust.py` `verify_for`). Comma-separated model provider
+ids (`ollama`, `lm-studio`, `vlm`, …) or hosts (`gpu.lan`) whose clients are built **without**
+certificate verification — for a LAN model server on a self-signed certificate you cannot
+anchor. Matching is exact (case-insensitive, a trailing dot ignored): `lan` does not match
+`gpu.lan`. It is the only way verification is ever off: a bad CA path never is. Every client
+built that way logs a WARNING naming its URL, and the start logs the list once. **The hardened
+profile (`JARVIS_HARDENED=1`) ignores the list** and logs an ERROR instead. Prefer
+`JARVIS_CA_BUNDLE` with the server's certificate: that keeps the check on.
 
 ### `JARVIS_TRUSTED_PROXIES`
 
@@ -598,6 +864,7 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_PERMISSION_LEDGER` | off (`permission_ledger.py`) | Consent ledger enforces: first contact with an app/site/device/file-root/terminal-target answers `ask`; widening is the `permission.grant` approval task | More approval cards early on; `never` rows and the default-deny list always deny | Unset + restart: `check()` allows legacy callers again, ledger inert |
 | `JARVIS_FILE_TOOLS` (+ `JARVIS_FILE_ROOTS`, `JARVIS_FILE_MAX_BYTES`) | off · `<data root>/workspace` · `2000000` | Registers `file_read`/`file_list`/`file_search` (ungated inside the roots) and gated `file_write`/`file_delete` ask-tier ToolRPC tasks with snapshot-restore | The model loop can read and search your files and, after approval, replace/delete them inside the named roots; snapshots have no GC yet | Unset + restart: `register_file_tools` is a no-op, no file tool on the allowlist |
 | `JARVIS_TERMINAL_LOCAL_HOST` (+ `JARVIS_TERMINAL_LOCAL_ROOTS`, `JARVIS_TERMINAL_TIMEOUT_S`) | off · `data_path('workspace')` · `60`s (cap 600) | Adds the `local-host` target and `LocalHostTransport` (argv-only, cwd-jailed, capped, kill-on-timeout) | Approved commands really run on your host; rollback `none`. Hardline denylist → target policy → durable approval → contract → kernel GRANT all still apply, and `JARVIS_ACTION_KERNEL` is mandatory | Unset + restart: byte-identical `local_transport_not_implemented` |
+| `JARVIS_VOICE_COMMANDS` (+ `JARVIS_VOICE_COMMAND_TIMEOUT_S`) | off · `30`s TTS / `120`s STT (cap 600) (`voice/local_providers.py`) | The owner's approved TTS/STT command providers may run (argv-only, private run dir, capped, kill-on-timeout) | An approved program runs as the hub's user; the settings stay ROUTE_ONLY, a set waits for a human, every spawn re-checks the program's identity, off in safe mode | Unset + restart: command voices fall back to the default voice, STT to Whisper or `[STT unavailable]` |
 | `JARVIS_BROWSER_ALLOW_PRIVATE_URLS` | off (`browser_transport.py`) | `PinnedResolver` in `lan` mode; the driver route layer admits RFC1918/loopback literals | Governed browsing can reach house devices. Honest limit: `BrowserPolicy.domain_allowed` still runs `check_ssrf` in public mode, so end-to-end LAN browsing needs a `BrowserPolicy` lan mode too | Unset + restart: unpinned hosts fail at name resolution |
 | `JARVIS_COMPANY_MODE` | off (`autonomy/company_supervisor.py`) | Arms the work-run loop: one owner-approved goal worked across turns/reboots, ticked one governed step at a time | Sustained autonomous *sequencing*; authority is unchanged — every action still enters the approval queue, budgets (steps/seconds/deadline/interrupts) are hard, and only the judge can mark a run succeeded | Unset: every tick answers `disabled`; run rows remain as a record and are purged by a forget |
 | `JARVIS_MODEL_PULL` | off (`routers/model_setup.py`) | `POST /api/onboarding/model-pull` may reach `action:model.pull` | Bandwidth + disk; needs both posture flags, loopback Ollama, and stays under `llm.model_pull_max_gb`; rollback is a manual `ollama rm` | Unset: the route refuses `model_pull_disabled` |
@@ -610,10 +877,12 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_MCP_STDIO_ENV_BASELINE` | **on** (`mcp/client.py` `STDIO_ENV_BASELINE_FLAG`) | stdio MCP subprocesses are handed only `STDIO_ENV_ALLOWLIST` + `JARVIS_MCP_STDIO_ALLOWED_ENV` + the per-server `env` — they are not handed the hub's API keys, tokens or proxies; one INFO line per connect reports the withheld **count** of host values (never names or values) and `GET /api/admin/mcp` reports `env_baseline` per spawning row (`null` for rows that spawn nothing) | **Defence in depth, not a boundary:** the child is same-UID, so a hostile server still reads the hub env from `/proc/<ppid>/environ`; the boundary needs the unshipped command screener + process isolation. A server that relied on inheriting a hub credential stops seeing it — the remedy is `JARVIS_MCP_STDIO_ALLOWED_ENV`, **not** the per-server `env` (in-process only, no config surface) | `JARVIS_MCP_STDIO_ENV_BASELINE=0` + reconnect: full parent env inherited again, for every stdio server at once |
 | `JARVIS_MCP_STDIO_ALLOWED_ENV` | empty (`mcp/client.py` `STDIO_ENV_ALLOW_FLAG`) | Comma-separated host variable **names** stdio MCP servers may keep inheriting on top of the allow-list; a listed name passes through even if it looks like a credential | Host-wide, not per-server: every stdio MCP server sees every listed name — list the minimum. Still narrower than `=0`, which surrenders the whole environment | Remove the name + reconnect: that variable is withheld again |
 | `JARVIS_VLM_PRESET` | unset (absolute pixels assumed) | Names a pinned open grounder from `vlm.py:VLM_PRESETS` so `LocalVLMLocator` normalizes 0–1000-relative vs absolute-on-resized coordinates before a click | Right preset = clicks land where the model meant; **wrong** preset = mis-clicks (why it is explicit). Still needs `JARVIS_VLM_MODEL` (`vlm_model_unset`); unknown id → `vlm_preset_unknown` | Unset: the locator assumes absolute pixels on the original screenshot |
+| `JARVIS_ROLE_<NAME>_*` (H277: `DEEP_MODEL`, `VISION_PROVIDER/_MODEL/_BASE_URL`, `VIDEO_*`, `APPROVAL_JUDGE_*`) | unset (`llm/model_roles.py`) | Picks a model per job; the `JARVIS_VLM_*` / `JARVIS_DEEP_MODEL` names stay the fallbacks. `APPROVAL_JUDGE_MODEL` turns on an advisory judge that scores queued tool-call approvals off the request path | The judge sees each queued call's arguments: local by default; remote only with `JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE=1`, never under strict-local / `cloud_fallback=never` / safe mode / H378 findings, never for local-policy agents or tainted items. It decides nothing | Unset: roles fall back to the legacy names; no judge |
 | `JARVIS_FAULT_INJECT` | off (`observability/fault_injection.py`) | Arms the in-process failure-injection harness (llm_down / db_corrupt / disk_full / clock_skew) for the **test lane** | `inject()` may patch httpx send, `open()`/`sqlite3.connect` under the data root, and `time.time` inside a `with` block; nothing outside `data_root()` is touched | Unset: nothing is patched. `JARVIS_HARDENED=1` refuses unconditionally (`fault_injection_refused:hardened`) |
 | `JARVIS_CHANNEL_PAIRING` | **on** (`channels/pairing.py`) | `0` admits every sender; the boot guard then demands an allowlist or `JARVIS_CHANNEL_OPEN=1` | Off = anyone who finds the bot talks to it | Set back to `1` (or unset) + restart: strangers are held again |
 | `JARVIS_CHANNEL_OPEN` | off (`channels/pairing.py`) | Acknowledges an open chat bot (no allowlist, pairing off) so boot proceeds with a `[SECURITY]` line | Every listed channel answers anyone | Unset + restart: boot refuses until an allowlist or pairing guards the channel |
-| `JARVIS_CA_BUNDLE` | unset (`http_client.py`) | Extra CA roots for plugin egress (adds only; verification always on) | A root you add is trusted for every plugin fetch — point it at your own proxy's CA, nothing else | Unset + restart: back to certifi alone |
+| `JARVIS_CA_BUNDLE` | unset (`tls_trust.py`) | Extra CA roots for plugin and model egress (adds only; verification stays on); every set CA variable and certifi validated at start | A root you add is trusted for every plugin fetch and model call — point it at your own proxy's CA, nothing else; a broken CA variable refuses boot with its repair | Unset + restart: back to certifi alone |
+| `JARVIS_TLS_INSECURE_TARGETS` | unset (`tls_trust.py` `verify_for`) | Named model provider ids or hosts get clients with certificate verification **off**, each announced by a WARNING naming the URL | A listed target can be impersonated by anyone on the path — list only a LAN server you cannot anchor; ignored (ERROR) under `JARVIS_HARDENED=1` | Unset + restart: every client verifies again |
 | `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers (`X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`) believed only from these networks; XFF walked right-to-left; uvicorn's own proxy-header layer is off under `serve.py` | A listed peer can name any client address — list only proxies you run; a malformed list, or a `FORWARDED_ALLOW_IPS` wider than it, refuses boot | Unset + restart: headers ignored, fail closed |
 | `JARVIS_ALLOWED_HOSTS` | unset (`host_policy.py`) | Extra `Host` names accepted by the rebinding guard | A listed name is reachable from any page that can resolve it to the box — list only names you own; `*` refuses boot | Unset + restart: only loopback names, IP literals and the bind/server address pass |
 | `llm.execute_code` *(runtime setting)* | off (`code_tools.py`) | Registers ungated `execute_code`: one model-written Python script per call, running in the sandbox, calling tools over file-RPC | Arbitrary code inside the container; inner calls bypass the tool loop's per-tool caps and repeated-call detector (bounded instead by `security.sandbox_max_tool_calls` and the sandbox timeout). Reach is K0-bound to the turn's own offered set, gated tools still only enqueue, and no isolated backend means `sandbox_not_isolated` rather than a host run | Set `false` + restart: `register_code_tools` is a no-op, nothing on the allowlist |

@@ -452,8 +452,10 @@ export interface paths {
          *     bounded consumer outcomes with setup/privacy/effect truth — a
          *     chat action is never presented ready without a model, and the local-docs
          *     action stays not-ready (with the reason) until the owner configures a
-         *     folder. Read-only; the actions point at existing governed endpoints and the
-         *     outcome projection never reads or returns credential values.
+         *     folder. The actions point at existing governed endpoints and the outcome
+         *     projection never reads or returns credential values; the model block, though,
+         *     proves a selected cloud route with one credentialed provider request when no
+         *     verdict is cached (see ``_model_snapshot``).
          */
         get: operations["command_center_api_onboarding_command_center_get"];
         put?: never;
@@ -496,6 +498,40 @@ export interface paths {
         get: operations["appearance_get_api_preferences_appearance_get"];
         /** Appearance Put */
         put: operations["appearance_put_api_preferences_appearance_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/help/docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Help Docs List */
+        get: operations["help_docs_list_api_help_docs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/help/docs/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Help Docs Read */
+        get: operations["help_docs_read_api_help_docs__slug__get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -827,13 +863,21 @@ export interface paths {
         /**
          * Trigger Webhook
          * @description Token-authenticated trigger → runs the configured agent/workflow.
+         *
+         *     H659: a delivery that carries an ``Idempotency-Key`` is run once per key and hook; a
+         *     retry gets the first delivery's outcome back (not its reply) and nothing runs again.
          */
         post: operations["trigger_webhook_api_webhooks__hook_id__post"];
         /** Delete Webhook */
         delete: operations["delete_webhook_api_webhooks__hook_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update Webhook
+         * @description Switch a hook on or off, or change its event list or prompt template (H153).
+         *     It keeps its token; a disabled hook refuses every delivery after authentication.
+         */
+        patch: operations["update_webhook_api_webhooks__hook_id__patch"];
         trace?: never;
     };
     "/.well-known/agent-card": {
@@ -1167,6 +1211,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/context-refs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Context Ref Completions
+         * @description H579 — what can follow ``@file:`` in the composer: in-scope paths for ``prefix``
+         *     (directories end in ``/``), resolved through the file tools' own scope; read-only.
+         */
+        get: operations["context_ref_completions_api_context_refs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/canvas": {
         parameters: {
             query?: never;
@@ -1176,6 +1241,27 @@ export interface paths {
         };
         /** Canvas List */
         get: operations["canvas_list_api_canvas_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/canvas/pointers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Canvas Pointers
+         * @description H309 — only the live tips and tours, with the hub's clock: what the HUD's pointer
+         *     overlay polls, instead of the whole canvas every few seconds.
+         */
+        get: operations["canvas_pointers_api_canvas_pointers_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1196,6 +1282,9 @@ export interface paths {
         /**
          * Canvas Post
          * @description Add a typed, sanitized element. Unsafe/unknown types are rejected (422).
+         *
+         *     H309: a tip or a tour posted here is marked untrusted unless the owner (an admin
+         *     credential) sent it; the payload has no say in that.
          */
         post: operations["canvas_post_api_canvas_post_post"];
         delete?: never;
@@ -2266,8 +2355,31 @@ export interface paths {
         /**
          * Actions Request
          * @description Register a pending tool-call approval (sub-task granularity).
+         *
+         *     H659: with an ``Idempotency-Key``, a retry returns the action the first request queued
+         *     instead of queuing a second approval card.
          */
         post: operations["actions_request_api_actions_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/actions/groups/{group_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Actions Reject Group
+         * @description Reject only an exact still-current registration group, never approve it.
+         */
+        post: operations["actions_reject_group_api_actions_groups__group_id__reject_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2517,6 +2629,23 @@ export interface paths {
          * @description Set the alert threshold (admin).
          */
         post: operations["quality_set_threshold_api_quality_threshold_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/security/data-handling/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Data Handling Ack */
+        post: operations["data_handling_ack_api_security_data_handling_ack_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2886,6 +3015,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/switch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch Skill
+         * @description H329 — switch one skill, or every skill of a category, on or off: everywhere, or
+         *     on one channel. Nothing is uninstalled. Off is always allowed and recorded when it
+         *     can be; on widens what the hub does, so it is refused unless the intent log records
+         *     it. An essential skill is never switched off.
+         */
+        post: operations["switch_skill_api_skills_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sandbox/status": {
         parameters: {
             query?: never;
@@ -3190,6 +3342,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Skill Proposals
+         * @description The skill changes awaiting the owner, as they review them (review-H318b M-2): each
+         *     pending proposal with the whole diff built from the ledger against the live SKILL.md
+         *     (never a card's own text), whether the skill drifted since, what the change does beyond
+         *     its text (a rename, a bundled skill), and the one approval card that decides it
+         *     (``POST /api/actions/{card}/decide``). A proposal from before cards were bound gets its
+         *     card here.
+         */
+        get: operations["skill_proposals_api_skills_proposals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health/components": {
         parameters: {
             query?: never;
@@ -3239,6 +3416,28 @@ export interface paths {
          * @description Return service version, agent count, and health status.
          */
         get: operations["api_status_api_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/inspector": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Inspector
+         * @description H227 — what *agent* can do right now as *view* sees it: status, the tools its
+         *     profile offers, the skills its prompt names, the MCP servers and the resolved prompt
+         *     (secrets masked, 64 KB at most). Read-only; ``section`` narrows it (repeatable).
+         */
+        get: operations["admin_inspector_api_admin_inspector_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4015,6 +4214,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/subagents/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subagents Batch
+         * @description H681 — run up to 16 isolated sub-agents, within the free slots, each with its own
+         *     optional model / provider / overrides. The answer reports every child and, when all
+         *     of them failed because the provider does not know the model autonomy.subagent_model
+         *     chose, one ``subagent_model_rejected`` notice naming the model, the setting and
+         *     whether a fallback exists.
+         */
+        post: operations["subagents_batch_api_subagents_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/subagents/{spawn_id}/steer": {
         parameters: {
             query?: never;
@@ -4246,6 +4469,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/autonomy/tasks/groups/{group_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Autonomy Reject Group */
+        post: operations["autonomy_reject_group_autonomy_tasks_groups__group_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/autonomy/tasks/{task_id}/decision": {
         parameters: {
             query?: never;
@@ -4416,7 +4656,8 @@ export interface paths {
         put?: never;
         /**
          * Missions Create
-         * @description Create a workspace. Body: {title, goal?, plan?:[step titles], max_steps?, max_seconds?}.
+         * @description Create a workspace. Body: {title, goal?, plan?, max_steps?, max_seconds?}; a plan
+         *     entry is a step title or {title, parent?}, parent the index of an earlier step (H666).
          */
         post: operations["missions_create_api_missions_post"];
         delete?: never;
@@ -4552,6 +4793,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/llm/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Llm Roles
+         * @description Inspect configured model roles without probing providers or exposing keys.
+         */
+        get: operations["llm_roles_api_llm_roles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/llm/grammar": {
         parameters: {
             query?: never;
@@ -4677,6 +4938,27 @@ export interface paths {
          *     mutation so one request cannot roll back another.
          */
         post: operations["models_local_switch_api_models_local_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Llm Quota
+         * @description H373 — each cloud backend's quota as its own responses report it (requests and tokens
+         *     left, when they reset) and any shared 429 block, from every process on this hub.
+         */
+        get: operations["llm_quota_api_llm_quota_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5571,6 +5853,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory/core": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Core
+         * @description H314 — the long-term memory the model writes: both rings, and the newest writes
+         *     that can still be undone (ref, time, targets).
+         */
+        get: operations["memory_core_api_memory_core_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/core/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Core Undo
+         * @description H314 — undo one write of the model's memory tool, while nothing has changed since.
+         */
+        post: operations["memory_core_undo_api_memory_core_undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/remember": {
         parameters: {
             query?: never;
@@ -5991,6 +6314,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/settings/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Export Settings
+         * @description H157 — the declared settings as JSON for another box. Secrets, values that look
+         *     like credentials and settings that hold credentials by design are left out and
+         *     named in ``excluded``. Registered before ``/{category}`` so it is never read as one.
+         */
+        get: operations["admin_export_settings_api_admin_settings_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/settings/resets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Settings Resets
+         * @description H259 — the recorded resets, newest first: when, which scope, which settings (never
+         *     their values) and whether each was undone. Registered before ``/{category}``.
+         */
+        get: operations["admin_settings_resets_api_admin_settings_resets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/settings/{category}": {
         parameters: {
             query?: never;
@@ -6009,6 +6375,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/settings/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Import Settings
+         * @description H157 — import a settings document (an export, or any ``{"settings": {category:
+         *     {key: value}}}``). Every key must be declared and passes the same validation a single
+         *     write does; one refusal and nothing is written (422 with every reason). The write is
+         *     one transaction with one audit row. ``"dry_run": true`` answers what would change.
+         *     H378 — a model choice in it passes the selection guards like a single write:
+         *     ``confirm_expensive`` / ``acknowledge_training`` (literal true) clear them, and a dry run
+         *     lists what they would ask.
+         */
+        post: operations["admin_import_settings_api_admin_settings_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/settings/{category}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Reset Category
+         * @description H157 — put one category back to its declared values (the global reseed was the only
+         *     reset). Its secrets are kept (``kept``); a setting the selected product posture forces
+         *     stays in effect (``overridden``). Audited, naming the keys that moved. A JSON request
+         *     from this origin only (review-H157 M1). H259 — ``{"dry_run": true}`` answers what it
+         *     would change and writes nothing; a reset that moved something is recorded, and
+         *     ``undo`` names the record ``POST /api/admin/settings/undo`` puts back.
+         */
+        post: operations["admin_reset_category_api_admin_settings__category__reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/settings/reseed": {
         parameters: {
             query?: never;
@@ -6018,8 +6435,65 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Admin Reseed */
+        /**
+         * Admin Reseed
+         * @description Every category back to its declared values. H259 — this used to delete the whole
+         *     store (secrets included) with no preview and no way back; it is now the per-category
+         *     reset over every category: the secrets are kept (``kept``), ``{"dry_run": true}``
+         *     answers what it would change, and what it replaced is recorded for ``undo``. A JSON
+         *     request from this origin only; audited (H153 review), naming how many moved.
+         */
         post: operations["admin_reseed_api_admin_settings_reseed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/settings/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Undo Reset
+         * @description H259 — put back what the latest reset replaced. A setting changed since that reset
+         *     is left as it is, and so is a value its declaration no longer accepts; both are named
+         *     in ``skipped``. 404 when there is nothing to undo. A JSON request from this origin
+         *     only; audited. H262 — an undo that would make retention delete deeper than approved
+         *     restores nothing (409 ``retention_needs_approval``).
+         */
+        post: operations["admin_undo_reset_api_admin_settings_undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Retention State
+         * @description H262 — the data lifecycle, read-only: the retention settings as stored, the approved
+         *     snapshot the sweep clamps to (``approved``; None: nothing approved, so retention deletes
+         *     nothing — ``awaiting_approval`` when it is on), the horizons in days (None: kept
+         *     forever) and the last sweep's state (claim time, last VACUUM, pending VACUUMs, report).
+         *     H262 review: ``awaiting_approval`` only when some horizon in force is finite (all kept
+         *     forever: there is nothing to confirm), and ``pending_task`` names a ``settings.retention``
+         *     card already waiting (the HUD then points at Approvals instead of offering Confirm).
+         */
+        get: operations["admin_retention_state_api_admin_retention_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6068,6 +6542,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/env/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Env Sources
+         * @description H273: where each environment key came from — the process environment, the
+         *     repo .env or the data-home .env, and which lower layers it overrides.
+         *
+         *     Names and layers only, at the same boundary as /api/admin/env: no value is
+         *     returned, and ``masked`` says whether /api/admin/env masks the key's value.
+         */
+        get: operations["admin_env_sources_api_admin_env_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/tool-events": {
         parameters: {
             query?: never;
@@ -6086,6 +6584,29 @@ export interface paths {
          *     ever fire" is answerable even after the ring buffer has turned over.
          */
         get: operations["admin_tool_events_api_admin_tool_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Logs
+         * @description H145 — the hub's own log, from the UI: the newest records of the log file or one of
+         *     its rotations, read backwards within a byte budget (at most 500 records), filtered by
+         *     file, minimum level and component, and redacted again as they are read. Admin-only and
+         *     read-only; when file logging is off the answer says so (``enabled``, ``note``).
+         */
+        get: operations["admin_logs_api_admin_logs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6354,6 +6875,29 @@ export interface paths {
         put?: never;
         /** Admin Llm Test */
         post: operations["admin_llm_test_api_admin_llm_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/llm/providers/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Llm Providers Probe
+         * @description H380 — prove each configured cloud provider accepts its key: one authenticated
+         *     read of its model list (cached, rate-limited; the key and the body never returned).
+         *     ``provider`` probes one; ``force`` re-probes a verdict older than the minimum
+         *     interval.
+         */
+        post: operations["admin_llm_providers_probe_api_admin_llm_providers_probe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7059,6 +7603,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/agents/{agent_id}/soul": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Agent Soul
+         * @description H156 — make *content* the agent's live persona: refused when the SOUL guard would
+         *     drop it (422), the text on disk kept as v1 on the first edit, written atomically to
+         *     the owner's overlay, versioned, reloaded for the next turn and audited (never the
+         *     text). 409 in safe mode, 413 over 256 KiB, 404 for an agent the hub has not loaded.
+         */
+        put: operations["put_agent_soul_api_admin_agents__agent_id__soul_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/agents/{agent_id}/description/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Agent Description
+         * @description H156 — the local model proposes a one-paragraph description from the live persona.
+         *     Nothing is saved: the owner puts it in the front-matter and applies the SOUL.
+         */
+        post: operations["draft_agent_description_api_admin_agents__agent_id__description_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents": {
         parameters: {
             query?: never;
@@ -7247,6 +7835,178 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/voice/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Voice Commands Status
+         * @description Per side: configured, armed (``JARVIS_VOICE_COMMANDS``), safe mode, ready (and why
+         *     not), the approved program and fingerprint, and the request waiting for a decision.
+         */
+        get: operations["voice_commands_status_api_admin_voice_commands_get"];
+        put?: never;
+        /**
+         * Voice Commands Write
+         * @description Ask for a TTS or STT command provider, or clear one. A set or a change is never
+         *     written here: it goes to the Decision Inbox as an irreversible-tier card naming the
+         *     program and its argv (202), and a human's accept writes it. A clear applies at once
+         *     and is audited. Same-origin JSON only (the admin guard trusts loopback).
+         */
+        post: operations["voice_commands_write_api_admin_voice_commands_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voice/listening": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Voice Listening
+         * @description Whether the hub or a satellite is listening now: each source's state, the loudest
+         *     one and ``mic_open``. Nothing here can open or close a mic.
+         */
+        get: operations["voice_listening_api_voice_listening_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voice/listening/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Voice Listening Stream
+         * @description Every change of the listening state, as server-sent events (read-only).
+         */
+        get: operations["voice_listening_stream_api_voice_listening_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voice/mic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Voice Mic Status
+         * @description H247 — which surface holds each device's microphone, the paused leases and the
+         *     kinds the owner allows to arm (``voice.mic_surfaces``).
+         */
+        get: operations["voice_mic_status_api_voice_mic_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voice/mic/arm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Voice Mic Arm
+         * @description Arm (or renew) a HUD's or a phone's microphone lease. 403 when the owner has not
+         *     allowed the kind, 409 naming the holder when the device's microphone is held (unless
+         *     ``take_over``). A browser or phone renews within 45 s, or its lease lapses.
+         */
+        post: operations["voice_mic_arm_api_voice_mic_arm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voice/mic/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Voice Mic Pause
+         * @description Close a surface's microphone but keep its lease (the host pipeline too).
+         */
+        post: operations["voice_mic_pause_api_voice_mic_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voice/mic/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Voice Mic Resume
+         * @description Arm a paused lease again; consent and the device's holder are asked again.
+         */
+        post: operations["voice_mic_resume_api_voice_mic_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/voice/mic/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Voice Mic Stop
+         * @description Release a surface's lease.
+         */
+        post: operations["voice_mic_stop_api_voice_mic_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vlm/status": {
         parameters: {
             query?: never;
@@ -7256,11 +8016,7 @@ export interface paths {
         };
         /**
          * Vlm Status
-         * @description H13.1 / GAP-9 — resolved VLM deployment truth, never a guess.
-         *
-         *     ``configured`` is config truth only; ``reachable`` is deliberately null
-         *     because this route does no network probe — claiming reachability without
-         *     measuring it is exactly the overclaim this surface used to make.
+         * @description Pure resolved configuration and public policy; never a reachability probe.
          */
         get: operations["vlm_status_api_vlm_status_get"];
         put?: never;
@@ -7282,12 +8038,7 @@ export interface paths {
         put?: never;
         /**
          * Vlm Describe
-         * @description H13.1 — send image(s) + a prompt to the configured VLM.
-         *
-         *     LM Studio (`JARVIS_VLM_BACKEND=lmstudio` + `JARVIS_VLM_MODEL`), vLLM and
-         *     llama.cpp (`JARVIS_VLM_BACKEND=custom` + `JARVIS_VLM_URL`) all serve the
-         *     same OpenAI-vision contract; the model + weights + GPU stay the host
-         *     deployment seam.
+         * @description One explicit local image request; failure never becomes a model answer.
          */
         post: operations["vlm_describe_api_vlm_describe_post"];
         delete?: never;
@@ -8135,8 +8886,157 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Sessions */
+        /**
+         * Get Sessions
+         * @description The newest sessions; H218: archived ones only with ``?archived=true``, never mixed in.
+         *     H262: each row carries its ``pinned_at``.
+         */
         get: operations["get_sessions_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive Session
+         * @description H218 — put a conversation away: it leaves the list, nothing is deleted.
+         */
+        post: operations["archive_session_sessions__session_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unarchive Session
+         * @description H218 — bring an archived conversation back to the list (a pinned one too).
+         */
+        post: operations["unarchive_session_sessions__session_id__unarchive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pin Session
+         * @description H262 — pin a conversation: never auto-archived, never deleted by retention.
+         */
+        post: operations["pin_session_sessions__session_id__pin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/unpin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unpin Session
+         * @description H262 — take the pin off; the chat is archived and retained like any other again.
+         */
+        post: operations["unpin_session_sessions__session_id__unpin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Session
+         * @description H218 — delete one conversation for good, backup first. Needs ``?confirm=DELETE``.
+         *
+         *     Holds the session's turn lease, as ``create_continuation`` does: a turn on it
+         *     finishes first (it would write the transcript back, or add a turn the backup never
+         *     saw), and one still running past the lease's wait answers 409 ``session_busy``.
+         */
+        delete: operations["delete_session_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/todo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Recent Plans
+         * @description H315 — the checklists the agent keeps, the one it most recently wrote or read
+         *     first (each carries ``updated_at``, when its list last changed).
+         */
+        get: operations["get_recent_plans_sessions_todo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/todo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Plan
+         * @description H315 — one session's checklist; a session with none answers an empty list.
+         */
+        get: operations["get_session_plan_sessions__session_id__todo_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9088,6 +9988,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/company/runs/{run_id}/barrier/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Company Run Barrier Clear
+         * @description Stop waiting: clear a parked run's barrier (H464). Idempotent — with no
+         *     barrier it answers ``cleared: false`` rather than an error. Same guard as stop:
+         *     clearing restores an already-approved, budget-bounded cadence and grants nothing.
+         *
+         *     ``cleared`` is what this call did. When it cleared nothing because a newer
+         *     barrier was set in the meantime, ``waiting_on`` says what the run waits on now,
+         *     so a surface never reports "was not waiting on anything" over a parked run. An
+         *     owner's clear also sticks: neither the planner nor the judge may park the run on
+         *     that same wait again.
+         */
+        post: operations["company_run_barrier_clear_api_company_runs__run_id__barrier_clear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operator/benchmark": {
         parameters: {
             query?: never;
@@ -9142,6 +10070,86 @@ export interface paths {
         get: operations["host_probe_api_host_probe_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/power": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Power State
+         * @description Battery, resume, background deferral and keep-awake, as of now.
+         */
+        get: operations["power_state_api_power_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/power/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Power Stream
+         * @description Every change of the power state, as server-sent events.
+         */
+        get: operations["power_stream_api_power_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/pressure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pressure State
+         * @description The ranked memory/disk conditions and the worst one not dismissed.
+         */
+        get: operations["pressure_state_api_system_pressure_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/pressure/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pressure Dismiss
+         * @description Dismiss one raised condition for this boot (a new boot, or its recovery, re-arms it).
+         */
+        post: operations["pressure_dismiss_api_system_pressure_dismiss_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9368,6 +10376,16 @@ export interface components {
             values: {
                 [key: string]: unknown;
             };
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
         };
         /** AgentUpdateRequest */
         AgentUpdateRequest: {
@@ -9433,6 +10451,17 @@ export interface components {
             payload?: {
                 [key: string]: unknown;
             } | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** AutonomyGroupRejectBody */
+        AutonomyGroupRejectBody: {
+            /** Snapshot */
+            snapshot: string;
+            /** Member Ids */
+            member_ids: number[];
+            /** Reason */
+            reason?: string | null;
         };
         /** AutonomyModeBody */
         AutonomyModeBody: {
@@ -9463,6 +10492,8 @@ export interface components {
              * @default generated
              */
             origin: string;
+            /** Approval Deadline At */
+            approval_deadline_at?: string | null;
         };
         /** BrowserCheckBody */
         BrowserCheckBody: {
@@ -9649,6 +10680,16 @@ export interface components {
              * @default []
              */
             pending_approvals: number[];
+            /**
+             * Warming
+             * @default false
+             */
+            warming: boolean;
+            /**
+             * Notices
+             * @default []
+             */
+            notices: components["schemas"]["TurnNotice"][];
         };
         /** ClimateControlBody */
         ClimateControlBody: {
@@ -9723,6 +10764,25 @@ export interface components {
              */
             keep_recent: number;
         };
+        /** ContextRef */
+        ContextRef: {
+            /** Ref */
+            ref: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "file" | "dir";
+        };
+        /** ContextRefCompletions */
+        ContextRefCompletions: {
+            /** Ok */
+            ok: boolean;
+            /** Types */
+            types: string[];
+            /** Items */
+            items: components["schemas"]["ContextRef"][];
+        };
         /** ContinueSessionRequest */
         ContinueSessionRequest: {
             /** Source Session Id */
@@ -9770,6 +10830,17 @@ export interface components {
              * @default 3
              */
             per_session: number;
+        };
+        /** DataHandlingAck */
+        DataHandlingAck: {
+            /** Provider */
+            provider: string;
+            /** Acknowledged */
+            acknowledged: boolean;
+            /** Scope */
+            scope: string;
+            /** Target */
+            target?: ("role:approval_judge" | "role:telegram_media_reader" | "role:camera_descriptions") | null;
         };
         /** DatasetRunBody */
         DatasetRunBody: {
@@ -9848,6 +10919,13 @@ export interface components {
             weights?: {
                 [key: string]: number;
             } | null;
+        };
+        /** DismissBody */
+        DismissBody: {
+            /** Condition */
+            condition: string;
+            /** Boot Id */
+            boot_id: string;
         };
         /** EvidenceItem */
         EvidenceItem: {
@@ -9998,6 +11076,18 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             } | null;
+            /** First Run */
+            first_run?: boolean | null;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
         };
         /**
          * JobEditBody
@@ -10016,6 +11106,16 @@ export interface components {
             options?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
         };
         /** JobNotepadBody */
         JobNotepadBody: {
@@ -10137,6 +11237,28 @@ export interface components {
             backend?: string | null;
             /** Model */
             model?: string | null;
+        };
+        /** MicArmBody */
+        MicArmBody: {
+            /** Surface */
+            surface: string;
+            /** Client */
+            client: string;
+            /**
+             * Take Over
+             * @default false
+             */
+            take_over: boolean;
+        };
+        /** MicSurfaceBody */
+        MicSurfaceBody: {
+            /** Surface */
+            surface: string;
+            /**
+             * Take Over
+             * @default false
+             */
+            take_over: boolean;
         };
         /** MoERouteBody */
         MoERouteBody: {
@@ -10379,6 +11501,16 @@ export interface components {
             /** Bench Agent */
             bench_agent: string;
         };
+        /** ProviderProbeRequest */
+        ProviderProbeRequest: {
+            /** Provider */
+            provider?: string | null;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+        };
         /**
          * PublishBody
          * @description T-0.50 — one finished asset's publish-readiness request.
@@ -10570,6 +11702,17 @@ export interface components {
              */
             max_reviews: number;
         };
+        /** SkillSwitchBody */
+        SkillSwitchBody: {
+            /** Skill */
+            skill?: string | null;
+            /** Category */
+            category?: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Channel */
+            channel?: string | null;
+        };
         /** SocialActionBody */
         SocialActionBody: {
             /** Platform */
@@ -10588,6 +11731,53 @@ export interface components {
              */
             source: string;
         };
+        /** SoulEditBody */
+        SoulEditBody: {
+            /** Content */
+            content: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+        };
+        /** SubAgentBatchBody */
+        SubAgentBatchBody: {
+            /** Tasks */
+            tasks: components["schemas"]["SubAgentBatchTask"][];
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
+        };
+        /** SubAgentBatchTask */
+        SubAgentBatchTask: {
+            /** Task */
+            task: string;
+            /**
+             * Agent
+             * @default
+             */
+            agent: string;
+            /** Output Schema */
+            output_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /** Model */
+            model?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Overrides */
+            overrides?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** SubAgentSpawnBody */
         SubAgentSpawnBody: {
             /** Task */
@@ -10601,6 +11791,24 @@ export interface components {
             output_schema?: {
                 [key: string]: unknown;
             } | null;
+            /** Model */
+            model?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Overrides */
+            overrides?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
         };
         /** SubAgentSteerBody */
         SubAgentSteerBody: {
@@ -10684,6 +11892,13 @@ export interface components {
             /** Target */
             target?: string | null;
         };
+        /** TurnNotice */
+        TurnNotice: {
+            /** Code */
+            code: string;
+            /** Text */
+            text: string;
+        };
         /** UninstallSkillBody */
         UninstallSkillBody: {
             /** Name */
@@ -10764,7 +11979,11 @@ export interface components {
              */
             live: boolean;
         };
-        /** WebhookCreateBody */
+        /**
+         * WebhookCreateBody
+         * @description A new hook. A field this model does not know is refused (a Hermes-shaped create
+         *     that carries ``skills`` or ``deliver_chat_id`` hears no, rather than a silent drop).
+         */
         WebhookCreateBody: {
             /** Target */
             target: string;
@@ -10783,6 +12002,51 @@ export interface components {
              * @default false
              */
             signed: boolean;
+            /** Events */
+            events?: string[];
+            /**
+             * Prompt
+             * @default
+             */
+            prompt: string;
+            /**
+             * Deliver
+             * @default log
+             * @enum {string}
+             */
+            deliver: "log" | "telegram" | "voice" | "ntfy";
+            /**
+             * Deliver Only
+             * @default false
+             */
+            deliver_only: boolean;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+        };
+        /**
+         * WebhookUpdateBody
+         * @description H153 — what PATCH may change; at least one field, and none of them null (the
+         *     schema says so too: a null is not advertised).
+         */
+        WebhookUpdateBody: {
+            /** Enabled */
+            enabled?: boolean;
+            /** Events */
+            events?: string[];
+            /** Prompt */
+            prompt?: string;
+            /**
+             * Deliver
+             * @enum {string}
+             */
+            deliver?: "log" | "telegram" | "voice" | "ntfy";
+            /** Deliver Only */
+            deliver_only?: boolean;
+            /** Description */
+            description?: string;
         };
         /** WorkflowRunBody */
         WorkflowRunBody: {
@@ -11542,6 +12806,57 @@ export interface operations {
             };
         };
     };
+    help_docs_list_api_help_docs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    help_docs_read_api_help_docs__slug__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     composer_status_api_vlm_composer_status_get: {
         parameters: {
             query?: never;
@@ -12190,6 +13505,41 @@ export interface operations {
             };
         };
     };
+    update_webhook_api_webhooks__hook_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookUpdateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     a2a_agent_card__well_known_agent_card_get: {
         parameters: {
             query?: never;
@@ -12669,6 +14019,37 @@ export interface operations {
             };
         };
     };
+    context_ref_completions_api_context_refs_get: {
+        parameters: {
+            query?: {
+                prefix?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextRefCompletions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     canvas_list_api_canvas_get: {
         parameters: {
             query?: {
@@ -12696,6 +14077,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    canvas_pointers_api_canvas_pointers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -14574,6 +15975,37 @@ export interface operations {
             };
         };
     };
+    actions_reject_group_api_actions_groups__group_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     actions_decide_api_actions__action_id__decide_post: {
         parameters: {
             query?: never;
@@ -14896,6 +16328,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    data_handling_ack_api_security_data_handling_ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataHandlingAck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -15290,6 +16755,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    switch_skill_api_skills_switch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillSwitchBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -15725,6 +17223,26 @@ export interface operations {
             };
         };
     };
+    skill_proposals_api_skills_proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     component_health_api_health_components_get: {
         parameters: {
             query?: never;
@@ -15781,6 +17299,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_inspector_api_admin_inspector_get: {
+        parameters: {
+            query?: {
+                agent?: string;
+                view?: string;
+                section?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -16975,6 +18526,39 @@ export interface operations {
             };
         };
     };
+    subagents_batch_api_subagents_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubAgentBatchBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     subagents_steer_api_subagents__spawn_id__steer_post: {
         parameters: {
             query?: never;
@@ -17287,6 +18871,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    autonomy_reject_group_autonomy_tasks_groups__group_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutonomyGroupRejectBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -17793,6 +19412,26 @@ export interface operations {
             };
         };
     };
+    llm_roles_api_llm_roles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     llm_grammar_api_llm_grammar_post: {
         parameters: {
             query?: never;
@@ -17948,6 +19587,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    llm_quota_api_llm_quota_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -19150,6 +20809,61 @@ export interface operations {
             };
         };
     };
+    memory_core_api_memory_core_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    memory_core_undo_api_memory_core_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     memory_remember_api_memory_remember_post: {
         parameters: {
             query?: never;
@@ -19587,6 +21301,46 @@ export interface operations {
             };
         };
     };
+    admin_export_settings_api_admin_settings_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_settings_resets_api_admin_settings_resets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     admin_get_category_api_admin_settings__category__get: {
         parameters: {
             query?: never;
@@ -19653,7 +21407,98 @@ export interface operations {
             };
         };
     };
+    admin_import_settings_api_admin_settings_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_reset_category_api_admin_settings__category__reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                category: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     admin_reseed_api_admin_settings_reseed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_undo_reset_api_admin_settings_undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_retention_state_api_admin_retention_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -19726,10 +21571,64 @@ export interface operations {
             };
         };
     };
+    admin_env_sources_api_admin_env_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     admin_tool_events_api_admin_tool_events_get: {
         parameters: {
             query?: {
                 limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_logs_api_admin_logs_get: {
+        parameters: {
+            query?: {
+                file?: string;
+                level?: string;
+                component?: string;
+                lines?: number;
             };
             header?: never;
             path?: never;
@@ -20184,6 +22083,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    admin_llm_providers_probe_api_admin_llm_providers_probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderProbeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -21194,6 +23126,72 @@ export interface operations {
             };
         };
     };
+    put_agent_soul_api_admin_agents__agent_id__soul_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoulEditBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_agent_description_api_admin_agents__agent_id__description_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_agents_agents_get: {
         parameters: {
             query?: never;
@@ -21420,6 +23418,238 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    voice_commands_status_api_admin_voice_commands_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    voice_commands_write_api_admin_voice_commands_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    voice_listening_api_voice_listening_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    voice_listening_stream_api_voice_listening_stream_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    voice_mic_status_api_voice_mic_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    voice_mic_arm_api_voice_mic_arm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MicArmBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    voice_mic_pause_api_voice_mic_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MicSurfaceBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    voice_mic_resume_api_voice_mic_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MicSurfaceBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    voice_mic_stop_api_voice_mic_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MicSurfaceBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -22664,6 +24894,194 @@ export interface operations {
     };
     get_sessions_sessions_get: {
         parameters: {
+            query?: {
+                archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_session_sessions__session_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unarchive_session_sessions__session_id__unarchive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_session_sessions__session_id__pin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unpin_session_sessions__session_id__unpin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_session_sessions__session_id__delete: {
+        parameters: {
+            query?: {
+                confirm?: string;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_recent_plans_sessions_todo_get: {
+        parameters: {
             query?: never;
             header?: never;
             path?: never;
@@ -22678,6 +25096,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_session_plan_sessions__session_id__todo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -24029,6 +26478,37 @@ export interface operations {
             };
         };
     };
+    company_run_barrier_clear_api_company_runs__run_id__barrier_clear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     operator_benchmark_api_operator_benchmark_get: {
         parameters: {
             query?: never;
@@ -24085,6 +26565,99 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    power_state_api_power_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    power_stream_api_power_stream_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    pressure_state_api_system_pressure_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    pressure_dismiss_api_system_pressure_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

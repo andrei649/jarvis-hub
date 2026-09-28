@@ -4,7 +4,10 @@ Offline: uses the deterministic `hash` backend (no Ollama / network) and a
 temp cache dir. Covers disk caching, persistence, batch alignment + de-dup,
 rate-limit retry/backoff, and graceful degradation.
 """
+import json
 import logging
+
+import httpx
 import sys
 from pathlib import Path
 
@@ -171,18 +174,13 @@ def test_mxbai_embed_large_via_mocked_lmstudio(tmp_path):
     """mxbai-embed-large uses the same /v1/embeddings interface as any other LM Studio model."""
     fake_vec = [0.1] * EMBEDDING_DIM
 
-    class _FakeResp:
-        def raise_for_status(self):
-            pass
-        def json(self):
-            return {"data": [{"embedding": fake_vec}]}
-
-    class _FakeHTTP:
+    class _FakeHTTP(httpx.Client):
         def __init__(self):
             self.last_payload = None
-        def post(self, path, *, json=None):
-            self.last_payload = json
-            return _FakeResp()
+            def handler(request):
+                self.last_payload = json.loads(request.content)
+                return httpx.Response(200, json={"data": [{"embedding": fake_vec}]})
+            super().__init__(base_url="http://localhost:1234", transport=httpx.MockTransport(handler))
 
     client = _FakeHTTP()
     e = Embedder(
@@ -202,9 +200,11 @@ def test_mxbai_embed_large_via_mocked_lmstudio(tmp_path):
 def test_graceful_fallback_to_hash_when_lmstudio_unavailable(tmp_path):
     """When LM Studio returns an error, Embedder degrades to hash (never raises)."""
 
-    class _BrokenHTTP:
-        def post(self, path, *, json=None):
-            raise ConnectionError("LM Studio not running")
+    class _BrokenHTTP(httpx.Client):
+        def __init__(self):
+            def handler(request):
+                raise ConnectionError("LM Studio not running")
+            super().__init__(base_url="http://localhost:1234", transport=httpx.MockTransport(handler))
 
     e = Embedder(
         backend="lmstudio",

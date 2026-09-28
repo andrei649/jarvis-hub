@@ -22,6 +22,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import sqlite3
 import threading
 import time
@@ -32,6 +33,14 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
+from agents.core.approval_outcomes import (
+    MAX_PER_CONSUMER,
+    MAX_PER_TURN,
+    TERMINAL_RETENTION_DAYS,
+    ApprovalTurnContext,
+    current_tool_approval,
+    render_chat_outcomes,
+)
 from agents.core.autonomy.mediation import (
     ZERO_HASH,
     DetachedHMACSigner,
@@ -50,11 +59,49 @@ from agents.core.autonomy.mediation import (
 )
 from agents.core.paths import data_path
 
+from .decision_reasons import normalize_reason
+
 logger = logging.getLogger("jarvis.autonomy.queue")
 
 DEFAULT_DB = data_path("autonomy.db")
 MAX_ATTEMPTS = 3
 _DATABASE_INIT_LOCK = threading.Lock()
+_HUMAN_REASON_UNSET = object()
+
+
+def normalize_approval_deadline(value: str | None) -> str | None:
+    """Validate an explicit aware ISO instant; no implicit expiry window."""
+    if value is None:
+        return None
+    if (type(value) is not str or len(value) > 64
+            or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)", value)):
+        raise ValueError('approval deadline must be an aware ISO datetime')
+    try:
+        instant = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        return instant.astimezone(timezone.utc).isoformat(timespec='microseconds')
+    except (ValueError, OverflowError) as exc:
+        raise ValueError('approval deadline must be a valid UTC instant') from exc
+
+
+def _approval_now(now: datetime | None = None) -> datetime:
+    instant = datetime.now(timezone.utc) if now is None else now
+    if not isinstance(instant, datetime) or instant.tzinfo is None or instant.utcoffset() is None:
+        raise ValueError('approval clock must be an aware datetime')
+    try:
+        return instant.astimezone(timezone.utc)
+    except (ValueError, OverflowError) as exc:
+        raise ValueError('approval clock must be a valid UTC instant') from exc
+
+
+def approval_is_pending(task: Task, *, now: datetime | None = None) -> bool:
+    instant = _approval_now(now)
+    if task.status not in {'proposed', 'blocked'}:
+        return False
+    try:
+        deadline = normalize_approval_deadline(task.approval_deadline_at)
+        return deadline is None or datetime.fromisoformat(deadline) > instant
+    except ValueError:
+        return False
 
 
 def _canonical_mediation_classification(kind: str) -> bool | None:
@@ -83,6 +130,7 @@ class TaskStatus(str, Enum):
     REJECTED = "rejected"
     DEFERRED = "deferred"
     QUARANTINED = "quarantined"
+    EXPIRED = "expired"
 
 
 TERMINAL = {
@@ -90,6 +138,7 @@ TERMINAL = {
     TaskStatus.FAILED,
     TaskStatus.REJECTED,
     TaskStatus.QUARANTINED,
+    TaskStatus.EXPIRED,
 }
 
 # Allowed transitions. Keys/values are TaskStatus.
@@ -113,11 +162,20 @@ _TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
     TaskStatus.FAILED: set(),
     TaskStatus.REJECTED: set(),
     TaskStatus.QUARANTINED: set(),
+    TaskStatus.EXPIRED: set(),
 }
 
 
 class TaskQueueError(Exception):
     """Raised on an illegal state transition."""
+
+
+class MediationStateUnavailable(TaskQueueError):
+    """The mediated-execution state could not be read or checked — the database, the
+    head anchor or the receipt signer raised (review round 6, item 2). Machinery, not a
+    governance answer: a caller reports it as a failure (``mediation_state_unavailable``),
+    never as the hold ``mediation_execution_required`` that a task the store holds but
+    does not authorise gets (``validate_mediated_execution`` returns False for that)."""
 
 
 @dataclass
@@ -150,10 +208,39 @@ class Task:
     mediation_execution_id: Optional[str] = field(default=None, kw_only=True)
     kernel_intake_id: Optional[str] = field(default=None, kw_only=True)
     kernel_intake_evidence: Optional[dict] = field(default=None, kw_only=True)
+    human_decision: Optional[dict] = field(default=None, kw_only=True)
+    approval_deadline_at: str | None = field(default=None, kw_only=True)
+    expired_at: str | None = field(default=None, kw_only=True)
 
     def to_dict(self) -> dict:
         d = dict(self.__dict__)
+        if not self.human_decision or not self.human_decision.get("reason"):
+            d.pop("human_decision", None)
+        for name in ('approval_deadline_at', 'expired_at'):
+            if d.get(name) is None:
+                d.pop(name, None)
         return d
+
+
+@dataclass(frozen=True)
+class ApprovalExpiryEffect:
+    task_id: int
+    expired_at: str
+    group_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ApprovalExpiryBatch:
+    tasks: tuple[Task, ...]
+    group_ids: tuple[str, ...]
+    effects: tuple[ApprovalExpiryEffect, ...] = field(default=(), kw_only=True)
+
+
+class TaskApprovalExpired(TaskQueueError):
+    """Expiry has already committed; callers may process the durable effects."""
+    def __init__(self, batch: ApprovalExpiryBatch):
+        self.batch = batch
+        super().__init__('task approval deadline passed')
 
 
 class TaskQueue:
@@ -258,6 +345,59 @@ class TaskQueue:
                 updated_at TEXT NOT NULL
             )
         """)
+        # Advisory opinions are outside Task and every signed execution payload.
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS approval_judgement_revisions (
+                task_id INTEGER PRIMARY KEY,
+                revision INTEGER NOT NULL
+            )
+        """)
+        self._conn.execute("""CREATE TABLE IF NOT EXISTS chat_approval_origins (
+            origin_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+            session_instance TEXT NOT NULL, principal_key TEXT NOT NULL, created_at TEXT NOT NULL
+        )""")
+        self._conn.execute("""CREATE INDEX IF NOT EXISTS idx_chat_approval_consumer
+            ON chat_approval_origins(session_id,session_instance,principal_key)""")
+        self._conn.execute("""CREATE TABLE IF NOT EXISTS chat_approval_tasks (
+            task_id INTEGER PRIMARY KEY, origin_id TEXT NOT NULL, tool TEXT NOT NULL,
+            task_birth TEXT NOT NULL, intent_sha256 TEXT, ready INTEGER NOT NULL DEFAULT 0,
+            acknowledged_revision TEXT, acknowledged_at TEXT
+        )""")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_approval_origin ON chat_approval_tasks(origin_id)")
+        self._conn.execute('''CREATE TABLE IF NOT EXISTS chat_approval_retention (
+            id INTEGER PRIMARY KEY CHECK(id=1), last_task_id INTEGER NOT NULL
+        )''')
+        self._conn.execute('INSERT OR IGNORE INTO chat_approval_retention VALUES(1,0)')
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS approval_judgements (
+                task_id INTEGER NOT NULL,
+                snapshot_sha256 TEXT NOT NULL,
+                annotation TEXT NOT NULL,
+                PRIMARY KEY (task_id, snapshot_sha256)
+            )
+        """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS task_approval_group_state (
+                key TEXT PRIMARY KEY, value TEXT NOT NULL
+            )
+        """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS task_approval_groups (
+                task_id INTEGER PRIMARY KEY, group_id TEXT NOT NULL,
+                fingerprint TEXT NOT NULL, member_sha256 TEXT NOT NULL,
+                snapshot TEXT NOT NULL, binding_sha256 TEXT
+            )
+        """)
+        group_columns = {row['name'] for row in self._conn.execute('PRAGMA table_info(task_approval_groups)')}
+        if 'binding_sha256' not in group_columns:
+            self._conn.execute('ALTER TABLE task_approval_groups ADD COLUMN binding_sha256 TEXT')
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_task_approval_groups ON task_approval_groups(group_id)")
+        self._conn.execute("INSERT OR IGNORE INTO task_approval_group_state(key,value) VALUES ('namespace',?)",
+                           (uuid.uuid4().hex,))
+        self._group_namespace = self._conn.execute(
+            "SELECT value FROM task_approval_group_state WHERE key='namespace'"
+        ).fetchone()['value']
+
         # H33.2: old autonomy databases predate the ask/digest/interrupt split.
         # Preserve their previous push behavior while new ambient proposals set
         # the mode explicitly.
@@ -266,6 +406,17 @@ class TaskQueue:
             self._conn.execute(
                 "ALTER TABLE tasks ADD COLUMN attention_mode TEXT NOT NULL DEFAULT 'interrupt'"
             )
+        if "human_decision" not in columns:
+            self._conn.execute("ALTER TABLE tasks ADD COLUMN human_decision TEXT")
+        for name in ('approval_deadline_at', 'expired_at'):
+            if name not in columns:
+                self._conn.execute(f'ALTER TABLE tasks ADD COLUMN {name} TEXT')
+        self._conn.execute("""CREATE TABLE IF NOT EXISTS task_approval_expiry_effects (
+            task_id INTEGER PRIMARY KEY, expired_at TEXT NOT NULL, group_id TEXT
+        )""")
+        self._conn.execute("""CREATE TABLE IF NOT EXISTS task_approval_expiry_state (
+            key TEXT PRIMARY KEY, last_task_id INTEGER NOT NULL
+        )""")
         mediation_columns = {
             "mediation_enqueue_id": "TEXT",
             "mediation_enqueue_revision": "INTEGER",
@@ -912,6 +1063,120 @@ class TaskQueue:
                     self._conn.rollback()
                 return False
 
+
+    @staticmethod
+    def _expiry_limit(limit):
+        if type(limit) is not int or limit < 0:
+            raise ValueError('expiry limit must be a nonnegative integer')
+        return min(100, limit)
+
+    def _expiry_batch_locked(self, effects) -> ApprovalExpiryBatch:
+        tasks = []
+        for effect in effects:
+            row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (effect.task_id,)).fetchone()
+            if row is not None and row['status'] == 'expired' and row['expired_at'] == effect.expired_at:
+                tasks.append(_row_to_task(row))
+        return ApprovalExpiryBatch(tuple(tasks), tuple(dict.fromkeys(
+            effect.group_id for effect in effects if effect.group_id)), effects=tuple(effects))
+
+    def _expire_approval_locked(self, row, now, *, reopening=False) -> ApprovalExpiryEffect | None:
+        if row['status'] not in {'proposed', 'blocked'} and not reopening:
+            return None
+        try:
+            deadline = normalize_approval_deadline(row['approval_deadline_at'])
+        except ValueError as exc:
+            logger.warning('task approval deadline unreadable; task retained')
+            raise TaskQueueError('task approval deadline is unreadable') from exc
+        if deadline is None or datetime.fromisoformat(deadline) > now:
+            return None
+        at = now.isoformat(timespec='microseconds')
+        cursor = self._conn.execute("UPDATE tasks SET status='expired', expired_at=?, updated_at=? "
+                                    'WHERE id=? AND status=?', (at, at, row['id'], row['status']))
+        if cursor.rowcount != 1:
+            return None
+        group_id = self._withdraw_task_group_locked(row['id'])
+        self._conn.execute('INSERT INTO task_approval_expiry_effects(task_id,expired_at,group_id) VALUES(?,?,?)',
+                           (row['id'], at, group_id))
+        return ApprovalExpiryEffect(row['id'], at, group_id)
+
+    def _raise_due_approval_locked(self, row, now, *, reopening=False):
+        if row['status'] == TaskStatus.EXPIRED.value:
+            raise TaskQueueError('expired task cannot be changed')
+        effect = self._expire_approval_locked(row, now, reopening=reopening)
+        if effect is not None:
+            batch = self._expiry_batch_locked((effect,))
+            self._conn.commit()
+            raise TaskApprovalExpired(batch)
+
+    def _expiry_scan_locked(self, key, query, params, limit):
+        self._conn.execute('INSERT OR IGNORE INTO task_approval_expiry_state VALUES(?,0)', (key,))
+        cursor = self._conn.execute('SELECT last_task_id FROM task_approval_expiry_state WHERE key=?',
+                                    (key,)).fetchone()[0]
+        rows = self._conn.execute(query + ' AND task_id>? ORDER BY task_id LIMIT ?',
+                                  (*params, cursor, limit)).fetchall()
+        if len(rows) < limit and cursor:
+            rows += self._conn.execute(query + ' AND task_id<=? ORDER BY task_id LIMIT ?',
+                                       (*params, cursor, limit-len(rows))).fetchall()
+        if rows:
+            self._conn.execute('UPDATE task_approval_expiry_state SET last_task_id=? WHERE key=?',
+                               (rows[-1]['task_id'], key))
+        return rows
+
+    def expire_pending_approvals(self, *, now: datetime | None = None, limit: int = 100) -> ApprovalExpiryBatch:
+        limit = self._expiry_limit(limit)
+        # Validate an explicitly supplied clock even when no rows are scanned.
+        if now is not None:
+            _approval_now(now)
+        with self._lock:
+            self._conn.execute('BEGIN IMMEDIATE')
+            try:
+                instant = _approval_now(now)
+                rows = self._expiry_scan_locked('due', "SELECT *, id AS task_id FROM tasks WHERE "
+                    "status IN ('proposed','blocked') AND approval_deadline_at IS NOT NULL", (), limit)
+                effects = []
+                for row in rows:
+                    try:
+                        effect = self._expire_approval_locked(row, instant)
+                    except TaskQueueError:
+                        continue  # corrupt metadata stays fail-closed without starving later rows
+                    if effect is not None:
+                        effects.append(effect)
+                batch = self._expiry_batch_locked(effects)
+                self._conn.commit()
+                return batch
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def pending_approval_expiry_effects(self, *, limit: int = 100) -> ApprovalExpiryBatch:
+        limit = self._expiry_limit(limit)
+        with self._lock:
+            self._conn.execute('BEGIN IMMEDIATE')
+            try:
+                rows = self._expiry_scan_locked('effects', 'SELECT * FROM task_approval_expiry_effects WHERE 1=1',
+                                               (), limit)
+                batch = self._expiry_batch_locked([ApprovalExpiryEffect(row['task_id'], row['expired_at'],
+                                                                       row['group_id']) for row in rows])
+                self._conn.commit()
+                return batch
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def ack_approval_expiry_effects(self, batch: ApprovalExpiryBatch) -> int:
+        with self._lock:
+            self._conn.execute('BEGIN IMMEDIATE')
+            try:
+                count = 0
+                for effect in batch.effects:
+                    count += self._conn.execute('DELETE FROM task_approval_expiry_effects '
+                        'WHERE task_id=? AND expired_at=?', (effect.task_id, effect.expired_at)).rowcount
+                self._conn.commit()
+                return count
+            except Exception:
+                self._conn.rollback()
+                raise
+
     # ── writes ────────────────────────────────────────────────────
     def enqueue(
         self,
@@ -924,7 +1189,9 @@ class TaskQueue:
         origin: str = "generated",
         attention_mode: str = "interrupt",
         kernel_intake_evidence: KernelIntakeEvidence | Mapping[str, object] | None = None,
+        *, approval_deadline_at: str | None = None,
     ) -> int:
+        approval_deadline_at = normalize_approval_deadline(approval_deadline_at)
         payload = dict(payload or {})
         # Legacy payload metadata is caller-controlled and has no authority.
         payload.pop("kernel_mediation", None)
@@ -943,29 +1210,36 @@ class TaskQueue:
         now = _now()
         intake_id, intake_json = _intake_evidence_columns(kernel_intake_evidence)
         with self._lock:
-            cur = self._conn.execute(
-                """INSERT INTO tasks (agent, kind, title, payload, risk_tier, status,
-                       autonomy_level, attention_mode, origin, attempts, pushed,
-                       kernel_intake_id, kernel_intake_evidence,
-                       created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, ?, 0, 0, ?, ?, ?, ?)""",
-                (
-                    agent,
-                    kind,
-                    title,
-                    json.dumps(payload, ensure_ascii=False),
-                    int(risk_tier),
-                    autonomy_level,
-                    attention_mode,
-                    origin,
-                    intake_id,
-                    intake_json,
-                    now,
-                    now,
-                ),
-            )
-            self._conn.commit()
-            return cur.lastrowid
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                cur = self._conn.execute(
+                    """INSERT INTO tasks (agent, kind, title, payload, risk_tier, status,
+                           autonomy_level, attention_mode, origin, attempts, pushed,
+                           kernel_intake_id, kernel_intake_evidence,
+                           created_at, updated_at, approval_deadline_at)
+                       VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)""",
+                    (
+                        agent,
+                        kind,
+                        title,
+                        json.dumps(payload, ensure_ascii=False),
+                        int(risk_tier),
+                        autonomy_level,
+                        attention_mode,
+                        origin,
+                        intake_id,
+                        intake_json,
+                        now,
+                        now,
+                        approval_deadline_at,
+                    ),
+                )
+                self._associate_chat_approval_locked(int(cur.lastrowid), now)
+                self._conn.commit()
+                return cur.lastrowid
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def attach_kernel_intake_evidence(
         self, task_id: int, evidence: KernelIntakeEvidence | Mapping[str, object]
@@ -1041,9 +1315,11 @@ class TaskQueue:
         origin: str = "generated",
         attention_mode: str = "interrupt",
         kernel_intake_evidence: KernelIntakeEvidence | Mapping[str, object] | None = None,
+        approval_deadline_at: str | None = None,
     ) -> int:
         """Insert exact task bytes, receipt, and authorization event atomically."""
 
+        approval_deadline_at = normalize_approval_deadline(approval_deadline_at)
         if self.mediation_mode == "hold":
             raise TaskQueueError("mediation hold refuses classified enqueue")
         if self._classification(kind) is not True:
@@ -1127,9 +1403,9 @@ class TaskQueue:
                             mediation_scope, mediation_policy_revision,
                              mediation_receipt, mediation_task_sha256,
                              kernel_intake_id, kernel_intake_evidence,
-                             created_at, updated_at)
+                             created_at, updated_at, approval_deadline_at)
                         VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, ?, 0, 0,
-                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         agent,
                         kind,
@@ -1149,9 +1425,11 @@ class TaskQueue:
                         intake_json,
                         now,
                         now,
+                        approval_deadline_at,
                     ),
                 )
                 task_id = int(cur.lastrowid)
+                self._associate_chat_approval_locked(task_id, now)
                 self._append_mediation_event_locked(
                     outcome="authorized_enqueue",
                     task_id=task_id,
@@ -1319,6 +1597,13 @@ class TaskQueue:
         this check independently proves that the same snapshot is still the
         authenticated RUNNING row in durable storage immediately before a
         handler receives it.
+
+        False is the governance answer: the store was read and does not authorise this
+        execution. A check that could not complete — the database, the head anchor, a
+        stored receipt or the signer raised — raises :class:`MediationStateUnavailable`
+        (review round 6, item 2): it used to read as False, so a broken store was
+        reported as a mediation hold (a refusal, or a withheld result) instead of a
+        failure.
         """
 
         if self.mediation_mode != "enforce" or not expected_fingerprint:
@@ -1394,8 +1679,8 @@ class TaskQueue:
                         now_ms=self._clock_ms(),
                     )
                 )
-            except Exception:
-                return False
+            except Exception as exc:
+                raise MediationStateUnavailable("mediation state unavailable") from exc
 
     def scan_unmediated_tasks(self) -> list[int]:
         """Quarantine executable classified rows without a valid B7 binding."""
@@ -1456,7 +1741,37 @@ class TaskQueue:
                     logger.exception("Could not quarantine unmediated task %s", row["id"])
         return quarantined
 
+    @staticmethod
+    def _human_decision_record(action: str, by: str, reason: str | None, at: str,
+                               *, previous: str | None = None) -> dict:
+        if action not in {"accept", "edit", "reject", "defer"} or not isinstance(by, str) or not by:
+            raise TaskQueueError("human decision requires an action and decider")
+        first_at = at if previous is None else None
+        if previous is not None:
+            try:
+                old = json.loads(previous)
+                candidate = normalize_approval_deadline(old.get('first_at')) if isinstance(old, dict) else None
+                if candidate is not None and datetime.fromisoformat(candidate) <= datetime.fromisoformat(at):
+                    first_at = candidate
+            except (TypeError, ValueError):
+                first_at = None  # A damaged or legacy last-decision record proves no first cutoff.
+        return {"id": uuid.uuid4().hex, "action": action, "reason": reason, "by": by,
+                "at": at, "first_at": first_at}
+
     def transition(
+        self, task_id: int, new_status: TaskStatus, *, decided_by: str = None,
+        decision: str = None, result: dict = None,
+        human_reason: str | None | object = _HUMAN_REASON_UNSET,
+        expected_status: TaskStatus | None = None,
+    ) -> Task:
+        task, _group_id = self.transition_with_group(
+            task_id, new_status, decided_by=decided_by, decision=decision,
+            result=result, human_reason=human_reason,
+            expected_status=expected_status,
+        )
+        return task
+
+    def transition_with_group(
         self,
         task_id: int,
         new_status: TaskStatus,
@@ -1464,75 +1779,411 @@ class TaskQueue:
         decided_by: str = None,
         decision: str = None,
         result: dict = None,
-    ) -> Task:
-        with self._lock:
-            row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
-            task = _row_to_task(row) if row else None
-        if task is None:
-            raise TaskQueueError(f"task {task_id} not found")
-        cur_status = TaskStatus(task.status)
+        human_reason: str | None | object = _HUMAN_REASON_UNSET,
+        expected_status: TaskStatus | None = None,
+    ) -> tuple[Task, str | None]:
+        """Settle and capture private promotion identity, including a singleton, atomically."""
+        # Execution passes result only; a successful human decision explicitly
+        # passes human_reason, including None to clear an earlier attribution.
+        record_human = human_reason is not _HUMAN_REASON_UNSET
+        reason = normalize_reason(human_reason) if record_human else None
         new_status = TaskStatus(new_status)
-        if new_status not in _TRANSITIONS.get(cur_status, set()):
-            raise TaskQueueError(
-                f"illegal transition {cur_status.value} → {new_status.value} (task {task_id})"
-            )
-        sets = ["status=?", "updated_at=?"]
-        params: list = [new_status.value, _now()]
-        if decided_by is not None:
-            sets.append("decided_by=?")
-            params.append(decided_by)
-        if decision is not None:
-            sets.append("decision=?")
-            params.append(decision)
-        if result is not None:
-            sets.append("result=?")
-            params.append(json.dumps(result, ensure_ascii=False))
-        params.append(task_id)
         with self._lock:
-            # Column names come from the fixed list above; all values stay parameterized.
-            self._conn.execute(
-                f"UPDATE tasks SET {', '.join(sets)} WHERE id=?",  # nosec B608
-                params,
-            )
-            self._conn.commit()
-        return self.get(task_id)
+            # Keep validation and mutation in one write transaction, including
+            # against other queue connections/processes racing this decision.
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                task = _row_to_task(row) if row else None
+                if task is None:
+                    raise TaskQueueError(f"task {task_id} not found")
+                cur_status = TaskStatus(task.status)
+                instant = _approval_now()
+                self._raise_due_approval_locked(row, instant,
+                    reopening=cur_status == TaskStatus.DEFERRED and new_status == TaskStatus.BLOCKED)
+                if expected_status is not None and cur_status != TaskStatus(expected_status):
+                    raise TaskQueueError(f'unexpected task status {cur_status.value} (task {task_id})')
+                if new_status not in _TRANSITIONS.get(cur_status, set()):
+                    raise TaskQueueError(
+                        f"illegal transition {cur_status.value} → {new_status.value} (task {task_id})"
+                    )
+                now = instant.isoformat(timespec='microseconds')
+                sets = ["status=?", "updated_at=?"]
+                params: list = [new_status.value, now]
+                if decided_by is not None:
+                    sets.append("decided_by=?")
+                    params.append(decided_by)
+                if decision is not None:
+                    sets.append("decision=?")
+                    params.append(decision)
+                if result is not None:
+                    sets.append("result=?")
+                    params.append(json.dumps(result, ensure_ascii=False))
+                if record_human:
+                    metadata = self._human_decision_record(decision, decided_by, reason, now,
+                                                           previous=row['human_decision'])
+                    sets.append("human_decision=?")
+                    params.append(json.dumps(metadata, ensure_ascii=False))
+                params.append(task_id)
+                # Column names are a fixed list; all values stay parameterized.
+                self._conn.execute(
+                    f"UPDATE tasks SET {', '.join(sets)} WHERE id=?", params,  # nosec B608
+                )
+                group_id = self._withdraw_task_group_locked(task_id)
+                updated = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                if new_status == TaskStatus.BLOCKED and decided_by == 'policy' and decision == 'needs-approval':
+                    self._finalize_chat_approval_locked(_row_to_task(updated))
+                self._conn.commit()
+                return _row_to_task(updated), group_id
+            except TaskApprovalExpired:
+                raise  # expiry already committed; never roll it back
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def attach_human_reason(self, task_id: int, reason: str | None, *,
+                            expected_decision: dict) -> Task | None:
+        """Fill one exact Telegram rejection's missing reason, metadata only.
+
+        The caller owns owner/chat/window verification; this CAS binds that
+        window to a persisted unique decision and never reopens the task.
+        """
+        normalized = normalize_reason(reason)
+        if normalized is None or not isinstance(expected_decision, dict):
+            return None
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                task = _row_to_task(row) if row else None
+                metadata = task.human_decision if task else None
+                if (task is None or task.status != TaskStatus.REJECTED.value
+                        or not isinstance(metadata, dict) or metadata != expected_decision
+                        or metadata.get("action") != "reject" or metadata.get("by") != "telegram"
+                        or metadata.get("reason") is not None):
+                    self._conn.rollback()
+                    return None
+                changed = {**metadata, "reason": normalized}
+                self._conn.execute("UPDATE tasks SET human_decision=? WHERE id=?",
+                                   (json.dumps(changed, ensure_ascii=False), task_id))
+                updated = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                self._conn.commit()
+                return _row_to_task(updated)
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def _task_group_binding_locked(self, row: sqlite3.Row) -> dict | None:
+        """Compare authority categories; each member keeps its independent receipt."""
+        binding = {'mode': self.mediation_mode, 'policy_revision': self.mediation_policy_revision,
+                   'binding': 'registration_only', 'scope': None}
+        if self._row_requires_mediation_locked(row):
+            try:
+                if self.mediation_mode != 'enforce':
+                    return None
+                receipt, expected, digest = self._row_receipt_and_expectation(row)
+                if (receipt.policy_revision != self.mediation_policy_revision
+                        or row['mediation_task_sha256'] != digest
+                        or not self._scope_allowed(expected.scope)
+                        or not verify_receipt(self._mediation_signer, receipt, expected=expected,
+                                              now_ms=self._mediation_clock_ms())):
+                    return None
+                binding.update(binding='independent_mediated_receipt', scope=receipt.scope,
+                               verdict=receipt.verdict, tier=receipt.tier,
+                               effective_tier=receipt.effective_tier,
+                               reason_sha256=receipt.reason_sha256)
+            except Exception:
+                return None
+        elif row['kernel_intake_id'] or row['kernel_intake_evidence']:
+            return None  # no proven common authority context for this separate intake seam
+        return binding
+
+    def _pending_group_members_locked(self, group_id: str) -> list[sqlite3.Row]:
+        members = self._conn.execute(
+            "SELECT tasks.*, g.fingerprint AS group_fingerprint, g.member_sha256 AS group_member_sha256, "
+            "g.snapshot AS group_snapshot, g.binding_sha256 AS group_binding_sha256 "
+            "FROM tasks JOIN task_approval_groups g ON g.task_id=tasks.id "
+            "WHERE g.group_id=? AND tasks.status='blocked' ORDER BY tasks.id LIMIT 65", (group_id,),
+        ).fetchall()
+        if len(members) > 64:
+            return []
+        for row in members:
+            binding = self._task_group_binding_locked(row)
+            binding_digest = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest() if binding else None
+            if (row['group_member_sha256'] != self._approval_snapshot_digest_locked(_row_to_task(row))
+                    or not binding_digest or row['group_binding_sha256'] != binding_digest
+                    or row['group_fingerprint'] != members[0]['group_fingerprint']
+                    or row['group_snapshot'] != members[0]['group_snapshot']):
+                return []
+        return members
+
+    def _withdraw_task_group_locked(self, task_id: int) -> str | None:
+        membership = self._conn.execute(
+            'SELECT group_id FROM task_approval_groups WHERE task_id=?', (task_id,),
+        ).fetchone()
+        if membership is not None:
+            self._conn.execute('DELETE FROM task_approval_groups WHERE task_id=?', (task_id,))
+            self._conn.execute('UPDATE task_approval_groups SET snapshot=? WHERE group_id=?',
+                               (uuid.uuid4().hex, membership['group_id']))
+            return membership['group_id']
+        return None
+
+    def register_pending_group(self, task_id: int, *, context, policy: dict) -> dict | None:
+        """Attach verified registration/producer metadata; this never changes the task."""
+        from .approval_grouping import current_model_producer, model_group_semantics
+        from .approval_judge import action_is_tainted
+        from .inbox import OwnerTaskRegistrationContext
+        owner_context = type(context) is OwnerTaskRegistrationContext
+        if owner_context:
+            try:
+                checked = OwnerTaskRegistrationContext.from_request(json.loads(context.request_json))
+                if checked is None or checked.request_json != context.request_json:
+                    return None
+            except (TypeError, ValueError, RecursionError):
+                return None
+        elif context is None or context is not current_model_producer():
+            return None
+        with self._lock:
+            self._conn.execute('BEGIN IMMEDIATE')
+            try:
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                if row is None or row['status'] != 'blocked':
+                    self._conn.rollback()
+                    return None
+                binding = self._task_group_binding_locked(row)
+                member = self._approval_snapshot_digest_locked(_row_to_task(row))
+                if binding is None or member is None:
+                    self._conn.rollback()
+                    return None
+                task = _row_to_task(row)
+                producer = ({'request': json.loads(context.request_json), 'principal': 'owner',
+                             'surface': 'http_task_registration'} if owner_context
+                            else model_group_semantics(context, task))
+                if producer is None:
+                    self._conn.rollback()
+                    return None
+                semantics = {**producer, 'policy': policy,
+                             'namespace': self._group_namespace, 'authority': binding,
+                             'task': {key: getattr(task, key) for key in (
+                                 'agent', 'kind', 'title', 'payload', 'origin', 'risk_tier',
+                                 'autonomy_level', 'attention_mode',
+                             )}, 'tainted': action_is_tainted({'args': task.payload, 'origin': task.origin})}
+                encoded = json.dumps(semantics, sort_keys=True, ensure_ascii=False,
+                                     separators=(',', ':'), allow_nan=False).encode('utf-8')
+                if len(encoded) > 131_072:
+                    self._conn.rollback()
+                    return None
+                fingerprint = hashlib.sha256(encoded).hexdigest()
+                binding_digest = hashlib.sha256(json.dumps(binding, sort_keys=True).encode()).hexdigest()
+                candidates = self._conn.execute(
+                    'SELECT DISTINCT group_id FROM task_approval_groups WHERE fingerprint=? LIMIT 64',
+                    (fingerprint,),
+                ).fetchall()
+                group_id = uuid.uuid4().hex
+                for candidate in candidates:
+                    members = self._pending_group_members_locked(candidate['group_id'])
+                    if 0 < len(members) < 64:
+                        group_id = candidate['group_id']
+                        break
+                snapshot = uuid.uuid4().hex
+                self._conn.execute('UPDATE task_approval_groups SET snapshot=? WHERE group_id=?',
+                                   (snapshot, group_id))
+                self._conn.execute(
+                    'INSERT INTO task_approval_groups(task_id,group_id,fingerprint,member_sha256,snapshot,binding_sha256) '
+                    'VALUES (?,?,?,?,?,?)', (task_id, group_id, fingerprint, member, snapshot, binding_digest),
+                )
+                self._conn.commit()
+            except (TypeError, ValueError, UnicodeError):
+                self._conn.rollback()
+                return None
+            except Exception:
+                self._conn.rollback()
+                raise
+        return self.pending_group(task_id)
+
+    def _group_projection_locked(self, group_id: str) -> dict | None:
+        members = self._pending_group_members_locked(group_id)
+        if len(members) < 2:
+            return None
+        return {'id': group_id, 'leader_id': members[0]['id'], 'count': len(members),
+                'member_ids': [row['id'] for row in members], 'snapshot': members[0]['group_snapshot']}
+
+    def pending_groups(self) -> list[dict]:
+        with self._lock:
+            identifiers = self._conn.execute(
+                "SELECT DISTINCT g.group_id FROM task_approval_groups g JOIN tasks ON tasks.id=g.task_id "
+                "WHERE tasks.status='blocked' ORDER BY tasks.id LIMIT 1000"
+            ).fetchall()
+            groups = [group for row in identifiers
+                      if (group := self._group_projection_locked(row['group_id'])) is not None]
+            groups.sort(key=lambda group: group['leader_id'])
+            return groups
+
+    def pending_group(self, task_id: int) -> dict | None:
+        with self._lock:
+            membership = self._conn.execute(
+                'SELECT group_id FROM task_approval_groups WHERE task_id=?', (task_id,),
+            ).fetchone()
+            group = self._group_projection_locked(membership['group_id']) if membership else None
+            return group if group and task_id in group['member_ids'] else None
+
+    def pending_group_leader(self, group_id: str) -> Task | None:
+        """Next valid member, including a singleton left after once settlement."""
+        with self._lock:
+            members = self._pending_group_members_locked(group_id)
+            return _row_to_task(members[0]) if members else None
+
+    def reject_pending_group(self, group_id: str, *, snapshot: str, member_ids: list[int],
+                             decided_by: str = 'admin', reason: str | None = None) -> list[Task] | None:
+        """One SQLite transaction rejects exactly the current immutable membership."""
+        normalized = normalize_reason(reason)
+        if (not isinstance(member_ids, list) or not 2 <= len(member_ids) <= 64
+                or any(type(task_id) is not int or task_id < 1 for task_id in member_ids)):
+            return None
+        with self._lock:
+            self._conn.execute('BEGIN IMMEDIATE')
+            try:
+                instant = _approval_now()
+                # Resolve membership from the stored group, never submitted IDs.
+                members = self._conn.execute(
+                    "SELECT tasks.* FROM tasks JOIN task_approval_groups g ON g.task_id=tasks.id "
+                    "WHERE g.group_id=? AND tasks.status='blocked' ORDER BY tasks.id LIMIT 65", (group_id,),
+                ).fetchall()
+                if len(members) > 64:
+                    self._conn.rollback()
+                    return None
+                effects = []
+                corrupt = False
+                for row in members:
+                    try:
+                        effect = self._expire_approval_locked(row, instant)
+                    except TaskQueueError:
+                        corrupt = True
+                        continue
+                    if effect is not None:
+                        effects.append(effect)
+                if effects:
+                    batch = self._expiry_batch_locked(effects)
+                    self._conn.commit()
+                    raise TaskApprovalExpired(batch)
+                if corrupt:
+                    self._conn.rollback()
+                    return None
+                group = self._group_projection_locked(group_id)
+                if group is None or group['snapshot'] != snapshot or group['member_ids'] != member_ids:
+                    self._conn.rollback()
+                    return None
+                now = instant.isoformat(timespec='microseconds')
+                previous_decisions = {row['id']: row['human_decision'] for row in members}
+                for task_id in member_ids:
+                    metadata = self._human_decision_record('reject', decided_by, normalized, now,
+                                                           previous=previous_decisions[task_id])
+                    self._conn.execute(
+                        "UPDATE tasks SET status='rejected', decided_by=?, decision='reject', "
+                        'human_decision=?, updated_at=? WHERE id=?',
+                        (decided_by, json.dumps(metadata, ensure_ascii=False), now, task_id),
+                    )
+                    self._withdraw_task_group_locked(task_id)
+                result = [_row_to_task(self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone())
+                          for task_id in member_ids]
+                self._conn.commit()
+                return result
+            except TaskApprovalExpired:
+                raise
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def update_payload(self, task_id: int, payload: dict) -> None:
         with self._lock:
-            self._conn.execute(
-                "UPDATE tasks SET payload=?, updated_at=? WHERE id=?",
-                (json.dumps(payload, ensure_ascii=False), _now(), task_id),
-            )
-            self._conn.commit()
+            self._conn.execute('BEGIN IMMEDIATE')
+            try:
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                instant = _approval_now()
+                if row is not None:
+                    self._raise_due_approval_locked(row, instant)
+                self._conn.execute(
+                    'UPDATE tasks SET payload=?, updated_at=? WHERE id=?',
+                    (json.dumps(payload, ensure_ascii=False), instant.isoformat(timespec='microseconds'), task_id),
+                )
+                self._conn.execute(
+                    'INSERT INTO approval_judgement_revisions (task_id, revision) VALUES (?, 1) '
+                    'ON CONFLICT(task_id) DO UPDATE SET revision=revision+1', (task_id,),
+                )
+                self._withdraw_task_group_locked(task_id)
+                self._conn.commit()
+            except TaskApprovalExpired:
+                raise
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def update_payload_policy(
+        self, task_id: int, payload: dict, *, risk_tier: int, autonomy_level: str,
+        decided_by: str | None = None,
+        human_reason: str | None | object = _HUMAN_REASON_UNSET, approve: bool = False,
+    ) -> Task:
+        task, _group_id = self.update_payload_policy_with_group(
+            task_id, payload, risk_tier=risk_tier, autonomy_level=autonomy_level,
+            decided_by=decided_by, human_reason=human_reason, approve=approve,
+        )
+        return task
+
+    def update_payload_policy_with_group(
         self,
         task_id: int,
         payload: dict,
         *,
         risk_tier: int,
         autonomy_level: str,
-    ) -> Task:
-        """Atomically replace execution bytes and their durable policy result."""
-
+        decided_by: str | None = None,
+        human_reason: str | None | object = _HUMAN_REASON_UNSET,
+        approve: bool = False,
+    ) -> tuple[Task, str | None]:
+        """Edit atomically and capture the withdrawn private group for promotion."""
+        record_human = human_reason is not _HUMAN_REASON_UNSET
+        reason = normalize_reason(human_reason) if record_human else None
         with self._lock:
-            self._conn.execute(
-                """UPDATE tasks
-                      SET payload=?, risk_tier=?, autonomy_level=?, updated_at=?
-                    WHERE id=?""",
-                (
-                    json.dumps(payload, ensure_ascii=False),
-                    int(risk_tier),
-                    autonomy_level,
-                    _now(),
-                    task_id,
-                ),
-            )
-            self._conn.commit()
-            row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
-        if row is None:
-            raise TaskQueueError(f"task {task_id} not found")
-        return _row_to_task(row)
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                task = _row_to_task(row) if row else None
+                if task is None:
+                    raise TaskQueueError(f"task {task_id} not found")
+                instant = _approval_now()
+                self._raise_due_approval_locked(row, instant)
+                if (record_human or approve) and TaskStatus.APPROVED not in _TRANSITIONS.get(
+                    TaskStatus(task.status), set(),
+                ):
+                    raise TaskQueueError(f"task {task_id} cannot accept an edit from {task.status}")
+                now = instant.isoformat(timespec='microseconds')
+                sets = ["payload=?", "risk_tier=?", "autonomy_level=?", "updated_at=?"]
+                values = [json.dumps(payload, ensure_ascii=False), int(risk_tier), autonomy_level, now]
+                if record_human:
+                    metadata = self._human_decision_record("edit", decided_by, reason, now,
+                                                           previous=row['human_decision'])
+                    sets.append("human_decision=?")
+                    values.append(json.dumps(metadata, ensure_ascii=False))
+                if approve:
+                    sets.extend(["status=?", "decided_by=?", "decision=?"])
+                    values.extend([TaskStatus.APPROVED.value, decided_by, "edit"])
+                values.append(task_id)
+                self._conn.execute(
+                    f"UPDATE tasks SET {', '.join(sets)} WHERE id=?", values,  # nosec B608
+                )
+                self._conn.execute(
+                    "INSERT INTO approval_judgement_revisions (task_id, revision) VALUES (?, 1) "
+                    "ON CONFLICT(task_id) DO UPDATE SET revision=revision+1", (task_id,),
+                )
+                group_id = self._withdraw_task_group_locked(task_id)
+                updated = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                self._conn.commit()
+                return _row_to_task(updated), group_id
+            except TaskApprovalExpired:
+                raise
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def increment_attempts(self, task_id: int) -> int:
         with self._lock:
@@ -1570,7 +2221,296 @@ class TaskQueue:
             )
             self._conn.commit()
 
+    # Chat origin metadata is observational, outside every execution/receipt field.
+    def _associate_chat_approval_locked(self, task_id: int, task_birth: str) -> None:
+        producer = current_tool_approval()
+        if producer is None:
+            return
+        context = producer.turn
+        per_turn = self._conn.execute('SELECT COUNT(*) FROM chat_approval_tasks WHERE origin_id=?',
+                                      (context.turn_id,)).fetchone()[0]
+        per_consumer = self._conn.execute('''SELECT COUNT(*) FROM chat_approval_tasks t
+            JOIN chat_approval_origins o ON o.origin_id=t.origin_id
+            WHERE o.session_id=? AND o.session_instance=? AND o.principal_key=?''',
+            (context.session_id, context.session_instance, context.principal_key)).fetchone()[0]
+        if per_turn >= MAX_PER_TURN or per_consumer >= MAX_PER_CONSUMER:
+            logger.warning('chat approval observation capacity reached; task retained')
+            return
+        self._conn.execute('INSERT OR IGNORE INTO chat_approval_origins VALUES(?,?,?,?,?)',
+                           (context.turn_id, context.session_id, context.session_instance,
+                            context.principal_key, _now()))
+        self._conn.execute('INSERT INTO chat_approval_tasks(task_id,origin_id,tool,task_birth) VALUES(?,?,?,?)',
+                           (task_id, context.turn_id, producer.tool, task_birth))
+
+    def _chat_intent_locked(self, task: Task) -> str:
+        fields = ('id', 'agent', 'kind', 'title', 'payload', 'risk_tier', 'autonomy_level',
+                  'attention_mode', 'origin', 'created_at', 'mediation_enqueue_id',
+                  'mediation_enqueue_revision', 'mediation_scope', 'mediation_policy_revision',
+                  'mediation_task_sha256', 'mediation_receipt', 'kernel_intake_id', 'kernel_intake_evidence')
+        value = {name: getattr(task, name) for name in fields}
+        revision = self._conn.execute('SELECT revision FROM approval_judgement_revisions WHERE task_id=?',
+                                      (task.id,)).fetchone()
+        value['edit_revision'] = revision[0] if revision else 0
+        value['queue_binding'] = [self.mediation_mode, self._mediation_policy_revision]
+        encoded = json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+        return hashlib.sha256(encoded.encode()).hexdigest()
+
+    def _finalize_chat_approval_locked(self, task: Task) -> None:
+        producer = current_tool_approval()
+        if producer is None:
+            return
+        try:
+            digest = self._chat_intent_locked(task)
+        except (TypeError, ValueError):
+            logger.warning('chat approval intent unavailable; task retained')
+            return
+        self._conn.execute('''UPDATE chat_approval_tasks SET ready=1,intent_sha256=?
+            WHERE task_id=? AND origin_id=? AND task_birth=? AND ready=0''',
+            (digest, task.id, producer.turn.turn_id, task.created_at))
+
+    @staticmethod
+    def _chat_context(context) -> bool:
+        return isinstance(context, ApprovalTurnContext) and context.live()
+
+    def _chat_observation_locked(self, association: sqlite3.Row) -> dict:
+        digest = association['intent_sha256']
+        if (not isinstance(digest, str) or len(digest) != 64
+                or any(ch not in '0123456789abcdef' for ch in digest)
+                or not isinstance(association['tool'], str) or not association['tool']
+                or len(association['tool']) > 128):
+            raise ValueError('invalid chat approval binding metadata')
+        raw = self._conn.execute('SELECT * FROM tasks WHERE id=?', (association['task_id'],)).fetchone()
+        task = _row_to_task(raw) if raw is not None else None
+        # AUTOINCREMENT prevents ordinary ID reuse. Birth check also fails closed
+        # for an externally restored/substituted row with the same integer ID.
+        if task is not None and task.created_at != association['task_birth']:
+            task = None
+        states = {'proposed': 'waiting', 'blocked': 'waiting', 'deferred': 'waiting',
+                  'approved': 'approved_not_executed', 'running': 'running', 'done': 'completed',
+                  'failed': 'execution_failed', 'rejected': 'rejected', 'quarantined': 'quarantined',
+                  'expired': 'expired_unanswered'}
+        item = {'task_id': association['task_id'], 'originating_turn_id': association['origin_id'],
+                'tool': association['tool'], 'intent': 'original' if task is not None
+                and self._chat_intent_locked(task) == digest else 'changed',
+                'state': task.status if task is not None else 'lost',
+                'outcome': states[task.status] if task is not None else 'lost'}
+        if task is not None:
+            deadline = normalize_approval_deadline(task.approval_deadline_at)
+            expired_at = normalize_approval_deadline(task.expired_at)
+            if deadline is not None:
+                item['approval_deadline_at'] = deadline
+            if expired_at is not None:
+                item['expired_at'] = expired_at
+        if task is not None and task.status != 'expired' and task.human_decision is not None:
+            metadata = task.human_decision
+            if (not isinstance(metadata.get('id'), str) or len(metadata['id']) != 32
+                    or metadata.get('action') not in {'accept', 'edit', 'reject', 'defer'}
+                    or not isinstance(metadata.get('by'), str) or not metadata['by']
+                    or len(metadata['by']) > 256 or not isinstance(metadata.get('at'), str)
+                    or len(metadata['at']) > 64):
+                raise ValueError('invalid human decision metadata')
+            reason = normalize_reason(metadata.get('reason'))
+            item['decision'] = {'id': metadata['id'], 'action': metadata['action'],
+                                'by': metadata['by'], **({'human_reason': reason} if reason else {})}
+        else:
+            metadata = None
+        encoded = json.dumps([item, metadata], sort_keys=True, separators=(',', ':'), allow_nan=False)
+        item['revision'] = hashlib.sha256(encoded.encode()).hexdigest()
+        return item
+
+    def _chat_rows_locked(self, context: ApprovalTurnContext):
+        return self._conn.execute('''SELECT t.* FROM chat_approval_tasks t
+            JOIN chat_approval_origins o ON o.origin_id=t.origin_id
+            WHERE o.session_id=? AND o.session_instance=? AND o.principal_key=?
+            AND t.origin_id!=? AND t.ready=1 ORDER BY t.task_id LIMIT 256''',
+            (context.session_id, context.session_instance, context.principal_key, context.turn_id)).fetchall()
+
+    def chat_outcome_snapshot(self, context, *, limit: int = 8, max_bytes: int = 4096) -> list[dict]:
+        if not self._chat_context(context):
+            return []
+        self.prune_chat_outcomes()
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN')
+                observations = []
+                for row in self._chat_rows_locked(context):
+                    try:
+                        item = self._chat_observation_locked(row)
+                    except (TypeError, ValueError, KeyError):
+                        logger.warning('chat approval binding unreadable; observation skipped')
+                        continue
+                    if item['revision'] != row['acknowledged_revision']:
+                        observations.append(item)
+                self._conn.commit()
+                if not self._chat_context(context):
+                    return []
+                return render_chat_outcomes(observations[:max(0, min(8, limit))], max_bytes=max_bytes)[1]
+            except Exception:
+                if self._conn is not None:
+                    self._conn.rollback()
+                logger.warning('chat approval observation unavailable; no outcome inferred')
+                return []
+
+    def ack_chat_outcomes(self, context, observations: list[dict]) -> int:
+        if not self._chat_context(context):
+            return 0
+        expected = {item.get('task_id'): item.get('revision') for item in observations[:8]
+                    if isinstance(item, dict) and type(item.get('task_id')) is int
+                    and isinstance(item.get('revision'), str)}
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                count = 0
+                for row in self._chat_rows_locked(context):
+                    try:
+                        item = self._chat_observation_locked(row)
+                    except (TypeError, ValueError, KeyError):
+                        logger.warning('chat approval binding unreadable; acknowledgement skipped')
+                        continue
+                    if expected.get(row['task_id']) != item['revision']:
+                        continue
+                    self._conn.execute('''UPDATE chat_approval_tasks SET acknowledged_revision=?,acknowledged_at=?
+                        WHERE task_id=?''', (item['revision'], _now(), row['task_id']))
+                    count += 1
+                if not self._chat_context(context):
+                    self._conn.rollback()
+                    return 0
+                self._conn.commit()
+                return count
+            except Exception:
+                if self._conn is not None:
+                    self._conn.rollback()
+                logger.warning('chat approval acknowledgement unavailable; revision retained')
+                return 0
+
+    def chat_outcomes_for_backup(self, session_id: str, *, session_instance: str | None = None) -> dict:
+        with self._lock:
+            clause = 'session_id=?' + (' AND session_instance=?' if session_instance is not None else '')
+            params = (session_id, session_instance) if session_instance is not None else (session_id,)
+            origins = self._conn.execute(f'SELECT * FROM chat_approval_origins WHERE {clause}', params).fetchall()  # nosec B608
+            tasks = self._conn.execute(f'''SELECT t.* FROM chat_approval_tasks t
+                JOIN chat_approval_origins o ON o.origin_id=t.origin_id WHERE {clause}''', params).fetchall()  # nosec B608
+            return {'origins': [dict(row) for row in origins], 'tasks': [dict(row) for row in tasks]}
+
+    def purge_chat_outcomes(self, session_id: str, session_instance: str | None = None) -> int:
+        with self._lock:
+            self._conn.execute('BEGIN IMMEDIATE')
+            try:
+                clause = 'session_id=?' + (' AND session_instance=?' if session_instance is not None else '')
+                params = (session_id, session_instance) if session_instance is not None else (session_id,)
+                count = self._conn.execute(f'''DELETE FROM chat_approval_tasks WHERE origin_id IN
+                    (SELECT origin_id FROM chat_approval_origins WHERE {clause})''', params).rowcount  # nosec B608
+                self._conn.execute(f'DELETE FROM chat_approval_origins WHERE {clause}', params)  # nosec B608
+                self._conn.commit()
+                return count
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def prune_chat_outcomes(self, *, limit: int = 128) -> int:
+        from datetime import timedelta
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=TERMINAL_RETENTION_DAYS)).isoformat()
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                batch = max(0, min(128, limit))
+                self._conn.execute('INSERT OR IGNORE INTO chat_approval_retention VALUES(1,0)')
+                cursor = self._conn.execute('SELECT last_task_id FROM chat_approval_retention WHERE id=1').fetchone()[0]
+                rows = self._conn.execute('''SELECT * FROM chat_approval_tasks
+                    WHERE acknowledged_at < ? AND task_id>? ORDER BY task_id LIMIT ?''',
+                    (cutoff, cursor, batch)).fetchall()
+                count = 0
+                for row in rows:
+                    try:
+                        item = self._chat_observation_locked(row)
+                    except (TypeError, ValueError, KeyError):
+                        logger.warning('chat approval binding unreadable; retention skipped')
+                        continue
+                    if item['state'] not in {'done', 'failed', 'rejected', 'quarantined', 'expired', 'lost'}:
+                        continue
+                    if item['revision'] == row['acknowledged_revision']:
+                        self._conn.execute('DELETE FROM chat_approval_tasks WHERE task_id=?', (row['task_id'],))
+                        count += 1
+                next_cursor = rows[-1]['task_id'] if rows and len(rows) == batch else 0
+                self._conn.execute('UPDATE chat_approval_retention SET last_task_id=? WHERE id=1', (next_cursor,))
+                self._conn.execute('''DELETE FROM chat_approval_origins WHERE NOT EXISTS
+                    (SELECT 1 FROM chat_approval_tasks t WHERE t.origin_id=chat_approval_origins.origin_id)''')
+                self._conn.commit()
+                return count
+            except Exception:
+                if self._conn is not None:
+                    self._conn.rollback()
+                logger.warning('chat approval retention unavailable; metadata retained')
+                return 0
+
     # ── reads ─────────────────────────────────────────────────────
+    def approval_snapshot_digest(self, task: Task) -> str | None:
+        """Bind an opinion to action bytes and a separate advisory edit revision."""
+        with self._lock:
+            return self._approval_snapshot_digest_locked(task)
+
+    def _approval_snapshot_digest_locked(self, task: Task) -> str | None:
+        # Push bookkeeping changes updated_at, but must not invalidate an opinion.
+        # A separate counter revokes even an edit that preserves the same payload.
+        revision = self._conn.execute(
+            "SELECT revision FROM approval_judgement_revisions WHERE task_id=?", (task.id,),
+        ).fetchone()
+        execution = TaskQueue.execution_fingerprint(task)
+        if execution is None:
+            return None
+        try:
+            encoded = json.dumps({
+                "execution": execution,
+                "kernel_intake_id": task.kernel_intake_id,
+                "kernel_intake_evidence": task.kernel_intake_evidence,
+                "advisory_revision": revision["revision"] if revision else 0,
+            }, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            return hashlib.sha256(encoded).hexdigest()
+        except (TypeError, ValueError):
+            return None
+
+    def approval_judgement(self, task_id: int, snapshot_sha256: str) -> dict | None:
+        """Read only a still-current BLOCKED row's opinion, never a stale one."""
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if (row is None or row["status"] != TaskStatus.BLOCKED.value
+                    or not approval_is_pending(_row_to_task(row))
+                    or self._approval_snapshot_digest_locked(_row_to_task(row)) != snapshot_sha256):
+                return None
+            opinion = self._conn.execute(
+                "SELECT annotation FROM approval_judgements WHERE task_id=? AND snapshot_sha256=?",
+                (task_id, snapshot_sha256),
+            ).fetchone()
+        return json.loads(opinion["annotation"]) if opinion else None
+
+    def store_approval_judgement(self, task_id: int, snapshot_sha256: str,
+                                annotation: dict) -> dict | None:
+        """Atomically compare persisted action/status and store its first opinion.
+
+        BEGIN IMMEDIATE protects the comparison even against another queue connection.
+        This method never updates the tasks table, receipts or mediation event chain.
+        """
+        encoded = json.dumps(annotation, ensure_ascii=False, allow_nan=False)
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                if (row is None or row["status"] != TaskStatus.BLOCKED.value
+                    or not approval_is_pending(_row_to_task(row))
+                        or self._approval_snapshot_digest_locked(_row_to_task(row)) != snapshot_sha256):
+                    self._conn.rollback()
+                    return None
+                cursor = self._conn.execute(
+                    "INSERT OR IGNORE INTO approval_judgements (task_id, snapshot_sha256, annotation) "
+                    "VALUES (?, ?, ?)", (task_id, snapshot_sha256, encoded),
+                )
+                self._conn.commit()
+                return json.loads(encoded) if cursor.rowcount == 1 else None
+            except Exception:
+                self._conn.rollback()
+                raise
+
     def get(self, task_id: int) -> Optional[Task]:
         with self._lock:
             row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
@@ -1650,19 +2590,27 @@ class TaskQueue:
             ).fetchall()
         return [_row_to_task(r) for r in rows]
 
-    def pending_decisions(self, only_unpushed: bool = False, limit: int = 100) -> list[Task]:
+    def pending_decisions(self, only_unpushed: bool = False, limit: int = 100,
+                          kind: Optional[str] = None) -> list[Task]:
         # O26-P0.7 (F3): a 'proposed' task also awaits a human decision
         # (PROPOSED -> APPROVED is a legal apply_decision transition) — before
         # this, broker-originated proposals never appeared in the decision
         # inbox (Telegram or HUD), only in the raw task list.
+        # H262 review round 2 (N7): ``kind`` filters in SQL, so the waiting tasks of one
+        # kind are found however many decisions of other kinds wait before them.
         clause = "status IN ('blocked','proposed')"
+        params: list = []
         if only_unpushed:
             clause += " AND pushed=0"
+        if kind is not None:
+            clause += " AND kind=?"
+            params.append(kind)
+        params.append(limit)
         with self._lock:
             rows = self._conn.execute(
-                # `clause` is one of the two fixed pending-decision predicates.
+                # `clause` is built only from the fixed predicates above; values are bound.
                 f"SELECT * FROM tasks WHERE {clause} ORDER BY id ASC LIMIT ?",  # nosec B608
-                (limit,),
+                params,
             ).fetchall()
         return [_row_to_task(r) for r in rows]
 
@@ -1735,6 +2683,14 @@ def _row_to_task(row: sqlite3.Row) -> Task:
             intake_evidence = json.loads(row["kernel_intake_evidence"])
         except (TypeError, ValueError, json.JSONDecodeError):
             intake_evidence = None
+    human_decision = None
+    if row["human_decision"]:
+        try:
+            metadata = json.loads(row["human_decision"])
+            if isinstance(metadata, dict):
+                human_decision = metadata
+        except (TypeError, ValueError):
+            pass
     return Task(
         id=row["id"],
         agent=row["agent"],
@@ -1762,6 +2718,9 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         mediation_execution_id=row["mediation_execution_id"],
         kernel_intake_id=row["kernel_intake_id"],
         kernel_intake_evidence=intake_evidence,
+        human_decision=human_decision,
+        approval_deadline_at=row["approval_deadline_at"],
+        expired_at=row["expired_at"],
     )
 
 

@@ -1,0 +1,848 @@
+{
+  "generated_at": "2026-09-27T07:50:38.877435+00:00",
+  "repository": "https://github.com/NousResearch/hermes-agent",
+  "commit": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "source_path": "/Users/andrei649/Projects/hermes-source-59b2aeef6c7a/hermes-agent-59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "archive_sha256": "bb955133513408fc08d3fdad2446246fe4875001db8dd84d964951355d3957fa",
+  "nerva_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "nerva_has_local_policy_changes": true,
+  "historical_inventory": "NousResearch/hermes-agent v2026.8.31 (package hermes-agent 0.21.0, MIT)",
+  "current_evidence_metrics": {
+    "total": 697,
+    "accepted": 590,
+    "counts": {
+      "equivalent": 154,
+      "partial": 309,
+      "missing": 65,
+      "excluded": 107,
+      "needs_review": 62
+    },
+    "all_percent": 22.1,
+    "accepted_percent": 26.1,
+    "reviewed": 162,
+    "reviewed_equivalent": 46,
+    "inherited_equivalent": 108
+  },
+  "inspection": "Static, selected modules only; no Hermes install, execution or runtime parity test",
+  "inspected_sources": [
+    {
+      "path": "LICENSE",
+      "sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6"
+    },
+    {
+      "path": "agent/auxiliary_client.py",
+      "sha256": "736dc25cab3ee014c88d156449ed16596bf214a0f70966e78582e71f86bb2c68"
+    },
+    {
+      "path": "providers/base.py",
+      "sha256": "53c48f8c6a10e0085dea8ac6622ece055218db0a03a4d575d5eaaf4a1b84ebf0"
+    },
+    {
+      "path": "tools/code_execution_tool.py",
+      "sha256": "09d5b8d5eb94f88292d5f6ea564a6536a1912a36cadf346168dbed6dda3d6d24"
+    },
+    {
+      "path": "tools/delegate_tool.py",
+      "sha256": "0cafc5163762c76da285050e4c8259996c8c3dac1b1a81cd5e262f8cb5156f22"
+    },
+    {
+      "path": "tools/video_generation_tool.py",
+      "sha256": "fe4cadc2cdc62990999be02ea047d268bd1ac0617175f198ff9daaf882eefab8"
+    },
+    {
+      "path": "cron/scheduler.py",
+      "sha256": "4f6d86815d38b683c0f1b64e9b0c444ae5654eabb1c006a4375f9387d9c57ab5"
+    },
+    {
+      "path": "acp_adapter/server.py",
+      "sha256": "e40e68d10b568013e7bea0ccf1f57053e3d50f00e88cd0e03da194e8122b106a"
+    }
+  ],
+  "former_exclusions_to_reassess": [
+    {
+      "id": "H021",
+      "name": "Run user-authored shell scripts on agent lifecycle events, with a consent record",
+      "cluster": "cli"
+    },
+    {
+      "id": "H032",
+      "name": "Run several models as one committee (Mixture of Agents presets)",
+      "cluster": "cli"
+    },
+    {
+      "id": "H036",
+      "name": "Run several isolated instances of the product on one machine",
+      "cluster": "cli"
+    },
+    {
+      "id": "H041",
+      "name": "Onboard through a vendor portal and route tools through a hosted gateway",
+      "cluster": "cli"
+    },
+    {
+      "id": "H050",
+      "name": "Hand a semi-trusted operator a restricted command shell",
+      "cluster": "cli"
+    },
+    {
+      "id": "H052",
+      "name": "Theme the terminal and keep an animated mascot",
+      "cluster": "cli"
+    },
+    {
+      "id": "H053",
+      "name": "Audit and reclaim disposable git worktrees the agent created",
+      "cluster": "cli"
+    },
+    {
+      "id": "H054",
+      "name": "Drive the owner's real, logged-in browser profile",
+      "cluster": "cli"
+    },
+    {
+      "id": "H055",
+      "name": "Install and manage language servers for code intelligence",
+      "cluster": "cli"
+    },
+    {
+      "id": "H056",
+      "name": "Serve the agent to an editor over the Agent Client Protocol",
+      "cluster": "cli"
+    },
+    {
+      "id": "H066",
+      "name": "Session-wide approval bypass (`/yolo`, `/approvals off`)",
+      "cluster": "gateway"
+    },
+    {
+      "id": "H075",
+      "name": "Kanban board and multi-agent board dispatcher (`/kanban`, kanban watchers)",
+      "cluster": "gateway"
+    },
+    {
+      "id": "H077",
+      "name": "Paid-tier and vendor-commerce knobs (`/fast` service_tier, `/codex-runtime`, `/topup`)",
+      "cluster": "gateway"
+    },
+    {
+      "id": "H085",
+      "name": "Multi-profile gateways, multiplexing, profile routes, relay, peer messaging, hosted rooms and cross-instance handoff",
+      "cluster": "gateway"
+    },
+    {
+      "id": "H087",
+      "name": "Scale-to-zero (idle self-suspend of the host)",
+      "cluster": "gateway"
+    },
+    {
+      "id": "H102",
+      "name": "DNS-over-HTTPS fallback-IP transport (reach the platform through a hostile network)",
+      "cluster": "platforms"
+    },
+    {
+      "id": "H110",
+      "name": "Discord voice-channel presence (join a VC, listen, speak, ambient audio bed)",
+      "cluster": "platforms"
+    },
+    {
+      "id": "H123",
+      "name": "Regional and enterprise-chat breadth (DingTalk, Feishu/Lark, WeCom, WeCom Callback, Yuanbao)",
+      "cluster": "platforms"
+    },
+    {
+      "id": "H124",
+      "name": "Long-tail protocol adapters (IRC, LINE, SimpleX, Mattermost, Raft, Buzz)",
+      "cluster": "platforms"
+    },
+    {
+      "id": "H125",
+      "name": "iMessage reach (Photon/BlueBubbles sidecar)",
+      "cluster": "platforms"
+    },
+    {
+      "id": "H126",
+      "name": "Slack-native AI-app surfaces (Agent view, task cards, suggested prompts, thread titles, Block Kit)",
+      "cluster": "platforms"
+    },
+    {
+      "id": "H127",
+      "name": "Transport-level end-to-end encryption (Matrix E2EE, cross-signing)",
+      "cluster": "platforms"
+    },
+    {
+      "id": "H128",
+      "name": "Agent-facing platform administration tools (act on the platform, not just chat in it)",
+      "cluster": "platforms"
+    },
+    {
+      "id": "H134",
+      "name": "Operator-authored reskin (themes, fonts, custom CSS, layout variants)",
+      "cluster": "web"
+    },
+    {
+      "id": "H148",
+      "name": "Install a plugin from an arbitrary Git URL",
+      "cluster": "web"
+    },
+    {
+      "id": "H149",
+      "name": "Swap the memory provider / context engine from the UI",
+      "cluster": "web"
+    },
+    {
+      "id": "H152",
+      "name": "Breadth of supported messaging platforms",
+      "cluster": "web"
+    },
+    {
+      "id": "H155",
+      "name": "Isolated workspaces (profiles): separate config, keys, memory, sessions, skills and cron per persona",
+      "cluster": "web"
+    },
+    {
+      "id": "H163",
+      "name": "Event-triggered shell hooks",
+      "cluster": "web"
+    },
+    {
+      "id": "H166",
+      "name": "Third-party dashboard extensions (plugin manifests, slots, SDK, route override)",
+      "cluster": "web"
+    },
+    {
+      "id": "H180",
+      "name": "Multi-window: peer app instances and per-session pop-outs",
+      "cluster": "desktop"
+    },
+    {
+      "id": "H211",
+      "name": "Third-party UI plugin SDK and install-a-plugin-from-Git",
+      "cluster": "desktop"
+    },
+    {
+      "id": "H212",
+      "name": "User-installable themes (VS Code Marketplace import)",
+      "cluster": "desktop"
+    },
+    {
+      "id": "H213",
+      "name": "Pane/zone tiling with layout presets and an agent-callable apply_layout tool",
+      "cluster": "desktop"
+    },
+    {
+      "id": "H214",
+      "name": "Desktop pet — generation, adoption and a floating overlay window",
+      "cluster": "desktop"
+    },
+    {
+      "id": "H215",
+      "name": "Native app context menu and spellchecker",
+      "cluster": "desktop"
+    },
+    {
+      "id": "H228",
+      "name": "Personality and ambient chrome (busy indicators, kaomoji faces, verb tickers, long-run charms, fortunes, ASCII hero art, pet mascot pane, ambient docks and floats)",
+      "cluster": "tui"
+    },
+    {
+      "id": "H230",
+      "name": "Theme/skin engine and terminal color adaptation",
+      "cluster": "tui"
+    },
+    {
+      "id": "H232",
+      "name": "Modal overlay surfaces (pager, live session switcher, model picker, skills hub, plugins hub, pet picker, billing/subscription overlays, agents overlay, journey overlay) and their stage machinery",
+      "cluster": "tui"
+    },
+    {
+      "id": "H233",
+      "name": "Terminal widget SDK: user-authored, hot-loaded widget apps with a grid layout engine and ambient zones",
+      "cluster": "tui"
+    },
+    {
+      "id": "H235",
+      "name": "TUI client internal architecture (UI/overlay/turn stores, event handler, session lifecycle hook, submission pipeline, config sync, small stores, cwd/branch label, battery polling, clipboard/OSC-52, text utils)",
+      "cluster": "tui"
+    },
+    {
+      "id": "H238",
+      "name": "Pet system (adopt, generate, hatch, rename, export, scale, disable a mascot)",
+      "cluster": "tui"
+    },
+    {
+      "id": "H239",
+      "name": "Hosted wallet: balance, top-up, auto-reload, spending limits, subscription plan change/upgrade/resume, charge settlement polling",
+      "cluster": "tui"
+    },
+    {
+      "id": "H245",
+      "name": "Hosted multi-gateway rooms: create, send, approve, replicate, promote/demote authority with epoch fencing",
+      "cluster": "tui"
+    },
+    {
+      "id": "H246",
+      "name": "Cross-process brokers: relaying agent DMs between gateways, and brokering an externally-registered browser controller",
+      "cluster": "tui"
+    },
+    {
+      "id": "H255",
+      "name": "`${env:VAR}` interpolation inside config values",
+      "cluster": "config"
+    },
+    {
+      "id": "H279",
+      "name": "Breadth of chat platforms an owner can reach the assistant on",
+      "cluster": "env"
+    },
+    {
+      "id": "H289",
+      "name": "Pluggable long-term memory backends",
+      "cluster": "env"
+    },
+    {
+      "id": "H291",
+      "name": "Terminal-UI and Electron desktop shell configuration",
+      "cluster": "env"
+    },
+    {
+      "id": "H292",
+      "name": "Response pacing that imitates a human typing",
+      "cluster": "env"
+    },
+    {
+      "id": "H293",
+      "name": "Test, benchmark and CI harness environment",
+      "cluster": "env"
+    },
+    {
+      "id": "H308",
+      "name": "Drive the app's own window: preview pane, panes, layouts, projects",
+      "cluster": "tools — the agent-callable surface"
+    },
+    {
+      "id": "H324",
+      "name": "Participate natively in third-party chat platforms",
+      "cluster": "tools — the agent-callable surface"
+    },
+    {
+      "id": "H337",
+      "name": "The bundled skill library itself (58 core + 137 optional procedure documents)",
+      "cluster": "skills"
+    },
+    {
+      "id": "H339",
+      "name": "Skill bundles (one command loads a fixed set of skills)",
+      "cluster": "skills"
+    },
+    {
+      "id": "H341",
+      "name": "Inline shell execution inside skill bodies",
+      "cluster": "skills"
+    },
+    {
+      "id": "H345",
+      "name": "Org-shared skill mirror and cross-device skill synchronisation",
+      "cluster": "skills"
+    },
+    {
+      "id": "H348",
+      "name": "LLM consolidation of overlapping skills into umbrella skills",
+      "cluster": "skills"
+    },
+    {
+      "id": "H356",
+      "name": "Third-party plugin ecosystem: community index, pinned installs, packs, capability consent",
+      "cluster": "skills"
+    },
+    {
+      "id": "H357",
+      "name": "Pluggable provider backends shipped as optional plugins (memory, web, image/video generation, browser, dashboard auth, cron)",
+      "cluster": "skills"
+    },
+    {
+      "id": "H358",
+      "name": "First-party optional feature plugins (kanban dispatcher, achievements, disk-cleanup, google_meet, spotify, Teams pipeline, Langfuse observability, security-guidance)",
+      "cluster": "skills"
+    },
+    {
+      "id": "H361",
+      "name": "Install a third-party provider as a plugin (drop-in directory or pip entry point)",
+      "cluster": "providers"
+    },
+    {
+      "id": "H365",
+      "name": "Authenticate with Bedrock / Vertex / Azure Foundry enterprise credentials",
+      "cluster": "providers"
+    },
+    {
+      "id": "H371",
+      "name": "Buy credits, manage a subscription and see a balance from inside the product",
+      "cluster": "providers"
+    },
+    {
+      "id": "H375",
+      "name": "Answer one turn with several models advising an aggregator (Mixture of Agents)",
+      "cluster": "providers"
+    },
+    {
+      "id": "H376",
+      "name": "Let other local apps use the house's provider credentials",
+      "cluster": "providers"
+    },
+    {
+      "id": "H384",
+      "name": "Use another agent CLI as the inference backend",
+      "cluster": "providers"
+    },
+    {
+      "id": "H385",
+      "name": "First-party portal: onboarding, tool gateway, request attribution, keepalive",
+      "cluster": "providers"
+    },
+    {
+      "id": "H418",
+      "name": "Telemetry export: monitoring emitter, gateway health, OTLP traces, install id",
+      "cluster": "agent-core"
+    },
+    {
+      "id": "H419",
+      "name": "Mixture-of-Agents aggregation runtime",
+      "cluster": "agent-core"
+    },
+    {
+      "id": "H420",
+      "name": "Terminal display surface: pet, spinner, tool labels, inline diffs, i18n",
+      "cluster": "agent-core"
+    },
+    {
+      "id": "H421",
+      "name": "Vendor-owned agent runtimes: Codex app-server, NeMo Relay, tools-as-MCP-server, transport registry",
+      "cluster": "agent-core"
+    },
+    {
+      "id": "H431",
+      "name": "Third-party memory-provider plugin ecosystem (nine SaaS/local backends, setup wizard, OAuth, declarative config, provider tools)",
+      "cluster": "memory"
+    },
+    {
+      "id": "H448",
+      "name": "Process heap trimming for long-lived agent processes",
+      "cluster": "memory"
+    },
+    {
+      "id": "H459",
+      "name": "Fire schedules without a live local process (pluggable scheduler provider / hosted cron)",
+      "cluster": "automation"
+    },
+    {
+      "id": "H473",
+      "name": "Named multi-folder projects that give work a stable repo and branch convention",
+      "cluster": "automation"
+    },
+    {
+      "id": "H475",
+      "name": "Federated rooms across machines: replicas, authority takeover, peer grants, target-side execution policy",
+      "cluster": "automation"
+    },
+    {
+      "id": "H489",
+      "name": "Turn every approval prompt off for a session or a process",
+      "cluster": "security"
+    },
+    {
+      "id": "H496",
+      "name": "Keep one identity's credentials out of another identity's turn",
+      "cluster": "security"
+    },
+    {
+      "id": "H498",
+      "name": "Let an administrator pin policy a normal user cannot override",
+      "cluster": "security"
+    },
+    {
+      "id": "H499",
+      "name": "Stop a writable settings surface from being used to escalate",
+      "cluster": "security"
+    },
+    {
+      "id": "H514",
+      "name": "Consent once, in writing, before a user-supplied command becomes a lifecycle hook",
+      "cluster": "security"
+    },
+    {
+      "id": "H541",
+      "name": "Drive the app's own preview pane, tours, tips and layouts",
+      "cluster": "media"
+    },
+    {
+      "id": "H546",
+      "name": "Use a third-party agent CLI (GitHub Copilot) as a model backend over ACP",
+      "cluster": "acp-mcp-dev"
+    },
+    {
+      "id": "H564",
+      "name": "Show the agent the semantic errors its own edit just introduced",
+      "cluster": "acp-mcp-dev"
+    },
+    {
+      "id": "H565",
+      "name": "Let third-party apps ride the owner's authenticated model subscription",
+      "cluster": "acp-mcp-dev"
+    },
+    {
+      "id": "H568",
+      "name": "Rewrite a tool call or a model request before it happens",
+      "cluster": "acp-mcp-dev"
+    },
+    {
+      "id": "H572",
+      "name": "Extend the desktop app and the web dashboard with custom UI",
+      "cluster": "acp-mcp-dev"
+    },
+    {
+      "id": "H574",
+      "name": "Shell completion and native search-index extensions",
+      "cluster": "acp-mcp-dev"
+    },
+    {
+      "id": "H582",
+      "name": "Search X / Twitter from the agent (x_search)",
+      "cluster": "docs-features"
+    },
+    {
+      "id": "H584",
+      "name": "Let other apps use your subscription as an OpenAI endpoint (subscription proxy)",
+      "cluster": "docs-features"
+    },
+    {
+      "id": "H587",
+      "name": "Get working search / images / TTS / browser without signing up for five vendors (Nous Tool Gateway)",
+      "cluster": "docs-features"
+    },
+    {
+      "id": "H590",
+      "name": "Have an animated mascot react to what the agent is doing (pets)",
+      "cluster": "docs-features"
+    },
+    {
+      "id": "H591",
+      "name": "Restyle the CLI chrome (skins & themes)",
+      "cluster": "docs-features"
+    },
+    {
+      "id": "H599",
+      "name": "Answer a hard question with several models at once (Mixture of Agents)",
+      "cluster": "docs-features"
+    },
+    {
+      "id": "H603",
+      "name": "Use the agent from inside an IDE (ACP host integration)",
+      "cluster": "docs-features"
+    },
+    {
+      "id": "H609",
+      "name": "Hand turns to an external coding-agent runtime (Codex app-server)",
+      "cluster": "docs-features"
+    },
+    {
+      "id": "H617",
+      "name": "Reskin and extend the dashboard without forking it",
+      "cluster": "docs-features"
+    },
+    {
+      "id": "H627",
+      "name": "Run the agent host on an Android phone",
+      "cluster": "rest-api"
+    },
+    {
+      "id": "H628",
+      "name": "Deploy declaratively and reproducibly to a fleet (Nix / NixOS / Home Manager)",
+      "cluster": "rest-api"
+    },
+    {
+      "id": "H638",
+      "name": "Extend the desktop shell itself (panes, pages, commands, themes) and point it at several backends",
+      "cluster": "rest-api"
+    },
+    {
+      "id": "H654",
+      "name": "Talk to the agent in a terminal",
+      "cluster": "rest-api"
+    },
+    {
+      "id": "H657",
+      "name": "A surviving host continues a room whose owner-host died, and fences the old host if it comes back",
+      "cluster": "delta"
+    },
+    {
+      "id": "H662",
+      "name": "A second local browser engine, and browsing with a snapshot of the owner's real signed-in profile",
+      "cluster": "delta"
+    },
+    {
+      "id": "H675",
+      "name": "A restricted background runtime whose whitelist can admit but never advertise",
+      "cluster": "delta"
+    },
+    {
+      "id": "H680",
+      "name": "Hosted-provider breadth: Ramp Router, Nebius Token Factory, region-split Alibaba, Tencent TokenPlan, refreshed model pickers",
+      "cluster": "delta"
+    },
+    {
+      "id": "H688",
+      "name": "Config keys whose NAME contains a dot can be addressed",
+      "cluster": "delta"
+    }
+  ],
+  "stale_evidence_to_reassess": [
+    {
+      "id": "H008",
+      "name": "Diagnose a broken install and repair the fixable parts"
+    },
+    {
+      "id": "H060",
+      "name": "Talking to a busy agent: queue / steer / interrupt, `/stop`, and the ack that says what happened"
+    },
+    {
+      "id": "H061",
+      "name": "Turn serialization and per-session runtime state (lease, run generations, slot claim, concurrency cap, stale/reaped eviction, warm agent cache)"
+    },
+    {
+      "id": "H063",
+      "name": "Session reset policy and expiry/stall watchers"
+    },
+    {
+      "id": "H068",
+      "name": "Outbound rendering: streaming edits, tool-progress bubbles, typing/status lines, verbosity tiers"
+    },
+    {
+      "id": "H104",
+      "name": "Live/streaming replies in chat"
+    },
+    {
+      "id": "H114",
+      "name": "Per-channel personality, skills and verbosity"
+    },
+    {
+      "id": "H139",
+      "name": "Attach an image or paste a screenshot into the conversation"
+    },
+    {
+      "id": "H146",
+      "name": "Create and manage your own scheduled jobs"
+    },
+    {
+      "id": "H153",
+      "name": "Webhook subscriptions (create, enable, HMAC secret, delete)"
+    },
+    {
+      "id": "H182",
+      "name": "Keep the machine awake through a turn, and be aware of power/battery state"
+    },
+    {
+      "id": "H227",
+      "name": "\"What can it do right now\" inspector: live status line plus a session panel of tools, skills, resolved system prompt and MCP servers"
+    },
+    {
+      "id": "H242",
+      "name": "Workspace/project model, repo discovery, strict setup verification and diagnostics bundle"
+    },
+    {
+      "id": "H262",
+      "name": "Config-driven data lifecycle — prune, archive, vacuum on an interval-gated sweep"
+    },
+    {
+      "id": "H273",
+      "name": "Tell the owner where an effective value actually came from"
+    },
+    {
+      "id": "H275",
+      "name": "Boot into a known-good state when customizations break the install"
+    },
+    {
+      "id": "H277",
+      "name": "Separate models for separate jobs (vision, video, approval judging)"
+    },
+    {
+      "id": "H298",
+      "name": "Keep a huge tool result out of context without losing it"
+    },
+    {
+      "id": "H313",
+      "name": "Speak"
+    },
+    {
+      "id": "H315",
+      "name": "Keep a visible checklist of what the agent is doing"
+    },
+    {
+      "id": "H318",
+      "name": "List, read and author the agent's own skills"
+    },
+    {
+      "id": "H326",
+      "name": "Model-facing skill discovery (prompt index + progressive disclosure)"
+    },
+    {
+      "id": "H328",
+      "name": "Conditional skill visibility (OS platform, runtime environment, channel, tool availability)"
+    },
+    {
+      "id": "H329",
+      "name": "Turning individual skills off without uninstalling them"
+    },
+    {
+      "id": "H363",
+      "name": "Pay the cached-input rate on repeated Claude context"
+    },
+    {
+      "id": "H364",
+      "name": "Ask for more or less thinking, and never 400 on a wire that rejects the level"
+    },
+    {
+      "id": "H396",
+      "name": "Turn exit reasons, a completion explainer and per-turn accounting"
+    },
+    {
+      "id": "H398",
+      "name": "Untrusted tool results wrapped as data, not instructions"
+    },
+    {
+      "id": "H413",
+      "name": "Session auto-titling"
+    },
+    {
+      "id": "H416",
+      "name": "Unified deadline and budget layer"
+    },
+    {
+      "id": "H425",
+      "name": "Destructive forget: retract a fact and everything derived from it"
+    },
+    {
+      "id": "H427",
+      "name": "Fail-closed pre-compression checkpoint — never discard a transcript unless the extraction durably landed"
+    },
+    {
+      "id": "H428",
+      "name": "Pre-turn recall with a triviality gate, a hard timeout, and next-turn warm-up"
+    },
+    {
+      "id": "H433",
+      "name": "Retrieval query rewriting by a cheap auxiliary model"
+    },
+    {
+      "id": "H441",
+      "name": "Getting back into a conversation: continue, resume, and a free recap"
+    },
+    {
+      "id": "H449",
+      "name": "Create, edit, pause, resume, trigger and delete a recurring scheduled job"
+    },
+    {
+      "id": "H461",
+      "name": "A standing instruction that re-enters this session on a cadence"
+    },
+    {
+      "id": "H465",
+      "name": "Run the self-improvement review on demand"
+    },
+    {
+      "id": "H487",
+      "name": "Ask a human on whatever surface they are on, carry their reason back, and fail closed on silence"
+    },
+    {
+      "id": "H490",
+      "name": "Start with zero customization to prove a bug is not your own setup"
+    },
+    {
+      "id": "H501",
+      "name": "Warn about a dangerous deployment posture before it becomes an incident"
+    },
+    {
+      "id": "H504",
+      "name": "Fail loudly when TLS trust is misconfigured instead of silently not verifying"
+    },
+    {
+      "id": "H513",
+      "name": "Restrict a capability to the surface it belongs on, and let the owner acknowledge a data-handling tradeoff without silencing the warning"
+    },
+    {
+      "id": "H557",
+      "name": "Make a third-party tool schema safe and unambiguous for every model provider"
+    },
+    {
+      "id": "H579",
+      "name": "Pull a file or slice of a file into a message inline (@ context references)"
+    },
+    {
+      "id": "H586",
+      "name": "Paste or attach a screenshot into the conversation (vision & image paste)"
+    },
+    {
+      "id": "H594",
+      "name": "Have the agent pick up a project's conventions automatically (context files)"
+    },
+    {
+      "id": "H613",
+      "name": "Choose how it sounds and how it hears (TTS / STT provider matrix)"
+    },
+    {
+      "id": "H659",
+      "name": "A retried external request returns the original run instead of starting a second one"
+    },
+    {
+      "id": "H667",
+      "name": "Never assume /tmp is real storage; prune only the cache you own"
+    },
+    {
+      "id": "H670",
+      "name": "The default identity prompt is a behavior contract, and it lives in one file"
+    },
+    {
+      "id": "H671",
+      "name": "A long-lived conversation knows what day it is now"
+    },
+    {
+      "id": "H672",
+      "name": "A never-ending session picks up config, skill and tool changes at the compaction boundary"
+    },
+    {
+      "id": "H673",
+      "name": "Context pressure is measured from the provider's own number, not re-estimated"
+    },
+    {
+      "id": "H674",
+      "name": "Compression cannot stall the user: bounded holds, inactivity deadlines and derived thresholds"
+    },
+    {
+      "id": "H677",
+      "name": "Boot warm-up before accepting work, and every shutdown wait has a short explicit budget"
+    },
+    {
+      "id": "H679",
+      "name": "Per-model reasoning-effort vocabularies, clamped by one canonical helper"
+    },
+    {
+      "id": "H681",
+      "name": "Per-child API settings for delegated subagents, and a batch report that names the real reason they all failed"
+    },
+    {
+      "id": "H683",
+      "name": "Chat replies stream, can be edited or deleted, and acknowledge receipt at ingest"
+    },
+    {
+      "id": "H686",
+      "name": "The operator can see how the model is actually performing right now, and choose which fields to see"
+    },
+    {
+      "id": "H689",
+      "name": "One stable identity for this install, and per-profile isolation of its runtime artifacts"
+    },
+    {
+      "id": "H691",
+      "name": "Reverse-proxy trust is a validated, bounded allowlist rather than an on/off switch"
+    }
+  ]
+}

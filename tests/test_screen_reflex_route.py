@@ -17,6 +17,7 @@ import json
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 repo_root = Path(__file__).resolve().parent.parent
@@ -24,8 +25,12 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.llm import vlm as vlm_mod
+from agents.core.llm.egress import llm_async_client
 from agents.core.llm.vlm import VLMConfig, VLMNotConfigured
 from agents.core.routers import multimodal
+
+_NATIVE_VLM = vlm_mod.VLMBackend
+_NATIVE_GENERATE = _NATIVE_VLM.generate_vision
 
 # A real 1×1 PNG — small enough that _downscale is a pass-through.
 PNG = base64.b64encode(
@@ -46,12 +51,19 @@ def _local(**kw):
 
 
 def _stub_generation(monkeypatch, text, *, calls=None):
-    async def _generate_vision(self, model, prompt, images=None, system="", **kw):
+    def factory(**kwargs):
+        actual = llm_async_client('vlm', base_url=kwargs['base_url'], auth=httpx.Auth(), trust_env=False,
+            transport=httpx.MockTransport(lambda request: httpx.Response(200,
+                json={'choices': [{'message': {'content': text}}]})))
+        return _NATIVE_VLM(client=actual, **kwargs)
+
+    async def observed(self, model, prompt, images=None, system="", **kw):
         if calls is not None:
             calls.append({"model": model, "prompt": prompt, "images": images, "system": system})
-        return text
+        return await _NATIVE_GENERATE(self, model, prompt, images, system, **kw)
 
-    monkeypatch.setattr(vlm_mod.VLMBackend, "generate_vision", _generate_vision)
+    monkeypatch.setattr(vlm_mod, "VLMBackend", factory)
+    monkeypatch.setattr(_NATIVE_VLM, "generate_vision", observed)
 
 
 def _body(**kw):

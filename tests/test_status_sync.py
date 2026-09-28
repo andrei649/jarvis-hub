@@ -598,3 +598,21 @@ def test_generated_snippets_still_report_a_real_delivered_count():
     assert "7 delivered (runtime proof pending)" in snippets["go-live-header"]
     assert "7 delivered (runtime proof pending)" in snippets["jarvis-stats"]   # H23 roll-up
     assert "Runtime proof pending: H23" in snippets["jarvis-stats"]
+
+
+def test_frontend_count_reads_the_report_file_vitest_5_writes(tmp_path, monkeypatch):
+    """Vitest 5's JSON reporter writes the report to a file and prints only where it went,
+    so a count read from stdout alone found nothing and every full refresh failed."""
+    seen = {}
+
+    def fake_run(cmd, cwd, **kwargs):
+        seen["cmd"] = cmd
+        out = next(arg.split("=", 1)[1] for arg in cmd if arg.startswith("--outputFile="))
+        Path(out).write_text('{"numTotalTestSuites": 3, "numTotalTests": 1394, "success": true}',
+                             encoding="utf-8")
+        return type("Proc", (), {"returncode": 0, "stdout": f"JSON report written to {out}\n",
+                                 "stderr": ""})()
+
+    monkeypatch.setattr(status_sync.subprocess, "run", fake_run)
+    assert status_sync.count_frontend_tests(tmp_path) == 1394
+    assert "--reporter=json" in seen["cmd"]

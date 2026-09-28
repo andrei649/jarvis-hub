@@ -111,7 +111,9 @@ async def test_actual_orchestrator_forwards_raw_window_through_guard(tmp_path):
     from agents.core.security.guardrails import GuardrailsEngine
     from tests.test_agent_runtime_v2 import _streamed_orchestrator_for
     backend = _Backend(1)
-    backend.context_window = lambda _: 4096
+    # A real agent's whole prompt (persona plus the shared contract, ~2.1K tokens) rides
+    # along, so the window leaves it room; a 30,000-character result still cannot fit.
+    backend.context_window = lambda _: 8192
     agent = Agent('jarvis', {'name': 'Jarvis'})
     agent.tool_runtime = AgentToolRuntime(_server(30000), enabled=lambda: True,
                                         result_store=ToolResultStore(tmp_path))
@@ -120,7 +122,7 @@ async def test_actual_orchestrator_forwards_raw_window_through_guard(tmp_path):
     assert await orch.handle_input_stream('fetch', channel='web', on_token=lambda _: None,
                                           session_id='window-test') == 'done'
     assert orch.security.stats()['counters']['scanned'] > 0
-    assert agent_runtime.estimate_messages(backend.calls[-1]) < 4096
+    assert agent_runtime.estimate_messages(backend.calls[-1]) < 8192
     assert list(tmp_path.glob('*.json'))
 
 

@@ -1,0 +1,28 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+...................................F.................................... [ 43%]
+........................................................................ [ 86%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+___________ test_deciding_before_the_judge_answers_drops_the_verdict ___________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-58/test_deciding_before_the_judge0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d8eaff0>
+
+    async def test_deciding_before_the_judge_answers_drops_the_verdict(tmp_path, monkeypatch):
+        gate = asyncio.Event()
+        audit = FakeIntentLog()
+        q = queue(tmp_path, local_judge(monkeypatch, FakeBackend(gate=gate)), audit)
+        item = q.request(ACTION)
+        await asyncio.sleep(0)
+        q.decide(item["id"], True, by="owner")
+        gate.set()
+        await drain(q)
+>       assert "judge" not in q.get(item["id"])
+E       AssertionError: assert 'judge' not in {'id': 'e5c3d98240d8', 'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', ...}
+E        +  where {'id': 'e5c3d98240d8', 'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', ...} = get('e5c3d98240d8')
+E        +    where get = <agents.core.autonomy.action_approvals.ActionApprovalQueue object at 0x10d8e5e50>.get
+
+tests/test_h277_approval_judge.py:429: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_deciding_before_the_judge_answers_drops_the_verdict
+1 failed, 165 passed in 2.67s

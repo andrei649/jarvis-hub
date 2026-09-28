@@ -1354,3 +1354,80 @@ organisation Copilot setting on GitHub, not a file in the tree — and if it wer
 
 Until one of those lands, PRs that are otherwise green wait on a manual merge by you;
 the seven required checks are unaffected and keep telling the truth.
+
+## P30 — two Hermes rows the review sent back to `partial`, each waiting on you (#1207)
+
+The adversarial review of the PR #1207 rows found two claims of equivalence that the code
+does not meet. The code findings are fixed; what is left is yours.
+
+### P30.1 — H218: route "delete a chat for good" through the approval queue
+
+The row's governance asks for the permanent delete to go through data_purge's backup-first
+path **and the irreversible approval bucket** — an approval card the owner accepts before
+anything is deleted. What exists is `DELETE /sessions/{id}?confirm=DELETE` (admin only),
+holding the chat's lease, with an encrypted, verified backup outside the data root first.
+There is no Action Kernel mediation and no approval card. An approval-queue action needs a
+kernel action kind (e.g. `session.purge`) in `agents/core/kernel/registry.py`, a protected
+path, so it was not added here. Either add the kind (then the route can enqueue an
+irreversible-tier action and execute it on approval), or decide that admin + typed
+confirmation + backup is enough and say so on the row.
+
+The same gap holds four more rows (build-queue critic note 28): a settings reset (H259 made
+it reversible instead), a retention TTL write (H262), `memory.forget` (H425) and
+`system.uninstall` (H174). One shared irreversible-action kind family in the registry, with
+an executor registry on the worker side, would let all of them enqueue instead of writing at
+once. That registry entry is the only part that has to be yours.
+
+### P30.2 — H427: what should a pre-compression checkpoint extract into memory?
+
+Compaction now fails closed when a required checkpoint does not land, but the only shipped
+checkpoint is a raw per-session copy of the evicted turns (`TranscriptArchive`). The row asks
+for a provider that extracts those turns into memory (episodes, consolidation or
+LivingMemory), or an interlock that checks per-turn extraction landed — the way Hermes lets
+the model save what matters before compressing. Episodes E3.0 never copies source payloads
+automatically, and LivingMemory turn records are content-free digests, so writing turn
+content into either is a design change. Options: (a) a model-driven "save what matters"
+pass over the evicted turns through the H314 memory tool (audited, undoable, refused on a
+tainted turn); (b) an interlock over the LivingMemory digests only; (c) keep the raw archive
+and add a read path from recall / `session_search`.
+
+## P31 — H464: three decisions before "park a run" can count as equivalent (H464b, 2026-09-28)
+
+H464b made one park path real in the shipped product: with `JARVIS_COMPANY_MODE` set at
+boot, the company runtime builds from the orchestrator's own queue and intake, walks the
+checklist you approved (read back from its own approval task), and parks a finished plan on
+its own approved tasks that are still running — no step and no verdict (only wall-clock time,
+stopping a grading margin short of the run's end since H464c), at most once per task, and
+your "stop waiting" sticks. The row stays **partial**: what is left needs you.
+
+### P31.1 — H464: must a pid wait be reachable for "equivalent"?
+
+Hermes parks a goal on a process (`/goal wait <pid>`). Nerva has the pid kind built and
+tested, but nothing in the hub starts run-owned background work and registers its pid
+(`register_process` has no caller outside tests), and on macOS/BSD every pid wait is refused
+`pid_unprovable` (no start token). Options: (a) accept the own-task / webhook trigger as the
+adaptation of Hermes's pid/session barrier and say so on the row; (b) require a pid wait —
+then the first producer is `terminal_run` with `background: true` on the local-host transport
+(needs H302's background mode, a reaper for stopped runs, a lifetime cap with `killpg`, and a
+`KillMode` change in `deploy/systemd/jarvis-hub.service`, since today a restart kills the
+child and the barrier clears as `exited`, which looks like success), plus a macOS start
+token verified on macOS hardware or a macOS CI runner.
+
+### P31.2 — H464: may a local model judge (and optionally plan) a company run unattended?
+
+The judge's `wait` verdict needs a model rubric, and a planner wait needs a model planner;
+the shipped runtime has neither (and no graders at all, so after the hub's park a run idles
+until its budget ends). Running a model unattended falls under the H513 data-handling policy.
+Decide whether a local model may act as the company judge's rubric, and optionally as the
+planner, without you watching — and if so, which model and provider (strict-local, under
+`auxiliary_request_scope`, with `security.data_training_ack` where it applies), behind opt-in
+settings forced off in safe mode. A model planner also needs the rest of the intake
+arguments clamped first: since H464c the task's kind is scope-checked as well as the action's,
+but the task's agent, title and payload still reach the intake unchanged.
+
+### P31.3 — H464: should you be able to park a run by hand?
+
+Hermes lets the user set a wait (`/goal wait <pid> [reason]`). The accepted row text does not
+require it. If you want it, it would be limited to a clock or one of the run's own tasks —
+never an owner-typed pid, which would contradict "only processes the hub registered for this
+run" — and it needs a new route (so the route snapshots change).

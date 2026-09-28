@@ -55,16 +55,35 @@ class RootPathRoutingMiddleware:
     Install first (innermost): outer policy middleware still sees the incoming
     logical path. Copy the scope so those readers cannot observe our adaptation.
     The FastAPI instance supplies root_path; no header can set it.
+
+    The one thing handed back is the router's ``route``: the outer golden-signals
+    middleware labels /metrics from ``scope["route"]`` on the scope it passed
+    down, so without it every request of a mounted deployment counted as
+    ``<unmatched>``. It is copied at each outgoing message — ``call_next`` returns
+    at ``http.response.start`` while a streamed body may still run — and once
+    more when the app returns or raises.
     """
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope['type'] in ('http', 'websocket'):
-            prefix = scope['app'].root_path
-            path = scope['path']
-            if prefix:
-                scope = {**scope, 'path': prefix + path}
-                if 'raw_path' in scope:
-                    scope['raw_path'] = prefix.encode('ascii') + scope['raw_path']
-        await self.app(scope, receive, send)
+        if scope['type'] not in ('http', 'websocket') or not scope['app'].root_path:
+            await self.app(scope, receive, send)
+            return
+        prefix = scope['app'].root_path
+        inner = {**scope, 'path': prefix + scope['path']}
+        if 'raw_path' in inner:
+            inner['raw_path'] = prefix.encode('ascii') + inner['raw_path']
+
+        def hand_back_route():
+            if 'route' in inner:
+                scope['route'] = inner['route']
+
+        async def labelled_send(message):
+            hand_back_route()
+            await send(message)
+
+        try:
+            await self.app(inner, receive, labelled_send)
+        finally:
+            hand_back_route()

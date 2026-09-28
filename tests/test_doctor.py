@@ -598,7 +598,9 @@ def test_report_serialises(healthy_root):
     payload = report.to_dict()
     json.dumps(payload)
     assert set(payload) == {"ok", "root", "checks"}
-    assert all(set(c) == {"name", "status", "reason", "detail"} for c in payload["checks"])
+    assert all(set(c) - {"data"} == {"name", "status", "reason", "detail"} for c in payload["checks"])
+    # H273: only the configuration table carries data, and it is names and layers
+    assert [c["name"] for c in payload["checks"] if "data" in c] == ["config_sources"]
     buf = io.StringIO()
     print(doctor.format_report(report), file=buf)
     assert "Nerva doctor" in buf.getvalue()

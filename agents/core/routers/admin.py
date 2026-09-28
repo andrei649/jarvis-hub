@@ -40,7 +40,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool
 
 from agents.core.app_state import get_orch
 from agents.core.log_safe import log_safe
@@ -51,7 +51,7 @@ from agents.core.web_helpers import mask_secret, nocache_json, safe_reflect
 logger = logging.getLogger("jarvis.web")
 
 # Settings-DB functions are leaf imports (no edge back into web.py).
-from agents.core.settings_db import get_all, get_category, init_db, put_category, validate_category
+from agents.core.settings_db import get_all, get_category, put_category, route_only_problems, validate_category
 from agents.core.security.types import SecurityEvent, SecurityEventType
 from agents.core.security.token_store import SCOPES, get_token_store
 
@@ -75,6 +75,28 @@ async def admin_get_all():
     return get_all()
 
 
+@router.get("/api/admin/settings/export", dependencies=[Depends(admin_guard)])
+async def admin_export_settings():
+    """H157 — the declared settings as JSON for another box. Secrets, values that look
+    like credentials and settings that hold credentials by design are left out and
+    named in ``excluded``. Registered before ``/{category}`` so it is never read as one."""
+    from agents.core import settings_db
+
+    doc = await asyncio.to_thread(settings_db.export_settings)
+    resp = nocache_json(doc)
+    resp.headers["Content-Disposition"] = 'attachment; filename="nerva-settings.json"'
+    return resp
+
+
+@router.get("/api/admin/settings/resets", dependencies=[Depends(admin_guard)])
+async def admin_settings_resets():
+    """H259 — the recorded resets, newest first: when, which scope, which settings (never
+    their values) and whether each was undone. Registered before ``/{category}``."""
+    from agents.core import settings_db
+
+    return nocache_json({"resets": await asyncio.to_thread(settings_db.list_resets)})
+
+
 @router.get("/api/admin/settings/{category}", dependencies=[Depends(admin_guard)])
 async def admin_get_category(category: str):
     items = get_category(category)
@@ -85,11 +107,38 @@ async def admin_get_category(category: str):
 
 class AdminPutBody(BaseModel):
     values: dict
+    # H378 — a model choice a selection guard asks about is stored only with the owner's
+    # explicit clearance (a literal true), never kept for the next choice.
+    confirm_expensive: StrictBool = False
+    acknowledge_training: StrictBool = False
 
 
-async def _audit_settings_change(category: str, keys: list) -> None:
-    """AUD-8: record a settings write in the audit log — the changed KEY NAMES only,
-    never their values, so the row can't leak a secret that was just set."""
+#: Setting kinds whose value is a choice, never a secret: a switch, a pick from a list,
+#: a number. The audit row says what such a key became (H153 review: "when was the
+#: webhook receiver off?" had no answer in a row that named only the key). A model id is
+#: typed, not picked (``model-select`` takes any string), so it is free text: a pasted
+#: key would land in the row.
+_VALUE_AUDITED_KINDS = frozenset({"toggle", "select", "number", "slider"})
+
+
+def _audited_values(category: str, values: dict) -> str:
+    """``key=value`` for the keys whose declared kind is a choice; never a secret key,
+    never free text (a URL, a note or a typed model id can carry a credential)."""
+    from agents.core import settings_db
+
+    kinds = {(row["category"], row["key"]): row.get("kind") for row in settings_db.DEFAULTS}
+    parts = []
+    for key in sorted(values):
+        if key in settings_db.SECRET_KEYS or kinds.get((category, key)) not in _VALUE_AUDITED_KINDS:
+            continue
+        try:
+            parts.append(f"{key}={json.dumps(values[key], ensure_ascii=False)[:64]}")
+        except (TypeError, ValueError):
+            continue
+    return " ".join(parts)
+
+
+async def _audit_row(preview: str, action: str, category: str) -> None:
     orch = get_orch()
     audit = getattr(orch, "audit", None) if orch else None
     if audit is None:
@@ -98,8 +147,8 @@ async def _audit_settings_change(category: str, keys: list) -> None:
         await asyncio.to_thread(audit.log, SecurityEvent(
             event_type=SecurityEventType.SETTINGS_CHANGE,
             timestamp=time.time(),
-            content_preview=f"settings.{category} updated: {sorted(keys)}",
-            action_taken="settings_update",
+            content_preview=preview,
+            action_taken=action,
         ))
     except Exception:
         # log_safe (not safe_reflect) is the recognized py/log-injection sanitizer:
@@ -107,27 +156,372 @@ async def _audit_settings_change(category: str, keys: list) -> None:
         logger.warning("failed to audit settings change for %s", log_safe(category))
 
 
+async def _audit_settings_change(category: str, keys: list, values: dict | None = None) -> None:
+    """AUD-8: record a settings write in the audit log — the changed KEY NAMES, and the
+    new value only for a key whose kind is a choice (a switch, a list pick, a number),
+    never a secret or free text, so the row can't leak a secret that was just set."""
+    preview = f"settings.{category} updated: {sorted(keys)}"
+    shown = _audited_values(category, {key: (values or {}).get(key) for key in keys if key in (values or {})})
+    if shown:
+        preview = f"{preview} · {shown}"
+    await _audit_row(preview, "settings_update", category)
+
+
+async def _guard_selection(changes: dict, *, confirm_expensive: bool,
+                           acknowledge_training: bool, surface: str):
+    """H378 — run the model-selection guards over the choices a settings write makes
+    (*changes*: ``{category: values}``). Returns the cleared findings (their confirmation
+    and consent rows already written), or the response to send instead: 409 naming what
+    is not cleared, 503 when a required consent row could not be written."""
+    from agents.core import settings_db
+    from agents.core.llm import selection_guards as sg
+
+    choices = sg.choices_from_changes(changes, settings_db.get_value)
+    if not choices:
+        return []
+    try:
+        findings = sg.enforce(choices, confirm_expensive=confirm_expensive, acknowledge_training=acknowledge_training)
+    except sg.SelectionRefused as refused:
+        return nocache_json(refused.payload(), status_code=409)
+    orch = get_orch()
+    try:
+        await asyncio.to_thread(sg.record, findings, surface, getattr(orch, "audit", None) if orch else None)
+    except sg.ConsentNotRecorded as exc:
+        return nocache_json({"error": "consent_not_recorded", "detail": str(exc)}, status_code=503)
+    return findings
+
+
 @router.put("/api/admin/settings/{category}", dependencies=[Depends(admin_guard)])
 async def admin_put_category(category: str, body: AdminPutBody):
     # AUD-8: reject a malformed write (wrong type / off the select allow-list) with
     # 422 before it can corrupt a setting the rest of the system reads back + trusts.
-    errors = validate_category(category, body.values)
+    # review-H329 F1: a row only its own route writes (the skill switches) is refused here.
+    errors = validate_category(category, body.values) + route_only_problems(category, body.values)
     if errors:
         return JSONResponse({"error": "invalid settings", "details": errors}, status_code=422)
-    updated, skipped = put_category(category, body.values)
-    changed = [k for k in body.values if k not in skipped]
+    guarded = await _guard_selection({category: body.values}, confirm_expensive=body.confirm_expensive,
+                                     acknowledge_training=body.acknowledge_training, surface="settings")
+    if isinstance(guarded, JSONResponse):
+        return guarded
+    # H262 — a write that makes retention delete deeper than approved goes to the approval
+    # queue (202); the rest of it is written. A queue that cannot take it: 503, nothing written.
+    # H262 review round 2 — the write is judged against the stored values and the approval
+    # only, never a waiting card's values; a card whose horizons a later write moved is
+    # refused on accept (``retention.apply_approved``). The HUD saves ``retention`` before
+    # ``memory`` so its own two-category save leaves the card acceptable. An identical card
+    # already waiting is answered with its id, not queued twice.
+    from agents.core import retention
+
+    values, pending = body.values, None
+    gated, stored, approved = await _retention_gate({category: body.values}, confirm=True)
+    if gated:
+        pending = await _request_retention_approval({category: body.values}, stored, approved)
+        if "refused" in pending:
+            return nocache_json({"error": "retention_needs_approval", "reason": pending["refused"],
+                                 "gated": gated}, status_code=503)
+        if not pending.get("existing"):
+            await _audit_row(f"settings.{category} retention change sent to approval (task {pending['pending']}): "
+                             f"{gated}", "settings_retention_requested", category)
+        values = {k: v for k, v in body.values.items() if f"{category}.{k}" not in gated}
+    updated, skipped = put_category(category, values) if values else (0, [])
+    changed = [k for k in values if k not in skipped]
     if changed:
-        await _audit_settings_change(category, changed)
+        await _audit_settings_change(category, changed, values)
+        if retention.retention_part({category: {k: values[k] for k in changed}}):
+            await _lower_approval()
     resp = {"updated": updated, "category": category}
     if skipped:
         resp["skipped"] = skipped
+    if guarded:
+        resp["guards"] = [f.as_dict() for f in guarded]
+    if pending is not None:
+        return JSONResponse({**resp, "pending": pending["pending"], "gated": gated}, status_code=202)
     return resp
 
 
+async def _retention_gate(changes: dict, *, confirm: bool = False) -> tuple[list, dict, dict | None]:
+    """H262 — ``(the retention keys of *changes* a human must approve, the stored retention
+    settings, the approved horizons)``. Nothing approved, or no store to say: every
+    deletion counts as deeper (fail closed)."""
+    from agents.core import retention
+
+    orch = get_orch()
+    stored = await asyncio.to_thread(retention.stored_values)
+    approved = await asyncio.to_thread(retention.approved_horizons, getattr(orch, "checkpoints", None) if orch else None)
+    return retention.needs_approval(changes, stored, approved, confirm=confirm), stored, approved
+
+
+async def _lower_approval() -> None:
+    """H262 review — a direct write of retention settings lowers the approved snapshot to
+    what they now hold (``retention.lower_approval``), never raises it."""
+    from agents.core import retention
+
+    orch = get_orch()
+    try:
+        await asyncio.to_thread(retention.lower_approval, getattr(orch, "checkpoints", None) if orch else None)
+    except Exception:  # noqa: BLE001 — the write happened; the sweep's clamp still holds the old approval
+        logger.warning("could not lower the approved retention snapshot", exc_info=True)
+
+
+async def _request_retention_approval(changes: dict, stored: dict, approved: dict | None) -> dict:
+    """Queue the retention part of *changes* at the irreversible tier, with the card's
+    preview: ``{"pending": id}`` or ``{"refused": reason}``. A card with the same values
+    already waiting is answered instead: ``{"pending": its id, "existing": True}``."""
+    from agents.core import retention
+    from agents.core.autonomy import irreversible
+
+    orch = get_orch()
+    request = await asyncio.to_thread(retention.approval_request, changes, stored, approved,
+                                      getattr(orch, "checkpoints", None) if orch else None,
+                                      getattr(orch, "audit", None) if orch else None)
+    for task in await asyncio.to_thread(irreversible.pending, orch, retention.APPROVAL_KIND):
+        # The same values asked from the same stored state: that card is still current. One
+        # asked before a later change would be refused on accept, so a fresh card is queued.
+        waiting = getattr(task, "payload", None) or {}
+        if (waiting.get("values") == request["payload"]["values"]
+                and waiting.get("before") == request["payload"]["before"]):
+            return {"pending": int(task.id), "existing": True}
+    return irreversible.enqueue(orch, retention.APPROVAL_KIND, **request)
+
+
+def _retention_refusal(settings: list) -> JSONResponse:
+    return nocache_json({"error": "retention_needs_approval", "settings": settings,
+                         "reason": f"needs approval in Settings → Retention: {', '.join(settings)}",
+                         "detail": "these settings would make retention delete deeper than approved: "
+                                   "change them in Settings → Retention, which asks for approval"},
+                        status_code=409)
+
+
+_IMPORT_MAX_BYTES = 1_000_000
+
+
+def _refuse_cross_site_write(request: Request) -> JSONResponse | None:
+    """H157 review M1 — a settings write must be a JSON request from this origin. On a
+    default install the admin guard trusts loopback, so a page the owner visits could
+    otherwise post a plain-text body that needs no browser pre-check. JSON forces that
+    pre-check (and the CORS allow-list decides it); a browser that says the request is
+    cross-site is refused outright."""
+    kind = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if kind != "application/json":
+        return nocache_json({"error": "expected application/json"}, status_code=415)
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        return nocache_json({"error": "a settings write must come from this origin"}, status_code=403)
+    return None
+
+
+async def _bounded_body(request: Request, limit: int) -> bytes | None:
+    declared = request.headers.get("content-length", "")
+    if declared.isascii() and declared.isdigit() and int(declared) > limit:
+        return None
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@router.post("/api/admin/settings/import", dependencies=[Depends(admin_guard)])
+async def admin_import_settings(request: Request):
+    """H157 — import a settings document (an export, or any ``{"settings": {category:
+    {key: value}}}``). Every key must be declared and passes the same validation a single
+    write does; one refusal and nothing is written (422 with every reason). The write is
+    one transaction with one audit row. ``"dry_run": true`` answers what would change.
+    H378 — a model choice in it passes the selection guards like a single write:
+    ``confirm_expensive`` / ``acknowledge_training`` (literal true) clear them, and a dry run
+    lists what they would ask."""
+    from agents.core import settings_db
+    from agents.core.llm import selection_guards as sg
+
+    refused = _refuse_cross_site_write(request)
+    if refused is not None:
+        return refused
+    raw = await _bounded_body(request, _IMPORT_MAX_BYTES)
+    if raw is None:
+        return nocache_json({"error": "invalid settings", "details": ["the document is over 1 MB"]},
+                            status_code=413)
+    try:
+        doc = json.loads(raw or b"{}")
+    except (ValueError, RecursionError):
+        return nocache_json({"error": "invalid settings", "details": ["the document is not JSON"]},
+                            status_code=422)
+    dry_run = doc.pop("dry_run", False) is True if isinstance(doc, dict) else False
+    confirm_expensive = doc.pop("confirm_expensive", False) is True if isinstance(doc, dict) else False
+    acknowledge_training = doc.pop("acknowledge_training", False) is True if isinstance(doc, dict) else False
+    changes, errors = await asyncio.to_thread(settings_db.plan_import, doc)
+    if errors:
+        return nocache_json({"error": "invalid settings", "details": errors}, status_code=422)
+    preview = await asyncio.to_thread(settings_db.describe_changes, changes)
+    # H262 — a document that makes retention delete deeper than approved is refused whole.
+    gated = (await _retention_gate(changes))[0]
+    if dry_run:
+        choices = sg.choices_from_changes(changes, settings_db.get_value)
+        return nocache_json({"dry_run": True, "count": len(preview), "changes": preview,
+                             "guards": [f.as_dict() for f in sg.evaluate(choices)],
+                             "retention_needs_approval": gated})
+    if gated:
+        return _retention_refusal(gated)
+    guarded = await _guard_selection(changes, confirm_expensive=confirm_expensive,
+                                     acknowledge_training=acknowledge_training, surface="settings import")
+    if isinstance(guarded, JSONResponse):
+        return guarded
+    written = await asyncio.to_thread(settings_db.apply_import, changes) if changes else 0
+    if written:
+        await _lower_approval()
+        names = [f"{cat}.{key}" for cat in sorted(changes) for key in sorted(changes[cat])]
+        shown = " ".join(filter(None, (_audited_values(cat, changes[cat]) for cat in sorted(changes))))
+        await _audit_row(f"settings imported: {written} setting(s): {names}" + (f" · {shown}" if shown else ""),
+                         "settings_import", "import")
+    return nocache_json({"ok": True, "updated": written, "changes": preview})
+
+
+async def _dry_run_asked(request: Request) -> bool | JSONResponse:
+    """H259 — whether a reset's JSON body is ``{"dry_run": true}`` (only a JSON ``true``)."""
+    raw = await _bounded_body(request, 4096)
+    if raw is None:
+        return nocache_json({"error": "the request is over 4 KB"}, status_code=413)
+    try:
+        doc = json.loads(raw or b"{}")
+    except (ValueError, RecursionError):
+        return nocache_json({"error": "the request is not JSON"}, status_code=422)
+    return isinstance(doc, dict) and doc.get("dry_run") is True
+
+
+@router.post("/api/admin/settings/{category}/reset", dependencies=[Depends(admin_guard)])
+async def admin_reset_category(category: str, request: Request):
+    """H157 — put one category back to its declared values (the global reseed was the only
+    reset). Its secrets are kept (``kept``); a setting the selected product posture forces
+    stays in effect (``overridden``). Audited, naming the keys that moved. A JSON request
+    from this origin only (review-H157 M1). H259 — ``{"dry_run": true}`` answers what it
+    would change and writes nothing; a reset that moved something is recorded, and
+    ``undo`` names the record ``POST /api/admin/settings/undo`` puts back."""
+    from agents.core import settings_db
+
+    refused = _refuse_cross_site_write(request)
+    if refused is not None:
+        return refused
+    dry_run = await _dry_run_asked(request)
+    if isinstance(dry_run, JSONResponse):
+        return dry_run
+    plan = await asyncio.to_thread(settings_db.plan_reset, category)
+    if plan is None:
+        return nocache_json({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
+    # H262 — a retention setting whose default would delete deeper than approved stays as it is.
+    held = frozenset((await _retention_gate(plan))[0])
+    if dry_run:
+        plan = await asyncio.to_thread(settings_db.plan_reset, category, held)
+        return nocache_json({"dry_run": True, "category": category,
+                             "changes": await asyncio.to_thread(settings_db.describe_changes, plan),
+                             "kept": settings_db.reset_kept(category), "retention_kept": sorted(held),
+                             "overridden": settings_db.posture_overridden(category)})
+    done = await asyncio.to_thread(settings_db.reset_settings, category, held)
+    if done is None:
+        return nocache_json({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
+    moved = sorted(done[0].get(category, {}))
+    if moved:
+        await _lower_approval()
+        await _audit_row(f"settings.{category} reset to defaults: {moved}", "settings_reset", category)
+    return nocache_json({"ok": True, "category": category, "reset": moved, "undo": done[1],
+                         "kept": settings_db.reset_kept(category), "retention_kept": sorted(held),
+                         "overridden": settings_db.posture_overridden(category)})
+
+
 @router.post("/api/admin/settings/reseed", dependencies=[Depends(admin_guard)])
-async def admin_reseed():
-    init_db(force=True)
-    return {"ok": True, "message": "Settings reseeded from defaults"}
+async def admin_reseed(request: Request):
+    """Every category back to its declared values. H259 — this used to delete the whole
+    store (secrets included) with no preview and no way back; it is now the per-category
+    reset over every category: the secrets are kept (``kept``), ``{"dry_run": true}``
+    answers what it would change, and what it replaced is recorded for ``undo``. A JSON
+    request from this origin only; audited (H153 review), naming how many moved."""
+    from agents.core import settings_db
+
+    refused = _refuse_cross_site_write(request)
+    if refused is not None:
+        return refused
+    dry_run = await _dry_run_asked(request)
+    if isinstance(dry_run, JSONResponse):
+        return dry_run
+    kept, forced = settings_db.reset_kept_all(), settings_db.posture_overridden_all()
+    held = frozenset((await _retention_gate(await asyncio.to_thread(settings_db.plan_reset, None)))[0])
+    if dry_run:
+        plan = await asyncio.to_thread(settings_db.plan_reset, None, held)
+        return nocache_json({"dry_run": True, "changes": await asyncio.to_thread(settings_db.describe_changes, plan),
+                             "kept": kept, "retention_kept": sorted(held), "overridden": forced})
+    moved, snap = await asyncio.to_thread(settings_db.reset_settings, None, held)
+    names = [f"{cat}.{key}" for cat in sorted(moved) for key in sorted(moved[cat])]
+    if names:
+        await _lower_approval()
+        await _audit_row(f"settings reset to defaults in every category: {len(names)} setting(s): {names}",
+                         "settings_reseed", "all")
+    return nocache_json({"ok": True, "message": "Settings reseeded from defaults", "reset": names,
+                         "undo": snap, "kept": kept, "retention_kept": sorted(held), "overridden": forced})
+
+
+@router.post("/api/admin/settings/undo", dependencies=[Depends(admin_guard)])
+async def admin_undo_reset(request: Request):
+    """H259 — put back what the latest reset replaced. A setting changed since that reset
+    is left as it is, and so is a value its declaration no longer accepts; both are named
+    in ``skipped``. 404 when there is nothing to undo. A JSON request from this origin
+    only; audited. H262 — an undo that would make retention delete deeper than approved
+    restores nothing (409 ``retention_needs_approval``)."""
+    from agents.core import retention, settings_db
+
+    refused = _refuse_cross_site_write(request)
+    if refused is not None:
+        return refused
+    _gated, stored, approved = await _retention_gate({})
+    undone = await asyncio.to_thread(settings_db.undo_last_reset,
+                                     lambda restore: retention.needs_approval(restore, stored, approved))
+    if undone is None:
+        return nocache_json({"error": "nothing to undo"}, status_code=404)
+    if undone.get("refused"):
+        return _retention_refusal(undone["refused"])
+    skipped = [s["setting"] for s in undone["skipped"]]
+    if undone.get("restored"):
+        await _lower_approval()
+    await _audit_row(f"settings reset undone ({undone['scope']}): restored {undone['restored']}"
+                     + (f" · left {skipped}" if skipped else ""), "settings_reset_undo", undone["scope"])
+    return nocache_json({"ok": True, **undone})
+
+
+@router.get("/api/admin/retention", dependencies=[Depends(admin_guard)])
+async def admin_retention_state():
+    """H262 — the data lifecycle, read-only: the retention settings as stored, the approved
+    snapshot the sweep clamps to (``approved``; None: nothing approved, so retention deletes
+    nothing — ``awaiting_approval`` when it is on), the horizons in days (None: kept
+    forever) and the last sweep's state (claim time, last VACUUM, pending VACUUMs, report).
+    H262 review: ``awaiting_approval`` only when some horizon in force is finite (all kept
+    forever: there is nothing to confirm), and ``pending_task`` names a ``settings.retention``
+    card already waiting (the HUD then points at Approvals instead of offering Confirm)."""
+    from agents.core import lifecycle_sweep, retention
+    from agents.core.autonomy import irreversible
+
+    orch = get_orch()
+    checkpoints = getattr(orch, "checkpoints", None) if orch else None
+    reader = getattr(checkpoints, "get_state", None)
+    current = await asyncio.to_thread(retention.stored_values)
+    approved_row = await asyncio.to_thread(reader, retention.APPROVED_STATE) if callable(reader) else None
+    sweep_row = await asyncio.to_thread(reader, lifecycle_sweep.SWEEP_STATE) if callable(reader) else None
+    approved = await asyncio.to_thread(retention.approved_horizons, checkpoints)
+    in_force = retention.horizons(current)
+    effective = retention.effective_horizons(in_force, approved)
+
+    def shown(found):
+        return None if found is None else retention.days_shown(found)
+
+    sweep = (sweep_row or {}).get("value") or {}
+    waiting = await asyncio.to_thread(irreversible.pending, orch, retention.APPROVAL_KIND)
+    return nocache_json({
+        "current": current,
+        "approved": (approved_row or {}).get("value") if approved is not None else None,
+        "awaiting_approval": (current.get("retention.enabled") is True and approved is None
+                              and bool(retention.widening(in_force, None))),
+        "pending_task": int(waiting[-1].id) if waiting else None,
+        "horizons": {"current": shown(in_force), "approved": shown(approved), "effective": shown(effective)},
+        "sweep": {"last_run_at": (sweep_row or {}).get("last_run_at"), "last_vacuum_at": sweep.get("last_vacuum_at"),
+                  "vacuum_pending": sweep.get("vacuum_pending", []), "last_report": sweep.get("last_report")},
+    })
 
 
 class RotateTokensBody(BaseModel):
@@ -179,6 +573,50 @@ async def admin_get_env():
     return out
 
 
+@router.get("/api/admin/env/sources", dependencies=[Depends(admin_guard)])
+async def admin_env_sources():
+    """H273: where each environment key came from — the process environment, the
+    repo .env or the data-home .env, and which lower layers it overrides.
+
+    Names and layers only, at the same boundary as /api/admin/env: no value is
+    returned, and ``masked`` says whether /api/admin/env masks the key's value.
+    """
+    from pathlib import Path
+
+    from agents.core import env_provenance
+    from agents.core.paths import user_home
+
+    rows = []
+    for key, row in sorted(env_provenance.provenance().items()):
+        if key.startswith("_"):
+            continue
+        item = {"key": key, "layer": row["layer"], "label": env_provenance.LABELS[row["layer"]],
+                "shadowed": row["shadowed"], "masked": any(h in key.lower() for h in _SECRET_HINTS)}
+        note = env_provenance.note_for(key, row["layer"])
+        if note:
+            item["note"] = note
+        rows.append(item)
+    # What the load did with each file (read, absent, the same file as the repo .env,
+    # or skipped because python-dotenv was switched off); with no load in this process,
+    # the files it would read now.
+    loaded = env_provenance.files()
+    if loaded:
+        files = {layer: {"path": info["path"], "present": info["present"], "kind": info["kind"],
+                         "read": info["read"]}
+                 for layer, info in loaded.items()}
+    else:
+        repo_env = Path(__file__).resolve().parents[3] / ".env"
+        home = user_home()
+        home_env = home / ".env" if home is not None else None
+        files = {
+            "repo_env": {"path": str(repo_env), "present": env_provenance.is_file_or_fifo(repo_env),
+                         "read": False},
+            "user_env": {"path": str(home_env) if home_env else None,
+                         "present": bool(home_env and env_provenance.is_file_or_fifo(home_env)), "read": False},
+        }
+    return nocache_json({"sources": rows, "files": files})
+
+
 def _redact_audit_details(details: object) -> object:
     """AUD-12: mask any raw ``matched_text`` in a findings JSON blob at the read
     boundary. New rows are already redacted at write time (audit.py); this also
@@ -214,6 +652,23 @@ async def admin_tool_events(limit: int = Query(100, ge=1, le=500)):
     from agents.core.observability.tool_events import TOOL_EVENTS
 
     return nocache_json({"events": TOOL_EVENTS.snapshot(limit), "counts": TOOL_EVENTS.counts()})
+
+
+@router.get("/api/admin/logs", dependencies=[Depends(admin_guard)])
+async def admin_logs(file: str = Query("", max_length=128), level: str = Query("", max_length=16),
+                     component: str = Query("", max_length=200), lines: int = Query(200)):
+    """H145 — the hub's own log, from the UI: the newest records of the log file or one of
+    its rotations, read backwards within a byte budget (at most 500 records), filtered by
+    file, minimum level and component, and redacted again as they are read. Admin-only and
+    read-only; when file logging is off the answer says so (``enabled``, ``note``)."""
+    from agents.core import log_tail
+
+    try:
+        out = await asyncio.to_thread(log_tail.read_log, file=file or None, level=level,
+                                      component=component, lines=lines)
+    except log_tail.LogRequestError as exc:
+        return nocache_json({"error": "bad_request", "reason": str(exc)}, status_code=400)
+    return nocache_json(out)
 
 
 @router.get("/api/admin/audit", dependencies=[Depends(admin_guard)])
@@ -356,6 +811,10 @@ async def admin_prompt_commit(agent_id: str, req: Request):
     if content is None:
         return JSONResponse({"error": "content required"}, status_code=400)
     entry = svs.commit(agent_id, content, message=body.get("message", ""), author=body.get("author", ""))
+    from agents.core import soul_edit
+
+    # H156: a saved version is a persona edit for the audit log, live or not.
+    await asyncio.to_thread(soul_edit.record_version, get_orch(), agent_id, entry, "commit")
     return nocache_json({"ok": True, "version": entry})
 
 
@@ -382,9 +841,35 @@ async def admin_prompt_rollback(agent_id: str, req: Request):
     version = (body or {}).get("version")
     if version is None:
         return JSONResponse({"error": "version required"}, status_code=400)
-    entry = svs.rollback(agent_id, int(version), author=body.get("author", ""))
+    try:
+        version = int(version)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "version must be an integer"}, status_code=400)
+    author = str((body or {}).get("author", "") or "")[:64]
+    # H156: an agent's persona rolls back through the one apply path, so the rollback is
+    # what the model reads next turn, not only a new line in this history. The shared
+    # contract (`_identity`, served from IDENTITY.local.md) and keys that are no loaded
+    # agent keep the history-only rollback.
+    from agents.core import soul_edit
+    from agents.core.agent import IDENTITY_KEY
+
+    orch = get_orch()
+    folder = soul_edit.agent_folder(agent_id)
+    if agent_id != IDENTITY_KEY and folder is not None and folder in (getattr(orch, "agents", None) or {}):
+        target = svs.get(folder, version)
+        if target is None:
+            return JSONResponse({"error": "version not found"}, status_code=404)
+        try:
+            result = await asyncio.to_thread(soul_edit.apply_soul, orch, folder, target["content"],
+                                             message=f"rollback to v{version}", author=author,
+                                             action="rollback")
+        except soul_edit.SoulEditError as exc:
+            return JSONResponse(exc.body(), status_code=exc.status)
+        return nocache_json({"ok": True, **result})
+    entry = svs.rollback(agent_id, version, author=author)
     if entry is None:
         return JSONResponse({"error": "version not found"}, status_code=404)
+    await asyncio.to_thread(soul_edit.record_version, orch, agent_id, entry, "rollback_history")
     return nocache_json({"ok": True, "version": entry})
 
 
@@ -475,6 +960,28 @@ async def admin_llm_test():
             logger.warning("admin llm/test probe failed for %s (%s): %s", name, url, e)
             results.append({"name": name, "url": url, "ok": False, "error": "connection failed"})
     return {"results": results}
+
+
+class ProviderProbeRequest(BaseModel):
+    provider: str | None = None
+    force: bool = False
+
+
+@router.post("/api/admin/llm/providers/probe", dependencies=[Depends(admin_guard)])
+async def admin_llm_providers_probe(req: ProviderProbeRequest):
+    """H380 — prove each configured cloud provider accepts its key: one authenticated
+    read of its model list (cached, rate-limited; the key and the body never returned).
+    ``provider`` probes one; ``force`` re-probes a verdict older than the minimum
+    interval."""
+    from agents.core.llm import provider_probe
+
+    if req.provider:
+        try:
+            result = await provider_probe.probe(req.provider.strip().lower(), force=req.force)
+        except KeyError:
+            return JSONResponse({"error": f"unknown provider {safe_reflect(req.provider)}"}, status_code=404)
+        return nocache_json({"providers": [result]})
+    return nocache_json({"providers": await provider_probe.probe_all(force=req.force)})
 
 
 # ── Admin Charts endpoint ──────────────────────────────────────

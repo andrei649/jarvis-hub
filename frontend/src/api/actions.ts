@@ -35,7 +35,7 @@ export interface MarketplaceSkill { name: string; signed?: boolean; review_statu
 export interface MarketplaceList { skills: MarketplaceSkill[] }
 export interface PluginInfo { id: string; name: string; enabled: boolean; [k: string]: unknown }
 export interface PluginList { plugins: PluginInfo[] }
-export interface AgentSoul { agent_id: string; soul: string }
+export interface AgentSoul { agent_id: string; soul: string; description?: string }
 export interface AgentHistory { agent_id: string; runs: unknown[] }
 export interface MemorySearchResult { results: Array<{ score: number; payload: unknown; sources?: unknown }> }
 export interface KgEntities { entities: unknown[] }

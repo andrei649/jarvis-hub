@@ -38,7 +38,7 @@ def _marketplace(tmp_path):
 def _skill_dir(mk, folder="myskill", title="My Skill"):
     path = mk.skills_dir / folder
     path.mkdir(parents=True, exist_ok=True)
-    (path / "SKILL.md").write_text(f"# {title}\nversion: 1.0\n", encoding="utf-8")
+    (path / "SKILL.md").write_text(f"# {title}\n> A test skill.\nversion: 1.0\n", encoding="utf-8")
     (path / "main.py").write_text("def run():\n    return 'ok'\n", encoding="utf-8")
     return path
 

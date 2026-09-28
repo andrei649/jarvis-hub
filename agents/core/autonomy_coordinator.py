@@ -18,7 +18,9 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
+import math
 import os
+import time
 from datetime import datetime
 
 from .autonomy import TaskExecutor
@@ -71,9 +73,88 @@ logger = logging.getLogger("jarvis.orchestrator")
 _RESEARCH_MAX_RESULTS = 5
 
 
+_DESKTOP_RUN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "steps": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "maxLength": 64},
+                    "args": {
+                        "type": "object",
+                        "maxProperties": 32,
+                        "additionalProperties": True,
+                    },
+                },
+                "required": ["action"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["steps"],
+    "additionalProperties": False,
+}
+
+
+_DESKTOP_RUN_DESCRIPTION = "Propose bounded governed desktop steps for approval."
+#: H296 — how long desktop_run trusts one look at this host's desktop driver: the tool
+#: list is built several times a turn, and the host probe touches the OS.
+_DESKTOP_DRIVER_TTL = 60.0
+#: That look: (when, the refusal reason or "", the actions the driver performs).
+_desktop_driver_seen: tuple[float, str, frozenset] | None = None
+
+
+def _desktop_driver_actions() -> tuple[str, frozenset]:
+    """Why this host has no desktop driver ("" when it has one) and what its driver
+    performs, from the same ``driver_for_host`` the approved run binds."""
+    global _desktop_driver_seen
+    import time
+
+    from .desktop_drivers import SUPPORTED_ACTIONS
+    from .routers import multimodal
+
+    now = time.monotonic()
+    seen = _desktop_driver_seen
+    if seen is None or now - seen[0] >= _DESKTOP_DRIVER_TTL:
+        choice = multimodal.driver_for_host()
+        if choice.ok and choice.driver is not None:
+            seen = (now, "", frozenset(getattr(choice.driver, "supported_actions", SUPPORTED_ACTIONS)))
+        else:
+            seen = (now, choice.reason or "desktop_dependency_unavailable", frozenset())
+        _desktop_driver_seen = seen
+    return seen[1], seen[2]
+
+
+def _desktop_run_overrides() -> dict:
+    """H296 — desktop_run names the step actions both its validator (the table
+    ``validate_desktop_run_args`` checks) and this host's driver accept, or says why
+    every call is refused: the desktop flags are off, or the host has no driver."""
+    from copy import deepcopy
+
+    from .desktop_operator import _DESKTOP_ARG_RULES
+    from .routers.multimodal import desktop_host_enabled
+
+    if not desktop_host_enabled():
+        return {"description": _DESKTOP_RUN_DESCRIPTION + " The desktop operator is switched off on this "
+                               "hub (JARVIS_DESKTOP_HOST, JARVIS_DESKTOP_ISOLATED), so every call is refused."}
+    refusal, actions = _desktop_driver_actions()
+    if refusal:
+        return {"description": _DESKTOP_RUN_DESCRIPTION + f" This host has no desktop driver ({refusal}), "
+                               "so every call is refused."}
+    steps = deepcopy(_DESKTOP_RUN_SCHEMA["properties"]["steps"])
+    steps["items"]["properties"]["action"]["enum"] = sorted(set(_DESKTOP_ARG_RULES) & actions)
+    return {"properties": {"steps": steps}}
+
+
 class AutonomyCoordinator:
     def __init__(self, orchestrator):
         self._orch = orchestrator
+        self._reason_windows = {}
+        self._reason_prompts = {}
+        self._reason_clock = time.monotonic
         # 0.34 (opt-in): lazily-built durable workflow pending-queue, drained each
         # tick only when JARVIS_WORKFLOW_PERSIST is set (else stays None, no drain).
         self._pending_queue = None
@@ -125,10 +206,23 @@ class AutonomyCoordinator:
         if tg and owner and hasattr(tg, "send_card"):
 
             async def base(task):
-                return await tg.send_card(int(owner), build_decision_card(task))
+                queue = getattr(self._orch, 'autonomy_queue', None)
+                pending_group = getattr(queue, 'pending_group', None)
+                group = pending_group(task.id) if callable(pending_group) else None
+                card = build_decision_card(task, group=group) if group is not None else build_decision_card(task)
+                return await tg.send_card(int(owner), card)
 
             self._orch.autonomy.notifier = self._away_notifier(base, exclude={"telegram"})
             tg.on_callback = self._on_callback
+            tg.on_decision_reason = self._on_reason_reply
+            # H117: the poll loop asks this (it has no side effects) whether a reply is a
+            # reason, and runs the hook above in the chat's lane only when it is.
+            tg.decision_reason_pending = self.would_consume_reason_reply
+            # ...and reads this clock once per getUpdates page, stamping a claimed reply from
+            # its page (credited by Telegram's date, never before the previous page came back),
+            # so the hook judges the reason window by that stamp, not by when the chat's lane
+            # reached the reply.
+            tg.decision_reason_clock = self.reason_clock
             logger.info(
                 "Autonomy decision inbox wired to Telegram (H34.2 away-notify via escalation)"
             )
@@ -187,11 +281,139 @@ class AutonomyCoordinator:
             )
             return None
         try:
-            await self._orch.autonomy.apply_decision(task_id, action, decided_by="telegram")
+            task = await self._orch.autonomy.apply_decision(task_id, action, decided_by="telegram")
+            windows = getattr(self, "_reason_windows", {})
+            windows.pop((str(chat_id), str(user_id)), None)
+            if action == "reject" and isinstance(getattr(task, "human_decision", None), dict):
+                await self._offer_reason(task, chat_id, user_id)
             return f"Task #{task_id}: {action}"
         except Exception as e:
             logger.warning(f"Autonomy decision callback failed: {e}")
             return None
+
+    async def _offer_reason(self, task, chat_id, user_id):
+        channel = self._telegram_channel()
+        record = task.human_decision
+        if (record.get("action") != "reject" or record.get("by") != "telegram"
+                or record.get("reason") is not None or not record.get("id")):
+            return
+        try:
+            prompt = await channel.request_decision_reason(task.id, chat_id=chat_id)
+            if type(prompt) is not int or prompt <= 0:
+                return
+        except Exception:
+            logger.warning("Telegram decision reason prompt unavailable")
+            return
+        now = self._reason_clock()
+        # Expired windows are pruned only to make room: a reply that arrived in time may still
+        # be waiting in the chat's lane behind this rejection (another member of a group owner
+        # chat), and it is judged by when it arrived, so its window must still be there (H117).
+        if len(self._reason_windows) >= 32:
+            self._reason_windows = {key: window for key, window in self._reason_windows.items()
+                                    if window["deadline"] > now}
+        if len(self._reason_windows) >= 32:
+            self._reason_windows.pop(next(iter(self._reason_windows)))
+        self._reason_windows[(str(chat_id), str(user_id))] = {
+            "task_id": task.id, "prompt": prompt, "expected": dict(record), "deadline": now + 120,
+        }
+        self._reason_prompts[(str(chat_id), str(user_id), prompt)] = True
+        if len(self._reason_prompts) > 64:
+            self._reason_prompts.pop(next(iter(self._reason_prompts)))
+
+    def _reason_reply_target(self, chat_id, user_id, reply_to_message_id):
+        """What a reply answers, read without side effects: ``None`` when it is no reason
+        reply (it stays a chat message); ``("window", key, window)`` when it answers the
+        owner's open window (live or expired); ``("stale", key, None)`` when it answers an
+        earlier prompt of this owner (superseded, answered, or expired and pruned)."""
+        if type(reply_to_message_id) is not int or reply_to_message_id <= 0:
+            return None
+        if not self._callback_is_owner(chat_id, user_id):
+            return None
+        key = (str(chat_id), str(user_id))
+        window = self._reason_windows.get(key)
+        if window is not None and window["prompt"] == reply_to_message_id:
+            return "window", key, window
+        if (*key, reply_to_message_id) in self._reason_prompts:
+            return "stale", key, None
+        return None
+
+    def reason_clock(self) -> float:
+        """Now, on the clock reason windows are opened and closed with (read live, so a clock
+        swapped after :meth:`wire` counts). Telegram's poll loop reads it once per getUpdates
+        page and hands a claimed reply's stamp, taken from that reading, to
+        :meth:`_on_reason_reply` as ``received_at`` (H117)."""
+        return self._reason_clock()
+
+    def would_consume_reason_reply(self, chat_id, user_id, reply_to_message_id) -> bool:
+        """Would :meth:`_on_reason_reply` consume this reply right now? Exactly the same
+        test (the owner, in the owner chat, replying to one of their reason prompts), with
+        no side effect: nothing is saved, sent or closed. Telegram's poll loop asks this to
+        decide, and runs the reply through ``_on_reason_reply`` in the chat's lane (H117)."""
+        return self._reason_reply_target(chat_id, user_id, reply_to_message_id) is not None
+
+    async def _reason_ack(self, chat_id, text) -> None:
+        """Answer a consumed reason reply with a service line. Never spoken (``voice=False``:
+        it neither goes to TTS nor takes the voice-for-voice mark of a turn in that chat),
+        and best effort: once a reply is consumed, and above all once its reason is saved,
+        a failed acknowledgement never turns it back into a chat turn."""
+        try:
+            await self._telegram_channel().send(text, chat_id=chat_id, voice=False)
+        except Exception:
+            logger.warning("Telegram decision reason acknowledgement failed", exc_info=True)
+
+    async def _on_reason_reply(self, text, *, chat_id, user_id, reply_to_message_id, received_at=None):
+        """Consume only the owner's reply to a live prompt for an exact decision.
+
+        Returns False, before any side effect, only for a reply that is no reason reply
+        (see :meth:`would_consume_reason_reply`); every other outcome is True. It never
+        raises once the reason is saved, so a caller's fallback on an exception (running the
+        reply as a turn) can only follow a failure before anything was saved.
+
+        ``received_at`` is the channel's stamp of when the reply arrived, on
+        :meth:`reason_clock`. Telegram stamps it from the getUpdates page that carried the
+        reply: never later than when that page came back, never earlier than when the page
+        before it did (the first bound wins should this clock step back between pages), and
+        within those bounds moved back by Telegram's date for the reply, as far as the host's
+        clock and Telegram's agree (see ``TelegramChannel._reason_arrival``); the reply may
+        then wait in the chat's lane behind a slow turn. The deadline is checked against the
+        stamp, so the time the reply waits after its page came back never counts against it,
+        and a reply stamped at or after the deadline is refused however soon it runs. Missing,
+        or not a finite instant, it is now (an older caller). Whether the prompt is still the
+        live one is decided here, when the lane reaches the reply: a tap read before the reply
+        runs before it and supersedes the prompt."""
+        target = self._reason_reply_target(chat_id, user_id, reply_to_message_id)
+        if target is None:
+            return False
+        kind, key, window = target
+        if kind == "stale":
+            await self._reason_ack(chat_id, "That reason prompt is no longer active; no decision changed.")
+            return True
+        arrived = (received_at if type(received_at) in (int, float) and math.isfinite(received_at)
+                   else self._reason_clock())
+        if arrived >= window["deadline"]:
+            self._reason_windows.pop(key, None)
+            await self._reason_ack(chat_id, "The reason window expired; the rejection is unchanged.")
+            return True
+        try:
+            task = self._orch.autonomy_queue.attach_human_reason(
+                window["task_id"], text, expected_decision=window["expected"],
+            )
+        except ValueError:
+            await self._reason_ack(chat_id, "Use a nonempty reason of at most 280 characters.")
+            return True
+        except Exception:
+            logger.warning("Telegram decision reason could not be saved")
+            await self._reason_ack(chat_id, "The reason could not be saved; the rejection is unchanged.")
+            return True
+        self._reason_windows.pop(key, None)
+        if task is not None:
+            try:
+                self._orch.autonomy._audit("autonomy.decision.reason", task,
+                                          "by telegram: " + task.human_decision["reason"])
+            except Exception:
+                logger.warning("Telegram decision reason audit failed after the save", exc_info=True)
+        await self._reason_ack(chat_id, "Reason saved." if task is not None else "That decision no longer accepts a reason.")
+        return True
 
     def _callback_is_owner(self, chat_id, user_id) -> bool:
         """Is this button tap the owner's?
@@ -255,6 +477,14 @@ class AutonomyCoordinator:
             # ESTOP sentinel exists (pause-new-work; in-flight work is not killed).
             from agents.core import estop
             if estop.check_paused("autonomy", logger):
+                # Expiry is queue metadata only under e-stop. Ledger resume and
+                # notifications stay in the durable outbox until release.
+                worker = getattr(self._orch, "autonomy", None)
+                if worker is not None:
+                    try:
+                        await worker.approval_housekeeping(reconcile=False, notify_promotions=False)
+                    except Exception:
+                        logger.warning("Approval expiry metadata sweep failed under e-stop", exc_info=True)
                 continue
             amode = "unknown"
             max_tier = None
@@ -516,31 +746,10 @@ class AutonomyCoordinator:
             "desktop_run",
             _rpc_desktop_run,
             gated=True,
-            description="Propose bounded governed desktop steps for approval.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "steps": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "action": {"type": "string", "maxLength": 64},
-                                "args": {
-                                    "type": "object",
-                                    "maxProperties": 32,
-                                    "additionalProperties": True,
-                                },
-                            },
-                            "required": ["action"],
-                            "additionalProperties": False,
-                        },
-                    }
-                },
-                "required": ["steps"],
-                "additionalProperties": False,
-            },
+            description=_DESKTOP_RUN_DESCRIPTION,
+            # H296: the actions the step validator and this host's driver accept.
+            schema_overrides=_desktop_run_overrides,
+            input_schema=_DESKTOP_RUN_SCHEMA,
             capability_id="tool:desktop_run",
             preflight=_desktop_preflight,
             trusted_execution=True,
@@ -590,7 +799,7 @@ class AutonomyCoordinator:
                 authorizer=action_kernel,
                 approval_check=_durable_terminal_approval,
             )
-            return await runner.run(
+            result = await runner.run(
                 target=args["target"],
                 agent="jarvis",
                 command=args["command"],
@@ -598,6 +807,11 @@ class AutonomyCoordinator:
                 cwd=args.get("cwd"),
                 timeout=args.get("timeout"),
             )
+            from . import project_context   # H594: the terminal moved into a project directory
+
+            if approved_task_id is not None and args.get("cwd"):
+                await asyncio.to_thread(project_context.note_terminal, approved_task_id, result, args["cwd"])
+            return result
 
         server.register_tool(
             "terminal_run",
@@ -617,6 +831,7 @@ class AutonomyCoordinator:
             },
             capability_id="tool:terminal_run",
             trusted_execution=True,
+            schema_overrides=self._terminal_run_overrides,
         )
 
         async def _rpc_desktop_plan(args):
@@ -848,6 +1063,13 @@ class AutonomyCoordinator:
             agents = getattr(config, "agents", None) or {}
             return getattr(agents.get(agent_id), "tools", None)
 
+        def _on_shared_session() -> bool:
+            # H315 review — a turn with no session of its own runs on the HUD's shared
+            # session; what a session-scoped tool keeps there is the owner's. A double
+            # without the probe counts as shared (fail closed).
+            probe = getattr(self._orch, "on_shared_session", None)
+            return True if not callable(probe) else bool(probe())
+
         # K1 — the model may write one script that orchestrates many tool calls. Off
         # unless `llm.execute_code` is on, and registered last on purpose: the tool
         # offers a script exactly the tools registered above, minus itself, narrowed by
@@ -864,6 +1086,8 @@ class AutonomyCoordinator:
             agent_patterns=_agent_tool_patterns,
             principal=_turn_principal,
             session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
+            # A script's reach is narrowed as the turn's offer is, the shared session included.
+            shared_session=_on_shared_session,
             # K2 — a resident interpreter per authorized session, behind its own
             # switch. Docker only and pinned by digest: a kernel that survives an
             # hour deserves the pin the acquisition profile already demands, and a
@@ -891,7 +1115,56 @@ class AutonomyCoordinator:
             settings=_get_setting,
             agent_patterns=_agent_tool_patterns,
             principal=_turn_principal,
+            shared_session=_on_shared_session,
         )
+        # H315 — the model keeps a checklist of the turn's work and re-reads it on every
+        # call. Ungated: it writes the session's own list, which the owner reads next to
+        # the approval queue with each item's posture and taint. On the shared session
+        # only an owner's turn keeps one.
+        from .todo_tool import register_todo_tool
+
+        register_todo_tool(
+            server,
+            session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
+            posture=lambda: tool_profile.posture().key,
+            shared_session=_on_shared_session,
+        )
+        # H314 — the model writes its long-term memory (the LivingMemory core and user
+        # rings): owner-operator turns only, audited in the intent log, undoable.
+        from .memory_tool import register_memory_tool
+
+        def _living_memory():
+            cog = getattr(self._orch, "cognition", None)
+            if cog is None or not cog.sub_enabled("memory_enabled"):
+                return None
+            return cog.module("memory")
+
+        register_memory_tool(
+            server,
+            living=_living_memory,
+            audit=lambda: getattr(self._orch, "intent_log", None),
+            posture=lambda: tool_profile.posture().key,
+        )
+        # H318 + H340 — the model lists and reads its skills under the catalog's trust
+        # gates (the body rendered with its template variables) and proposes changes into
+        # the governed pipeline; nothing here writes a live SKILL.md.
+        from .skills.tools import register_skill_tools
+
+        register_skill_tools(
+            server,
+            loader=lambda: getattr(self._orch, "skills", None),
+            proposals=lambda: getattr(self._orch, "skill_proposals", None),
+            approvals=lambda: getattr(self._orch, "action_approvals", None),
+            session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
+            posture=lambda: tool_profile.posture().key,
+            settings=_get_setting,
+        )
+        # H309 — the model points at the owner's HUD (a tip, or a short tour) through
+        # the canvas; ungated, named anchors only, marked when an untrusted turn wrote it.
+        from .pointer_tool import register_pointer_tool
+
+        register_pointer_tool(server, canvas=lambda: getattr(self._orch, "canvas", None),
+                              posture=lambda: tool_profile.posture().key)
 
         def _profile_and_note_offer(agent_id, tools):
             # H661 — the same decision, unchanged, plus a note of what it offered in the
@@ -1006,6 +1279,22 @@ class AutonomyCoordinator:
             max_tool_calls=int(get_setting("security.sandbox_max_tool_calls", 50) or 50),
         )
 
+    def _terminal_run_overrides(self) -> dict:
+        """H296 — terminal_run names the targets its runner would run on (enabled, open to
+        this agent, granting terminal.exec — the handler's own agent and capability), or
+        says it is off."""
+        from .env_config import env_flag
+
+        if not env_flag("JARVIS_TERMINAL_TARGETS"):
+            return {"description": "Run one bounded shell command on a named governed target. "
+                                   "Terminal targets are switched off on this hub "
+                                   "(JARVIS_TERMINAL_TARGETS), so every call is refused."}
+        names = self._target_registry().usable_names("jarvis", "terminal.exec")
+        if not names:
+            return {"description": "Run one bounded shell command on a named governed target. "
+                                   "No target it can run on is enabled, so every call is refused."}
+        return {"properties": {"target": {"enum": names[:64]}}}
+
     def _target_registry(self):
         """Build the named-target registry once, with a durable audit chain.
 
@@ -1054,7 +1343,8 @@ class AutonomyCoordinator:
         redact = getattr(getattr(self._orch, 'secret_broker', None), 'redact', None)
         if worker is None or not callable(redact):
             return
-        runtime = CloudImageRuntime(worker, kernel=getattr(worker, 'kernel_gate', None), redact=redact)
+        runtime = CloudImageRuntime(worker, kernel=getattr(worker, 'kernel_gate', None), redact=redact,
+                                    gate=getattr(self._orch, 'permission_gate', None))
         previous_guard, previous_execute = executor.execution_guard, executor.resolve('plugin.egress')
 
         def guard(task):
@@ -1380,17 +1670,33 @@ class AutonomyCoordinator:
                 return {"status": "refused", "reason": exc.reason}
             runs = getattr(self._orch, "work_runs", None)
             if not isinstance(runs, WorkRunLedger):
-                return {"status": "refused", "reason": "work_run_ledger_unavailable"}
+                # The ledger is bound above whatever the flag says, so its absence
+                # means it failed to construct: machinery, a failure — never a
+                # ``refused`` that ran nothing (review round 4, item 5).
+                return {"status": "failed", "reason": "work_run_ledger_unavailable"}
             try:
                 run = await asyncio.to_thread(
                     runs.open_run, goal, budget=goal.budget, deadline_at=goal.deadline_at
                 )
             except WorkRunError as exc:
                 return {"status": "refused", "reason": exc.reason}
+            # H464c: one approval opens one run, so a retry gets the run the first
+            # attempt opened — reported with that run's goal id, not the retry's.
             return {"status": "ok", "kind": "goal.approve", "run_id": run.id,
-                    "goal_id": goal.goal_id}
+                    "goal_id": run.goal_id}
 
         executor.register("goal.approve", _open_approved_goal)
+
+        # H262 — the irreversible tier (settings.retention, …): applied only out of a
+        # human's accept on the task itself. Registered here because an unhandled kind
+        # would fall to the LLM fallback and run its title as a prompt.
+        from .autonomy import irreversible
+
+        async def _apply_irreversible(task):
+            return await irreversible.execute(task, orch=self._orch)
+
+        for kind in irreversible.kinds():
+            executor.register(kind, _apply_irreversible)
 
         acquisition = getattr(self._orch, "acquisition", None)
         if acquisition is not None:
@@ -1425,16 +1731,14 @@ class AutonomyCoordinator:
         # H20.6 — agent-initiated sub-agent delegation (isolated session, capped).
         from .subagents import SubAgentManager
 
-        async def _subagent_runner(task, session_id, agent):
-            picked = agent if agent in self._orch.agents else "jarvis"
-            out = await self._orch.process(task, agent=picked, channel="subagent")
-            return {"output": out, "session_id": session_id}
-
         bind_external_orchestrator_attribute(
             self._orch,
             "subagents",
             SubAgentManager(
-                runner=_subagent_runner,
+                runner=make_subagent_runner(self._orch),
+                # H681: a child names no model → autonomy.subagent_model / _provider.
+                selection_defaults=self._subagent_selection_defaults,
+                fallback_probe=self._subagent_fallback_model,
                 max_concurrent=self._subagent_concurrency(),
                 max_depth=int(self._orch.get_setting("autonomy.max_subagent_depth", 8) or 8),
                 # Concurrency caps how many run at once; this caps how many may be
@@ -1449,6 +1753,30 @@ class AutonomyCoordinator:
         # the concrete executor; the worker still receives only ``execute``.
         bind_external_orchestrator_attribute(self._orch, "task_executor", executor)
         return executor
+
+    def _subagent_selection_defaults(self) -> dict:
+        """``autonomy.subagent_model`` / ``autonomy.subagent_provider``, read at each
+        spawn (empty = the child runs on its agent's own route)."""
+        def read(key):
+            value = self._orch.get_setting(key, "")
+            return value.strip() if isinstance(value, str) else ""
+
+        return {"model": read("autonomy.subagent_model"), "provider": read("autonomy.subagent_provider")}
+
+    def _subagent_fallback_model(self, rejected: str):
+        """The model children would run on with the setting cleared: what the governed
+        router picks for the default agent, asked outside any pin. None when it cannot
+        say, or picks the rejected model."""
+        router = getattr(self._orch, "llm_router", None)
+        select = getattr(router, "select_backend", None)
+        if not callable(select):
+            return None
+        try:
+            _backend, model, _route = select("jarvis", "")
+        except Exception:
+            logger.debug("no fallback model for the sub-agent notice", exc_info=True)
+            return None
+        return model if isinstance(model, str) and model and model != rejected else None
 
     def _subagent_spawn_budget(self):
         """Total-spawn budget for one boot, or ``None`` when the setting is 0.
@@ -1481,3 +1809,38 @@ class AutonomyCoordinator:
         if isinstance(hint, int) and not isinstance(hint, bool) and hint > 0:
             return min(base, hint)
         return base
+
+
+def make_subagent_runner(orch):
+    """The production sub-agent runner (H681): one turn through the orchestrator, with
+    the child's pin checked against the governed router before it runs, and a failed
+    turn raised as :class:`SubAgentProviderError` (with what the backends noted), never
+    answered as an empty success. The manager has already opened the child's selection
+    and override scopes around this call."""
+    from .llm.job_selection import current_selection
+    from .llm.provider_errors import provider_failure_scope
+    from .subagents import SubAgentProviderError
+
+    async def _subagent_runner(task, session_id, agent):
+        picked = agent if agent in orch.agents else "jarvis"
+        with provider_failure_scope() as failures:
+            if current_selection() is not None:
+                router = getattr(orch, "llm_router", None)
+                if not callable(getattr(router, "select_backend", None)):
+                    raise SubAgentProviderError(
+                        "selection refused: a model or provider pin requires the governed model router")
+                try:
+                    router.select_backend(picked, task)
+                except Exception as exc:
+                    raise SubAgentProviderError(f"selection refused: {exc}") from exc
+            detailed = getattr(orch, "process_detailed", None)
+            if callable(detailed):
+                text, error = await detailed(task, agent=picked, channel="subagent")
+            else:
+                text = await orch.process(task, agent=picked, channel="subagent")
+                error = None if (text or "").strip() else "empty reply"
+        if error is not None:
+            raise SubAgentProviderError(error, failures=list(failures))
+        return {"output": text, "session_id": session_id}
+
+    return _subagent_runner

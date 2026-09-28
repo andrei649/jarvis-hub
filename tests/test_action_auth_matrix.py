@@ -771,6 +771,22 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             checks=(SuccessCheck(id="brief", describe="the brief exists"),),
         )
         propose(draft, lambda **kwargs: 1, authorizer=spy, now=0.0)
+    elif kind == "settings.voice_command":
+        import asyncio
+
+        from agents.core.kernel import kernel_enabled
+        from agents.core.voice import command_settings
+        from tests.test_h517_voice_kernel import make_rig
+
+        enabled = kernel_enabled()
+        rig = make_rig(tmp_path, monkeypatch, mode="off", kernel=spy)
+        if not enabled:
+            monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+        try:
+            code, _ = asyncio.run(command_settings.request(rig.orch, "tts", rig.argv))
+            assert code == (503 if enabled and spy._verdict is Verdict.DENY else 202)
+        finally:
+            rig.q.close()
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 

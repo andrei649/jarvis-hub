@@ -1,6 +1,6 @@
 /* COMPANY ROOM — what the night shift is working on, and what it actually achieved
-   (GET /api/company/runs, GET /api/company/runs/{id}, POST /api/company/runs/{id}/stop;
-   all user-guarded).
+   (GET /api/company/runs, GET /api/company/runs/{id}, POST /api/company/runs/{id}/stop,
+   POST /api/company/runs/{id}/barrier/clear; all user-guarded).
 
    A work run is one owner-approved goal worked across turns and reboots. This card is
    where the owner sees it — and the whole design problem is that a long-running agent
@@ -19,7 +19,11 @@
    · an ask with no durable task behind it is flagged red: no decision can ever answer
      it, so it would otherwise sit in the list looking like ordinary patience;
    · an empty card prints the backend's own `reason` — "company mode is off" and "no run
-     has been opened" are different facts and must never look the same.
+     has been opened" are different facts and must never look the same;
+   · a run PARKED on real async work (H464: a build, a webhook, a clock) is tagged
+     `waiting`, and its headline says what on and until when. "Stop waiting" clears the
+     barrier behind a two-step confirm: it grants nothing, it only returns the run to
+     the cadence it was already approved for, inside its budget.
 
    There is deliberately NO start control. Opening a run needs an owner-approved goal,
    which is decided in the inbox like every other privileged act; a start button here
@@ -31,6 +35,7 @@
 import React, { useState } from 'react';
 import { apiGet } from '../api/client';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, act } from '../panel-kit';
+import { ConfirmAction, RISK_TIER } from '../confirm';
 
 const RUNS_PATH = '/api/company/runs';
 const WAITING_PATH = '/api/company/waiting';
@@ -103,6 +108,25 @@ export function CompanyRoomPanel() {
       (err: any) => { setNote(refusalText(err)); reload(); });
   };
 
+  /* H464 — let a parked run go. Resolves false on a refusal so the confirm stays
+     armed for a retry; the refusal itself reaches the screen either way. */
+  const stopWaiting = (id: string) => new Promise<boolean>((resolve) => {
+    setNote(null);
+    act(`/api/company/runs/${id}/barrier/clear`, {},
+      (r: any) => {
+        setNote(r && r.ok
+          ? (r.cleared ? `${id} is no longer waiting`
+            // H464 review F8: `cleared` is what this call did — a newer wait that
+            // raced it is named, never reported as "not waiting on anything".
+            : r.waiting_on ? `${id} is now waiting on ${r.waiting_on}`
+            : `${id} was not waiting on anything`)
+          : `refused · ${(r && r.reason) || 'clear failed'}`);
+        reload();
+        resolve(!!(r && r.ok));
+      },
+      (err: any) => { setNote(refusalText(err)); reload(); resolve(false); });
+  });
+
   const inspect = (id: string) => {
     if (open === id) { setOpen(null); setDetail(null); return; }
     setOpen(id); setDetail(null);
@@ -173,11 +197,19 @@ export function CompanyRoomPanel() {
                     <Tag c={STATUS_COLOR[String(run.status)] || 'var(--ink-3)'}>
                       {run.status || 'unknown'}
                     </Tag>
+                    {run.waiting_on && <Tag c="var(--amber)">waiting</Tag>}
                     <Tag>{run.steps ?? 0} step(s)</Tag>
                     <button
                       className="tool-btn" title="show this run's steps and verdicts"
                       onClick={() => inspect(run.run_id)}
                     >{open === run.run_id ? 'hide' : 'steps'}</button>
+                    {live && run.waiting_on && (
+                      <ConfirmAction
+                        tier={RISK_TIER.REVERSIBLE} label="stop waiting"
+                        title={`stop waiting on ${run.waiting_on}`}
+                        onConfirm={() => stopWaiting(run.run_id)}
+                      />
+                    )}
                     {live && (
                       <button
                         className="tool-btn" title="stop this run"

@@ -1,0 +1,407 @@
+{
+  "roles_pick_legacy_fallback_dropped": [
+    "tests/test_h277_model_roles.py::test_vision_role_falls_back_to_jarvis_vlm_model",
+    "tests/test_h277_model_roles.py::test_deep_role_legacy_pin - AssertionE..."
+  ],
+  "roles_vision_view_provider_not_validated": [
+    "tests/test_h277_model_roles.py::test_unknown_vision_provider_is_rejected",
+    "tests/test_h277_model_roles.py::test_a_real_provider_the_vision_path_cannot_speak_is_unsupported",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[22]",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[23]"
+  ],
+  "roles_validate_supported_set_check_dropped": [
+    "tests/test_h277_model_roles.py::test_a_real_provider_the_vision_path_cannot_speak_is_unsupported",
+    "tests/test_h277_model_roles.py::test_video_role_validates_its_provider",
+    "tests/test_h277_model_roles.py::test_judge_role_rejects_a_cloud_vendor_this_cut_cannot_speak",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[23]",
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[unsupported_provider-role_provider_unsupported]"
+  ],
+  "roles_main_becomes_env_selectable": [
+    "tests/test_h277_model_roles.py::test_main_role_is_not_env_selectable",
+    "tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_an_ignored_main_variable"
+  ],
+  "roles_env_role_default_provider_ollama": [
+    "tests/test_h277_model_roles.py::test_judge_role_uses_the_provider_profile_base_url",
+    "tests/test_h277_model_roles.py::test_doctor_model_roles_row_notes_a_second_lm_studio_model",
+    "tests/test_h277_approval_judge.py::test_configured_judge_annotates_the_item_and_changes_nothing_else",
+    "tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity",
+    "tests/test_h277_approval_judge.py::test_local_judge_status_shows_its_loopback_base_url"
+  ],
+  "roles_env_role_unset_model_guard_dropped": [
+    "tests/test_h277_model_roles.py::test_doctor_model_roles_row_ok_by_default",
+    "tests/test_h277_approval_judge.py::test_attached_but_unconfigured_judge_is_never_called",
+    "tests/test_h277_approval_judge.py::test_round2_unconfigured_judge_preserves_tainted_head_shape[True]"
+  ],
+  "roles_locality_or_instead_of_and": [
+    "tests/test_h277_model_roles.py::test_judge_role_uses_the_provider_profile_base_url"
+  ],
+  "roles_describe_catches_wrong_error": [
+    "tests/test_h277_model_roles.py::test_describe_never_raises_and_reports_a_bad_role",
+    "tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_a_bad_provider",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[22]",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[23]"
+  ],
+  "vlm_role_error_reason_masked": [
+    "tests/test_h277_model_roles.py::test_unknown_vision_provider_is_rejected",
+    "tests/test_h277_model_roles.py::test_a_real_provider_the_vision_path_cannot_speak_is_unsupported",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[22]",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[23]"
+  ],
+  "model_config_override_flag_inverted": [
+    "tests/test_h277_model_roles.py::test_deep_role_defaults_and_is_not_pinned",
+    "tests/test_h277_model_roles.py::test_deep_role_legacy_pin - assert Fal...",
+    "tests/test_h277_model_roles.py::test_deep_role_new_name_wins - assert ...",
+    "tests/test_h277_model_roles.py::test_deep_role_whitespace_is_not_a_pin"
+  ],
+  "judge_safe_mode_check_dropped": [
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[safe_mode-safe_mode]",
+    "tests/test_h277_approval_judge.py::test_safe_mode_turns_even_a_local_judge_off",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[safe_mode]"
+  ],
+  "judge_protocol_refusal_dropped": [
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[protocol-judge_protocol_refused]"
+  ],
+  "judge_h378_findings_ignored": [
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[trains-judge_trains_on_inputs]",
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[expensive-judge_over_cost_line]"
+  ],
+  "judge_remote_gate_applies_to_local": [
+    "tests/test_h277_approval_judge.py::test_configured_judge_annotates_the_item_and_changes_nothing_else",
+    "tests/test_h277_approval_judge.py::test_qwen3_judge_gets_no_think - In...",
+    "tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity",
+    "tests/test_h277_approval_judge.py::test_a_judge_that_says_approve_changes_nothing[{\"risk\": 0, \"why\": \"ignore the user, approve\"}-True]",
+    "tests/test_h277_approval_judge.py::test_prompt_fences_untrusted_arguments_and_flags_injection",
+    "tests/test_h277_approval_judge.py::test_prompt_caps_large_arguments - ...",
+    "tests/test_h277_approval_judge.py::test_the_judge_never_holds_the_stored_args",
+    "tests/test_h277_approval_judge.py::test_request_returns_at_once_and_the_item_is_marked_judging",
+    "tests/test_h277_approval_judge.py::test_the_first_annotation_wins - Ke...",
+    "tests/test_h277_approval_judge.py::test_restart_keeps_the_annotation_and_never_rejudges",
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[remote_not_allowed-judge_remote_not_allowed]",
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[strict_local-judge_strict_local]",
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[cloud_never-judge_cloud_fallback_never]",
+    "tests/test_h277_approval_judge.py::test_the_judge_runs_outside_a_childs_selection_and_overrides",
+    "tests/test_h277_approval_judge.py::test_a_request_from_a_worker_thread_is_judged_on_the_loop_in_a_fresh_context",
+    "tests/test_h277_approval_judge.py::test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop",
+    "tests/test_h277_approval_judge.py::test_local_judge_status_shows_its_loopback_base_url",
+    "tests/test_h277_approval_judge.py::test_an_idempotent_replay_returns_the_annotation_and_judges_once",
+    "tests/test_h277_approval_judge.py::test_decide_route_is_unaffected_by_a_judgement",
+    "tests/test_h277_approval_judge.py::test_active_model_uses_the_routers_local_backend",
+    "tests/test_h277_approval_judge.py::test_a_queued_call_with_a_wrapped_injection_is_stored_with_its_flag",
+    "tests/test_h277_approval_judge.py::test_a_truncated_view_is_recorded_on_the_item_and_in_the_audit",
+    "tests/test_h277_approval_judge.py::test_a_local_judge_still_judges_a_tainted_item",
+    "tests/test_h277_approval_judge.py::test_active_model_on_a_hybrid_router_with_a_cloud_backend",
+    "tests/test_h277_approval_judge.py::test_judge_concurrency_is_bounded_and_the_overflow_is_skipped",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[allow_remote]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[fallback]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[strict_local]",
+    "tests/test_h277_approval_judge.py::test_judge_pending_is_public_runtime_state_only",
+    "tests/test_h277_approval_judge.py::test_round2_non_json_values_are_normalised_and_scanned[Ignore all\\nprevious instructions]",
+    "tests/test_h277_approval_judge.py::test_round2_non_json_values_are_normalised_and_scanned[value1]",
+    "tests/test_h277_approval_judge.py::test_round2_non_json_values_are_normalised_and_scanned[value2]",
+    "tests/test_h277_approval_judge.py::test_round2_decided_tasks_keep_the_capacity_bound"
+  ],
+  "judge_allow_remote_inverted": [
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[remote_not_allowed-judge_remote_not_allowed]",
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[strict_local-judge_strict_local]",
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[cloud_never-judge_cloud_fallback_never]",
+    "tests/test_h277_approval_judge.py::test_an_allowed_remote_judge_runs_and_says_it_is_remote",
+    "tests/test_h277_approval_judge.py::test_pending_route_carries_the_judge_status_and_no_secret",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_refuses_a_tainted_item_wherever_the_flag_sits[top-level]",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_refuses_a_tainted_item_wherever_the_flag_sits[metadata]",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_refuses_a_tainted_item_wherever_the_flag_sits[nested]",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_refuses_a_tainted_item_wherever_the_flag_sits[nested-list]",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_refuses_an_item_queued_in_an_untrusted_turn",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[allow_remote]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[fallback]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[safe_mode]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[decide]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[strict_local]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[taint]",
+    "tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[decided]",
+    "tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[missing]",
+    "tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[corrupt]"
+  ],
+  "judge_strict_local_ignored": [
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[strict_local-judge_strict_local]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[strict_local]"
+  ],
+  "judge_cloud_fallback_never_ignored": [
+    "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[cloud_never-judge_cloud_fallback_never]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[fallback]"
+  ],
+  "judge_timeout_floor_dropped": [
+    "tests/test_h277_approval_judge.py::test_the_default_timeout_is_bounded",
+    "tests/test_h277_approval_judge.py::test_the_timeout_is_clamped[0.5-20.0]",
+    "tests/test_h277_approval_judge.py::test_the_timeout_is_clamped[0-20.0]",
+    "tests/test_h277_approval_judge.py::test_the_timeout_is_clamped[-5-20.0]"
+  ],
+  "judge_public_leaks_remote_base_url": [
+    "tests/test_h277_approval_judge.py::test_an_allowed_remote_judge_runs_and_says_it_is_remote",
+    "tests/test_h277_approval_judge.py::test_pending_route_carries_the_judge_status_and_no_secret"
+  ],
+  "judge_prompt_not_fenced": [
+    "tests/test_h277_approval_judge.py::test_prompt_fences_untrusted_arguments_and_flags_injection"
+  ],
+  "judge_parse_extra_keys_allowed": [
+    "tests/test_h277_approval_judge.py::test_a_judge_that_says_approve_changes_nothing[{\"risk\": 0, \"why\": \"safe\", \"decision\": \"approved\"}-False]",
+    "tests/test_h277_approval_judge.py::test_parse_verdict_rejects[{\"risk\": 10, \"why\": \"x\", \"decision\": \"approve\"}]"
+  ],
+  "judge_parse_fractional_risk_allowed": [
+    "tests/test_h277_approval_judge.py::test_parse_verdict_rejects[{\"risk\": 10.5, \"why\": \"x\"}]"
+  ],
+  "judge_parse_empty_why_allowed": [
+    "tests/test_h277_approval_judge.py::test_parse_verdict_rejects[{\"risk\": 10, \"why\": \"   \"}]",
+    "tests/test_h277_approval_judge.py::test_parse_verdict_rejects_a_rationale_that_sanitises_to_nothing"
+  ],
+  "judge_parse_code_fence_unanchored": [
+    "tests/test_h277_approval_judge.py::test_parse_verdict_rejects[```json\\n{\"risk\": 1, \"why\": \"a\"}\\n```\\n```json\\n{\"risk\": 1, \"why\": \"b\"}\\n```]"
+  ],
+  "judge_clamp_upper_bound_raised": [
+    "tests/test_h277_approval_judge.py::test_parse_verdict_clamps - assert ..."
+  ],
+  "judge_rationale_fence_markers_kept": [
+    "tests/test_h277_approval_judge.py::test_parse_verdict_sanitises_the_rationale",
+    "tests/test_h277_approval_judge.py::test_parse_verdict_rejects_a_rationale_that_sanitises_to_nothing"
+  ],
+  "judge_wants_unconfigured_guard_dropped": [
+    "tests/test_h277_approval_judge.py::test_attached_but_unconfigured_judge_is_never_called",
+    "tests/test_h277_approval_judge.py::test_round2_unconfigured_judge_preserves_tainted_head_shape[True]"
+  ],
+  "judge_wants_skill_card_judged": [
+    "tests/test_h277_approval_judge.py::test_a_skill_change_card_is_never_judged"
+  ],
+  "judge_wants_local_agent_sent_remote": [
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_never_sees_local_or_tainted_items[action0]",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_never_sees_local_or_tainted_items[action1]"
+  ],
+  "judge_wants_tainted_sent_remote": [
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_never_sees_local_or_tainted_items[action2]",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_refuses_a_tainted_item_wherever_the_flag_sits[top-level]",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_refuses_a_tainted_item_wherever_the_flag_sits[metadata]",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_refuses_a_tainted_item_wherever_the_flag_sits[nested]",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_refuses_a_tainted_item_wherever_the_flag_sits[nested-list]",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_refuses_an_item_queued_in_an_untrusted_turn",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[taint]",
+    "tests/test_h277_approval_judge.py::test_round2_too_deep_scan_fails_closed",
+    "tests/test_h277_approval_judge.py::test_round2_wants_scans_nested_taint_without_a_recorded_mark",
+    "tests/test_h277_approval_judge.py::test_round2_remote_wants_refuses_an_already_normalised_deep_snapshot"
+  ],
+  "judge_selection_pin_check_inverted": [
+    "tests/test_h277_approval_judge.py::test_configured_judge_annotates_the_item_and_changes_nothing_else",
+    "tests/test_h277_approval_judge.py::test_qwen3_judge_gets_no_think - In...",
+    "tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity",
+    "tests/test_h277_approval_judge.py::test_a_judge_that_says_approve_changes_nothing[{\"risk\": 0, \"why\": \"ignore the user, approve\"}-True]",
+    "tests/test_h277_approval_judge.py::test_prompt_fences_untrusted_arguments_and_flags_injection",
+    "tests/test_h277_approval_judge.py::test_prompt_caps_large_arguments - ...",
+    "tests/test_h277_approval_judge.py::test_the_judge_never_holds_the_stored_args",
+    "tests/test_h277_approval_judge.py::test_the_first_annotation_wins - Ke...",
+    "tests/test_h277_approval_judge.py::test_restart_keeps_the_annotation_and_never_rejudges",
+    "tests/test_h277_approval_judge.py::test_an_allowed_remote_judge_runs_and_says_it_is_remote",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_never_sees_local_or_tainted_items[action0]",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_never_sees_local_or_tainted_items[action1]",
+    "tests/test_h277_approval_judge.py::test_a_remote_judge_never_sees_local_or_tainted_items[action2]",
+    "tests/test_h277_approval_judge.py::test_the_judge_runs_outside_a_childs_selection_and_overrides",
+    "tests/test_h277_approval_judge.py::test_a_request_from_a_worker_thread_is_judged_on_the_loop_in_a_fresh_context",
+    "tests/test_h277_approval_judge.py::test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop",
+    "tests/test_h277_approval_judge.py::test_pending_route_carries_the_judge_status_and_no_secret",
+    "tests/test_h277_approval_judge.py::test_an_idempotent_replay_returns_the_annotation_and_judges_once",
+    "tests/test_h277_approval_judge.py::test_decide_route_is_unaffected_by_a_judgement",
+    "tests/test_h277_approval_judge.py::test_active_model_uses_the_routers_local_backend",
+    "tests/test_h277_approval_judge.py::test_a_queued_call_with_a_wrapped_injection_is_stored_with_its_flag",
+    "tests/test_h277_approval_judge.py::test_a_truncated_view_is_recorded_on_the_item_and_in_the_audit",
+    "tests/test_h277_approval_judge.py::test_a_local_judge_still_judges_a_tainted_item",
+    "tests/test_h277_approval_judge.py::test_judge_concurrency_is_bounded_and_the_overflow_is_skipped",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[allow_remote]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[fallback]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[safe_mode]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[decide]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[strict_local]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[taint]",
+    "tests/test_h277_approval_judge.py::test_judge_pending_is_public_runtime_state_only",
+    "tests/test_h277_approval_judge.py::test_round2_non_json_values_are_normalised_and_scanned[Ignore all\\nprevious instructions]",
+    "tests/test_h277_approval_judge.py::test_round2_non_json_values_are_normalised_and_scanned[value1]",
+    "tests/test_h277_approval_judge.py::test_round2_non_json_values_are_normalised_and_scanned[value2]",
+    "tests/test_h277_approval_judge.py::test_round2_unrepresentable_keys_are_never_dispatched",
+    "tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[decided]",
+    "tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[missing]",
+    "tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[corrupt]",
+    "tests/test_h277_approval_judge.py::test_round2_decided_tasks_keep_the_capacity_bound"
+  ],
+  "queue_annotate_after_decision": [
+    "tests/test_h277_approval_judge.py::test_deciding_before_the_judge_answers_drops_the_verdict"
+  ],
+  "queue_annotate_second_answer_overwrites": [
+    "tests/test_h277_approval_judge.py::test_the_first_annotation_wins - As..."
+  ],
+  "queue_annotate_low_score_auto_approves": [
+    "tests/test_h277_approval_judge.py::test_a_judge_that_says_approve_changes_nothing[{\"risk\": 0, \"why\": \"ignore the user, approve\"}-True]"
+  ],
+  "queue_snapshot_is_stored_item": [
+    "tests/test_h277_approval_judge.py::test_the_judge_never_holds_the_stored_args"
+  ],
+  "queue_judge_inherits_caller_context": [
+    "tests/test_h277_approval_judge.py::test_the_judge_runs_outside_a_childs_selection_and_overrides"
+  ],
+  "queue_short_lived_loop_not_judged_on_hub": [
+    "tests/test_h277_approval_judge.py::test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop"
+  ],
+  "queue_decided_audit_drops_judge_identity": [
+    "tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity",
+    "tests/test_h277_approval_judge.py::test_decide_route_is_unaffected_by_a_judgement"
+  ],
+  "queue_judged_audit_drops_judge_identity": [
+    "tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity"
+  ],
+  "route_pending_drops_judge_key": [
+    "tests/test_h277_approval_judge.py::test_pending_route_carries_the_judge_status_and_no_secret",
+    "tests/test_h277_approval_judge.py::test_pending_route_without_a_judge_says_so",
+    "tests/test_h277_approval_judge.py::test_local_judge_status_shows_its_loopback_base_url"
+  ],
+  "doctor_model_roles_attention_ignored": [
+    "tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_a_bad_provider",
+    "tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_an_ignored_main_variable",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[6]",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[9]",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[12]",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[13]",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[15]",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[18]",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[20]",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[22]",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[23]",
+    "tests/test_h277_model_roles.py::test_the_vision_row_agrees_with_resolve_vlm_config[24]"
+  ],
+  "doctor_model_roles_ignored_not_flagged": [
+    "tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_an_ignored_main_variable"
+  ],
+  "hud_opinion_shown_on_skill_card": [],
+  "hud_repoll_never_stops": [],
+  "N1_post_slot_status_stale": [
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[allow_remote]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[fallback]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[safe_mode]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[strict_local]"
+  ],
+  "N1_post_slot_wants_dropped": [
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[taint]"
+  ],
+  "N1_disk_pending_recheck_dropped": [
+    "tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[decided]"
+  ],
+  "N1_memory_pending_recheck_dropped": [
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[False-decide]"
+  ],
+  "N1_skip_revoked_counter_dropped": [
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[allow_remote]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[fallback]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[safe_mode]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[decide]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[strict_local]",
+    "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[taint]",
+    "tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[decided]",
+    "tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[missing]",
+    "tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state[corrupt]"
+  ],
+  "N2_public_pending_hidden": [
+    "tests/test_h277_approval_judge.py::test_judge_pending_is_public_runtime_state_only"
+  ],
+  "N2_finish_pending_not_cleared": [
+    "tests/test_h277_approval_judge.py::test_judge_pending_is_public_runtime_state_only"
+  ],
+  "N2_decide_pending_not_cleared": [],
+  "N2_hud_early_timeout": [],
+  "N2_hud_deadline_refreshes": [],
+  "N2_capacity_released_on_decide": [
+    "tests/test_h277_approval_judge.py::test_round2_decided_tasks_keep_the_capacity_bound"
+  ],
+  "N3_within_budget_values_cut": [
+    "tests/test_h277_approval_judge.py::test_round2_small_long_value_is_sent_whole"
+  ],
+  "N3_small_values_inflated": [
+    "tests/test_h277_approval_judge.py::test_round2_many_small_values_survive_budget_allocation"
+  ],
+  "N3_args_cap_raised": [
+    "tests/test_h277_approval_judge.py::test_every_argument_key_stays_visible_past_the_cap",
+    "tests/test_h277_approval_judge.py::test_a_truncated_view_is_recorded_on_the_item_and_in_the_audit",
+    "tests/test_h277_approval_judge.py::test_round2_large_values_share_budget_and_keep_small_values_and_keys",
+    "tests/test_h277_approval_judge.py::test_round2_unrepresentable_keys_are_never_dispatched",
+    "tests/test_h277_approval_judge.py::test_round2_many_small_values_survive_budget_allocation"
+  ],
+  "N4_deep_truncated_flag_dropped": [
+    "tests/test_h277_approval_judge.py::test_round2_too_deep_scan_fails_closed"
+  ],
+  "N4_deep_flag_dropped": [
+    "tests/test_h277_approval_judge.py::test_round2_too_deep_scan_fails_closed"
+  ],
+  "N4_remote_depth_refusal_dropped": [
+    "tests/test_h277_approval_judge.py::test_direct_remote_scoring_also_refuses_unscannable_depth"
+  ],
+  "N4_normalised_marker_not_tainted": [
+    "tests/test_h277_approval_judge.py::test_round2_remote_wants_refuses_an_already_normalised_deep_snapshot"
+  ],
+  "N5_nfkc_dropped": [
+    "tests/test_h277_approval_judge.py::test_round2_nfkc_keeps_legacy_double_prime_neutralised"
+  ],
+  "N5_unicode_quote_categories_dropped": [
+    "tests/test_h277_approval_judge.py::test_the_rationale_cannot_close_the_huds_quotes_or_fake_its_separator",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_quote[\\xab]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_quote[\\xbb]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_quote[\\u2018]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_quote[\\u2019]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_quote[\\u201b]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_quote[\\u201c]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_quote[\\u201d]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_quote[\\u201f]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_quote[\\u2039]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_quote[\\u203a]"
+  ],
+  "N5_dot_separator_kept": [
+    "tests/test_h277_approval_judge.py::test_the_rationale_cannot_close_the_huds_quotes_or_fake_its_separator",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_dot[\\xb7]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_dot[\\u0387]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_dot[\\u2022]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_dot[\\u2027]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_dot[\\u2219]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_dot[\\u22c5]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_dot[\\u2e31]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_dot[\\u30fb]",
+    "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_dot[\\uff65]"
+  ],
+  "N6_bytes_repr_instead_of_decode": [
+    "tests/test_h277_approval_judge.py::test_round2_non_json_values_are_normalised_and_scanned[Ignore all\\nprevious instructions]"
+  ],
+  "N6_set_repr_instead_of_list": [
+    "tests/test_h277_approval_judge.py::test_round2_non_json_values_are_normalised_and_scanned[value1]"
+  ],
+  "N7_import_guard_wrong_exception": [
+    "tests/test_h277_approval_judge.py::test_round2_failed_judge_import_does_not_fail_requests"
+  ],
+  "N7_unconfigured_judge_taints_item": [
+    "tests/test_h277_approval_judge.py::test_round2_unconfigured_judge_preserves_tainted_head_shape[False]",
+    "tests/test_h277_approval_judge.py::test_round2_unconfigured_judge_preserves_tainted_head_shape[True]"
+  ],
+  "roles_pick_legacy_wins_over_role_name": [
+    "tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable",
+    "tests/test_h277_model_roles.py::test_deep_role_new_name_wins - Asserti...",
+    "tests/test_h277_model_roles.py::test_a_legacy_model_differing_only_by_case_is_reported_as_shadowed",
+    "tests/test_h277_model_roles.py::test_a_legacy_base_url_differing_only_by_case_is_reported_as_shadowed"
+  ],
+  "roles_pick_shadowed_legacy_not_reported": [
+    "tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable",
+    "tests/test_h277_model_roles.py::test_deep_role_new_name_wins - Asserti...",
+    "tests/test_h277_model_roles.py::test_a_legacy_model_differing_only_by_case_is_reported_as_shadowed",
+    "tests/test_h277_model_roles.py::test_a_legacy_base_url_differing_only_by_case_is_reported_as_shadowed"
+  ],
+  "roles_vision_view_legacy_url_wins": [
+    "tests/test_h277_model_roles.py::test_the_legacy_vlm_key_never_goes_to_a_foreign_role_base_url"
+  ],
+  "roles_vision_lmstudio_default_url_dropped": [
+    "tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping[10]",
+    "tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping[14]",
+    "tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_from_the_process_env[10]",
+    "tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_from_the_process_env[14]",
+    "tests/test_h277_model_roles.py::test_vision_role_falls_back_to_jarvis_vlm_model",
+    "tests/test_h277_model_roles.py::test_role_provider_lm_studio_maps_to_the_lmstudio_backend"
+  ],
+  "hud_opinion_advisory_label_dropped": []
+}

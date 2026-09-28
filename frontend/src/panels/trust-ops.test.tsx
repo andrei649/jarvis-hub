@@ -193,6 +193,9 @@ describe('TrustOpsPanel · rotate-tokens — destructive, confirmed, and echoed 
     fireEvent.click(rotateBtn());
     await waitFor(() => expect(callsTo(fn, ROTATE)).toHaveLength(1));
     expect(bodyOf(fn, ROTATE)).toEqual({ scope: 'admin' });
+    // H168: a rotation that landed clears the phrase, so a second rotation is typed again
+    await waitFor(() => expect(screen.getByLabelText('type the scope to confirm').value).toBe(''));
+    expect(rotateBtn().disabled).toBe(true);
   });
 
   it('re-arms the gate when the scope changes, so a stale confirm cannot fire', async () => {
@@ -248,5 +251,8 @@ describe('TrustOpsPanel · rotate-tokens — destructive, confirmed, and echoed 
     expect(screen.queryByText('reveal token')).toBeNull();
     expect(screen.queryByText('null · never expires')).toBeNull();
     expect(document.body.textContent).not.toMatch(/shown only once — the store keeps/);
+    // H168: a refusal keeps what was typed, to retry once the credential is fixed
+    expect(screen.getByLabelText('type the scope to confirm').value).toBe('admin');
+    expect(rotateBtn().disabled).toBe(false);
   });
 });

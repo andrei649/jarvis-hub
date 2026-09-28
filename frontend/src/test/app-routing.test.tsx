@@ -146,3 +146,192 @@ it('closes prefixed World with Escape and restores the invoking mode', async () 
     expect(location.pathname).toBe('/one/v2/chat');
   } finally {delete window.__NERVA_BASE_PATH__;}
 });
+
+it('H209: mod+/ opens the shortcuts panel, a rebinding moves the key, and it persists', async () => {
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  fireEvent.keyDown(window, { key: '/', ctrlKey: true });
+  const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+  fireEvent.keyDown(window, { key: '2' });                          // the panel owns the keyboard
+  expect(location.pathname).toBe('/v2/chat');
+  fireEvent.click(screen.getByRole('button', { name: 'Rebind Go to Agents' }));
+  fireEvent.keyDown(window, { key: 'x' });
+  expect(JSON.parse(localStorage.getItem('hud.shortcuts') || '{}')).toEqual({ 'mode.agents': 'x' });
+  fireEvent.keyDown(window, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(dialog.isConnected).toBe(false);
+  fireEvent.keyDown(window, { key: '2' });
+  expect(location.pathname).toBe('/v2/chat');
+  fireEvent.keyDown(window, { key: 'x' });
+  await screen.findByText('Agents route loaded');
+  expect(location.pathname).toBe('/v2/agents');
+});
+
+it('H209: a rebound World key opens World and the old one no longer does', async () => {
+  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'view.world': 'y' }));
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  fireEvent.keyDown(window, { key: 'w' });
+  expect(location.pathname).toBe('/v2/chat');
+  expect(screen.getByTitle('World Intelligence (Y)')).toBeTruthy();   // the hint names the new key
+  fireEvent.keyDown(window, { key: 'y' });
+  await screen.findByText('World route loaded');
+});
+
+it('H209: a key typed into a field is the field\'s, not a mode switch', async () => {
+  history.replaceState(null, '', '/v2/memory?demo=1');
+  render(<WorldAwareApp />);
+  const box = await screen.findByLabelText('Memory draft');
+  box.focus();
+  fireEvent.keyDown(box, { key: '2' });
+  fireEvent.keyDown(box, { key: 'w' });
+  await act(async () => {});
+  expect(location.pathname).toBe('/v2/memory');
+  expect(screen.queryByText('Agents route loaded')).toBeNull();
+  expect(screen.queryByText('World route loaded')).toBeNull();
+});
+
+it('H209: a rebinding made in the panel reaches the World button beside the app', async () => {
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  expect(screen.getByTitle('World Intelligence (W)')).toBeTruthy();
+  fireEvent.keyDown(window, { key: '/', ctrlKey: true });
+  await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+  fireEvent.click(screen.getByRole('button', { name: 'Rebind Open World Intelligence' }));
+  fireEvent.keyDown(window, { key: 'y' });
+  fireEvent.keyDown(window, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(screen.getByTitle('World Intelligence (Y)')).toBeTruthy();
+});
+
+it('H209: / focuses the message box', async () => {
+  history.replaceState(null, '', '/v2/cockpit?demo=1');
+  render(<WorldAwareApp />);
+  const box = await waitFor(() => { const el = document.querySelector('[data-composer]'); if (!el) throw new Error('no composer'); return el; });
+  fireEvent.keyDown(window, { key: '/' });
+  expect(document.activeElement).toBe(box);
+});
+
+it('H209: Ctrl+Space on the panel itself opens it, and a stored "mod+" no longer locks it out (F1)', async () => {
+  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'session.shortcuts': 'mod+' }));
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  fireEvent.keyDown(window, { key: '/', ctrlKey: true });
+  await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+  fireEvent.click(screen.getByRole('button', { name: 'Rebind Keyboard shortcuts' }));
+  fireEvent.keyDown(window, { key: ' ', ctrlKey: true });
+  expect(JSON.parse(localStorage.getItem('hud.shortcuts') || '{}')).toEqual({ 'session.shortcuts': 'mod+space' });
+  fireEvent.keyDown(window, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.keyDown(window, { key: ' ', ctrlKey: true });
+  await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+});
+
+it('H209: the palette still opens the panel when its chord is taken (F2)', async () => {
+  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'mode.cockpit': 'mod+/', 'session.shortcuts': 'mod+k' }));
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  fireEvent.keyDown(window, { key: '/', ctrlKey: true });            // Cockpit's now (the first action wins)
+  await waitFor(() => expect(location.pathname).toBe('/v2/cockpit'));
+  expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).toBeNull();
+  fireEvent.click(screen.getByTitle('command palette'));
+  fireEvent.click(screen.getByText('Keyboard shortcuts'));
+  await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+});
+
+it('H209: a palette rebound to a bare key never fires while typing (F3)', async () => {
+  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'session.palette': 'p' }));
+  history.replaceState(null, '', '/v2/memory?demo=1');
+  render(<WorldAwareApp />);
+  const box = await screen.findByLabelText('Memory draft');
+  box.focus();
+  expect(fireEvent.keyDown(box, { key: 'p' })).toBe(true);           // the letter is typed, not eaten
+  expect(screen.queryByText('Accent · Cyan')).toBeNull();
+  fireEvent.keyDown(box, { key: 'k', ctrlKey: true });
+  await screen.findByText('Accent · Cyan');
+});
+
+it('H209: a HUD action on a rebound chord is not also the browser\'s (F4)', async () => {
+  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'mode.agents': 'mod+d', 'view.world': 'mod+y' }));
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  expect(fireEvent.keyDown(window, { key: 'd', ctrlKey: true })).toBe(false);
+  await screen.findByText('Agents route loaded');
+  expect(fireEvent.keyDown(window, { key: 'y', ctrlKey: true })).toBe(false);
+  await screen.findByText('World route loaded');
+});
+
+it('H209: World\'s key waits while the panel is open (F5)', async () => {
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  fireEvent.keyDown(window, { key: '/', ctrlKey: true });
+  await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+  fireEvent.keyDown(window, { key: 'w' });
+  expect(location.pathname).toBe('/v2/chat');
+});
+
+it('H209: with storage off, a World rebinding still takes for this page (F6)', async () => {
+  const setItem = Storage.prototype.setItem;
+  const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
+    if (key === 'hud.shortcuts') throw new Error('storage off');
+    return setItem.call(this, key, value);
+  });
+  try {
+    render(<WorldAwareApp />);
+    await screen.findByText('Chat route loaded');
+    fireEvent.keyDown(window, { key: '/', ctrlKey: true });
+    await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+    fireEvent.click(screen.getByRole('button', { name: 'Rebind Open World Intelligence' }));
+    fireEvent.keyDown(window, { key: 'y' });
+    expect(screen.getByRole('button', { name: 'Rebind Open World Intelligence' }).textContent).toBe('Y');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.keyDown(window, { key: 'w' });
+    expect(location.pathname).toBe('/v2/chat');
+    fireEvent.keyDown(window, { key: 'y' });
+    await screen.findByText('World route loaded');
+  } finally { spy.mockRestore(); }
+});
+
+it('H209: the HUD\'s key hints follow a rebinding (F7)', async () => {
+  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'mode.agents': 'x', 'view.world': 'y', 'view.console': 'c', 'session.palette': 'mod+p' }));
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  expect(screen.getByTitle('World Intelligence (Y)')).toBeTruthy();
+  expect(screen.getByTitle('console (C)')).toBeTruthy();
+  const paletteButton = screen.getByTitle('command palette');
+  expect(paletteButton.textContent).toBe('Ctrl+P');
+  fireEvent.click(paletteButton);
+  const item = (name: string) => [...document.querySelectorAll('.pal-item')].find((el) => el.querySelector('.pi-name')?.textContent === name);
+  expect(item('Agents')?.querySelector('.pi-hint')?.textContent).toBe('X');
+  expect(item('Cockpit')?.querySelector('.pi-hint')?.textContent).toBe('1');
+});
+
+it('H209: the Escape that closes the panel leaves World open beneath it (F8)', async () => {
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  fireEvent.keyDown(window, { key: 'w' });
+  await screen.findByText('World route loaded');
+  fireEvent.keyDown(window, { key: '/', ctrlKey: true });
+  await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+  fireEvent.keyDown(window, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(location.pathname).toBe('/v2/world');
+});
+
+it('H209: in Cinema the panel does not open unseen; stage keys and hints follow the registry (F10, F4, F7)', async () => {
+  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'cinema.orb': 'q' }));
+  render(<WorldAwareApp />);
+  await screen.findByText('Chat route loaded');
+  fireEvent.keyDown(window, { key: 'm' });
+  const picker = await screen.findByTitle('voice orb (Q)');
+  fireEvent.keyDown(window, { key: '/', ctrlKey: true });
+  expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).toBeNull();
+  expect(fireEvent.keyDown(window, { key: 'q' })).toBe(false);
+  await waitFor(() => expect(screen.getByTitle('voice orb (Q)').className).toBe('on'));
+  fireEvent.keyDown(window, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByTitle('voice orb (Q)')).toBeNull());
+  expect(picker.isConnected).toBe(false);
+  fireEvent.keyDown(window, { key: '/', ctrlKey: true });
+  await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
+});

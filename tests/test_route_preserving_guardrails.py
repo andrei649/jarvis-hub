@@ -12,6 +12,7 @@ from agents.core.llm.hybrid_router import (
     HybridRouter,
     LocalBackendUnavailableError,
 )
+from agents.core.llm.providers import get_profile
 from agents.core.orchestrator import Orchestrator
 from agents.core.security.guardrails import GuardrailsEngine
 
@@ -24,7 +25,10 @@ EXPECTED_LOCAL_UNAVAILABLE_REPLY = (
 class RecordingBackend(LLMBackend):
     supports_tools = True
 
-    def __init__(self, answer: str):
+    def __init__(self, answer: str, *, provider: str = "lm-studio"):
+        self.profile = get_profile(provider)
+        self.base_url = ("http://127.0.0.1:1234/v1" if provider == "lm-studio"
+                         else self.profile.default_base_url)
         self.answer = answer
         self.calls = []
 
@@ -190,8 +194,8 @@ def build_agent(
 @pytest.mark.asyncio
 async def test_local_only_agents_never_call_cloud_after_guardrail_binding(agent_id):
     local = RecordingBackend("local answer")
-    gemini = RecordingBackend("gemini answer")
-    claude = RecordingBackend("claude answer")
+    gemini = RecordingBackend("gemini answer", provider="gemini")
+    claude = RecordingBackend("claude answer", provider="anthropic")
     agent = build_agent(agent_id, local=local, gemini=gemini, claude=claude)
     agent.guardrails = GuardrailsEngine(backend=claude)
 
@@ -257,7 +261,7 @@ async def test_synthesis_pins_local_when_any_contributor_is_strict_local():
     prompt, which breaks the one rule the documentation calls non-negotiable.
     """
     local = RecordingBackend("local synthesis")
-    routed = RecordingBackend("routed synthesis")
+    routed = RecordingBackend("routed synthesis", provider="gemini")
 
     class _RouterWithLocal(StaticRouter):
         active_model = "local-model"
@@ -293,7 +297,7 @@ async def test_synthesis_falls_back_to_the_join_when_no_local_backend_exists():
 
     Falling through to select_backend here would recreate the hole exactly.
     """
-    routed = RecordingBackend("routed synthesis")
+    routed = RecordingBackend("routed synthesis", provider="gemini")
     agent = Agent("jarvis", {"name": "Jarvis"}, StaticRouter(routed))   # no local_backend
     agent.soul = {"content": "test policy"}
     agent._gen_params = lambda route_name: (128, 0.0)
@@ -436,8 +440,8 @@ async def test_local_unavailable_paths_share_stable_reply_and_zero_cloud_calls(
     agent_id,
 ):
     local = RecordingBackend("local answer")
-    gemini = RecordingBackend("gemini answer")
-    claude = RecordingBackend("claude answer")
+    gemini = RecordingBackend("gemini answer", provider="gemini")
+    claude = RecordingBackend("claude answer", provider="anthropic")
     agent = build_agent(agent_id, local=local, gemini=gemini, claude=claude)
     router = agent.llm_router
     router._local_available = False
@@ -484,8 +488,8 @@ async def test_unavailable_synthesis_returns_constituent_reports():
 @pytest.mark.asyncio
 async def test_local_only_synthesis_uses_local_and_never_calls_cloud(agent_id):
     local = RecordingBackend("local synthesis")
-    gemini = RecordingBackend("gemini synthesis")
-    claude = RecordingBackend("claude synthesis")
+    gemini = RecordingBackend("gemini synthesis", provider="gemini")
+    claude = RecordingBackend("claude synthesis", provider="anthropic")
     agent = build_agent(agent_id, local=local, gemini=gemini, claude=claude)
     agent.guardrails = GuardrailsEngine(backend=claude)
 
@@ -506,8 +510,8 @@ async def test_local_only_unavailable_synthesis_returns_reports_without_cloud(
     agent_id,
 ):
     local = RecordingBackend("local synthesis")
-    gemini = RecordingBackend("gemini synthesis")
-    claude = RecordingBackend("claude synthesis")
+    gemini = RecordingBackend("gemini synthesis", provider="gemini")
+    claude = RecordingBackend("claude synthesis", provider="anthropic")
     agent = build_agent(agent_id, local=local, gemini=gemini, claude=claude)
     agent.llm_router._local_available = False
     agent.llm_router._backend = None

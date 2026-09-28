@@ -124,3 +124,59 @@ def test_mount_prefix_can_match_a_logical_route_segment(monkeypatch, prefix, pat
         assert f'window.__NERVA_BASE_PATH__="{prefix}"' in response.text
     else:
         assert 'topology' in response.json()
+
+
+def test_a_mounted_deployment_keeps_the_route_label_in_the_golden_signals(prefixed):
+    # The router writes scope["route"] into the scope this middleware hands it; the
+    # outer golden-signals middleware reads its label from the scope it passed down.
+    # Adapting a copy would count every request of a JARVIS_ROOT_PATH deployment as
+    # "<unmatched>" — /metrics would show one route and no latency per endpoint.
+    from agents.core.observability.http_metrics import HTTP_METRICS
+
+    path = '/api/system-map'
+    matched, unmatched = HTTP_METRICS.count('GET', path), HTTP_METRICS.count('GET', '<unmatched>')
+    assert prefixed.get(path).status_code == 200
+    assert HTTP_METRICS.count('GET', path) - matched == 1
+    assert HTTP_METRICS.count('GET', '<unmatched>') == unmatched
+
+
+def test_an_unrouted_path_under_the_mount_still_folds_into_unmatched(prefixed):
+    from agents.core.observability.http_metrics import HTTP_METRICS
+
+    unmatched = HTTP_METRICS.count('GET', '<unmatched>')
+    assert prefixed.get('/api/no-such-route-xyz').status_code == 404
+    assert HTTP_METRICS.count('GET', '<unmatched>') - unmatched == 1
+
+
+@pytest.mark.asyncio
+async def test_the_route_reaches_the_outer_scope_before_the_response_starts():
+    # BaseHTTPMiddleware's call_next returns at http.response.start, while a streaming
+    # body may still be running — the label must be on the outer scope by then, and a
+    # handler that raises after routing must still leave it there.
+    from types import SimpleNamespace
+
+    from agents.core.web_base_path import RootPathRoutingMiddleware
+    route = SimpleNamespace(path='/api/thing')
+    seen = []
+    outer = {'type': 'http', 'app': SimpleNamespace(root_path='/one'), 'path': '/api/thing'}
+
+    async def inner(scope, receive, send):
+        scope['route'] = route
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+        await send({'type': 'http.response.body', 'body': b''})
+
+    async def send(message):
+        seen.append((message['type'], outer.get('route')))
+
+    await RootPathRoutingMiddleware(inner)(outer, None, send)
+    assert seen[0] == ('http.response.start', route)
+    assert outer['path'] == '/api/thing'
+
+    async def raising(scope, receive, send):
+        scope['route'] = route
+        raise RuntimeError('handler failed after routing')
+
+    outer = {'type': 'http', 'app': SimpleNamespace(root_path='/one'), 'path': '/api/thing'}
+    with pytest.raises(RuntimeError):
+        await RootPathRoutingMiddleware(raising)(outer, None, send)
+    assert outer['route'] is route

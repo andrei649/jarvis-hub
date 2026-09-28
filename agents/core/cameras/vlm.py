@@ -80,6 +80,20 @@ class LocalCameraVLMConfig:
             raise ValueError("local VLM image limit must be between 1 byte and 2 MiB")
 
 
+def resolve_camera_vlm_config(orch):
+    """Read only global inference eligibility and normalized native configuration."""
+    getter = getattr(orch, 'get_setting', None)
+    if not callable(getter):
+        return None
+    flags = [getter(key, False) for key in ('camera.enabled', 'camera.vlm_enabled', 'camera.vlm_describe_events')]
+    if any(not isinstance(flag, (bool, int)) or flag not in (False, True) for flag in flags):
+        raise ValueError('camera eligibility must be boolean')
+    if not all(flags):
+        return None
+    return LocalCameraVLMConfig(endpoint=getter('camera.vlm_endpoint', 'http://127.0.0.1:8000/v1'),
+                                model=getter('camera.vlm_model', 'qwen3-vl-local'), enabled=True)
+
+
 class LocalCameraVLM:
     """Describe a masked PNG without retaining bytes or exposing backend failures."""
 
@@ -95,6 +109,7 @@ class LocalCameraVLM:
             raise ValueError("camera VLM generate callback must be callable")
         self._config = config
         self._generate = generate
+        self._native = False
 
     @property
     def enabled(self) -> bool:
@@ -109,7 +124,46 @@ class LocalCameraVLM:
             raise ValueError("camera VLM backend must provide generate_vision")
         return cls(config, generate=callback)
 
-    async def describe(self, frame: MaskedFrame, event: CameraEvent) -> str | None:
+    @classmethod
+    def from_native(cls, config, *, resolve_config, backend_factory=None, owns_backend=True):
+        """Own per-inference clients by default; explicitly borrowed native clients stay open."""
+        async def generate(*, privacy_check=None, **kwargs):
+            from agents.core.llm import selection_guards as sg
+            from agents.core.llm.data_handling import authorize_role_target
+            from agents.core.llm.vision_policy import (
+                camera_data_target,
+                unattended_camera_request_scope,
+            )
+            from agents.core.llm.vlm import VLMBackend
+            if resolve_config() != config:
+                return None
+            target = camera_data_target(config)
+            authorize_role_target(None, target, actual_use=False)
+            if privacy_check is not None:
+                privacy_check()
+            findings = sg.evaluate([sg.Choice('vision.model', target.provider, config.model)])
+            if findings:
+                raise sg.SelectionRefused(findings, sorted({finding.needs for finding in findings}))
+            backend = (backend_factory() if backend_factory is not None else
+                       VLMBackend(base_url=config.endpoint, api_key='', composer_auth=True))
+            closed = not owns_backend
+            try:
+                with unattended_camera_request_scope(config, backend, resolve_config=resolve_config,
+                                                      request_validity=privacy_check):
+                    try:
+                        return await backend.generate_vision_checked(**kwargs)
+                    finally:
+                        if owns_backend:
+                            closed = True
+                            await backend.aclose()
+            finally:
+                if not closed:
+                    await backend.aclose()
+        instance = cls(config, generate=generate)
+        instance._native = True
+        return instance
+
+    async def describe(self, frame: MaskedFrame, event: CameraEvent, *, privacy_check=None) -> str | None:
         if not self._config.enabled:
             return None
         if not isinstance(frame, MaskedFrame) or not isinstance(event, CameraEvent):
@@ -133,6 +187,7 @@ class LocalCameraVLM:
             "Do not identify any person or transcribe any plate."
         )
         try:
+            extra = {'privacy_check': privacy_check} if self._native else {}
             response = self._generate(
                 model=self._config.model,
                 prompt=prompt,
@@ -140,6 +195,7 @@ class LocalCameraVLM:
                 system=system,
                 max_tokens=160,
                 temperature=0.0,
+                **extra,
             )
             if inspect.isawaitable(response):
                 response = await response
@@ -177,4 +233,4 @@ def _safe_description(response: Any) -> str | None:
     return " ".join(text.split())
 
 
-__all__ = ["LocalCameraVLM", "LocalCameraVLMConfig"]
+__all__ = ["LocalCameraVLM", "LocalCameraVLMConfig", "resolve_camera_vlm_config"]

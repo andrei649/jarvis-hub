@@ -25,6 +25,24 @@ logger = logging.getLogger("jarvis.autonomy.executor")
 
 Handler = Callable[[object], Awaitable[dict]]
 
+#: The reason key on the executor's refusal when its execution guard said why it declined.
+GUARD_REASON_KEY = "guard_reason"
+
+
+class ExecutionGuardDeclined(Exception):
+    """An execution guard declining for a reason it can name (review round 6, item 6).
+
+    A guard returns True to allow, or False / raises anything else when it cannot allow
+    — machinery, recorded as a failure of the capability. A guard whose GATE declined
+    before any attempt (a feature switched off, a configuration or approval that changed,
+    the kernel denying) raises this with the gate's reason instead: the executor's
+    refusal carries it as ``guard_reason``, and the autonomy worker records nothing when
+    the reason is a refusal of the task's kind."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
 
 class TaskExecutor:
     def __init__(
@@ -48,14 +66,26 @@ class TaskExecutor:
         self._handlers[prefix.lower()] = handler
         return self
 
-    def resolve(self, kind: str) -> Optional[Handler]:
+    def _prefix_for(self, kind: str) -> Optional[str]:
         kind = (kind or "").lower()
         best: Optional[str] = None
         for prefix in self._handlers:
             if kind == prefix or kind.startswith(prefix):
                 if best is None or len(prefix) > len(best):
                     best = prefix
+        return best
+
+    def resolve(self, kind: str) -> Optional[Handler]:
+        best = self._prefix_for(kind)
         return self._handlers[best] if best is not None else self.fallback
+
+    def handles(self, kind: str) -> bool:
+        """Whether a handler registered for *kind* (not the generic fallback) runs it.
+
+        The autonomy worker records a capability outcome only for a task a registered
+        handler ran: a kind that falls through to the fallback (the LLM pipeline) did
+        not exercise the capability its manifest names (review round 5, item 9)."""
+        return self._prefix_for(kind) is not None
 
     async def execute(self, task) -> dict:
         # The guard and handler must observe the same detached bytes.  Without
@@ -70,15 +100,23 @@ class TaskExecutor:
                     "reason": "mediation_execution_context_required",
                 }
         if self.execution_guard is not None:
+            guard_reason = None
             try:
                 allowed = self.execution_guard(dispatch_task) is True
+            except ExecutionGuardDeclined as declined:
+                allowed = False
+                if isinstance(declined.reason, str) and declined.reason:
+                    guard_reason = declined.reason
             except Exception:
                 allowed = False
             if not allowed:
-                return {
+                refused = {
                     "status": "refused",
                     "reason": "mediation_execution_context_required",
                 }
+                if guard_reason is not None:
+                    refused[GUARD_REASON_KEY] = guard_reason
+                return refused
         handler = self.resolve(getattr(dispatch_task, "kind", ""))
         if handler is None:
             return {

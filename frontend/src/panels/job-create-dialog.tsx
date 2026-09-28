@@ -2,11 +2,13 @@ import React, { useEffect, useId, useRef } from 'react';
 import { JobBuilder, type JobToolset } from './job-builder';
 
 /** Native modal supplies background inertness; keyboard handling also excludes shell shortcuts. */
-export function JobCreateDialog({ onClose, onSave, error, toolsets }: {
+export function JobCreateDialog({ onClose, onSave, error, toolsets, guard }: {
   onClose: () => void;
   onSave: (body: Record<string, unknown>) => void;
   error?: string | null;
   toolsets?: JobToolset[];
+  /** H378 — the model-choice confirmation, shown inside the modal (the page behind is inert). */
+  guard?: React.ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const title = useId();
@@ -38,6 +40,7 @@ export function JobCreateDialog({ onClose, onSave, error, toolsets }: {
     </header>
     <p>Choose what should run and when. Actions retain the existing approval and delivery rules.</p>
     {error && <div role="alert" style={{ color: 'var(--red)' }}>{error}</div>}
+    {guard}
     <JobBuilder toolsets={toolsets} onSave={onSave} />
   </dialog>;
 }

@@ -193,7 +193,11 @@ async def test_caught_retention_failure_has_explicit_result(monkeypatch):
     def fail(*args, **kwargs):
         raise RuntimeError("private retention details")
     monkeypatch.setattr(retention, "run_retention", fail)
-    service = SchedulerService(SimpleNamespace(get_setting=lambda key, default: True))
+    # H262 — the sweep runs only once it holds the claim and an approved horizon.
+    checkpoints = SimpleNamespace(claim_sweep=lambda *a: True, put_state=lambda *a: True, session_ids=set,
+                                  get_state=lambda name: {"last_run_at": None, "value": {"values": {
+                                      "retention.enabled": True, "retention.audit_ttl_days": 365}}})
+    service = SchedulerService(SimpleNamespace(get_setting=lambda key, default: True, checkpoints=checkpoints))
     assert await service.run_retention_purge() == {"_scheduler_status": "failed"}
 
 

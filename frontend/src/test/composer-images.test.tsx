@@ -77,3 +77,14 @@ it('requires acknowledgement of the current remote destination and resets it on 
   expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
   expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
 });
+it('shows a remote policy warning without replacing the current destination checkbox',async()=>{
+  const warning='Images and prompts may be used for training.';
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify({...status,local:false,warning,data_policy:'unknown'}))));
+  render(<InputBar onSubmit={()=>{}} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  expect(await screen.findByText(warning)).toBeTruthy();
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
+  fireEvent.click(screen.getByRole('checkbox'));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false));
+  expect(screen.getByText(warning)).toBeTruthy();
+});

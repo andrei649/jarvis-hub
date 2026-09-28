@@ -166,6 +166,30 @@ class QdrantVectorStore(VectorStore):
         except Exception as exc:
             logger.warning(f"Qdrant remove error (degraded): {exc}")
 
+    def remove_where(self, key: str, value: Any) -> int:
+        """Delete every point whose payload ``key`` is ``value``; how many there were.
+
+        Raises like :meth:`clear`, not "degraded": a permanent session delete that left
+        the chat's turns in recall would otherwise report success (H218). A 404 means
+        there is no collection yet, so nothing to remove.
+        """
+        only = {"must": [{"key": key, "match": {"value": value}}]}
+        points = f"{self.url}/collections/{self.collection}/points"
+        try:
+            counted = self._client.post(f"{points}/count", json={"filter": only, "exact": True})
+            if counted.status_code == 404:
+                return 0
+            deleted = self._client.post(f"{points}/delete?wait=true", json={"filter": only}) \
+                if counted.status_code == 200 else counted
+        except Exception as exc:
+            raise RuntimeError(
+                f"vector-store delete failed: Qdrant at {self.url} is unreachable ({exc})") from exc
+        if deleted.status_code != 200:
+            raise RuntimeError(
+                f"vector-store delete failed: Qdrant returned {deleted.status_code} "
+                f"removing {key}={value!r} from {self.collection!r}")
+        return int(counted.json().get("result", {}).get("count", 0))
+
     def search_by_sender(self, sender: str, k: int = 10) -> list[dict]:
         try:
             self._ensure_collection()

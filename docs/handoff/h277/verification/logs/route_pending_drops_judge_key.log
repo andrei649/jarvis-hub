@@ -1,0 +1,58 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+..........................................................FFF........... [ 43%]
+........................................................................ [ 86%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+__________ test_pending_route_carries_the_judge_status_and_no_secret ___________
+
+rig = namespace(app=<fastapi.applications.FastAPI object at 0x10da69610>, state=namespace(orch=namespace(action_approvals=<agents.core.autonomy.action_approvals.ActionApprovalQueue object at 0x10da69340>)))
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-66/test_pending_route_carries_the0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10da66180>
+
+    async def test_pending_route_carries_the_judge_status_and_no_secret(rig, tmp_path, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-judge-secret")
+        backend = FakeBackend()
+        rig.state.orch.action_approvals = queue(tmp_path, remote_judge(monkeypatch, backend))
+        async with http(rig) as client:
+            created = (await client.post("/api/actions/request", json=ACTION)).json()["action"]
+            assert "judge" not in created                      # the request answered before any model call
+            pending = (await client.get("/api/actions/pending")).json()
+>           assert pending["judge"]["configured"] is True and pending["judge"]["reason"] == ""
+                   ^^^^^^^^^^^^^^^^
+E           KeyError: 'judge'
+
+tests/test_h277_approval_judge.py:696: KeyError
+__________________ test_pending_route_without_a_judge_says_so __________________
+
+rig = namespace(app=<fastapi.applications.FastAPI object at 0x10da697f0>, state=namespace(orch=namespace(action_approvals=<agents.core.autonomy.action_approvals.ActionApprovalQueue object at 0x10da68d70>)))
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-66/test_pending_route_without_a_j0')
+
+    async def test_pending_route_without_a_judge_says_so(rig, tmp_path):
+        rig.state.orch.action_approvals = queue(tmp_path)
+        async with http(rig) as client:
+            body = (await client.get("/api/actions/pending")).json()
+>       assert body["judge"]["configured"] is False and body["judge"]["reason"] == "judge_unset"
+               ^^^^^^^^^^^^^
+E       KeyError: 'judge'
+
+tests/test_h277_approval_judge.py:712: KeyError
+_____________ test_local_judge_status_shows_its_loopback_base_url ______________
+
+rig = namespace(app=<fastapi.applications.FastAPI object at 0x10da6e510>, state=namespace(orch=namespace(action_approvals=<agents.core.autonomy.action_approvals.ActionApprovalQueue object at 0x10da6eed0>)))
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-66/test_local_judge_status_shows_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10da6e0f0>
+
+    async def test_local_judge_status_shows_its_loopback_base_url(rig, tmp_path, monkeypatch):
+        rig.state.orch.action_approvals = queue(tmp_path, local_judge(monkeypatch, FakeBackend()))
+        async with http(rig) as client:
+            body = (await client.get("/api/actions/pending")).json()
+>       assert body["judge"]["base_url"] == "http://localhost:1234" and body["judge"]["local"] is True
+               ^^^^^^^^^^^^^
+E       KeyError: 'judge'
+
+tests/test_h277_approval_judge.py:719: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_pending_route_carries_the_judge_status_and_no_secret
+FAILED tests/test_h277_approval_judge.py::test_pending_route_without_a_judge_says_so
+FAILED tests/test_h277_approval_judge.py::test_local_judge_status_shows_its_loopback_base_url
+3 failed, 163 passed in 2.55s

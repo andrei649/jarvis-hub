@@ -931,7 +931,7 @@ describe('CinemaMesh — brain stage', () => {
       <CinemaMesh agents={AGENTS} tasks={TASKS} serverUp={true} voice={{ status: 'idle' }} onExit={onExit} t={{}} />,
     );
     expect(container.querySelector('.cin-stage .nmesh')).toBeTruthy();   // mesh is still default
-    fireEvent.click(getByTitle('briefing wall (b)'));
+    fireEvent.click(getByTitle('briefing wall (B)'));
     expect(container.querySelector('.wall')).toBeTruthy();
     expect(container.querySelector('.cinema')).toBeNull();               // the wall owns the screen
     fireEvent.keyDown(window, { key: 'Escape' });

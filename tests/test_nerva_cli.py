@@ -86,8 +86,8 @@ def temp_settings(tmp_path, monkeypatch):
 def test_the_command_tree_is_discoverable_and_complete():
     tree = command_tree(build_parser())
     assert set(tree) == {
-        "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
-        "prompt-size", "desktop", "security",
+        "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
+        "prompt-size", "desktop", "security", "todo", "skills", "company",
     }
     # S2 added the two owner acts an extension needs: agree to what a descriptor
     # declares, and prove it in the sandbox. `doctor` and `list` stay read-only.
@@ -98,6 +98,10 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["approvals"] == ["accept", "defer", "edit", "list", "reject"]
     assert tree["kernel"] == ["explain"]
     assert tree["estop"] == ["engage", "resume", "status"]
+    # H350: the linter reads files and reports; it never writes a skill.
+    assert tree["skills"] == ["lint", "list", "off", "on"]
+    # H464: read the runs, and let a parked one go. Nothing here starts a run.
+    assert tree["company"] == ["clear-wait", "list"]
 
 
 @pytest.mark.parametrize("report,expected", [
@@ -410,6 +414,22 @@ def test_sessions_and_chat_use_the_user_routes():
     assert hub.calls[-1] == ("POST", "/chat", {"message": "hello", "agent": "friday"})
 
 
+def test_sessions_show_each_title_after_the_start_time():
+    hub = _FakeHub(
+        {
+            "GET /sessions": {"sessions": [
+                {"id": "sess-titled", "started_at": "2026-09-26T10:00:00", "title": "Brasov weekend trip plan",
+                 "title_source": "model"},
+                {"id": "sess-untitled", "started_at": "2026-09-26T11:00:00", "title": "", "title_source": ""},
+            ]},
+        }
+    )
+    code, out, _err, _hub = _run(["sessions"], hub)
+    assert code == EXIT_OK
+    assert out.splitlines() == ["sess-titled  2026-09-26T10:00:00  Brasov weekend trip plan",
+                                "sess-untitled  2026-09-26T11:00:00"]
+
+
 def test_an_unreachable_hub_is_exit_3_with_the_next_step():
     hub = _FakeHub(raise_with=HubUnavailable("http://127.0.0.1:8080", "connection refused"))
     code, _out, err, _hub = _run(["status"], hub)
@@ -419,7 +439,7 @@ def test_an_unreachable_hub_is_exit_3_with_the_next_step():
 def test_a_missing_credential_is_exit_4_with_how_to_mint_one():
     hub = _FakeHub(raise_with=HubError(401, "admin token required"))
     code, _out, err, _hub = _run(["approvals", "list"], hub)
-    assert code == EXIT_AUTH and "JARVIS_ADMIN_TOKEN" in err and "token_store issue admin" in err
+    assert code == EXIT_AUTH and "JARVIS_ADMIN_TOKEN" in err and "token_recover.py issue admin" in err
 
 
 def test_any_other_hub_error_is_exit_1():
@@ -443,7 +463,7 @@ def test_config_list_get_set_and_check_work_on_the_data_root(temp_settings):
     assert code == EXIT_OK and settings_db.get_value("llm", "tool_loop_max_iterations") == 12
 
     code, out, _err, _hub = _run(["config", "list", "llm"])
-    assert code == EXIT_OK and "llm.tool_loop_max_iterations = 12  (number)" in out
+    assert code == EXIT_OK and "llm.tool_loop_max_iterations = 12  (number, set)" in out   # H273: changed from 8
 
     code, out, _err, _hub = _run(["config", "list", "--json"])
     assert code == EXIT_OK and json.loads(out)["llm"]
@@ -472,7 +492,8 @@ def test_config_set_refuses_what_the_schema_refuses(temp_settings):
 
 def test_config_masks_secrets_unless_revealed(temp_settings):
     secret_row = next(
-        (r for r in settings_db.DEFAULTS if "token" in r["key"] or "key" in r["key"] or r["kind"] in ("secret", "password")),
+        (r for r in settings_db.DEFAULTS
+         if r["kind"] == "text" and ("token" in r["key"] or "secret" in r["key"]) or r["kind"] in ("secret", "password")),
         None,
     )
     if secret_row is None:
@@ -484,6 +505,16 @@ def test_config_masks_secrets_unless_revealed(temp_settings):
     assert code == EXIT_OK and "sk-live-1234" not in out and "••••" in out
     code, out, _err, _hub = _run(["config", "get", name, "--reveal"])
     assert code == EXIT_OK and "sk-live-1234" in out
+
+
+def test_config_shows_a_token_budget_as_the_number_it_is(temp_settings):
+    """A number named ``…max_tokens`` is a budget, not a credential (review-H465c m-2:
+    /refine tells the owner to raise ``learning.review_max_tokens``)."""
+    for name in ("learning.review_max_tokens", "llm.max_tokens"):
+        category, key = name.split(".")
+        settings_db.put_category(category, {key: 4096})
+        code, out, _err, _hub = _run(["config", "get", name])
+        assert code == EXIT_OK and "4096" in out and "••" not in out, name
 
 
 def test_logs_tail_the_hub_log_or_say_where_it_would_be(tmp_path, monkeypatch):
@@ -824,11 +855,11 @@ def test_send_with_stdin_closed_is_a_usage_error_not_a_traceback():
 
 def test_send_strips_a_byte_order_mark_and_refuses_a_bom_only_body(tmp_path):
     bom = tmp_path / "bom.txt"
-    bom.write_bytes("\ufeffhello\n".encode("utf-8"))
+    bom.write_bytes("\ufeffhello\n".encode())
     code, _out, _err, hub = _run(["send", "--channel", "ntfy", "-f", str(bom)], hub=_FakeHub(_SENT))
     assert code == 0 and _posted(hub)[0][2]["text"] == "hello\n"
     only = tmp_path / "only.txt"
-    only.write_bytes("\ufeff \n".encode("utf-8"))
+    only.write_bytes("\ufeff \n".encode())
     code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(only)])
     assert code == EXIT_USAGE and "no message provided" in err and hub.calls == []
     code, _out, _err, hub = _run(["send", "--channel", "ntfy", "-f", "-"], hub=_FakeHub(_SENT), stdin="\ufeffpiped")
@@ -875,6 +906,19 @@ def test_send_names_an_unreadable_file_and_an_empty_one(tmp_path):
     empty.write_text("  \n", encoding="utf-8")
     code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(empty)])
     assert code == EXIT_USAGE and "no message provided" in err and hub.calls == []
+
+
+def test_send_long_path_diagnostics_preserve_filename_and_escape_controls(tmp_path):
+    parent = tmp_path / ("long-" * 32)
+    parent.mkdir()
+    huge = parent / "huge.log"
+    huge.write_text("y" * 5000, encoding="utf-8")
+    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(huge)])
+    assert code == EXIT_USAGE and "huge.log is longer than 4,000" in err
+    assert "\x1b" not in err and hub.calls == []
+    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(parent / "missing\x1b.txt")])
+    assert code == EXIT_USAGE and "cannot read" in err and "missing .txt" in err
+    assert "\x1b" not in err and len(err) < 200 and hub.calls == []
 
 
 def test_send_carries_a_subject_separately_to_a_channel_and_as_a_first_line_to_a_thread():
@@ -1218,3 +1262,86 @@ def test_security_audit_that_cannot_complete_is_exit_5_not_a_findings_exit(monke
     assert code == EXIT_UNAVAILABLE
     assert out == "" and "did not complete (RuntimeError)" in err and "nothing is claimed" in err
     assert "site-packages vanished" not in err                 # the message is not reflected
+
+
+def test_jobs_create_prints_whether_a_first_run_was_queued():
+    # H687 — the hub's confirmation names the first run (or the wait for the cadence).
+    interval = {"id": "abc123abc123", "name": "Ask", "schedule_text": "every 2 hours", "cron": "0 */2 * * *"}
+    queued = _FakeHub({"POST /api/jobs": {"ok": True, "job": interval, "first_run": {"status": "queued"},
+                                          "confirmation": "first run now, then every 2 hours (0 */2 * * *)"}})
+    code, out, _err, _hub = _run(["jobs", "create", "--blueprint", "ask_agent", "--param", "prompt=hi"], queued)
+    assert code == EXIT_OK and "first run now, then every 2 hours (0 */2 * * *)" in out
+    job = {"id": "abc123abc123", "name": "Ask", "schedule_text": "every weekday at 8:00", "cron": "0 8 * * 1-5"}
+    # An older hub without the field still prints the schedule, as before.
+    older = _FakeHub({"POST /api/jobs": {"ok": True, "job": job}})
+    code, out, _err, _hub = _run(["jobs", "create", "--blueprint", "ask_agent", "--param", "prompt=hi"], older)
+    assert code == EXIT_OK and "every weekday at 8:00 (0 8 * * 1-5)" in out
+
+
+# ── H464: company runs, and letting a parked one go ─────────────────────────
+
+_BRIEF = {
+    "schema": "nerva.company.brief.v1", "enabled": True, "empty": False, "reason": "",
+    "runs": [
+        {"run_id": "r1", "status": "working", "headline": "parked — waiting on task 412 to finish",
+         "waiting_on": "task 412 to finish"},
+        {"run_id": "r2", "status": "succeeded", "headline": "met its goal", "waiting_on": None},
+    ],
+}
+
+
+def test_company_list_prints_one_line_per_run():
+    hub = _FakeHub({"GET /api/company/runs": _BRIEF})
+    code, out, _err, hub = _run(["company", "list"], hub)
+    assert code == EXIT_OK
+    assert out.splitlines() == [
+        "r1  working  parked — waiting on task 412 to finish",
+        "r2  succeeded  met its goal",
+    ]
+    code, out, _err, _hub = _run(["company", "list", "--json"], hub)
+    assert code == EXIT_OK and json.loads(out) == _BRIEF
+
+
+def test_company_list_says_why_it_is_empty():
+    hub = _FakeHub({"GET /api/company/runs": {"empty": True, "runs": [],
+                                              "reason": "company mode is off, so no run was opened"}})
+    code, out, _err, _hub = _run(["company", "list"], hub)
+    assert code == EXIT_OK and out.strip() == "company mode is off, so no run was opened"
+
+
+def test_company_list_refuses_a_reply_with_no_runs_in_it():
+    code, _out, err, _hub = _run(["company", "list"], _FakeHub({"GET /api/company/runs": {}}))
+    assert code == EXIT_FAILED and "no list of runs" in err
+
+
+@pytest.mark.parametrize("cleared,said", [(True, "cleared"), (False, "no barrier")])
+def test_company_clear_wait_posts_the_owner_clear(cleared, said):
+    route = "POST /api/company/runs/r1/barrier/clear"
+    hub = _FakeHub({route: {"ok": True, "cleared": cleared, "run": {"id": "r1"}}})
+    code, out, _err, hub = _run(["company", "clear-wait", "r1"], hub)
+    assert code == EXIT_OK and out.strip() == said
+    assert hub.calls == [("POST", "/api/company/runs/r1/barrier/clear", {})]
+    code, out, _err, _hub = _run(["company", "clear-wait", "r1", "--json"], hub)
+    assert json.loads(out)["cleared"] is cleared
+
+
+def test_company_clear_wait_refuses_a_bad_run_id_before_the_hub():
+    code, _out, err, hub = _run(["company", "clear-wait", "../x"])
+    assert code == EXIT_USAGE and "not a run id" in err
+    assert hub.calls == []
+
+
+def test_company_clear_wait_reports_an_unknown_run():
+    code, _out, err, _hub = _run(["company", "clear-wait", "nope"], _FakeHub())
+    assert code == EXIT_FAILED and "no fake route" in err
+
+
+def test_company_clear_wait_that_lost_a_race_says_what_the_run_waits_on_now():
+    """H464 review F8: nothing was cleared because a new barrier raced in — say that,
+    not "no barrier"."""
+    route = "POST /api/company/runs/r1/barrier/clear"
+    hub = _FakeHub({route: {"ok": True, "cleared": False, "waiting_on": "task 8 to finish",
+                            "run": {"id": "r1"}}})
+    code, out, _err, _hub = _run(["company", "clear-wait", "r1"], hub)
+    assert code == EXIT_OK
+    assert out.strip() == "not cleared: it is now waiting on task 8 to finish"

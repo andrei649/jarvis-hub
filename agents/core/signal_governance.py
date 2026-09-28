@@ -12,6 +12,15 @@ existing human-approval queue. It is deliberately conservative:
 - **Only actionable recommendations are queued** (``requiresApproval`` truthy);
   purely advisory "keep monitoring" items are skipped.
 - **Audited.** An optional ``audit`` callable records every queued item.
+- **Tainted at ingest.** Recommendations are derived from external OSINT feeds, so
+  every queued payload carries the taint mark (``TAINT_SOURCE``); this bridge
+  queues outside the worker, whose origin marking it therefore cannot rely on.
+  Today exactly one consumer reads that mark: the task approval judge
+  (``TaskApprovalJudge._snapshot``), which then refuses to send the row to a remote
+  judge. Nothing else does — the bridge enqueues directly, so no kernel action is
+  ever built from the row, and no executor is registered for
+  ``signal_recommendation``: an approved row falls to the coordinator's generic
+  ``_llm`` fallback, which runs its prompt (or title) without carrying the mark.
 
 This keeps the project's invariant intact: facts, raw leads, model inference,
 forecasts, and recommendations stay separate, and nothing acts without approval.
@@ -27,6 +36,7 @@ from typing import Any, Callable, Optional
 from agents.core.automation_contracts import ContractTemplate, predicate
 
 from .autonomy.queue import TaskQueue, TaskStatus
+from .security import taint
 
 logger = logging.getLogger("jarvis.signal_governance")
 
@@ -35,6 +45,8 @@ TASK_KIND = "signal_recommendation"
 # EXTERNAL tier: a human must decide. We also force BLOCKED regardless, so this is
 # defense-in-depth, not the only guard.
 RISK_TIER_EXTERNAL = 2
+#: The taint source every queued recommendation carries (review F4): the feed is OSINT.
+TAINT_SOURCE = "osint:signal-layer"
 
 
 def _signal_recommendation_contract_template() -> ContractTemplate:
@@ -109,12 +121,12 @@ class SignalGovernanceBridge:
 
         for rec in actionable:
             label = str(rec.get("label") or "Signal Layer recommendation")
-            payload = {
+            payload = taint.mark({
                 "recommendation": rec,
                 "context": context or {},
                 "preview_only": True,
                 "source": "signal-layer",
-            }
+            }, TAINT_SOURCE)
             try:
                 decision = SIGNAL_RECOMMENDATION_CONTRACT.evaluate(payload, now=time.time())
                 if not decision.admissible:

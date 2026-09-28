@@ -51,6 +51,10 @@ async function loadZip() {
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } vi.restoreAllMocks(); });
 
+/* H168 — the uninstall is an IRREVERSIBLE_OR_MONEY confirmation: type the folder shown. */
+const typeTheFolder = () => fireEvent.change(screen.getByLabelText('type the folder to confirm the removal'),
+  { target: { value: screen.getByLabelText('skills/ folder').value.trim() } });
+
 describe('MarketplaceAdminPanel — the installed tree and its three lifecycle writes', () => {
   it('renders GET /skills as the OBJECT MAP it is (arr() would fabricate an empty tree)', async () => {
     mockRoutes(() => null);
@@ -157,6 +161,31 @@ describe('MarketplaceAdminPanel — the installed tree and its three lifecycle w
     expect(screen.getByText('confirm remove')).toBeTruthy();
   });
 
+  it('H168 — the removal is typed: the folder, exactly, and a changed folder is typed again', async () => {
+    const fn = mockRoutes(() => null);
+    render(<MarketplaceAdminPanel />);
+    await waitFor(() => expect(screen.getByText('Weather Intel')).toBeTruthy());
+    fireEvent.click(screen.getAllByText('uninstall…')[0]);
+    const phrase = screen.getByLabelText('type the folder to confirm the removal');
+    expect(document.activeElement).toBe(phrase);                 // focus goes to the phrase box
+    const confirm = () => screen.getByText('confirm remove').closest('button');
+    expect(confirm().disabled).toBe(true);
+    fireEvent.change(phrase, { target: { value: 'Weather_Intel' } });
+    expect(confirm().disabled).toBe(true);                       // case matters
+    fireEvent.change(phrase, { target: { value: 'weather_intel' } });
+    expect(confirm().disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText('skills/ folder'), { target: { value: 'weather' } });
+    expect(screen.getByLabelText('type the folder to confirm the removal').value).toBe('');   // typed again
+    expect(confirm().disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('skills/ folder'), { target: { value: '  ' } });
+    expect(confirm().disabled).toBe(true);                       // no folder, nothing to confirm
+    fireEvent.keyDown(screen.getByLabelText('type the folder to confirm the removal'), { key: 'Enter' });
+    expect(posts(fn)).toHaveLength(0);
+    fireEvent.keyDown(screen.getByLabelText('type the folder to confirm the removal'), { key: 'Escape' });
+    expect(screen.queryByText('confirm remove')).toBeNull();     // Escape backs out
+    expect(posts(fn)).toHaveLength(0);
+  });
+
   it('renders uninstall 200 {"ok":true,"removed":false} as "nothing was deleted", never as a success', async () => {
     const fn = mockRoutes((u, method) => {
       if (u === '/api/skills/marketplace/uninstall' && method === 'POST') {
@@ -169,6 +198,7 @@ describe('MarketplaceAdminPanel — the installed tree and its three lifecycle w
 
     fireEvent.click(screen.getAllByText('uninstall…')[0]);
     fireEvent.click(screen.getByLabelText('purge registry row matching the folder string'));
+    typeTheFolder();                                   // H168: the removal is typed
     fireEvent.click(screen.getByText('confirm remove'));
 
     await waitFor(() => expect(screen.getByText(/removed:false — nothing was deleted from disk/)).toBeTruthy());
@@ -190,9 +220,11 @@ describe('MarketplaceAdminPanel — the installed tree and its three lifecycle w
 
     fireEvent.click(screen.getAllByText('uninstall…')[0]);
     fireEvent.change(screen.getByLabelText('skills/ folder'), { target: { value: 'weather' } });
+    typeTheFolder();                                   // H168: the removal is typed
     fireEvent.click(screen.getByText('confirm remove'));
 
     await waitFor(() => expect(screen.getByText(/removed skills\/weather/)).toBeTruthy());
+    expect(screen.queryByText('confirm remove')).toBeNull();     // H168: a removal that landed closes it
     // purge was NOT requested, so the registry row is genuinely untouched — that is the
     // one branch where the panel may speak about the registry without hedging.
     expect(container.textContent).toContain('purge was not requested');
@@ -226,6 +258,7 @@ describe('MarketplaceAdminPanel — the installed tree and its three lifecycle w
     fireEvent.click(screen.getAllByText('uninstall…')[0]);
     fireEvent.change(screen.getByLabelText('skills/ folder'), { target: { value: 'weather' } });
     fireEvent.click(screen.getByLabelText('purge registry row matching the folder string'));
+    typeTheFolder();                                   // H168: the removal is typed
     fireEvent.click(screen.getByText('confirm remove'));
 
     await waitFor(() => expect(screen.getByText(/removed skills\/weather/)).toBeTruthy());
@@ -249,6 +282,7 @@ describe('MarketplaceAdminPanel — the installed tree and its three lifecycle w
     fireEvent.click(screen.getAllByText('uninstall…')[0]);
     fireEvent.change(screen.getByLabelText('skills/ folder'), { target: { value: 'weather' } });
     fireEvent.click(screen.getByLabelText('purge registry row matching the folder string'));
+    typeTheFolder();                                   // H168: the removal is typed
     fireEvent.click(screen.getByText('confirm remove'));
 
     await waitFor(() => expect(screen.getByText(/removed skills\/weather/)).toBeTruthy());
@@ -282,6 +316,7 @@ describe('MarketplaceAdminPanel — the installed tree and its three lifecycle w
 
     fireEvent.click(screen.getAllByText('uninstall…')[0]);
     fireEvent.click(screen.getByLabelText('purge registry row matching the folder string'));
+    typeTheFolder();                                   // H168: the removal is typed
     fireEvent.click(screen.getByText('confirm remove'));
 
     await waitFor(() => expect(screen.getByText(/nothing was deleted from disk/)).toBeTruthy());

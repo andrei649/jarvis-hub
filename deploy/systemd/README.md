@@ -60,14 +60,45 @@ The hub exposes machine-facing probes (H23.11) a monitor can poll:
 - `GET /healthz` → `200` while the process serves (liveness).
 - `GET /readyz`  → `200` once the orchestrator + agents are loaded, `503` while starting.
 
-A simple external watchdog (cron/timer or your monitoring stack):
+The unit is `Type=notify` (H283): the hub sends `READY=1` to systemd once its port is
+bound and the orchestrator and its agents are loaded (the moment `/readyz` answers
+200), so `systemctl start jarvis-hub` returns when it can serve, and units ordered
+`After=jarvis-hub.service` wait for that; a bind that fails is never announced. It feeds
+systemd's watchdog (`WatchdogSec=60`) with `WATCHDOG=1` every 30 s from its event loop:
+if the loop hangs, the pings stop and systemd restarts the hub (`Restart=on-failure`).
+On stop it sends `STOPPING=1` before draining. `systemctl status jarvis-hub` shows its
+`STATUS=` line. `serve.py` (the unit's `ExecStart`) speaks the protocol; a raw
+`uvicorn agents.web:app` does not, so keep `serve.py` in a `Type=notify` unit. Outside
+systemd (no `NOTIFY_SOCKET`) none of this runs.
+
+For a monitor outside systemd, the probes still work:
 
 ```bash
 curl -fsS http://127.0.0.1:8080/readyz >/dev/null || systemctl restart jarvis-hub
 ```
 
-> systemd's built-in `WatchdogSec` needs `sd_notify` from the app, which the hub
-> does not emit — use the `/readyz` curl check above instead.
+To tell the model about the machine it runs on (a proxy, how credentials are handled
+here, where the shared drives are), set `JARVIS_ENVIRONMENT_HINT` in the env file, in
+double quotes, with `\n` for a line break (a quoted value may also span real lines).
+Unquoted, systemd drops the backslash and the hub receives a plain `n`. It is given to
+every agent as a description of the machine, not as instructions, at most 2,000
+characters; `nerva prompt-size`, run with the same variable, counts it.
+
+## Safe mode
+
+To start without the owner's customizations (H275: skills that did not ship, saved MCP
+servers, persona and heartbeat overlays, scheduled jobs, plugins and the rest), set
+`JARVIS_SAFE_MODE=1` in `/etc/jarvis-hub/jarvis.env` and restart **both** units:
+
+```bash
+sudo systemctl restart jarvis-hub jarvis-runtime
+```
+
+Both units read that env file, and both need it: `jarvis-runtime` runs the heartbeats,
+the owner jobs and the agents on the same data root as the hub, so a hub in safe mode
+beside a normal runtime still fires them. `--safe-mode` on `serve.py`,
+`scripts/runtime_supervisor.py` or `scripts/coordinator.py` sets the same variable for
+that one process only. To leave safe mode, remove the line and restart both again.
 
 ## Notes
 

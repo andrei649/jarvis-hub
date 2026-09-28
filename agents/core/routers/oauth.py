@@ -4,12 +4,12 @@ One router for three small, related governance-edge surfaces:
 
 * `/api/oauth/*` — third-party OAuth connect/callback/refresh for Gmail, Google
   Calendar and Spotify (PKCE + encrypted token at rest live in
-  `core.plugins.oauth`).
+  `agents.core.plugins.oauth`).
 * `/api/oracle/*` — the Oracle bridge: Claude-session status, sync, and
   conflict detection/resolution (read off `orch.oracle_bridge`).
 * `/api/trust/status` — the H12.10 trust indicator (mic state + strict-local).
 
-`OAUTH_SERVICES` + the `core.plugins.oauth` symbols are used only by the OAuth
+`OAUTH_SERVICES` + the `agents.core.plugins.oauth` symbols are used only by the OAuth
 routes, so they move here verbatim (and `init_from_env()` runs at this module's
 import, exactly as it did in web.py's body). The `_trust_status` / `_env_truthy`
 helpers were used only by the trust route in web.py (grep-confirmed), so they
@@ -27,7 +27,10 @@ from agents.core.env_config import env_flag, truthy as _env_truthy
 from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import nocache_json
 
-from core.plugins.oauth import (
+# The plugin manager's own copy of the module (H273): it re-reads the client ids after the
+# .env files are loaded, so the ids in .env reach these routes (a `core.` import was a
+# second module object, initialised once at import, before any load).
+from agents.core.plugins.oauth import (
     init_from_env, get_google_auth_url, get_spotify_auth_url,
     exchange_google_code, exchange_spotify_code,
     refresh_google_token, refresh_spotify_token, load_token,

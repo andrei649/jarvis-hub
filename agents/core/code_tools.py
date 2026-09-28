@@ -53,6 +53,7 @@ from .environments.output_limits import (
     truncate_text,
 )
 from .sandbox_invocation import bind
+from .security.taint import is_untrusted_source
 from .tool_result_store import DEFAULT_PAGE_BYTES, page_recipe
 from .tool_rpc import ToolRPCValidationError, current_tool_actor
 
@@ -291,6 +292,7 @@ class CodeExecutionTool:
         kernels=None,
         authorizer: Callable[..., object] | None = None,
         result_store=None,
+        shared_session: Callable[[], bool] | None = None,
     ) -> None:
         self._server = server
         self._sandbox = sandbox
@@ -298,6 +300,9 @@ class CodeExecutionTool:
         self._agent_patterns = agent_patterns
         self._principal = principal
         self._session_id = session_id
+        # Whether the turn runs on the owner's shared session (H315 second review): a
+        # script's reach is narrowed exactly as the turn's offer is. Unknown is yes.
+        self._shared_session = shared_session
         # K2. Absent, or switched off, and every call is the K1 one-shot path.
         self._kernels = kernels
         self._authorizer = authorizer
@@ -342,6 +347,10 @@ class CodeExecutionTool:
                 session = str(self._session_id() or "")
             except Exception:
                 session = ""
+        try:
+            shared = True if self._shared_session is None else bool(self._shared_session())
+        except Exception:
+            shared = True
         invocation, _decision = bind(
             tools=self._offerable(),
             agent=agent,
@@ -350,6 +359,7 @@ class CodeExecutionTool:
             session_id=session,
             settings=self._settings,
             agent_patterns=patterns,
+            shared_session=shared,
         )
         return invocation
 
@@ -462,6 +472,8 @@ class CodeExecutionTool:
             "max_tool_calls": max_calls,
             "timed_out": run.timed_out,
             "offered_tools": sorted(invocation.offered),
+            **_run_taint(stdout.text, stderr.text,
+                         read_untrusted=is_untrusted_source(current_action_origin())),
         }
 
 
@@ -551,6 +563,7 @@ class CodeExecutionTool:
             "output_limit": limit,
             "session": True,
             "offered_tools": sorted(invocation.offered),
+            **_run_taint(stdout.text, stderr.text, read_untrusted=outcome.tainted),
         }
 
     def _authorize_fallback(self, invocation):
@@ -588,6 +601,17 @@ class CodeExecutionTool:
             raise ToolRPCValidationError(SESSION_DENIED)
 
 
+def _run_taint(stdout: str, stderr: str, *, read_untrusted: bool) -> dict:
+    """``{"tainted": True}`` for a run whose output reaches the model as third-party
+    text (H315 third review). The tool declares ``untrusted_output``, but the loop fences
+    such a result only when it is ok, and a run that fails still carries what it printed:
+    a script that fetched a page, printed it and exited 1 handed the page to a clean turn.
+    A run that read an untrusted tool, or a kernel that held one, says so too, whatever
+    it printed: the broker's own mark stays in this handler's task and never reaches the
+    turn. The loop fences a result that says ``tainted`` and raises the turn's taint."""
+    return {"tainted": True} if stdout or stderr or read_untrusted else {}
+
+
 def register_code_tools(
     server,
     *,
@@ -599,6 +623,7 @@ def register_code_tools(
     kernels=None,
     authorizer: Callable[..., object] | None = None,
     result_store=None,
+    shared_session: Callable[[], bool] | None = None,
 ) -> list[str]:
     """Register ``execute_code`` when the owner has switched it on, else nothing.
 
@@ -616,7 +641,7 @@ def register_code_tools(
     tool = CodeExecutionTool(
         server, sandbox=sandbox, settings=settings, agent_patterns=agent_patterns,
         principal=principal, session_id=session_id, kernels=kernels,
-        authorizer=authorizer, result_store=result_store,
+        authorizer=authorizer, result_store=result_store, shared_session=shared_session,
     )
     sessions = tool.sessions_on()
     server.register_tool(

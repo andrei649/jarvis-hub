@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T11:16:33.618746+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "Local H487 originating-chat outcomes and H513 four auxiliary consumers; both remain partial",
+  "full_backend_command": ".venv/bin/python -m pytest tests/ -n 3 --dist loadfile --timeout=90 -q --tb=short --junitxml=/tmp/nerva-chat-aux-backend-green.xml",
+  "verification": [
+    {
+      "path": "/tmp/nerva-h487-chat-combined.xml",
+      "total": 776,
+      "passed": 776,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 18.05,
+      "sha256": "fd45d6f7d167493734556a631f6cf70b13fad7b0b05e4ffcf700a04655f0f9eb"
+    },
+    {
+      "path": "/tmp/nerva-h487-chat-lifecycle.xml",
+      "total": 111,
+      "passed": 111,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 4.706,
+      "sha256": "a05fad253f1b08f0413556e64b0120da9508fe890ecf65b8a047e2b6f5ddbf8e"
+    },
+    {
+      "path": "/tmp/nerva-h513-auxiliary-regression.xml",
+      "total": 66,
+      "passed": 66,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 1.367,
+      "sha256": "4d5a22c257906f88cb3fff0c519e62d35880170007395c6084e8ec1534ee353b"
+    },
+    {
+      "path": "/tmp/h513-auxiliary-focused.xml",
+      "total": 374,
+      "passed": 374,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 4.057,
+      "sha256": "e9ebb9947e978afe11415b13da73b13d09646fe6453db8280ed58544da7f8840"
+    },
+    {
+      "path": "/tmp/h513-auxiliary-integration-final.xml",
+      "total": 13,
+      "passed": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.763,
+      "sha256": "869719553f11e26336f3e17969c81cb4f9c66d25073550d5a91cd286cfbabff1"
+    },
+    {
+      "path": "/tmp/nerva-chat-aux-backend.xml",
+      "total": 18873,
+      "passed": 18820,
+      "failures": 18,
+      "errors": 0,
+      "skipped": 35,
+      "seconds": 238.703,
+      "sha256": "56b81d15f27237987d198293127a5295c63eb341f0461f06b83cb46b3933c126"
+    },
+    {
+      "path": "/tmp/h487-wrapper-minimal-green.xml",
+      "total": 363,
+      "passed": 361,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2,
+      "seconds": 6.426,
+      "sha256": "4a4991117898ca102d88c4e2eb665caff08cd01460392fbac61766112a9e3d8a"
+    },
+    {
+      "path": "/tmp/nerva-h513-final-fixture-green.xml",
+      "total": 165,
+      "passed": 165,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 5.928,
+      "sha256": "a8deb1c855d9f6636bd1dbaabf5549fd880dd3633d749b31d7203c1f6ba323af"
+    },
+    {
+      "path": "/tmp/nerva-chat-aux-backend-green.xml",
+      "total": 18873,
+      "passed": 18838,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "seconds": 241.43,
+      "sha256": "ce1322d15bae632f3a79b0c156f5c7e7742edaee5b9171dfa8706a125cd295ef"
+    }
+  ],
+  "source_sha256": {
+    "agents/core/approval_outcomes.py": "3279daae231b3674e42b04b8d11ce829264c973eb19e5df5868db613fdb8901c",
+    "agents/core/autonomy/queue.py": "d342171633f18222594d9b3eb226dcb8297a1b35ba6e36acc5df2afbbef15121",
+    "agents/core/autonomy/worker.py": "7b96fbd3de6047add7e437a4acc61dadf8244f8c3e801c5937ac8d0cb4441156",
+    "agents/core/orchestrator.py": "4e31f75e9907e53f37935a72c474223b8933dd560f41133327bd2fd402193513",
+    "agents/core/tool_rpc.py": "78683281e695f4ccc8b6626bd96481378cfdce21740622a054908d27918f9109",
+    "agents/core/session_archive.py": "6abb94b3fb6fef38047c53bdd38c0c8f953ea2597e15d0d3d221362cee9ea1e0",
+    "agents/core/llm/data_handling.py": "448a8fbd05a1188ca1f6351df8e59fed9e50fbabe44b46dbc7d2634becaa10dd",
+    "tests/test_h487_chat_outcome_store.py": "31c81ae36c876aca365abea3f1514dc2ffff479c1b38bda736ed513e36ed390e",
+    "tests/test_h487_chat_outcome_integration.py": "086e32a9e250deb192efbe2e5a1caa4d89183681ec927ad067c97d4c140790a4",
+    "tests/test_h513_auxiliary_policy.py": "37c643dd558db7e7de23106994670d3dc126515f1917cd043c41b225226a0104",
+    "tests/test_h513_auxiliary_integration.py": "c71348509896c65bd520e12aea7c26f5b30455c8ddefe2ae9042f835d0954736",
+    "tests/test_h413_session_titles.py": "1174c0177df55ddb72c9e397c85a4d8bb4d07e3a9a03c8799c93844ab89f327b",
+    "tests/test_query_rewrite.py": "8fad980290b433eded5e2869f26449fc036611be1dfb3447ac4943d1dafcea8a",
+    "tests/test_context_compression_phase2.py": "80bf6c4174eb1b0d4200c4e400dbb4e2a9884bdbab6c4fc9a056cfe3c8177a6b",
+    "tests/test_job_model_pins.py": "cf490ec3745ccb84c4b7eb0d3d09ce5d628252195169222f3ef08b4d3067f18f",
+    "tests/test_h674_compaction_hold.py": "7f57b456804eba43941877e5fe2724ab5c53e87a855ac4a62c4164d97ed0a89c",
+    "tests/test_h465f_refine_review.py": "2012fb280cac57e5b74a97d33aa7c62729599996c894e62286db389bb150a6e4"
+  },
+  "security": {
+    "bandit": {
+      "exit_code": 0,
+      "log": "/tmp/nerva-chat-aux-bandit.log",
+      "scope": "agents scripts against existing .bandit-baseline.json"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "files": 19,
+      "log": "/tmp/nerva-chat-aux-gitleaks.log",
+      "scope": "19 explicitly selected changed source/test/plan files; final record wording after scan is not included",
+      "snapshot": "/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/nerva-chat-aux-delta-scan-s4qqmcv8",
+      "sha256": {
+        "agents/core/approval_outcomes.py": "3279daae231b3674e42b04b8d11ce829264c973eb19e5df5868db613fdb8901c",
+        "agents/core/autonomy/queue.py": "d342171633f18222594d9b3eb226dcb8297a1b35ba6e36acc5df2afbbef15121",
+        "agents/core/autonomy/worker.py": "7b96fbd3de6047add7e437a4acc61dadf8244f8c3e801c5937ac8d0cb4441156",
+        "agents/core/orchestrator.py": "4e31f75e9907e53f37935a72c474223b8933dd560f41133327bd2fd402193513",
+        "agents/core/tool_rpc.py": "78683281e695f4ccc8b6626bd96481378cfdce21740622a054908d27918f9109",
+        "agents/core/session_archive.py": "6abb94b3fb6fef38047c53bdd38c0c8f953ea2597e15d0d3d221362cee9ea1e0",
+        "agents/core/llm/data_handling.py": "448a8fbd05a1188ca1f6351df8e59fed9e50fbabe44b46dbc7d2634becaa10dd",
+        "tests/test_h487_chat_outcome_store.py": "31c81ae36c876aca365abea3f1514dc2ffff479c1b38bda736ed513e36ed390e",
+        "tests/test_h487_chat_outcome_integration.py": "086e32a9e250deb192efbe2e5a1caa4d89183681ec927ad067c97d4c140790a4",
+        "tests/test_h513_auxiliary_policy.py": "37c643dd558db7e7de23106994670d3dc126515f1917cd043c41b225226a0104",
+        "tests/test_h513_auxiliary_integration.py": "c71348509896c65bd520e12aea7c26f5b30455c8ddefe2ae9042f835d0954736",
+        "tests/test_h413_session_titles.py": "1174c0177df55ddb72c9e397c85a4d8bb4d07e3a9a03c8799c93844ab89f327b",
+        "tests/test_query_rewrite.py": "8fad980290b433eded5e2869f26449fc036611be1dfb3447ac4943d1dafcea8a",
+        "tests/test_context_compression_phase2.py": "80bf6c4174eb1b0d4200c4e400dbb4e2a9884bdbab6c4fc9a056cfe3c8177a6b",
+        "tests/test_job_model_pins.py": "cf490ec3745ccb84c4b7eb0d3d09ce5d628252195169222f3ef08b4d3067f18f",
+        "tests/test_h674_compaction_hold.py": "7f57b456804eba43941877e5fe2724ab5c53e87a855ac4a62c4164d97ed0a89c",
+        "tests/test_h465f_refine_review.py": "2012fb280cac57e5b74a97d33aa7c62729599996c894e62286db389bb150a6e4",
+        "docs/hermes/h487-chat-outcomes-plan.md": "2d932bd147431ea4f4b193078b58807eed87c977294657b4a4b969f76b8463ca",
+        "docs/hermes/h513-auxiliary-policy-plan.md": "1d602930f81d5843496b004f836c749afb95c1324799ce3b33e912a9d8e5dd7b"
+      }
+    }
+  },
+  "graft": {
+    "check": "passed",
+    "scope": [
+      "agents/core/autonomy",
+      "agents/core/llm",
+      "agents/core/kernel"
+    ],
+    "deep_index": false
+  },
+  "milestone_repairs": [
+    "Eight minimal turn-wrapper seams: ACK only when an outcome context exists; actual ACK/closed lifetime unchanged",
+    "Nine existing auxiliary fixture failures: declared real local adapter profile/loopback metadata, all original assertions retained",
+    "H595 shared ToolRPC evidence reviewed; observation scope does not alter execution/SDK spill paging"
+  ],
+  "limitations": [
+    "No frontend changes in these two slices; prior1802 frontend and233legacy results remain their separately recorded snapshot",
+    "No live provider/Telegram/native acceptance or paid calls",
+    "H487 generic governed ToolRPC owner-web/exactauthorizedTelegram only; no TaskQueue expiry/sharedgrants or specializedproducer parity",
+    "H513 judge/VLM/acquisition/house/embedding and other independentclient integration remains incomplete",
+    "Earlier H277 mutation results retain their original snapshots; this is no new mutation run",
+    "No commit/push/merge/deployment"
+  ]
+}

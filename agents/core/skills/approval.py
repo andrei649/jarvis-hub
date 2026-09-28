@@ -112,14 +112,16 @@ class SkillApprovalStore(JsonStore):
     def _key(canonical_path: str) -> str:
         return hashlib.sha256(canonical_path.encode("utf-8")).hexdigest()
 
-    def approve(self, path: Path) -> dict[str, str]:
+    def approve(self, path: Path, *, snapshot: SkillSourceSnapshot | None = None) -> dict[str, str]:
+        """Record the owner's approval of ``path``'s bytes: ``snapshot``'s when given (the
+        bytes a caller verified), else a fresh read."""
         canonical = self._canonical_path(path)
         with self._registry_lock, _process_registry_lock(self.path):
             if not self._reload_locked():
                 raise SkillApprovalStoreError(
                     "cannot merge a corrupt or unknown skill approval registry"
                 )
-            snapshot = source_snapshot(path)
+            snapshot = snapshot if snapshot is not None else source_snapshot(path)
             record = {
                 "canonical_path": canonical,
                 "source_fingerprint": snapshot.fingerprint,

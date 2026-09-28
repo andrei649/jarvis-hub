@@ -20,6 +20,10 @@ export async function speak(
   stopSpeaking();
 
   const base64 = await ttsFetchBase64(config, text, lang);
+  if (!base64) {           // nothing to say (H526): finish at once, nothing to play
+    onEnd?.();
+    return;
+  }
   const uri = `${FileSystem.cacheDirectory ?? ''}jarvis-tts-${Date.now()}.mp3`;
   await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
 

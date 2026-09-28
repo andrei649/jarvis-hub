@@ -3,7 +3,7 @@
 Covers:
   GET  /api/admin/settings/{category}  — per-category read + 404
   PUT  /api/admin/settings/{category}  — write values
-  POST /api/admin/settings/reseed      — force-reseed from defaults
+  POST /api/admin/settings/reseed      — every category back to its defaults (H259: secrets kept, undoable)
   Auth guards: 401 without token, 403 from non-local without token
 """
 import sys
@@ -119,7 +119,9 @@ def test_put_category_empty_values_accepted(admin_client):
 # ---------------------------------------------------------------------------
 
 def test_reseed_returns_ok_true(admin_client):
-    resp = admin_client.post("/api/admin/settings/reseed", headers=_HDR)
+    # H259: a JSON request (a bare POST is 415), like every other settings write
+    assert admin_client.post("/api/admin/settings/reseed", headers=_HDR).status_code == 415
+    resp = admin_client.post("/api/admin/settings/reseed", json={}, headers=_HDR)
     assert resp.status_code == 200
     data = resp.json()
     assert data["ok"] is True

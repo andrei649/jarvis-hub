@@ -91,8 +91,11 @@ def test_persistence(tmp_path):
 
 # ── endpoints (admin-guarded) ────────────────────────────────────────────────
 
-def test_prompt_vc_endpoints():
+def test_prompt_vc_endpoints(tmp_path, monkeypatch):
     from agents import web
+    # H156: rolling an agent's persona back now makes it live, so the overlay it writes
+    # goes to a throwaway data home, never the checkout's agents/<id>/SOUL.local.md.
+    monkeypatch.setenv("JARVIS_USER_HOME", str(tmp_path / "home"))
     old = web.ADMIN_TOKEN
     web.ADMIN_TOKEN = "test-secret"
     hdr = {"X-Admin-Token": "test-secret"}
@@ -120,6 +123,9 @@ def test_prompt_vc_endpoints():
                                    params={"a": 1, "b": 2}, headers=hdr).json()
             rb = c.post("/api/admin/prompts/jarvis/rollback", json={"version": 1}, headers=hdr)
             assert rb.status_code == 200
+            v1 = c.get("/api/admin/prompts/jarvis/version/1", headers=hdr).json()["content"]
+            overlay = tmp_path / "home" / "souls" / "jarvis" / "SOUL.local.md"
+            assert overlay.read_text(encoding="utf-8") == v1       # rolled back AND live
 
             # A/B
             ab = c.post("/api/admin/prompts/jarvis/ab", json={"a": 1, "b": 2}, headers=hdr)

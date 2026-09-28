@@ -1,0 +1,284 @@
+[
+ {
+  "name": "markdown_markers_links_code",
+  "lang": "en",
+  "text": "**Done.** See `serve.py` and https://example.com/x for the rest.\n\n```python\nprint('never spoken')\n```\n_Next_: restart.",
+  "spoken": "Done. See serve.py and link for the rest. Next: restart."
+ },
+ {
+  "name": "whitespace_folds",
+  "lang": "en",
+  "text": "  a \n\n\t b  ",
+  "spoken": "a b"
+ },
+ {
+  "name": "link_keeps_its_words",
+  "lang": "en",
+  "text": "Read [the guide](https://x.test/guide) today.",
+  "spoken": "Read the guide today."
+ },
+ {
+  "name": "bare_url_in_parentheses",
+  "lang": "en",
+  "text": "The docs (https://x.test/docs) say so.",
+  "spoken": "The docs (link) say so."
+ },
+ {
+  "name": "url_before_punctuation",
+  "lang": "en",
+  "text": "Go to https://x.test/start.",
+  "spoken": "Go to link."
+ },
+ {
+  "name": "autolink",
+  "lang": "en",
+  "text": "See <https://x.test/a> now",
+  "spoken": "See link now"
+ },
+ {
+  "name": "image_alt",
+  "lang": "en",
+  "text": "![a red cat](https://x.test/cat.png)",
+  "spoken": "a red cat"
+ },
+ {
+  "name": "emoji",
+  "lang": "en",
+  "text": "Great job! 🎉👍 Let's ship 🚀",
+  "spoken": "Great job! Let's ship"
+ },
+ {
+  "name": "emoji_sequences",
+  "lang": "en",
+  "text": "Family 👨‍👩‍👧 from 🇷🇴, step 1️⃣ done ✅.",
+  "spoken": "Family from, step 1 done."
+ },
+ {
+  "name": "lists",
+  "lang": "en",
+  "text": "Steps:\n- Install it\n- Run it\n1. First\n2) Second\n* [x] Done",
+  "spoken": "Steps: Install it. Run it. First. Second. Done."
+ },
+ {
+  "name": "nested_list_and_numbers",
+  "lang": "en",
+  "text": "  - nested item\n10. tenth",
+  "spoken": "nested item. tenth."
+ },
+ {
+  "name": "decimal_is_not_a_list",
+  "lang": "en",
+  "text": "3.14 is pi",
+  "spoken": "3.14 is pi"
+ },
+ {
+  "name": "table",
+  "lang": "en",
+  "text": "| Name | Age |\n|---|:---:|\n| Ana | 30 |",
+  "spoken": "Name, Age. Ana, 30."
+ },
+ {
+  "name": "think_closed",
+  "lang": "en",
+  "text": "<think>plan the answer</think>The answer is 4.",
+  "spoken": "The answer is 4."
+ },
+ {
+  "name": "think_any_case",
+  "lang": "en",
+  "text": "<THINK>x</THINK>ok",
+  "spoken": "ok"
+ },
+ {
+  "name": "think_unclosed",
+  "lang": "en",
+  "text": "Sure. <think>still reasoning about it",
+  "spoken": "Sure."
+ },
+ {
+  "name": "think_close_only",
+  "lang": "en",
+  "text": "reasoning without an opening tag</think>Final answer.",
+  "spoken": "Final answer."
+ },
+ {
+  "name": "symbols_en",
+  "lang": "en",
+  "text": "Settings -> Privacy: 50% done & tested at 20°C.",
+  "spoken": "Settings to Privacy: 50 percent done and tested at 20 degrees Celsius."
+ },
+ {
+  "name": "symbols_ro",
+  "lang": "ro",
+  "text": "Setări -> Confidențialitate: 50% gata & testat la 20°C.",
+  "spoken": "Setări spre Confidențialitate: 50 la sută gata și testat la 20 grade Celsius."
+ },
+ {
+  "name": "arrows",
+  "lang": "en",
+  "text": "A → B => C",
+  "spoken": "A to B to C"
+ },
+ {
+  "name": "fahrenheit",
+  "lang": "en",
+  "text": "It is 70°F.",
+  "spoken": "It is 70 degrees Fahrenheit."
+ },
+ {
+  "name": "degrees_plain_ro",
+  "lang": "ro",
+  "text": "Afară sunt 5° acum",
+  "spoken": "Afară sunt 5 grade acum"
+ },
+ {
+  "name": "percent_spaced_ro",
+  "lang": "ro",
+  "text": "Bateria e la 80 %.",
+  "spoken": "Bateria e la 80 la sută."
+ },
+ {
+  "name": "emotion_tags_kept",
+  "lang": "en",
+  "text": "[calm] All good. [excited] Let's go!",
+  "spoken": "[calm] All good. [excited] Let's go!"
+ },
+ {
+  "name": "heading",
+  "lang": "en",
+  "text": "# Summary\nAll set",
+  "spoken": "Summary. All set"
+ },
+ {
+  "name": "blockquote_and_rule",
+  "lang": "en",
+  "text": "> quoted line\n\n---\n\nAfter",
+  "spoken": "quoted line. After"
+ },
+ {
+  "name": "unclosed_fence",
+  "lang": "en",
+  "text": "Here:\n```bash\nrm -rf /\n",
+  "spoken": "Here:"
+ },
+ {
+  "name": "tilde_fence",
+  "lang": "en",
+  "text": "Before\n~~~\ncode here\n~~~\nAfter",
+  "spoken": "Before After"
+ },
+ {
+  "name": "html_tags",
+  "lang": "en",
+  "text": "Line one<br>next <b>bold</b> end",
+  "spoken": "Line one next bold end"
+ },
+ {
+  "name": "strikethrough_and_emphasis",
+  "lang": "en",
+  "text": "~~old~~ **new** _plan_ with my_var_name kept",
+  "spoken": "old new plan with my_var_name kept"
+ },
+ {
+  "name": "inline_code",
+  "lang": "en",
+  "text": "Run `make test` now.",
+  "spoken": "Run make test now."
+ },
+ {
+  "name": "soft_wrapped_paragraph",
+  "lang": "en",
+  "text": "This is a\nwrapped line.",
+  "spoken": "This is a wrapped line."
+ },
+ {
+  "name": "only_code",
+  "lang": "en",
+  "text": "```\nx = 1\n```",
+  "spoken": ""
+ },
+ {
+  "name": "only_emoji",
+  "lang": "en",
+  "text": "👍🎉",
+  "spoken": ""
+ },
+ {
+  "name": "crlf",
+  "lang": "en",
+  "text": "One\r\n- two\r\n",
+  "spoken": "One two."
+ },
+ {
+  "name": "underscores_in_words_ro",
+  "lang": "ro",
+  "text": "și_cu _italic_ ș_x",
+  "spoken": "și_cu italic ș_x"
+ },
+ {
+  "name": "ordinary_letters_and_signs_ro",
+  "lang": "ro",
+  "text": "Preț: 5 € — „bine” … ™ © ° ș ț ă î â ñ ü 中文 😀",
+  "spoken": "Preț: 5 € — „bine”… ™ © grade ș ț ă î â ñ ü 中文"
+ },
+ {
+  "name": "punctuation_only",
+  "lang": "en",
+  "text": "👋 . -- ...",
+  "spoken": ""
+ },
+ {
+  "name": "digits_are_sayable",
+  "lang": "en",
+  "text": "42 👍",
+  "spoken": "42"
+ },
+ {
+  "name": "thinking_and_reasoning_tags",
+  "lang": "en",
+  "text": "<thinking>a</thinking>B. <reasoning effort=\"high\">c</reasoning>D.",
+  "spoken": "B. D."
+ },
+ {
+  "name": "asterisk_italic",
+  "lang": "en",
+  "text": "An *important* note and 2*3*4 stays",
+  "spoken": "An important note and 2*3*4 stays"
+ },
+ {
+  "name": "stars_clocks_and_tag_flags",
+  "lang": "en",
+  "text": "Rated ⭐⭐ by 9 ⏰ in 🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+  "spoken": "Rated by 9 in"
+ },
+ {
+  "name": "heading_ending_in_a_colon",
+  "lang": "en",
+  "text": "## Notes:\n- a",
+  "spoken": "Notes: a."
+ },
+ {
+  "name": "cr_only_line_breaks",
+  "lang": "en",
+  "text": "One\r- two",
+  "spoken": "One two."
+ },
+ {
+  "name": "nbsp_is_a_space",
+  "lang": "en",
+  "text": "a & b",
+  "spoken": "a and b"
+ },
+ {
+  "name": "bold_italic_nested",
+  "lang": "en",
+  "text": "***very*** __init__ `x`",
+  "spoken": "very init x"
+ },
+ {
+  "name": "unicode_letter_before_underscore",
+  "lang": "ro",
+  "text": "ș_ab_ c",
+  "spoken": "ș_ab_ c"
+ }
+]

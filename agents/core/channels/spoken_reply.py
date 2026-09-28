@@ -28,15 +28,13 @@ import asyncio
 import contextlib
 import hashlib
 import logging
-import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from agents.core.voice.sentence_stream import split_sentences
-
-from .render import to_plain
+from agents.core.voice.speech_text import for_speech
 
 logger = logging.getLogger("jarvis.channels.spoken_reply")
 
@@ -53,9 +51,6 @@ MAX_SPOKEN_CHARS = 1500
 #: What may be handed to a chat transport as one clip.
 MAX_AUDIO_BYTES = 8 * 1024 * 1024
 
-_FENCE_RE = re.compile(r"```.*?```", re.S)
-_URL_RE = re.compile(r"https?://\S+")
-_SPACES_RE = re.compile(r"[ \t]+")
 _MIME = {
     ".mp3": "audio/mpeg",
     ".ogg": "audio/ogg",
@@ -63,6 +58,7 @@ _MIME = {
     ".opus": "audio/ogg",
     ".wav": "audio/wav",
     ".m4a": "audio/mp4",
+    ".flac": "audio/flac",                  # a TTS command may write FLAC (H613)
 }
 
 #: ``(text, lang)`` → path of the synthesized file, or ``None`` when the engine
@@ -70,20 +66,16 @@ _MIME = {
 Synthesizer = Callable[[str, str], Awaitable[str | None]]
 
 
-def speakable(text: object, *, max_chars: int = MAX_SPOKEN_CHARS) -> str:
+def speakable(text: object, *, max_chars: int = MAX_SPOKEN_CHARS, lang: object = None) -> str:
     """The prose worth reading aloud, or ``""`` when there is none.
 
-    Fenced code goes, links become "link", markers are stripped, whitespace is
-    folded to single spaces, and the result is cut at a sentence boundary
-    inside ``max_chars`` with an ellipsis marking the cut.
+    The hub's one speech normaliser (H526, :func:`agents.core.voice.speech_text.
+    for_speech`: reasoning, code, links, markers, emoji and symbols), then cut at a
+    sentence boundary inside ``max_chars`` with an ellipsis marking the cut.
     """
     if isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars < 16:
         raise ValueError("max_chars must be an integer of at least 16")
-    raw = _FENCE_RE.sub(" ", str(text or ""))
-    raw = to_plain(raw)
-    raw = _URL_RE.sub("link", raw)
-    lines = [_SPACES_RE.sub(" ", line).strip() for line in raw.splitlines()]
-    plain = " ".join(line for line in lines if line)
+    plain = for_speech(text, lang=lang)
     if len(plain) <= max_chars:
         return plain
     kept = ""
@@ -157,23 +149,54 @@ class SpokenReply:
             return False, False
         return bool(HAS_EDGE), bool(HAS_KOKORO)
 
+    @staticmethod
+    def _local_engine() -> tuple[str | None, bool]:
+        """H613 — ``(the program on this host that would speak: "piper", "command" or
+        None, whether voice.local_only keeps speech on this machine)``. Under local_only
+        the TTS command never counts (its locality is not checked). A cheap probe: the
+        piper package is looked up, not imported, and the command's files are compared by
+        stat (the spawn checks their digests)."""
+        try:
+            from agents.core.voice import local_providers
+        except Exception:  # pragma: no cover - import guard, not a code path
+            return None, False
+        try:
+            local_only = local_providers.local_only()
+            if local_providers.piper_status(load=False)["available"]:
+                return "piper", local_only
+            if not local_only and local_providers.command_ready("tts", verify_content=False).ok:
+                return "command", local_only
+            return None, local_only
+        except Exception:  # noqa: BLE001 — a probe that fails reports no local engine
+            return None, False
+
     @property
     def is_available(self) -> bool:
         """True only when this host has a text-to-speech backend to call."""
         if self._available is not None:
             return bool(self._available)
         has_edge, has_kokoro = self._engines()
-        return has_edge or has_kokoro
+        local, local_only = self._local_engine()
+        if local_only:                      # edge is never called then
+            return bool(local or has_kokoro)
+        return has_edge or has_kokoro or local is not None
 
     def backend_label(self) -> str:
         """Which engine would speak, named honestly — cloud is called cloud."""
         if self._backend is not None:
             return self._backend
         has_edge, has_kokoro = self._engines()
-        if has_edge:
+        local, local_only = self._local_engine()
+        if has_edge and not local_only:
             return "edge-tts (Microsoft, cloud)"
+        if local_only and local:            # voice.local_only: Piper, then Kokoro
+            return "piper (local)"
         if has_kokoro:
             return "kokoro (local)"
+        if local == "piper":
+            return "piper (local)"
+        if local == "command":              # the hub cannot check where a command sends the text
+            return "your TTS command (locality not checked)"
         return "none"
 
     def refusal(self) -> Audio | None:
@@ -193,7 +216,7 @@ class SpokenReply:
         refused = await asyncio.to_thread(self.refusal)
         if refused is not None:
             return refused
-        spoken = speakable(text, max_chars=self.max_chars)
+        spoken = speakable(text, max_chars=self.max_chars, lang=lang)
         if not spoken:
             return Audio(False, reason=REASON_EMPTY)
         digest = hashlib.sha256(spoken.encode("utf-8")).hexdigest()

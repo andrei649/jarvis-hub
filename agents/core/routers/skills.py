@@ -21,26 +21,178 @@ from agents.core.web_helpers import error_json, logger
 from agents.core import app_state
 from agents.core.app_state import get_orch
 from agents.core.skills.marketplace import BrokerOnlyInstall
+from agents.core.skills.signing import SkillSourceSnapshotError
+from agents.core.skills.validate import SkillDocumentInvalid
 
 
 router = APIRouter(tags=["skills"])
 
 
-@router.get("/skills")
+def _invalid_skill_md(exc: SkillDocumentInvalid, message: str) -> JSONResponse:
+    """H350 — a SKILL.md a write refused: 422, with every problem and its field."""
+    return JSONResponse({"error": message, "reason": "invalid_skill_md", "problems": exc.as_list()},
+                        status_code=422)
+
+
+# A user route (review-H329 F11): each skill says where the owner switched it off, and
+# the switches name the owner's channels.
+@router.get("/skills", dependencies=[Depends(user_guard)])
 async def list_skills():
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    from agents.core import load_set
+    from agents.core.skills import switches
+    from agents.core.skills.visibility import readiness
+
+    try:
+        switched = switches.state()
+    except Exception:
+        logger.warning("skill switches unreadable", exc_info=True)
+        switched = {switches.GLOBAL_KEY: [], switches.CHANNEL_KEY: {}}
     result = {}
     for name, skill in orch.skills.skills.items():
+        key = skill.name.casefold()
+        essential = switches.is_essential(skill)
+        ready, why = readiness(skill)
         result[name] = {
             "name": skill.name,
             "version": skill.version,
+            # H328: a skill for another operating system is listed, and says so.
+            "readiness": ready,
+            "readiness_reason": why,
             "description": skill.description,
             "agents": skill.agents,
             "commands": skill.commands_meta,
+            # H329: switched off (kept installed) everywhere, or on these channels.
+            "category": _skill_category(skill),
+            "essential": essential,
+            "disabled": not essential and key in {n.casefold() for n in switched[switches.GLOBAL_KEY]},
+            "disabled_channels": [] if essential else sorted(
+                ch for ch, names in switched[switches.CHANNEL_KEY].items()
+                if key in {n.casefold() for n in names}),
         }
-    return {"skills": result}
+    # H285: what the owner's load set switched off at discovery, and what it names in vain.
+    return {"skills": result, "load_set": load_set.status("skills"), "switches": switched}
+
+
+def _skill_category(skill) -> str:
+    """The category a SKILL.md declared (``metadata.hermes.category``), or ``""``."""
+    value = (getattr(skill, "hermes_meta", None) or {}).get("category")
+    return value.strip() if isinstance(value, str) else ""
+
+
+class SkillSwitchBody(BaseModel):
+    skill: str | None = Field(None, max_length=128)
+    category: str | None = Field(None, max_length=64)
+    enabled: bool
+    channel: str | None = Field(None, max_length=32)
+
+
+@router.post("/api/skills/switch", dependencies=[Depends(admin_guard)])
+async def switch_skill(body: SkillSwitchBody):
+    """H329 — switch one skill, or every skill of a category, on or off: everywhere, or
+    on one channel. Nothing is uninstalled. Off is always allowed and recorded when it
+    can be; on widens what the hub does, so it is refused unless the intent log records
+    it. An essential skill is never switched off."""
+    import asyncio
+
+    from agents.core.skills import switches
+
+    orch = get_orch()
+    if not orch or getattr(orch, "skills", None) is None:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    if bool(body.skill) == bool(body.category):
+        return JSONResponse({"error": "name one skill or one category", "reason": "bad_target"}, status_code=422)
+    channel = ""
+    if body.channel:
+        channel = switches.clean_channel(body.channel)
+        if not channel:
+            return JSONResponse({"error": f"{body.channel!r} is not a channel name", "reason": "bad_channel"},
+                                status_code=422)
+    loaded = orch.skills.skills
+    if body.skill:
+        wanted = body.skill.strip().casefold()
+        # A manifest name wins over another skill's folder of the same spelling.
+        targets = sorted((s for s in loaded.values() if wanted in switches.identities(s)),
+                         key=lambda s: s.name.casefold() != wanted)
+    else:
+        wanted = body.category.strip().casefold()
+        targets = [s for s in loaded.values() if _skill_category(s).casefold() == wanted and wanted]
+    if not targets:
+        what = "skill" if body.skill else "category"
+        return JSONResponse({"error": f"no installed {what} named {(body.skill or body.category)!r}",
+                             "reason": "not_found"}, status_code=404)
+    targets = targets[:1] if body.skill else targets
+    if body.skill and not body.enabled and switches.is_essential(targets[0]):
+        return JSONResponse({"error": f"{targets[0].name} is essential and cannot be switched off",
+                             "reason": "essential"}, status_code=409)
+    audit = getattr(orch, "intent_log", None)
+    recordable = audit is not None and callable(getattr(audit, "record", None))
+    if body.enabled and not recordable:
+        return JSONResponse({"error": "switching a skill back on is recorded in the intent log, "
+                                      "which is not available", "reason": "audit_unavailable"}, status_code=503)
+    try:
+        outcome = await asyncio.to_thread(switches.apply, targets, enabled=body.enabled, channel=channel)
+    except Exception:
+        logger.warning("skill switch failed", exc_info=True)
+        return JSONResponse({"error": "the skill switches could not be saved", "reason": "write_failed"},
+                            status_code=500)
+    if body.skill and not outcome["changed"]:
+        # One skill the switch did nothing for, and "unchanged" would be untrue (review-H329 F3, F6).
+        name = targets[0].name
+        if outcome["off_everywhere"]:
+            return JSONResponse({"error": f"{name} is switched off everywhere; switch it on everywhere "
+                                          f"(no channel) to use it on {channel}", "reason": "off_everywhere"},
+                                status_code=409)
+        if outcome["unstorable"]:
+            return JSONResponse({"error": f"{name} cannot be stored as a switch (a name of at most "
+                                          f"{switches.MAX_NAME_CHARS} printable characters, at most "
+                                          f"{switches.MAX_NAMES} skills and {switches.MAX_CHANNELS} channels)",
+                                 "reason": "unstorable"}, status_code=409)
+    audited = False
+    if outcome["changed"]:
+        where = f"on {channel}" if channel else "everywhere"
+        try:
+            audit.record(actor="owner", action="skill.enable" if body.enabled else "skill.disable",
+                         why=f"the owner switched {', '.join(outcome['changed'])} "
+                             f"{'on' if body.enabled else 'off'} {where}",
+                         cause="skills.switch",
+                         metadata={"skills": outcome["changed"], "channel": channel or None,
+                                   "category": body.category or None})
+            audited = True
+        except Exception:
+            logger.warning("skill switch not recorded in the intent log", exc_info=True)
+            if body.enabled:
+                # Never widened unrecorded: put the switches back as they were.
+                restored = await asyncio.to_thread(switches.restore, outcome["before"], outcome["state"])
+                if restored:
+                    # IntentLog keeps an entry whose save failed and writes it with the next
+                    # one, so the revert follows it (review-H329 F8).
+                    try:
+                        audit.record(actor="owner", action="skill.disable",
+                                     why=f"the switch-on of {', '.join(outcome['changed'])} could not be "
+                                         "recorded, so it was not kept",
+                                     cause="skills.switch.revert",
+                                     metadata={"skills": outcome["changed"], "channel": channel or None,
+                                               "category": body.category or None})
+                    except Exception:
+                        logger.warning("skill switch revert not recorded in the intent log", exc_info=True)
+                return JSONResponse({"error": "the switch could not be recorded, so it was not kept"
+                                              if restored else "the switch could not be recorded and a later "
+                                              "change landed first; check the skill switches",
+                                     "reason": "audit_failed", "restored": restored}, status_code=503)
+    if audited and body.enabled:
+        # The months a skill spent switched off are not neglect: its idle clock restarts
+        # now, so the curator's next pass does not archive it (batch-6 verify of H329 F9).
+        usage = getattr(orch, "skill_usage", None)
+        if usage is not None and callable(getattr(usage, "bump", None)):
+            for name in outcome["changed"]:
+                usage.bump(name, "switch_on")
+    return {"ok": True, "enabled": body.enabled, "channel": channel or None, "changed": outcome["changed"],
+            "unchanged": outcome["unchanged"], "essential": outcome["essential"],
+            "off_everywhere": outcome["off_everywhere"], "unstorable": outcome["unstorable"], "audited": audited,
+            "switches": outcome["state"]}
 
 
 @router.get("/sandbox/status")
@@ -60,7 +212,8 @@ async def sandbox_status():
         **orch.sandbox.security_status(),
         "tool_rpc": {
             "available": server is not None,
-            "tools": server.tools() if server is not None else [],
+            # Open route: the static schemas, never the live H296 answers.
+            "tools": server.tools(live=False) if server is not None else [],
         },
     }
 
@@ -327,6 +480,13 @@ async def skills_import(req: Request):
     if ok:
         orch.skills.discover()
         return {"ok": True, "source": source, "skill": skill_name}
+    refusal = getattr(orch.skill_importer, "last_refusal", None)
+    if isinstance(refusal, list) and refusal:
+        # H350 — found, but its SKILL.md is not valid: say why, never "not found".
+        return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' in {source} has a SKILL.md that is "
+                                                    "not valid, and was not imported",
+                             "reason": "invalid_skill_md", "problems": [p.as_dict() for p in refusal]},
+                            status_code=422)
     return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in {source}"}, status_code=404)
 
 
@@ -339,6 +499,12 @@ async def skills_imported():
 
 
 # ── Agent Marketplace Endpoints (H5.8) ───────────────────────────
+
+def _install_warnings(orch) -> dict:
+    """H507 — the installed package's code warnings (warn-only), when there are any."""
+    found = getattr(getattr(orch, "marketplace", None), "last_install_warnings", None)
+    return {"code_warnings": list(found)} if isinstance(found, list) and found else {}
+
 
 class PublishSkillBody(BaseModel):
     name: str
@@ -405,12 +571,19 @@ async def marketplace_publish(body: PublishSkillBody):
     try:
         res = orch.marketplace.publish_skill(body.name)
         return {"ok": True, "published": res}
+    except SkillDocumentInvalid as e:
+        return _invalid_skill_md(e, f"skill '{body.name}' has a SKILL.md that is not valid, and was not published")
     except PermissionError:
         logger.warning("Skill publish blocked by supply-chain contract")
         return JSONResponse({"error": f"skill '{body.name}' blocked by supply-chain contract"},
                             status_code=403)
     except FileNotFoundError as e:
         return error_json(e, 404, "skill not found")
+    except SkillSourceSnapshotError:
+        # A link, a special file, or a file that could not be read stably: nothing was packed
+        # (review-H318c m-7, review-H318f n-4).
+        return JSONResponse({"error": f"skill '{body.name}' holds a link, a special file, or a file that "
+                                      "could not be read stably, and was not published", "reason": "skill_source_refused"}, status_code=422)
     except Exception:
         logger.exception("Failed to publish skill")
         return JSONResponse({"error": "internal error", "code": 500}, status_code=500)
@@ -425,8 +598,11 @@ async def marketplace_install(body: InstallSkillBody):
         ok = orch.marketplace.install_skill(body.name)
         if ok:
             orch.skills.discover()
-            return {"ok": True, "installed": body.name}
+            return {"ok": True, "installed": body.name, **_install_warnings(orch)}
         return JSONResponse({"error": f"Failed to install skill '{body.name}'"}, status_code=500)
+    except SkillDocumentInvalid as e:
+        # Before the ValueError below: the package was found, its SKILL.md is the problem.
+        return _invalid_skill_md(e, f"skill '{body.name}' has a SKILL.md that is not valid, and was not installed")
     except BrokerOnlyInstall:
         # Not a moderation verdict: an acquired package's code never lands in
         # skills/, so this endpoint is simply the wrong path for it. Reported
@@ -472,8 +648,10 @@ async def marketplace_install_zip(body: InstallZipBody):
         ok = orch.marketplace.install_from_zip(zip_bytes)
         if ok:
             orch.skills.discover()
-            return {"ok": True}
+            return {"ok": True, **_install_warnings(orch)}
         return JSONResponse({"error": "Failed to install skill from zip"}, status_code=500)
+    except SkillDocumentInvalid as e:
+        return _invalid_skill_md(e, "the package's SKILL.md is not valid, and nothing was installed")
     except (PermissionError, ValueError):
         # Rejected by the zip-slip guard or the signature gate (H12.12).
         logger.warning("Skill zip install rejected (unsafe path or signature policy)")
@@ -585,5 +763,54 @@ async def approve_generated_skill(name: str):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     if orch.skills.approve_generated_skill(name):
+        from agents.core import safe_mode
+
+        if safe_mode.enabled():
+            # H275: approved and signed, but safe mode loads no skill that did not ship.
+            return {"approved": True, "skill": name, "loaded": False,
+                    "message": "approved; it loads on the next normal boot (safe mode)"}
         return {"approved": True, "skill": name}
     return JSONResponse({"error": f"no pending skill '{name}'"}, status_code=404)
+
+
+#: Proposals one answer carries, whole diffs included (review-H318c n-2: forty review
+#: proposals of a large skill made an 8 MB answer). The rest are counted in ``more``.
+PROPOSALS_SHOWN = 20
+
+
+@router.get("/api/skills/proposals", dependencies=[Depends(admin_guard)])
+async def skill_proposals():
+    """The skill changes awaiting the owner, as they review them (review-H318b M-2): each
+    pending proposal with the whole diff built from the ledger against the live SKILL.md
+    (never a card's own text), whether the skill drifted since, what the change does beyond
+    its text (a rename, a bundled skill), and the one approval card that decides it
+    (``POST /api/actions/{card}/decide``). A proposal from before cards were bound gets its
+    card here."""
+    orch = get_orch()
+    store = getattr(orch, "skill_proposals", None) if orch else None
+    if store is None:
+        return component_unavailable("skill proposals are not available")
+    loader = getattr(orch, "skills", None)
+    queue = getattr(orch, "action_approvals", None)
+    out = []
+    pending = store.list("pending")
+    cards = []
+    for index, rec in enumerate(pending):
+        if queue is not None:
+            # A proposal from before cards were bound gets its card here, and so does one
+            # whose card is gone from the queue (review-H318c m-6).
+            try:
+                store.queue_card(rec["id"], queue, agent=str(rec.get("origin") or "agent"),
+                                 summary=f"A change to skill '{rec.get('skill')}' is proposed")
+                rec = store.get(rec["id"]) or rec
+            except Exception:
+                logger.warning("skill proposal %s: its card could not be queued", rec.get("id"), exc_info=True)
+        if rec.get("card"):
+            cards.append(rec["card"])
+        if index < PROPOSALS_SHOWN:
+            out.append(store.describe(rec, loader))
+    # Every pending proposal's card is re-bound and named, the page's and the rest's: a
+    # console can then hold a card it has no diff for instead of calling it inert
+    # (review-H318d m-4).
+    return JSONResponse({"proposals": out, "count": len(out), "more": max(0, len(pending) - len(out)),
+                         "cards": cards}, headers={"Cache-Control": "no-store"})

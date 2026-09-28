@@ -12,6 +12,8 @@ ignore) surfaced as Aprob / Editez / Resping / Amân.
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass
 from typing import Optional, Tuple
 
 # callback_data prefix; Telegram limits callback_data to 64 bytes.
@@ -28,7 +30,48 @@ DECISION_ACTIONS = {
 _TIER_LABELS = {0: "read-only", 1: "reversibil", 2: "extern", 3: "ireversibil/bani"}
 
 
-def build_decision_card(task) -> dict:
+@dataclass(frozen=True)
+class OwnerTaskRegistrationContext:
+    """Internal admin-route provenance, outside every task/receipt/execution byte."""
+
+    request_json: str
+
+    @classmethod
+    def from_request(cls, request: dict) -> OwnerTaskRegistrationContext | None:
+        # Share the conservative JSON/authority-claim rules with action registrations.
+        from .approval_grouping import _valid_json
+
+        try:
+            if not isinstance(request, dict) or not _valid_json(request):
+                return None
+            authority_keys = {'kernel_mediation', 'mediation_receipt', 'mediation_scope',
+                              'mediation_policy_revision', 'mediation_enqueue_id', 'mediation_execution_id',
+                              'kernel_intake_id', 'kernel_intake_evidence', 'approval_context', 'authorization'}
+
+            def contains_authority(value):
+                if isinstance(value, dict):
+                    return any(key in authority_keys or contains_authority(child) for key, child in value.items())
+                if isinstance(value, list):
+                    return any(contains_authority(child) for child in value)
+                return False
+
+            if contains_authority(request):
+                return None
+            encoded = json.dumps(request, sort_keys=True, ensure_ascii=False,
+                                 separators=(',', ':'), allow_nan=False)
+            return cls(encoded) if len(encoded.encode('utf-8')) <= 65_536 else None
+        except (TypeError, ValueError, RecursionError, UnicodeError):
+            return None
+
+
+def is_decision_notification_leader(queue, task) -> bool:
+    """Suppress a pending follower before any delivery/budget/push bookkeeping."""
+    task_id = task.get('id') if isinstance(task, dict) else task.id
+    group = queue.pending_group(task_id)
+    return group is None or group['leader_id'] == task_id
+
+
+def build_decision_card(task, *, group: dict | None = None) -> dict:
     """Return a Telegram sendMessage body (text + inline keyboard) for a task.
 
     `task` is a queue.Task (or any object/dict with id/title/agent/kind/
@@ -43,6 +86,10 @@ def build_decision_card(task) -> dict:
         f"Agent: `{_md(t.get('agent', '?'))}` · Acțiune: `{_md(t.get('kind', '?'))}`",
         f"Risc: *{_TIER_LABELS.get(tier, tier)}*",
     ]
+    grouped_leader = (isinstance(group, dict) and group.get('leader_id') == t['id']
+                      and type(group.get('count')) is int and group['count'] >= 2)
+    if grouped_leader:
+        lines.append(f"{group['count']} cereri identice; aprobarea se aplică doar acestei sarcini.")
     if payload.get("rationale"):
         lines.append(f"_De ce:_ {_md(str(payload['rationale']))}")
     if payload.get("expected"):
@@ -64,7 +111,8 @@ def build_decision_card(task) -> dict:
         pass
 
     keyboard = [[
-        {"text": label, "callback_data": f"{CALLBACK_PREFIX}:{t['id']}:{action}"}
+        {"text": '✅ Aprob o dată' if grouped_leader and action == 'accept' else label,
+         "callback_data": f"{CALLBACK_PREFIX}:{t['id']}:{action}"}
         for action, label in DECISION_ACTIONS.items()
     ]]
     return {

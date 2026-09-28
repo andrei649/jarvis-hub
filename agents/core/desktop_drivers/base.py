@@ -150,6 +150,8 @@ class AccessibilityDriver:
     # the legacy direct path that skips the kernel.
     requires_kernel = True
     platform = "unknown"
+    #: What :meth:`perform` accepts; desktop_run advertises it (H296).
+    supported_actions = SUPPORTED_ACTIONS
 
     def __init__(self, *, locator: Any = None, max_type_chars: int = MAX_TYPE_CHARS) -> None:
         self._locator = locator

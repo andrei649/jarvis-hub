@@ -5,10 +5,13 @@ export type ImageState = 'awaiting_approval' | 'queued' | 'generating' | 'ready'
 export type ImageTask = { task_id: number; state: ImageState; artifact: ImageArtifact | null };
 export type CloudImageOptions = {size: '1024x1024' | '1536x1024' | '1024x1536'; quality: 'low' | 'medium' | 'high'};
 export type CloudImageCapability = {configured:boolean; provider:'openai'; model:'gpt-image-1.5'};
-export type ImageCapability = { cloud?: CloudImageCapability; configured: boolean; edit: boolean; backends?: { id: string; models: string[] }[]; max_references?: number; upscale?: number[] };
+export type ImageBackend = { id: string; models: string[]; protocol?: 'comfyui' | 'openai_images'; edit?: boolean; max_references?: number; upscale?: number[] };
+export type ImageCapability = { cloud?: CloudImageCapability; configured: boolean; backend?: string; edit: boolean; backends?: ImageBackend[]; max_references?: number; upscale?: number[] };
 /** An edit of an artifact this hub already produced: its opaque id, plus how much of
  *  it to keep. There is deliberately no field here for a path, a URL or a filename. */
 export type ImageEdit = { reference?: string; references?: string[]; strength?: number; backend?: string; model?: string; upscale?: number };
+const modelValid = (value: unknown): value is string => typeof value === 'string'
+  && /^[A-Za-z0-9][A-Za-z0-9_./:-]{0,172}$/.test(value) && value.trim() === value;
 export class ImageRequestError extends Error {
   constructor(public code: 'auth' | 'refused' | 'uncertain' | 'unavailable') { super(code); }
 }
@@ -27,7 +30,7 @@ export const editValid = (value: any): value is ImageEdit => {
   if (value.reference !== undefined && refs.length !== 1) return false;
   if (refs.length ? !positiveInt(value.strength, 100) : value.strength !== undefined) return false;
   if (value.backend !== undefined && !/^[a-z][a-z0-9_-]{0,31}$/.test(value.backend)) return false;
-  if (value.model !== undefined && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,160}\.safetensors$/.test(value.model)) return false;
+  if (value.model !== undefined && !modelValid(value.model)) return false;
   return value.upscale === undefined || value.upscale === 2;
 };
 const states: ImageState[] = ['awaiting_approval', 'queued', 'generating', 'ready', 'rejected', 'deferred', 'refused', 'uncertain'];
@@ -101,8 +104,17 @@ export async function imageStatus(signal?: AbortSignal): Promise<ImageCapability
     // `edit` is read, never required: a hub that predates image editing still reports
     // a usable generator, and refusing the whole status over a missing capability flag
     // would break generation to advertise editing.
-    const backends = Array.isArray(status.backends) ? status.backends.filter((b: any) => typeof b?.id === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(b.id) && Array.isArray(b.models) && b.models.every((m: any) => typeof m === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,160}\.safetensors$/.test(m))) : undefined;
-    return { ...(cloud ? {cloud} : {}), configured: status.configured, edit: status.edit === true, ...(backends ? {backends, max_references: status.max_references, upscale: status.upscale} : {}) };
+    const backends: ImageBackend[] | undefined = Array.isArray(status.backends) ? status.backends
+      .filter((b: any) => typeof b?.id === 'string' && /^[a-z][a-z0-9_-]{0,31}$/.test(b.id)
+        && b.id.trim() === b.id && [undefined, 'comfyui', 'openai_images'].includes(b.protocol)
+        && Array.isArray(b.models) && b.models.length > 0 && b.models.length <= 32 && b.models.every(modelValid))
+      .map((b: any) => ({id:b.id, models:b.models,
+        ...(b.protocol ? {protocol:b.protocol, edit:b.edit === true,
+          max_references:Number.isInteger(b.max_references) && b.max_references >= 0 && b.max_references <= 4 ? b.max_references : 0,
+          upscale:Array.isArray(b.upscale) && b.upscale.includes(2) ? [2] : []} : {})})) : undefined;
+    const backend = typeof status.backend === 'string' && backends?.some(b => b.id === status.backend) ? status.backend : undefined;
+    return { ...(cloud ? {cloud} : {}), configured: status.configured, edit: status.edit === true,
+      ...(backend ? {backend} : {}), ...(backends ? {backends, max_references: status.max_references, upscale: status.upscale} : {}) };
   });
 }
 export async function proposeImage(prompt: string, edit?: ImageEdit | null, signal?: AbortSignal): Promise<number> {

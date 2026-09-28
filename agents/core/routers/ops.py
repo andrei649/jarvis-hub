@@ -47,9 +47,13 @@ async def healthz():
     flap on a slow backend: it answers the single question a supervisor asks —
     "is this process alive enough to keep, or should it be restarted?".
     """
+    from agents.core import safe_mode
+
     return nocache_json({
         "status": "ok",
         "uptime_seconds": round(time.monotonic() - _PROCESS_START, 1),
+        # H275: a flag read from the environment, still dependency-free.
+        "safe_mode": safe_mode.enabled(),
     })
 
 
@@ -128,7 +132,15 @@ def readiness_snapshot() -> dict:
         "channels": len(getattr(orch, "channels", {}) or {}) if orch else 0,
     }
     ready = orch is not None and n_agents > 0
-    body = {"ready": ready, "checks": checks, "llm": _llm_snapshot(orch)}
+    from agents.core import safe_mode
+
+    # H275: said, never a reason to be not-ready — a safe-mode hub serves.
+    from agents.core.lifecycle_budget import WARMUP
+
+    # H677: the boot warm-up is reported, never a reason to be not-ready (the gate
+    # already held the channels; a turn served while it still runs is marked warming).
+    body = {"ready": ready, "checks": checks, "llm": _llm_snapshot(orch), "safe_mode": safe_mode.status(),
+            "warmup": WARMUP.snapshot()}
     if not ready:
         body["reason"] = "starting" if orch is None else "agents-not-loaded"
     return body

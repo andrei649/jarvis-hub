@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T16:18:56.390659+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "H517 speech registration authority prerequisite and truthful H613 full-provider scope reassessment",
+  "status": "verified_local_partial",
+  "plan": "docs/hermes/h517-voice-authority-plan.md",
+  "review": "docs/hermes/h517-voice-authority-review.md",
+  "coordination": {
+    "implementers": 2,
+    "model": "gpt-6-sol",
+    "reasoning": "high",
+    "review": "coordinator plus bounded Luna Medium; no subdelegation"
+  },
+  "verification": [
+    {
+      "tests": 3,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-voice-kernel-red.xml",
+      "seconds": 0.831,
+      "sha256": "acedd2417e91dcbe342e0fdeced7a1611e51685e83451566cb67da920f5ea06f",
+      "passed": 2
+    },
+    {
+      "tests": 16,
+      "failures": 6,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-voice-revision-red.xml",
+      "seconds": 4.339,
+      "sha256": "bfd6cb5d3df5e9cf41e0fcefc944e242a9e178f79852798a0a8c58fd875a7241",
+      "passed": 10
+    },
+    {
+      "tests": 156,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-voice-revision-final.xml",
+      "seconds": 27.122,
+      "sha256": "4779cbd29e06a7b7707b3035c1368e3543fb267b4e20ed0efad2de8e6b9d6bdb",
+      "passed": 156
+    },
+    {
+      "tests": 326,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-voice-kernel-final.xml",
+      "seconds": 27.327,
+      "sha256": "250310a836bfaf1897bf9615ec3a69299448276d6f28f8b135402484a5953232",
+      "passed": 326
+    },
+    {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-voice-authority-integration.xml",
+      "seconds": 1.072,
+      "sha256": "66d378f3a46f96fcb731146122d2675344c2463e4d49d9dc166222d76385335c",
+      "passed": 2
+    },
+    {
+      "tests": 19446,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 35,
+      "path": "/tmp/nerva-h517-voice-backend.xml",
+      "seconds": 249.392,
+      "sha256": "6d4e26ccf708287a4bdcfc85b3a53f308109757318d5678c1f3b79cd43868406",
+      "passed": 19409
+    },
+    {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-voice-kernel-manifest-red.xml",
+      "seconds": 0.765,
+      "sha256": "9e32244cebe0758bc08ed3762d233678702af51482dc51191e824f7b87eecaf9",
+      "passed": 0
+    },
+    {
+      "tests": 95,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-voice-kernel-manifest-final.xml",
+      "seconds": 1.75,
+      "sha256": "1ba44a7b8d778be3aec363ec462a55bb8ca6dadb31d777d3c4b5c7ca90bbfa98",
+      "passed": 95
+    },
+    {
+      "tests": 19447,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 35,
+      "path": "/tmp/nerva-h517-voice-backend-final.xml",
+      "seconds": 248.3,
+      "sha256": "e4986bee95517ab51c2462662b8fdadf68d824b87e7be3a3496f6be7a54ad34a",
+      "passed": 19409
+    },
+    {
+      "tests": 771,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-voice-capability-inventories-final.xml",
+      "seconds": 49.403,
+      "sha256": "15a3f855986f6c754761cb46fbef8c3b73b7416ce2b28e29a3abe710a523b76a",
+      "passed": 771
+    },
+    {
+      "tests": 19447,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "path": "/tmp/nerva-h517-voice-backend-verified.xml",
+      "seconds": 250.534,
+      "sha256": "0f50e7b15601897bb19586e0a5e900d45266a617ce7e870f977b85af12cc65a1",
+      "passed": 19412
+    },
+    {
+      "tests": 92,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/nerva-h517-voice-docs.xml",
+      "seconds": 2.802,
+      "sha256": "ee9d6154efb21acd8948799e7af630802dc615a390e258f86a02e4d6b82b071a",
+      "passed": 92
+    }
+  ],
+  "source_sha256": {
+    "agents/core/kernel/registry.py": "261e05b31a7523af256880e5c0a61fe6c38bdb760587ac752beb063d8c07fd32",
+    "agents/core/capability_manifests.py": "cefd5d8a4ee432ea574537212fda1d46ee25f1ca6853ac5260dcb2c9ee367366",
+    "agents/core/voice/local_providers.py": "73502a7f7c1ce3df60cba311ef85bac81d5d3ddc5102c9cb5ac7ecba1bb9e9b3",
+    "agents/core/voice/command_settings.py": "68d4705944a5e12554122714da4352f14b7152a8a15540d36fe6bb44a7f6d7ac",
+    "agents/core/autonomy/irreversible.py": "ded431aecc28d728b4fdcce34c7a7ecf436876228b8b7edd97c7afeaebe2bd91",
+    "tests/test_h517_voice_kernel.py": "b20d85153f319bec71ae1cb1ae1afca2a80ba76f379bb61b92b7a5f9bba5ce5b",
+    "tests/test_h517_voice_revision.py": "fef68a15768f195d473072532e62324b756c9e270866c1267e9836819a18b7c5",
+    "tests/test_h517_voice_authority_integration.py": "7f7efd025c3743ac5f7558fbdbbd4b898ee1f9e4a5e0ae5b06ba045e516c07fe",
+    "tests/test_action_auth_matrix.py": "a9338f106655e16be9229df6ce47c1c38eda4201030cfd09dddbe3d2c845cf6d",
+    "tests/_snapshots/action_auth.json": "11edb7487b0cebed8d483e805019d69754bb40e98e62b1e6fee58dc74107d28b",
+    "tests/test_h27_capability_verification.py": "021aa65ec07cfa75a81579d9ab9b65f0a1acf827e46d8a0b664fe964870c4707",
+    "tests/_snapshots/capability_readiness.json": "1a7e788d0bbf85309e181daf780e8c618d7019e978ee5525e1459179381c1642"
+  },
+  "frontend": {
+    "source_changed": false,
+    "rerun": false,
+    "previous_full_report": "/tmp/nerva-h517-frontend.json",
+    "previous_passed": 1829
+  },
+  "limits": [
+    "H517/H613 partial: named providers, common registries and full vendor/feature breadth remain open",
+    "No live or paid provider acceptance; no publication",
+    "Existing signed-decision contract retained; current receipt/policy/scope/halt checks revoke execution authority",
+    "Identical legacy records without approval metadata cannot expose identical restoration",
+    "Approved program dependencies are trusted; clear does not stop already running processes"
+  ],
+  "review_outcome": "Coordinator and Luna review found no open defects in this prerequisite. Companion manifest/inventory corrections reviewed; wired remains wired, never fabricated VERIFIED.",
+  "checks": {
+    "ruff": {
+      "exit_code": 0,
+      "log": "/tmp/nerva-h517-voice-ruff-final.log"
+    },
+    "bandit": {
+      "exit_code": 0,
+      "log": "/tmp/nerva-h517-voice-bandit-final.log",
+      "scope": "agents and scripts against existing baseline"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "report": "/tmp/nerva-h517-voice-gitleaks-final.json",
+      "scope": "40 selected source/test/document files; manifest /tmp/nerva-h517-voice-final-scan-manifest.json"
+    },
+    "graft": {
+      "exit_code": 0,
+      "log": "/tmp/nerva-h517-voice-graft-check-final.log",
+      "scope": "selected core domains including voice/kernel; not a whole repository graph"
+    },
+    "diff_check": {
+      "exit_code": 0,
+      "log": "/tmp/nerva-h517-voice-diff-check.log"
+    }
+  },
+  "status_counts": {
+    "equivalent": 125,
+    "partial": 253,
+    "missing": 64,
+    "needs_review": 255,
+    "excluded": 0,
+    "total": 697
+  }
+}

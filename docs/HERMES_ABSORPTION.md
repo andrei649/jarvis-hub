@@ -4,6 +4,12 @@
 [Reguli, livrări reunite și următorii pași](HERMES_SPRINT.md). Cifrele de inventar
 de mai jos sunt auditul din 7 septembrie; progresul curent se citește în pagina de status.
 
+**Actualizare de obiectiv, 2026-09-27:** cele 107 excluderi istorice de mai jos
+au fost readmise explicit pentru paritate completă. Nu mai sunt scutiri de
+implementare și nu sunt numărate ca funcții terminate. Inventarul istoric este
+păstrat; [migrarea evaluării](hermes/scope-reopening-plan-2026-09-27.md) le pune
+în starea «de evaluat», cu aceleași ID-uri.
+
 > **Directiva owner-ului, 2026-09-07:** *„vreau ca tot să fie în nerva — ce avem superior, păstrăm;
 > ce nu avem, copiem; ce e sub hermes, facem update."*
 >
@@ -251,7 +257,7 @@ fără principal → internal), principalul din același loc (owner / guest / sy
 owner-ul la HUD primește tot; un musafir la HUD sau pe voce, owner-ul pe un canal inbound și orice
 tură fără om (heartbeat, job, workflow) primesc doar uneltele ne-gated (`llm.inbound_actuation` /
 `llm.internal_actuation` le lărgesc la cele gated, fiecare propunere rămânând sub aprobare); un
-musafir pe canal inbound primește `llm.guest_tools` (implicit `echo`, `time`) și niciodată o
+musafir pe canal inbound primește `llm.guest_tools` (implicit `echo`, `time`, `todo`) și niciodată o
 unealtă gated. `tools:` per agent în `agents.yaml` (nume sau glob-uri) îngustează postura și nu o
 lărgește niciodată. Un apel la o unealtă reținută e `tool_not_allowed` înainte de server; o tură
 căreia nu i se oferă nimic nu intră în buclă; un eveniment `tool_profile` spune suprafața,
@@ -346,7 +352,9 @@ rezultate duplicate: un rezultat reușit identic byte cu byte cu unul deja în t
 bytes) e înlocuit cu o referință — „la fel ca apelul N" — ca modelul să nu plătească payload-ul
 de două ori, cu un eveniment `tool_result_deduplicated`; rezultatele de eroare nu sunt niciodată
 înlocuite. Cu 3a (apeluri identice, serii de eșecuri) rândul „loop guardrails" din registru e
-livrat integral. Teste: `tests/test_tool_loop_guardrails.py` (4).
+livrat integral. Teste: `tests/test_tool_loop_guardrails.py` (4). Planul (`todo`, H315) nu intră
+sub plafon și nu e niciodată înlocuit cu un stub: e recitit cu totul la fiecare schimbare. Aceeași
+citire, fără nicio schimbare între ele, e totuși o repetiție și e oprită ca oricare alta.
 
 **Livrat 2026-09-07 (4g — un push pe telefonul owner-ului fără bot și fără cont).**
 `channels/ntfy.py`: un singur POST HTTP către un server ntfy pe care îl numește owner-ul

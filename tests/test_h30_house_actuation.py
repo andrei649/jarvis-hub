@@ -419,8 +419,13 @@ async def test_lost_driver_response_is_decided_by_fresh_state_not_transport(tmp_
 
     result = await actuator.execute_task(task)
 
-    assert result["status"] == "verified"
-    assert sim.state == "on"
+    # Review round 6, item 5: the fresh state decides whether the WORLD is in the
+    # approved state (no rollback, the row finishes), but a driver that raised is not an
+    # actuation that worked — a failure naming both facts, never ``verified``.
+    assert result == {"status": "failed", "reason": "driver_failed", "verified": False,
+                      "state_verified": True, "driver_reason": "implementation_error",
+                      "manual_recovery_required": False}
+    assert sim.state == "on" and len(sim.calls) == 1
 
 
 @pytest.mark.asyncio

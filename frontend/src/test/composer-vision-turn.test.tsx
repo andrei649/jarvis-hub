@@ -73,3 +73,9 @@ it('aborts an owned image turn on unmount',async()=>{
   view.unmount();expect(request.signal.aborted).toBe(true);
   await act(async()=>resolveVision(answer()));
 });
+it('keeps a successful vision policy warning separate from its answer',async()=>{
+  await mount();act(()=>submit('question',draft));
+  await act(async()=>resolveVision(new Response(JSON.stringify({ok:true,response:'A blue square.',model:'vision-test',backend:'custom',destination:status.destination,local:true,warning:'Vision policy is unknown.'}))));
+  expect(await screen.findByText('Vision policy is unknown.')).toBeTruthy();
+  expect(screen.getByText('A blue square.')).toBeTruthy();
+});

@@ -12,6 +12,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "agents"))
 
+SAFE_MODE_SWITCH = "--safe-mode"
+
+
+def apply_safe_mode_switch(argv=None) -> bool:
+    """H275: ``python serve.py --safe-mode`` boots with every owner customization left
+    out (agents/core/safe_mode.py). It sets ``JARVIS_SAFE_MODE=1`` here, before the
+    hub is imported, so every loader sees it; the variable itself works the same way."""
+    if SAFE_MODE_SWITCH in (sys.argv[1:] if argv is None else argv):
+        os.environ.update({"JARVIS_SAFE_MODE": "1"})   # a write, not a read of the environment
+        return True
+    return False
+
+
+apply_safe_mode_switch()
+
 import importlib.util
 
 # Dependency availability probes (find_spec checks without importing the module).
@@ -30,6 +45,13 @@ if missing:
 
 if importlib.util.find_spec("numpy") is None:
     warnings.warn("numpy not installed — vector store will be slower")
+
+# H689: a refused JARVIS_PROFILE stops the start here, named, before the hub is imported
+# (its stores open under the data root at import, and data_root() refuses the name).
+from agents.core.paths import profile_error  # noqa: E402
+
+if profile_error():
+    sys.exit(profile_error())
 
 # O26-P0.6 (F6): the boot guards moved to agents/core/boot_guards.py so the
 # raw-uvicorn entry (`python -m uvicorn agents.web:app`) enforces the same
@@ -215,7 +237,11 @@ def probe_bind(host: str, port: int) -> None:
 
 
 def main():
-    import uvicorn
+    from agents.core.env_provenance import load_hub_env
+
+    # H273: the .env files come first, so the server, the posture guards and the bind
+    # guard see a value there (a token in .env is one); the lifespan's load is then a no-op.
+    load_hub_env()
     config = server_config()
     assert_parseable_posture_flags()  # fail-closed on a mistyped posture flag (H23.30)
     assert_safe_bind(config.host)   # fail-closed on an unauthenticated external bind
@@ -223,18 +249,35 @@ def main():
     # Posture guards run first (they must fail-closed even on a taken port); only
     # then do we tell the owner *why* the bind is about to fail (H042).
     probe_bind(config.host, config.port)
+    # H689: one hub per data root (per profile); a second one is told who holds it.
+    from agents.core import install_identity
+    from agents.core.paths import data_root
+
+    try:
+        install_identity.acquire_hub_lock()
+    except install_identity.HubAlreadyRunning as exc:
+        raise SystemExit(f"Nerva is already running on this data root: {exc}") from None
+    print(f"Data root: {data_root()}  (install {install_identity.install_id() or 'id unavailable'})")
     # Packaged installs: create + announce the owner's data folder up front so
     # first-run users know exactly where their memory/config/skills live.
+    from agents.core.env_provenance import profile_env_file
     from agents.core.paths import ensure_user_home
+    profile_env = profile_env_file()   # H689b: a profile's config is its own .env
+    if profile_env is not None:
+        print(f"Profile config: {profile_env}  (a profile reads only its own .env)")
     home = ensure_user_home()
     if home is not None:
-        print(f"Your data lives in: {home}  (config: {home / '.env'})")
+        print(f"Your data lives in: {home}" + ("" if profile_env is not None else f"  (config: {home / '.env'})"))
     print(f"Nerva starting at http://{config.host}:{config.port}")
     print("Features: multi-agent cabinet, skills system, memory store, cost analytics, CI/CD")
     # uvicorn.Server installs SIGINT/SIGTERM handlers and triggers the lifespan
     # shutdown (graceful channel stop + pooled-client close), bounded by
-    # timeout_graceful_shutdown above.
-    uvicorn.Server(config).run()
+    # timeout_graceful_shutdown above. H283: this subclass tells systemd READY once the
+    # port is bound and /readyz would say ready, and STOPPING before the drain.
+    from agents.core.routers.ops import readiness_snapshot
+    from agents.core.sd_notify import NotifyingServer
+
+    NotifyingServer(config, readiness_snapshot).run()
 
 
 if __name__ == "__main__":

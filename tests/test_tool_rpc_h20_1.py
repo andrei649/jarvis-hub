@@ -673,3 +673,26 @@ async def test_approved_execute_kernel_grant_uses_server_actor_and_omitted_args(
     assert out["status"] == "ok"
     assert seen == [{}]
     assert kernel.calls[-1].agent == "server-default"
+
+
+@pytest.mark.asyncio
+async def test_trusted_failure_detail_is_scrubbed_where_it_is_lifted_too():
+    """Review round 5, item 4: a trusted tool's failure ``detail`` is lifted to the top
+    level of the task result beside the scrubbed nested copy — it goes through the same
+    scrub, so a secret never reaches the task row through the lifted copy."""
+    token = object()
+    sb = SecretBroker()
+    sb.put("api_key", "sk-DETAIL-SECRET")
+    server = ToolRPCServer(secret_broker=sb,
+                           execution_context_check=lambda context, _task: context is token)
+
+    async def failing(_args):
+        return {"ok": False, "reason": "withheld_after_generation",
+                "detail": "gate said sk-DETAIL-SECRET"}
+
+    server.register_tool("mutate", failing, gated=True, trusted_execution=True)
+    out = await server.execute(_Task({"tool": "mutate", "args": {}}), execution_context=token)
+    assert out["status"] == "failed" and out["reason"] == "withheld_after_generation"
+    assert out["detail"] == "gate said [REDACTED:api_key]"
+    assert out["result"]["detail"] == out["detail"]
+    assert "sk-DETAIL-SECRET" not in str(out)

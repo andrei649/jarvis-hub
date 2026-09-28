@@ -35,6 +35,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Status / telemetry | `GET /status` | ✅ | ✅ | H18.1 |
 | Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ✅ | H18.5 |
 | Voice / TTS | `POST /tts` | ✅ | ✅ | H18.5 |
+| Approved speech command configuration | `GET/POST /api/admin/voice/commands` | ✅ Settings → Voice → Command providers; independent named TTS/STT, signed registration, human approval, revisioned clear and STT selection | ⬜ native provider configuration; hub TTS playback remains available | H517 / H613; vendor/plugin breadth remains open |
 | Stream timeout / reconnect | — (client-side) | ✅ | ✅ | H18.6 |
 | Dashboard (weather/news) | `GET /dashboard` | ✅ | ✅ | H18.14 |
 | Tasks board | `GET /tasks` | ✅ | ✅ | H18.13 |
@@ -44,6 +45,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Knowledge graph | read legs only: `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, `GET /api/kg/facts/{as-of,history}` | ✅ | ✅ existing native entity list/detail and relation rows | H18.17 |
 | Memory neighborhood navigation | user `GET /api/kg/entities`, `GET /api/kg/entities/{name}` | ✅ live search, selectable connections, bounded reads; samples only in explicit Demo | 🟡 entity list/detail exists; connected-neighbor navigation and request-bound parity remain | DW-1 / H18.28 |
 | Action approval queue + rollback story | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 / H27.6 |
+| Advisory approval model opinions (H277) | Optional `judge` / `judge_pending` on blocked tasks; `GET /api/llm/roles` configuration | ✅ Decision Inbox opinion, bounded polling and model roles viewer | ⬜ opinion rendering and role configuration; existing decisions remain usable | H18.29 / H277 |
 | Capability registry board | `GET /api/capabilities` | ✅ | ✅ | H18.22 / H27.8 |
 | WorldView bridge (World tab: liveness + recon read data) | `GET /api/worldview/status`, `GET /api/worldview/overview` | ✅ | ⬜ | |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
@@ -57,7 +59,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | First-run command center (0.19) | `GET /api/onboarding/command-center` | ✅ | ✅ | H18.19 |
 | Artifacts workspace (Canvas) | `GET /api/canvas`, `POST /api/canvas/post`, `POST /api/canvas/{id}/pin`, `DELETE /api/canvas/{id}` | ✅ | ✅ | H18.20 |
 | Media Director (O29, default-off) | `GET /api/media/devices`, `POST /api/media/devices`, `DELETE /api/media/devices/{device_id}`, `GET /api/media/session`, `POST /api/media/present`, `POST /api/media/restore/{device_id}` | ✅ | ✅ | H18.21 |
-| Local image generation (ComfyUI, default-off) | `GET /api/media`, `POST /api/media/generate`, admin-only `GET /api/media/generation-tasks/{task_id}`, user-guarded `GET /api/media/generated/{artifact_id}` | ✅ Console → Build → Images: exact prompt, existing Inbox approval, one-task state, authenticated PNG preview/download; resume by task ID; persistent gallery and host proof pending | ⬜ image status/composer and authenticated previews; existing approval queue remains available | H18.27 / HA-4i-image |
+| Local image generation (ComfyUI and configured images API, default-off) | `GET /api/media`, `POST /api/media/generate`, admin-only `GET /api/media/generation-tasks/{task_id}`, user-guarded `GET /api/media/generated/{artifact_id}` | ✅ Console → Build → Images: backend/model selection with per-backend edit/upscale capabilities, exact prompt, existing Inbox approval, one-task state, authenticated PNG preview/download and opt-in gallery; resume by task ID. Live service proof pending | ⬜ image status/composer and authenticated previews; existing approval queue remains available | H18.27 / HA-4i-image / H517 |
 | House Brain (H30.5, default-off) | `GET /api/house/state`, `POST /api/house/control/{light,climate,security}`, admin-only `/api/house/security/{task_id}/{challenge,confirm}` | ✅ | ✅ | H30.5 |
 | Camera Intelligence (H31.5, default-off, metadata-only) | `GET /api/cameras/{status,events}`, `POST /api/cameras/search`, admin-only `POST /api/cameras/onvif/discover` | ✅ | ✅ | H31.5 |
 | Governed Capability Acquisition (H32.6, default-off) | user `GET /api/acquisition/{status,events}`; admin-only revoke, rollback, ledger export/purge | ✅ | ✅ | H32.6 |
@@ -237,3 +239,46 @@ remain a parity gap; existing text Canvas is unchanged.
 2026-09-15 — H684: existing admin GET /api/jobs/doctor includes health and persistent execution/delivery outcomes. Responsive web Jobs renders the report. Native mobile has no dedicated health view; that parity gap remains. Diagnosis triggers no repair or delivery.
 
 H129 (2026-09-15): responsive HUD routes are bookmarkable at /v2/<mode> and /v2/console/<panel>. Pixel 7 Chromium navigation is verified with a stubbed backend. This does not add native mobile navigation or a cross-profile route registry.
+
+### 2026-09-27 — H487/H513 approval grouping and provider consent
+
+Responsive web Decision Inbox and legacy Actions accept bounded human reasons and
+group verified owner submissions. Individual approval remains single-use; explicit
+group rejection uses a current membership snapshot. Telegram shows group counts and
+collects a reason after rejection. Native mobile has no new grouping/reason controls.
+
+The responsive web Security Posture panel displays provider data-handling policies,
+persistent warnings, and audited configuration-bound unattended-use consent/revocation.
+Native mobile has no consent-management surface; use the web panel. No native-device
+acceptance or external provider call is claimed by this offline increment.
+
+Approval-judge consent is a separate responsive-web row, keyed to its configured
+model, destination and credentials. It does not enable remote judging. Native mobile
+still uses the web panel for consent management; no native acceptance was run.
+
+The responsive-web image composer now displays provider-policy warnings alongside
+the reviewed destination and successful answer. Its request-scoped remote
+acknowledgment is unchanged. Native image-policy warning parity remains open;
+the local embedding guard has no new native control or remote-consent surface.
+
+The responsive-web Decision Inbox displays an optional task approval deadline.
+Authoring is the existing owner-authenticated task API; omitted deadlines preserve
+indefinite waiting. Native deadline authoring/display is not added in this slice.
+Expired tasks and failed unanswered-approval outcomes remain visible through the
+existing task/work-run APIs. No native-device acceptance is claimed.
+
+Responsive-web image description and screen reflex now show policy warnings and
+require a local VLM on the Nerva server. The obsolete remote acknowledgment in
+the legacy describe panel is removed. Status exposes a sanitized origin; failed
+or empty inference is not a successful answer. Native equivalents of these policy
+warnings and controls remain open; this slice has no native-device acceptance.
+
+Responsive-web Trust includes separate allow/revoke controls for Telegram image
+descriptions with unknown or training policies. This acknowledgment neither grants
+remote image access nor changes household camera consent. Native role controls and
+live Telegram/device acceptance remain open.
+
+Responsive-web Trust also exposes the separate camera-description model-data role.
+Acknowledgment is independent of household consent and does not enable capture or
+remote inference. Native camera role controls, supported owner camera provisioning
+and live-device acceptance remain open.

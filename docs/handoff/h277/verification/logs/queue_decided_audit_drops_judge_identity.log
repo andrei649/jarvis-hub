@@ -1,0 +1,55 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+....F.........................................................F......... [ 43%]
+........................................................................ [ 86%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+___________________ test_audit_rows_carry_the_judge_identity ___________________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-64/test_audit_rows_carry_the_judg0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110143c20>
+
+    async def test_audit_rows_carry_the_judge_identity(tmp_path, monkeypatch):
+        audit = FakeIntentLog()
+        q = queue(tmp_path, local_judge(monkeypatch, FakeBackend()), audit)
+        item = q.request(ACTION)
+        await drain(q)
+        [judged] = audit.of("action_approval.judged")
+        assert judged["actor"] == "approval_judge"
+        assert judged["cause"] == f"action_approval:{item['id']}"
+        meta = judged["metadata"]
+        assert meta["judge"] == {"provider": "lm-studio", "model": "judge-m", "local": True}
+        assert meta["score"] == 37 and meta["tool"] == "write_file" and meta["agent"] == "pepper"
+        assert len(meta["rationale_sha256"]) == 64
+        assert "Writes one file" not in json.dumps(judged)
+        assert "decides nothing" in judged["why"]
+        q.decide(item["id"], True, by="owner")
+        [decided] = audit.of("action_approval.decided")
+        assert decided["actor"] == "owner" and decided["cause"] == f"action_approval:{item['id']}"
+>       assert decided["metadata"]["judge"] == {"provider": "lm-studio", "model": "judge-m", "local": True}
+E       AssertionError: assert None == {'provider': 'lm-studio', 'model': 'judge-m', 'local': True}
+
+tests/test_h277_approval_judge.py:230: AssertionError
+________________ test_decide_route_is_unaffected_by_a_judgement ________________
+
+rig = namespace(app=<fastapi.applications.FastAPI object at 0x1101d1700>, state=namespace(orch=namespace(action_approvals=<agents.core.autonomy.action_approvals.ActionApprovalQueue object at 0x1101d5f40>)))
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-64/test_decide_route_is_unaffecte0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1101d30e0>
+
+    async def test_decide_route_is_unaffected_by_a_judgement(rig, tmp_path, monkeypatch):
+        audit = FakeIntentLog()
+        rig.state.orch.action_approvals = queue(tmp_path, local_judge(monkeypatch, FakeBackend()), audit)
+        async with http(rig) as client:
+            created = (await client.post("/api/actions/request", json=ACTION)).json()["action"]
+            await drain(rig.state.orch.action_approvals)
+            decided = await client.post(f"/api/actions/{created['id']}/decide", json={"approved": False, "by": "owner"},
+                                        headers={"X-Admin-Token": "judge-owner"})
+        assert decided.json()["action"]["status"] == "rejected"
+>       assert audit.of("action_approval.decided")[0]["metadata"]["judge"]["model"] == "judge-m"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: 'NoneType' object is not subscriptable
+
+tests/test_h277_approval_judge.py:746: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity
+FAILED tests/test_h277_approval_judge.py::test_decide_route_is_unaffected_by_a_judgement
+2 failed, 164 passed in 2.54s

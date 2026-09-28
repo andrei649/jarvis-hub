@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T14:39:45.805549+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "H487 generic model ToolRPC notification grouping; independent decisions and signed receipts",
+  "plan": "docs/hermes/h487-model-grouping-plan.md",
+  "review": "docs/hermes/h487-model-grouping-review.md",
+  "coordination": {
+    "implementers": 2,
+    "model": "gpt-6-sol",
+    "reasoning": "high",
+    "ownership": "one implementation writer and one independent integration-test writer; coordinator review and integration"
+  },
+  "verification": [
+    {
+      "path": "/tmp/h487-model-grouping-red.xml",
+      "tests": 12,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 10,
+      "seconds": 0.866,
+      "sha256": "92e682f74f2edf9899960f033ce6260a1885f515270e00dc2363dd4bdd25073d"
+    },
+    {
+      "path": "/tmp/h487-model-lifetime-red.xml",
+      "tests": 17,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 16,
+      "seconds": 0.95,
+      "sha256": "39d32320b2f35fccef79b0b4b35ef454eba6c058ae9667d6bc0f12cbeab121ac"
+    },
+    {
+      "path": "/tmp/h487-model-grouping-focus.xml",
+      "tests": 159,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 159,
+      "seconds": 3.183,
+      "sha256": "aed2d7ab4644875c62aead1210fa453a7c746edb23f4bc3a0dc143b856472a47"
+    },
+    {
+      "path": "/tmp/nerva-h487-model-grouping-integration.xml",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 15,
+      "seconds": 0.805,
+      "sha256": "56a664206c63a3c6198444d67c7fa341dd3ea608b679dbdc15a3022ba4ef11c4"
+    },
+    {
+      "path": "/tmp/nerva-h487-model-review.xml",
+      "tests": 101,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 101,
+      "seconds": 3.707,
+      "sha256": "e9f7a82d1d76a682614a57b169ef6b22fc1c5f1a63ae5e97c60fee964acbf7b5"
+    },
+    {
+      "path": "/tmp/nerva-h487-model-backend.xml",
+      "tests": 19261,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 19226,
+      "seconds": 271.602,
+      "sha256": "9900cc1af0eb27be9df0f8eeb23ba9c01b329de1fec64b5c55bb8500e2943992"
+    },
+    {
+      "path": "/tmp/nerva-h487-model-final-focus.xml",
+      "tests": 101,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 101,
+      "seconds": 3.666,
+      "sha256": "06d3172f6fc3bb5c3333447497155df955eb5345cb5f35eed8d7b7892803ba4d"
+    },
+    {
+      "tests": 92,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/nerva-h487-model-docs.xml",
+      "passed": 92,
+      "sha256": "5aeddc59f223533f591d28038af482815752a380ec8497b8789712a49396a7b6"
+    }
+  ],
+  "source_sha256": {
+    "agents/core/autonomy/approval_grouping.py": "e065c51436e4ae97f1b66c20dd8f58808a597e4c32a44ad95fba3484af5db5cc",
+    "agents/core/tool_rpc.py": "ac3bc1b722f7e541e5f1f436a596a87a5ede360d772e44dc520cb21a4c2be977",
+    "agents/core/autonomy/worker.py": "05520ead3e0afdd6a118b49f1bde920547697d8dd2d7f069b5d8e001c90f268b",
+    "agents/core/autonomy/queue.py": "f454dc3745c5e35b888fef3ad79025e765d85d8e341f3e20ffea00e787aad2cb",
+    "tests/test_h487_model_grouping.py": "b1fba39a290ae13b17581eeee07b7a214a7f19942599082b57c36676c275006d",
+    "tests/test_h487_model_grouping_integration.py": "ec102f19b72f8f66c1028aa1093627072e9cbf2c553b5cf6f63d48809746d332"
+  },
+  "frontend": {
+    "reused_evidence": "docs/hermes/evidence/h513-camera-integration-2026-09-27.json",
+    "passed": 1822,
+    "changed": false
+  },
+  "security": {
+    "bandit": {
+      "initial_exit_code": 1,
+      "finding": "B110 silent exception in provenance context",
+      "correction": "Explicit context=None; metadata failure retains independent ask",
+      "final_exit_code": 0,
+      "log": "/tmp/nerva-h487-model-bandit-final.log"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "files": 6,
+      "log": "/tmp/nerva-h487-model-gitleaks.log"
+    }
+  },
+  "graft": {
+    "check": "passed",
+    "log": "/tmp/nerva-h487-model-graft-check.log",
+    "deep_index": false
+  },
+  "limitations": [
+    "Notification grouping is not shared standing consent; H487 remains partial.",
+    "Shared session/always/deny adoption, additional proven producers and bounded human-wait accounting remain open.",
+    "The full backend snapshot precedes the equivalent explicit context=None fallback and module docstring correction; 101 focused integration tests and final scans verify those final changes.",
+    "Unchanged frontend reuses preceding tested snapshot; no live provider, channel or native device acceptance.",
+    "No new H277 mutation campaign, commit, push, merge, deployment or paid calls."
+  ]
+}

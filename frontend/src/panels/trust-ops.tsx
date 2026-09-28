@@ -98,6 +98,7 @@
    would be dead code and a refused rotation could sit under a success line. */
 import React, { useState } from 'react';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, actA, inpS, taS, Json } from '../panel-kit';
+import { ConfirmAction, RISK_TIER } from '../confirm';
 
 const SPOTLIGHT_PATH = '/api/security/spotlight';
 const BROKER_PATH = '/api/secrets/broker';
@@ -202,7 +203,6 @@ export function TrustOpsPanel() {
   /* ── 3 · token rotation (admin, destructive) ───────────────────────────── */
   const [scope, setScope] = useState('admin');
   const [ttl, setTtl] = useState('');
-  const [confirm, setConfirm] = useState('');
   const [rot, setRot] = useState<any>(null);
   const [rotErr, setRotErr] = useState<any>(null);
   const [rotBusy, setRotBusy] = useState(false);
@@ -212,21 +212,20 @@ export function TrustOpsPanel() {
   const ttlRaw = ttl.trim();
   const ttlNum = ttlRaw === '' ? null : Number(ttlRaw);
   const ttlBad = ttlNum != null && !Number.isFinite(ttlNum);
-  const rotateReady = confirm === scope && !ttlBad && !rotBusy;
-
-  const rotate = () => {
-    if (!rotateReady) return;
+  // H168: the typed scope is the tier-3 confirmation (ConfirmAction, always open); a
+  // refusal keeps what was typed, a rotation clears it.
+  const rotate = () => {                  // never called disabled (bad TTL) or busy: ConfirmAction holds it
     setRotBusy(true);
     setRot(null);
     setRotErr(null);
     setReveal(false);
     setStored('');
-    actA(
+    return new Promise<boolean>((resolve) => actA(
       ROTATE_PATH,
       { scope, ...(ttlNum != null && Number.isFinite(ttlNum) ? { ttl_days: ttlNum } : {}) },
-      (r) => { setRot(r); setConfirm(''); setRotBusy(false); },
-      (e) => { setRotErr(e); setRotBusy(false); },
-    );
+      (r) => { setRot(r); setRotBusy(false); resolve(true); },
+      (e) => { setRotErr(e); setRotBusy(false); resolve(false); },
+    ));
   };
 
   const storeToken = () => {
@@ -379,7 +378,7 @@ export function TrustOpsPanel() {
       </div>
       <Row>
         <span style={{ ...mono, color: 'var(--ink-3)' }}>scope</span>
-        <select aria-label="rotation scope" style={{ ...inpS }} value={scope} onChange={(e) => { setScope(e.target.value); setConfirm(''); }}>
+        <select aria-label="rotation scope" style={{ ...inpS }} value={scope} onChange={(e) => setScope(e.target.value)}>
           {SCOPES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         <input
@@ -395,19 +394,10 @@ export function TrustOpsPanel() {
         <div style={WARN}>{ttlRaw} is not positive — the handler coerces any ttl_days &lt;= 0 to null (no expiry). The response below is the authority.</div>
       )}
       <Row>
-        <input
-          style={{ ...inpS, flex: 1 }}
-          aria-label="type the scope to confirm"
-          value={confirm}
-          placeholder={'type "' + scope + '" to confirm'}
-          onChange={(e) => setConfirm(e.target.value)}
-        />
-        <button
-          className="tool-btn"
-          aria-label="Rotate tokens for the selected scope"
-          disabled={!rotateReady}
-          onClick={rotate}
-        >ROTATE {scope.toUpperCase()} TOKENS</button>
+        <ConfirmAction tier={RISK_TIER.IRREVERSIBLE_OR_MONEY} open phrase={scope} label={`ROTATE ${scope.toUpperCase()} TOKENS`}
+          prompt={<>type the scope to rotate</>} inputLabel="type the scope to confirm" placeholder={'type "' + scope + '" to confirm'}
+          armedLabel={`ROTATE ${scope.toUpperCase()} TOKENS`} confirmAriaLabel="Rotate tokens for the selected scope"
+          disabled={ttlBad} busy={rotBusy} onConfirm={rotate} />
       </Row>
       <State e={null} loading={rotBusy} n={null} />
       {rotErr != null && <Refusal err={rotErr} path={ROTATE_PATH} />}

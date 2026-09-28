@@ -172,9 +172,11 @@ def test_a_mock_result_is_not_recorded_as_a_capability_success(monkeypatch):
         _task("plugin.demo"), success=True, result={"_degraded": {"reason": "no key"}})
     assert queue.recorded == []
 
-    # a genuine success still counts, or the fix would just break the ledger
+    # a genuine success still counts, or the fix would just break the ledger. Review
+    # round 5, item 8: a success is explicit — a success status (or ``ok: True``); a
+    # result that says nothing about its outcome is not counted as one.
     worker._record_capability_outcome(
-        _task("plugin.demo"), success=True, result={"value": "real"})
+        _task("plugin.demo"), success=True, result={"status": "ok", "value": "real"})
     assert queue.recorded == [("plugin:demo", True)]
 
 

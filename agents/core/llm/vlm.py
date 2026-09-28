@@ -27,29 +27,27 @@ pin, because the served model name is the host's fact, not ours.
 from __future__ import annotations
 
 import base64
-import ipaddress
 import logging
 from dataclasses import dataclass
 from typing import Optional
-from urllib.parse import urlsplit
 
-
-from ..env_config import env_str
 from ..screen_grounding import (
     CONVENTION_ABSOLUTE,
     CONVENTION_ABSOLUTE_RESIZED,
     CONVENTION_RELATIVE_1000,
     CONVENTIONS,
 )
+from . import model_roles
 from .base import LLMBackend, strip_thinking
 from .egress import llm_async_client
+from .model_roles import LMSTUDIO_VLM_BASE, _is_loopback_base  # noqa: F401 — re-exported by name
 
 logger = logging.getLogger("jarvis.llm.vlm")
 
 DEFAULT_VLM_BASE = "http://localhost:8000/v1"
-# LM Studio's OpenAI-compatible server default; Ollama serves the same
-# contract on 11434/v1 (same constant the companion-eval lane documents).
-LMSTUDIO_VLM_BASE = "http://localhost:1234/v1"
+# LM Studio's OpenAI-compatible server default (``LMSTUDIO_VLM_BASE``) and the loopback
+# label ``_is_loopback_base`` live in the H277 role table now and keep their names here;
+# Ollama serves the same contract on 11434/v1 (same constant the companion-eval lane documents).
 _FMT_MIME = {"PNG": "image/png", "JPEG": "image/jpeg", "JPG": "image/jpeg",
              "GIF": "image/gif", "WEBP": "image/webp"}
 
@@ -64,30 +62,6 @@ class VLMNotConfigured(RuntimeError):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
-
-
-def _is_loopback_base(url: str) -> bool:
-    """Best-effort loopback check for provenance labeling (never raises).
-
-    ``_is_loopback_base`` is a *label*: it computes ``VLMConfig.is_local`` and
-    ``VLMBackend.is_local`` and never blocks anything itself. The **gate** is
-    enforced by the callers that hold screen bytes — ``routers/multimodal.py``
-    (``screen_reflex`` refuses a non-local config with 503 before generating)
-    and ``screen_locator.LocalVLMLocator`` (refuses ``local_vlm_not_proven_local``
-    before any bytes leave the process). The consent-scoped camera path keeps
-    its own strict fail-closed validator (``cameras/vlm._local_endpoint``), which
-    cannot be imported here without a package cycle.
-    """
-    try:
-        host = (urlsplit(url).hostname or "").lower()
-    except ValueError:
-        return False
-    if host == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
 
 
 # ── pinned local grounder presets ────────────────────────────────────────────
@@ -202,21 +176,26 @@ def resolve_vlm_config(env=None) -> VLMConfig:
     - ``vlm_model_unset`` — a preset is set but JARVIS_VLM_MODEL is not: the
       preset annotates the convention, it never stands in for the model pin.
 
+    - ``role_provider_unknown`` / ``role_provider_unsupported`` (H277) —
+      ``JARVIS_ROLE_VISION_PROVIDER`` names no provider profile, or one the vision
+      path cannot speak to.
+
     Legacy compatibility: a bare JARVIS_VLM_URL with no backend selector keeps
     working as ``custom`` (with the historical qwen2-vl model default), so
     existing owner hosts do not regress.
+
+    H277: the reads go through the ``vision`` role (``model_roles.vision_env_view``):
+    ``JARVIS_ROLE_VISION_PROVIDER`` (``lm-studio`` | ``openai-compatible``) / ``_MODEL`` /
+    ``_BASE_URL`` win when set, and ``JARVIS_VLM_*`` are the fallbacks, unchanged.
     """
-
-    def _get(name: str, default: str = "") -> str:
-        if env is not None:
-            return str(env.get(name, default) or default)
-        return env_str(name, default)
-
-    backend = _get("JARVIS_VLM_BACKEND").strip().lower()
-    url = _get("JARVIS_VLM_URL").strip()
-    model = _get("JARVIS_VLM_MODEL").strip()
-    api_key = _get("JARVIS_VLM_KEY")
-    preset_name = _get("JARVIS_VLM_PRESET").strip().lower()
+    try:
+        backend, url, model, api_key, preset_name = model_roles.vision_env_view(env)
+    except model_roles.RoleConfigError as exc:
+        raise VLMNotConfigured(exc.reason) from exc
+    backend = backend.strip().lower()
+    url = url.strip()
+    model = model.strip()
+    preset_name = preset_name.strip().lower()
     if backend in {"", "off"} and not (backend == "" and url):
         raise VLMNotConfigured("vlm_disabled")
     if backend not in {"", "lmstudio", "custom"}:
@@ -320,14 +299,21 @@ class VLMBackend(LLMBackend):
     supports_tools = False
 
     def __init__(self, base_url: str = DEFAULT_VLM_BASE, api_key: str = "",
-                 client=None, max_image_dim: int = 1024) -> None:
+                 client=None, max_image_dim: int = 1024, *, composer_auth: bool = False) -> None:
         self.base_url = base_url
         self.api_key = api_key
         self.max_image_dim = max_image_dim
+        self._composer_auth = composer_auth
         # Provenance label consumed by proven-local gates (e.g. the H28
         # desktop fallback); a remote base is honestly not local.
         self.is_local = _is_loopback_base(base_url)
-        self.client = client or llm_async_client("vlm", base_url=base_url, timeout=180.0)
+        options = {}
+        if composer_auth:
+            import httpx
+            # Suppress URL Basic overriding explicit Bearer; _headers resolves both.
+            options["auth"] = httpx.Auth()
+            options["trust_env"] = False
+        self.client = client or llm_async_client("vlm", base_url=base_url, timeout=180.0, **options)
 
     @classmethod
     def from_env(cls, *, client=None, max_image_dim: int = 1024) -> "VLMBackend":
@@ -352,6 +338,11 @@ class VLMBackend(LLMBackend):
         h = {"Content-Type": "application/json"}
         if self.api_key:
             h["Authorization"] = f"Bearer {self.api_key}"
+        elif self._composer_auth:
+            from .vision_policy import authorization
+            auth = authorization(self.base_url, self.api_key)
+            if auth:
+                h["Authorization"] = auth
         return h
 
     async def generate_vision_checked(self, model: str, prompt: str, images=None, system: str = "",

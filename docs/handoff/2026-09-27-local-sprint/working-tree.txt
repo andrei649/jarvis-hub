@@ -1,0 +1,394 @@
+ M AGENTS.md
+ M BACKLOG.md
+ M GO_LIVE_PLAN.md
+ M HERMES_STATUS.md
+ M NERVA.md
+ M README.md
+ M STATUS.md
+ M agents/cli/nerva.py
+ M agents/core/acquisition/llm_synth.py
+ M agents/core/agent.py
+ M agents/core/agent_runtime.py
+ M agents/core/autonomy/action_approvals.py
+ M agents/core/autonomy/approval_judge.py
+ M agents/core/autonomy/company_runtime.py
+ M agents/core/autonomy/inbox.py
+ M agents/core/autonomy/irreversible.py
+ M agents/core/autonomy/pending_requests.py
+ M agents/core/autonomy/queue.py
+ M agents/core/autonomy/work_runs.py
+ M agents/core/autonomy/worker.py
+ M agents/core/autonomy_coordinator.py
+ M agents/core/browser_agent.py
+ M agents/core/cameras/pipeline.py
+ M agents/core/cameras/runtime.py
+ M agents/core/cameras/vlm.py
+ M agents/core/capability_manifests.py
+ M agents/core/channels/media_reader.py
+ M agents/core/channels/telegram.py
+ M agents/core/house/presence.py
+ M agents/core/image_generation_runtime.py
+ M agents/core/ingestion/embedder.py
+ M agents/core/kernel/registry.py
+ M agents/core/llm/base.py
+ M agents/core/llm/egress.py
+ M agents/core/llm/gemini_cache.py
+ M agents/core/llm/hybrid_router.py
+ M agents/core/llm/model_roles.py
+ M agents/core/llm/vlm.py
+ M agents/core/media_backends/comfyui.py
+ M agents/core/observability/camera_reality.py
+ M agents/core/orchestrator.py
+ M agents/core/orchestrator_bindings.py
+ M agents/core/routers/actions.py
+ M agents/core/routers/autonomy.py
+ M agents/core/routers/composer_vision.py
+ M agents/core/routers/models_llm.py
+ M agents/core/routers/multimodal.py
+ M agents/core/routers/security.py
+ M agents/core/routers/voice.py
+ M agents/core/sd_notify.py
+ M agents/core/session_archive.py
+ M agents/core/settings_db.py
+ M agents/core/tool_rpc.py
+ M agents/core/voice/command_settings.py
+ M agents/core/voice/local_providers.py
+ M agents/core/voice/stt.py
+ M agents/core/voice/tts.py
+ M agents/web/static/tools.js
+ D agents/web/v2/assets/gap-DJlgiXUG.js
+ D agents/web/v2/assets/index-W_NSGeSa.js
+ D agents/web/v2/assets/modes-Bu2GgkFC.js
+ D agents/web/v2/assets/modes2-CK4X65TV.js
+ D agents/web/v2/assets/modes3-BToAqzz2.js
+ D agents/web/v2/assets/modes4-CeC919dt.js
+ D agents/web/v2/assets/modes_world-B6ibiipE.js
+ M agents/web/v2/index.html
+ M docs/ARCHITECTURE.md
+ M docs/FLAGS.md
+ M docs/HERMES_ABSORPTION.md
+ M docs/HERMES_CAPABILITIES.md
+ M docs/HERMES_SPRINT.md
+ M docs/design/HUD_V2_REMAINING.md
+ M docs/handoff/h277/README.md
+ M docs/hermes/assessment.json
+ M docs/hermes/build-queue.md
+ M docs/test-manual/07-autonomy-governance.md
+ M docs/test-manual/08-security-privacy.md
+ M docs/test-manual/14-api-surface-sweep.md
+ M frontend/src/api/images.ts
+ M frontend/src/api/schema.gen.ts
+ M frontend/src/cockpit.tsx
+ M frontend/src/composer-images.tsx
+ M frontend/src/gap.tsx
+ M frontend/src/panels/images.tsx
+ M frontend/src/panels/voice-commands.tsx
+ M frontend/src/test/composer-images.test.tsx
+ M frontend/src/test/composer-vision-turn.test.tsx
+ M frontend/src/test/decision-inbox-panel.test.tsx
+ M frontend/src/test/governance-posture-panel.test.tsx
+ M frontend/src/test/images-api.test.ts
+ M frontend/src/test/images-panel.test.tsx
+ M frontend/src/test/screen-reflex-panel.test.tsx
+ M frontend/src/test/vlm-describe-panel.test.tsx
+ M frontend/src/vision-turn.ts
+ M mobile/PARITY.md
+ M project-status.json
+ M scripts/hermes_status.py
+ M scripts/install_smoke.py
+ M scripts/selfdev_policy.py
+ M selfdev-policy.json
+ M tests/_nerva_e1_2_checks.py
+ M tests/_snapshots/action_auth.json
+ M tests/_snapshots/capability_readiness.json
+ M tests/_snapshots/openapi_surface.json
+ M tests/_snapshots/route_auth.json
+ M tests/_snapshots/route_surface.json
+ M tests/frontend/coverage-badge.svg
+ M tests/frontend/tools.test.js
+ M tests/golden_harness.py
+ M tests/test_action_auth_matrix.py
+ M tests/test_agent_runtime_v2.py
+ M tests/test_composer_vision.py
+ M tests/test_concurrent_session_isolation.py
+ M tests/test_context_compression_phase2.py
+ M tests/test_embedding_pipeline.py
+ M tests/test_h10_18_action_approvals.py
+ M tests/test_h277_approval_judge.py
+ M tests/test_h277_model_roles.py
+ M tests/test_h27_capability_verification.py
+ M tests/test_h283_host_notify_and_hint.py
+ M tests/test_h30_presence.py
+ M tests/test_h31_camera_reality.py
+ M tests/test_h32_llm_synth.py
+ M tests/test_h413_session_titles.py
+ M tests/test_h464_run_barriers.py
+ M tests/test_h465f_refine_review.py
+ M tests/test_h579_context_refs.py
+ M tests/test_h613_piper_command_voice.py
+ M tests/test_h667c_exec_cache_review.py
+ M tests/test_h674_compaction_hold.py
+ M tests/test_hermes_sprint_status.py
+ M tests/test_howard_rag.py
+ M tests/test_inbound_media_read.py
+ M tests/test_job_model_pins.py
+ M tests/test_memory_embeddings.py
+ M tests/test_nerva_cli.py
+ M tests/test_o26_golden_loop_chat.py
+ M tests/test_pr_auto_merge_policy.py
+ M tests/test_query_rewrite.py
+ M tests/test_recall_cache.py
+ M tests/test_route_preserving_guardrails.py
+ M tests/test_screen_reflex_route.py
+ M tests/test_stream_abort_no_persist.py
+ M tests/test_vlm_h13_1.py
+ M tests/test_workflows_autonomy_api.py
+?? agents/core/approval_outcomes.py
+?? agents/core/autonomy/advisory_judgements.py
+?? agents/core/autonomy/approval_grouping.py
+?? agents/core/autonomy/decision_reasons.py
+?? agents/core/autonomy/task_approval_judge.py
+?? agents/core/ingestion/embedding_policy.py
+?? agents/core/llm/data_handling.py
+?? agents/core/llm/direct_transport.py
+?? agents/core/llm/vision_policy.py
+?? agents/core/media_backends/local_openai_image.py
+?? agents/core/media_backends/registry.py
+?? agents/core/media_providers.py
+?? agents/core/voice/provider_registry.py
+?? agents/core/voice/provider_store.py
+?? agents/web/v2/assets/gap-CS351l-W.js
+?? agents/web/v2/assets/index-CZlKF3lX.js
+?? agents/web/v2/assets/modes-DUC-fuw_.js
+?? agents/web/v2/assets/modes2-Ds41d0fR.js
+?? agents/web/v2/assets/modes3-Fkuu1Oat.js
+?? agents/web/v2/assets/modes4-D-Qv37tg.js
+?? agents/web/v2/assets/modes_world-DOH332Mx.js
+?? docs/handoff/2026-09-27-local-sprint/README.md
+?? docs/handoff/2026-09-27-local-sprint/dispatch-report.md
+?? docs/handoff/2026-09-27-local-sprint/independent-review.md
+?? docs/handoff/2026-09-27-local-sprint/source-manifest.json
+?? docs/handoff/2026-09-27-local-sprint/storage-report.md
+?? docs/handoff/h277/verification/build_report.py
+?? docs/handoff/h277/verification/effective_mutants.json
+?? docs/handoff/h277/verification/failing_test_index.json
+?? docs/handoff/h277/verification/initial_results.json
+?? docs/handoff/h277/verification/logs/N1_disk_pending_recheck_dropped.log
+?? docs/handoff/h277/verification/logs/N1_memory_pending_recheck_dropped.log
+?? docs/handoff/h277/verification/logs/N1_post_slot_status_stale.log
+?? docs/handoff/h277/verification/logs/N1_post_slot_wants_dropped.log
+?? docs/handoff/h277/verification/logs/N1_skip_revoked_counter_dropped.log
+?? docs/handoff/h277/verification/logs/N2_capacity_released_on_decide.log
+?? docs/handoff/h277/verification/logs/N2_decide_pending_not_cleared.log
+?? docs/handoff/h277/verification/logs/N2_finish_pending_not_cleared.log
+?? docs/handoff/h277/verification/logs/N2_hud_deadline_refreshes.log
+?? docs/handoff/h277/verification/logs/N2_hud_early_timeout.log
+?? docs/handoff/h277/verification/logs/N2_public_pending_hidden.log
+?? docs/handoff/h277/verification/logs/N3_args_cap_raised.log
+?? docs/handoff/h277/verification/logs/N3_small_values_inflated.log
+?? docs/handoff/h277/verification/logs/N3_within_budget_values_cut.log
+?? docs/handoff/h277/verification/logs/N4_deep_flag_dropped.log
+?? docs/handoff/h277/verification/logs/N4_deep_truncated_flag_dropped.log
+?? docs/handoff/h277/verification/logs/N4_normalised_marker_not_tainted.log
+?? docs/handoff/h277/verification/logs/N4_remote_depth_refusal_dropped.log
+?? docs/handoff/h277/verification/logs/N5_dot_separator_kept.log
+?? docs/handoff/h277/verification/logs/N5_nfkc_dropped.log
+?? docs/handoff/h277/verification/logs/N5_unicode_quote_categories_dropped.log
+?? docs/handoff/h277/verification/logs/N6_bytes_repr_instead_of_decode.log
+?? docs/handoff/h277/verification/logs/N6_set_repr_instead_of_list.log
+?? docs/handoff/h277/verification/logs/N7_import_guard_wrong_exception.log
+?? docs/handoff/h277/verification/logs/N7_unconfigured_judge_taints_item.log
+?? docs/handoff/h277/verification/logs/baseline_js.log
+?? docs/handoff/h277/verification/logs/baseline_py.log
+?? docs/handoff/h277/verification/logs/doctor_model_roles_attention_ignored.log
+?? docs/handoff/h277/verification/logs/doctor_model_roles_ignored_not_flagged.log
+?? docs/handoff/h277/verification/logs/hud_opinion_advisory_label_dropped.log
+?? docs/handoff/h277/verification/logs/hud_opinion_shown_on_skill_card.log
+?? docs/handoff/h277/verification/logs/hud_repoll_never_stops.log
+?? docs/handoff/h277/verification/logs/judge_allow_remote_inverted.log
+?? docs/handoff/h277/verification/logs/judge_clamp_upper_bound_raised.log
+?? docs/handoff/h277/verification/logs/judge_cloud_fallback_never_ignored.log
+?? docs/handoff/h277/verification/logs/judge_h378_findings_ignored.log
+?? docs/handoff/h277/verification/logs/judge_parse_code_fence_unanchored.log
+?? docs/handoff/h277/verification/logs/judge_parse_empty_why_allowed.log
+?? docs/handoff/h277/verification/logs/judge_parse_extra_keys_allowed.log
+?? docs/handoff/h277/verification/logs/judge_parse_fractional_risk_allowed.log
+?? docs/handoff/h277/verification/logs/judge_prompt_not_fenced.log
+?? docs/handoff/h277/verification/logs/judge_protocol_refusal_dropped.log
+?? docs/handoff/h277/verification/logs/judge_public_leaks_remote_base_url.log
+?? docs/handoff/h277/verification/logs/judge_rationale_fence_markers_kept.log
+?? docs/handoff/h277/verification/logs/judge_remote_gate_applies_to_local.log
+?? docs/handoff/h277/verification/logs/judge_safe_mode_check_dropped.log
+?? docs/handoff/h277/verification/logs/judge_selection_pin_check_inverted.log
+?? docs/handoff/h277/verification/logs/judge_strict_local_ignored.log
+?? docs/handoff/h277/verification/logs/judge_timeout_floor_dropped.log
+?? docs/handoff/h277/verification/logs/judge_wants_local_agent_sent_remote.log
+?? docs/handoff/h277/verification/logs/judge_wants_skill_card_judged.log
+?? docs/handoff/h277/verification/logs/judge_wants_tainted_sent_remote.log
+?? docs/handoff/h277/verification/logs/judge_wants_unconfigured_guard_dropped.log
+?? docs/handoff/h277/verification/logs/model_config_override_flag_inverted.log
+?? docs/handoff/h277/verification/logs/overlay_baseline_js.log
+?? docs/handoff/h277/verification/logs/overlay_baseline_py.log
+?? docs/handoff/h277/verification/logs/queue_annotate_after_decision.log
+?? docs/handoff/h277/verification/logs/queue_annotate_low_score_auto_approves.log
+?? docs/handoff/h277/verification/logs/queue_annotate_second_answer_overwrites.log
+?? docs/handoff/h277/verification/logs/queue_decided_audit_drops_judge_identity.log
+?? docs/handoff/h277/verification/logs/queue_judge_inherits_caller_context.log
+?? docs/handoff/h277/verification/logs/queue_judged_audit_drops_judge_identity.log
+?? docs/handoff/h277/verification/logs/queue_short_lived_loop_not_judged_on_hub.log
+?? docs/handoff/h277/verification/logs/queue_snapshot_is_stored_item.log
+?? docs/handoff/h277/verification/logs/recheck_N1_memory_pending_recheck_dropped.log
+?? docs/handoff/h277/verification/logs/recheck_N4_remote_depth_refusal_dropped.log
+?? docs/handoff/h277/verification/logs/recheck_hud_repoll_never_stops.log
+?? docs/handoff/h277/verification/logs/recheck_queue_short_lived_loop_not_judged_on_hub.log
+?? docs/handoff/h277/verification/logs/roles_describe_catches_wrong_error.log
+?? docs/handoff/h277/verification/logs/roles_env_role_default_provider_ollama.log
+?? docs/handoff/h277/verification/logs/roles_env_role_unset_model_guard_dropped.log
+?? docs/handoff/h277/verification/logs/roles_locality_or_instead_of_and.log
+?? docs/handoff/h277/verification/logs/roles_main_becomes_env_selectable.log
+?? docs/handoff/h277/verification/logs/roles_pick_legacy_fallback_dropped.log
+?? docs/handoff/h277/verification/logs/roles_pick_legacy_wins_over_role_name.log
+?? docs/handoff/h277/verification/logs/roles_pick_shadowed_legacy_not_reported.log
+?? docs/handoff/h277/verification/logs/roles_validate_supported_set_check_dropped.log
+?? docs/handoff/h277/verification/logs/roles_vision_lmstudio_default_url_dropped.log
+?? docs/handoff/h277/verification/logs/roles_vision_view_legacy_url_wins.log
+?? docs/handoff/h277/verification/logs/roles_vision_view_provider_not_validated.log
+?? docs/handoff/h277/verification/logs/route_pending_drops_judge_key.log
+?? docs/handoff/h277/verification/logs/vlm_role_error_reason_masked.log
+?? docs/handoff/h277/verification/post_refactor/README.md
+?? docs/handoff/h277/verification/post_refactor/anchor_checks.json
+?? docs/handoff/h277/verification/post_refactor/build_report.py
+?? docs/handoff/h277/verification/post_refactor/followup_overlay_manifest.json
+?? docs/handoff/h277/verification/post_refactor/initial_results.json
+?? docs/handoff/h277/verification/post_refactor/logs/N1_disk_pending_recheck_dropped.log
+?? docs/handoff/h277/verification/post_refactor/logs/N1_memory_pending_recheck_dropped.log
+?? docs/handoff/h277/verification/post_refactor/logs/N1_post_slot_status_stale.log
+?? docs/handoff/h277/verification/post_refactor/logs/N1_post_slot_wants_dropped.log
+?? docs/handoff/h277/verification/post_refactor/logs/N1_skip_revoked_counter_dropped.log
+?? docs/handoff/h277/verification/post_refactor/logs/N2_capacity_released_on_decide.log
+?? docs/handoff/h277/verification/post_refactor/logs/N2_finish_pending_not_cleared.log
+?? docs/handoff/h277/verification/post_refactor/logs/baseline.log
+?? docs/handoff/h277/verification/post_refactor/logs/capacity_reuse_baseline.log
+?? docs/handoff/h277/verification/post_refactor/logs/queue_judge_inherits_caller_context.log
+?? docs/handoff/h277/verification/post_refactor/logs/queue_short_lived_loop_not_judged_on_hub.log
+?? docs/handoff/h277/verification/post_refactor/logs/queue_snapshot_is_stored_item.log
+?? docs/handoff/h277/verification/post_refactor/logs/recheck_shared_capacity_release_dropped.log
+?? docs/handoff/h277/verification/post_refactor/logs/shared_capacity_release_dropped.log
+?? docs/handoff/h277/verification/post_refactor/logs/shared_concurrency_limit_raised.log
+?? docs/handoff/h277/verification/post_refactor/logs/shared_external_capacity_ignored.log
+?? docs/handoff/h277/verification/post_refactor/logs/shared_pending_limit_dropped.log
+?? docs/handoff/h277/verification/post_refactor/overlay_manifest.json
+?? docs/handoff/h277/verification/post_refactor/plan.json
+?? docs/handoff/h277/verification/post_refactor/recheck_capacity.py
+?? docs/handoff/h277/verification/post_refactor/report.md
+?? docs/handoff/h277/verification/post_refactor/restoration.json
+?? docs/handoff/h277/verification/post_refactor/results.json
+?? docs/handoff/h277/verification/post_refactor/run_bounded.py
+?? docs/handoff/h277/verification/post_refactor/source_manifest.json
+?? docs/handoff/h277/verification/post_refactor/source_manifest_pre_overlay.json
+?? docs/handoff/h277/verification/post_refactor/source_manifest_pre_recheck.json
+?? docs/handoff/h277/verification/post_refactor/state.json
+?? docs/handoff/h277/verification/recheck_survivors.py
+?? docs/handoff/h277/verification/report.md
+?? docs/handoff/h277/verification/restoration.json
+?? docs/handoff/h277/verification/results.json
+?? docs/handoff/h277/verification/run_mutations.py
+?? docs/handoff/h277/verification/source_manifest.json
+?? docs/handoff/h277/verification/test_overlay_manifest.json
+?? docs/hermes/evidence/chat-outcomes-auxiliary-integration-2026-09-27.json
+?? docs/hermes/evidence/h277-local-integration-2026-09-27.json
+?? docs/hermes/evidence/h487-chat-outcomes-2026-09-27.json
+?? docs/hermes/evidence/h487-h513-local-integration-2026-09-27.json
+?? docs/hermes/evidence/h487-human-wait-2026-09-27.json
+?? docs/hermes/evidence/h487-model-grouping-2026-09-27.json
+?? docs/hermes/evidence/h487-task-expiry-integration-2026-09-27.json
+?? docs/hermes/evidence/h513-camera-integration-2026-09-27.json
+?? docs/hermes/evidence/h513-direct-local-2026-09-27.json
+?? docs/hermes/evidence/h513-direct-transport-integration-2026-09-27.json
+?? docs/hermes/evidence/h513-interactive-vision-integration-2026-09-27.json
+?? docs/hermes/evidence/h513-judge-integration-2026-09-27.json
+?? docs/hermes/evidence/h513-media-reader-integration-2026-09-27.json
+?? docs/hermes/evidence/h513-vision-embedding-integration-2026-09-27.json
+?? docs/hermes/evidence/h517-local-providers-2026-09-27.json
+?? docs/hermes/evidence/h517-named-providers-2026-09-27.json
+?? docs/hermes/evidence/h517-voice-authority-2026-09-27.json
+?? docs/hermes/full-parity-2026-09-27.md
+?? docs/hermes/h277-completion-plan.md
+?? docs/hermes/h487-action-grouping-plan.md
+?? docs/hermes/h487-chat-outcomes-plan.md
+?? docs/hermes/h487-human-wait-budget-plan.md
+?? docs/hermes/h487-human-wait-review.md
+?? docs/hermes/h487-implementation-plan.md
+?? docs/hermes/h487-model-grouping-plan.md
+?? docs/hermes/h487-model-grouping-review.md
+?? docs/hermes/h487-task-expiry-plan.md
+?? docs/hermes/h487-task-grouping-plan.md
+?? docs/hermes/h513-auxiliary-policy-plan.md
+?? docs/hermes/h513-camera-dispatch-plan.md
+?? docs/hermes/h513-code-equivalence-review.md
+?? docs/hermes/h513-composer-vision-plan.md
+?? docs/hermes/h513-direct-local-plan.md
+?? docs/hermes/h513-direct-transport-plan.md
+?? docs/hermes/h513-direct-vision-investigation.md
+?? docs/hermes/h513-embedding-policy-plan.md
+?? docs/hermes/h513-implementation-plan.md
+?? docs/hermes/h513-interactive-local-vision-plan.md
+?? docs/hermes/h513-judge-target-plan.md
+?? docs/hermes/h513-unattended-media-reader-plan.md
+?? docs/hermes/h516-video-design-checkpoint.md
+?? docs/hermes/h517-local-provider-plan.md
+?? docs/hermes/h517-local-provider-review.md
+?? docs/hermes/h517-named-provider-next.md
+?? docs/hermes/h517-named-provider-plan.md
+?? docs/hermes/h517-named-provider-review.md
+?? docs/hermes/h517-provider-registration-design.md
+?? docs/hermes/h517-voice-authority-plan.md
+?? docs/hermes/h517-voice-authority-review.md
+?? docs/hermes/local-image-providers.md
+?? docs/hermes/scope-reopening-plan-2026-09-27.md
+?? docs/hermes/sprint-batch-2026-09-27.md
+?? docs/hermes/upstream-reference-2026-09-27.json
+?? frontend/src/panels/data-handling.tsx
+?? frontend/src/test/model-roles-panel.test.tsx
+?? frontend/src/test/named-voice-providers.test.tsx
+?? tests/test_h277_role_routes.py
+?? tests/test_h277_task_judge.py
+?? tests/test_h487_action_reasons.py
+?? tests/test_h487_approval_groups.py
+?? tests/test_h487_chat_outcome_integration.py
+?? tests/test_h487_chat_outcome_store.py
+?? tests/test_h487_decision_clock.py
+?? tests/test_h487_human_wait_budget.py
+?? tests/test_h487_human_wait_integration.py
+?? tests/test_h487_model_grouping.py
+?? tests/test_h487_model_grouping_integration.py
+?? tests/test_h487_task_expiry.py
+?? tests/test_h487_task_expiry_integration.py
+?? tests/test_h487_task_groups.py
+?? tests/test_h487_task_reasons.py
+?? tests/test_h487_telegram_lanes.py
+?? tests/test_h487_telegram_reasons.py
+?? tests/test_h513_acquisition_policy.py
+?? tests/test_h513_approval_judge_policy.py
+?? tests/test_h513_auxiliary_integration.py
+?? tests/test_h513_auxiliary_policy.py
+?? tests/test_h513_camera_policy.py
+?? tests/test_h513_composer_vision_policy.py
+?? tests/test_h513_data_handling.py
+?? tests/test_h513_direct_transport.py
+?? tests/test_h513_embedding_policy.py
+?? tests/test_h513_interactive_local_vision.py
+?? tests/test_h513_judge_consent.py
+?? tests/test_h513_judge_direct_transport.py
+?? tests/test_h513_presence_policy.py
+?? tests/test_h513_unattended_media_reader.py
+?? tests/test_h517_local_provider.py
+?? tests/test_h517_named_provider_approval.py
+?? tests/test_h517_named_provider_dispatch.py
+?? tests/test_h517_named_provider_integration.py
+?? tests/test_h517_named_provider_store.py
+?? tests/test_h517_provider_integration.py
+?? tests/test_h517_shared_provider_registry.py
+?? tests/test_h517_voice_authority_integration.py
+?? tests/test_h517_voice_kernel.py
+?? tests/test_h517_voice_revision.py

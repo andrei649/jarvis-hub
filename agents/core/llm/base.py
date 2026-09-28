@@ -69,13 +69,22 @@ _LOCAL_UNREACHABLE = (
 )
 
 
-def local_backend_degraded_reply(backend_name: str, server_hint: str, exc: Exception) -> str:
+#: The provider ids a local backend's failure is noted under (job_selection.PROVIDERS).
+_LOCAL_PROVIDER_IDS = {"LM Studio": "lm-studio", "Ollama": "ollama"}
+
+
+def local_backend_degraded_reply(backend_name: str, server_hint: str, exc: Exception,
+                                 model: str | None = None) -> str:
     """Map a local-backend failure to a clean, user-facing degraded reply (H23.12).
 
     Never raises and never leaks the raw exception — which used to land verbatim in
     the chat bubble (``[LM Studio error: ...]``) and get persisted into conversation
-    memory. The detail is logged for operators instead.
+    memory. The detail is logged for operators instead, and noted for the request
+    (H681: provider, the model asked for, status and kind — never the server's text).
     """
+    from .provider_errors import note_provider_failure
+
+    note_provider_failure(_LOCAL_PROVIDER_IDS.get(backend_name, backend_name.lower()), model, exc)
     if isinstance(exc, _LOCAL_UNREACHABLE):
         logger.warning("%s unreachable — serving a degraded reply: %s", backend_name, exc)
         return (
@@ -150,6 +159,27 @@ THINKING_EXHAUSTED_REPLY = (
     "answer. Ask again more narrowly, or raise llm.max_tokens (or load a "
     "larger-context model)."
 )
+
+
+#: H681 — the exact replies a backend answers a failed call with. ``is_degraded_reply``
+#: reads any text opening with "[" or "⚠️" as degraded, which is right for scoring a
+#: generation but wrong for a caller that must tell a failed call from an answer that
+#: happens to be a JSON array or a "[1]" list: that caller asks here.
+BACKEND_FAILURE_PREFIXES = (
+    "⚠️ No local language model is available.",
+    "⚠️ I can't reach the local ",
+    "⚠️ The local ",
+    "⚠️ The model spent its whole answer budget thinking",
+    "[Claude API error", "[Claude API stream error", "[OpenRouter error]", "[Gemini error",
+    "[OpenAI Responses error", "[xAI Responses error", "[VLM error]",
+)
+_NO_BACKEND_MARKER = re.compile(r"\[[^\]\n]{1,80} no LLM backend\]")
+
+
+def is_backend_failure_reply(text: object) -> bool:
+    """True only for the fixed replies a backend gives for a failed call (H681)."""
+    return isinstance(text, str) and (text.startswith(BACKEND_FAILURE_PREFIXES)
+                                      or _NO_BACKEND_MARKER.fullmatch(text.strip()) is not None)
 
 
 def is_degraded_reply(text: object) -> bool:
@@ -427,7 +457,10 @@ class LLMBackend(ABC):
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7,
         on_token: Callable[[str], None] = None,
+        on_activity: Callable[[], None] | None = None,
     ) -> str:
+        # Not streamed, so there is nothing to report as activity (``on_activity``,
+        # H674) until the whole answer is in.
         full = await self.generate(model, prompt, system, max_tokens, temperature)
         if on_token:
             await _emit(on_token, full)
@@ -481,10 +514,11 @@ class LMStudioBackend(LLMBackend):
 
     supports_tools = True
 
-    def __init__(self, base_url: str = "http://localhost:1234"):
+    def __init__(self, base_url: str = "http://localhost:1234", *, trust_env: bool = True):
         self.base_url = base_url
         # H23.12: short connect / long read so a down server fails fast (no hang).
-        self.client = llm_async_client("lm-studio", base_url=base_url, timeout=local_read_timeout(300.0))
+        self.client = llm_async_client("lm-studio", base_url=base_url, timeout=local_read_timeout(300.0),
+                                       trust_env=trust_env)
 
     async def aclose(self):
         """Close the HTTP client's connection pool (BUG-7)."""
@@ -536,7 +570,7 @@ class LMStudioBackend(LLMBackend):
             report_text_usage(lmstudio_usage(data))
             return answer
         except Exception as e:
-            return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e)
+            return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e, model=model)
 
     async def generate_tool_turn(
         self,
@@ -577,7 +611,7 @@ class LMStudioBackend(LLMBackend):
         except Exception as e:
             return ToolTurn(
                 content=local_backend_degraded_reply(
-                    "LM Studio", f"LM Studio ({self.base_url})", e
+                    "LM Studio", f"LM Studio ({self.base_url})", e, model=model
                 )
             )
 
@@ -585,6 +619,7 @@ class LMStudioBackend(LLMBackend):
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7,
         on_token: Callable[[str], None] = None,
+        on_activity: Callable[[], None] | None = None,
     ) -> str:
         payload = {
             "model": model,
@@ -617,6 +652,8 @@ class LMStudioBackend(LLMBackend):
                         await resp.aread()
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():
+                        if line and on_activity is not None:
+                            on_activity()     # H674: any chunk, reasoning included, is life
                         if line.startswith("data: "):
                             chunk = line[6:]
                             if chunk.strip() == "[DONE]":
@@ -659,7 +696,7 @@ class LMStudioBackend(LLMBackend):
                     )
                     continue
                 err = local_backend_degraded_reply(
-                    "LM Studio", f"LM Studio ({self.base_url})", e
+                    "LM Studio", f"LM Studio ({self.base_url})", e, model=model
                 )
                 if on_token:
                     await _emit(on_token, err)
@@ -691,12 +728,14 @@ class OllamaBackend(LLMBackend):
     # translation lives in tool_dialects (Hermes absorption, wave 0.1).
     supports_tools = True
 
-    def __init__(self, base_url: str = "http://localhost:11434", num_ctx: int = 0):
+    def __init__(self, base_url: str = "http://localhost:11434", num_ctx: int = 0, *,
+                 trust_env: bool = True):
         self.num_ctx = max(0, int(num_ctx or 0))
         self._context_windows: dict[str, int] = {}
         self.base_url = base_url
         # H23.12: short connect / long read so a down server fails fast (no hang).
-        self.client = llm_async_client("ollama", base_url=base_url, timeout=local_read_timeout(120.0))
+        self.client = llm_async_client("ollama", base_url=base_url, timeout=local_read_timeout(120.0),
+                                       trust_env=trust_env)
 
     def context_window(self, model: str) -> int | None:
         return self.num_ctx or self._context_windows.get(model)
@@ -786,7 +825,7 @@ class OllamaBackend(LLMBackend):
             report_text_usage(ollama_usage(data))
             return answer
         except Exception as e:
-            return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
+            return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
 
     async def generate_tool_turn(
         self,
@@ -831,13 +870,14 @@ class OllamaBackend(LLMBackend):
                             usage=ollama_usage(data))
         except Exception as e:
             return ToolTurn(
-                content=local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
+                content=local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
             )
 
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7,
         on_token: Callable[[str], None] = None,
+        on_activity: Callable[[], None] | None = None,
     ) -> str:
         payload = {
             "model": model,
@@ -863,6 +903,8 @@ class OllamaBackend(LLMBackend):
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if line.strip():
+                        if on_activity is not None:
+                            on_activity()     # H674: any chunk, thinking included, is life
                         try:
                             data = json.loads(line)
                             if "error" in data or data.get("type") == "error":
@@ -889,7 +931,7 @@ class OllamaBackend(LLMBackend):
                             usage_failed = True
                             continue
         except Exception as e:
-            err = local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e)
+            err = local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
             if on_token:
                 await _emit(on_token, err)
             return err

@@ -108,6 +108,11 @@ class SlackChannel(ChannelAdapter):
         super().__init__("slack", handler)
         self.token = token
         self.app_token = app_token
+        # H117: a burst from one member in one channel (and thread) is one turn. One batch
+        # on its way at a time: the dispatcher is held while a turn runs, as it was before
+        # batching, so the bounded ingress queue stays the only buffer.
+        from .batching import AsyncBatcher, configured
+        self._batch = AsyncBatcher(self._deliver_turn, *configured(), max_pending=1)
         self._client: Optional[WebClient] = None
         self._socket_client = None
         self._team_id = ""
@@ -184,6 +189,7 @@ class SlackChannel(ChannelAdapter):
         await self._shutdown()
 
     async def _shutdown(self):
+        self._batch.discard()              # H117: like the undelivered event queue below
         with self._ingress_lock:
             self._running = False
             client, self._socket_client = self._socket_client, None
@@ -354,6 +360,11 @@ class SlackChannel(ChannelAdapter):
         # the member id from the payload is the identity pairing holds, so it wins
         # rather than colliding with the handler's keyword. Adapters never raise.
         kwargs.pop("sender", None)
-        return await self.handler(
-            text, channel="slack", slack_channel=channel, sender=sender, **kwargs
-        )
+        # H117: held for the batch window, keyed by channel, member and thread.
+        key = (str(channel), sender, str(kwargs.get("thread_ts") or ""))
+        return await self._batch.submit(key, text, slack_channel=channel, sender=sender, **kwargs)
+
+    async def _deliver_turn(self, key, text: str, meta: dict):
+        if not self.handler:
+            return None
+        return await self.handler(text, channel="slack", **meta)

@@ -79,14 +79,24 @@ class ToolRefresh:
     removed: tuple[str, ...] = ()
     reason: str = "identical"   # "identical" | "rebuilt" | "failed-closed"
     notes: tuple[str, ...] = field(default_factory=tuple)
+    #: H296 — tools still offered whose advertised description or schema moved (a
+    #: target registered, a speaker removed): the model must see the live shape.
+    reshaped: tuple[str, ...] = ()
 
     @property
     def changed(self) -> bool:
-        return bool(self.added or self.removed)
+        return bool(self.added or self.removed or self.reshaped)
 
 
 def _names(tools: Iterable[Mapping[str, Any]]) -> list[str]:
     return [str(t.get("name") or "") for t in tools or () if t.get("name")]
+
+
+def _shape(tool: Mapping[str, Any]) -> str:
+    """What the model is told about one tool, as comparable text."""
+    import json
+
+    return json.dumps([tool.get("description"), tool.get("input_schema")], sort_keys=True, default=str)
 
 
 def refresh_prompt(
@@ -139,11 +149,15 @@ def refresh_tools(
         )
     after = _names(resolved)
     before_set, after_set = set(before), set(after)
+    old_shapes = {str(t.get("name")): _shape(t) for t in in_force or () if t.get("name")}
+    reshaped = tuple(str(t.get("name")) for t in resolved
+                     if t.get("name") in old_shapes and _shape(t) != old_shapes[str(t.get("name"))])
     return ToolRefresh(
         tools=tuple(dict(t) for t in resolved),
         added=tuple(n for n in after if n not in before_set),
         removed=tuple(n for n in before if n not in after_set),
-        reason="rebuilt" if before_set != after_set else "identical",
+        reason="rebuilt" if before_set != after_set or reshaped else "identical",
+        reshaped=reshaped,
     )
 
 
@@ -163,6 +177,8 @@ def boundary_note(prompt: PromptRefresh, tools: ToolRefresh) -> str:
         parts.append(f"tools added: {', '.join(tools.added)}")
     if tools.removed:
         parts.append(f"tools removed: {', '.join(tools.removed)}")
+    if tools.reshaped:
+        parts.append(f"tool schemas moved: {', '.join(tools.reshaped)}")
     if tools.reason == "failed-closed":
         parts.append("tool resolver failed closed")
     return "; ".join(parts)

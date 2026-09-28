@@ -1,0 +1,286 @@
+{
+  "generated_at": "2026-09-27T16:54:15.205987+00:00",
+  "scope": "H517/H613 named approved speech providers and common production image/speech registry",
+  "head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "worktree": "/Users/andrei649/Projects/nerva-hub",
+  "publication": "local only; uncommitted; no push, merge, deployment or paid/live provider calls",
+  "status": "verified offline slice; full Hermes parity remains incomplete; owner-requested handover",
+  "junit_runs": [
+    {
+      "tests": 9,
+      "failures": 9,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-shared-registry-red.xml",
+      "sha256": "00a140c0ff0840c704b0a86eb490cd845ff8bef92b6515cf4e97ca0088a88263",
+      "seconds": 0.791,
+      "passed": 0
+    },
+    {
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-shared-base-green.xml",
+      "sha256": "9aba599aaea92fcde2a830653c6289b8cae8e369c1dd51771b89b3f932ee3410",
+      "seconds": 0.681,
+      "passed": 8
+    },
+    {
+      "tests": 87,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-shared-image-green.xml",
+      "sha256": "76a8136e686bc4224015100e6337416ad5957c3143c04fced3b750fc65ed0f0b",
+      "seconds": 1.485,
+      "passed": 87
+    },
+    {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-shared-registry-final.xml",
+      "sha256": "d391290951e6bee79dc845be98f1f541b2aa38b4038a63ac5dd6bc77cadbc741",
+      "seconds": 0.915,
+      "passed": 11
+    },
+    {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-named-integration.xml",
+      "sha256": "eddce237931954199cde62a81b0aba2024ba74fe8860635a895e67729bd8097e",
+      "seconds": 1.141,
+      "passed": 4
+    },
+    {
+      "tests": 42,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-named-storage-approval-final.xml",
+      "sha256": "55a7dc273c7b23f7dd0fe2620d4383caa19734f870ca25e463f8a253bb7d9b5e",
+      "seconds": 1.452,
+      "passed": 42
+    },
+    {
+      "tests": 322,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-named-storage-final.xml",
+      "sha256": "685e9d97fd681d4636bed590cca3a202269a8bf100c0984ee81fa5de65d6627a",
+      "seconds": 27.202,
+      "passed": 322
+    },
+    {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-named-selected-store-red.xml",
+      "sha256": "0501f81ff6185fa93f31ff58371c889e772e8a422e9ec8d4a6377a477936f706",
+      "seconds": 0.926,
+      "passed": 0
+    },
+    {
+      "tests": 181,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-named-selected-store-final.xml",
+      "sha256": "3ffd9b98ce7098f9edae2f622bd08aa9f65f7bb21bad5a31b06a94edeee601f0",
+      "seconds": 23.297,
+      "passed": 181
+    },
+    {
+      "tests": 3,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-named-dispatch-red.xml",
+      "sha256": "b70830119f82fbe3f70dc9c72a501dd0472e7026fcd8fc98dea004c9b0f91692",
+      "seconds": 0.691,
+      "passed": 0
+    },
+    {
+      "tests": 188,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-named-dispatch-final.xml",
+      "sha256": "19c7b6d77e453af7533ff1fd425ebd6d818b07694b7e5a9fc251331749d57f72",
+      "seconds": 28.808,
+      "passed": 188
+    },
+    {
+      "tests": 1228,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-named-broad.xml",
+      "sha256": "f528bf6badec768c8f7f807367cbc751f9782163a8c7ab0d42d01a8378275e88",
+      "seconds": 86.087,
+      "passed": 1227
+    },
+    {
+      "tests": 1230,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-named-broad-final.xml",
+      "sha256": "f8006d388ff9108a12a8aae22fcef212047909786d654b2261997b7b22ca726c",
+      "seconds": 32.606,
+      "passed": 1230
+    },
+    {
+      "tests": 763,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "path": "/tmp/h517-named-compatibility.xml",
+      "sha256": "3010e0d9efc1bd1c128f08baba3d9a18be9f6eaa563656aee43ed44153a9d554",
+      "seconds": 8.843,
+      "passed": 762
+    },
+    {
+      "tests": 41,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-named-registry-final.xml",
+      "sha256": "9dee436c23178d58d86fdaccc64752de5559781428e0dda6aac95bd1bcf55950",
+      "seconds": 3.373,
+      "passed": 41
+    },
+    {
+      "tests": 92,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-named-docs-preflight.xml",
+      "sha256": "14cdbecbc1645c1ea26c72a3581487cbb2398c67219f5656dc3fbbce0dbf7f1b",
+      "seconds": 3.276,
+      "passed": 92
+    },
+    {
+      "tests": 19537,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "path": "/tmp/h517-named-backend-final.xml",
+      "sha256": "0de0b3752cf20578c710dc8db092b0089f16978bc92399dbe5bd05f6177f89ba",
+      "seconds": 250.397,
+      "passed": 19502
+    },
+    {
+      "tests": 92,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "/tmp/h517-named-docs-final.xml",
+      "sha256": "76e0272e73ff5409150831722ea11a59dbff67e8f96bf592e433264ffb7e78b4",
+      "seconds": 2.795,
+      "passed": 92
+    }
+  ],
+  "source_sha256": {
+    "agents/core/media_providers.py": "dd153d1a92ec99f3926113b3f63f4591cc024e3bad314b507188bd099b65e173",
+    "agents/core/media_backends/registry.py": "9d4df0069ead511037be323cba13e5705ffe3aafe323b10a8a41577793a54b0a",
+    "agents/core/image_generation_runtime.py": "4cd0b1b9187840cb8d68f682ce3ec5f7d8767c4eb700f296b0d7efc8a1d42277",
+    "agents/core/voice/provider_store.py": "da12da226a51785ccc3d3e260904af08d1710d6b00c8b650cec92301467c81ca",
+    "agents/core/voice/provider_registry.py": "037649d895a07aadb6a347bd819ef865d6c264e329659718a28b2f51daefdf06",
+    "agents/core/voice/command_settings.py": "8aa5c9a9fb9144f814fed9dd284fe88a145ec54108539f2af9a386873702eb6f",
+    "agents/core/voice/local_providers.py": "80f394d6b5e839b2a60d057176134bda8bb3270e17a52a0f13be0fdddc14ce17",
+    "agents/core/voice/tts.py": "5b48f339b97506bc4a4b5fff413b68b3da6fa41033818508381eb98f8b8c5d34",
+    "agents/core/voice/stt.py": "299c00661907a8088070d71622e65d5a166f6ac5b7b8bf32b6e8b553039026b9",
+    "agents/core/routers/voice.py": "d1434db016eb1f1ce035b5f296c25d3cfa2708873a877b110915d2ea605e7245",
+    "agents/core/settings_db.py": "d28302c6cbf6eadb290a23e17f536d687ce5846c7f26d6e1c0635338a0bf9eed",
+    "frontend/src/panels/voice-commands.tsx": "8516d152293d5d48099093ea96244c9b1a412fc68cda3d65bbc8b7130175cd05",
+    "frontend/src/test/named-voice-providers.test.tsx": "1cb4865940b96af80979ae2b0d0960e5050fa5833453716937cdf61e63023162",
+    "docs/hermes/h517-named-provider-plan.md": "a415bdef22b05e77a83909bc0cf37b0788c8ba99db359b757f853e897632c83e",
+    "docs/hermes/h517-named-provider-review.md": "608f6e1fcc9fba1988a2efc182660972dd600fe28a3fe6fe36f33a24264b96c6",
+    "docs/FLAGS.md": "bc5e2b9b34882441b9918603b9ba4d46aa64d617165e03d4b2b1f5686be9982e",
+    "docs/design/HUD_V2_REMAINING.md": "4f81032117324c9357eae6496b7c49adc7a76d254a6304c38caaea193e3526d1",
+    "mobile/PARITY.md": "7da64592bdc52e06264e38817ff87a506bd48e1a078286113eabcc9b1428f7c4",
+    "docs/hermes/build-queue.md": "3612bbd6c409beb5739bc68e2315ddbe391af261fe2dd7fcf09b704b16bde9c6",
+    "tests/test_h517_named_provider_store.py": "8e55340f7bee691b33bc6521fc97e90449a22ca8f1aecf243afb0ea4eda243a9",
+    "tests/test_h517_named_provider_approval.py": "3c3dae467929373b372de75951a947bf2915c38be4f17001b3a4c566df3236bc",
+    "tests/test_h517_named_provider_dispatch.py": "958830a54f51fd381afc1bd76f3910b4d8ba5751ab30799902b2afe8145641f4",
+    "tests/test_h517_named_provider_integration.py": "da22a1ce775081f34c61b0dbb99c48ac2982028dc1239044822967634015ebce",
+    "tests/test_h517_shared_provider_registry.py": "e231cf3167cb15e6b0ed1c664f52d0e63f93d720098a36446381c813efe3f0be"
+  },
+  "review": "Luna selected-store capability reporting finding reproduced and fixed; re-review resolved. Coordinator integrated actual HTTP/signed-worker/process and image registry tests.",
+  "known_failed_intermediate_runs": {
+    "h517-named-broad": "Imported router before the selected-store correction while collecting its new regression. Stable-source final1230-case rerun passed.",
+    "red_runs": "Expected failing regressions before implementation/fixes; not claimed passing."
+  },
+  "coverage": "Meaningful deterministic behavioral, race and integration regressions. No numeric coverage threshold configured or newly measured.",
+  "limits": [
+    "H517/H613 remain partial; remaining vendor/plugin/setup/domain breadth is open",
+    "Commands are not a sandbox and imported dependencies are not pinned",
+    "No live provider/hardware/native mobile acceptance",
+    "Clear does not terminate already running commands",
+    "Named tombstones retained;16active/128historical per side",
+    "Legacy identical restoration without revision metadata remains indistinguishable"
+  ],
+  "status_counts": {
+    "equivalent": 125,
+    "partial": 253,
+    "missing": 64,
+    "needs_review": 255,
+    "excluded": 0,
+    "total": 697
+  },
+  "checks": {
+    "ruff": {
+      "exit_code": 0,
+      "log": "/tmp/h517-named-ruff-final.log"
+    },
+    "bandit": {
+      "exit_code": 0,
+      "log": "/tmp/h517-named-bandit.log",
+      "scope": "agents/scripts existing baseline"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "report": "/tmp/h517-named-gitleaks.json",
+      "scope": "24selectedsource/test/docs files"
+    },
+    "graft": {
+      "exit_code": 0,
+      "log": "/tmp/h517-named-graft-final.log",
+      "scope": "selected core directories only; no deep summaries and no common root module graph claim"
+    },
+    "diff_check": {
+      "exit_code": 0,
+      "log": "/tmp/h517-named-diff-check.log"
+    },
+    "handover_gitleaks": {
+      "exit_code": 0,
+      "scope": "35 selected source/test/docs and handover files; excludes runtime/private data",
+      "report": "/tmp/h517-named-handover-gitleaks.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    }
+  },
+  "frontend": {
+    "tests": 1835,
+    "passed": 1835,
+    "failed": 0,
+    "report": "/tmp/h517-named-frontend-final.json",
+    "sha256": "f7d6514345ba5316a36d37d5d2cb98c1fc8b831a2f496a4264ce691ca203c81a",
+    "typecheck_exit_code": 0,
+    "build_exit_code": 0,
+    "typecheck_log": "/tmp/h517-named-typecheck-final.log",
+    "build_log": "/tmp/h517-named-build.log"
+  },
+  "stop_deadline": "2026-09-27T18:05:00Z",
+  "mobile": {
+    "rerun": false,
+    "inherited_test_count": 142,
+    "reason": "No native mobile source changed; configuration gap recorded in mobile/PARITY.md"
+  }
+}

@@ -25,12 +25,15 @@ Env:
   JARVIS_RUNTIME_FAKE_LLM       1 = boot with a deterministic in-process fake LLM
                                  backend instead of detecting a real one (dev/CI
                                  use, same pattern as scripts/install_smoke.py)
+  JARVIS_SAFE_MODE              1 = safe mode (H275), as for the hub; ``--safe-mode``
+                                 sets it
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -40,6 +43,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "agents"))
 
 logger = logging.getLogger("jarvis.coordinator")
 
+SAFE_MODE_SWITCH = "--safe-mode"
+
+
+def apply_safe_mode_switch(argv=None) -> bool:
+    """H275: ``--safe-mode`` sets ``JARVIS_SAFE_MODE=1`` before the orchestrator is built,
+    as ``serve.py --safe-mode`` does for the hub. This process runs the heartbeats, the
+    owner jobs and the agents on the hub's data root, so a safe hub beside a normal
+    coordinator would still run them (review-H275 F3)."""
+    if SAFE_MODE_SWITCH in (sys.argv[1:] if argv is None else argv):
+        os.environ.update({"JARVIS_SAFE_MODE": "1"})   # a write, not a read of the environment
+        return True
+    return False
+
 
 def _env_float(name: str, default: float, *, minimum: float) -> float:
     from agents.core.env_config import env_float
@@ -48,6 +64,13 @@ def _env_float(name: str, default: float, *, minimum: float) -> float:
 
 
 async def _build_orchestrator():
+    # The coordinator (systemd jarvis-runtime) shares the hub's data root: it loads the
+    # same .env files before anything it builds reads config, or its audit rows go
+    # unkeyed beside the hub's keyed ones and the shared chain reads as tampered
+    # (review-H273e M2). Idempotent: run() has usually loaded already.
+    from agents.core.env_provenance import load_hub_env
+
+    load_hub_env()
     from agents.core.config import JarvisConfig
     from agents.core.env_config import env_flag
     from agents.core.orchestrator import Orchestrator
@@ -78,8 +101,9 @@ async def _build_orchestrator():
 
 
 async def run() -> None:
-    import os
+    from agents.core.env_provenance import load_hub_env
 
+    load_hub_env()                    # before the paths and knobs below are read
     from agents.core.observability.runtime_log import RuntimeRunLog, default_log_path
 
     log_path = default_log_path()
@@ -118,8 +142,18 @@ async def run() -> None:
         await orch.aclose()
 
 
-def main() -> None:
+def configure_logging() -> None:
+    """stderr logging, through both log redactors (H410): this process runs the
+    orchestrator, its channels and its jobs, and wrote every record unredacted."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    from agents.core.log import install_redaction
+
+    install_redaction()
+
+
+def main() -> None:
+    apply_safe_mode_switch()
+    configure_logging()
     asyncio.run(run())
 
 

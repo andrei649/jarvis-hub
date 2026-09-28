@@ -139,29 +139,42 @@ class PresenceOutcome:
 class LocalPresenceExplainer:
     """Optional post-hoc explanation seam that can only bind a local backend."""
 
-    def __init__(self, backend, model: str) -> None:
+    def __init__(self, backend, model: str, *, router=None) -> None:
         self._backend = backend
         self._model = _text(model or "local", label="model", limit=256)
+        self._router = router
 
     @classmethod
     def from_router(cls, router) -> LocalPresenceExplainer:
         backend = router.local_backend
-        return cls(backend, getattr(router, "active_model", None) or "local")
+        return cls(backend, getattr(router, "active_model", None) or "local", router=router)
 
     async def explain(self, decision: PresenceDecision) -> str:
+        from agents.core.llm.data_handling import DataHandlingRefused, auxiliary_request_scope
+
+        if self._router is None:
+            raise DataHandlingRefused("presence explanation requires a live router binding")
+        try:
+            selected = self._router.local_backend
+        except Exception as exc:
+            raise DataHandlingRefused("presence explanation router binding is unavailable") from exc
+        if selected is not self._backend:
+            raise DataHandlingRefused("presence explanation router binding changed")
         payload = decision.to_dict()
         payload.pop("occupant_id", None)
         prompt = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        result = await self._backend.generate(
-            self._model,
-            prompt,
-            system=(
-                "Explain this deterministic presence decision briefly. Do not infer identity, "
-                "change the decision, or add facts."
-            ),
-            max_tokens=128,
-            temperature=0.0,
-        )
+        with auxiliary_request_scope(self._router, self._backend, self._model,
+                                     role="house_presence_explanation"):
+            result = await self._backend.generate(
+                self._model,
+                prompt,
+                system=(
+                    "Explain this deterministic presence decision briefly. Do not infer identity, "
+                    "change the decision, or add facts."
+                ),
+                max_tokens=128,
+                temperature=0.0,
+            )
         return str(result)[:1_000]
 
 

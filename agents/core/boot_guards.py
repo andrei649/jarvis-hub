@@ -18,10 +18,10 @@ A fourth guard (Hermes absorption 5b) is the front door: an inbound channel that
 configured must be *guarded* — the inbound pairing gate on (its default), or a
 per-channel allowlist of the owner's own ids — or the operator must have written
 down ``JARVIS_CHANNEL_OPEN=1``. Otherwise the box refuses to start rather than
-answer any stranger who finds the bot. ``assert_front_door`` bundles that guard
-with the parse check of its two flags for a caller that runs *after* the ``.env``
-files are loaded — the lifespan runs ``enforce_boot_posture`` before them, so a
-token that lives only in ``.env`` is invisible to the early pass.
+answer any stranger who finds the bot. The lifespan and serve.py load the ``.env``
+files before these guards run (H273, ``env_provenance.load_hub_env``), so a token
+that lives only in ``.env`` is judged too. ``assert_front_door`` bundles that guard
+with the parse check of its two flags for a caller holding a mapping of its own.
 
 Residual (documented, not silently ignored): a bind host passed only as a raw
 uvicorn CLI flag (``--host 0.0.0.0`` without ``JARVIS_HOST``) is invisible to
@@ -296,24 +296,19 @@ _FRONT_DOOR_FLAGS = ("JARVIS_CHANNEL_PAIRING", "JARVIS_CHANNEL_OPEN")
 
 
 def assert_front_door(environ: Mapping[str, str] | None = None) -> None:
-    """The front-door guard for a caller that runs after ``.env`` is loaded.
+    """The front-door checks over a mapping the caller holds.
 
-    ``enforce_boot_posture`` runs at the top of the app lifespan, *before* the repo
-    and user ``.env`` files are read, so a bot token or a ``JARVIS_CHANNEL_PAIRING=0``
-    that lives only there is invisible to it and the early pass is decorative for
-    the documented install path. This is the same checks — a typo in either
-    front-door flag refuses, a malformed trusted-proxy or allowed-host list refuses,
-    then the channel guard — over whatever environment the caller holds at the
-    moment the channels are about to be wired. It re-checks rather than trusting
-    the early pass because the environment has changed in between. The web
-    lifespan calls it right after ``load_agents`` (which loads ``.env``) and before
-    any channel is constructed. (Hermes absorption 5b)
+    The same checks ``enforce_boot_posture`` makes — a typo in either front-door
+    flag refuses, a malformed trusted-proxy or allowed-host list refuses, then the
+    channel guard — over *environ* (``os.environ`` by default). The web lifespan
+    used to call it after ``load_agents``, because its early pass ran before the
+    ``.env`` files were read; the files now load first (H273), so the early pass
+    sees them. (Hermes absorption 5b)
     """
     env = os.environ if environ is None else environ
     _unparseable_bool_flags(env, _FRONT_DOOR_FLAGS)
     # The two network-edge lists live in ``.env`` too (that is where .env.example
-    # puts them), so their parse check has the same blind spot as the front door
-    # when it runs early: re-run it over the loaded environment.
+    # puts them), so a caller's mapping is parse-checked for them as well.
     from agents.core.host_policy import assert_parseable_allowed_hosts
     from agents.core.proxy_trust import (
         assert_parseable_trusted_proxies,
@@ -359,6 +354,6 @@ def enforce_boot_posture() -> None:
     assert_parseable_allowed_hosts()
     assert_safe_bind(os.environ.get("JARVIS_HOST", "127.0.0.1"))
     # The front door (Hermes absorption 5b): a configured inbound channel must be
-    # guarded. Runs again as ``assert_front_door`` once ``.env`` has been loaded.
+    # guarded. The .env files are loaded before this runs, so a token there counts.
     assert_guarded_channels()
     assert_hardened_posture()

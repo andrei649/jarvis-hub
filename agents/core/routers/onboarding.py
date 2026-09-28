@@ -4,6 +4,9 @@
 folder (selected by key, never a raw request path) into memory, offline.
 """
 
+import asyncio
+import time
+
 from fastapi import APIRouter, Depends
 from agents.core.routers._deps import user_guard
 from pydantic import BaseModel, Field
@@ -186,16 +189,64 @@ def _provider_residency_state(inventory: dict, provider: str | None) -> str:
 #: ``runnable:`` line) reports the same cause the HUD acts on, without re-deriving it.
 #: ready=True: ``resident`` (local pair proven resident) · ``cloud_selected`` (the
 #: router chose a cloud route — Gemini, Claude or the owner's ``cloud-compatible``
-#: adapter — and handed back the very backend that route names).
+#: adapter — handed back the very backend that route names, and its provider accepted
+#: the key) · ``cloud_rate_limited`` (the provider answered 429: a turn waits, the key
+#: stands).
 #: ready=False: ``route_unselected`` · ``provider_unresolved`` (the router handed back
 #: a backend that is not the one its route names, or a route this check does not know —
-#: an indirect fallback) · ``provider_offline`` · ``configured_not_resident``.
-#: ready=None: ``router_unavailable`` · ``inventory_unavailable`` · ``residency_unknown``.
+#: an indirect fallback) · ``provider_offline`` · ``configured_not_resident`` · a key
+#: the route cannot use: ``cloud_auth_failed`` · ``cloud_forbidden`` · ``cloud_refused``
+#: · ``cloud_not_configured``.
+#: ready=None: ``router_unavailable`` · ``inventory_unavailable`` · ``residency_unknown``
+#: · a provider that said nothing about the key: ``cloud_unreachable`` · ``cloud_error``
+#: · ``cloud_no_listing``.
+#: H380 — a selected cloud route whose provider did not simply accept its key.
+CLOUD_PROBE_REASONS = frozenset({
+    "cloud_auth_failed", "cloud_forbidden", "cloud_rate_limited", "cloud_error",
+    "cloud_unreachable", "cloud_refused", "cloud_not_configured", "cloud_no_listing",
+})
+#: The probe verdicts that do not make a selected cloud route unrunnable (see above).
+_CLOUD_READY = {"rate_limited": True, "unreachable": None, "error": None, "no_listing": None}
 MODEL_READINESS_REASONS = frozenset({
-    "resident", "cloud_selected",
+    "resident", "cloud_selected", *CLOUD_PROBE_REASONS,
     "route_unselected", "provider_unresolved", "provider_offline", "configured_not_resident",
     "router_unavailable", "inventory_unavailable", "residency_unknown",
 })
+
+
+#: The route's provider name (``_selected_provider``) → the provider profile it uses.
+_PROBE_PROFILES = {"claude": "anthropic", "gemini": "gemini"}
+#: How long the command center waits for a provider's verdict: well inside the 10 s
+#: ``nerva doctor`` gives the whole read. A slower probe finishes, and is cached, behind it.
+CLOUD_PROBE_WAIT_SECONDS = 4.0
+
+
+async def _cloud_probe(llm_router, provider: str) -> dict | None:
+    """H380: the provider's own verdict on the key this route would use (cached and
+    rate-limited in ``provider_probe``), or None when no profile names it. The key is the
+    one the route's backend holds: the pool's current key for Claude and Gemini, the
+    compatible adapter's own otherwise. No answer within ``CLOUD_PROBE_WAIT_SECONDS``
+    reads ``unreachable``."""
+    from agents.core.llm import provider_probe
+
+    profile_id = _PROBE_PROFILES.get(provider, provider)
+    pool = {"anthropic": "_anthropic_pool", "gemini": "_gemini_pool"}.get(profile_id)
+    key = None
+    try:
+        if pool:
+            key = getattr(getattr(llm_router, pool, None), "current_key", lambda: None)()
+        else:
+            key = getattr(getattr(llm_router, "_compatible_backend", None), "api_key", None)
+    except Exception:
+        key = None
+    try:
+        return await asyncio.wait_for(provider_probe.probe(profile_id, key=key or None),
+                                      CLOUD_PROBE_WAIT_SECONDS)
+    except KeyError:
+        return None
+    except TimeoutError:
+        return {"provider": profile_id, "verdict": "unreachable", "status_code": None,
+                "checked_at": time.time(), "cached": False}
 
 
 async def _model_snapshot() -> dict:
@@ -204,15 +255,18 @@ async def _model_snapshot() -> dict:
     Catalog residency is observability, not routing: a model resident on some
     other provider must never unlock ``Say hello``.  Selection is performed
     without generation; a local route is ready only when that provider/model
-    pair is proven resident, while a selected cloud route is ready by the
-    router's own availability decision.
+    pair is proven resident, while a selected cloud route the router chose is
+    ready when its provider accepts the key the route would use (H380).
 
     This is Nerva's ``setup.runtime_check`` (Hermes, H242): the same
     ``select_backend`` call a Jarvis turn makes, not "some runtime answers" or
     "some credential exists".  ``reason`` names the verdict (see
     ``MODEL_READINESS_REASONS``); ``selected_provider``/``selected_model`` name
     what the route asked for even when it is not runnable, while
-    ``active_provider``/``active_model`` stay None unless it is.  Read-only.
+    ``active_provider``/``active_model`` stay None unless it is.  Nothing is
+    generated, but a selected cloud route sends its key to its provider in one
+    request when no verdict is cached (``provider_probe``: an egress-ledger row,
+    cached, shared by concurrent readers); the key and the reply are never returned.
     """
     orch = get_orch()
     llm_router = getattr(orch, "llm_router", None) if orch else None
@@ -230,6 +284,7 @@ async def _model_snapshot() -> dict:
             "selected_provider": None,
             "selected_model": None,
             "cloud_configured": False,
+            "cloud_probe": None,
         }
 
     cloud_configured = bool(
@@ -271,14 +326,22 @@ async def _model_snapshot() -> dict:
     )
 
     ready: bool | None
+    probe = None
     if not route_selected:
         ready, reason = False, "route_unselected"
     elif provider is None:
         ready, reason = False, "provider_unresolved"
     elif route in _CLOUD_ROUTE_PROVIDERS or route == _COMPATIBLE_ROUTE:
         # The router itself chose this cloud backend (policy, spend cap and fallback
-        # mode already applied) and handed back the very object its route names.
-        ready, reason = True, "cloud_selected"
+        # mode already applied) and handed back the very object its route names. H380:
+        # it is not runnable when the provider refuses the key it would use, and unknown
+        # when the provider said nothing about it (``_CLOUD_READY``).
+        probe = await _cloud_probe(llm_router, provider)
+        verdict = (probe or {}).get("verdict")
+        if probe is None or verdict == "ok":
+            ready, reason = True, "cloud_selected"
+        else:
+            ready, reason = _CLOUD_READY.get(verdict, False), f"cloud_{verdict}"
     elif not inventory_available:
         ready, reason = None, "inventory_unavailable"
     elif (provider, selected_model) in resident_pairs:
@@ -303,7 +366,51 @@ async def _model_snapshot() -> dict:
         "selected_provider": provider,
         "selected_model": selected_model if route_selected else None,
         "cloud_configured": cloud_configured,
+        # H380: what the provider said about the key (no key, no body).
+        "cloud_probe": None if probe is None else {
+            k: probe.get(k) for k in ("provider", "verdict", "status_code", "checked_at", "cached")},
     }
+
+
+#: H380 — the hint for a selected cloud route its provider did not simply accept: it
+#: names the provider and what it said, never a local model to load.
+_CLOUD_HINTS = {
+    "cloud_auth_failed": "{name} rejected the API key{status} — update it in Admin → settings.",
+    "cloud_forbidden": "{name} does not allow this API key{status} — check its access, or replace it "
+                       "in Admin → settings.",
+    "cloud_refused": "The hub will not send {name}'s key to this base URL (its host speaks another "
+                     "protocol) — fix the base URL in Admin → settings.",
+    "cloud_not_configured": "No API key is set for {name} — add one in Admin → settings.",
+    "cloud_unreachable": "{name} did not answer — check the network, then refresh.",
+    "cloud_error": "{name} answered with an error{status} — refresh in a moment.",
+    "cloud_no_listing": "{name} has nothing at the configured base URL{status}, so the key could not "
+                        "be checked — check the base URL in Admin → settings.",
+}
+
+
+def _model_hint(model: dict) -> str | None:
+    """The first-run hint for a model block (None when the route is runnable)."""
+    if model.get("ready") is True:
+        return None
+    template = _CLOUD_HINTS.get(model.get("reason"))
+    if template:
+        from agents.core.llm.providers import get_profile
+
+        probe = model.get("cloud_probe") or {}
+        provider = probe.get("provider") or model.get("selected_provider")
+        try:
+            name = get_profile(_PROBE_PROFILES.get(provider, provider)).display_name
+        except KeyError:
+            name = "the cloud provider"
+        status = probe.get("status_code")
+        hint = template.format(name=name, status=f" (HTTP {status})" if status else "")
+        return hint[:1].upper() + hint[1:]
+    if model.get("ready") is False:
+        return (
+            "No conversational model is loaded — load one in LM Studio or Ollama, "
+            "or add a cloud API key in Admin → settings."
+        )
+    return "Model readiness could not be verified — check the model server and refresh."
 
 
 def _completed_steps() -> list[str]:
@@ -409,15 +516,9 @@ async def onboarding_wizard():
     """First-run wizard state (H23.20): ordered steps + which are complete + cold-start
     guidance. Completion derives from the activation funnel, so the HUD can resume."""
     done = _completed_steps()
-    ready = (await _model_snapshot())["ready"]
-    hint = None
-    if ready is False:
-        hint = (
-            "No conversational model is loaded — load one in LM Studio or Ollama, "
-            "or add a cloud API key in Admin → settings."
-        )
-    elif ready is None:
-        hint = "Model readiness could not be verified — check the model server and refresh."
+    model = await _model_snapshot()
+    ready = model["ready"]
+    hint = _model_hint(model)
     from agents.core import product_posture
 
     orch = get_orch()
@@ -444,8 +545,10 @@ async def command_center():
     bounded consumer outcomes with setup/privacy/effect truth — a
     chat action is never presented ready without a model, and the local-docs
     action stays not-ready (with the reason) until the owner configures a
-    folder. Read-only; the actions point at existing governed endpoints and the
-    outcome projection never reads or returns credential values.
+    folder. The actions point at existing governed endpoints and the outcome
+    projection never reads or returns credential values; the model block, though,
+    proves a selected cloud route with one credentialed provider request when no
+    verdict is cached (see ``_model_snapshot``).
     """
     from agents import __version__
     from agents.core.routers.ops import readiness_snapshot
@@ -456,14 +559,7 @@ async def command_center():
     model_ready = model["ready"]
 
     done = _completed_steps()
-    hint = None
-    if model_ready is False:
-        hint = (
-            "No conversational model is loaded — load one in LM Studio or Ollama, "
-            "or add a cloud API key in Admin → settings."
-        )
-    elif model_ready is None:
-        hint = "Model readiness could not be verified — check the model server and refresh."
+    hint = _model_hint(model)
     wizard = {
         "steps": _WIZARD_STEPS,
         "completed": done,
@@ -478,6 +574,8 @@ async def command_center():
         chat_reason = "still starting"
     elif model_ready is None:
         chat_reason = "model readiness unknown"
+    elif model["reason"] in CLOUD_PROBE_REASONS:
+        chat_reason = "cloud key not usable"
     else:
         chat_reason = "model not loaded"
     folders = sorted(_configured_doc_folders())

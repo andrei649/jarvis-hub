@@ -146,13 +146,22 @@ async def serve(transport: StreamableHttpTransport, reader=None, writer=None) ->
         await transport.close()
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+def configure_logging(verbose: bool) -> None:
+    """stderr only (stdout is the protocol channel), through both log redactors
+    (H410): the bridge carries the hub's token and every tool call's arguments."""
     logging.basicConfig(
         stream=sys.stderr,
-        level=logging.DEBUG if args.verbose else logging.INFO,
+        level=logging.DEBUG if verbose else logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",
     )
+    from agents.core.log import install_redaction
+
+    install_redaction()
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    configure_logging(args.verbose)
     url = rpc_url(args.hub_url, args.rpc_path)
     reason = validate_mcp_url(url)
     if reason:

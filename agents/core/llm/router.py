@@ -192,6 +192,13 @@ class LLMRouter:
         return self._backend
 
     @property
+    def local_backend_name(self) -> str:
+        """The detected local backend's own name (``lm-studio`` / ``ollama``), ``none``
+        without one — never a composite: ``HybridRouter.name`` joins every available
+        backend with ``+``, so a check for a local server reads this (H277)."""
+        return self._backend_name if self._backend is not None else "none"
+
+    @property
     def name(self) -> str:
         return self._backend_name
 

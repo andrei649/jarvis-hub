@@ -138,17 +138,21 @@ def bind(
     data_scope: Sequence[str] | None = None,
     lifetime_seconds: float = DEFAULT_LIFETIME_SECONDS,
     now: Callable[[], float] = time.time,
+    shared_session: bool = True,
 ) -> tuple[SandboxInvocation, ProfileDecision]:
     """Resolve one run's authority from live host state.
 
     There is deliberately no parameter for "the offered set" or "the identity to act
     as": both are computed here from the principal the caller was already
     authenticated as, so a request body cannot name either. ``tools`` is the live
-    registry metadata, and the posture narrows it exactly as it narrows a model turn.
+    registry metadata, and the posture narrows it exactly as it narrows a model turn,
+    ``shared_session`` included (whether the turn runs on the owner's shared session;
+    unknown is yes).
     """
     posture = classify_turn(principal, origin)
     offered_rows, withheld = resolve_tools(
         tools, posture=posture, agent_patterns=agent_patterns, settings=settings,
+        shared_session=shared_session,
     )
     offered = frozenset(str(row.get("name") or "") for row in offered_rows) - {""}
     issued = float(now())

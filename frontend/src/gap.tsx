@@ -12,6 +12,23 @@ import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionF
 import { localModelStatus } from './api/live';
 import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
+import { DocsPanel, docHref, sectionIndex } from './panels/docs';
+import { WebhooksPanel } from './panels/webhooks';
+import { LongTermMemoryPanel } from './panels/long-term-memory';
+import { SkillSwitchesPanel } from './panels/skill-switches';
+import { ProviderCheckPanel } from './panels/provider-check';
+import { ProviderQuotaPanel } from './panels/provider-quota';
+import { InspectorPanel } from './panels/inspector';
+import { refusalText } from './soul-edit';
+import { ConfirmAction, RISK_TIER } from './confirm';
+import { LogsPanel } from './panels/logs';
+import { SessionsPanel } from './panels/sessions';
+import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, settingMatches, shown as shownSetting } from './panels/settings-tools';
+import { useSelectionGuard, type GuardFlags } from './selection-guard';
+import { PLANS_PATH, PlansInFlight } from './panels/plans';
+import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
+import { RETENTION_KIND, RetentionBanner, RetentionCard, refusedWhy, saveOrder, sentFor } from './panels/retention';
+import { VOICE_COMMAND_KIND, VoiceCommandCard, VoiceCommands } from './panels/voice-commands';
 import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
@@ -41,6 +58,7 @@ import { CompanyRoomPanel } from './panels/company-room';
 import { QuickbarPanel } from './panels/quickbar';
 import { MemoryConsolidatePanel } from './panels/memory-consolidate';
 import { PermissionsPanel } from './panels/permissions';
+import { DataHandling } from './panels/data-handling';
 
 import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, refusalReason, inpS, taS, Json } from './panel-kit';
 
@@ -750,8 +768,15 @@ export function KillSwitchPanel() {
         : halted ? 'ENGAGED · all agents halted' : 'ARMED · operational'}</span>
       {/* The button stays live even when the state is unknown: with `halted` false
           it sends engage=true, and halting on an unknown state is the safe
-          direction. Only the claim about current state is withheld. */}
-      <Btn onClick={toggle}>{halted ? 'disengage' : 'HALT ALL'}</Btn></Row>
+          direction. Only the claim about current state is withheld. H168: halting is
+          one click (a stop never waits for a second one); disengaging lets every agent
+          act again, so it takes the typed phrase. */}
+      <span style={{ marginLeft: 'auto' }}>
+        {halted
+          ? <ConfirmAction tier={RISK_TIER.EXTERNAL} label="disengage" phrase="DISENGAGE"
+              prompt="type DISENGAGE to let every agent act again:" onConfirm={toggle} />
+          : <ConfirmAction tier={RISK_TIER.READ_ONLY} label="HALT ALL" onConfirm={toggle} />}
+      </span></Row>
     {actErr && <Row><span role="alert" style={{ ...mono, color: 'var(--red)' }}>
       {halted ? 'DISENGAGE' : 'HALT'} REFUSED · {actErr} · the switch did NOT change state
     </span></Row>}
@@ -1001,8 +1026,11 @@ export function PosturePanel() {
               {sb.docker_available && <Tag>docker</Tag>}
             </span>
           </Row>
+          <DataHandling value={d.data_handling} reload={reload} />
         </>
       )}
+      {/* H165 — each switch above has a price; the flags doc names it. */}
+      <Row><a href={docHref('flags')} style={mono}>what flipping a flag costs ↗</a></Row>
     </Card>
   );
 }
@@ -1363,13 +1391,22 @@ export function SwarmPanel() {
    runner never opted into the steer kwarg) is rendered as "recorded, not delivered"
    rather than as a success, because the message did reach the spawn record but not the
    running turn. Stop reports the status the backend read back after yielding, so a child
-   that unwinds immediately shows `stopped` and one that does not shows `stopping`. */
+   that unwinds immediately shows `stopped` and one that does not shows `stopping`.
+
+   H681 — a child may name its own model; a row shows the model a child ran on (and what
+   chose it: the spawn or autonomy.subagent_model), and a child whose model call failed is
+   `failed` with the reason, never `done` with an empty answer. A model the selection
+   guards ask about is refused (409) with the price or data policy named. */
 export function SubAgentsPanel() {
   const { d, e, loading, reload } = useApi('/api/subagents');  // user-guarded
   const spawns = arr(d, 'spawns');
   const stats = (d && d.stats) || {};
   const [task, setTask] = useState('');
   const [agent, setAgent] = useState('');
+  const [model, setModel] = useState('');
+  const [batch, setBatch] = useState('');
+  const [batchOut, setBatchOut] = useState(null);
+  const [guard, setGuard] = useState(null);   // a 409 selection_guard: {url, body, needs}
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState(null);
   const [steerFor, setSteerFor] = useState(null);
@@ -1381,7 +1418,14 @@ export function SubAgentsPanel() {
     if (!t || pending) return;
     setPending(true);
     setNote(null);
-    act('/api/subagents/spawn', { task: t, agent: agent.trim() },
+    const pin = model.trim();
+    sendSpawn({ task: t, agent: agent.trim(), ...(pin ? { model: pin } : {}) });
+  };
+  const sendSpawn = (body) => {
+    setPending(true);
+    setNote(null);
+    setGuard(null);
+    act('/api/subagents/spawn', body,
       (r) => {
         setPending(false);
         setNote(r && r.ok === false
@@ -1390,7 +1434,53 @@ export function SubAgentsPanel() {
         setTask('');
         reload();
       },
-      (err) => { setPending(false); setNote(`refused · ${refusalReason(err, 'spawn failed')}`); reload(); });
+      (err) => { setPending(false); refused('/api/subagents/spawn', body, err); });
+  };
+  // A guarded model is asked once: the confirmation resends the same request with
+  // exactly the flags the hub named, and the hub audits it.
+  const refused = (url, body, err) => {
+    const b = err && err.body;
+    setGuard(b && b.error === 'selection_guard' ? { url, body, needs: b.needs || [] } : null);
+    setNote(spawnRefusal(err));
+    reload();
+  };
+  const confirmGuard = () => {
+    if (!guard || pending) return;
+    const body = { ...guard.body, ...Object.fromEntries(guard.needs.map((n) => [n, true])) };
+    if (guard.url === '/api/subagents/spawn') { sendSpawn(body); return; }
+    setPending(true); setNote(null); setGuard(null);
+    act(guard.url, body,
+      (r) => { setPending(false); setBatchOut(r || {}); setBatch(''); reload(); },
+      (err) => { setPending(false); refused(guard.url, body, err); });
+  };
+  // H681 — up to 16 children at once, one task per line, sharing the agent and model fields.
+  // The answer names every child's outcome and, when all of them failed because the provider
+  // does not know autonomy.subagent_model, one notice that says so and what to do.
+  const batchTasks = batch.split('\n').map((l) => l.trim()).filter(Boolean);
+  const runBatch = () => {
+    if (!batchTasks.length || batchTasks.length > 16 || pending) return;
+    const pin = model.trim();
+    setPending(true);
+    setNote(null);
+    setBatchOut(null);
+    setGuard(null);
+    const body = { tasks: batchTasks.map((t) => ({ task: t, agent: agent.trim(), ...(pin ? { model: pin } : {}) })) };
+    act('/api/subagents/batch', body,
+      (r) => { setPending(false); setBatchOut(r || {}); setBatch(''); reload(); },
+      (err) => { setPending(false); refused('/api/subagents/batch', body, err); });
+  };
+  // A child that ran and whose model call failed answers 422 with its result; a model the
+  // selection guards ask about answers 409 naming the price or the data policy.
+  const spawnRefusal = (err) => {
+    const b = err && err.body;
+    if (b && b.result && b.result.error === 'provider_failed') {
+      return `failed · ${b.result.detail || 'the model call failed'}`;
+    }
+    if (b && b.error === 'selection_guard') {
+      return `refused · ${b.detail || 'the model needs a confirmation'} (needs ${(b.needs || []).join(', ')})`;
+    }
+    if (b && b.reason === 'invalid_selection') return `refused · ${b.detail || 'invalid selection'}`;
+    return `refused · ${refusalReason(err, 'spawn failed')}`;
   };
   const sendSteer = (id) => {
     const msg = steerText.trim();
@@ -1438,6 +1528,11 @@ export function SubAgentsPanel() {
                 <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{String(s.task || '').slice(0, 40)}</span>
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                   <Tag>{s.agent || 'sub'}</Tag>
+                  {s.selection && s.selection.model && (
+                    <span title={`model chosen by ${s.selection.source === 'setting' ? 'autonomy.subagent_model' : 'the spawn'}`}>
+                      <Tag>{s.selection.model}</Tag>
+                    </span>
+                  )}
                   <Tag c={statusColor(s.status)}>{s.status || '—'}</Tag>
                   {s.status === 'running' && (
                     <>
@@ -1453,6 +1548,11 @@ export function SubAgentsPanel() {
                   )}
                 </span>
               </Row>
+              {s.status === 'failed' && s.failure && (
+                <div style={{ ...mono, fontSize: 10, color: 'var(--red)', margin: '0 0 4px 8px' }}>
+                  {s.failure.error}{s.failure.detail ? ` · ${s.failure.detail}` : ''}
+                </div>
+              )}
               {steerFor === s.id && (
                 <Row>
                   <input
@@ -1478,19 +1578,49 @@ export function SubAgentsPanel() {
               style={{ ...inpS, width: 120 }} placeholder="agent (optional)" value={agent}
               disabled={pending} onChange={(ev) => setAgent(ev.target.value)}
             />
+            <input
+              style={{ ...inpS, width: 140 }} placeholder="model (optional)" value={model}
+              disabled={pending} onChange={(ev) => setModel(ev.target.value)}
+            />
             <button
               className="tool-btn" title="spawn a sub-agent (long-running)"
               disabled={pending || !task.trim()} onClick={spawn}
             >spawn</button>
           </Row>
+          <Row>
+            <textarea
+              style={{ ...inpS, flex: 1, minHeight: 40 }} placeholder="batch: one task per line (up to 16)"
+              value={batch} disabled={pending} onChange={(ev) => setBatch(ev.target.value)}
+            />
+            <button
+              className="tool-btn" title="run these tasks as a batch of sub-agents"
+              disabled={pending || !batchTasks.length || batchTasks.length > 16} onClick={runBatch}
+            >run batch</button>
+          </Row>
+          {batchTasks.length > 16 && <div style={{ ...mono, fontSize: 10, color: 'var(--red)' }}>a batch holds at most 16 tasks</div>}
+          {batchOut && batchOut.summary && (
+            <div role="status" style={{ ...mono, marginTop: 6, fontSize: 11 }}>
+              batch · {batchOut.summary.done} done · {batchOut.summary.failed} failed · {batchOut.summary.refused} refused
+            </div>
+          )}
+          {batchOut && batchOut.notice && (
+            <div role="alert" style={{ ...mono, marginTop: 6, fontSize: 11, color: 'var(--red)' }}>{batchOut.notice.message}</div>
+          )}
           {pending && <div role="status" style={{ ...mono, marginTop: 6, color: 'var(--amber)' }}>spawning… the connection is held for the whole turn</div>}
-          {note && <div role="alert" style={{ ...mono, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
+          {note && <div role="alert" style={{ ...mono, marginTop: 6, color: /^(refused|failed)/.test(note) ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
+          {guard && (
+            <button className="tool-btn" style={{ marginTop: 6 }} disabled={pending}
+              title="confirm this model and send the same request again" onClick={confirmGuard}
+            >confirm ({guard.needs.join(', ')}) and send</button>
+          )}
           <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
             Spawning is long-running, not fire-and-forget: the POST runs the sub-agent inline and
             the request stays open until the sub-agent&apos;s turn finishes. Cap, recursion-depth and
             budget refusals all answer 429 — the capacity row above says which limit is tight.
             Steer is guidance to a running child, never an approval: a queue decision only ever
             comes from the decision inbox. Steer and stop appear only while a spawn is running.
+            With no model named, a child runs on autonomy.subagent_model, or on its agent&apos;s
+            own model when that is empty; a child whose model call failed shows why.
           </div>
         </>
       )}
@@ -2218,6 +2348,9 @@ export function ScreenReflexPanel() {
   const canCapture = typeof navigator !== 'undefined' && !!(navigator as any).mediaDevices?.getDisplayMedia;
   const configured = !!vlm.d && vlm.d.configured === true;
   const isLocal = configured && vlm.d.local === true;
+  const policyMessages = [...new Set([vlm.d?.data_policy_note, vlm.d?.warning, out?.data_policy_note, out?.warning]
+    .filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim().slice(0, 500)))];
+  const generated = out?.ok === true && out?.generated === true;
 
   const readBlob = (blob, label) => {
     const reader = new FileReader();
@@ -2253,7 +2386,7 @@ export function ScreenReflexPanel() {
     }
   };
   const observe = () => {
-    if (!img) return;
+    if (!configured || !isLocal || !img) return;
     setOut(null);
     setNote('observing…');
     // apiPost THROWS on the route's 503s (no VLM / non-loopback VLM) — without
@@ -2277,9 +2410,10 @@ export function ScreenReflexPanel() {
     )}
     {configured && !isLocal && (
       <div role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginBottom: 6 }}>
-        {vlm.d.base_url} is not loopback — the route refuses it (screen bytes must never leave the host)
+        {vlm.d.base_url} is not loopback — the route refuses it (a local VLM on the Nerva server is required)
       </div>
     )}
+    {policyMessages.map((message) => <div key={message} role="status" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginBottom: 6 }}>{message}</div>)}
     <div onPaste={onPaste}>
       <input
         aria-label="screenshot image file"
@@ -2298,7 +2432,7 @@ export function ScreenReflexPanel() {
         <option value="answer">answer</option>
         <option value="ground">ground</option>
       </select>
-      <button className="tool-btn" type="button" disabled={!img} onClick={observe} aria-label="observe screen">observe screen</button>
+      <button className="tool-btn" type="button" disabled={!configured || !isLocal || !img} onClick={observe} aria-label="observe screen">observe screen</button>
     </div>
     <input
       aria-label="reflex question"
@@ -2307,21 +2441,21 @@ export function ScreenReflexPanel() {
       placeholder="question (optional) — e.g. what is this error asking me to do?"
       style={{ ...inpS, width: '100%', marginTop: 6 }}
     />
-    {out && out.ok && out.generated && (
+    {generated && (
       <div style={{ ...mono, fontSize: 11, color: 'var(--ink)', marginTop: 8, whiteSpace: 'pre-wrap' }}>{out.answer}</div>
     )}
-    {out && out.ok && out.generated && out.mode === 'ground' && elements.map((el, i) => (
+    {generated && out.mode === 'ground' && elements.map((el, i) => (
       <Row key={`${el.label}:${i}`}>
         <span style={{ ...mono, color: 'var(--accent-light)' }}>{`${el.label} · (${el.x}, ${el.y})`}</span>
         <span style={{ marginLeft: 'auto' }}><Tag>{el.source || 'vlm'}</Tag></span>
       </Row>
     ))}
-    {out && out.ok !== true && (
-      <div role="alert" style={{ ...mono, fontSize: 11, color: 'var(--ink-3)', marginTop: 8 }}>{out.reason || 'no answer'}</div>
+    {out && !generated && (
+      <div role="alert" style={{ ...mono, fontSize: 11, color: 'var(--ink-3)', marginTop: 8 }}>{typeof out.reason === 'string' && out.reason.trim() ? out.reason.slice(0, 500) : 'no answer'}</div>
     )}
     {note && <div role="status" style={{ ...mono, fontSize: 10, color: note.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 6 }}>{note}</div>}
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
-      screen bytes are held in memory and sent only to the loopback VLM · the global hotkey + OS-level grab stay host-gated
+      screen bytes are held in memory and sent to the local VLM on the Nerva server · the global hotkey + OS-level grab stay host-gated
     </div>
   </Card>;
 }
@@ -2366,15 +2500,6 @@ export function LearningPanel() {
     </div>
   </Card>;
 }
-function SessionsPanel() {
-  const { d, e, loading, reload } = useApi('/sessions');
-  const list = arr(d, 'sessions');
-  return <Card title="SESSIONS" live={asLive(d)} sub={list.length} onReload={reload}>
-    <State e={e} loading={loading} n={list.length} />
-    {list.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{s.session_id || s.id || s}</span><span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{s.turns ?? s.count ?? ''}</span>{(s.session_id || s.id) && <button className="tool-btn" onClick={() => act('/sessions/resume', { session_id: s.session_id || s.id })}>resume</button>}</Row>)}
-  </Card>;
-}
-
 /* ── Admin ─────────────────────────────────────────────── */
 export function LMStudioPanel() {
   const { d, e, loading, reload } = useApi('/api/models/local', true, true);
@@ -2440,26 +2565,9 @@ export function LMStudioPanel() {
     <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>configured routing is independent from provider-reported residency · lifecycle actions follow backend capabilities</div>
   </Card>;
 }
-/* DRA-29 — the VLM *input* leg. The multimodal surface was output-only: the HUD
-   read `GET /api/vlm/status` (the LOCAL MODELS config line) but nothing in the
-   product ever called `POST /api/vlm/describe`. Images are read in the browser
-   into `data:` URIs; `encode_image_block` rejects filesystem paths by design, so
-   this control cannot smuggle a host file to the model.
-
-   EGRESS DISCLOSURE — why this panel is not a bare form. Unlike
-   `POST /api/screen/reflex`, `/api/vlm/describe` carries NO `is_local` gate, and
-   that is deliberate on the backend: `resolve_vlm_config` supports a `custom`
-   backend at an arbitrary URL and computes `is_local` as a *label*, and
-   `_is_loopback_base` counts a LAN address as non-local — so a hard route-level
-   gate would also refuse the owner's own second box, and would break an existing
-   documented, snapshot-frozen contract for every caller. What must not happen is
-   the HUD silently shipping owner-picked images off-host: so when the resolved
-   VLM is not loopback this panel names the exact destination and refuses to
-   upload until the owner ticks an explicit acknowledgement. This is a CONSENT
-   gate on files the owner chose one by one, not a security boundary — the route
-   is unchanged and behaves for curl exactly as it always has. A screen grab (which
-   the owner cannot review before it is sent) keeps its hard route-level refusal;
-   the asymmetry is the point. */
+/* DRA-29 — browser-picked images are sent as data: URIs to the strict-loopback
+   describe route. The destination and optional policy warnings are visible
+   before submission; non-loopback configuration is refused by both UI and route. */
 export const VLM_MAX_IMAGES = 8;
 const VLM_MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 export function VlmDescribePanel() {
@@ -2468,11 +2576,12 @@ export function VlmDescribePanel() {
   const [images, setImages] = useState<Array<{ name: string; data: string }>>([]);
   const [out, setOut] = useState(null);
   const [note, setNote] = useState('');
-  const [ack, setAck] = useState(false);
   const configured = !!vlmD && vlmD.configured === true;
   const isLocal = configured && vlmD.local === true;
   const destination = configured ? String(vlmD.base_url || 'an unnamed endpoint') : '';
-  const needsAck = configured && !isLocal;
+  const policyMessages = [...new Set([vlmD?.data_policy_note, vlmD?.warning, out?.data_policy_note, out?.warning]
+    .filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim().slice(0, 500)))];
+  const described = out?.ok === true && typeof out?.response === 'string' && !!out.response.trim();
 
   const addFiles = (files) => {
     const picked = Array.from(files || []);
@@ -2497,16 +2606,16 @@ export function VlmDescribePanel() {
   };
 
   const describe = () => {
-    if (!configured || !prompt.trim() || !images.length) return;
-    if (needsAck && !ack) {
-      // Not a network call: nothing leaves the host until the destination is acknowledged.
-      setNote(`refused · ${destination} is not loopback — acknowledge the destination before any image is uploaded`);
-      return;
-    }
+    if (!configured || !isLocal || !prompt.trim() || !images.length) return;
     setOut(null);
     setNote('describing…');
     apiPost('/api/vlm/describe', { prompt, images: images.map((i) => i.data), model: '' })
-      .then((r) => { setOut(r); setNote(''); })
+      .then((r: any) => {
+        setOut(r);
+        const success = r?.ok === true && typeof r?.response === 'string' && !!r.response.trim();
+        const reason = typeof r?.error === 'string' ? r.error : typeof r?.reason === 'string' ? r.reason : '';
+        setNote(success ? '' : `describe failed${reason.trim() ? ` · ${reason.trim().slice(0, 500)}` : ' · no answer'}`);
+      })
       .catch((err) => {
         const status = Number(err?.status);
         setOut(null);
@@ -2516,7 +2625,7 @@ export function VlmDescribePanel() {
 
   return <Card
     title="VLM · DESCRIBE"
-    live={asLive(vlmD, configured)}
+    live={asLive(vlmD, configured && isLocal)}
     sub={vlmD ? (configured ? `${vlmD.backend} · ${vlmD.default_model || 'model unset'}` : 'no VLM') : null}
     onReload={reload}
   >
@@ -2531,20 +2640,12 @@ export function VlmDescribePanel() {
         {destination} · loopback · reachable not probed
       </div>
     )}
-    {needsAck && (
+    {configured && !isLocal && (
       <div role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginBottom: 6 }}>
-        <div>{destination} is NOT loopback — every image you pick would be uploaded to that host.</div>
-        <label style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, color: 'var(--amber)' }}>
-          <input
-            type="checkbox"
-            aria-label={`acknowledge that images are uploaded to ${destination}`}
-            checked={ack}
-            onChange={(ev) => setAck(ev.target.checked)}
-          />
-          <span>I acknowledge these images leave this host</span>
-        </label>
+        refused · {destination} is not loopback — a local VLM on the Nerva server is required
       </div>
     )}
+    {policyMessages.map((message) => <div key={message} role="status" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginBottom: 6 }}>{message}</div>)}
     <input
       aria-label="image files to describe"
       type="file"
@@ -2571,13 +2672,13 @@ export function VlmDescribePanel() {
       <button
         className="tool-btn"
         type="button"
-        disabled={!configured || !prompt.trim() || !images.length}
+        disabled={!configured || !isLocal || !prompt.trim() || !images.length}
         onClick={describe}
-        title={needsAck && !ack ? `acknowledge the ${destination} destination first` : 'describe the picked image(s)'}
+        title={configured && !isLocal ? 'refused · destination must be loopback' : 'describe the picked image(s)'}
       >describe</button>
       <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>{images.length}/{VLM_MAX_IMAGES} image(s)</span>
     </div>
-    {out && out.ok === true && (
+    {described && (
       <>
         <div style={{ ...mono, fontSize: 11, color: 'var(--ink)', marginTop: 8, whiteSpace: 'pre-wrap' }}>{out.response}</div>
         <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>model · {out.model || 'unnamed'}</div>
@@ -2622,48 +2723,157 @@ export function OAuthPanel() {
       </span></Row>)}
   </Card>;
 }
-function settingsField(it, val, on) {
+function settingsField(it, val, on, suggest?: string[]) {
   const ip = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: '3px 6px', ...mono, fontSize: 11 };
+  // H613: a text setting with known choices (voice.tts_voice: the Piper voices, the command
+  // provider) offers them, and still takes any value typed.
+  if (suggest && suggest.length && (it.kind === 'text' || !it.kind)) {
+    const id = 'suggest-' + it.key;
+    return <>
+      <input list={id} aria-label={'value of ' + it.key} value={val == null ? '' : val} onChange={(e) => on(e.target.value)} style={{ ...ip, width: 150 }} />
+      <datalist id={id} data-testid={id}>{suggest.map((o) => <option key={o} value={o} />)}</datalist>
+    </>;
+  }
   switch (it.kind) {
     case 'toggle': return <input type="checkbox" checked={!!val} onChange={(e) => on(e.target.checked)} />;
     case 'select': return <select value={val} onChange={(e) => on(e.target.value)} style={ip}>{(it.opts || []).map((o) => <option key={o} value={o}>{o}</option>)}</select>;
     case 'number': case 'slider': return <input type="number" value={val} onChange={(e) => on(e.target.value === '' ? '' : Number(e.target.value))} style={{ ...ip, width: 84 }} />;
     case 'tags': return <input value={Array.isArray(val) ? val.join(', ') : (val || '')} onChange={(e) => on(e.target.value.split(',').map((s) => s.trim()).filter(Boolean))} style={{ ...ip, width: 150 }} />;
+    // A JSON setting is edited as JSON and saved parsed (H340 review: skills.template_vars
+    // saved from a text box was a string the hub ignored). Text that does not parse is sent
+    // as typed, so the hub's refusal names what is wrong.
+    case 'json': return <textarea aria-label={'json value of ' + it.key} defaultValue={typeof val === 'string' ? val : JSON.stringify(val ?? {})} onChange={(e) => { try { on(JSON.parse(e.target.value)); } catch { on(e.target.value); } }} rows={2} style={{ ...ip, width: 220 }} />;
     default: return <input value={val == null ? '' : val} onChange={(e) => on(e.target.value)} style={{ ...ip, width: 150 }} />;
   }
 }
-function SettingsPanel() {
+export function SettingsPanel() {
   const { d, e, loading, reload } = useApi('/api/admin/settings');
+  // H165 — a setting FLAGS.md documents links to its section: its cost, at the toggle.
+  const costs = sectionIndex(useApi('/api/help/docs').d, 'flags');
+  // H613 — the voices this hub can speak with (Piper models, the command provider).
+  const voiceCaps: any = useApi('/api/voice/capabilities').d;
+  const voiceChoices: string[] = Array.isArray(voiceCaps?.voices) ? voiceCaps.voices.filter((v) => typeof v === 'string') : [];
   const [dirty, setDirty] = useState<Record<string, any>>({});
   const [saved, setSaved] = useState(null);
+  const [refused, setRefused] = useState<string[]>([]);
+  // H262 — the categories a save sent to Approvals instead (a retention write that deletes
+  // deeper than approved: 202, its retention keys queued, the rest written).
+  const [sent, setSent] = useState<string[]>([]);
+  const [retentionTick, setRetentionTick] = useState(0);
+  // H157 — one search across every category (key or label), a reset per category, and a
+  // configuration moved between boxes as JSON (SettingsTransfer).
+  const [query, setQuery] = useState('');
   const cats = d && typeof d === 'object' ? d : {};
+  const shownCats = Object.entries(cats)
+    .map(([cat, items]: [string, any]) => [cat, (items || []).filter((it) => settingMatches(cat, it, query))] as [string, any[]])
+    .filter(([, items]) => items.length > 0);
+  const nMatches = shownCats.reduce((n, [, items]) => n + items.length, 0);
+  // Edits kept under a search: saved with the rest, and counted so the owner knows.
+  const visible = new Set(shownCats.flatMap(([cat, items]) => items.map((it) => `${cat}.${it.key}`)));
+  const nHidden = Object.entries(dirty).reduce((n, [cat, o]) => n + Object.keys(o).filter((k) => !visible.has(`${cat}.${k}`)).length, 0);
+  // A reset or an import changes the stored values: unsaved edits of those categories are
+  // dropped, or "save" would write the old values back over them (review-H157 m3).
+  const dropDirty = (cats: string[]) => setDirty((p) => { const n = { ...p }; for (const c of cats) delete n[c]; return n; });
+  // H259: a reset (one category or all) or an undo re-reads the list of resets.
+  const [resetTick, setResetTick] = useState(0);
+  const afterReset = (cats: string[]) => { dropDirty(cats); setResetTick((n) => n + 1); setRetentionTick((n) => n + 1); reload(); };
   const setVal = (cat, key, v) => setDirty((p) => ({ ...p, [cat]: { ...(p[cat] || {}), [key]: v } }));
   const valOf = (cat, it) => (dirty[cat] && it.key in dirty[cat]) ? dirty[cat][it.key] : it.value;
   const nDirty = Object.values(dirty).reduce((a, o) => a + Object.keys(o).length, 0);
+  // H378 — a model choice the hub's selection guards ask about (a very expensive model, a
+  // vendor that trains on prompts) keeps its edits and opens a confirmation; confirming sends
+  // the category again with the owner's flags.
+  const guard = useSelectionGuard();
+  const saveGuarded = (cat: string, values: Record<string, any>) => (flags: GuardFlags) =>
+    apiPut('/api/admin/settings/' + cat, { values, ...flags }, { admin: true })
+      .then((r: any) => {
+        setSaved((r && r.updated) || 0); setRefused([]);
+        setSent(sentFor(cat, r)); setRetentionTick((n) => n + 1);
+        setDirty((p) => {                            // drop what was saved; a later edit stays
+          const rest = { ...(p[cat] || {}) };
+          for (const k of Object.keys(values)) if (JSON.stringify(rest[k]) === JSON.stringify(values[k])) delete rest[k];
+          const next = { ...p };
+          if (Object.keys(rest).length) next[cat] = rest; else delete next[cat];
+          return next;
+        });
+        reload();
+      })
+      .catch((err: any) => setRefused([`${cat}: ${refusedWhy(err, 'not saved')}`]));
   const save = async () => {
+    // A refused category keeps its edits and shows the hub's own reason (review-H318b n-4:
+    // "updated 0" over a 422 read as saved, and the typed text stayed in the box).
     let n = 0;
-    for (const cat of Object.keys(dirty)) {
-      try { const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true }); n += (r && r.updated) || 0; } catch { /* offline */ }
+    const kept: Record<string, any> = {};
+    const why: string[] = [];
+    const queued: string[] = [];
+    // H262: the ungated one of retention / memory first, one at a time (saveOrder).
+    const retentionOn = (cats.retention || []).some((it: any) => it && it.key === 'enabled' && it.value === true);
+    for (const cat of saveOrder(Object.keys(dirty), retentionOn)) {
+      try {
+        const r: any = await apiPut('/api/admin/settings/' + cat, { values: dirty[cat] }, { admin: true });
+        n += (r && r.updated) || 0;
+        queued.push(...sentFor(cat, r));
+      }
+      catch (err) {
+        kept[cat] = dirty[cat];
+        guard.catchGuard(saveGuarded(cat, dirty[cat]), (e) => why.push(`${cat}: ${refusedWhy(e, 'not saved')}`))(err);
+      }
     }
-    setSaved(n); setDirty({}); reload();
+    setSaved(n); setRefused(why); setSent(queued); setDirty(kept); setRetentionTick((t) => t + 1); reload();
   };
   return <Card title="SETTINGS DB" live={asLive(d)} sub={Object.keys(cats).length + ' cat'} onReload={reload}>
     <State e={e} loading={loading} n={Object.keys(cats).length} />
+    <SettingsSearch value={query} onChange={setQuery} matches={nMatches} />
+    {query.trim() && nMatches === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>no setting matches “{query.trim()}”</div>}
     <div style={{ maxHeight: 300, overflow: 'auto' }}>
-      {Object.entries(cats).map(([cat, items]: [string, any]) => (
+      {shownCats.map(([cat, items]) => (
         <div key={cat} style={{ marginBottom: 6 }}>
-          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', margin: '6px 0 2px' }}>{String(cat).toUpperCase()}</div>
+          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', margin: '6px 0 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>{String(cat).toUpperCase()}</span>
+            {(cats[cat] || []).some((it) => it.source !== 'undeclared') && (
+              <span style={{ marginLeft: 'auto' }}><ResetCategory cat={cat} count={(cats[cat] || []).length} onDone={(c) => afterReset([c])} /></span>
+            )}
+          </div>
+          {cat === 'retention' && <RetentionBanner refresh={retentionTick} />}
+          {cat === 'voice' && <VoiceCommands />}
           {(items || []).map((it) => (
             <Row key={it.key}>
               <span style={{ fontSize: 11, color: 'var(--ink-2)', flex: '0 0 46%' }} title={it.key}>{it.label || it.key}</span>
-              <span style={{ marginLeft: 'auto' }}>{settingsField(it, valOf(cat, it), (v) => setVal(cat, it.key, v))}</span>
+              {costs[`${cat}.${it.key}`] && (
+                <a href={docHref('flags', costs[`${cat}.${it.key}`])} target="_blank" rel="noopener noreferrer"
+                  style={{ ...mono, fontSize: 9.5 }} title="what flipping this costs (FLAGS.md)">cost ↗</a>
+              )}
+              {/* H259: a setting that differs from its declared default says so, and ↺ stages the
+                  default for the next save (a secret carries no default, so never). */}
+              {!it.written_by && 'default' in it && JSON.stringify(valOf(cat, it)) !== JSON.stringify(it.default) && <>
+                <span title={`default: ${shownSetting(it.default)}`} style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>changed</span>
+                <button className="tool-btn" style={{ padding: '0 5px', fontSize: 9.5 }} title={`default: ${shownSetting(it.default)}`}
+                  aria-label={`put ${cat}.${it.key} back to its default`} onClick={() => setVal(cat, it.key, it.default)}>↺</button>
+              </>}
+              {/* review-H329 F1: a setting only its own route writes (the skill switches) is
+                  shown, with where to change it; the hub refuses it in a settings save. */}
+              {it.written_by
+                ? <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                    <span style={{ ...mono, fontSize: 11 }}>{shownSetting(it.value)}</span>
+                    <span style={{ display: 'block', fontSize: 9.5, color: 'var(--ink-3)' }}>change it in {it.written_by}</span>
+                  </span>
+                : <span style={{ marginLeft: 'auto' }}>{settingsField(it, valOf(cat, it), (v) => setVal(cat, it.key, v),
+                    cat === 'voice' && it.key === 'tts_voice' ? voiceChoices : undefined)}</span>}
             </Row>
           ))}
         </div>
       ))}
     </div>
-    {nDirty > 0 && <button className="tool-btn" style={{ marginTop: 8 }} onClick={save}>💾 save {nDirty} change{nDirty === 1 ? '' : 's'}</button>}
+    {nDirty > 0 && <button className="tool-btn" style={{ marginTop: 8 }} onClick={save}>💾 save {nDirty} change{nDirty === 1 ? '' : 's'}{nHidden ? ` (${nHidden} hidden by the search)` : ''}</button>}
     {saved != null && <span style={{ fontSize: 10, color: 'var(--green)', marginLeft: 8 }}>updated {saved}</span>}
+    {refused.map((r) => <div key={r} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 4 }}>not saved · {r}</div>)}
+    {sent.length > 0 && <div data-testid="sent-to-approvals" role="status" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>
+      {sent.map((line) => <div key={line}>{line}</div>)}
+    </div>}
+    {guard.view}
+    <SettingsTransfer onDone={(cats) => { dropDirty(cats); reload(); }} />
+    <ResetAll onDone={() => afterReset(Object.keys(cats))} />
+    <UndoReset refresh={resetTick} onDone={(cats) => { dropDirty(cats); reload(); }} />
   </Card>;
 }
 function PromptsPanel() {
@@ -2685,10 +2895,12 @@ function PromptsPanel() {
   const loadAB = () => apiGet(base + '/ab', { admin: true }).then((r: any) => setAb(r.ab || null)).catch(() => setAb(null));
   const doDiff = () => { if (a == null || b == null) return; setDiff('…'); apiGet(`${base}/diff?a=${a}&b=${b}`, { admin: true }).then((r: any) => setDiff(r.diff ?? '')).catch(() => setDiff(null)); };
   const doAB = () => { if (a == null || b == null) return; apiPost(`${base}/ab`, { a, b, split: 0.5 }, { admin: true }).then(loadAB).catch(() => {}); };
-  const rollback = (vn) => apiPost(`${base}/rollback`, { version: vn }, { admin: true }).then(() => { setNote('rolled back to v' + vn); reload(); }).catch(() => {});
+  const rollback = (vn) => apiPost(`${base}/rollback`, { version: vn }, { admin: true }).then((r: any) => { setNote('rolled back to v' + vn + (r?.live ? ' · live' : '')); reload(); }).catch((err: any) => setNote(refusalText(err)));
   const loadEdit = (vn) => apiGet(`${base}/version/${vn}`, { admin: true }).then((v: any) => { setEdit({ version: vn, content: v.content || '', message: '' }); setPreview(null); }).catch(() => {});
   const doPreview = () => { if (!edit) return; apiPost(`${base}/preview`, { proposed: edit.content }, { admin: true }).then(setPreview).catch(() => {}); };
   const doCommit = () => { if (!edit) return; apiPost(`${base}/commit`, { content: edit.content, message: edit.message || ('edit of v' + edit.version) }, { admin: true }).then((r: any) => { setNote('committed v' + (r.version?.version ?? '?')); setEdit(null); setPreview(null); setPick([]); reload(); }).catch(() => {}); };
+  // H156: apply = a new version AND the live persona (the agent's next turn uses it).
+  const doApply = () => { if (!edit) return; apiPut('/api/admin/agents/' + encodeURIComponent(agent) + '/soul', { content: edit.content, message: edit.message || ('edit of v' + edit.version) }, { admin: true }).then((r: any) => { setNote('applied v' + (r.version?.version ?? '?') + ' · live'); setEdit(null); setPreview(null); setPick([]); reload(); }).catch((err: any) => setNote(refusalText(err))); };
 
   useEffect(() => { loadAB(); }, [agent]); // eslint-disable-line
 
@@ -2725,7 +2937,8 @@ function PromptsPanel() {
       <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
         <input value={edit.message} onChange={(ev) => setEdit({ ...edit, message: ev.target.value })} placeholder="commit message" style={{ ...inp, flex: 1, minWidth: 120 }} />
         <button className="tool-btn" onClick={doPreview}>preview</button>
-        <button className="tool-btn" onClick={doCommit}>commit</button>
+        <button className="tool-btn" onClick={doCommit} title="save a version only; the persona in use does not change">commit</button>
+        <button className="tool-btn" onClick={doApply} title="save a version and make it the live persona">apply</button>
         <button className="tool-btn" onClick={() => { setEdit(null); setPreview(null); }}>✕</button>
       </div>
       {preview && <div style={{ marginTop: 6 }}>
@@ -2733,7 +2946,7 @@ function PromptsPanel() {
         <DiffView text={preview.diff} />
       </div>}
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>click v# to pick A/B · ✎ edit · ⟲ rollback · A/B + diff + rollback (H10.22)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>click v# to pick A/B · ✎ edit · ⟲ rollback (an agent's rollback is live) · commit saves a version, apply makes it live (H10.22, H156)</div>
   </Card>;
 }
 export function RoomsPanel() {
@@ -2954,7 +3167,10 @@ export function OnboardingPanel() {
 /* HUD-v3 B1 — the DECISION INBOX (the product north-star). The frontend READ /tasks (the
    autonomy queue, drawn as a network fan) but had NO control to resolve a blocked
    decision. This is it: the blocked queue (GET /autonomy/tasks?status=blocked) with
-   accept / reject / defer, each → POST /autonomy/tasks/{id}/decision {action} (admin). */
+   accept / reject / defer, each → POST /autonomy/tasks/{id}/decision {action} (admin).
+   H315 — under them, the plans the agent is working through (GET /sessions/todo).
+   H318 — and the skill changes the agent proposed, each with its whole diff
+   (GET /api/skills/proposals; panels/skill-changes.tsx). */
 export function DecisionInboxPanel() {
   const { d, e, loading, reload } = useApi('/autonomy/tasks?status=blocked', true, true);  // admin
   useEffect(() => {
@@ -2962,16 +3178,82 @@ export function DecisionInboxPanel() {
     return () => window.removeEventListener('nerva:image-proposed', reload);
   }, [reload]);
   const pending = arr(d, 'tasks');
+  const taskIds = new Set(pending.map(t => t.id));
+  const groupLeaders = new Map();
+  const groupFollowers = new Set();
+  arr(d, 'groups').forEach(group => {
+    const members = group.member_ids;
+    if (!Array.isArray(members) || members.length < 2 || members.length !== group.count
+        || new Set(members).size !== members.length || !members.includes(group.leader_id)
+        || !members.every(id => taskIds.has(id))) return;
+    groupLeaders.set(group.leader_id, group);
+    members.forEach(id => { if (id !== group.leader_id) groupFollowers.add(id); });
+  });
+  const cards = pending.filter(t => !groupFollowers.has(t.id));
+  // H277: an opinion is advisory. Poll only queued/running judgments, with a
+  // separate wall-clock budget per card (32 queued items / two judge slots).
+  // Loading, failed reads and unrelated refreshes never extend that budget.
+  const judgeDeadlines = useRef(new Map());
+  const [judgeExpired, setJudgeExpired] = useState(new Set());
+  useEffect(() => {
+    if (!d) return;
+    const timeout = Number(d.judge?.timeout);
+    const budget = (17 * (Number.isFinite(timeout) && timeout > 0 ? timeout : 20) + 5) * 1000;
+    const now = Date.now();
+    const deadlines = new Map();
+    const waiting = [];
+    arr(d, 'tasks').forEach(t => {
+      if (judgeDeadlines.current.has(t.id)) deadlines.set(t.id, judgeDeadlines.current.get(t.id));
+      if (t.judge_pending === true && !t.judge) {
+        if (!deadlines.has(t.id)) deadlines.set(t.id, now + budget);
+        waiting.push(t.id);
+      }
+    });
+    judgeDeadlines.current = deadlines;
+    let timer;
+    const schedule = () => {
+      const current = Date.now();
+      setJudgeExpired(new Set(waiting.filter(id => deadlines.get(id) <= current)));
+      const remaining = waiting.map(id => deadlines.get(id) - current).filter(ms => ms > 0);
+      if (!remaining.length) return;
+      timer = window.setTimeout(() => {
+        // Re-check real time after browser throttling before issuing a read.
+        if (waiting.some(id => deadlines.get(id) > Date.now())) reload();
+        schedule();
+      }, Math.min(3000, ...remaining));
+    };
+    schedule();
+    return () => window.clearTimeout(timer);
+  }, [d, reload]);
   const interrupts = useApi('/autonomy/interrupts', true, true);   // admin — the calm-by-the-numbers budget
   const ib = interrupts.d;
+  const plans = useApi(PLANS_PATH, true, true);   // H315 — the agent's checklists, intent before the card
+  const changes = useApi(SKILL_CHANGES_PATH, true, true);   // H318 — skill changes, each with its whole diff
   const [imageReturn,setImageReturn] = useState<number | null>(null);
   const [editing, setEditing] = useState(null);   // task id whose payload is being edited
   const [draft, setDraft] = useState('');
+  const [decisionReasons, setDecisionReasons] = useState<Record<string, string>>({});
+  const [groupError, setGroupError] = useState('');
+  const rejectGroup = (group) => {
+    setGroupError('');
+    const reason = (decisionReasons[group.leader_id] || '').trim();
+    return actA('/autonomy/tasks/groups/' + encodeURIComponent(group.id) + '/reject', {
+      snapshot: group.snapshot, member_ids: group.member_ids, ...(reason ? { reason } : {}),
+    }, () => {
+      setDecisionReasons(previous => {
+        const next = { ...previous }; group.member_ids.forEach(id => { delete next[id]; }); return next;
+      });
+      if (group.member_ids.includes(editing)) setEditing(null);
+      reload();
+    }, err => setGroupError(err?.body?.error || err?.message || 'Group decision refused; reload and review.'));
+  };
   const decide = (id, action, payload?) => {
     const image = pending.some(t=>t.id===id && isImageProposal(t));
+    const reason = (decisionReasons[id] || '').trim();
     return actA('/autonomy/tasks/' + id + '/decision',
-      payload !== undefined ? { action, payload } : { action }, () => {
+      { action, ...(payload !== undefined ? { payload } : {}), ...(reason ? { reason } : {}) }, () => {
         if(image && Number.isSafeInteger(id) && id>0) setImageReturn(id);
+        setDecisionReasons(previous => { const next = { ...previous }; delete next[id]; return next; });
         setEditing(null); reload();
       });
   };
@@ -2996,22 +3278,53 @@ export function DecisionInboxPanel() {
   return (
     <div id="decision-inbox"><Card title="DECISION INBOX" live={asLive(d)}
       sub={d ? `${pending.length} awaiting you` + (ib && ib.per_day != null ? ` · ${ib.used ?? 0}/${ib.per_day} interrupts today` : '') : null}
-      onReload={() => { reload(); interrupts.reload(); }}>
+      onReload={() => { reload(); interrupts.reload(); plans.reload(); changes.reload(); }}>
       <State e={e} loading={loading} n={pending.length} />
+      {groupError && <div role="alert" style={{ color: 'var(--red)' }}>{groupError}</div>}
       {imageReturn && <p><a href={internalLink("/v2/console/images?image_task="+imageReturn)}>Watch decided image task</a></p>}
-      {pending.slice(0, 10).map((t, i) => (
+      {cards.slice(0, 10).map((t, i) => (
         <div key={t.id ?? i}>
           <Row>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
               {!isImageProposal(t) && <button className="tool-btn" title="dry-run preview" onClick={() => loadPreview(t.id)}>preview</button>}
-              <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>✓</button>
-              {!isImageProposal(t) && <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>}
+              <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>{groupLeaders.has(t.id) ? 'approve once' : '✓'}</button>
+              {!isImageProposal(t) && t.kind !== VOICE_COMMAND_KIND && <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>}
               <button className="tool-btn" title="reject" onClick={() => decide(t.id, 'reject')}>✕</button>
               <button className="tool-btn" title="defer" onClick={() => decide(t.id, 'defer')}>defer</button>
+              {groupLeaders.has(t.id) && <button className="tool-btn" onClick={() => rejectGroup(groupLeaders.get(t.id))}>reject group</button>}
             </span>
           </Row>
+          {typeof t.approval_deadline_at === 'string' && Number.isFinite(Date.parse(t.approval_deadline_at)) &&
+            <div aria-label={`Approval deadline for ${t.title || t.kind || ('task ' + t.id)}`}
+              style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 4 }}>
+              Expires without a response: <time dateTime={t.approval_deadline_at}>
+                {new Date(t.approval_deadline_at).toLocaleString()}
+              </time>
+            </div>}
+          {groupLeaders.has(t.id) && <div style={{ ...mono, fontSize: 11, marginBottom: 4 }}>
+            {groupLeaders.get(t.id).count} matching requests · approval applies only to this task; the next remains pending.
+          </div>}
+          <textarea aria-label={`Your decision reason for ${t.title || t.kind || ('task ' + t.id)}`}
+            placeholder="Your decision reason (optional)" maxLength={280}
+            value={decisionReasons[t.id] || ''} style={taS}
+            onChange={event => setDecisionReasons(previous => ({ ...previous, [t.id]: event.target.value }))} />
+          {t.judge && <div aria-label="Advisory model opinion" style={{ margin: '4px 0 8px 12px', fontSize: 11, overflowWrap: 'anywhere' }}>
+            <div style={{ color: 'var(--ink-2)' }}>Model opinion · advisory only · you decide</div>
+            <div style={{ color: Number(t.judge.score) >= 70 ? 'var(--amber)' : 'var(--ink-2)' }}>
+              Risk score {t.judge.score}/100 · {t.judge.judge?.provider || 'unknown provider'} · {t.judge.judge?.model || 'unknown model'} · {t.judge.judge?.local ? 'local' : 'remote'}
+            </div>
+            {t.judge.truncated && <div style={{ color: 'var(--amber)' }}>Judged on a shortened copy of the task.</div>}
+            {Array.isArray(t.judge.flags) && t.judge.flags.length > 0 && <div style={{ color: 'var(--amber)' }}>
+              <div>Flagged arguments may have manipulated this model opinion.</div>
+              {t.judge.flags.map((flag, k) => <Tag key={k} c="var(--amber)">{String(flag)}</Tag>)}
+            </div>}
+            <blockquote style={{ margin: '4px 0', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>{t.judge.rationale || 'No rationale supplied.'}</blockquote>
+          </div>}
+          {!t.judge && t.judge_pending === true && <div style={{ margin: '4px 0 8px 12px', fontSize: 11, color: 'var(--ink-2)' }}>
+            {judgeExpired.has(t.id) ? 'Advisory model opinion is taking longer · refresh to check again; you can decide now.' : 'Advisory model opinion pending · you can decide now.'}
+          </div>}
           {isImageProposal(t) && <div style={{ fontSize: 12, margin: '6px 0' }}>
             <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{typeof (isCloudImageProposal(t) ? t.payload?.image?.body?.prompt : t.payload?.args?.prompt) === 'string' ? (isCloudImageProposal(t) ? t.payload.image.body.prompt : t.payload.args.prompt).slice(0,4000) : 'Image prompt unavailable.'}</p>
             {isCloudImageProposal(t) ? <p>OpenAI · {String(t.payload?.image?.body?.model || 'unavailable')} · {String(t.payload?.image?.body?.size || 'unavailable')} · {String(t.payload?.image?.body?.quality || 'unavailable')} · potentially paid after approval.</p> : <p>Local image · {Number.isInteger(t.payload?.args?.width) ? t.payload.args.width : 512} × {Number.isInteger(t.payload?.args?.height) ? t.payload.args.height : 512}
@@ -3019,6 +3332,8 @@ export function DecisionInboxPanel() {
             <p>Changes require a fresh proposal in Images. Reject this proposal before replacing it.</p>
             {Number.isSafeInteger(t.id) && t.id > 0 && <a href={internalLink("/v2/console/images?image_task=" + t.id)}>Watch image task</a>}
           </div>}
+          {t.kind === RETENTION_KIND && <RetentionCard task={t} />}
+          {t.kind === VOICE_COMMAND_KIND && <VoiceCommandCard task={t} />}
           {t.rollback && <div style={{ margin: '3px 0 7px 12px', fontSize: 10, color: 'var(--ink-2)' }}>
             <div><span style={{ ...mono, color: 'var(--accent-light)' }}>rollback · </span>{t.rollback.description}</div>
             {t.rollback.limitations && <div style={{ color: 'var(--amber)', marginTop: 2 }}>{t.rollback.limitations}</div>}
@@ -3053,6 +3368,8 @@ export function DecisionInboxPanel() {
         </div>
       ))}
       {pending.length === 0 && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 6 }}>all clear · no decisions waiting</div>}
+      <SkillChangesInbox reply={changes.d} error={changes.e} onDecided={changes.reload} />
+      <PlansInFlight reply={plans.d} error={plans.e} />
     </Card></div>
   );
 }
@@ -3137,14 +3454,12 @@ export function BackupPanel() {
   const verify = () => actA('/api/admin/backup/verify', {}, (r) => setMsg(r && r.ok ? 'restore-drill OK · ' + (r.file_count || 0) + ' files' : 'verify failed'));
   const exportMe = () => actA('/api/admin/export', {}, (r) => setMsg(r && r.bytes ? 'export written · ' + sz(r.bytes) : 'export written'));
   // forget-me (C9, destructive) — the backend requires {"confirm":"FORGET"}; the UI mirrors
-  // that hard-to-fat-finger acknowledgement with a typed-confirmation reveal. Backup-first.
-  const [armed, setArmed] = useState(false);
-  const [confirm, setConfirm] = useState('');
+  // that hard-to-fat-finger acknowledgement with the tier-3 typed confirmation (H168).
+  // Backup-first.
   const forget = () => {
-    if (confirm !== 'FORGET') return;
     actA('/api/admin/forget', { confirm: 'FORGET' }, (r) => {
       setMsg(r && r.ok !== false ? 'forgotten · backup-first purge complete' : 'forget failed');
-      setArmed(false); setConfirm(''); reload();
+      reload();
     });
   };
   return (
@@ -3165,16 +3480,10 @@ export function BackupPanel() {
         <button className="tool-btn" onClick={exportMe}>export my data</button>
       </div>
       {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
-      {!armed
-        ? <button className="tool-btn" style={{ marginTop: 8, color: 'var(--red)' }} onClick={() => setArmed(true)}>forget me…</button>
-        : (
-          <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 10, color: 'var(--red)' }}>type FORGET to erase all content (backup-first):</span>
-            <input value={confirm} onChange={(ev) => setConfirm(ev.target.value)} placeholder="FORGET" style={{ ...inpS, width: 90 }} />
-            <button className="tool-btn" disabled={confirm !== 'FORGET'} style={{ color: confirm === 'FORGET' ? 'var(--red)' : 'var(--ink-3)' }} onClick={forget}>confirm erase</button>
-            <button className="tool-btn" onClick={() => { setArmed(false); setConfirm(''); }}>cancel</button>
-          </div>
-        )}
+      <div style={{ marginTop: 8 }}>
+        <ConfirmAction tier={RISK_TIER.IRREVERSIBLE_OR_MONEY} label="forget me…" phrase="FORGET" armedLabel="confirm erase"
+          prompt="type FORGET to erase all content (backup-first):" style={{ color: 'var(--red)' }} onConfirm={forget} />
+      </div>
     </Card>
   );
 }
@@ -3898,6 +4207,8 @@ export function CameraPanel() {
   );
 }
 
+/* The phrase the acquisition ledger purge takes, typed (H168), and sent to the hub. */
+const PURGE_PHRASE = 'PURGE ACQUISITION DETAIL';
 /* H32.6 — owner-visible acquisition lifecycle and hash-only audit projection.
    Raw goals, research extracts, package paths, and receipt bodies never reach the HUD. */
 export function AcquisitionPanel() {
@@ -3922,7 +4233,6 @@ export function AcquisitionPanel() {
   const reuse = data.reuse || {};
   const reuseRate = Math.round(Math.max(0, Math.min(1, Number(reuse.reuse_rate) || 0)) * 100);
   const [outcome, setOutcome] = useState('');
-  const [purgeConfirmation, setPurgeConfirmation] = useState('');
   const [entrypoint, setEntrypoint] = useState('run');
   const [cases, setCases] = useState('[{"input": {}, "expected": null}]');
   const gaps = arr(requests.d, 'requests').slice(0, 50);
@@ -3943,12 +4253,11 @@ export function AcquisitionPanel() {
       .then((result: any) => setOutcome(`export ready · ${Number(result.summary?.count || 0)} summarized events`))
       .catch((error) => setOutcome(`refused · ${error?.message || 'export_failed'}`));
   };
+  // H168: the tier-3 typed confirmation guards it; the hub checks the phrase again.
   const purgeLedger = () => {
-    if (purgeConfirmation !== 'PURGE ACQUISITION DETAIL') return;
-    apiPost('/api/acquisition/ledger/purge', { confirm: purgeConfirmation }, { admin: true })
+    apiPost('/api/acquisition/ledger/purge', { confirm: PURGE_PHRASE }, { admin: true })
       .then((result: any) => {
         setOutcome(`purged · ${Number(result.purged || 0)} detailed events`);
-        setPurgeConfirmation('');
         reload();
       })
       .catch((error) => setOutcome(`refused · ${error?.message || 'purge_failed'}`));
@@ -4068,22 +4377,9 @@ export function AcquisitionPanel() {
                 </span>
               </Row>
             ))}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, marginTop: 10 }}>
-            <input
-              aria-label="acquisition purge confirmation"
-              value={purgeConfirmation}
-              onChange={(event) => setPurgeConfirmation(event.target.value)}
-              maxLength={64}
-              placeholder="type PURGE ACQUISITION DETAIL"
-              style={inpS}
-            />
-            <button
-              className="tool-btn"
-              type="button"
-              disabled={purgeConfirmation !== 'PURGE ACQUISITION DETAIL'}
-              onClick={purgeLedger}
-              aria-label="Purge acquisition detail"
-            >purge detail</button>
+          <div style={{ marginTop: 10 }}>
+            <ConfirmAction tier={RISK_TIER.IRREVERSIBLE_OR_MONEY} label="purge detail" ariaLabel="Purge acquisition detail"
+              phrase={PURGE_PHRASE} armedLabel="purge detail" onConfirm={purgeLedger} />
           </div>
         </section>
         {outcome && <div role="status" style={{ ...mono, color: outcome.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 7 }}>{outcome}</div>}
@@ -4217,9 +4513,10 @@ export function SafeCommsDraftPanel() {
    the panel says so (nothing is recorded by default). */
 export function ModelInfoPanel() {
   const { d, e, loading, reload } = useApi('/api/models/info', true, true);
+  const roles = useApi('/api/llm/roles');
   const enabled = !!(d && d.enabled);
   const models = arr(d && d.models);
-  return (
+  return (<>
     <Card title="MODEL FINGERPRINTS" live={asLive(d, enabled)} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} models` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={models.length} />
       {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_MODEL_INFO is on</div>}
@@ -4230,6 +4527,21 @@ export function ModelInfoPanel() {
         </Row>
       ))}
     </Card>
+    <Card title="MODEL ROLES" live={asLive(roles.d)} sub="Configuration only" onReload={roles.reload}>
+      <State e={roles.e} loading={roles.loading} n={arr(roles.d, 'roles').length} />
+      {roles.d && <p>Connectivity has not been checked.</p>}
+      {arr(roles.d, 'roles').map(role => <div key={role.role} style={{ marginBottom: 8 }}>
+        <Row>
+          <span style={mono}>{role.role}</span>
+          <span>{role.configured
+            ? `${role.provider || 'router'} · ${role.model || 'router selected'} · ${role.local === true ? 'local' : role.local === false ? 'remote' : 'locality unknown'}`
+            : `Not configured: ${role.reason || 'unset'}`}</span>
+        </Row>
+        {role.note && <div>{role.note}</div>}
+        {role.error && <div>{role.detail || role.reason}</div>}
+      </div>)}
+    </Card>
+  </>
   );
 }
 
@@ -4753,6 +5065,9 @@ const PANEL_COMPONENTS = {
   CommandCenterPanel,
   TodayReceiptPanel,
   ModelSetupPanel,
+  DocsPanel,
+  WebhooksPanel,
+  LogsPanel,
   PresenceInboxPanel,
   AmbientWatchPanel,
   HousePanel,
@@ -4764,6 +5079,11 @@ const PANEL_COMPONENTS = {
   VaultPanel,
   KgPanel,
   MemoryWritePanel,
+  LongTermMemoryPanel,
+  SkillSwitchesPanel,
+  ProviderCheckPanel,
+  ProviderQuotaPanel,
+  InspectorPanel,
   MemoryHygienePanel,
   MemoryConsolidatePanel,
   MemoryEvalPanel,

@@ -38,6 +38,9 @@ class DiscordChannel(ChannelAdapter):
         super().__init__("discord", handler)
         self.token = token
         self._client: Optional[discord.Client] = None
+        # H117: a burst from one author in one channel is handed over as one turn.
+        from .batching import AsyncBatcher, configured
+        self._batch = AsyncBatcher(self._deliver_turn, *configured())
 
     async def start(self):
         if not DISCORD_AVAILABLE:
@@ -80,15 +83,21 @@ class DiscordChannel(ChannelAdapter):
             return
         if not self.handler:
             return
+        sender, channel_id = str(message.author.id), str(message.channel.id)
+        # H117: held for the batch window, so a split message is one turn.
+        await self._batch.submit((channel_id, sender), message.content,
+                                 sender=sender, channel_id=channel_id)
+
+    async def _deliver_turn(self, key, text: str, meta: dict) -> None:
+        if not self.handler:
+            return
         # The orchestrator queues a governed channel.reply. Echoing its return
         # value here would bypass approval (and duplicate an approved delivery).
-        await self.handler(
-            message.content, channel="discord", sender=str(message.author.id),
-            channel_id=str(message.channel.id),
-        )
+        await self.handler(text, channel="discord", sender=meta["sender"], channel_id=meta["channel_id"])
 
     async def stop(self):
         self._running = False
+        self._batch.discard()              # H117: a stopping channel starts no new turn
         if self._client:
             await self._client.close()
         task = getattr(self, "_start_task", None)

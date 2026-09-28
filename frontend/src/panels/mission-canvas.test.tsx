@@ -159,6 +159,35 @@ describe('MissionCanvasPanel · finishing a step', () => {
   });
 });
 
+describe('MissionCanvasPanel · subtasks (H666)', () => {
+  it('indents a step under its parent step and keeps a dangling or cyclic parent in view', async () => {
+    const fn = mockRoutes({
+      '/api/missions': { status: 200, body: { missions: [MISSION({ plan: [
+        step(0, 'phase one'), step(1, 'sub a', 'pending', { parent: 0 }), step(2, 'phase two'),
+        step(3, 'deeper', 'pending', { parent: 1 }), step(4, 'lost', 'pending', { parent: 99 }),
+        step(5, 'loop x', 'pending', { parent: 6 }), step(6, 'loop y', 'pending', { parent: 5 }),
+      ] })] } },
+      '/api/canvas': CANVAS,
+      '/api/missions/7/steps/3/finish': { status: 200, body: { ok: true, mission: MISSION() } },
+    });
+    render(<MissionCanvasPanel />);
+    await openSteps();
+    await waitFor(() => expect(screen.getByText('deeper')).toBeTruthy());
+    const drawn = Array.from(document.querySelectorAll('[data-depth]'))
+      .map((el) => [el.querySelector('span:nth-child(2)').textContent, el.getAttribute('data-depth'), el.style.paddingLeft]);
+    expect(drawn).toEqual([
+      ['phase one', '0', ''], ['sub a', '1', '14px'], ['deeper', '2', '28px'], ['phase two', '0', ''],
+      ['lost', '0', ''], ['loop x', '0', ''], ['loop y', '0', ''],
+    ]);
+    // The finish controls name the step's own idx, not its drawn position: the "deeper"
+    // row is drawn third but is step 3, and its done button posts step 3.
+    const deeperRow = Array.from(document.querySelectorAll('[data-depth]'))
+      .find((el) => el.querySelector('span:nth-child(2)').textContent === 'deeper');
+    fireEvent.click(deeperRow.querySelector('button[aria-label^="done step"]'));
+    await waitFor(() => expect(callsTo(fn, '/api/missions/7/steps/3/finish').length).toBe(1));
+  });
+});
+
 describe('MissionCanvasPanel · refusals reach the screen as refusals', () => {
   it('renders the budget 409 verbatim AND its side effect, with no success line', async () => {
     const fn = mockRoutes({

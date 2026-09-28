@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T13:07:03.058937+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "H487 persisted opt-in task approval deadlines, durable expiry effects, atomic work-run reconciliation and responsive deadline display; full capability remains partial",
+  "coordination": {
+    "implementers": 2,
+    "model": "gpt-6-sol",
+    "reasoning": "high",
+    "ownership": "single writer per file; coordinator integration and bounded independent read-only review"
+  },
+  "verification": [
+    {
+      "path": "/tmp/h487-task-expiry-queue-final.xml",
+      "tests": 507,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 507,
+      "seconds": 8.448,
+      "sha256": "294ce5be39745764cd8b23b21598628b57f0f686ff6eb9b793c9efc09d10adf2"
+    },
+    {
+      "path": "/tmp/nerva-h487-expiry-b-final.xml",
+      "tests": 386,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 386,
+      "seconds": 6.169,
+      "sha256": "95736b8a94fa0eaf352305b39e2ee803aeecf8e117c1996f675d1c35f5395b35"
+    },
+    {
+      "path": "/tmp/nerva-h487-expiry-integration.xml",
+      "tests": 174,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 174,
+      "seconds": 5.263,
+      "sha256": "1be37d7854a69e6b3be2e85b7458d5ce451b84d71ea407c45d19f0b6dd7bec34"
+    },
+    {
+      "path": "/tmp/nerva-h487-expiry-backend.xml",
+      "tests": 19089,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 19052,
+      "seconds": 314.015,
+      "sha256": "69985dda2b75511db2025ceb83c8903fe0df50873cf91d46f355621c1855c920"
+    },
+    {
+      "path": "/tmp/nerva-h487-expiry-compatibility.xml",
+      "tests": 169,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 169,
+      "seconds": 30.946,
+      "sha256": "513f25950285b27f8c63533d5d842f47ad34b0813236da2bede0e549a496c7a5"
+    },
+    {
+      "path": "/tmp/nerva-h487-expiry-backend-green.xml",
+      "tests": 19089,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 19054,
+      "seconds": 248.765,
+      "sha256": "4853b20e84fae7931503816300ec2be0c0d8d9cca54e426c88208a23d7d7aa34"
+    }
+  ],
+  "full_backend_command": ".venv/bin/python -m pytest tests/ -n 3 --dist loadfile --timeout=90 -q --tb=short --junitxml=/tmp/nerva-h487-expiry-backend-green.xml",
+  "frontend": {
+    "path": "/tmp/nerva-h487-expiry-frontend.json",
+    "sha256": "31e49652217882df187571ce0beb9f05c40905bd8cc509aa2170d6507f0bcfa9",
+    "total": 1809,
+    "passed": 1809,
+    "failed": 0,
+    "typecheck": "passed including regenerated OpenAPI",
+    "production_build": "passed; existing chunk-size warning",
+    "red_report": "/tmp/nerva-h487-expiry-hud-red.log",
+    "green_report": "/tmp/nerva-h487-expiry-hud-green.log"
+  },
+  "source_sha256": {
+    "agents/core/autonomy/queue.py": "a11625df9fb0f38c94deb71bcbc59a59f18c6a21a4f2006ee8ae4d7563723ea4",
+    "agents/core/autonomy/worker.py": "c30e085ee2df5848034ef3b97a4e7e2551dac3e2a7a3d50be664f584fa7ad64a",
+    "agents/core/autonomy/pending_requests.py": "6a693dfa67150a95f59aef342d945c5a1527e48f10a4758f6eb07f94728fa72f",
+    "agents/core/autonomy/work_runs.py": "941e5ba72e4c9a138f65535f8d21a92b467d069932cea75f3dcbf1f09a8faa2e",
+    "agents/core/autonomy/task_approval_judge.py": "ae7d9f8db2f75c8c8f7f54233f8aa82b529f1bcf7f584b91bb34903ce409e44f",
+    "agents/core/orchestrator_bindings.py": "e546ee52534773ba1a219a696ea3648a68eb477eed88f5809398655c47bca496",
+    "tests/test_h613_piper_command_voice.py": "3077d25159f7af2d4dc94721dfe69c96a330e8e82fb9d44312f686edbf574466",
+    "agents/core/autonomy_coordinator.py": "7997d3b25934f1cc8a670db75a47e2c0c432b1adfcaf7261812319d35ade4f71",
+    "agents/core/routers/autonomy.py": "bca4ade9355f7e7747cf08be80d45ec747dacf9b0a25f7d8db32504079ec024e",
+    "tests/test_h487_task_expiry.py": "7538b2d4fec0790ffa8f8fe2e32362cdab0e52838bd0f9ecb370ee7320cd3dfc",
+    "tests/test_h487_task_expiry_integration.py": "c600dfd6168669d4a161146e79554cdee004350887534d95c43c507857a1fb6b",
+    "frontend/src/gap.tsx": "29fd4dc4540199329c2b4ca73adc2ae8f88eba37b5455751854dead3502091c5",
+    "frontend/src/test/decision-inbox-panel.test.tsx": "4041b7438abab873b078c0ad6728e73fd9f6368cae06277289559359346f7d35",
+    "frontend/src/api/schema.gen.ts": "c0f3762e56b1e3819b7a3d723538fea74bcc6948eb2f9a8d5629b677c91c827c",
+    "docs/hermes/h487-task-expiry-plan.md": "908aa331c69557114ff7b969a3bd1bbcb049d37ad9eb357a49746012d54902c3",
+    "docs/test-manual/07-autonomy-governance.md": "1dd660123d6882e0cf5e57b0371ca46e80ce960c824fbfdf636446db2dcbdaa6",
+    "mobile/PARITY.md": "749c6044b214ee8b686378031996458817288a9b19d4764a2766271476fe767e",
+    "docs/design/HUD_V2_REMAINING.md": "4470b8709753de79b3d382d9d98730f9c80420292914f007dd172cc1816363bf",
+    "agents/web/v2/index.html": "12fc401862ad8171f38285c8b0a8e2dfd1258e7de437b7cd1179f9512cb49bfd",
+    "agents/web/v2/sw-v2.js": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c",
+    "agents/web/v2/manifest.webmanifest": "c2d642afdc2d01e79fe147118fc92dfbefa66b7c503406efb5e5479f7c101c69",
+    "agents/web/v2/assets/modes4-CCazoXpa.js": "30d7fc9d8cc0a935547ddcd5d83a8e178fe4fcef5e0d34f589c71b0ebe6232fa",
+    "agents/web/v2/assets/modes-DK4CDC3x.js": "64289c090c0ff483a9f01067aa4101adf7712666c0019199e4e1a659b9fa91f3",
+    "agents/web/v2/assets/soul-edit-BVVaOyCV.js": "8221c9fab9d7ec43cba6e0c17868a3ee899eba2abfb2d29b69f85bdf0331ee83",
+    "agents/web/v2/assets/jobs-UvrJfY-6.js": "4668f31d287655bbda0e26b1b0e154e854a2277c1cd6a6b93f414149be7e921c",
+    "agents/web/v2/assets/jetbrains-mono-latin-var-B9CIFXIH.woff2": "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e",
+    "agents/web/v2/assets/index-ldxH5Xm9.css": "a4851f9c57ea8630fad9196f3eb2c84181e4286232c396ede73290e4b272bbd1",
+    "agents/web/v2/assets/gap-D7vLXMLD.js": "3bc251fc82397247298782f29bb99023342ca2bfe211cc105d2b1a75641ddd0a",
+    "agents/web/v2/assets/space-grotesk-latin-var-BhU9QXUp.woff2": "0640890476fc1198ab4de571fb658de443c4d85b66466ec09534a8737ab1ce9d",
+    "agents/web/v2/assets/modes3-D0hNVgNH.js": "8d0807cfd5b69420c30a644d612b38b1f012b9a0e160922fcf0a317bcd8b2277",
+    "agents/web/v2/assets/modes2-CyhCaFe9.js": "e0c644608742b2adab25642d1c99c30fd9edc7f43fc8b7f457e53adaa1a19c9e",
+    "agents/web/v2/assets/panel-kit-gf7swuoi.js": "ca4602b0da8dd2cd9c694b306cbffd87257b759a4d8b20772fbdebc25a3e819f",
+    "agents/web/v2/assets/client-C3wAcB0V.js": "40c77894e27ed04d3fb085a9e3840df283c0c404e29ccabfd52f980c67e1cbca",
+    "agents/web/v2/assets/index-CmT0jghy.js": "6ea5e52b789b2d4cd3a333f5016920f7d9ad1dd140224e51dea6df4a043abb96",
+    "agents/web/v2/assets/modes_world-DIJsKxss.js": "0cf4b6e455869d8fcf7a8a84c7e4ee2043c5e13e9bd0f0b2b0bbf6ee3fc86741"
+  },
+  "security": {
+    "bandit": {
+      "exit_code": 0,
+      "scope": "agents/scripts against existing baseline",
+      "log": "/tmp/nerva-h487-expiry-bandit.log"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "files": 35,
+      "snapshot": "/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/nerva-h487-expiry-source-vby0asum",
+      "log": "/tmp/nerva-h487-expiry-gitleaks.log"
+    }
+  },
+  "graft": {
+    "check": "passed",
+    "scope": [
+      "agents/core/autonomy",
+      "agents/core/llm",
+      "agents/core/kernel",
+      "agents/core/acquisition",
+      "agents/core/house",
+      "agents/core/ingestion"
+    ],
+    "log": "/tmp/nerva-h487-expiry-graft.log",
+    "deep_index": false
+  },
+  "review_corrections": [
+    "The initial full suite found stale binding source positions and a Piper timeout child-log readiness race; inventory positions and test-only process observation were corrected.",
+    "Strict ISO offset validation rejects normalized invalid offsets.",
+    "Committed due individual/edit/group conflicts immediately consume exact expiry receipts.",
+    "Halted metadata housekeeping clears newly expired advisory keys but defers durable effects.",
+    "Fresh exact task/status/stamp checks prevent stale selected receipts from auditing, resuming or promoting.",
+    "An attached historical work-run ledger does not authorize resumption while Company Mode is disabled.",
+    "Atomic expiry settlement binds its source and block epoch; replay never resumes a subsequent block."
+  ],
+  "limitations": [
+    "No live provider/channel/native-mobile acceptance or publication.",
+    "Approval deadlines are optional and API-authored; legacy tasks retain existing behavior.",
+    "Deferred tasks are a human response; existing deadlines apply again only if explicitly reopened as pending.",
+    "Legacy markerless blocked runs remain held for explicit recovery.",
+    "Cross-store audit may repeat after a crash; at-least-once effect delivery is intentional.",
+    "Ordinary non-expiry promotion retry, specialized/model/browser grouping, session/always grants and human-wait budget accounting remain open.",
+    "Existing H277 mutation evidence is unchanged; no new mutation campaign.",
+    "Mobile and legacy HUD suites were not rerun for this batch."
+  ],
+  "final_documentation_verification": {
+    "path": "/tmp/nerva-h487-expiry-final-docs.xml",
+    "tests": 92,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "sha256": "796322d1f5eb237b530654648fe5e4459d8f1634e35ff9b37eb6c1cd8ae50706"
+  }
+}

@@ -5,6 +5,7 @@ import json
 
 from .base import LLMBackend, _emit, cloud_cap
 from .egress import llm_async_client
+from .provider_errors import note_provider_failure, read_error_head
 from .provider_request import compatible_parameters
 from .providers import DEFAULT_REGISTRY
 from .request_context import ensure_reasoning_active
@@ -96,6 +97,8 @@ class ResponsesBackend(LLMBackend):
             async with self.client.stream(
                 "POST", self.endpoint, headers=self._headers(), content=encoded(payload)
             ) as response:
+                if response.is_error:
+                    await read_error_head(response)
                 response.raise_for_status()
                 if response.headers.get("content-encoding", "identity") != "identity":
                     raise ResponsesRefused()
@@ -117,7 +120,8 @@ class ResponsesBackend(LLMBackend):
             turn = await self._request(payload)
             if turn.tool_calls:
                 raise ResponsesRefused()
-        except Exception:
+        except Exception as exc:
+            note_provider_failure(self.profile.id, model, exc)
             return self.error
         report_text_usage(turn.usage)
         return self._finalize_cloud(turn.content)
@@ -126,7 +130,8 @@ class ResponsesBackend(LLMBackend):
         payload = self._payload(model, messages, max_tokens, temperature, tools)
         try:
             return await self._request(payload)
-        except Exception:
+        except Exception as exc:
+            note_provider_failure(self.profile.id, model, exc)
             return ToolTurn(content=self.error)
 
     async def generate_stream(
@@ -200,7 +205,8 @@ class ResponsesBackend(LLMBackend):
                         if len(buffer) > MAX_EVENT:
                             raise ResponsesRefused()
             self._accept_completion()
-        except Exception:
+        except Exception as exc:
+            note_provider_failure(self.profile.id, model, exc)
             return self.error
         if terminal is None or buffer.strip():
             return self.error

@@ -41,6 +41,13 @@ Every rule below exists against a specific way of faking an approval:
 * **A stop outranks an answer.** A resolution never resumes a run that is
   stopping or already terminal: the asks are still closed (the record should say
   what the answer was) but the run does not move.
+* **A wait still open is observed here (H464d).** H487 credits the time the owner
+  took to decide, and for an ask whose decision stamp cannot be used (the owner
+  edited it before approving) only up to the last time the open wait was observed
+  on the record. The report routes are read-only, so this reconcile — which reads
+  every blocked run's asks on each sweep anyway — is the observer: a run still
+  waiting gets one settling budget read, and the credit is the same whether or not
+  anyone looked at the HUD.
 
 Nothing here reads the environment and nothing here authorises: the reconciler
 can unblock a run, which is strictly less than being able to start one.
@@ -66,7 +73,7 @@ FLAG = _FLAG
 # How a queued step ended up. Each maps to one sentence in the brief; "waiting"
 # is a first-class outcome rather than the absence of one, because "still waiting
 # on you, since 11pm" is the most useful thing a morning report can say.
-RESOLUTIONS = ("approved", "rejected", "waiting", "lost")
+RESOLUTIONS = ("approved", "rejected", "waiting", "lost", "expired_unanswered")
 
 # Task statuses that mean the owner (or policy) said yes. ``running`` and ``done``
 # are included because a task can be decided and executed between two sweeps —
@@ -95,6 +102,7 @@ class AskOutcome:
     detail: str
     decided_by: str = ""
     by_machine: bool = False
+    human_reason: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -105,6 +113,7 @@ class AskOutcome:
             "detail": self.detail,
             "decided_by": self.decided_by,
             "by_machine": self.by_machine,
+            **({"human_reason": self.human_reason} if self.human_reason else {}),
         }
 
 
@@ -161,6 +170,10 @@ class SweepReport:
         }
 
 
+# A task whose read raised in this pass: never a decision, never re-read again.
+_UNREADABLE = object()
+
+
 def _status_of(task: Any) -> str:
     return str(getattr(task, "status", "") or "").strip().lower()
 
@@ -183,6 +196,8 @@ def classify(task: Any) -> tuple[str, str]:
     if task is None:
         return "lost", "the durable task is gone — it was never an approval"
     status = _status_of(task)
+    if status == "expired":
+        return "expired_unanswered", "approval deadline elapsed unanswered"
     if status in _APPROVED_STATUSES:
         decision = _decision_of(task) or "approved"
         return "approved", f"the task was {status} ({decision})"
@@ -194,6 +209,22 @@ def classify(task: Any) -> tuple[str, str]:
         # nobody gave.
         return "waiting", "the task has no readable status"
     return "waiting", f"the task is still {status}"
+
+
+def _human_reason_of(task: Any) -> str | None:
+    """Read only durable human metadata; executor result dictionaries never count."""
+    from .decision_reasons import normalize_reason
+
+    metadata = getattr(task, "human_decision", None)
+    if not isinstance(metadata, dict):
+        return None
+    by = str(metadata.get("by") or "").strip().lower()
+    if by in MACHINE_DECIDERS or metadata.get("action") not in {"accept", "edit", "reject", "defer"}:
+        return None
+    try:
+        return normalize_reason(metadata.get("reason"))
+    except ValueError:
+        return None
 
 
 class PendingRequests:
@@ -220,16 +251,22 @@ class PendingRequests:
         run = self._ledger.get(run_id)
         if run is None:
             return ReconcileResult(run_id, note="unknown run")
+        outcomes, expiry_resumed, settled_expiry = self._close_asks_with_expiry(run_id)
+        if settled_expiry:
+            # An expiry settled in this pass — found on the first read or on a re-read
+            # after that read failed — has already decided, atomically, whether the run
+            # resumes. No generic resume may follow it: for an unmarked (pre-v3) block
+            # that would turn "nobody answered" into a resume (round-2 MINOR 1).
+            return ReconcileResult(run_id, outcomes, resumed=expiry_resumed,
+                                   note="expiry settled atomically" if expiry_resumed else "expiry settled; run held")
         if run.terminal:
             # The asks are still worth closing — the record should say what the
             # answer was — but a finished run is a record, never a resource to
             # reopen.
-            outcomes = self._close_asks(run_id)
             return ReconcileResult(
                 run_id, outcomes, note=f"run is already {run.status}"
             )
 
-        outcomes = self._close_asks(run_id)
         if run.status == "stopping":
             return ReconcileResult(
                 run_id, outcomes, note="the run is stopping; an answer does not restart it"
@@ -240,6 +277,7 @@ class PendingRequests:
             )
         if any(o.resolution == "waiting" for o in outcomes):
             waiting = sum(1 for o in outcomes if o.resolution == "waiting")
+            self._observe_wait(run_id)
             return ReconcileResult(
                 run_id, outcomes,
                 note=f"still waiting on {waiting} decision(s)",
@@ -252,38 +290,113 @@ class PendingRequests:
                 note="blocked with no outstanding ask — nothing here can unblock it",
             )
         try:
-            self._ledger.resume(run_id)
+            if self._unmarked_block(run_id):
+                # Review F5: a run blocked before migration v3 has no causal marker.
+                # An answered ask resumes it on the pre-v3 contract plus the same
+                # stop/barrier/outstanding/budget holds, atomically in the ledger;
+                # expiry settlement (above) still holds such a run, and so does the
+                # ledger when an ask of the block expired in an EARLIER pass (round 3,
+                # item 6) — the hold is read from the block's asks, not from this pass.
+                self._ledger.resume_unmarked_after_asks(run_id)
+            else:
+                self._ledger.resume_after_asks(run_id, answered_seqs=[o.step_seq for o in outcomes])
         except WorkRunError as exc:
             return ReconcileResult(run_id, outcomes, note=f"resume refused: {exc.reason}")
         return ReconcileResult(run_id, outcomes, resumed=True, note="every ask is answered")
 
-    def _close_asks(self, run_id: str) -> tuple[AskOutcome, ...]:
-        outcomes: list[AskOutcome] = []
-        for step in self._ledger.outstanding_asks(run_id):
-            outcomes.append(self._close_one(run_id, step))
-        return tuple(outcomes)
+    def _observe_wait(self, run_id: str) -> None:
+        """Record, durably, that the run's approval wait is still open (H464d).
 
-    def _close_one(self, run_id: str, step: Any) -> AskOutcome:
+        The ledger's settling budget read extends each open wait source to now when
+        — and only when — its task is still blocked on the owner with the intent it
+        was queued with; a decided, edited or expired task is never extended. Best
+        effort: a failed observation costs credit, never the reconcile."""
+        observe = getattr(self._ledger, "budget_state", None)
+        if not callable(observe):
+            return
+        try:
+            observe(run_id)
+        except Exception:
+            logger.debug("could not observe the open approval wait of %s", run_id,
+                         exc_info=True)
+
+    def _unmarked_block(self, run_id: str) -> bool:
+        """Whether the run's block carries no ``approval_block_seq`` (a pre-v3 block).
+        A ledger without the marker accessor is treated as marked (the strict path)."""
+        marker_of = getattr(self._ledger, "approval_block_seq", None)
+        if not callable(marker_of) or not callable(getattr(self._ledger, "resume_unmarked_after_asks", None)):
+            return False
+        return marker_of(run_id) is None
+
+    def _close_asks_with_expiry(self, run_id: str) -> tuple[tuple[AskOutcome, ...], bool, bool]:
+        """Close every outstanding ask of one run.
+
+        Returns ``(outcomes, resumed, settled_expiry)``: ``settled_expiry`` is True when
+        any ask was settled as expired in this pass, and ``resumed`` when one of those
+        settlements resumed the run atomically.
+        """
+        steps = self._ledger.outstanding_asks(run_id)
+        # One authoritative read per source (a second only when the first raised);
+        # expiry is terminal. The re-read happens here, before ordering, so an
+        # expiry found only on the re-read is ordered like any other: normal answers
+        # first, every expiry last, so the final expiry transaction can close the
+        # epoch. A source unreadable twice stays queued and prevents atomic resume.
+        prepared = [(step, self._read_or_unreadable(step)) for step in steps]
+        prepared = [(step, self._read_or_unreadable(step) if task is _UNREADABLE else task)
+                    for step, task in prepared]
+        prepared.sort(key=lambda item: _status_of(item[1]) == "expired")
+        outcomes: list[AskOutcome] = []
+        settled_expiry = False
+        resumed = False
+        for step, task in prepared:
+            outcome, expiry_resumed = self._close_one(run_id, step, task=task)
+            if expiry_resumed is not None:
+                settled_expiry = True
+                resumed = resumed or expiry_resumed
+            outcomes.append(outcome)
+        return tuple(outcomes), resumed, settled_expiry
+
+    def _read_or_unreadable(self, step: Any) -> Any:
+        if step.task_id is None:
+            return None
+        try:
+            return self._read_task(step.task_id)
+        except Exception:
+            # Preserve per-source ordinary reconciliation on read failures.
+            return _UNREADABLE
+
+    def _close_one(self, run_id: str, step: Any, *, task: Any) -> tuple[AskOutcome, bool | None]:
+        """Close one ask, given what :meth:`_read_or_unreadable` read for it (the task,
+        ``None``, or ``_UNREADABLE``). Returns ``(outcome, expiry_resumed)``: ``None``
+        when this call settled no expiry, otherwise whether the ledger's expiry
+        settlement resumed the run. This is the only place a reconcile pass settles an
+        expiry, and it reports it, so the caller holds the run on the expiry's own
+        decision instead of resuming it a second way (round-2 MINOR 1)."""
         task_id = getattr(step, "task_id", None)
         seq = int(getattr(step, "seq", 0))
         if not isinstance(task_id, int) or isinstance(task_id, bool) or task_id <= 0:
             # A queued step with no durable task is a bug in whatever recorded it.
             # It is recorded as lost rather than silently waiting forever, so the
             # streak rule can end the run instead of the run hanging until dawn.
-            return self._apply(run_id, seq, None, "lost", "the step carries no durable task")
-        try:
-            task = self._read_task(task_id)
-        except Exception:
-            # A queue that cannot be read is not a queue that said yes.
+            return self._apply(run_id, seq, None, "lost", "the step carries no durable task"), None
+        if task is _UNREADABLE:
+            # A queue that cannot be read is not a queue that said yes. The source
+            # remains queued and prevents atomic resume.
             logger.warning("could not read task %s while reconciling %s", task_id, run_id)
             return AskOutcome(
                 run_id, seq, task_id, "waiting", "the task could not be read"
-            )
+            ), None
         resolution, detail = classify(task)
+        if resolution == "expired_unanswered":
+            settlement = self._ledger.settle_expired_ask(run_id, seq, task_id=task_id,
+                                                         expired_at=task.expired_at)
+            return (AskOutcome(run_id, seq, task_id, resolution, detail, "system", True),
+                    bool(getattr(settlement, "resumed", False)))
         decided_by = _decider_of(task) if task is not None else ""
         return self._apply(
-            run_id, seq, task_id, resolution, detail, decided_by=decided_by
-        )
+            run_id, seq, task_id, resolution, detail, decided_by=decided_by,
+            human_reason=_human_reason_of(task),
+        ), None
 
     def _apply(
         self,
@@ -294,11 +407,12 @@ class PendingRequests:
         detail: str,
         *,
         decided_by: str = "",
+        human_reason: str | None = None,
     ) -> AskOutcome:
         by_machine = decided_by in MACHINE_DECIDERS
         outcome = AskOutcome(
             run_id, seq, task_id, resolution, detail,
-            decided_by=decided_by, by_machine=by_machine,
+            decided_by=decided_by, by_machine=by_machine, human_reason=human_reason,
         )
         if resolution == "waiting":
             return outcome
@@ -312,6 +426,7 @@ class PendingRequests:
                     "reason": detail,
                     "decided_by": decided_by,
                     "by_machine": by_machine,
+                    **({"human_reason": human_reason} if human_reason else {}),
                 },
             )
         except WorkRunError as exc:

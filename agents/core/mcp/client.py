@@ -814,7 +814,13 @@ class MCPManager:
     def load_from_config(self, configs: list[dict]):
         """Load servers from config list."""
         self.servers.clear()
-        for cfg in configs:
+        for cfg in configs if isinstance(configs, list) else []:
+            # A saved entry the loader cannot read is skipped, never a stop at start
+            # (review-H157 m2: an import or a hand edit could store one).
+            if not isinstance(cfg, dict) or not isinstance(cfg.get("name"), str) \
+                    or not cfg["name"].strip():
+                logger.warning("MCP servers setting: skipped an entry with no name")
+                continue
             headers = cfg.get("headers")
             raw_trust = cfg.get("trust")
             trust = normalize_trust(raw_trust)

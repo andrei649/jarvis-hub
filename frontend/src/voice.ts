@@ -18,7 +18,9 @@ import { appUrl } from './base-path';
    itself off. With it off, tap the mic to cut a reply short. */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { getToken } from './api/client';
+import { armMic, releaseMic, RENEW_MS } from './mic-lease';
 import { SentenceAggregator, unspokenRemainder } from './sentences';
+import { speechText, SpeechStreamFilter } from './speech-text';
 import { streamTts } from './api/ttsStream';
 
 const SILENCE_MS = 1100;     // trailing silence (after speech) that ends an utterance
@@ -27,6 +29,16 @@ const MAX_UTTER_MS = 15000;  // hard cap per utterance
 const WAIT_SPEECH_MS = 7000; // give up a turn if no speech after listening starts
 const BARGE_RMS = 0.045;     // higher bar than SPEECH_RMS — only real speech, not TTS echo, triggers barge-in
 const BARGE_MS = 360;        // sustained over-talk before we cut the reply
+
+/** Whether a transcript is an engine sentinel rather than speech: exactly `[silence]`, or
+    `[STT error…]` / `[STT unavailable…]` (the hub's `local_providers.is_stt_sentinel`). Other
+    bracketed text — `[laughs] hi`, a command provider's output — is what was said (H613). */
+export function isSttSentinel(text: unknown): boolean {
+  if (typeof text !== 'string') return false;
+  const t = text.trim();
+  if (t === '[silence]') return true;
+  return t.endsWith(']') && (t.startsWith('[STT error') || t.startsWith('[STT unavailable'));
+}
 
 function browserSpeak(text, lang, cancelled) {
   return new Promise((resolve) => {
@@ -53,6 +65,10 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   const [transcript, setTranscript] = useState('');
   const [level, setLevel] = useState(0);
   const [active, setActive] = useState(false);
+  // H247: who holds the microphone when the hub refused this tab (a take-over is offered).
+  const [micHolder, setMicHolder] = useState<string | null>(null);
+  const renewRef = useRef<any>(null);
+  const leasedRef = useRef(false);
 
   const streamRef = useRef(null);
   const acRef = useRef(null);
@@ -116,6 +132,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   function releaseStream() {
     // First, and unconditionally: the meter stops here, not on an event we hope for.
     if (levelIvRef.current) { clearInterval(levelIvRef.current); levelIvRef.current = null; }
+    dropLease();                         // H247: every end of the loop gives the microphone back
     try { if (recRef.current && recRef.current.state !== 'inactive') recRef.current.stop(); } catch { /* */ }
     try { if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop()); } catch { /* */ }
     try { if (acRef.current) acRef.current.close(); } catch { /* */ }
@@ -182,7 +199,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     if (!res.ok) throw new Error('stt ' + res.status);
     const d = await res.json();
     const t = (d && d.text || '').trim();
-    if (!t || t.charAt(0) === '[') return '';    // [silence] / [STT unavailable] → nothing said
+    if (!t || isSttSentinel(t)) return '';    // [silence] / [STT unavailable] / [STT error…] → nothing said
     return t;
   }
 
@@ -197,7 +214,10 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     catch (e) { setError(String((e && e.message) || e)); setStat('error'); activeRef.current = false; setActive(false); releaseStream(); return ''; }
   }
 
-  const speak = useCallback(async (text) => {
+  const speak = useCallback(async (reply) => {
+    // H526: the reply as it should be heard — no code, reasoning, markup, emoji or
+    // unread symbols — for the browser voice and the hub alike. Nothing left: silence.
+    const text = speechText(reply, langRef.current);
     if (!text || ttsRef.current === 'off') return;
     if (cancelSpeakRef.current) cancelSpeakRef.current();
     let cancelled = false;
@@ -237,7 +257,9 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
           // Whole-reply fallback (unchanged behavior): synthesize the full reply, then play.
           const res = await fetch(appUrl('/tts'), { method: 'POST', headers: tok({ 'Content-Type': 'application/json' }), body: JSON.stringify({ text, lang: langRef.current }) });
           if (!cancelled) {
-            if (res.ok) {
+            if (res.status === 204) {
+              // the hub found nothing to say (H526): silence, not a fallback voice
+            } else if (res.ok) {
               const blob = await res.blob();
               if (!cancelled) await playAudioBlob(blob, () => cancelled);
             } else {
@@ -272,6 +294,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     if (ttsRef.current === 'off') { speakStreamRef.current = null; return; }
     if (cancelSpeakRef.current) cancelSpeakRef.current();
     const session = {
+      filter: new SpeechStreamFilter(),   // H526: code/reasoning split across deltas never spoken
       agg: new SentenceAggregator(),
       chain: Promise.resolve(),
       spoke: false,
@@ -290,16 +313,21 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   const enqueueSentence = (session, sentence) => {
     session.chain = session.chain.then(async () => {
       if (session.cancelled || session.failed || !sentence.trim()) return;
+      // H526: the sentence as it should be heard; one with nothing to say (an emoji, a
+      // stray marker) is skipped — any fallback re-normalises it away too.
+      const spoken = speechText(sentence, langRef.current);
+      if (!spoken) return;
       try {
         if (ttsRef.current === 'browser') {
-          await browserSpeak(sentence, langRef.current, () => session.cancelled);
+          await browserSpeak(spoken, langRef.current, () => session.cancelled);
         } else {
           const res = await fetch(appUrl('/tts'), {
             method: 'POST',
             headers: tok({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ text: sentence, lang: langRef.current }),
+            body: JSON.stringify({ text: spoken, lang: langRef.current }),
           });
           if (session.cancelled) return;
+          if (res.status === 204) return;   // the hub found nothing to say: no empty clip
           if (!res.ok) { session.failed = true; return; }
           const blob = await res.blob();
           if (session.cancelled) return;
@@ -317,7 +345,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   const pushSpeakDelta = useCallback((delta) => {
     const session = speakStreamRef.current;
     if (!session || session.cancelled || session.failed) return;
-    for (const sentence of session.agg.push(String(delta || ''))) {
+    for (const sentence of session.agg.push(session.filter.push(String(delta || '')))) {
       enqueueSentence(session, sentence);
     }
   }, []);
@@ -328,7 +356,8 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     speakStreamRef.current = null;
     if (!session) return { complete: false, cancelled: false, spokenSentences: [] };
     if (!session.cancelled && !session.failed) {
-      for (const sentence of session.agg.flush()) enqueueSentence(session, sentence);
+      const tail = [...session.agg.push(session.filter.flush()), ...session.agg.flush()];
+      for (const sentence of tail) enqueueSentence(session, sentence);
     }
     await session.chain;
     return {
@@ -368,24 +397,48 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     setLevel(0);
   }
 
-  const start = useCallback(async () => {
+  // H247: the lease is released with the loop, whatever ends it.
+  function dropLease() {
+    if (renewRef.current) { clearInterval(renewRef.current); renewRef.current = null; }
+    if (leasedRef.current) { leasedRef.current = false; releaseMic(); }
+  }
+
+  const start = useCallback(async (opts?: any) => {
     if (!supported) { setError('Voice not supported in this browser'); setStat('error'); return; }
     if (activeRef.current) return;
     if (micMutedRef.current) { setError('Mic is muted — unmute JARVIS to use voice'); setStat('error'); return; }
     if (caps && caps.stt === false) { setError('Local speech-to-text not installed on the server (pip install faster-whisper)'); setStat('error'); return; }
-    setError(null);
+    setError(null); setMicHolder(null);
     const gen = ++startGenRef.current;
+    // H247: ask the hub for this device's microphone before opening it.
+    const lease = await armMic(!!(opts && opts.takeOver === true));
+    if (gen !== startGenRef.current) { if (lease.ok) releaseMic(); return; }
+    if (lease.ok === false) {
+      setError(lease.message); setMicHolder(lease.code === 'mic_busy' ? (lease.holder || null) : null); setStat('error');
+      return;
+    }
+    leasedRef.current = true;
     let stream = null;
     try { stream = await ensureStream(gen); } catch {
       // A rejection from a SUPERSEDED start must stay silent: it would otherwise overwrite
       // the OFF state a stop() just set, or report an error over a newer capture that is
       // already running. Only the current generation may publish permission-denied.
       if (gen !== startGenRef.current) return;
+      dropLease();
       setError('Microphone permission denied'); setStat('error'); return;
     }
     // cancelled while the permission prompt was up: never go active, never enter the loop
-    if (!stream || gen !== startGenRef.current) return;
+    if (!stream || gen !== startGenRef.current) { dropLease(); return; }
     activeRef.current = true; setActive(true); setStat('idle');
+    // Renew the lease while the loop runs; a refusal (taken over, consent withdrawn) ends it.
+    renewRef.current = setInterval(async () => {
+      const again = await armMic(false);
+      if (again.ok === false && activeRef.current && gen === startGenRef.current) {
+        stopRef.current();
+        setError(again.code === 'mic_busy' ? `The microphone was taken by ${again.holder}.` : again.message);
+        setMicHolder(again.code === 'mic_busy' ? (again.holder || null) : null); setStat('error');
+      }
+    }, RENEW_MS);
     loop();
   }, [supported, caps]);
 
@@ -395,10 +448,14 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     if (cancelSpeakRef.current) cancelSpeakRef.current();
     releaseStream(); setStat('off'); setLevel(0);
   }, []);
+  const stopRef = useRef(stop); stopRef.current = stop;
+
+  /** Take the microphone from the surface that holds it on this device (H247). */
+  const takeOver = useCallback(() => start({ takeOver: true }), [start]);
 
   const toggle = useCallback(() => { if (activeRef.current) stop(); else start(); }, [start, stop]);
 
   useEffect(() => () => { startGenRef.current++; activeRef.current = false; if (cancelSpeakRef.current) cancelSpeakRef.current(); releaseStream(); }, []);
 
-  return { supported, caps, status, error, transcript, level, active, start, stop, toggle, speak, cancelSpeak, pushSpeakDelta };
+  return { supported, caps, status, error, transcript, level, active, start, stop, toggle, speak, cancelSpeak, pushSpeakDelta, micHolder, takeOver };
 }

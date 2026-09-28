@@ -385,7 +385,7 @@ def normalize_result(result: Any) -> Any:
 # route's ``Depends(user_guard)`` does not run here directly. Instead a mutating
 # tool now carries an ``identity_check`` callable that re-applies the SAME rule
 # ``user_guard`` uses (see ``web.py``: ``_user_credential_ok`` /
-# ``_user_token_required``), and ``call`` is given the caller's presented
+# ``_user_credential_required``), and ``call`` is given the caller's presented
 # credential (``token``). A mutating tool invoked WITHOUT a valid identity is
 # REFUSED (and the refusal is audited) — even when BOTH kill-switches are on.
 #
@@ -425,7 +425,7 @@ MutatingInvoke = Callable[[dict], Awaitable[Any]]
 # An identity check: ``(token: str | None) -> bool``. Returns True when the
 # presented credential authorises a mutating call under the SAME rule the HTTP
 # ``user_guard`` applies. ``web.py`` provides an implementation backed by
-# ``_user_token_required`` / ``_user_credential_ok``; tests inject a fake. When
+# ``_user_credential_required`` / ``_user_credential_ok``; tests inject a fake. When
 # no check is provided a mutating tool fails CLOSED (refuses) — a write tool is
 # never reachable without an explicit identity policy bound to it.
 IdentityCheck = Callable[[Optional[str]], bool]

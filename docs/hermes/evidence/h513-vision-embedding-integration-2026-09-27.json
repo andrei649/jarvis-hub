@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T12:31:14.013634+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "H513 explicit composer vision policy and local-only embedding dispatch/cache provenance; full capability remains partial",
+  "coordination": {
+    "implementers": 2,
+    "model": "gpt-6-sol",
+    "reasoning": "high",
+    "ownership": "single writer per file, coordinator review/integration"
+  },
+  "verification": [
+    {
+      "path": "/tmp/h513-composer-final.xml",
+      "tests": 138,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 138,
+      "seconds": 2.612,
+      "sha256": "5b0288bc4a6f0ba83f17438ccd1ef61a43d30e9b0b3710b5e3244c3dfa56acf2"
+    },
+    {
+      "path": "/tmp/nerva-h513-embedding-final.xml",
+      "tests": 448,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 448,
+      "seconds": 7.169,
+      "sha256": "ab2684a64748c91a0ea9cf324efdf7ca3efa139c27e78ba3eabe8723de95789c"
+    },
+    {
+      "path": "/tmp/nerva-h513-recall-cache-red.xml",
+      "tests": 6,
+      "failures": 6,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "seconds": 0.732,
+      "sha256": "c89d122ff484cfdfc54d02daf33d94bd8c14fe6352dbd59ce38cf2d940d56266"
+    },
+    {
+      "path": "/tmp/nerva-h513-recall-cache-final.xml",
+      "tests": 96,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 96,
+      "seconds": 1.684,
+      "sha256": "07a8cbf240ea8db88a4db0c66a3a46155d7806cfad02ff74fde70fffbaaac6c1"
+    },
+    {
+      "path": "/tmp/nerva-h513-vision-embedding-integration.xml",
+      "tests": 385,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 385,
+      "seconds": 7.462,
+      "sha256": "e8f8002a7da87cc247f1f3c2b854d03b458a36969ebd8255753bdb89c30a1791"
+    },
+    {
+      "path": "/tmp/nerva-h513-vision-embedding-backend.xml",
+      "tests": 19012,
+      "failures": 6,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 18971,
+      "seconds": 244.002,
+      "sha256": "f66c36af97a7770cfa7a0bbd88083bb0c3ca90d937590e017c55eedd3e43fae9"
+    },
+    {
+      "path": "/tmp/nerva-h513-vision-embedding-backend-green.xml",
+      "tests": 19013,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 18978,
+      "seconds": 243.297,
+      "sha256": "051a21c68f089e3d6055c86f74bcc3b1284a3f7d2c550c440a66c14c8f6cae20"
+    }
+  ],
+  "full_backend_command": ".venv/bin/python -m pytest tests/ -n 3 --dist loadfile --timeout=90 -q --tb=short --junitxml=/tmp/nerva-h513-vision-embedding-backend-green.xml",
+  "frontend": {
+    "path": "/tmp/nerva-h513-vision-embedding-frontend.json",
+    "sha256": "3da9cac210a957c03aaae3464d2c4fe7b757c8b9fc703381c32bdb4a18fc8bbf",
+    "total": 1806,
+    "passed": 1806,
+    "failed": 0,
+    "typecheck": "passed",
+    "production_build": "passed; existing chunk-size warning"
+  },
+  "source_sha256": {
+    "agents/core/llm/data_handling.py": "1255be8b9d613254772f0364bcb2ad28ce2287770c8902a99984f6c4b7412dd1",
+    "agents/core/llm/egress.py": "5d99ce12e6d00d41153fafb2c471a1ff84703226c8502a3e4d1fe5a1f125a0e3",
+    "agents/core/llm/vision_policy.py": "c16656d26ca84665d0f4b7bba194b7e93466c3ee71627434a8b927e4a1c02968",
+    "agents/core/llm/vlm.py": "2faef8afc9d4210a2d6bc881bd245dd548d5bbc746bfaa1db4f57219f1184539",
+    "agents/core/routers/composer_vision.py": "ccba27143492fddb18cc751e42649e94d9e91a0fa94692fe12964e351f0d9698",
+    "agents/core/ingestion/embedder.py": "a4f3685a53727cec4e2c28149945a554078dda1f58193754a0899777fcc49aa2",
+    "agents/core/ingestion/embedding_policy.py": "46f46020a9c75d56b289d7e1339ba7f3a2fa44527f3c9a6455bccc2324339408",
+    "tests/test_h513_composer_vision_policy.py": "00e440e64cb2c921b96aa766bc466fe170c506e02c86db719fe456fca6696cc3",
+    "tests/test_composer_vision.py": "6a61c38ddfe3571e9e2e5694af046c6d2478c4dd09d3a3db84bd765a4494f2df",
+    "tests/test_h513_embedding_policy.py": "27a692f49de255537e80bc721cad6eb948f15a728605ba5e3d8ec9e47ca720ae",
+    "tests/test_memory_embeddings.py": "5640f305163ddc0a93c994b0c8bf94e7faba3c4dfef70ce93f90f5fa34f9c31d",
+    "tests/test_embedding_pipeline.py": "7ea365935d3491b9f1fac9c047d5e5a96b5b3fa10191b6002a70fbc86e5fe54c",
+    "tests/test_howard_rag.py": "146037cf04e52e29eb99fb62b4c6d8b27e397904b6e733a6a58c1a3b44bd94db",
+    "frontend/src/composer-images.tsx": "33f363cea95251da7b12537cc7aee89e790ce1e9a7f5452d1ec9b90a5d279c29",
+    "frontend/src/vision-turn.ts": "8a21f65be123b5aee801e5b7e1889377752abacfb65801ecca7202624a209158",
+    "frontend/src/cockpit.tsx": "7eea035310e250f0358b680461a86c5012768e53db0986ff54c179e19dc41df2",
+    "frontend/src/test/composer-images.test.tsx": "0d52ac754cf80593e18871113311b4e6c94eeb78114cc2d541d4c157012e3b4c",
+    "frontend/src/test/composer-vision-turn.test.tsx": "f623661bb0bb8bd69974122118307ad0106891954cba9053469434bde5ad56e5",
+    "docs/hermes/h513-composer-vision-plan.md": "db1f9f50f5207223cc1f4528aac152f6703362a125bbd254a63c29663beac1f9",
+    "docs/hermes/h513-embedding-policy-plan.md": "a74aecc18ddaca2907a7775a391f392b4310dc4d683e03dad52ec39249efe139",
+    "agents/web/v2/assets/client-C3wAcB0V.js": "40c77894e27ed04d3fb085a9e3840df283c0c404e29ccabfd52f980c67e1cbca",
+    "agents/web/v2/assets/gap-CN7R4ogQ.js": "a2129605c1a17d9ca9819868b3a8a6b928f4d90a7b5247620c2d63d971932ed2",
+    "agents/web/v2/assets/index-lXbMEP1G.js": "bd303d3aa3337f827ed66f33e0b2e91dc8d3800f7d840825330da15634cd3ef1",
+    "agents/web/v2/assets/jobs-UvrJfY-6.js": "4668f31d287655bbda0e26b1b0e154e854a2277c1cd6a6b93f414149be7e921c",
+    "agents/web/v2/assets/modes-DM9sCmIH.js": "b55eeb1341003fe1e7b367fb0999b00c872f09183576e4371985f83e4bbdba7d",
+    "agents/web/v2/assets/modes2-DofMTxkA.js": "65d5083f4aa4f07459cb72a19d947648fcdcef109a9a9113bc02875d83382205",
+    "agents/web/v2/assets/modes3-Dhd62moP.js": "c8f090da47ea2a490efdd14de907c8c9f3c696f78357bdd12086cbf776421d5b",
+    "agents/web/v2/assets/modes4-Cc6OrBT_.js": "a0dd81150b63749f9a5ba7c757408ea5151c4efb336f849274a6990c179679da",
+    "agents/web/v2/assets/modes_world-Dt-D21yP.js": "08f14fae6efb3b5eed23f1453a3ed49a4814c3979536dbcfe0f246a0fa568ab7",
+    "agents/web/v2/assets/panel-kit-gf7swuoi.js": "ca4602b0da8dd2cd9c694b306cbffd87257b759a4d8b20772fbdebc25a3e819f",
+    "agents/web/v2/assets/soul-edit-BVVaOyCV.js": "8221c9fab9d7ec43cba6e0c17868a3ee899eba2abfb2d29b69f85bdf0331ee83",
+    "agents/web/v2/sw-v2.js": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c",
+    "tests/test_recall_cache.py": "905a437c99661108fbaaa25ab8fb5b991a4fb9627dac0ecff9288d20b37bc1ae"
+  },
+  "security": {
+    "bandit": {
+      "exit_code": 0,
+      "scope": "agents/scripts against existing baseline",
+      "log": "/tmp/nerva-h513-vision-embedding-bandit.log"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "files": 33,
+      "snapshot": "/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/nerva-h513-vision-embedding-green-scan-49ysp5k8",
+      "log": "/tmp/nerva-h513-vision-embedding-gitleaks.log"
+    }
+  },
+  "graft": {
+    "check": "passed",
+    "scope": [
+      "agents/core/autonomy",
+      "agents/core/llm",
+      "agents/core/kernel",
+      "agents/core/acquisition",
+      "agents/core/house",
+      "agents/core/ingestion"
+    ],
+    "log": "/tmp/nerva-h513-vision-embedding-graft.log",
+    "deep_index": false
+  },
+  "review_corrections": [
+    "Frozen composer identity is captured before client construction and checked after awaited cleanup.",
+    "Composer native authentication preserves explicit Bearer precedence over URL Basic, with actual prepared-request validation.",
+    "Embedding vectors carry immutable producer/cache identity across retries and concurrent batches; semantic failure fallback cannot poison a semantic cache.",
+    "Embedding clients use bounded timeouts, no redirects and no environment proxy routing; unsupported injected transports fail closed.",
+    "The first full run exposed four incomplete recall-cache client fixtures and two missing cache.dir compatibility assertions; these are corrected without weakening cache isolation.",
+    "Malformed embedding URL setup falls back without logging the private URL; archive fixtures explicitly select offline hash without weakening search assertions."
+  ],
+  "limitations": [
+    "No live provider, paid service or native-mobile acceptance, no commit/push/merge/deploy.",
+    "Independent media reader, screen/reflex, camera and legacy multimodal clients remain outside composer scope.",
+    "Composer/judge proxy environment hardening is not part of this local embedding transport correction.",
+    "Remote embedding consent and durable stored-vector provenance/migration remain open; existing vector records were not re-embedded.",
+    "Prior H277 mutation results remain tied to their original snapshots; no new mutation campaign.",
+    "House presence explanation has no verified production caller.",
+    "Prior legacy HUD and mobile test snapshots are separate; neither suite was rerun for this batch."
+  ],
+  "verification_note": "Focused reports record intermediate checkpoints; source_sha256 describes the final full-backend snapshot before subsequent sprint implementation. The initial full run and recall-cache RED report are preserved rather than relabeled as passes.",
+  "initial_selected_source_snapshot": "/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/nerva-h513-vision-embedding-scan-pcxlovy_",
+  "final_document_checks": {
+    "path": "/tmp/nerva-h513-vision-embedding-final-docs.xml",
+    "sha256": "c4bc1026ccd8825d9d03cce7d1a0da9ce567addcfc61c6f68409541a39ccb1f5",
+    "tests": "54",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0"
+  }
+}

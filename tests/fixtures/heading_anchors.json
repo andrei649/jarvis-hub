@@ -1,0 +1,9 @@
+{
+  "FLAGS.md — action-posture flags: know what flipping costs": "flags.md-action-posture-flags-know-what-flipping-costs",
+  "`JARVIS_ACTION_KERNEL`": "jarvis_action_kernel",
+  "`JARVIS_FILE_TOOLS` · `JARVIS_FILE_ROOTS` · `JARVIS_FILE_MAX_BYTES`": "jarvis_file_tools-jarvis_file_roots-jarvis_file_max_bytes",
+  "`llm.execute_code_sessions` (+ `llm.execute_code_image`, `llm.execute_code_max_kernels`)": "llm.execute_code_sessions-llm.execute_code_image-llm.execute_code_max_kernels",
+  "Wave 2026-09-06 flags (all default OFF)": "wave-2026-09-06-flags-all-default-off",
+  "  Leading and trailing  ": "leading-and-trailing",
+  "Confidențialitate și cameră": "confiden-ialitate-i-camer"
+}

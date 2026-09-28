@@ -127,6 +127,9 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # decision to spend the night at all, and a DENY refuses it before the
     # decision inbox ever sees the card.
     "goal.approve": Mediation.KERNEL,
+    # Owner-approved resident speech commands widen host-exec capability. Strict
+    # intake persists kernel evidence; irreversible policy still requires a human.
+    "settings.voice_command": Mediation.KERNEL,
 }
 
 
@@ -152,6 +155,8 @@ def known_broker_action_kinds() -> set[str]:
     kinds.add(CHANNEL_REPLY_TASK_KIND)
     from ..skills.marketplace import SKILL_INSTALL_CONTRACT_KIND
     kinds.add(SKILL_INSTALL_CONTRACT_KIND)
+    from ..voice.command_settings import APPROVAL_KIND as VOICE_COMMAND_KIND
+    kinds.add(VOICE_COMMAND_KIND)
     return kinds
 
 

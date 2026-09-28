@@ -147,11 +147,13 @@ def test_the_class_is_the_documented_set():
     """
     assert frozenset({
         "soul.md", "agents.md", "claude.md", "gemini.md", ".cursorrules", "heartbeat.md",
+        "identity.md",
     }) == INSTRUCTION_BASE_NAMES
     assert frozenset({
         "soul.md", "soul.local.md", "agents.md", "agents.local.md",
         "claude.md", "claude.local.md", "gemini.md", "gemini.local.md",
         ".cursorrules", "heartbeat.md", "heartbeat.local.md",
+        "identity.md", "identity.local.md",
     }) == INSTRUCTION_FILE_NAMES
     assert INSTRUCTION_CLASS == "agent_instructions"
 

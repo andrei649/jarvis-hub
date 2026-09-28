@@ -138,6 +138,73 @@ def test_an_excluded_row_cannot_be_silently_promoted(sample):
         hs.assess(*sample)
 
 
+def reopen_scope(sample):
+    ledger, data, _ = sample
+    data['schema_version'] = 2
+    entry = {'id': 'H003', 'row_sha256': hs.digest(ledger['capabilities'][2]),
+             'decided_at': '2026-09-27T00:00:00Z',
+             'reason': 'Owner requests full functional parity, including former exclusions.'}
+    data['scope_reopenings'] = [entry]
+    return entry
+
+
+def test_explicit_reopening_preserves_identity_without_inheriting_equivalence(sample):
+    before = copy.deepcopy(sample[0])
+    reopen_scope(sample)
+    rows = hs.assess(*sample)
+    assert sample[0] == before
+    assert rows[2]['id'] == 'H003' and rows[2]['decision'] == 'skip'
+    assert rows[2]['status'] == 'needs_review'
+    assert rows[2]['basis'] == 'scope_reopened'
+    result = hs.metrics(rows)
+    assert result['accepted'] == 4 and result['counts']['excluded'] == 0
+    assert result['counts']['equivalent'] == 1 and result['reviewed'] == 0
+    reports = hs.reports(rows, sample[1])
+    assert 'scope_reopened' not in reports['docs/HERMES_CAPABILITIES.md']
+    assert 'Readmis' in reports['docs/HERMES_CAPABILITIES.md']
+
+
+def test_reopened_equivalence_still_needs_current_source_and_tests(sample):
+    reopen_scope(sample)
+    item = add_review(sample)
+    item.update(id='H003', row_sha256=hs.digest(sample[0]['capabilities'][2]))
+    assert hs.assess(*sample)[2]['status'] == 'equivalent'
+    (sample[2] / 'agents/core/example.py').write_text('# changed\n')
+    assert hs.assess(*sample)[2]['status'] == 'needs_review'
+    item['evidence'] = [item['evidence'][1]]
+    with pytest.raises(ValueError, match='source and tests'):
+        hs.assess(*sample)
+
+
+@pytest.mark.parametrize('field,value', [
+    ('id', 'H999'), ('row_sha256', 'f' * 64), ('reason', ''),
+    ('decided_at', 'yesterday'), ('decided_at', '2026-09-27'), ('extra', True),
+])
+def test_invalid_scope_reopening_is_refused(sample, field, value):
+    entry = reopen_scope(sample)
+    entry[field] = value
+    with pytest.raises(ValueError):
+        hs.assess(*sample)
+
+
+def test_scope_reopening_cannot_duplicate_or_reclassify_accepted_rows(sample):
+    entry = reopen_scope(sample)
+    sample[1]['scope_reopenings'].append(copy.deepcopy(entry))
+    with pytest.raises(ValueError, match='duplicate'):
+        hs.assess(*sample)
+    sample[1]['scope_reopenings'] = [entry]
+    entry.update(id='H002', row_sha256=hs.digest(sample[0]['capabilities'][1]))
+    with pytest.raises(ValueError, match='excluded'):
+        hs.assess(*sample)
+
+
+def test_version_one_cannot_silently_accept_scope_overrides(sample):
+    reopen_scope(sample)
+    sample[1]['schema_version'] = 1
+    with pytest.raises(ValueError, match='schema'):
+        hs.assess(*sample)
+
+
 @pytest.mark.parametrize("path", ["../outside.py", "/tmp/a.py", "C:/temp/a.py", "agents\\a.py"])
 def test_evidence_paths_must_stay_in_the_repository(sample, path):
     item = add_review(sample)
@@ -246,8 +313,12 @@ def test_real_inventory_covers_exactly_697_rows_and_reports_are_current():
     assert len({row["id"] for row in rows}) == 697
     result = hs.metrics(rows)
     assert sum(result["counts"].values()) == 697
-    assert result["counts"]["excluded"] == 107
-    assert result["accepted"] == 590
+    formerly_excluded = {f'H{i:03}' for i, row in enumerate(ledger['capabilities'], 1)
+                         if row['decision'] == 'skip'}
+    assert len(formerly_excluded) == 107
+    assert {item['id'] for item in data['scope_reopenings']} == formerly_excluded
+    assert result["counts"]["excluded"] == 0
+    assert result["accepted"] == 697
     for relative, generated in hs.reports(rows, data).items():
         assert (hs.REPO / relative).read_text(encoding="utf-8") == generated, relative
 

@@ -1,0 +1,358 @@
+{
+  "source_sha256": "bb5d80e859e08116e97b2c28f037c429ffc032f2cd691afe6408367d038a9d6b",
+  "baseline": [
+    {
+      "returncode": 0,
+      "elapsed_seconds": 3.56,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/baseline.log"
+    }
+  ],
+  "counts": {
+    "killed": 13,
+    "survived": 1,
+    "superseded": 0,
+    "invalid": 0
+  },
+  "results": [
+    {
+      "label": "queue_snapshot_is_stored_item",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.48,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/queue_snapshot_is_stored_item.log"
+    },
+    {
+      "label": "queue_judge_inherits_caller_context",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.52,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/queue_judge_inherits_caller_context.log"
+    },
+    {
+      "label": "queue_short_lived_loop_not_judged_on_hub",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.64,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/queue_short_lived_loop_not_judged_on_hub.log"
+    },
+    {
+      "label": "N1_post_slot_status_stale",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.56,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/N1_post_slot_status_stale.log"
+    },
+    {
+      "label": "N1_post_slot_wants_dropped",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.86,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/N1_post_slot_wants_dropped.log"
+    },
+    {
+      "label": "N1_skip_revoked_counter_dropped",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.93,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/N1_skip_revoked_counter_dropped.log"
+    },
+    {
+      "label": "N2_finish_pending_not_cleared",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "generation": "N2",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.47,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/N2_finish_pending_not_cleared.log"
+    },
+    {
+      "label": "N1_disk_pending_recheck_dropped",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Action storage/decision adapter still participates in shared runner dispatch/capacity contract.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.56,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/N1_disk_pending_recheck_dropped.log"
+    },
+    {
+      "label": "N1_memory_pending_recheck_dropped",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Action storage/decision adapter still participates in shared runner dispatch/capacity contract.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.55,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/N1_memory_pending_recheck_dropped.log"
+    },
+    {
+      "label": "N2_capacity_released_on_decide",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N2",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Capacity is now held in a shared pool; release both tracking and shared reservation before generation finishes.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.5,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/N2_capacity_released_on_decide.log"
+    },
+    {
+      "label": "shared_pending_limit_dropped",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "shared_runner",
+      "mapping": "Drop global pending bound across action/task adapters.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.35,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/shared_pending_limit_dropped.log"
+    },
+    {
+      "label": "shared_concurrency_limit_raised",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "shared_runner",
+      "mapping": "Increase shared generation semaphore above allowed two slots.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.85,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/shared_concurrency_limit_raised.log"
+    },
+    {
+      "label": "shared_external_capacity_ignored",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "shared_runner",
+      "mapping": "Ignore supplied shared pool and retain each adapter private pool.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 3.45,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/shared_external_capacity_ignored.log"
+    },
+    {
+      "label": "shared_capacity_release_dropped",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "shared_runner",
+      "mapping": "Fail to return reservation after completed/skipped work.",
+      "result": "survived",
+      "returncode": 0,
+      "elapsed_seconds": 3.45,
+      "command": [
+        "/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/handoff/h277/verification/post_refactor/logs/shared_capacity_release_dropped.log"
+    }
+  ]
+}

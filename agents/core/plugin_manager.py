@@ -15,9 +15,8 @@ No top-level import of Orchestrator — no import cycle.
 """
 
 import logging
-from pathlib import Path
 
-from dotenv import load_dotenv
+from agents.core.env_provenance import load_hub_env
 
 from .argus import ArgusInterface
 from .env_config import env_str
@@ -52,6 +51,9 @@ from .plugins.worldview import WorldViewPlugin
 
 logger = logging.getLogger("jarvis.plugins.manager")
 
+#: Registry keys that are not the plugin's gate id.
+_GATE_IDS = {"whatsapp": "whatsapp-bridge"}
+
 
 class PluginManager:
     """Owns the live-plugin registry (``orch.plugins``) + its build/close lifecycle."""
@@ -70,16 +72,15 @@ class PluginManager:
         self.plugins["weather"] = WeatherPlugin()
         self.plugins["news"] = NewsPlugin()
         self.plugins["stock-quotes"] = StockQuotesPlugin()
-        env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-        load_dotenv(env_path)
         # Packaged installs / $JARVIS_USER_HOME: the owner's config lives in
-        # <Documents/Jarvis>/.env. Loaded second with the default override=False,
-        # so a repo .env (dev) keeps precedence and only unset keys are filled —
-        # in a frozen install there is no repo .env, making this the config source.
-        from agents.core.paths import user_home
-        home = user_home()
-        if home is not None and (home / ".env").exists():
-            load_dotenv(home / ".env")
+        # <Documents/Jarvis>/.env. Loaded second with override=False, so a repo
+        # .env (dev) keeps precedence and only unset keys are filled — in a frozen
+        # install there is no repo .env, making this the config source. H273: the
+        # load records which layer supplied each key (names only), for the admin
+        # route, the doctor and the HUD. The hub's entries (serve.py, the lifespan)
+        # have loaded the files before anything they read, so this is their table; an
+        # entry that did not (agents/run.py before its main) loads here, once.
+        load_hub_env()
         self.plugins["cloud-llm"] = CloudLLMPlugin(
             anthropic_key=env_str("ANTHROPIC_API_KEY"),
             openai_key=env_str("OPENAI_API_KEY"),
@@ -143,9 +144,6 @@ class PluginManager:
         self.plugins["oracle-bridge"] = OracleBridgePlugin(
             github_token=env_str("GITHUB_TOKEN"),
         )
-        bind_external_orchestrator_attribute(
-            orch, "oracle_bridge", self.plugins["oracle-bridge"]
-        )
         self.plugins["n8n"] = N8NPlugin(
             base_url=env_str("N8N_BASE_URL"),
             api_key=env_str("N8N_API_KEY"),
@@ -187,11 +185,26 @@ class PluginManager:
             base_url=env_str("POSTIZ_URL"),
             api_key=env_str("POSTIZ_API_KEY"),
         )
+        self._drop_switched_off()
+        bind_external_orchestrator_attribute(
+            orch, "oracle_bridge", self.plugins.get("oracle-bridge")
+        )
         # Argus — one governed facade over WorldView + Signal Layer for world-intel
         # queries. Built after both backends are registered; every call is gated.
         bind_external_orchestrator_attribute(
             orch, "argus", ArgusInterface.from_orchestrator(orch)
         )
+
+    def _drop_switched_off(self) -> None:
+        """H285: a plugin the owner's load set switches off is not kept, as safe mode
+        keeps none: the probes, the dashboard and WorldView reach ``orch.plugins``
+        without asking the gate. The lists name gate ids."""
+        from . import load_set
+
+        lists = load_set.declared("plugins")
+        for key in [k for k in self.plugins if not load_set.permits("plugins", _GATE_IDS.get(k, k), lists=lists)]:
+            del self.plugins[key]
+            logger.info("Plugin %s not loaded: switched off by the load set", key)
 
     async def close_all(self) -> None:
         """Close all active plugins gracefully (was Orchestrator.stop_channels inline)."""

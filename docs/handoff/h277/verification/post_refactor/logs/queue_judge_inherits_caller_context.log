@@ -1,0 +1,53 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py", "tests/test_h277_task_judge.py"]
+......................................................F................. [ 36%]
+........................................................................ [ 72%]
+....................................................F..                  [100%]
+=================================== FAILURES ===================================
+_________ test_the_judge_runs_outside_a_childs_selection_and_overrides _________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-128/test_the_judge_runs_outside_a_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e50e9f0>
+
+    async def test_the_judge_runs_outside_a_childs_selection_and_overrides(tmp_path, monkeypatch):
+        from agents.core.llm.job_selection import selection_scope
+        from agents.core.llm.request_context import RequestOverrides, request_overrides_scope
+    
+        seen: dict = {}
+        backend = FakeBackend(probe=_context_probe(seen))
+        q = queue(tmp_path, local_judge(monkeypatch, backend))
+        with selection_scope({"model": "child-model", "provider": "anthropic"}), \
+                request_overrides_scope(RequestOverrides(max_tokens=7, temperature=1.5)):
+            item = q.request(ACTION)
+        await drain(q)
+>       assert seen == {"selection": None, "overrides": None}
+E       AssertionError: assert {} == {'selection':...rrides': None}
+E         
+E         Right contains 2 more items:
+E         {'overrides': None, 'selection': None}
+E         Use -v to get more diff
+
+tests/test_h277_approval_judge.py:608: AssertionError
+_______________ test_task_adapter_clears_inherited_job_selection _______________
+
+q = <agents.core.autonomy.queue.TaskQueue object at 0x10e854a70>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e833a10>
+
+    @pytest.mark.asyncio
+    async def test_task_adapter_clears_inherited_job_selection(q, monkeypatch):
+        from agents.core.llm import job_selection
+    
+        backend = Backend()
+        worker, adapter = bind(q, judge(monkeypatch, backend))
+        marker = job_selection._selection.set(object())
+        try:
+            task = await worker.submit('jarvis', 'delete_file', 'Delete', attention_mode='none')
+            await drain(adapter)
+>           assert adapter.project(task)['judge']['score'] == 99
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'judge'
+
+tests/test_h277_task_judge.py:384: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_the_judge_runs_outside_a_childs_selection_and_overrides
+FAILED tests/test_h277_task_judge.py::test_task_adapter_clears_inherited_job_selection
+2 failed, 197 passed in 3.05s

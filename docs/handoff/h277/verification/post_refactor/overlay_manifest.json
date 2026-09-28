@@ -1,0 +1,22 @@
+{
+  "before_source_sha256": "6434719f47633fe78894e4d59ad81bdf9e0794b32dbc973cf8fd7a7bdbc0b9ea",
+  "after_source_sha256": "bb5d80e859e08116e97b2c28f037c429ffc032f2cd691afe6408367d038a9d6b",
+  "files": {
+    "agents/core/autonomy/approval_judge.py": {
+      "before": "c55d9096813948dab6f73e2bf516758b769170c8680e94929b8983e9380572ae",
+      "after": "6c5f74d8f1a9ebb11091c6f433a1d09f7d0ba4be2f957130e52b007b52c40237"
+    },
+    "agents/core/llm/model_roles.py": {
+      "before": "90f03ddc2d1bae0d9520e37fc0c393ff375b4beabab1727aeb52e292700c18f5",
+      "after": "361ff428dbdbcf3d3741143bcefcb5cd53f5738c77668e5f1491cdb4b7d88e39"
+    },
+    "tests/test_h277_approval_judge.py": {
+      "before": "5d93ae75533e99f7b0ad7476f1ce17201fc32e9b6f0c7e4042a93585b70691c7",
+      "after": "0392024f4b47520276b1b314dc117f0b3bcba42aaeb3fd952d94f1f3da8783e7"
+    },
+    "tests/test_h277_model_roles.py": {
+      "before": "8443406ccfab06e751a47b32b8e2c4655b93b073c470f527c60bbb43cc95ebc0",
+      "after": "60f141543aebaa6bc4c170e8151ad94446bf78409d5a4a42aa4e40ba852ab4d2"
+    }
+  }
+}

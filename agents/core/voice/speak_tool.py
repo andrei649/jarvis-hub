@@ -138,8 +138,12 @@ _AUDIO_SUFFIX = {
     "audio/ogg": ".ogg",
     "audio/wav": ".wav",
     "audio/mp4": ".m4a",
+    "audio/flac": ".flac",                  # a TTS command may write FLAC (H613)
 }
 _ARG_KEYS = frozenset({"text", "target", "urgency", "lang"})
+#: H296 — the most targets advertised as an enum; past it none is listed, since a cut
+#: enum would close the schema on the targets it dropped.
+MAX_ADVERTISED_TARGETS = 64
 _MAX_DETAIL = 200
 
 INPUT_SCHEMA: dict[str, Any] = {
@@ -191,16 +195,45 @@ def tts_installed() -> bool:
     import, so an unloaded engine is probed by module lookup only. A backend that
     is present but broken still refuses by name at synthesis (``tts_unavailable``).
     """
+    local_only = _local_only()
     engine = sys.modules.get("agents.core.voice.tts")
     if engine is not None:
-        return bool(getattr(engine, "HAS_EDGE", False) or getattr(engine, "HAS_KOKORO", False))
-    for name in _TTS_MODULES:
-        try:
-            if importlib.util.find_spec(name) is not None:
-                return True
-        except (ImportError, ValueError):
-            continue
-    return False
+        if (getattr(engine, "HAS_EDGE", False) and not local_only) or getattr(engine, "HAS_KOKORO", False):
+            return True
+    else:
+        for name in _TTS_MODULES:
+            if local_only and name == "edge_tts":           # voice.local_only never calls edge
+                continue
+            try:
+                if importlib.util.find_spec(name) is not None:
+                    return True
+            except (ImportError, ValueError):
+                continue
+    return _local_tts_ready(local_only)
+
+
+def _local_only() -> bool:
+    try:
+        from agents.core.voice import local_providers
+
+        return local_providers.local_only()
+    except Exception:  # noqa: BLE001 — no settings: the default (off)
+        return False
+
+
+def _local_tts_ready(local_only: bool = False) -> bool:
+    """H613 — Piper (the package or the binary, with a model) or, unless voice.local_only,
+    a ready TTS command. A cheap probe on the event loop: the piper package is looked up,
+    not imported, and the command's files are compared by stat (the spawn checks the
+    digests)."""
+    try:
+        from agents.core.voice import local_providers
+
+        if local_providers.piper_status(load=False)["available"]:
+            return True
+        return not local_only and local_providers.command_ready("tts", verify_content=False).ok
+    except Exception:  # noqa: BLE001 — a probe that fails reports no engine
+        return False
 
 
 def _refuse(reason: str, **extra: Any) -> dict[str, Any]:
@@ -289,6 +322,54 @@ class SpeakTool:
         self._audit = audit
         self._speaker = speaker
         self._tts_ready = tts_ready
+
+    # ── H296: what the model is told it can target, from the live registry ──
+
+    def schema_overrides(self) -> dict[str, Any]:
+        """The targets preflight accepts right now: announce-capable device ids, rooms
+        with one announce default (a room named like a device is that device), and
+        presence:auto when a presence room resolves — each only when its speaker has a
+        media driver. None configured, none driven, too many to list or the Media
+        Director unavailable is said in the description instead of an enum a model
+        could never satisfy."""
+        try:
+            # Not _get_director: this runs on every tool-list build, and a failing
+            # factory is logged with its traceback where a call actually needs it.
+            director = self._director() if media_director_enabled() else None
+        except Exception:  # noqa: BLE001 - the description says it; preflight logs it
+            director = None
+        if director is None:
+            return {"description": DESCRIPTION + " The Media Director is not available right now, "
+                                                 "so every call is refused."}
+        registry = director.registry
+        rows = [row for row in registry.list() if isinstance(row, Mapping)]
+        announcing: list[tuple[str, Any]] = [
+            (str(row["id"]), registry.get(str(row["id"]))) for row in rows
+            if ANNOUNCE in (row.get("supports") or ())]
+        for room in sorted({str(row.get("room")) for row in rows if row.get("room")}):
+            if registry.get(room) is not None:
+                continue
+            try:
+                announcing.append((room, _room_announce_device(registry, room)))
+            except ToolRPCValidationError:
+                continue
+        presence = str(getattr(director, "presence_room", "") or "")
+        if presence:
+            with contextlib.suppress(ToolRPCValidationError):
+                announcing.append((PRESENCE_TARGET, _room_announce_device(registry, presence)))
+        if not announcing:
+            return {"description": DESCRIPTION + " No speaker can announce yet: register one "
+                                                 "that supports announce in the Media Director first."}
+        targets = [name for name, device in announcing
+                   if device is not None and not isinstance(director.driver_for(device), NullMediaDriver)]
+        if not targets:
+            return {"description": DESCRIPTION + " No speaker that can announce has a media driver "
+                                                 "(JARVIS_MEDIA_DRIVERS), so every call is refused."}
+        if len(targets) > MAX_ADVERTISED_TARGETS:
+            return {"description": DESCRIPTION + f" More than {MAX_ADVERTISED_TARGETS} targets can announce, "
+                                                 "so they are not listed: name a speaker id, a room or "
+                                                 f"{PRESENCE_TARGET}."}
+        return {"properties": {"target": {"enum": targets}}}
 
     # ── preflight: runs at proposal (no card on refusal) and again at execution ──
 
@@ -634,6 +715,7 @@ def register_speak_tool(
         preflight=tool.preflight,
         trusted_execution=True,
         gated_intake=tool.intake,
+        schema_overrides=tool.schema_overrides,
     )
     return [SPEAK_TOOL]
 

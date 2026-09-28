@@ -1,0 +1,72 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_model_roles.py", "tests/test_model_config.py"]
+..................................F........F............................ [ 63%]
+..................FF.....................                                [100%]
+=================================== FAILURES ===================================
+__ test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable __
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f7b4170>
+
+    def test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable(monkeypatch):
+        monkeypatch.setenv("JARVIS_VLM_BACKEND", "lmstudio")
+        monkeypatch.setenv("JARVIS_VLM_MODEL", "old-vl")
+        monkeypatch.setenv("JARVIS_ROLE_VISION_MODEL", "new-vl")
+        role = model_roles.resolve("vision")
+>       assert role.model == "new-vl" and role.source["model"] == "JARVIS_ROLE_VISION_MODEL"
+E       AssertionError: assert ('new-vl' == 'new-vl'
+E         
+E           new-vl and 'JARVIS_VLM_MODEL' == 'JARVIS_ROLE_VISION_MODEL'
+E         
+E         - JARVIS_ROLE_VISION_MODEL
+E         + JARVIS_VLM_MODEL)
+
+tests/test_h277_model_roles.py:142: AssertionError
+_________________________ test_deep_role_new_name_wins _________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f7b63f0>
+
+    def test_deep_role_new_name_wins(monkeypatch):
+        monkeypatch.setenv("JARVIS_DEEP_MODEL", "local/old")
+        monkeypatch.setenv("JARVIS_ROLE_DEEP_MODEL", "local/new")
+>       assert model_config.deep_model_name() == "local/new"
+E       AssertionError: assert 'local/old' == 'local/new'
+E         
+E         - local/new
+E         + local/old
+
+tests/test_h277_model_roles.py:224: AssertionError
+______ test_a_legacy_model_differing_only_by_case_is_reported_as_shadowed ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f8634d0>
+
+    def test_a_legacy_model_differing_only_by_case_is_reported_as_shadowed(monkeypatch):
+        monkeypatch.setenv("JARVIS_VLM_BACKEND", "lmstudio")
+        monkeypatch.setenv("JARVIS_VLM_MODEL", "qwen3-vl")
+        monkeypatch.setenv("JARVIS_ROLE_VISION_MODEL", "Qwen3-VL")
+>       assert "JARVIS_VLM_MODEL" in model_roles.resolve("vision").ignored
+E       AssertionError: assert 'JARVIS_VLM_MODEL' in ()
+E        +  where () = ResolvedRole(role='vision', configured=True, provider_id='lm-studio', model='Qwen3-VL', base_url='http://localhost:123...model': 'JARVIS_VLM_MODEL', 'provider': 'JARVIS_VLM_BACKEND'}), local=True, data_policy='local', reason='', ignored=()).ignored
+E        +    where ResolvedRole(role='vision', configured=True, provider_id='lm-studio', model='Qwen3-VL', base_url='http://localhost:123...model': 'JARVIS_VLM_MODEL', 'provider': 'JARVIS_VLM_BACKEND'}), local=True, data_policy='local', reason='', ignored=()) = <function resolve at 0x10c8c1d00>('vision')
+E        +      where <function resolve at 0x10c8c1d00> = model_roles.resolve
+
+tests/test_h277_model_roles.py:462: AssertionError
+____ test_a_legacy_base_url_differing_only_by_case_is_reported_as_shadowed _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f8308f0>
+
+    def test_a_legacy_base_url_differing_only_by_case_is_reported_as_shadowed(monkeypatch):
+        monkeypatch.setenv("JARVIS_VLM_BACKEND", "custom")
+        monkeypatch.setenv("JARVIS_VLM_URL", "http://127.0.0.1:8000/V1")
+        monkeypatch.setenv("JARVIS_ROLE_VISION_BASE_URL", "http://127.0.0.1:8000/v1")
+>       assert "JARVIS_VLM_URL" in model_roles.resolve("vision").ignored
+E       AssertionError: assert 'JARVIS_VLM_URL' in ()
+E        +  where () = ResolvedRole(role='vision', configured=True, provider_id='openai-compatible', model='qwen2-vl', base_url='http://127.0...M_URL', 'model': 'default', 'provider': 'JARVIS_VLM_BACKEND'}), local=True, data_policy='local', reason='', ignored=()).ignored
+E        +    where ResolvedRole(role='vision', configured=True, provider_id='openai-compatible', model='qwen2-vl', base_url='http://127.0...M_URL', 'model': 'default', 'provider': 'JARVIS_VLM_BACKEND'}), local=True, data_policy='local', reason='', ignored=()) = <function resolve at 0x10c8c1d00>('vision')
+E        +      where <function resolve at 0x10c8c1d00> = model_roles.resolve
+
+tests/test_h277_model_roles.py:472: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable
+FAILED tests/test_h277_model_roles.py::test_deep_role_new_name_wins - Asserti...
+FAILED tests/test_h277_model_roles.py::test_a_legacy_model_differing_only_by_case_is_reported_as_shadowed
+FAILED tests/test_h277_model_roles.py::test_a_legacy_base_url_differing_only_by_case_is_reported_as_shadowed
+4 failed, 109 passed in 1.60s

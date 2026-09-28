@@ -74,6 +74,30 @@ is committed), so no Node toolchain is needed at package time.
 - **Uninstall:** delete the install folder (+ shortcut). Your data stays in `Documents/Nerva`.
 - **Full reset:** stop Nerva, delete `Documents/Nerva/memory`.
 
+## Recovering a lost admin token
+
+A packaged install ships only the app, not the Python that runs
+`scripts/token_recover.py`. If a `JARVIS_ADMIN_TOKEN` you still hold works, there is nothing
+to recover: use it. Otherwise, with the app stopped:
+
+1. **First** remove every `JARVIS_ADMIN_TOKEN` and `JARVIS_USER_TOKEN` from **both** places the
+   app reads them: the data home's `.env` (`~/Documents/Nerva/.env` by default,
+   `<JARVIS_USER_HOME>/.env` when the data folder is moved) and the environment the app
+   starts from (a wrapper script, a shortcut, a service definition; PHONE_ACCESS puts the
+   phone's token there). The file removed in step 2 is also what records that those tokens
+   were rotated away or revoked: without it a token left in either place, such as a lost
+   phone's, works again (review-H273h m2, review-H273i m1).
+2. If the app is bound to the network (`JARVIS_HOST=0.0.0.0` for phones), unset `JARVIS_HOST`
+   for now: with no token left, the app refuses to start on a network bind, by design.
+3. Remove `security/tokens.db` under the data root: `~/Documents/Nerva/memory/security/tokens.db`
+   by default, `<JARVIS_USER_HOME>/memory/security/tokens.db` when the data folder is moved,
+   `$JARVIS_HOME/security/tokens.db` when `JARVIS_HOME` is set, and
+   `$JARVIS_MEMORY_DIR/security/tokens.db` when `JARVIS_MEMORY_DIR` is (see Relocating data).
+4. Start the app. On this machine it trusts the caller again, as on a fresh install, until a
+   new admin token is minted from the HUD. Every issued user token went with the file: mint
+   the phones' tokens again, put the new ones where step 1 took the old ones from, then set
+   `JARVIS_HOST` back and restart.
+
 ## Relocating data
 
 Set in the app's environment (or a wrapper script): `JARVIS_USER_HOME` moves

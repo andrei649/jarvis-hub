@@ -6,6 +6,7 @@ and which agents it serves. The core blocks any request outside the
 declared permissions.
 """
 
+import dataclasses
 import logging
 import time
 from dataclasses import dataclass, field
@@ -605,9 +606,15 @@ def grants_from_env() -> "dict[str, set[str]]":
     """Parse ``JARVIS_PLUGIN_GRANTS`` — a comma list of ``plugin_id:agent_id``
     pairs the owner declares to keep external-write plugins usable under
     hardening (e.g. ``social_x:veronica,writeback_github:stark``)."""
+    from agents.core import safe_mode
     from agents.core.env_config import env_list
 
     out: dict[str, set[str]] = {}
+    if safe_mode.enabled():
+        # H275: a grant only widens access; safe mode keeps none of the owner's.
+        if env_list("JARVIS_PLUGIN_GRANTS"):
+            safe_mode.note("plugin_grants")
+        return out
     for pair in env_list("JARVIS_PLUGIN_GRANTS"):
         pid, sep, agent = pair.strip().partition(":")
         if sep and pid.strip() and agent.strip():
@@ -629,10 +636,32 @@ class PermissionGate:
         )
         self._grants: dict[str, set[str]] = grants_from_env()
         self._load_builtins()
+        self.apply_load_set()
 
     def _load_builtins(self):
+        # H285: each gate holds its own copies, so switching a plugin off here (the
+        # load set, a toggle) never reaches the module table or another gate.
         for plugin_id, manifest in BUILTIN_PLUGINS.items():
-            self.register(manifest)
+            self.register(dataclasses.replace(manifest))
+
+    def apply_load_set(self) -> None:
+        """H285: switch off the plugins the owner's load set names (``loadset.plugins_*``
+        and the ``plugins.<id>`` switches). It only disables: a name that is not a
+        registered plugin is reported, and nothing is enabled or registered here."""
+        from agents.core import load_set, safe_mode
+
+        if safe_mode.enabled():
+            # H490: no plugin is built in safe mode; the gate refuses every one as well.
+            for manifest in self.plugins.values():
+                manifest.enabled = False
+            safe_mode.note("plugins")
+        lists = load_set.declared("plugins")
+        load_set.begin("plugins")
+        for plugin_id, manifest in self.plugins.items():
+            if not load_set.permits("plugins", plugin_id, lists=lists):
+                manifest.enabled = False
+                load_set.note_skipped("plugins", plugin_id)
+        load_set.finish("plugins", set(self.plugins), lists=lists)
 
     def register(self, manifest: PluginManifest):
         self.plugins[manifest.id] = manifest

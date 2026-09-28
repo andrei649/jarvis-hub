@@ -5,7 +5,7 @@ const TYPES=['image/png','image/jpeg','image/gif','image/webp'];
 const MAX_BYTES=4*1024*1024, MAX_IMAGES=8;
 export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;remote_ack:boolean};
 type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;data?:string;error?:string};
-type Destination={configured:boolean;destination?:string;binding?:string;model?:string;backend?:string;local?:boolean};
+type Destination={configured:boolean;destination?:string;binding?:string;model?:string;backend?:string;local?:boolean;warning?:string};
 
 export function useComposerImages(){
   const records=useRef<Draft[]>([]), serial=useRef(0);
@@ -52,6 +52,7 @@ export function useComposerImages(){
       const text=await response.text();if(text.length>8192)throw new Error('Invalid vision status');
       const data=JSON.parse(text) as Destination;
       if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!/^\w{64}$/.test(data.binding||'')))throw new Error('Invalid vision status');
+      if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision status');
       if(active)setDestination(data);
     }).catch(()=>{if(active)setDestination({configured:false});});
     return()=>{active=false;controller.abort();};
@@ -73,6 +74,7 @@ export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImage
       {!image.data&&!image.error&&<span> Reading…</span>}{image.error&&<span>{image.error}</span>}
     </div>)}</div>
     <div role="status">{draft.note || (draft.images.length ? !d?'Checking vision configuration…':!d.configured?'Vision model unavailable. Remove images to send text.':`${d.model} · ${d.destination} · ${d.local?'loopback':'remote'} · reachability not probed` : '')}</div>
+    {d?.configured&&d.warning&&<div style={{color:'var(--amber)'}}>{d.warning}</div>}
     {!!draft.images.length&&<button className="tool-btn" onClick={draft.refresh}>Refresh vision destination</button>}
     {d?.configured&&d.local!==true&&<label style={{display:'block'}}>
       <input type="checkbox" checked={draft.ack===d.binding} onChange={event=>draft.acknowledge(event.target.checked)}/>

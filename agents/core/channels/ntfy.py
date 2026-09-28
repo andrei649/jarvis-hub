@@ -29,7 +29,7 @@ import httpx
 
 from .base import ChannelAdapter
 from .descriptor import DIALECT_PLAIN, ChannelDescriptor
-from .render import render_outbound
+from .render import chunk, render_outbound
 
 logger = logging.getLogger("jarvis.channels.ntfy")
 
@@ -123,14 +123,20 @@ class NtfyChannel(ChannelAdapter):
             await close()
 
     async def send(self, message: str, **kwargs) -> bool:
-        """POST the plain-text rendering, chunked; True only when every chunk was accepted."""
+        """POST the plain-text rendering, chunked; True only when every chunk was accepted.
+
+        ``plain=True`` sends every chunk as it is, never rendered: a notice whose text
+        came from outside (a webhook's sender) keeps its file names and addresses."""
         headers = {
             "Title": _clean_title(kwargs.get("title") or self.title),
             "Priority": str(_clean_priority(kwargs.get("priority", DEFAULT_PRIORITY))),
         }
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
-        for piece in render_outbound(str(message or ""), self.descriptor):
+        text = str(message or "")
+        pieces = (chunk(text, self.descriptor.max_message_length) if kwargs.get("plain") is True
+                  else render_outbound(text, self.descriptor))
+        for piece in pieces:
             try:
                 resp = await self.client.post(
                     f"{self.url}/{self.topic}", content=piece.encode("utf-8"), headers=headers,

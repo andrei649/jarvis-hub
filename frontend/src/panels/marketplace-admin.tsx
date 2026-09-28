@@ -96,6 +96,7 @@
    All three writes are admin tier (actA → X-Admin-Token); /skills is read at user tier. */
 import React, { useState } from 'react';
 import { useApi, mono, asLive, Card, State, Row, Tag, Btn, actA, inpS, Json } from '../panel-kit';
+import { ConfirmAction, RISK_TIER } from '../confirm';
 
 const PUBLISH_PATH = '/api/skills/marketplace/publish';
 const INSTALL_ZIP_PATH = '/api/skills/marketplace/install-zip';
@@ -200,8 +201,11 @@ export function MarketplaceAdminPanel() {
     setPurge(false);
     setUn(null);
   };
-  const confirmRemove = () => {
-    if (unBusy || !unName.trim()) return;
+  /* H168 — the removal is ConfirmAction's, graded IRREVERSIBLE_OR_MONEY (the rmtree has no
+     undo on this box): the owner types the folder it is about to delete. The page arms it
+     from the row and closes it when the hub answers. */
+  const confirmRemove = () => new Promise<boolean>((settle) => {
+    if (unBusy || !unName.trim()) { settle(false); return; }
     setUnBusy(true); setUn(null);
     /* What we SENT is the only trustworthy record of the purge request — the response's
        `purged` is that same flag echoed, and the box unmounts on success. */
@@ -209,10 +213,10 @@ export function MarketplaceAdminPanel() {
     const sentTitle = armed;
     const sentPurge = purge;
     actA(UNINSTALL_PATH, { name: unName, purge },
-      (r) => { setUn({ res: r, sentFolder, sentTitle, sentPurge }); setUnBusy(false); setArmed(null); reload(); },
+      (r) => { setUn({ res: r, sentFolder, sentTitle, sentPurge }); setUnBusy(false); setArmed(null); reload(); settle(true); },
       /* Stay armed on a refusal — the folder name is usually what needs fixing. */
-      (err) => { setUn({ msg: why(err), status: err && err.status }); setUnBusy(false); });
-  };
+      (err) => { setUn({ msg: why(err), status: err && err.status }); setUnBusy(false); settle(false); });
+  });
 
   const p = pub && (pub as any).ok ? (pub as any).p : null;
   const ures = un && (un as any).res ? (un as any).res : null;
@@ -306,22 +310,25 @@ export function MarketplaceAdminPanel() {
       {armed && (
         <div style={{ marginTop: 8, padding: 8, border: '1px solid var(--red)', borderRadius: 4 }}>
           <div style={{ ...mono, fontSize: 10.5, color: 'var(--red)' }}>confirm removal of “{armed}”</div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-            <input
-              style={{ ...inpS, flex: 1, minWidth: 140 }}
-              aria-label="skills/ folder"
-              value={unName}
-              onChange={(ev) => setUnName(ev.target.value)}
-            />
-            <label style={{ ...mono, fontSize: 10, display: 'flex', gap: 4, alignItems: 'center', color: 'var(--ink-2)' }}>
-              <input type="checkbox" aria-label="purge registry row matching the folder string" checked={purge} onChange={(ev) => setPurge(!!ev.target.checked)} />
-              purge · also unpublish (delete the registry row and its package blob)
-            </label>
-            <button className="tool-btn" disabled={unBusy || !unName.trim()} onClick={confirmRemove} style={{ color: 'var(--red)' }}>
-              {unBusy ? 'removing…' : 'confirm remove'}
-            </button>
-            <button className="tool-btn" onClick={() => { setArmed(null); setUn(null); }}>cancel</button>
-          </div>
+          <ConfirmAction tier={RISK_TIER.IRREVERSIBLE_OR_MONEY} block armed onCancel={() => { setArmed(null); setUn(null); }}
+            label={`remove ${armed}`} phrase={unName.trim()} onConfirm={confirmRemove}
+            prompt={<>type the folder, <b>{unName.trim() || '…'}</b>, to delete skills/{unName.trim() || '…'}</>}
+            inputLabel="type the folder to confirm the removal" placeholder="folder"
+            armedLabel={unBusy ? 'removing…' : 'confirm remove'} disabled={!unName.trim()} busy={unBusy}
+            extra={
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '6px 0', flexWrap: 'wrap' }}>
+                <input
+                  style={{ ...inpS, flex: 1, minWidth: 140 }}
+                  aria-label="skills/ folder"
+                  value={unName}
+                  onChange={(ev) => setUnName(ev.target.value)}
+                />
+                <label style={{ ...mono, fontSize: 10, display: 'flex', gap: 4, alignItems: 'center', color: 'var(--ink-2)' }}>
+                  <input type="checkbox" aria-label="purge registry row matching the folder string" checked={purge} onChange={(ev) => setPurge(!!ev.target.checked)} />
+                  purge · also unpublish (delete the registry row and its package blob)
+                </label>
+              </div>
+            } />
           <Note>
             the folder above is <b>derived</b> (lower-cased, spaces→underscores) exactly the way the installer derives
             it. For a marketplace-installed package that is right; for a repo-bundled skill it can be wrong

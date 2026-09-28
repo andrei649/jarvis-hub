@@ -104,8 +104,9 @@ def test_live_registry_offers_web_and_memory_tools_to_the_owner_and_never_to_an_
 
     owner = _offered(tools, "operator", "owner")
     assert set(NEW_TOOLS) <= set(owner)
-    # A stranger on an inbound channel still sees only the two harmless defaults.
-    assert _offered(tools, "inbound", "guest") == ["echo", "time"]
+    # A stranger on an inbound channel still sees only the guest allowlist: the two harmless
+    # defaults and H315's checklist, which on a chat of its own is the stranger's own list.
+    assert _offered(tools, "inbound", "guest") == ["echo", "time", "todo"]
 
 
 def test_osint_enrich_declares_untrusted_output(tmp_path, monkeypatch):

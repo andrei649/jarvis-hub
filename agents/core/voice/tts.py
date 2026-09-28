@@ -1,15 +1,35 @@
 """
 tts.py — Text-to-speech via edge-tts (Microsoft Edge, online, high quality).
 Falls back to Kokoro or pyttsx3 if available.
+
+H613 — two local paths (``local_providers``): ``piper:<model>`` (and bare ``piper``)
+voices run Piper, and ``command`` voices run the owner's approved TTS command provider.
+Both sit after the persona/cloned-voice consent gate, which is unchanged: a Piper model
+or a command voice whose name happens to contain ``xtts``/``elevenlabs``/``fish`` still
+needs consent (the gate matches by substring and fails closed), and with consent it goes
+to Piper or the command, never to Fish or XTTS. Bare ``piper`` (a model picked by
+language) never picks a model the gate would flag unless consent is granted.
+
+When ``voice.tts_voice`` is a Piper or command voice, it is the voice a request with only
+a language gets too (the HUD, spoken replies, the voice channel); bare ``piper`` picks the
+model for that language. Any failure falls back to the built-in safe default — an edge /
+Kokoro voice for the language, never the local voice that just failed.
+
+``voice.local_only`` keeps speech on this machine: Piper, Kokoro or XTTS. Edge,
+ElevenLabs, Fish and the TTS command are never called then (the hub cannot check where
+a command sends the text), and availability reports say so.
 """
 
+import asyncio
 import logging
 import re
 import tempfile
 from pathlib import Path
 from typing import AsyncIterator, Callable, Optional
 
+from . import local_providers
 from .sentence_stream import split_sentences
+from .speech_text import for_speech, speech_lang
 
 logger = logging.getLogger("jarvis.voice.tts")
 
@@ -33,6 +53,37 @@ PERSONA_VOICE_CONSENT_MESSAGE = (
     "Cloned/persona voice playback requires recorded owner consent; using default voice."
 )
 PERSONA_VOICE_MARKERS = ("xtts", "elevenlabs", "fish")
+
+
+def local_voice_kind(voice: object) -> str | None:
+    """``"piper"`` for ``piper`` / ``piper:<model>``, ``"command"`` for ``command`` /
+    ``command:…`` (the part after the colon is ignored), else None (H613)."""
+    if not isinstance(voice, str):
+        return None
+    lowered = voice.strip().lower()
+    for kind in ("piper", "command", "provider"):
+        if lowered == kind or lowered.startswith(kind + ":"):
+            return kind
+    return None
+
+
+def tts_available() -> bool:
+    """Whether a server-side TTS path exists for the owner's settings (H613): edge, Kokoro,
+    Piper with a model, a ready command provider, or a configured XTTS / ElevenLabs / Fish.
+    With ``voice.local_only`` only Piper, Kokoro or XTTS count."""
+    from agents.core.env_config import env_str
+
+    if local_providers.local_only():
+        return bool(HAS_KOKORO or env_str("XTTS_SERVER_URL") or local_providers.piper_status()["available"])
+    if HAS_EDGE or HAS_KOKORO:
+        return True
+    if any(env_str(name) for name in ("XTTS_SERVER_URL", "ELEVENLABS_API_KEY", "FISH_AUDIO_API_KEY")):
+        return True
+    try:
+        named = any(row["ready"] for row in local_providers.named_command_status("tts"))
+    except Exception:
+        named = False
+    return bool(local_providers.piper_status()["available"] or local_providers.command_ready("tts").ok or named)
 
 # Fish Audio S-series models understand inline square-bracket emotion tags
 # ([calm], [amused], …). Every other backend would read them aloud, so the
@@ -113,13 +164,29 @@ class TTSEngine:
         logger.info(f"TTS Engine ready (edge={HAS_EDGE}, kokoro={HAS_KOKORO})")
 
     def _safe_default_voice(self, lang: str = None) -> str:
+        """The built-in voice a failure (or a blocked voice) falls back to: the configured
+        default when it is an edge / Kokoro voice, else the edge voice for the language
+        (the request's, else the default Piper model's, else the default language's).
+        Never a persona/cloned voice and never a Piper or command voice (H613): those are
+        what just failed, and edge / Kokoro cannot speak them."""
         candidate = self.VOICE_MAP.get(lang) or self.default_voice
-        if not is_persona_or_cloned_voice(candidate):
+        if not is_persona_or_cloned_voice(candidate) and not local_voice_kind(candidate):
             return candidate
-        fallback = self.VOICE_MAP.get(lang) or self.VOICE_MAP.get(self.default_lang)
+        fallback = (self.VOICE_MAP.get(lang) or self.VOICE_MAP.get(local_providers.model_lang(self.default_voice))
+                    or self.VOICE_MAP.get(self.default_lang))
         if fallback and not is_persona_or_cloned_voice(fallback):
             return fallback
         return "en-GB-RyanNeural"
+
+    def _voice_for(self, voice: str = None, lang: str = None) -> str:
+        """The voice a request speaks with: the one it names, else the owner's Piper or
+        command voice (``voice.tts_voice``) whatever the language, else the edge voice for
+        the language, else the default (H613)."""
+        if voice:
+            return voice
+        if local_voice_kind(self.default_voice):
+            return self.default_voice
+        return self.VOICE_MAP.get(lang, self.default_voice)
 
     def _persona_voice_allowed(self, requested_voice: str, lang: str = None) -> bool:
         fallback = self._safe_default_voice(lang)
@@ -141,9 +208,31 @@ class TTSEngine:
             )
         return granted
 
+    def speech_for(self, text: str, voice: str = None, lang: str = None) -> str:
+        """*text* as it should be heard with this voice and language (H526)."""
+        v = self._voice_for(voice, lang)
+        return for_speech(text, lang=speech_lang(lang, v, default=self.default_lang))
+
     async def speak(self, text: str, voice: str = None, lang: str = None) -> Optional[str]:
-        """Synthesize speech, return path to audio file, or None."""
-        v = voice or self.VOICE_MAP.get(lang, self.default_voice)
+        """Synthesize speech, return path to audio file, or None.
+
+        Every caller's text is normalised first (H526, :func:`speech_text.for_speech`:
+        no reasoning, code, markup, emoji or unread symbols); nothing left to say is no
+        synthesis at all."""
+        v = self._voice_for(voice, lang)
+        named = None
+        if local_voice_kind(v) == "provider":
+            from .provider_registry import speech_registry
+            try:
+                named = speech_registry("tts").get("tts", v[len("provider:"):])
+            except Exception:
+                return None
+            if named is None:
+                return None
+        text = for_speech(text, lang=speech_lang(lang, v, default=self.default_lang))
+        if not text:
+            logger.info("TTS: nothing to say after normalising the reply")
+            return None
         self.last_consent_status = {
             "required": False,
             "granted": True,
@@ -156,15 +245,39 @@ class TTSEngine:
         if is_persona_or_cloned_voice(v) and not self._persona_voice_allowed(v, lang):
             v = self._safe_default_voice(lang)
 
+        # H613 — read now: the owner can flip it at any time.
+        local_only = local_providers.local_only()
+        tried_piper = None
+        # H613 — Piper and command voices, after the consent gate and before Fish.
+        kind = local_voice_kind(v)
+        if kind in {"command", "provider"} and local_only:
+            # The hub cannot check where a command sends the text: local_only never runs it.
+            logger.info("voice.local_only: the TTS command is not used; speaking with a local engine")
+            kind, v = None, self._safe_default_voice(lang)
+        if kind:
+            spoken = strip_emotion_tags(text)
+            if not spoken:
+                return None
+            if kind == "provider":
+                res = await named.synthesize(spoken, lang, temp_dir=TEMP_DIR, default_lang=self.default_lang)
+            else:
+                res = await (self._speak_piper(spoken, v, lang) if kind == "piper" else self._speak_command(spoken, lang))
+            if res:
+                return res
+            tried_piper = v if kind == "piper" else None
+            v = self._safe_default_voice(lang)
+
         # Fish Audio (cloned voice + inline [emotion] tags) runs first so the
         # tags survive; every backend below gets tag-stripped text.
         if isinstance(v, str) and "fish" in v.lower():
-            res = await self._speak_fish(text, v)
+            res = None if local_only else await self._speak_fish(text, v)
             if res:
                 return res
             v = self._safe_default_voice(lang)
 
         text = strip_emotion_tags(text)
+        if not text:                    # the reply was only emotion tags: nothing to say
+            return None
 
         # H5.1 Local XTTS / ElevenLabs voice cloning integrations
         if v == "xtts" or (isinstance(v, str) and v.startswith("xtts:")) or (isinstance(v, str) and "xtts" in v.lower()):
@@ -174,18 +287,30 @@ class TTSEngine:
             v = self._safe_default_voice(lang)
 
         if v == "elevenlabs" or (isinstance(v, str) and v.startswith("elevenlabs:")) or (isinstance(v, str) and "elevenlabs" in v.lower()):
-            res = await self._speak_elevenlabs(text, v)
+            res = None if local_only else await self._speak_elevenlabs(text, v)
             if res:
                 return res
             v = self._safe_default_voice(lang)
 
+        if local_only:                  # H613: Piper, then Kokoro; never a cloud voice
+            # The Piper model that already failed above is not run again (verify round, N3).
+            again = tried_piper is None or not await asyncio.to_thread(self._same_piper_pick, tried_piper, lang)
+            res = await self._speak_piper(text, "piper", lang) if again else None
+            if res:
+                return res
+            if HAS_KOKORO:
+                return await self._speak_kokoro(text, v)
+            logger.warning("voice.local_only: no local TTS engine answered (install piper-tts or kokoro)")
+            return None
         if HAS_EDGE:
             return await self._speak_edge(text, v)
         elif HAS_KOKORO:
             return await self._speak_kokoro(text, v)
-        else:
-            logger.warning("No TTS backend available. Install: pip install edge-tts")
-            return None
+        res = await self._speak_piper(text, "piper", lang)
+        if res:
+            return res
+        logger.warning("No TTS backend available. Install: pip install edge-tts (or piper-tts)")
+        return None
 
     async def speak_stream(
         self, text: str, voice: str = None, lang: str = None,
@@ -201,7 +326,9 @@ class TTSEngine:
         The segmentation is the pure `split_sentences`; only the per-chunk synthesis
         here touches a backend. Falls back to a single chunk if there's no boundary.
         """
-        sentences = split_sentences(text)
+        # Normalised whole first (H526), so a code block or a reasoning block that spans
+        # sentences is dropped whole instead of being read a line at a time.
+        sentences = split_sentences(self.speech_for(text, voice=voice, lang=lang))
         for idx, sentence in enumerate(sentences):
             try:
                 path = await self.speak(sentence, voice=voice, lang=lang)
@@ -209,6 +336,29 @@ class TTSEngine:
                 logger.warning(f"sentence {idx} TTS failed ({e}); continuing")
                 path = None
             yield idx, sentence, path
+
+    def _same_piper_pick(self, tried: str, lang: str = None) -> bool:
+        """Whether bare ``piper`` would pick the model the voice *tried* named (verify round, N3)."""
+        if ":" not in tried:
+            return True
+        allow = voice_persona_consent_granted(self._consent_getter)
+        pick_lang = lang or local_providers.model_lang(self.default_voice) or self.default_lang
+        return local_providers.pick_piper_model(pick_lang, allow_persona=allow) == tried.split(":", 1)[1]
+
+    async def _speak_piper(self, text: str, voice: str, lang: str = None) -> Optional[str]:
+        """Piper (H613): ``piper:<model>``, or bare ``piper`` (a model picked by language:
+        the request's, else the default Piper model's, else the default language). Bare
+        ``piper`` never picks a model the consent gate would flag unless consent is granted."""
+        bare = local_voice_kind(voice) == "piper" and ":" not in voice
+        allow = voice_persona_consent_granted(self._consent_getter) if bare else False
+        pick_lang = lang or local_providers.model_lang(self.default_voice) or self.default_lang
+        return await local_providers.speak_piper(text, voice, pick_lang, temp_dir=TEMP_DIR, allow_persona=allow)
+
+    async def _speak_command(self, text: str, lang: str = None) -> Optional[str]:
+        """The owner's approved TTS command provider (H613). The voice's ``command:…``
+        suffix is never used: the argv is exactly the approved one."""
+        return await local_providers.speak_command(text, lang, temp_dir=TEMP_DIR,
+                                                   default_lang=self.default_lang)
 
     async def _speak_xtts(self, text: str, voice: str) -> Optional[str]:
         import httpx

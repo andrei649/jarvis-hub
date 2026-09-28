@@ -24,6 +24,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core.agent import Agent
 from agents.core.config import JarvisConfig
+from agents.core.llm.providers import get_profile
 from agents.core.orchestrator import Orchestrator
 
 
@@ -53,6 +54,9 @@ async def test_cancel_mid_generation_persists_user_turn_only(orch):
     streamed = []
 
     class _BlockingBackend:
+        profile = get_profile("lm-studio")
+        base_url = "http://127.0.0.1:1234/v1"
+
         async def generate_stream(self, *, model, prompt, system, max_tokens,
                                   temperature, on_token):
             # Some tokens already reached the client — exactly the Stop-button

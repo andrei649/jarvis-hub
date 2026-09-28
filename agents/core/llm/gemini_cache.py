@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 from collections.abc import Callable, Sequence
@@ -205,6 +206,19 @@ class ContextCache:
                 conn.close()
 
     async def create_or_extend(
+        self, *, session_id: str, system_instruction: str, history: Sequence[str],
+        model: str, policy_fingerprint: str, lease: AuthLease,
+        ttl_seconds: int = DEFAULT_TTL_SECONDS, before_request: Callable | None = None,
+    ) -> str | None:
+        from .data_handling import physical_request_scope
+        with physical_request_scope(before_request):
+            return await self._create_or_extend(
+                session_id=session_id, system_instruction=system_instruction, history=history,
+                model=model, policy_fingerprint=policy_fingerprint, lease=lease,
+                ttl_seconds=ttl_seconds, before_request=before_request,
+            )
+
+    async def _create_or_extend(
         self,
         *,
         session_id: str,
@@ -214,6 +228,7 @@ class ContextCache:
         policy_fingerprint: str,
         lease: AuthLease,
         ttl_seconds: int = DEFAULT_TTL_SECONDS,
+        before_request: Callable | None = None,
     ) -> str | None:
         history_parts = tuple(history)
         lock = self._session_locks.setdefault(session_id, asyncio.Lock())
@@ -246,6 +261,10 @@ class ContextCache:
                 attempted_profiles.add(current_lease.profile_id)
 
                 if cache_name is not None:
+                    if before_request is not None:
+                        checked = before_request()
+                        if inspect.isawaitable(checked):
+                            await checked
                     try:
                         await self._extend(
                             cache_name=cache_name,
@@ -275,6 +294,13 @@ class ContextCache:
                         self._report_success(pool, current_lease)
                         return cache_name
 
+                # H513: after the session lock and every retry, before provider I/O.
+                # The hook is outside the best-effort provider catch: refusal cannot
+                # become a fallback creation or a silently successful cache operation.
+                if before_request is not None:
+                    checked = before_request()
+                    if inspect.isawaitable(checked):
+                        await checked
                 try:
                     created_name = await self._create(
                         system_instruction=system_instruction,

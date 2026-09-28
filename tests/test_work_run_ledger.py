@@ -356,3 +356,184 @@ def test_unknown_runs_are_refused_by_name(ledger):
         assert exc.value.reason == "unknown_run"
     assert ledger.get("nope") is None
     assert ledger.tampered("nope") is False
+
+
+# ── H464: barriers are zero-budget events, never steps ──────────────────────
+
+def _barrier(clock, **over):
+    record = {
+        "v": 1, "id": "b-00000001", "kind": "deadline", "target": clock.now + 600,
+        "set_at": clock.now, "cap_at": clock.now + 600, "reason": "waiting on deadline",
+        "source": "planner",
+    }
+    record.update(over)
+    return record
+
+
+def test_setting_and_clearing_a_barrier_spends_no_budget_and_is_not_a_step(ledger, clock):
+    run = ledger.open_run(_goal())
+    parked = ledger.set_barrier(run.id, _barrier(clock))
+    assert parked.barrier["id"] == "b-00000001"
+    assert parked.as_dict()["barrier"]["kind"] == "deadline"
+    cleared = ledger.clear_barrier(run.id, why="elapsed", by="check")
+    assert cleared.barrier is None and cleared.as_dict()["barrier"] is None
+    after = ledger.get(run.id)
+    assert (after.steps_used, after.status, after.updated_at) == (0, "planning", run.updated_at)
+    snap = ledger.snapshot(run.id)
+    assert snap["steps"] == [] and snap["unauthorised_steps"] == []
+    assert ledger.tampered(run.id) is False
+    assert [e["kind"] for e in snap["events"]] == ["barrier.cleared", "barrier.set"]
+    assert snap["events"][1]["detail"] == {
+        "id": "b-00000001", "kind": "deadline", "target": clock.now + 600,
+        "cap_at": clock.now + 600, "source": "planner", "reason": "waiting on deadline",
+    }
+    assert snap["events"][0]["detail"] == {"id": "b-00000001", "why": "elapsed", "by": "check"}
+
+
+def test_the_ledger_refuses_a_barrier_it_should_not_hold(ledger, clock):
+    """Defence in depth: the ledger re-checks under its own lock rather than
+    trusting whoever called it."""
+    run = ledger.open_run(_goal())
+    for record, reason in (
+        (_barrier(clock, kind="sleep"), "unknown_kind"),
+        (_barrier(clock, cap_at=clock.now), "no_time_left"),
+        (_barrier(clock, reason="x" * 3_000), "barrier_too_large"),
+        (_barrier(clock, id=""), "malformed_barrier"),
+    ):
+        with pytest.raises(WorkRunError) as exc:
+            ledger.set_barrier(run.id, record)
+        assert exc.value.reason == reason
+    ledger.record_step(run.id, kind="ask", summary="ask", outcome="queued", task_id=1)
+    with pytest.raises(WorkRunError) as exc:
+        ledger.set_barrier(run.id, _barrier(clock))
+    assert exc.value.reason == "run_not_parkable"
+    spent = ledger.open_run(_goal(goal_id="spent"), budget=Budget(max_steps=1))
+    ledger.record_step(spent.id, kind="a", summary="a", outcome="ok", task_id=2)
+    with pytest.raises(WorkRunError) as exc:
+        ledger.set_barrier(spent.id, _barrier(clock))
+    assert exc.value.reason == "budget_spent"
+    with pytest.raises(WorkRunError) as exc:
+        ledger.set_barrier("nope", _barrier(clock))
+    assert exc.value.reason == "unknown_run"
+    with pytest.raises(WorkRunError) as exc:
+        ledger.clear_barrier(run.id, why="because", by="check")
+    assert exc.value.reason == "invalid_clear"
+
+
+def test_a_new_barrier_replaces_the_old_one_on_the_record(ledger, clock):
+    run = ledger.open_run(_goal())
+    ledger.set_barrier(run.id, _barrier(clock))
+    ledger.set_barrier(run.id, _barrier(clock, id="b-00000002"))
+    assert ledger.get(run.id).barrier["id"] == "b-00000002"
+    kinds = [(e["kind"], e["detail"].get("why")) for e in ledger.events(run.id)]
+    assert kinds == [("barrier.set", None), ("barrier.cleared", "replaced"), ("barrier.set", None)]
+    assert ledger.barrier_set_count(run.id) == 2
+    assert ledger.barrier_set_count(run.id, source="judge") == 0
+
+
+def test_a_stale_clear_never_erases_a_newer_barrier(ledger, clock):
+    run = ledger.open_run(_goal())
+    ledger.set_barrier(run.id, _barrier(clock, id="b-new"))
+    kept = ledger.clear_barrier(run.id, why="elapsed", by="check", expect_id="b-old")
+    assert kept.barrier["id"] == "b-new"
+    assert [e["kind"] for e in ledger.events(run.id)] == ["barrier.set"]
+    # and clearing when nothing is set is a no-op, not an error
+    ledger.clear_barrier(run.id, why="owner", by="owner")
+    assert ledger.clear_barrier(run.id, why="owner", by="owner").barrier is None
+    assert len(ledger.events(run.id)) == 2
+
+
+def test_stop_clears_the_barrier_in_the_same_write(ledger, clock):
+    run = ledger.open_run(_goal())
+    ledger.record_step(run.id, kind="a", summary="a", outcome="ok", task_id=1)
+    ledger.set_barrier(run.id, _barrier(clock))
+    stopping = ledger.request_stop(run.id)
+    assert stopping.status == "stopping" and stopping.barrier is None
+    assert ledger.get(run.id).barrier is None
+    assert ledger.events(run.id)[0]["detail"] == {
+        "id": "b-00000001", "why": "run_stopping", "by": "ledger",
+    }
+
+
+def test_a_judge_verdict_clears_a_barrier_as_it_settles(ledger, clock):
+    run = ledger.open_run(_goal())
+    ledger.record_step(run.id, kind="a", summary="a", outcome="ok", task_id=1)
+    ledger.set_barrier(run.id, _barrier(clock))
+    ledger.record_verdict(run.id, role="judge", passed=False, reason="no")
+    assert ledger.get(run.id).barrier is None
+    assert ledger.events(run.id)[0]["detail"]["why"] == "run_failed"
+
+
+def test_registered_processes_are_kept_per_run(ledger, clock):
+    run = ledger.open_run(_goal())
+    other = ledger.open_run(_goal(goal_id="other"))
+    ledger.add_process(run.id, {"pid": 4242, "start": "1", "ns": "n", "boot": "b",
+                                "label": "npm run build"})
+    ledger.add_process(run.id, {"pid": 4242, "start": "1", "ns": "n", "boot": "b",
+                                "label": "npm run build"})     # idempotent
+    assert [p["pid"] for p in ledger.processes(run.id)] == [4242]
+    assert ledger.processes(run.id)[0]["label"] == "npm run build"
+    assert ledger.processes(other.id) == []
+    with pytest.raises(WorkRunError):
+        ledger.add_process("nope", {"pid": 1, "start": "", "ns": "", "boot": ""})
+
+
+def test_the_barrier_survives_a_restart(tmp_path, clock):
+    path = tmp_path / "runs.db"
+    led = WorkRunLedger(path, clock=clock)
+    run = led.open_run(_goal())
+    led.set_barrier(run.id, _barrier(clock))
+    led.close()
+
+    reopened = WorkRunLedger(path, clock=clock)
+    try:
+        assert reopened.get(run.id).barrier["id"] == "b-00000001"
+        assert reopened.events(run.id)[0]["kind"] == "barrier.set"
+        assert reopened.tampered(run.id) is False
+    finally:
+        reopened.close()
+
+
+def test_a_v1_database_is_migrated_to_carry_barriers(tmp_path, clock):
+    import sqlite3
+
+    from agents.core.autonomy import work_runs
+    from agents.core.persistence.migrations import apply_migrations
+
+    path = tmp_path / "runs.db"
+    conn = sqlite3.connect(path)
+    apply_migrations(conn, work_runs.MIGRATIONS[:1], name="work_runs")
+    conn.execute(
+        "INSERT INTO runs (id, goal_id, title, status, approved_by, budget, started_at, "
+        "updated_at, deadline_at, fingerprint) VALUES ('r1', 'g', 't', 'planning', 'x', "
+        "'{\"max_steps\": 5}', 1000, 1000, 0, 'fp')"
+    )
+    conn.commit()
+    conn.close()
+
+    for _ in range(2):  # idempotent: reopening a migrated DB changes nothing
+        led = WorkRunLedger(path, clock=clock)
+        try:
+            assert led.get("r1").barrier is None
+            assert led.events("r1") == [] and led.processes("r1") == []
+        finally:
+            led.close()
+    with sqlite3.connect(path) as check:
+        assert check.execute("PRAGMA user_version").fetchone()[0] == len(work_runs.MIGRATIONS)
+
+
+def test_a_corrupt_barrier_column_reads_as_no_barrier(tmp_path, clock):
+    import sqlite3
+
+    path = tmp_path / "runs.db"
+    led = WorkRunLedger(path, clock=clock)
+    run = led.open_run(_goal())
+    led.close()
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE runs SET barrier = '[1, 2' WHERE id = ?", (run.id,))
+        conn.commit()
+    reopened = WorkRunLedger(path, clock=clock)
+    try:
+        assert reopened.get(run.id).barrier is None
+    finally:
+        reopened.close()

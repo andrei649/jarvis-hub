@@ -57,6 +57,7 @@ import shutil
 # Local CLI orchestrates fixed pytest/npm/git argv and never invokes a shell.
 import subprocess  # nosec B404
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -182,8 +183,12 @@ def reported_test_count_result(
     }
 
 
-def _json_test_count(package_dir: Path, extra_args: list[str]) -> int:
-    """Run a JS test suite with its JSON reporter and return the collected count."""
+def _json_test_count(package_dir: Path, extra_args: list[str], result_file: Path | None = None) -> int:
+    """Run a JS test suite with its JSON reporter and return the collected count.
+
+    ``result_file`` is where the reporter was told to write its JSON (Vitest 5 writes
+    the report to a file and prints only its path); without one the JSON is read from
+    the output, as Jest prints it."""
     npm = shutil.which("npm.cmd") or shutil.which("npm") or "npm"
     proc = subprocess.run(  # noqa: S603  # nosec B603
         [npm, "test", "--", *extra_args],
@@ -196,6 +201,11 @@ def _json_test_count(package_dir: Path, extra_args: list[str]) -> int:
     output = proc.stdout + "\n" + proc.stderr
     if proc.returncode != 0:
         raise RuntimeError(f"test-count command failed in {package_dir} (exit {proc.returncode})")
+    if result_file is not None:
+        try:
+            output = result_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise RuntimeError(f"test-count JSON missing in {package_dir}") from exc
     try:
         return parse_json_test_count(output)
     except ValueError as exc:
@@ -203,7 +213,10 @@ def _json_test_count(package_dir: Path, extra_args: list[str]) -> int:
 
 
 def count_frontend_tests(repo: Path = REPO) -> int:
-    return _json_test_count(repo / "frontend", ["--reporter=json"])
+    with tempfile.TemporaryDirectory(prefix="vitest-count-") as tmp:
+        report = Path(tmp) / "vitest.json"
+        return _json_test_count(
+            repo / "frontend", ["--reporter=json", f"--outputFile={report}"], result_file=report)
 
 
 def count_mobile_tests(repo: Path = REPO) -> int:

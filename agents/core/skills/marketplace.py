@@ -32,6 +32,7 @@ from agents.core.persistence.migrations import apply_migrations
 from . import signing
 from .loader import EXTERNAL_SOURCE_MARKER, OWNER_APPROVED_MARKER, SkillLoader
 from .skill_history import SkillHistory
+from .validate import Problem, SkillDocumentInvalid, declared_name, require_valid
 
 logger = logging.getLogger("jarvis.skills.marketplace")
 
@@ -165,6 +166,8 @@ class SkillMarketplace:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         # Guard concurrent publish/install from async task runners (H7.4).
         self._lock = threading.Lock()
+        # H507 — what the last install's code looks like (warn-only; never blocks).
+        self.last_install_warnings: list = []
         # 0.58 wiring: when a version-history ledger is attached, publish/install/
         # uninstall are recorded so a rollback target can be derived. Opt-in;
         # None → behaviour is byte-identical to before.
@@ -355,23 +358,41 @@ class SkillMarketplace:
         if not skill_file.exists():
             raise FileNotFoundError(f"SKILL.md manifest missing in: {skill_path}")
 
-        # Parse manifest using SkillLoader's internal helper
-        loader = SkillLoader()
-        manifest = loader._parse_manifest(skill_file)
-
-        # Sign the skill so the published package ships a SKILL.sig the installer
-        # can verify (HMAC-keyed when JARVIS_SKILL_SIGNING_KEY is set). (H12.12)
-        signature = signing.sign_skill(skill_path)
-
-        # Build Zip archive in memory (includes the freshly written SKILL.sig). The walk
-        # never follows or packs a link (H503): signing already refuses a linked
-        # artifact, and this keeps a link planted after signing from pulling an
-        # arbitrary file into a package that leaves the machine.
+        # Sign the package so it ships a SKILL.sig the installer can verify (HMAC-keyed
+        # when JARVIS_SKILL_SIGNING_KEY is set; H12.12). The signature is made on a staged
+        # copy, never on the owner's tree (review-H318b m-7): sharing a skill is not
+        # vouching for it, and a keyed SKILL.sig written in place would make an imported,
+        # unvouched skill load as owner-vouched.
+        #
+        # The package is built from one snapshot of the source (review-H318d m-2): it
+        # refuses a skill whose folder is a link, a member that is a link or not a regular
+        # file, and a file that changed while it was read, as signing the source tree did,
+        # and what is packed is the bytes it read, never a second read a link planted after
+        # the check could redirect. The control markers it leaves out never ship.
         zip_buffer = io.BytesIO()
-        files, _links = archive_safe.collect_regular_files(skill_path)
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            for file_path in files:
-                zip_file.write(file_path, file_path.relative_to(skill_path).as_posix())
+        with tempfile.TemporaryDirectory(prefix="nerva-publish-") as staging:
+            staged = Path(staging) / skill_path.name
+            snapshot = signing.source_snapshot(skill_path)
+            # The row describes the SKILL.md the package ships: the snapshot's bytes, never
+            # an earlier read of a file that could change before the snapshot (review-H318e n-5).
+            manifest_bytes = snapshot.read_bytes("SKILL.md")
+            if manifest_bytes is None:
+                raise FileNotFoundError(f"SKILL.md manifest missing in: {skill_path}")
+            # H350 — a package ships only a SKILL.md every hub reads as intended.
+            require_valid(manifest_bytes)
+            manifest = SkillLoader()._parse_manifest(skill_file, source_bytes=manifest_bytes)
+            for item in snapshot.files:
+                if item.kind != "file":
+                    continue
+                dest = staged / item.relative_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(item.content)
+            staged.mkdir(parents=True, exist_ok=True)
+            signature = signing.sign_skill(staged)
+            files, _links = archive_safe.collect_regular_files(staged)
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                for file_path in files:
+                    zip_file.write(file_path, file_path.relative_to(staged).as_posix())
 
         zip_data = zip_buffer.getvalue()
 
@@ -624,7 +645,7 @@ class SkillMarketplace:
     def _safe_skill_dir(self, raw_name: str, *, action: str = "install") -> Path:
         """Resolve a skill name to a directory strictly inside ``skills_dir``.
 
-        Used for both install (name derived from an untrusted SKILL.md heading)
+        Used for both install (the name an untrusted SKILL.md declares)
         and uninstall so a name with a separator, ``.``/``..``, or a NUL can never
         escape the skills tree. Returns the resolved, in-tree target directory.
         """
@@ -795,22 +816,21 @@ class SkillMarketplace:
             written = archive_safe.extract_zip_bytes(zip_bytes, package,
                                                      limits=SKILL_PACKAGE_LIMITS)
             manifest_parts = self._find_manifest(written)
-            skill_md_content = package.joinpath(*manifest_parts).read_text(encoding="utf-8")
+            skill_md_bytes = package.joinpath(*manifest_parts).read_bytes()
+            # H350 — checked before its name picks a folder or anything is placed.
+            require_valid(skill_md_bytes)
+            # The folder is the name that check validated (the frontmatter ``name``, or the
+            # heading dialect's one '# ' line), never a heading in the body (review-H350 F6).
+            skill_name = declared_name(skill_md_bytes) or ""
 
-            skill_name = None
-            for line in skill_md_content.split("\n"):
-                stripped = line.strip()
-                if stripped.startswith("# "):
-                    skill_name = stripped[2:].strip()
-                    break
-
-            if not skill_name:
-                skill_name = manifest_parts[-2] if len(manifest_parts) > 1 else "imported_skill"
-
-            # skill_name is the untrusted '# ' heading of SKILL.md inside the zip.
-            # Validate the derived folder BEFORE anything is placed, or a heading like
-            # '# ..' / '# /etc/cron.d' relocates target_dir outside skills_dir.
+            # skill_name is still the package's own. Validate the derived folder BEFORE
+            # anything is placed, or a name like '..' relocates target_dir outside skills_dir.
             target_dir = self._safe_skill_dir(skill_name)
+            if target_dir.exists() and not self._holds_skill(target_dir.joinpath(*manifest_parts), skill_name):
+                # A reinstall replaces its own folder; another skill's is never swapped out.
+                raise SkillDocumentInvalid([Problem(
+                    "name", f"{skill_name!r} would replace the folder {target_dir.name!r}, which holds "
+                            "another skill: uninstall that one first, or rename this one")])
 
             # Signature gate: SKILL.sig lives at the package root (manifest dir). The
             # digest is over relative paths, so verifying the staged tree verifies
@@ -835,10 +855,31 @@ class SkillMarketplace:
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
+        from agents.core.code_guidance import scan_tree
+
+        try:
+            self.last_install_warnings = scan_tree(target_dir)
+        except Exception:
+            logger.warning("code guidance for an installed skill failed", exc_info=True)
+            self.last_install_warnings = []
+        if self.last_install_warnings:
+            logger.warning("Installed skill package has %d code warning(s): %s",
+                           len(self.last_install_warnings),
+                           ", ".join(sorted({w["rule"] for w in self.last_install_warnings})))
+
         # Avoid logging the package-derived name/path (log-injection); signature
         # reason is a fixed label.
         logger.info("Installed a marketplace skill package (signature: %s)", reason)
         return True
+
+    @staticmethod
+    def _holds_skill(skill_md: Path, name: str) -> bool:
+        """Whether the installed *skill_md* declares *name* (so an install is a reinstall)."""
+        try:
+            installed = declared_name(skill_md.read_bytes())
+        except OSError:
+            return False
+        return installed is not None and installed.casefold() == name.casefold()
 
     @staticmethod
     def _place(package: Path, target_dir: Path, staging: Path) -> None:

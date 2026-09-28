@@ -242,6 +242,22 @@ class TargetRegistry:
         for target in targets:
             self.register(target)
 
+    def names(self) -> list[str]:
+        """The registered target names, sorted."""
+        with self._lock:
+            return sorted(self._targets)
+
+    def usable_names(self, agent: str, capability: str) -> list[str]:
+        """The targets :meth:`authorize` would not deny *agent* for *capability*, sorted
+        (H296: what terminal_run advertises). A read, not a decision: nothing is audited."""
+        with self._lock:
+            return sorted(
+                name for name, target in self._targets.items()
+                if target.enabled
+                and ("*" in target.allowed_agents or agent in target.allowed_agents)
+                and capability in target.capabilities
+            )
+
     def register(self, target: TerminalTarget) -> None:
         if not isinstance(target, TerminalTarget):
             raise ValueError("target must be TerminalTarget")

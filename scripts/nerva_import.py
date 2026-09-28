@@ -966,6 +966,18 @@ def _skill_notes(rows, *, applied_update: bool) -> list[str]:
             f"  ({untrusted} imported skill record(s) name a file outside the install: "
             "not followed)"
         )
+    for row in rows:
+        if row.get("status") != "rejected":
+            continue
+        # H350 — the reason and every problem, as --json has them (review-H350 F7).
+        problems = "; ".join(
+            f"{p.get('field')}: {p.get('message')}" + (f" (line {p['line']})" if "line" in p else "")
+            for p in row.get("problems") or [] if isinstance(p, dict)
+        )
+        notes.append(
+            f"  ! {row.get('slug') or 'a skill'}: not imported ({row.get('reason') or 'rejected'})"
+            + (f": {problems}" if problems else "")
+        )
     denied = [row for row in rows if row.get("status") == "denied"]
     if denied:
         notes.append(

@@ -1,0 +1,32 @@
+COMMAND ["/Users/andrei649/Projects/nerva-hub/.venv/bin/python3.12", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py"]
+................F....................................................... [ 43%]
+........................................................................ [ 86%]
+......................                                                   [100%]
+=================================== FAILURES ===================================
+____________ test_parse_verdict_rejects[{"risk": 10.5, "why": "x"}] ____________
+
+text = '{"risk": 10.5, "why": "x"}'
+
+    @pytest.mark.parametrize("text", [
+        '{"risk": 10, "why": "x", "decision": "approve"}',
+        '{"risk": true, "why": "x"}',
+        '{"risk": "10", "why": "x"}',
+        '{"risk": 10}',
+        '{"risk": 10, "why": "   "}',
+        '{"risk": 10, "why": "x"} and it is safe',
+        '{"risk": 10.5, "why": "x"}',
+        '[10, "x"]',
+        "",
+        "approved",
+        '{"risk": 10, "why": 5}',
+        '```json\n{"risk": 1, "why": "a"}\n```\n```json\n{"risk": 1, "why": "b"}\n```',
+    ])
+    def test_parse_verdict_rejects(text):
+>       assert parse_verdict(text) is None
+E       assert Verdict(score=10, rationale='x') is None
+E        +  where Verdict(score=10, rationale='x') = parse_verdict('{"risk": 10.5, "why": "x"}')
+
+tests/test_h277_approval_judge.py:291: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_parse_verdict_rejects[{"risk": 10.5, "why": "x"}]
+1 failed, 165 passed in 2.52s

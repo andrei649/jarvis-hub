@@ -188,6 +188,7 @@ class GovernedBrowser:
 
     async def run_step(self, step: dict) -> dict:
         action = step.get("action", "")
+        human = {}
         kind = classify_step(action)
         if kind == "unknown":
             return {"action": action, "status": "blocked", "reason": f"unknown action: {action}"}
@@ -229,14 +230,20 @@ class GovernedBrowser:
                 "risk_tier": 2,
             })
             status = await self.approvals.await_decision(req["id"], timeout=self.approval_timeout)
+            get_item = getattr(self.approvals, "get", None)
+            decided = get_item(req["id"]) if callable(get_item) else None
+            if decided and decided.get("human_reason") is not None:
+                human["human_reason"] = decided["human_reason"]
             if status != "approved":
-                return {"action": action, "status": "denied", "reason": status, "approval_id": req["id"]}
+                reason = "expired_unanswered" if status == "expired" else status
+                return {"action": action, "status": "denied", "reason": reason,
+                        "approval_id": req["id"], **human}
         try:
             result = await getattr(self.driver, action)(**{k: v for k, v in step.items() if k != "action"})
-            return {"action": action, "status": "done", "result": result}
+            return {"action": action, "status": "done", "result": result, **human}
         except Exception:
             logger.warning("browser step %s failed", action, exc_info=True)
-            return {"action": action, "status": "error", "reason": "step failed"}
+            return {"action": action, "status": "error", "reason": "step failed", **human}
 
     async def run(self, plan: list[dict], stop_on_block: bool = True) -> dict:
         trace = []

@@ -127,6 +127,13 @@ def validate_policy(policy: dict[str, Any]) -> None:
     if policy.get("autonomous_default") is not True:
         raise PolicyError("autonomous_default must remain true for this owner directive")
 
+    if "local_development" in policy:
+        local = policy["local_development"]
+        if not isinstance(local, dict):
+            raise PolicyError("local_development must be an object")
+        for key in ("enabled", "allow_protected_changes", "require_owner_approval"):
+            _require_bool(local, key)
+
     patterns = _patterns(policy)
     for required in MANDATORY_PROTECTED_PATHS:
         if protected_pattern(required, patterns) is None:
@@ -225,10 +232,18 @@ def classify(paths: list[str], policy: dict[str, Any]) -> dict[str, Any]:
     has_paths = bool(clean_paths)
     protected = bool(hits)
     autonomous = has_paths and not protected and policy["autonomous_default"] is True
+    local = policy.get("local_development", {})
+    local_autonomous = (
+        has_paths
+        and local.get("enabled") is True
+        and local.get("require_owner_approval") is False
+        and (not protected or local.get("allow_protected_changes") is True)
+    )
     return {
         "policy_id": policy["policy_id"],
         "paths": clean_paths,
         "protected_hits": hits,
+        "autonomous_local_development": local_autonomous,
         "autonomous_merge": autonomous and policy["merge"]["enabled"],
         "autonomous_deploy": autonomous and policy["deploy"]["enabled"],
         "independent_review_enforced": policy["review"]["independent_reviewer_required"],

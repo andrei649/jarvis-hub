@@ -88,6 +88,29 @@ def _canonical(payload: Mapping[str, Any]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
 
 
+def task_kind_in_scope(task_kind: Any, scope_kinds: Any) -> bool:
+    """Whether a plan row's queued task kind is inside the goal's scope (H464c).
+
+    The scope names step kinds, and a row's task is what actually reaches the
+    governed intake, so the task's kind is held to the same scope: it must BE one
+    of the scope kinds, or sit under one — the whole scope kind, then a dot
+    (``research.collect`` under ``research``, ``file.write.append`` under
+    ``file.write``; H464d: not just under its first segment). ``file.write`` is not
+    inside ``research``, ``file.writer`` is not inside ``file.write``, and a kind
+    that is not a string is inside nothing. An empty scope is the explicitly
+    unrestricted goal.
+    """
+    scope = frozenset(scope_kinds or ())
+    if not scope:
+        return True
+    if not isinstance(task_kind, str):
+        return False
+    return any(
+        isinstance(kind, str) and kind and (task_kind == kind or task_kind.startswith(kind + "."))
+        for kind in scope
+    )
+
+
 @dataclass(frozen=True)
 class SuccessCheck:
     """How anyone would know the goal was met. Becomes a verifier check.
@@ -202,6 +225,13 @@ class GoalDraft:
                 # a contradiction in the card the owner is being shown.
                 raise GoalContractError("plan_step_out_of_scope")
             task = row.get("task")
+            if (
+                not self.unrestricted and isinstance(task, Mapping) and "kind" in task
+                and not task_kind_in_scope(task["kind"], kinds)
+            ):
+                # The row's kind is in scope but the task it queues is not: the
+                # card would show one thing and the intake receive another (H464c).
+                raise GoalContractError("plan_task_out_of_scope")
             plan.append({
                 "kind": kind,
                 "summary": summary,
@@ -282,6 +312,13 @@ class ApprovedGoal:
     @property
     def budget(self) -> Budget:
         return self.draft.budget
+
+    @property
+    def approved_fingerprint(self) -> str:
+        """The fingerprint of exactly what the owner approved. ``open_run`` pins it
+        on the run, so a later edit of the approval task — whatever fingerprint it
+        carries about itself — can never drive that run (H464c)."""
+        return self.draft.fingerprint()
 
     def plan_steps(self) -> list[Any]:
         """The approved plan as planner ``PlanStep`` objects.
@@ -485,4 +522,5 @@ __all__ = [
     "approve_from_task",
     "draft_from_payload",
     "propose",
+    "task_kind_in_scope",
 ]

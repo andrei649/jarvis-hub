@@ -390,6 +390,11 @@ class CallBroker:
                     delivery_id, "call", _place_call
                 )
                 if delivery["status"] == "downgraded":
+                    if delivery.get("reason") == "attention_ledger_unavailable":
+                        # The ledger could not be read or written: the call's own
+                        # machinery failed, not a spent budget — a failure under its own
+                        # reason (review round 4, item 5).
+                        return {"status": "failed", "reason": "attention_ledger_unavailable"}
                     return {"status": "failed", "reason": "interrupt_budget_exhausted"}
                 if delivery["status"] != "delivered":
                     logger.warning("call execute failed: %s", delivery.get("reason"))
@@ -412,7 +417,13 @@ class CallBroker:
             if self._ledger is not None and performed:
                 self._ledger.add_tokens(len(message))   # coarse per-call usage signal
             self._record("call.execute", f"{provider}:{to}", to=to)
-            return {"status": "ok", "provider": provider, "to": to, "call": result}
+            # A deferral (the default Null client: no credential) is not a call placed:
+            # its degraded marker and reason are lifted to the top level, every key kept
+            # (review round 6, item 4), so the worker never records it as a success.
+            from ..plugins.degradation import lift_degraded
+
+            return lift_degraded(
+                {"status": "ok", "provider": provider, "to": to, "call": result}, result)
         finally:
             if self._ledger is not None:
                 self._ledger.leave()

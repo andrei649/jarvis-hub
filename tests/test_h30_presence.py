@@ -13,6 +13,7 @@ from agents.core.house.presence import (
     PresenceInference,
 )
 from agents.core.house.private_store import PrivateHouseStore
+from agents.core.llm.providers import get_profile
 from agents.core.observability.egress_monitor import EGRESS_MONITOR
 from agents.core.security.secret_broker import SecretBroker
 
@@ -256,6 +257,9 @@ def test_expired_persisted_presence_recovers_as_unknown(tmp_path):
 @pytest.mark.asyncio
 async def test_optional_explanation_uses_only_local_backend_and_sanitized_payload(tmp_path):
     class Backend:
+        profile = get_profile("lm-studio")
+        base_url = "http://127.0.0.1:1234"
+
         async def generate(self, model, prompt, **_kwargs):
             assert model == "local-model"
             assert "Alice Example" not in prompt
@@ -265,9 +269,12 @@ async def test_optional_explanation_uses_only_local_backend_and_sanitized_payloa
     class Router:
         active_model = "local-model"
 
+        def __init__(self):
+            self._local_backend = Backend()
+
         @property
         def local_backend(self):
-            return Backend()
+            return self._local_backend
 
         @property
         def backend(self):

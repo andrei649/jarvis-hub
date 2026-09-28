@@ -12,9 +12,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
@@ -26,7 +28,8 @@ from agents.core.sandbox_invocation import (
     InvocationRefused,
     SandboxInvocation,
 )
-from agents.core.tool_rpc import ToolRPCServer
+from agents.core.security.recall_taint import mark_turn_recall_tainted
+from agents.core.tool_rpc import ToolRPCServer, bind_tool_turn, reset_tool_turn
 
 logger = logging.getLogger("jarvis.tool_rpc_runtime")
 
@@ -43,15 +46,27 @@ class ToolCallBroker:
     A broker is per *authority*, not per process: a session kernel builds a fresh one
     for every cell, which is what stops a variable created in cell 1 from carrying
     cell 1's permissions into cell 400.
+
+    It also carries what the script has read (the H315 second review). A script's tool
+    calls never pass through the loop, which raises the turn's taint only once a batch
+    returns, so a script could read a page and write it into the plan as clean text.
+    It reads an answer as the loop reads a result (H315 third review): once a tool that
+    declares ``untrusted_output`` answers ok, an answer says ``tainted``, or the injection
+    scanner flags an answer, :attr:`tainted` is set and every later call this broker
+    services runs under a raised origin. A refusal or a tool that raised is Nerva's own
+    words about a call that did not happen, and taints nothing. The flag lives here, not
+    only in the context: a session kernel services each batch of a cell's calls in a task
+    of its own.
     """
 
-    __slots__ = ("server", "invocation", "revoked")
+    __slots__ = ("server", "invocation", "revoked", "tainted")
 
     def __init__(self, server: ToolRPCServer, invocation: SandboxInvocation | None,
                  *, revoked: Callable[[], bool] | None = None) -> None:
         self.server = server
         self.invocation = invocation
         self.revoked = revoked
+        self.tainted = False
 
     async def call(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         # Authority first, and entirely before `handle`: a refusal after the call has
@@ -65,18 +80,176 @@ class ToolCallBroker:
             )
         except InvocationRefused as refusal:
             return refusal.as_response()
+        if self.tainted:
+            mark_turn_recall_tainted()        # an earlier call of this run read untrusted text
+        declares = getattr(self.server, "declares_untrusted_output", None)
+        untrusted = bool(declares(tool)) if callable(declares) else False
+        # A script's call belongs to no model turn: what it writes is not text the model
+        # sent in its own transcript, so a tool never treats it as the turn's own words.
+        turn = bind_tool_turn(None)
         try:
             response = await self.server.handle(
                 {"tool": tool, "args": args}, actor=self.invocation.agent,
             )
         except Exception:
             logger.warning("file-rpc tool request failed: %s", tool, exc_info=True)
-            return {"ok": False, "reason": "tool_error", "tool": tool}
+            response = {"ok": False, "reason": "tool_error", "tool": tool}
+        finally:
+            reset_tool_turn(turn)
+        # Once the run is tainted a scan can change nothing, so it is skipped: this broker's
+        # own flag, or the origin an earlier read raised (the K1 loop builds a broker per
+        # request, review-H315f m3). Otherwise it runs off the event loop (review-H315e m2:
+        # 50 nested answers of 2 MB held every chat for 16 s), over the whole answer (an
+        # injection deep in it counts), in chunks on a thread of its own.
+        if self.tainted or _origin_untrusted():
+            self.tainted = True
+        elif (untrusted and _answered_ok(response)) or _declares_taint(response) or await _scan(response):
+            self.tainted = True
+            mark_turn_recall_tainted()
         return response if isinstance(response, dict) else {
             "ok": False,
             "reason": "bad_response",
             "tool": tool,
         }
+
+
+def _answered_ok(response: Any) -> bool:
+    """The tool ran and answered: neither the server nor the handler refused."""
+    if not isinstance(response, dict) or response.get("ok") is not True:
+        return False
+    inner = response.get("result")
+    return not (isinstance(inner, dict) and inner.get("ok") is False)
+
+
+#: The scan's own thread: never the loop's default pool, which scans of many concurrent
+#: scripts would otherwise fill for every other ``to_thread`` user (review-H315f m3). Only
+#: large answers go to it; small ones are scanned inline, so they never queue behind a
+#: multi-megabyte scan (review-H315g m2). One thread, not four: the scan holds the GIL,
+#: so more scanners bought no throughput and made the loop wait 4-5x longer at p99
+#: (review-H315h m2).
+_SCAN_WORKERS = 1
+
+
+def _new_scan_pool() -> ThreadPoolExecutor:
+    return ThreadPoolExecutor(max_workers=_SCAN_WORKERS, thread_name_prefix="tool-rpc-scan")
+
+
+_SCAN_POOL = _new_scan_pool()
+
+
+def _rebuild_scan_pool_after_fork() -> None:
+    """A forked child inherits the pool without its threads, and its scans would hang
+    (review-H315g n3)."""
+    global _SCAN_POOL
+    _SCAN_POOL = _new_scan_pool()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_rebuild_scan_pool_after_fork)
+
+#: An answer this small is scanned inline, where it costs microseconds: sending it to a
+#: thread would only queue it behind other scripts' large scans.
+_SCAN_INLINE_BYTES = 16 * 1024
+
+
+_encode_string = json.encoder.encode_basestring   # the C encoder when there is one
+
+
+def _small(value: Any, budget: int = _SCAN_INLINE_BYTES) -> bool:
+    """Whether ``value`` encodes to under ``budget`` characters, counted until it does not:
+    a container wider than what is left is refused before its items are listed, and a
+    string longer than it before it is looked at, so the walk costs at most ``budget``
+    whatever the answer's size (review-H315h n1). A string that fits is counted as it
+    encodes, exactly, so a newline costs two, not the whole string six times over (a
+    multi-line log answer queued behind large scans again: review-H315i m1), and a quote
+    two, not one (n4). ``bytes`` count as ``str()`` spells them, as the encoder does. A
+    value JSON spells through ``str()`` otherwise (a huge int, any object) has a size
+    nobody knows until it is spelled, so it is never small."""
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, (str, bytes, bytearray)):
+            if len(item) > budget:
+                return False
+            text = item if isinstance(item, str) else str(item)
+            if len(text) > 4 * budget:
+                return False
+            # What json.dumps(ensure_ascii=False) writes for a string, without its
+            # machinery: the size walk runs on the loop for every call (review-H315j n1).
+            budget -= len(_encode_string(text))
+        elif isinstance(item, dict):
+            budget -= 4 * len(item) + 2          # ": " and ", " per pair (review-H315j n2)
+            if budget < 0:
+                return False
+            stack.extend(item.keys())
+            stack.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            budget -= 2 * len(item) + 2          # ", " per item
+            if budget < 0:
+                return False
+            stack.extend(item)
+        elif item is None or isinstance(item, (bool, float)) or (
+                isinstance(item, int) and -(2 ** 63) <= item < 2 ** 63):
+            budget -= 24
+        else:
+            return False
+        if budget < 0:
+            return False
+    return True
+
+
+async def _scan(response: Any) -> bool:
+    if _small(response):
+        return _flagged(response)
+    return await asyncio.get_running_loop().run_in_executor(_SCAN_POOL, _flagged, response)
+#: The answer is scanned in slices of this many characters, overlapping by
+#: _SCAN_OVERLAP, so no single regex call holds the interpreter lock for a whole 2 MB
+#: answer (the loop stalls while it does); the overlap keeps a pattern that straddles two
+#: slices whole.
+_SCAN_CHUNK = 64 * 1024
+_SCAN_OVERLAP = 4 * 1024
+
+
+def _origin_untrusted() -> bool:
+    """This context has already read untrusted text (an earlier call of the run)."""
+    try:
+        from agents.core.action_origin import current_action_origin
+        from agents.core.security.taint import is_untrusted_source
+
+        return bool(is_untrusted_source(current_action_origin()))
+    except Exception:
+        return False
+
+
+def _flagged(response: Any) -> bool:
+    """The answer is flagged as the loop's fence flags a result: an injection pattern, or
+    the fence's own markers spelled out inside it (review-H315e n1)."""
+    from agents.core.security.quarantine import FENCE_CLOSE, detect_injection
+
+    try:
+        encoded = json.dumps(response, ensure_ascii=False, default=str)
+    except RecursionError:
+        return True                      # too deep to read is not clean: fail closed (review-H315h)
+    except (TypeError, ValueError):
+        return False
+    if FENCE_CLOSE in encoded or "<<UNTRUSTED" in encoded:
+        return True
+    for start in range(0, max(1, len(encoded)), _SCAN_CHUNK):
+        end = start + _SCAN_CHUNK + _SCAN_OVERLAP
+        # A slice never ends inside a word: a pattern's closing \b would match at the cut
+        # ("you are now|here"), which the whole answer does not (review-H315g n2).
+        stop = min(len(encoded), end + 256)
+        while end < stop and (encoded[end].isalnum() or encoded[end] == "_"):
+            end += 1
+        if detect_injection(encoded[start:end]):
+            return True
+    return False
+
+
+def _declares_taint(response: Any) -> bool:
+    """A handler's own answer, under ``result``, says its content is tainted."""
+    inner = response.get("result") if isinstance(response, dict) else None
+    return isinstance(inner, dict) and inner.get("tainted") is True
 
 
 @dataclass(frozen=True)
@@ -203,6 +376,11 @@ class ToolRPCSandboxRuntime:
         while the child runs and has no business deciding what happens to its output.
         """
         run_id = uuid.uuid4().hex
+        # The sandbox makes its run directory right (0700, its lock) before the RPC
+        # mailbox inside it would make it again with the umask's mode (review-H667b m2).
+        ensure = getattr(self.sandbox, "ensure_work_dir", None)
+        if ensure is not None:
+            ensure()
         rpc_dir = self.sandbox.work_dir / ".jarvis_file_rpc" / run_id
         store = FileRPCStore(rpc_dir, max_tool_calls=self.max_tool_calls)
         child_rpc_dir = self._child_rpc_dir(run_id)
@@ -302,6 +480,8 @@ class ToolRPCSandboxRuntime:
             store.request_path(seq).unlink(missing_ok=True)
 
     async def _handle_request(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        # A broker per request is enough here: this loop services every request of the
+        # run in one context, so the origin an untrusted read raised holds for the next.
         return await ToolCallBroker(
             self.server, self.invocation, revoked=self.revoked,
         ).call(tool, args)

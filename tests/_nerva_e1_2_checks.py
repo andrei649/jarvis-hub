@@ -13,8 +13,10 @@ import sys
 import traceback
 from copy import deepcopy
 from dataclasses import FrozenInstanceError, fields, replace
+from functools import partial
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory as _TemporaryDirectory
+from tempfile import gettempdir
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -45,6 +47,10 @@ from agents.core.observability.scheduled_report import (
     run_fingerprint,
 )
 from agents.core.router import Intent, IntentRouter
+
+# Canonicalize only the system temporary root: macOS /var is a symlink.
+# Explicit symlink/reparse probes below still exercise the strict security guard.
+TemporaryDirectory = partial(_TemporaryDirectory, dir=Path(gettempdir()).resolve())
 
 _REVISION = "a" * 40
 _ARBITRARY_NOTE_SENTINEL = "arbitrary-note-sentinel"

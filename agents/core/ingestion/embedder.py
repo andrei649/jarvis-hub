@@ -18,7 +18,7 @@ H5.17 — Batch & Cache Embeddings Pipeline:
 
 H7.4 — Query-embedding cache + fast-fail for recall:
   * **In-process LRU** (`_PROC_CACHE`): bounded dict keyed by
-    ``(backend, model, text)``; skips even the disk read for hot queries
+    ``(versioned target/source namespace, text)``; skips even the disk read for hot queries
     within a single process.
   * **from_env default cache_dir**: when no ``cache_dir`` is supplied,
     defaults to ``memory_logs/embedding_cache/recall`` (overridable via
@@ -37,11 +37,16 @@ import threading
 import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from httpx import InvalidURL
+
+from agents.core.llm.data_handling import DataHandlingRefused
 from agents.core.paths import data_path
 
+from . import embedding_policy
 from .normalizer import NormalizedMessage
 
 logger = logging.getLogger("jarvis.ingestion.embedder")
@@ -49,8 +54,8 @@ logger = logging.getLogger("jarvis.ingestion.embedder")
 EMBEDDING_DIM = 768
 
 # ── In-process LRU cache (H7.4) ──────────────────────────────────────────────
-# Keyed by (backend, model, text) so vectors from different backends/models
-# never collide even when the text is identical.
+# Keyed by (versioned target/source namespace, text); semantic targets include
+# actual endpoint/account identity, and hash fallback never fills semantic keys.
 _PROC_CACHE_MAX = 256
 _PROC_CACHE: "OrderedDict[tuple, list[float]]" = OrderedDict()
 # BUG-12: embedding runs via asyncio.to_thread, so the module-global OrderedDict
@@ -156,6 +161,37 @@ class EmbeddingCache:
         }
 
 
+@dataclass(frozen=True)
+class _ProducedEmbedding:
+    vector: list[float]
+    namespace: str | None
+
+
+class _BoundCacheView:
+    """Keep archive cache.get compatible while re-resolving the current target."""
+    def __init__(self, owner):
+        self.owner = owner
+
+    def get(self, text):
+        cache = self.owner._cache_for(self.owner._cache_identity())
+        return cache.get(text) if cache is not None else None
+
+    @property
+    def dir(self):
+        """Expose a directory only for the current usable cache identity."""
+        cache = self.owner._cache_for(self.owner._cache_identity())
+        return cache.dir if cache is not None else None
+
+    @property
+    def stats(self):
+        with self.owner._cache_lock:
+            caches = list(self.owner._cache_stores.values())
+        hits = sum(cache.hits for cache in caches)
+        misses = sum(cache.misses for cache in caches)
+        return {"hits": hits, "misses": misses, "writes": sum(cache.writes for cache in caches),
+                "hit_rate": hits / (hits + misses) if hits + misses else 0.0}
+
+
 class Embedder:
     def __init__(self, backend: str = "ollama", model: str = "nomic-embed-text",
                  cache_dir=None, *, base_url: str = None, http_client=None,
@@ -168,7 +204,7 @@ class Embedder:
         self.backoff_base = backoff_base
         self.backoff_max = backoff_max
         self.max_workers = max(1, max_workers)
-        self._client = None          # ollama module
+        self._client = None          # owned Ollama SDK client
         self._http_client = http_client  # injectable httpx-like client (lmstudio)
         # Degraded-state latch (log-noise discipline): once the primary backend
         # exhausts retries and we fall back to hash embeddings, warn ONCE with
@@ -179,10 +215,10 @@ class Embedder:
         self._setup()
         # Namespace the cache by the backend that actually produces vectors, so
         # ollama and hash embeddings are never mixed under one key.
-        self.cache = (
-            EmbeddingCache(cache_dir, namespace=f"{self.backend}:{self.model}")
-            if cache_dir is not None else None
-        )
+        self._cache_dir = cache_dir
+        self._cache_stores = {}
+        self._cache_lock = threading.Lock()
+        self.cache = _BoundCacheView(self) if cache_dir is not None else None
         # Per-instance hit counter that includes both proc-cache and disk-cache
         # hits so that cache_stats["hits"] remains meaningful even when the
         # in-process LRU absorbs calls before they reach the disk layer.
@@ -192,21 +228,37 @@ class Embedder:
         if self.backend == "ollama":
             try:
                 import ollama
-                self._client = ollama
+
+                from agents.core.llm.egress import llm_sync_request_hook
+                from agents.core.tls_trust import verify_for
+
+                self._client = ollama.Client(host=os.getenv("OLLAMA_HOST"), timeout=30.0,
+                                             follow_redirects=False, trust_env=False,
+                                             event_hooks={"request": [llm_sync_request_hook("ollama")]},
+                                             verify=verify_for("ollama", os.getenv("OLLAMA_HOST")))
                 logger.info(f"Embedder: Ollama/{self.model}")
             except ImportError:
                 logger.warning("Ollama not installed, falling back to hash embeddings")
+                self.backend = "hash"
+            except (ValueError, InvalidURL):
+                logger.warning("Invalid embedding client configuration; using hash fallback")
                 self.backend = "hash"
         elif self.backend == "lmstudio":
             self.base_url = self.base_url or "http://localhost:1234"
             if self._http_client is None:
                 try:
-                    import httpx
-                    self._http_client = httpx.Client(base_url=self.base_url, timeout=30.0)
+                    from agents.core.llm.egress import llm_sync_client
+
+                    self._http_client = llm_sync_client("lm-studio", base_url=self.base_url,
+                                                       timeout=30.0, follow_redirects=False, trust_env=False)
                 except ImportError:
                     logger.warning("httpx not installed, falling back to hash embeddings")
                     self.backend = "hash"
-            logger.info(f"Embedder: LM Studio/{self.model} @ {self.base_url}")
+                except (ValueError, InvalidURL):
+                    logger.warning("Invalid embedding client configuration; using hash fallback")
+                    self.backend = "hash"
+            embedding_policy.install_hook(self._http_client, "lm-studio")
+            logger.info("Embedder: %s", self.backend)
         else:
             logger.info(f"Embedder: {self.backend}")
 
@@ -242,26 +294,26 @@ class Embedder:
     def embed(self, text: str) -> list[float]:
         """Embed one text (in-process cache → disk cache → backend).
 
-        H7.4: checks the bounded in-process LRU first (keyed by backend+model+text)
+        Checks the bounded in-process LRU first (keyed by target/source+text)
         before touching disk or the network backend.
         """
         if not text or not text.strip():
             return [0.0] * EMBEDDING_DIM
-        proc_key = (self.backend, self.model, text)
-        cached_proc = _proc_cache_get(proc_key)
+        namespace = self._cache_identity()
+        proc_key = (namespace, text)
+        cached_proc = _proc_cache_get(proc_key) if namespace is not None else None
         if cached_proc is not None:
             self._proc_hits += 1
             return cached_proc
-        if self.cache is not None:
-            cached_disk = self.cache.get(text)
+        cache = self._cache_for(namespace)
+        if cache is not None:
+            cached_disk = cache.get(text)
             if cached_disk is not None:
                 _proc_cache_put(proc_key, cached_disk)
                 return cached_disk
-        vec = self._embed_resilient(text)
-        _proc_cache_put(proc_key, vec)
-        if self.cache is not None:
-            self.cache.put(text, vec)
-        return vec
+        produced = self._embed_resilient(text)
+        self._cache_produced(text, produced)
+        return produced.vector
 
     def embed_batch(self, texts: list[str], *, batch_size: int = 32) -> list[list[float]]:
         """Embed many texts with caching, de-duplication, and parallel misses.
@@ -288,11 +340,10 @@ class Embedder:
         for start in range(0, len(unique_texts), max(1, batch_size)):
             wave = unique_texts[start:start + max(1, batch_size)]
             computed = self._compute_wave(wave)
-            for text, vec in zip(wave, computed):
-                if self.cache is not None:
-                    self.cache.put(text, vec)
+            for text, produced in zip(wave, computed):
+                self._cache_produced(text, produced)
                 for pos in misses[text]:
-                    results[pos] = vec
+                    results[pos] = produced.vector
 
         return [r if r is not None else [0.0] * EMBEDDING_DIM for r in results]
 
@@ -324,14 +375,44 @@ class Embedder:
 
     # ── internals ─────────────────────────────────────────────────────────────
 
-    def _compute_wave(self, texts: list[str]) -> list[list[float]]:
+    def _policy_client(self):
+        return self._client._client if self.backend == "ollama" and self._client else self._http_client
+
+    def _cache_identity(self):
+        if self.backend == "hash":
+            return f"embedding:v2:hash:{self.model}"
+        try:
+            provider = "lm-studio" if self.backend == "lmstudio" else "ollama"
+            return embedding_policy.describe(self._policy_client(), provider, self.model).namespace
+        except Exception:
+            return None
+
+    def _cache_for(self, namespace):
+        if namespace is None or self._cache_dir is None:
+            return None
+        with self._cache_lock:
+            if namespace not in self._cache_stores:
+                if len(self._cache_stores) >= 16:
+                    self._cache_stores.clear()
+                self._cache_stores[namespace] = EmbeddingCache(self._cache_dir, namespace)
+            return self._cache_stores[namespace]
+
+    def _cache_produced(self, text, produced):
+        if produced.namespace is None:
+            return
+        _proc_cache_put((produced.namespace, text), produced.vector)
+        cache = self._cache_for(produced.namespace)
+        if cache is not None:
+            cache.put(text, produced.vector)
+
+    def _compute_wave(self, texts: list[str]) -> list[_ProducedEmbedding]:
         """Compute embeddings for a wave of unique misses, optionally in parallel."""
         if self.max_workers == 1 or len(texts) == 1:
             return [self._embed_resilient(t) for t in texts]
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
             return list(pool.map(self._embed_resilient, texts))
 
-    def _embed_resilient(self, text: str) -> list[float]:
+    def _embed_resilient(self, text: str) -> _ProducedEmbedding:
         """Call the primary backend with retry+backoff; degrade to hash on failure.
 
         Log-noise discipline: retry attempts log at DEBUG (transient plumbing);
@@ -342,16 +423,31 @@ class Embedder:
         still surfacing the condition once, with guidance.
         """
         last_exc: Optional[Exception] = None
+        backend, model = self.backend, self.model
+        client = self._client if backend == "ollama" else self._http_client
+        wire_client = getattr(client, "_client", None) if backend == "ollama" else client
+        provider = "lm-studio" if backend == "lmstudio" else "ollama"
+        expected_target = None
         for attempt in range(self.max_retries + 1):
             try:
-                vec = self._embed_primary(text)
+                if backend == "hash":
+                    vec, namespace = self._embed_primary(text), self._cache_identity()
+                else:
+                    if expected_target is None:
+                        expected_target = embedding_policy.describe(wire_client, provider, model)
+                    with embedding_policy.request_scope(wire_client, provider, model, expected=expected_target) as target:
+                        vec = self._embed_primary(text, backend=backend, model=model, client=client)
+                    namespace = target.namespace
                 if self._degraded:
                     logger.info(
                         "embedding backend recovered (%s/%s); resuming semantic embeddings",
                         self.backend, self.model,
                     )
                     self._degraded = False
-                return vec
+                return _ProducedEmbedding(vec, namespace)
+            except DataHandlingRefused as e:
+                last_exc = e
+                break  # Policy refusal is never a retryable model/network failure.
             except Exception as e:  # rate limit, transient network, model busy…
                 last_exc = e
                 if attempt < self.max_retries:
@@ -372,21 +468,24 @@ class Embedder:
             )
         else:
             logger.debug("embed still degraded (%s); using hash fallback", last_exc)
-        return self._embed_hash(text)
+        return _ProducedEmbedding(self._embed_hash(text), self._cache_identity() if self.backend == "hash" else None)
 
-    def _embed_primary(self, text: str) -> list[float]:
+    def _embed_primary(self, text: str, *, backend=None, model=None, client=None) -> list[float]:
         """Raw backend call. Ollama may raise (caught by `_embed_resilient`);
         the hash backend is deterministic and never raises."""
-        if self.backend == "ollama" and self._client:
-            response = self._client.embeddings(model=self.model, prompt=text[:2048])
+        backend = self.backend if backend is None else backend
+        model = self.model if model is None else model
+        client = (self._client if backend == "ollama" else self._http_client) if client is None else client
+        if backend == "ollama" and client:
+            response = client.embeddings(model=model, prompt=text[:2048])
             vec = response.get("embedding")
             if not vec:
                 raise ValueError("empty embedding from ollama")
             return vec
-        if self.backend == "lmstudio" and self._http_client:
-            resp = self._http_client.post(
+        if backend == "lmstudio" and client:
+            resp = client.post(
                 "/v1/embeddings",
-                json={"model": self.model, "input": text[:2048]},
+                json={"model": model, "input": text[:2048]},
             )
             resp.raise_for_status()
             data = resp.json()

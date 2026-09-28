@@ -1,9 +1,14 @@
 {
   "schema_version": 1,
   "policy_id": "nerva.selfdev.v1",
-  "owner_directive_date": "2026-09-09",
+  "owner_directive_date": "2026-09-27",
   "autonomous_default": true,
-  "description": "Routine Nerva engineering may merge without owner approval when the trusted control plane classifies it as autonomous and the mandatory automated proof set plus every other reported check have completed successfully. Autonomous review and deployment are explicit targets but are not claimed live until their enforcement slices land.",
+  "description": "The owner authorizes autonomous local development across the entire repository, including kernel, security, workflows and this policy, without further owner approval. This local authorization does not authorize pushing, merging or deploying this sprint. Remote merge eligibility retains the trusted control-plane classification and automated proof requirements; autonomous deployment remains a target until its enforcement lands.",
+  "local_development": {
+    "enabled": true,
+    "allow_protected_changes": true,
+    "require_owner_approval": false
+  },
   "protected_paths": [
     "selfdev-policy.json",
     "scripts/selfdev_policy.py",

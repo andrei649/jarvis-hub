@@ -231,10 +231,10 @@ async def test_a_command_never_reaches_the_model_and_a_message_still_does():
 
 def test_the_default_registry_names_the_first_wave():
     assert {c.name for c in build_default_registry().visible(OWNER)} == {
-        "help", "status", "sessions", "pause", "stop", "resume", "jobs", "remind", "voice",
+        "help", "status", "sessions", "recap", "pause", "stop", "resume", "jobs", "remind", "voice", "refine", "usage",
     }
     assert {c.name for c in build_default_registry().visible(GUEST)} == {
-        "help", "status", "sessions", "jobs", "voice",
+        "help", "status", "sessions", "recap", "jobs", "voice",
     }
     assert commands_module.USER == "user"
 
@@ -292,6 +292,11 @@ class _Runner:
         self.created.append(kwargs)
         job = SimpleNamespace(id="job1", schedule_text=kwargs["schedule_text"], cron="0 7 * * 1-5", name=kwargs["name"])
         return job
+
+    def arm(self, **kwargs):
+        # H687 — a reminder queues no first run, so the receipt is None.
+        job = self.create(**kwargs)
+        return job, None, f"{job.schedule_text} ({job.cron}), on its cadence"
 
 
 @pytest.mark.asyncio

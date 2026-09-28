@@ -37,7 +37,21 @@ class MemoryManager:
             self.vectors = InMemoryVectorStore(dimension=768)
         self.agent_contexts: dict[str, dict] = {}
         self.graph: KnowledgeGraph = create_graph(graph_backend)
+        # Two locks (H428). ``_lock`` guards the conversation and agent contexts;
+        # ``_store_lock`` serialises the vector store and the knowledge graph, whose
+        # blocking I/O runs on worker threads. A recall search stuck on a slow Qdrant
+        # or Neo4j therefore holds only the store lock: saving the reply, reading the
+        # context and every other session's turn go on while it finishes.
         self._lock = asyncio.Lock()
+        self._store_lock = asyncio.Lock()
+        # Turn embeddings are written in the background, one at a time, oldest first
+        # (Hermes' sync_all: "never inline" — a provider write may block for minutes).
+        self._embed_tail: asyncio.Task | None = None
+        self._embed_pending: set[asyncio.Task] = set()
+        # Bumped by a purge: a queued turn embedding from before it is never stored.
+        self._embed_generation = 0
+        # The same, per session: bumped by a permanent session delete (H218).
+        self._session_epochs: dict[str, int] = {}
         # Real-embeddings recall (lazy: no network/import until first use).
         self._embedder = None
         from agents.core.env_config import env_flag
@@ -94,7 +108,7 @@ class MemoryManager:
             self.conversation.instances[sid] = instance
 
     async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None,
-                       channel: str = None):
+                       channel: str = None, tools: list[str] | None = None):
         async with self._lock:
             manager = getattr(self, "_checkpoint_mgr", None)
             if manager is not None and manager._conn is not None:
@@ -109,7 +123,10 @@ class MemoryManager:
                     async with self.conversation._lock:
                         _load_locked(SimpleNamespace(memory=self, checkpoints=manager), session_id)
             self._bind_history_instance(session_id)
-            await self.conversation.add_turn(session_id, role, content, agent_id)
+            if tools:
+                await self.conversation.add_turn(session_id, role, content, agent_id, tools=tools)
+            else:
+                await self.conversation.add_turn(session_id, role, content, agent_id)
 
             if hasattr(self, '_checkpoint_mgr') and self._checkpoint_mgr:
                 turn_count = len(self.conversation.sessions.get(session_id, []))
@@ -127,7 +144,68 @@ class MemoryManager:
                 metadata.update({"channel": channel, "origin": origin})
                 if role == "user" and origin == INBOUND_ACTION_ORIGIN:
                     metadata = taint.mark(metadata, source=f"inbound:{channel}")
-            await self.remember(content, metadata=metadata)
+            self._queue_turn_embedding(content, metadata)
+
+    _EMBED_BACKLOG_MAX = 256
+
+    def _queue_turn_embedding(self, content: str, metadata: dict) -> None:
+        """Embed and store one turn in the background, after every earlier one (H428).
+
+        The turn never waits on the embedder or the vector store: a hung backend
+        cannot stall the conversation, only delay long-term memory. Past the backlog
+        cap a turn is not embedded, with a warning, instead of piling up.
+        """
+        if len(self._embed_pending) >= self._EMBED_BACKLOG_MAX:
+            logger.warning("turn embedding skipped: %d earlier turns still waiting on the embedder",
+                           len(self._embed_pending))
+            return
+        loop = asyncio.get_running_loop()
+        previous = self._embed_tail
+        if previous is not None and (previous.done() or previous.get_loop() is not loop):
+            previous = None
+        generation = self._embed_generation
+        epoch = self._session_epochs.get(metadata.get("session"), 0)
+
+        async def _write() -> None:
+            if previous is not None:
+                await asyncio.wait({previous})
+            try:
+                if self._embedding_stale(generation, metadata, epoch):
+                    return
+                vector = await self.embed(content)
+                await self._store_remembered(content, vector, metadata=metadata, generation=generation,
+                                             epoch=epoch)
+            except Exception:
+                logger.warning("turn embedding failed", exc_info=True)
+
+        task = loop.create_task(_write())
+        self._embed_tail = task
+        self._embed_pending.add(task)
+        task.add_done_callback(self._embed_pending.discard)
+
+    async def flush_embeddings(self) -> None:
+        """Wait for every queued turn embedding (tests, shutdown)."""
+        loop = asyncio.get_running_loop()
+        while pending := {task for task in self._embed_pending if task.get_loop() is loop}:
+            await asyncio.wait(pending)
+
+    def discard_pending_embeddings(self) -> None:
+        """A purge: every turn embedding queued before now is dropped, not stored."""
+        self._embed_generation += 1
+
+    def _embedding_stale(self, generation: int | None, metadata: dict | None, epoch: int | None) -> bool:
+        """A purge, or a delete of the turn's session, ran since the embedding was queued."""
+        if generation is not None and generation != self._embed_generation:
+            return True
+        return epoch is not None and self._session_epochs.get((metadata or {}).get("session"), 0) != epoch
+
+    async def forget_session_embeddings(self, session_id: str) -> int:
+        """H218 — a permanent session delete: every stored turn embedding of the session
+        leaves the vector store, and one still queued for it is never stored. How many were
+        removed; raises when the store could not remove them."""
+        self._session_epochs[session_id] = self._session_epochs.get(session_id, 0) + 1
+        async with self._store_lock:
+            return await asyncio.to_thread(self.vectors.remove_where, "session", session_id)
 
     async def get_context(self, session_id: str, last_n: int = 10) -> str:
         async with self._lock:
@@ -172,8 +250,18 @@ class MemoryManager:
 
     async def remember(self, text: str, record_id: str = None, metadata: dict = None) -> Optional[str]:
         """Embed `text` and store it in the vector store for later recall.
-        Returns the record id, or None if it could not be embedded/stored."""
+        Returns the record id, or None if it could not be embedded/stored.
+
+        Like a turn embedding it carries the purge generation it started under
+        (H428): a purge that runs while it is being embedded wins."""
+        generation = self._embed_generation
         vec = await self.embed(text)
+        return await self._store_remembered(text, vec, record_id=record_id, metadata=metadata,
+                                            generation=generation)
+
+    async def _store_remembered(self, text: str, vec: Optional[list[float]], *, record_id: str = None,
+                                metadata: dict = None, generation: int | None = None,
+                                epoch: int | None = None) -> Optional[str]:
         if vec is None:
             return None
         expected = getattr(self.vectors, "dimension", len(vec))
@@ -184,8 +272,8 @@ class MemoryManager:
         meta = dict(metadata or {})
         meta.setdefault("text", text)
         meta.setdefault("created_at", time.time())  # CDX-7: real age provenance on later recall
-        await self.store_embedding(rid, vec, meta)
-        return rid
+        stored = await self.store_embedding(rid, vec, meta, generation=generation, epoch=epoch)
+        return rid if stored else None
 
     async def recall(self, query_text: str, top_k: int = 10, keyword: str = None) -> list:
         """Fused recall (vector ⊕ graph) for a natural-language query. Embeds the
@@ -197,15 +285,32 @@ class MemoryManager:
             top_k=top_k,
         )
 
-    async def store_embedding(self, record_id: str, vector: list[float], metadata: dict = None):
+    async def store_embedding(self, record_id: str, vector: list[float], metadata: dict = None, *,
+                              generation: int | None = None, epoch: int | None = None) -> bool:
         # Offload to a thread: with a networked backend (Qdrant) vectors.add is a
         # blocking httpx call that would otherwise stall the whole event loop for
-        # every embedded turn. The lock still serializes manager mutations.
-        async with self._lock:
+        # every embedded turn. The store lock serialises vector-store access.
+        async with self._store_lock:
+            # A queued turn embedding re-checks its generation under the lock, right
+            # before the write: a purge (or a delete of its session) that ran while it
+            # was being embedded wins.
+            if self._embedding_stale(generation, metadata, epoch):
+                return False
             await asyncio.to_thread(self.vectors.add, record_id, vector, metadata)
+            if self._embedding_stale(generation, metadata, epoch):
+                # A purge gave up waiting for this lock (a backend slower than its
+                # bounded wait) and wiped while the write was still inside the store:
+                # take the record back out. The lock is still held, so no search saw it.
+                try:
+                    await asyncio.to_thread(self.vectors.remove, record_id)
+                except Exception:
+                    logger.error("a write that landed after a purge could not be removed (%s)",
+                                 record_id, exc_info=True)
+                return False
+            return True
 
     async def search_similar(self, query: list[float], k: int = 5) -> list[dict]:
-        async with self._lock:
+        async with self._store_lock:
             return await asyncio.to_thread(self.vectors.search, query, k)
 
     async def hybrid_search(self, embedding: list[float] = None, keyword: str = None,
@@ -213,7 +318,7 @@ class MemoryManager:
         """Fuse vector similarity + knowledge-graph hits via Reciprocal Rank
         Fusion (H5.14). Returns a ranked list of `fusion.FusedHit`."""
         from .fusion import HybridRetriever
-        async with self._lock:
+        async with self._store_lock:
             retriever = HybridRetriever(
                 self.vectors, self.graph,
                 k=getattr(self, "fusion_k", 60),
@@ -272,7 +377,7 @@ class MemoryManager:
 
     async def add_fact(self, name: str, entity_type: str = None, properties: dict = None, source: str = None, relation: str = None, target: str = None) -> bool:
         """Add a fact to the knowledge graph. Supports entity or relation creation."""
-        async with self._lock:
+        async with self._store_lock:
             if source and relation and target:
                 ok = self.graph.add_relation(source, relation, target, properties)
             elif name and entity_type:
@@ -283,12 +388,12 @@ class MemoryManager:
 
     async def query_facts(self, cypher: str, params: dict = None) -> list[dict]:
         """Run a Cypher query against the knowledge graph."""
-        async with self._lock:
+        async with self._store_lock:
             return self.graph.query(cypher, params)
 
     async def get_entity_info(self, name: str) -> Optional[dict]:
         """Get entity info from the knowledge graph."""
-        async with self._lock:
+        async with self._store_lock:
             entity = self.graph.get_entity(name)
             if entity:
                 entity["relations"] = self.graph.get_relations(name)

@@ -3,6 +3,7 @@ import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic3, ICONS as IK3, Glyph as Gl3, statusClass as sc3 } from './ui';
 import { queueChannelReply, togglePlugin, getEstopStatus, engageEstop, resumeEstop } from './api/actions';
 import { RoomsPanel } from './gap';
+import { ConfirmAction, RISK_TIER } from './confirm';
 /* HUD v2 · MODES III — Chat (focus), Comms, Admin */
 
 function SubH3({ children, style }: { children?: any; style?: any }){ return <div className="sub-h" style={style}>{children}</div>; }
@@ -170,19 +171,19 @@ function EstopCard(){
   const [st,setSt]=uS3<{engaged:boolean; state:{reason:string|null; engaged_at:string|null}|null}|null>(null);
   const [err,setErr]=uS3(false);
   const [busy,setBusy]=uS3(false);
-  const [confirming,setConfirming]=uS3(false);
   const [reason,setReason]=uS3('');
   uE3(()=>{ let alive=true;
     getEstopStatus().then(r=>{ if(alive&&r) setSt(r); }).catch(()=>{ if(alive) setErr(true); });
     return ()=>{ alive=false; };
   },[]);
   const engaged = !!st?.engaged;
+  // H168: the pause is the tier-1 two-step ConfirmAction; it stays open until the hub answers.
   const doEngage = () => {
-    if (busy) return;
+    if (busy) return false;
     setBusy(true);
-    engageEstop(reason.trim()||undefined)
-      .then(r=>{ setSt(r); setConfirming(false); setReason(''); })
-      .catch(()=>setErr(true))
+    return engageEstop(reason.trim()||undefined)
+      .then(r=>{ setSt(r); setReason(''); })
+      .catch(()=>{ setErr(true); return false; })
       .finally(()=>setBusy(false));
   };
   const doResume = () => {
@@ -202,18 +203,15 @@ function EstopCard(){
           {st.state?.engaged_at ? ` · since ${st.state.engaged_at}` : ''}
         </div>
         <button className="cr-btn primary" disabled={busy} onClick={doResume} title="lift the pause — autonomous dispatch resumes on the next tick">{busy?'resuming…':'Resume autonomy'}</button>
-      </>) : confirming ? (<>
-        <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.1em',color:'var(--amber)'}}>CONFIRM PAUSE — owner chat keeps working; in-flight work is not killed</div>
-        <input value={reason} onChange={e=>setReason(e.target.value)} placeholder="reason (optional)"
-          style={{width:'100%',margin:'6px 0',background:'var(--surface)',color:'var(--ink)',border:'1px solid var(--panel-line)',borderRadius:4,padding:6,fontFamily:'var(--font-ui)',fontSize:11}}/>
-        <div style={{display:'flex',gap:8}}>
-          <button className="cr-btn primary" disabled={busy} onClick={doEngage}>{busy?'engaging…':'Confirm pause'}</button>
-          <button className="cr-btn" disabled={busy} onClick={()=>setConfirming(false)}>Cancel</button>
-        </div>
       </>) : (<>
         <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.1em',color:'var(--green)'}}>RELEASED · autonomy running</div>
         <div className="mdl-meta" style={{margin:'6px 0'}}>pauses NEW heartbeats + autonomy ticks (resumable)</div>
-        <button className="cr-btn" disabled={busy} onClick={()=>setConfirming(true)} title="two-step: confirm on the next click">Pause new autonomous work…</button>
+        <ConfirmAction tier={RISK_TIER.REVERSIBLE} block className="cr-btn" confirmClassName="cr-btn primary"
+          label="Pause new autonomous work…" title="two-step: confirm on the next click"
+          prompt={<div style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.1em',color:'var(--amber)'}}>CONFIRM PAUSE — owner chat keeps working; in-flight work is not killed</div>}
+          extra={<input value={reason} onChange={e=>setReason(e.target.value)} placeholder="reason (optional)"
+            style={{width:'100%',margin:'6px 0',background:'var(--surface)',color:'var(--ink)',border:'1px solid var(--panel-line)',borderRadius:4,padding:6,fontFamily:'var(--font-ui)',fontSize:11}}/>}
+          armedLabel={busy?'engaging…':'Confirm pause'} cancelLabel="Cancel" busy={busy} onConfirm={doEngage}/>
       </>)}
     </div>
   );
@@ -253,7 +251,7 @@ function AdminMode({ t }){
             <SubH3 style={{marginTop:16}}>API KEYS &amp; SECRETS</SubH3>
             {A.keys.length ? A.keys.map((k,i)=>(
               <div className="key-row" key={i}>
-                <div><div className="key-name">{k.name}</div><div className="key-mask">{k.masked}</div></div>
+                <div><div className="key-name">{k.name}</div><div className="key-mask">{k.masked}{'source' in k && k.source ? ` · ${String(k.source)}` : ''}</div></div>
                 <div className="key-right"><span className={'key-status '+(k.status==='valid'?'ok':'warn')}>{k.status}</span><span className="key-rot">{k.rotated}</span></div>
               </div>
             )) : <NotConnected what="no keys in env"/>}

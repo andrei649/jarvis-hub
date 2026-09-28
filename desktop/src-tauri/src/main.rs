@@ -1,9 +1,12 @@
 //! Native local HUD and bounded floating-chat window management.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod geometry;
+mod indicator;
 mod policy;
+mod throttling;
 use geometry::{recover_scaled, Rect};
 use policy::Action;
+use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::{
     Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
@@ -163,6 +166,26 @@ fn desktop_action(window: WebviewWindow, action: Action) -> Result<(), String> {
     verify(&window)?;
     action_impl(&window, action)
 }
+/// H222: the tray icon's id, so the listening indicator can find it.
+const TRAY_ID: &str = "nerva";
+/// A HUD window reports whether Nerva is listening; the tray shows the loudest window's
+/// state. Read-only: the tray only says it, nothing here opens or closes a mic.
+#[tauri::command]
+fn desktop_listening(
+    window: WebviewWindow,
+    board: tauri::State<'_, indicator::Board>,
+    state: String,
+) -> Result<(), String> {
+    verify(&window)?;
+    let shown = board.report(window.label(), indicator::parse(&state)?);
+    let tray = window
+        .app_handle()
+        .tray_by_id(TRAY_ID)
+        .ok_or_else(|| "tray icon unavailable".to_string())?;
+    tray.set_tooltip(Some(shown.tooltip()))
+        .map_err(|e| e.to_string())?;
+    tray.set_title(shown.title()).map_err(|e| e.to_string())
+}
 fn action_impl(window: &WebviewWindow, requested: Action) -> Result<(), String> {
     if window.label() != "floating"
         && matches!(
@@ -177,11 +200,19 @@ fn action_impl(window: &WebviewWindow, requested: Action) -> Result<(), String> 
 fn main() {
     tauri::Builder::default()
         .manage(Capabilities::detect())
+        .manage(indicator::Board::default())
         .invoke_handler(tauri::generate_handler![
             desktop_action,
-            desktop_capabilities
+            desktop_capabilities,
+            desktop_listening
         ])
         .setup(|app| {
+            // H182: a HUD in the background keeps reading a streaming reply.
+            let throttle = match throttling::from_env() {
+                throttling::Throttling::Disabled => BackgroundThrottlingPolicy::Disabled,
+                throttling::Throttling::Throttle => BackgroundThrottlingPolicy::Throttle,
+                throttling::Throttling::Suspend => BackgroundThrottlingPolicy::Suspend,
+            };
             WebviewWindowBuilder::new(
                 app,
                 "main",
@@ -189,6 +220,7 @@ fn main() {
             )
             .title("Nerva")
             .inner_size(1280., 820.)
+            .background_throttling(throttle.clone())
             .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
             .on_navigation(|url| policy::allowed("main", url))
             .build()?;
@@ -203,6 +235,7 @@ fn main() {
             .decorations(false)
             .resizable(true)
             .always_on_top(app.state::<Capabilities>().always_on_top)
+            .background_throttling(throttle)
             .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
             .on_navigation(|url| policy::allowed("floating", url))
             .build()?;
@@ -241,7 +274,7 @@ fn main() {
                     &MenuItem::with_id(app, "quit", "Quit Nerva", true, None::<&str>)?,
                 ],
             )?;
-            tauri::tray::TrayIconBuilder::new()
+            tauri::tray::TrayIconBuilder::with_id(TRAY_ID)
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Nerva")
                 .menu(&menu)

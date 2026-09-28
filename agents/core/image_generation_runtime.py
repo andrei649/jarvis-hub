@@ -10,15 +10,24 @@ import json
 import os
 import re
 import secrets
+import stat
 from collections.abc import Mapping
 from pathlib import Path
 
+from .autonomy.queue import MediationStateUnavailable
+from .env_config import env_str
 from .media_backends.comfyui import (
     ComfyUIBackend,
+    ComfyUIConfig,
     ImageGenerationError,
-    backend_catalog,
+)
+from .media_backends.local_openai_image import LocalOpenAIImageBackend
+from .media_backends.registry import configuration_status as configuration_status
+from .media_backends.registry import (
+    normalize_options,
+    registry_fingerprint,
     resolve_config,
-    validate_options,
+    resolve_provider,
 )
 from .paths import data_path
 from .tool_rpc import ToolRPCValidationError
@@ -47,17 +56,6 @@ INPUT_SCHEMA = {
         "model": {"type": "string", "maxLength": 173},
     },
 }
-
-
-def configuration_status():
-    try:
-        config = resolve_config()
-    except ImageGenerationError as exc:
-        return {"configured": False, "backend": "comfyui", "reason": exc.reason, "reachable": None}
-    return {"configured": config is not None, "backend": "comfyui" if config else "off",
-            "reason": "not_probed" if config else "disabled", "reachable": None,
-            "local": True, "approval_required": True, "edit": True, "max_references": 4, "upscale": [2],
-            "backends": [{"id": name, "models": row["checkpoints"]} for name, row in backend_catalog().items()]}
 
 
 def _digest(value):
@@ -89,6 +87,20 @@ def _write_exclusive(path, value):
         json.dump(value, handle, sort_keys=True)
         handle.flush()
         os.fsync(handle.fileno())
+    # The marker's inode alone is insufficient: persist its directory entry and
+    # the chain containing newly-created parents before allowing any transport.
+    # Sync ancestors even when they already exist: a previous failed call may
+    # have created them without durably recording their entries. Never remove
+    # the marker after failure; a surviving entry continues to refuse replay.
+    directory = path.parent.resolve()
+    for parent in (directory, *directory.parents):
+        fd = os.open(str(parent), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            if not stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError("authority parent is not a directory")
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
 
 class LocalImageRuntime:
@@ -113,7 +125,7 @@ class LocalImageRuntime:
         return config
 
     def _head(self, config):
-        return _digest({"backend": config.fingerprint(), "runtime": _SOURCE_SHA})
+        return _digest({"backend": config.fingerprint(), "registry": registry_fingerprint(), "runtime": _SOURCE_SHA})
 
     def _record_path(self, task, suffix):
         binding = task.payload["args"]["_binding"]
@@ -132,10 +144,10 @@ class LocalImageRuntime:
             if set(args) - allowed:
                 raise ImageGenerationError("invalid_args")
             prompt = args.get("prompt")
-            options = validate_options(prompt, {k: v for k, v in args.items() if k not in {"prompt", "_binding"}})
+            options = normalize_options(prompt, {k: v for k, v in args.items() if k not in {"prompt", "_binding"}}, config)
             normalized = {"prompt": prompt, **options}
             if task is None:
-                if "seed" not in args:
+                if isinstance(config, ComfyUIConfig) and "seed" not in args:
                     normalized["seed"] = secrets.randbits(63)
                 normalized["_binding"] = {"nonce": secrets.token_hex(16), "head": self._head(config)}
             else:
@@ -189,23 +201,41 @@ class LocalImageRuntime:
             and persisted.decided_by and str(persisted.decided_by).strip().lower() != "policy"
             and _task_binding(task) == _task_binding(persisted)
             and persisted.payload.get("args") == args
-            and args["_binding"]["head"] == self._head(config)
         ):
             raise ImageGenerationError("approval_binding_invalid")
         proposal = self._record_path(persisted, "proposal")
         try:
-            if proposal.stat().st_size > 1024 or json.loads(proposal.read_text(encoding="utf-8")) != {"digest": _task_binding(persisted)}:
-                raise ImageGenerationError("approved_payload_changed")
+            oversized = proposal.stat().st_size > 1024
+            recorded = None if oversized else json.loads(proposal.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             raise ImageGenerationError("approval_binding_invalid") from None
+        # Outside the try: ImageGenerationError is a ValueError, and a changed record
+        # must be reported as changed, not as an unreadable binding (round 4, item 3).
+        if oversized or recorded != {"digest": _task_binding(persisted)}:
+            raise ImageGenerationError("approved_payload_changed")
+        # The approved provider binding, checked after the approval record (round 6,
+        # item 1): an intact approval whose provider the owner reconfigured since is the
+        # governance change ``backend_binding_changed`` — a refusal before the request,
+        # a withheld image after it — never the unreadable binding
+        # ``approval_binding_invalid`` (a failure), which stays for a record that is
+        # missing, unreadable or corrupt. A backend whose source changed raises its own
+        # error from ``_head`` (``backend_source_changed``, a failure).
+        if args["_binding"]["head"] != self._head(config):
+            raise ImageGenerationError("backend_binding_changed")
         mode = getattr(self._queue, "mediation_mode", None)
         if mode == "enforce":
             # The worker has already consumed its private dispatch permit.
             # Recheck the presented snapshot against current authenticated
             # storage at each guard, including immediately before the attempt.
-            if not self._queue.validate_mediated_execution(
-                task, self._queue.execution_fingerprint(task),
-            ):
+            # A store that could not be read is the machinery failing (round 6, item
+            # 2): ``mediation_state_unavailable``, a failure — not the governance hold.
+            try:
+                mediated = self._queue.validate_mediated_execution(
+                    task, self._queue.execution_fingerprint(task),
+                )
+            except MediationStateUnavailable:
+                raise ImageGenerationError("mediation_state_unavailable") from None
+            if not mediated:
                 raise ImageGenerationError("mediation_execution_required")
         elif mode != "off":
             raise ImageGenerationError("mediation_execution_required")
@@ -219,6 +249,7 @@ class LocalImageRuntime:
         from .security.taint import is_untrusted_source
 
         reason = "local_refused"
+        detail = None
         try:
             config = self._config(args)
             task = self._approval(args, config)
@@ -228,7 +259,7 @@ class LocalImageRuntime:
         # options: a text-to-image tuple and an edit tuple both round-trip exactly.
         options = {key: value for key, value in args.items() if key not in {"prompt", "_binding"}}
 
-        def guard(kind, prompt, opts):
+        def guard(kind, prompt, opts, *, consume=True):
             nonlocal reason
             try:
                 if kind != "image" or prompt != args["prompt"] or opts != options:
@@ -257,36 +288,54 @@ class LocalImageRuntime:
                 # human approval; it is not rewritten to GRANT. The exclusive
                 # durable marker consumes that authority before the only POST.
                 self._approval(args, self._config(args))
-                try:
-                    _write_exclusive(self._record_path(persisted, "attempt"), {
-                        "task_id": persisted.id, "digest": _task_binding(persisted),
-                        "head": args["_binding"]["head"], "verdict": verdict.value,
-                        "origin": origin, "risk_tier": max(2, persisted.risk_tier),
-                        "decided_by": persisted.decided_by,
-                        "state": "consumed_result_may_be_unknown",
-                    })
-                except FileExistsError:
-                    raise ImageGenerationError("approval_consumed_result_may_be_unknown") from None
-                except OSError:
-                    raise ImageGenerationError("durable_attempt_unavailable") from None
+                if consume:
+                    try:
+                        _write_exclusive(self._record_path(persisted, "attempt"), {
+                            "task_id": persisted.id, "digest": _task_binding(persisted),
+                            "head": args["_binding"]["head"], "verdict": verdict.value,
+                            "origin": origin, "risk_tier": max(2, persisted.risk_tier),
+                            "decided_by": persisted.decided_by,
+                            "state": "consumed_result_may_be_unknown",
+                        })
+                    except FileExistsError:
+                        raise ImageGenerationError("approval_consumed_result_may_be_unknown") from None
+                    except OSError:
+                        raise ImageGenerationError("durable_attempt_unavailable") from None
                 return True, ""
             except Exception as exc:
                 reason = getattr(exc, "reason", "local_guard_failed")
                 return False, reason
 
         async def comfyui(prompt, opts):
-            nonlocal reason
+            nonlocal reason, detail
             try:
-                return await ComfyUIBackend(config).generate(prompt, opts)
+                def recheck():
+                    allowed, why = guard("image", prompt, opts, consume=False)
+                    if not allowed:
+                        raise ImageGenerationError(why)
+                provider = resolve_provider(args)
+                if provider is None or provider.config(args) != config:
+                    raise ImageGenerationError("backend_binding_changed")
+                return await provider.generate(config, prompt, opts, guard=recheck,
+                                               backend_factories={"comfyui": ComfyUIBackend,
+                                                                  "openai_images": LocalOpenAIImageBackend})
             except ImageGenerationError as exc:
+                # A governance gate that declined after the request completed withholds
+                # a generated image: ``withheld_after_generation``, its cause in
+                # ``detail`` (round 4, item 3). A guard that BROKE there keeps its own
+                # reason — a failure, as before the request (round 5, item 1).
                 reason = exc.reason
+                detail = getattr(exc, "cause", None)
                 raise
 
+        comfyui.__name__ = args.get("backend", env_str("JARVIS_LOCAL_IMAGE_DEFAULT_BACKEND", "comfyui"))
         manager = MediaGenManager(backends={"image": comfyui}, agent=task.agent,
                                   local_guard=guard, catalog=default_catalog_if_enabled())
         result = await manager.generate("image", args["prompt"], opts=options)
         if not result.get("ok"):
             result["reason"] = reason
+            if isinstance(detail, str) and detail:
+                result["detail"] = detail
         elif isinstance(result.get("result"), dict):
             artifact = result["result"]
             artifact.pop("path", None)

@@ -204,8 +204,8 @@ async def test_docker_python_mounts_file_rpc_dir_as_writable(tmp_path, monkeypat
     assert result.success
     docker_cmd = list(calls[0])
     assert "--read-only" in docker_cmd
-    assert f"{tmp_path}:/workspace:ro" in docker_cmd
-    assert f"{rpc_dir}:/workspace/.jarvis_file_rpc/run:rw" in docker_cmd
+    assert f"type=bind,src={tmp_path},dst=/workspace,readonly" in docker_cmd
+    assert f"type=bind,src={rpc_dir},dst=/workspace/.jarvis_file_rpc/run" in docker_cmd
 
 
 @pytest.mark.asyncio

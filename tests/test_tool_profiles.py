@@ -164,7 +164,7 @@ def test_settings_rows_exist():
 
     rows = {(r["category"], r["key"]): r for r in ROWS}
     assert rows[("llm", "guest_tools")]["kind"] == "tags"
-    assert rows[("llm", "guest_tools")]["value"] == ["echo", "time"]
+    assert rows[("llm", "guest_tools")]["value"] == ["echo", "time", "todo"]   # H315: the checklist
     assert rows[("llm", "inbound_actuation")]["kind"] == "toggle"
     assert rows[("llm", "inbound_actuation")]["value"] is False
     assert rows[("llm", "internal_actuation")]["kind"] == "toggle"
@@ -215,7 +215,9 @@ def test_postures_over_the_live_registry_match_the_snapshot(tmp_path, monkeypatc
     for key, names in snap["postures"].items():
         if key != "operator/owner":
             assert not gated & set(names), f"{key} offers actuation by default: {names}"
-    assert snap["postures"]["inbound/guest"] == ["echo", "time"]
+    # The guest allowlist (echo, time and H315's checklist, `todo`), and nothing else.
+    assert snap["postures"]["inbound/guest"] == ["echo", "time", "todo"]
+    assert set(tp.SESSION_SCOPED_TOOLS) <= set(snap["registry"]) - gated
 
 
 # ── the runtime ──────────────────────────────────────────────────────────────
@@ -365,8 +367,13 @@ def test_coordinator_resolves_from_the_turn_principal_and_the_agent_config(tmp_p
     token = bind_turn_principal(Principal(channel="telegram", admin=False))
     try:
         offered, decision = runtime._profiled("jarvis", registry)
+        # H315 review — this double has no session probe, which counts as the shared
+        # session, where the checklist is the owner's: the guest gets the rest of its list.
         assert [t["name"] for t in offered] == ["echo", "time"]
         assert "desktop_run" in decision.withheld and "session_search" in decision.withheld
+        orch.on_shared_session = lambda: False            # a chat of its own
+        offered, _decision = runtime._profiled("jarvis", registry)
+        assert [t["name"] for t in offered] == ["echo", "time", "todo"]
     finally:
         reset_turn_principal(token)
 

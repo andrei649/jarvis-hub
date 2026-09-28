@@ -11,7 +11,7 @@ from typing import Any, Callable, Optional
 from ..action_origin import origin_for_channel
 from ..log_safe import log_safe
 from ..security import taint
-from ..security.quarantine import detect_injection
+from ..security.quarantine import detect_injection_normalized
 
 logger = logging.getLogger("jarvis.gateway")
 
@@ -170,7 +170,10 @@ class Gateway:
             return {}
         source = f"inbound:{str(channel or '').strip().lower() or 'unknown'}"
         meta = taint.mark({}, source=source)
-        meta["injection_flags"] = detect_injection(str(text or ""))
+        # H117: scanned normalised too (whitespace collapsed, invisible characters taken
+        # out), so a payload split across the pieces of a batched burst (or across lines,
+        # or by a zero-width space) reads as the sentence it is.
+        meta["injection_flags"] = detect_injection_normalized(str(text or ""))
         return meta
 
     def _record_inbox(self, channel: str, text: str, *, sender: Any = None,

@@ -82,10 +82,13 @@ async def _build_fake_orchestrator(state_dir: Path, reply: str):
     _ensure_paths()
     from agents.core.config import JarvisConfig
     from agents.core.llm.base import LLMBackend
+    from agents.core.llm.providers import get_profile
     from agents.core.orchestrator import Orchestrator
 
     class FakeBackend(LLMBackend):
         def __init__(self, text: str):
+            self.profile = get_profile("lm-studio")
+            self.base_url = "http://127.0.0.1:1234/v1"
             self.reply = text
             self.calls: list[dict] = []
 

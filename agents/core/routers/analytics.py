@@ -237,7 +237,8 @@ async def metrics_capabilities():
     if not orch:
         return nocache_json({"error": "not initialized"}, status_code=503)
     from agents.core.observability.capability_registry import snapshot
-    return nocache_json(snapshot(orch))
+    # Open route: tool records carry their static schema, never the live H296 answer.
+    return nocache_json(snapshot(orch, live_schemas=False))
 
 
 @router.get("/api/capabilities", dependencies=[Depends(user_guard)])

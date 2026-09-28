@@ -112,7 +112,10 @@ async def admin_mcp_list():
                 for t in srv.tools
             ],
         })
-    return {"servers": servers, "total": len(servers)}
+    from agents.core import load_set
+
+    # H285: the saved servers the load set switched off, and what it names that is not saved.
+    return {"servers": servers, "total": len(servers), "load_set": load_set.status("mcp")}
 
 
 def _trust_of(srv) -> Optional[str]:
@@ -139,12 +142,44 @@ class MCPServerConfig(BaseModel):
     tools_deny: Optional[list[str]] = None
 
 
+def _held_refusal(name: str):
+    """H285: a saved server the load set switched off is not in the manager. Adding one
+    of that name would duplicate it, and removing it would do nothing the owner can see:
+    both refuse and name the list."""
+    held = getattr(_web(), "mcp_held_names", None)
+    if held is None or name not in held():
+        return None
+    return JSONResponse(
+        {"error": "switched_off",
+         "message": f"MCP server '{name}' is saved but switched off by the load set "
+                    "(loadset.mcp_disabled / loadset.mcp_only); change the list and restart"},
+        status_code=409,
+    )
+
+
+def _safe_mode_refusal():
+    """H275: in safe mode the saved servers are not loaded, so an add or a remove would
+    rewrite the saved list from an empty manager. Both refuse until a normal boot."""
+    from agents.core import safe_mode
+
+    if not safe_mode.enabled():
+        return None
+    return JSONResponse(
+        {"error": safe_mode.REASON,
+         "message": "MCP servers cannot be added or removed in safe mode; restart normally first"},
+        status_code=409,
+    )
+
+
 @router.post("/api/admin/mcp", dependencies=[Depends(admin_guard)])
 async def admin_mcp_add(req: MCPServerConfig):
     """Add a new MCP server configuration."""
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    refusal = _safe_mode_refusal() or _held_refusal(req.name)
+    if refusal is not None:
+        return refusal
     from core.mcp.client import TRUST_TIERS, MCPServer, normalize_trust, tool_patterns_over_bounds
     # stdio is the only transport MCPServer.connect() actually speaks. Accepting
     # an "sse" config used to register + persist a server that could never
@@ -199,6 +234,9 @@ async def admin_mcp_remove(name: str):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    refusal = _safe_mode_refusal() or _held_refusal(name)
+    if refusal is not None:
+        return refusal
     if name not in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
     srv = orch.mcp.servers[name]
@@ -350,7 +388,9 @@ async def mcp_server_rpc(message: dict, request: Request):
         # JARVIS_USER_TOKEN is set, else localhost-only (fail closed behind an untrusted
         # proxy, HF-7). Without this gate a REMOTE caller could reach the read tools
         # (dashboard/memory) over the MCP transport even though the HTTP routes are guarded.
-        if w.USER_TOKEN:
+        # The credential is required exactly when the guard requires it (H273, review-H273e
+        # M1): one predicate, so a lapsed or revoked credential locks MCP as it locks HTTP.
+        if w._user_credential_required():
             if not w._request_is_authed(request):
                 return JSONResponse(
                     {"error": "unauthorized: user token required"}, status_code=401)

@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import json
 import math
+import re
 import sqlite3
 import threading
 import time
@@ -62,7 +63,30 @@ _SECURITY_STATES = {
 
 
 class HouseActuationError(RuntimeError):
-    """A durable house task failed and must not be settled as successful."""
+    """A durable house task failed and must not be settled as successful.
+
+    ``reason`` is the result's reason, so the worker can tell a refusal (a kernel
+    denial, a missing strong confirmation) from an actuation that broke.
+    ``manual_recovery_required`` is the result's flag (a stranded row, a rollback that
+    did not verify); ``task_record`` hands it to the worker, which keeps it in the
+    FAILED task's result (review round 4, hunt NIT 1)."""
+
+    def __init__(self, reason: str, *, manual_recovery_required: bool = False,
+                 record: dict | None = None) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.manual_recovery_required = manual_recovery_required is True
+        # Further facts the FAILED task keeps (review round 6, item 5: a driver that
+        # failed on a device whose state verified names both — ``state_verified`` and
+        # ``driver_reason``).
+        self._record = dict(record or {})
+
+    @property
+    def task_record(self) -> dict:
+        record = dict(self._record)
+        if self.manual_recovery_required:
+            record["manual_recovery_required"] = True
+        return record
 
 
 def _text(value: object, *, label: str, limit: int = 128) -> str:
@@ -199,6 +223,34 @@ def _payload_hash(payload: Mapping) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+# The executions in flight in this process, per ledger file (review round 3, item 2).
+# A ``running`` row alone cannot say whether its attempt is still executing or raised /
+# died after ``begin`` (a stranded row): only an execution that holds a claim here is
+# live. Keyed by the resolved ledger path, so two actuators on one file share it. In
+# memory only — never a sqlite round-trip on the event loop.
+_IN_FLIGHT: dict[str, set[int]] = {}
+_IN_FLIGHT_LOCK = threading.Lock()
+
+
+def _claim_execution(key: str, task_id: int) -> bool:
+    """Mark *task_id* as executing in this process; False when it already is."""
+    with _IN_FLIGHT_LOCK:
+        running = _IN_FLIGHT.setdefault(key, set())
+        if task_id in running:
+            return False
+        running.add(task_id)
+        return True
+
+
+def _release_execution(key: str, task_id: int) -> None:
+    with _IN_FLIGHT_LOCK:
+        running = _IN_FLIGHT.get(key)
+        if running is not None:
+            running.discard(task_id)
+            if not running:
+                _IN_FLIGHT.pop(key, None)
+
+
 class _ExecutionLedger:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -224,9 +276,12 @@ class _ExecutionLedger:
             ).fetchone()
         if row is None:
             return "new", None
+        if row[1] != "done":
+            # A begun attempt that never finished, whatever payload it began with.
+            return "running", None
         if row[0] != digest:
             return "conflict", None
-        if row[1] == "done" and row[2]:
+        if row[2]:
             return "cached", json.loads(row[2])
         return "running", None
 
@@ -373,6 +428,7 @@ class HouseActuator:
         self._confirmations = confirmation_store
         self._clock = clock or time.time
         self._ledger = _ExecutionLedger(ledger_path or data_path("house", "actuation.db"))
+        self._flight_key = str(self._ledger.path.resolve())
         self._actions = CapabilityActionAPI(authorizer=authorizer)
         for capability in (
             _CONTROL_CAPABILITY,
@@ -619,7 +675,10 @@ class HouseActuator:
             ),
         )
         if result.status != "completed":
-            return {"status": "failed", "reason": "kernel_denied"}
+            # Name what stopped the recovery (round 5, item 6): a real kernel Decision is
+            # ``kernel_denied``; a broken kernel or a driver error is its own reason.
+            return {"status": "failed", "reason": (
+                "kernel_denied" if result.stage == "decision" else result.reason or "recovery_failed")}
         try:
             verified_snapshot = await self._state_reader.snapshot()
         except Exception:
@@ -627,6 +686,20 @@ class HouseActuator:
         if self._verified(self._entity(verified_snapshot, pre.entity_id), restore):
             return {"status": "verified"}
         return {"status": "failed", "reason": "recovery_verification_failed"}
+
+    @staticmethod
+    def _driver_failure(perform) -> str | None:
+        """Why the driver's own result is not a success, or None when it is: a driver
+        answers ``{"ok": True, ...}`` for a service call it made. A refused/queued the
+        facade mapped from the driver's output, a raise (``implementation_error``) or an
+        ``ok`` that is not True is a failure of the driver — named by its reason code."""
+        output = perform.output if isinstance(perform.output, Mapping) else {}
+        if perform.status == "completed" and output.get("ok") is True:
+            return None
+        reason = perform.reason if perform.status != "completed" else output.get("reason")
+        if isinstance(reason, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", reason):
+            return reason
+        return "driver_error"
 
     async def execute_task(self, task) -> dict:
         try:
@@ -636,6 +709,17 @@ class HouseActuator:
         except (AttributeError, TypeError, ValueError):
             return {"status": "failed", "reason": "invalid_payload", "verified": False}
         digest = _payload_hash(payload)
+        if not _claim_execution(self._flight_key, task_id):
+            # Another execution of this very task is in flight in this process right
+            # now: this call attempted nothing (the refusal ``execution_in_progress``).
+            return {"status": "failed", "reason": "execution_in_progress", "verified": False}
+        try:
+            return await self._execute_claimed(task, task_id, kind, payload, digest)
+        finally:
+            _release_execution(self._flight_key, task_id)
+
+    async def _execute_claimed(self, task, task_id: int, kind: str, payload: dict,
+                               digest: str) -> dict:
         # Ledger ops are sync sqlite round-trips (lookup/begin/finish/abort);
         # execute_task runs on the loop via the autonomy executor, so offload.
         ledger_state, cached = await asyncio.to_thread(self._ledger.lookup, task_id, digest)
@@ -644,7 +728,28 @@ class HouseActuator:
         if ledger_state == "conflict":
             return {"status": "failed", "reason": "task_payload_changed", "verified": False}
         if ledger_state == "running":
-            return {"status": "failed", "reason": "execution_in_progress", "verified": False}
+            # Review round 3, item 2: a begun attempt of this task that no execution in
+            # this process holds — it raised after ``begin`` (a ledger write that failed
+            # after the device was commanded) or the process died mid-attempt. The
+            # device may have been commanded and nobody verified it: a failure that
+            # needs a human, never the refusal ``execution_in_progress``, and never a
+            # second command.
+            #
+            # Multi-process (review round 4, hunt NIT 2): the in-flight claim is per
+            # process, so a row ANOTHER live process began before this lookup reads as
+            # stranded here (a failure), while one it began between this lookup and
+            # ``begin`` below reads as ``execution_in_progress`` (a refusal) — two
+            # classifications of one situation. It cannot arise in a deployment: the
+            # hub lock (``install_identity.acquire_hub_lock``, H689) admits one hub
+            # process per data root, and this ledger lives in that root and is run only
+            # by that hub. Were two processes ever to share it, "stranded" is the
+            # conservative reading (a human looks; the device is never commanded twice).
+            return {
+                "status": "failed",
+                "reason": "execution_stranded",
+                "verified": False,
+                "manual_recovery_required": True,
+            }
 
         try:
             snapshot, pre = await self._snapshot_entity(payload["entity_id"])
@@ -665,6 +770,10 @@ class HouseActuator:
                 "verified": False,
             }
         if not await asyncio.to_thread(self._ledger.begin, task_id, digest):
+            # The row appeared after this call's lookup found none, while this process
+            # holds the task's claim: another process began it. Nothing attempted here.
+            # (Only with two processes on one ledger, which the hub lock prevents; see
+            # the multi-process note above.)
             return {"status": "failed", "reason": "execution_in_progress", "verified": False}
 
         capability = _SECURITY_CAPABILITY if kind == HOUSE_SECURITY_KIND else _CONTROL_CAPABILITY
@@ -678,15 +787,33 @@ class HouseActuator:
                 scope=f"house:{payload['entity_id']}",
             ),
         )
-        if perform.status in {"disabled", "refused", "queued"}:
+        if perform.stage != "handler":
+            # The driver was never called (review round 5, item 6), so the row is aborted
+            # and the reason says why. A refusal only when something decided the device
+            # must not be commanded: a real kernel Decision (``kernel_denied``) or a
+            # switch turned off (``unified_action_api_disabled``,
+            # ``action_kernel_disabled``). Anything else stopped here is the machinery
+            # — a kernel that raised, gave no Decision or is not there (``kernel_error``,
+            # ``kernel_unavailable``), an unbound implementation, inputs the manifest
+            # needs and the canonical payload lacks (a malformed request) — a failure
+            # under its own reason.
+            if perform.stage == "decision":
+                reason = "kernel_denied"
+            else:
+                reason = perform.reason or "perform_failed"
             result = {
                 "status": "failed",
-                "reason": "kernel_denied",
+                "reason": reason,
                 "verified": False,
                 "manual_recovery_required": False,
             }
             await asyncio.to_thread(self._ledger.abort, task_id)
             return result
+        # From here the driver WAS called — even when ``perform`` reports a refused or
+        # queued the driver returned, or the driver raising (``implementation_error``):
+        # the device may have been commanded, so the post-actuation verification decides
+        # (verified, or verification_failed with a rollback), never a refusal, and the
+        # row is finished, never aborted into a second command.
 
         try:
             post = await self._state_reader.snapshot()
@@ -695,6 +822,23 @@ class HouseActuator:
             post = None
             current = None
         if post is not None and post.status == "live" and self._verified(current, payload):
+            driver_reason = self._driver_failure(perform)
+            if driver_reason is not None:
+                # The WORLD is in the approved state — the device may already have
+                # matched — but the driver did not do the work (review round 6, item 5):
+                # it returned an error or a refusal after it ran, or raised. Not a
+                # success: a failure naming both facts. The row is finished (no second
+                # command), and nothing is rolled back — the state is the approved one.
+                result = {
+                    "status": "failed",
+                    "reason": "driver_failed",
+                    "verified": False,
+                    "state_verified": True,
+                    "driver_reason": driver_reason,
+                    "manual_recovery_required": False,
+                }
+                await asyncio.to_thread(self._ledger.finish, task_id, result)
+                return result
             result = {
                 "status": "verified",
                 "reason": "state_verified",
@@ -721,7 +865,13 @@ def register_house_handlers(executor, actuator: HouseActuator):
     async def _execute(task):
         result = await actuator.execute_task(task)
         if result.get("status") == "failed":
-            raise HouseActuationError(str(result.get("reason") or "house actuation failed"))
+            record = {key: result[key] for key in ("state_verified", "driver_reason")
+                      if key in result}
+            raise HouseActuationError(
+                str(result.get("reason") or "house actuation failed"),
+                manual_recovery_required=result.get("manual_recovery_required") is True,
+                record=record,
+            )
         return result
 
     executor.register(HOUSE_CONTROL_KIND, _execute)

@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-27T14:20:50.739226+00:00",
+  "base_head": "bd2bb70ead1b493043a335e77713fc42c47d4013",
+  "scope": "H513 strict-local native camera description policy, original household lease at physical sends, separate audited role controls; frozen H513 server policy code-equivalence review",
+  "acceptance_review": "docs/hermes/h513-code-equivalence-review.md",
+  "coordination": {
+    "implementers": 2,
+    "model": "gpt-6-sol",
+    "reasoning": "high",
+    "ownership": "one backend writer, one frontend writer, coordinator hermetic fixture and integration; bounded independent review"
+  },
+  "verification": [
+    {
+      "path": "/tmp/h513-camera-red.xml",
+      "tests": 9,
+      "failures": 9,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "seconds": 0.916,
+      "sha256": "4efbc6fb008cfd1aa60552181b6e003368cfc20f777b552c0b65ee8e06b3abef"
+    },
+    {
+      "path": "/tmp/h513-camera-lease-red.xml",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "seconds": 0.894,
+      "sha256": "c7fd05491ffca86fbd03094dd6c3f9a0037e4f2d9c8e15789e900e4dd853f0d9"
+    },
+    {
+      "path": "/tmp/h513-camera-borrowed-red.xml",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "seconds": 0.918,
+      "sha256": "e84b33823fef8836ca898efef11f45cbf658f2c27872bcfbc89cfefc141aab77"
+    },
+    {
+      "path": "/tmp/nerva-h513-camera-reality-red.xml",
+      "tests": 4,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 3,
+      "seconds": 1.17,
+      "sha256": "b77f84d7975cf4a0bced0ed864aef051a66cb1cc5696011b5d96e39ba8b1eea9"
+    },
+    {
+      "path": "/tmp/h513-camera-final.xml",
+      "tests": 278,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 278,
+      "seconds": 3.99,
+      "sha256": "bb93ecc0e711d24555365119eda5ed334daf3d7df9c0fc699109afa771eb6a2c"
+    },
+    {
+      "path": "/tmp/nerva-h513-camera-reality-green.xml",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 4,
+      "seconds": 1.14,
+      "sha256": "eb8245719de175d8aa893b099160fcd36a74ccb41ecbc183b1b4b612fd061b91"
+    },
+    {
+      "path": "/tmp/nerva-h513-camera-hud.xml",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 18,
+      "seconds": 0.332551,
+      "sha256": "97f2869507079062b3280a256293721ca9f5f5997ef16e405861096148a8262c"
+    },
+    {
+      "path": "/tmp/nerva-h513-camera-integration.xml",
+      "tests": 183,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 183,
+      "seconds": 4.36,
+      "sha256": "3ced3797dad7c9d79224e64eafd59c806b50138e29b0c2d5d21dac065c99c8be"
+    },
+    {
+      "path": "/tmp/nerva-h513-camera-plan-docs.xml",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 6,
+      "seconds": 0.898,
+      "sha256": "27db70abc93dfe09690ca88ec13eccbd6c28a4c4f13881e84e76d4acdecb0398"
+    },
+    {
+      "path": "/tmp/nerva-h513-camera-backend.xml",
+      "tests": 19229,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 19194,
+      "seconds": 251.367,
+      "sha256": "593b8ae5d834c43a6d8f9472b5f335c63312e3f5ff7d748e3f69d204c5041b70"
+    }
+  ],
+  "full_backend_command": ".venv/bin/python -m pytest tests/ -n 3 --dist loadfile --timeout=90 -q --tb=short --junitxml=/tmp/nerva-h513-camera-backend.xml",
+  "frontend": {
+    "path": "/tmp/nerva-h513-camera-frontend.json",
+    "sha256": "0bf9d173ebf5e5c6e9b6e3b5ff727681009b005d7a7e832f00500c1cd842cace",
+    "passed": 1822,
+    "total": 1822,
+    "failed": 0,
+    "typecheck": "passed after OpenAPI generation",
+    "build": "passed; existing chunk-size warning",
+    "openapi_change": "finite role target enum adds role:camera_descriptions"
+  },
+  "source_sha256": {
+    "agents/core/cameras/runtime.py": "43b85f25010ce992583b2c2a5f8307e37122ec5dbc473c4a0ad0632d13d9fe9e",
+    "agents/core/cameras/vlm.py": "51a0217832bba53870efd9e8809304ac21c55c6a4fbd790c10a731fbf1cc19d7",
+    "agents/core/cameras/pipeline.py": "59c048f0520385fce5d22dae0d1a9b4b15b13eff7b7b739ff750afb8ee563d90",
+    "agents/core/observability/camera_reality.py": "f36f0437f9aac7a03cb4ab368c2cc0e147aac636d7fc950630b4f8720ba232e5",
+    "tests/test_h31_camera_reality.py": "cc50a7e39c5bd8a2fd1df801a48e7cd76ef00888bb592170aca1058fe9aa3bbd",
+    "tests/test_h513_camera_policy.py": "65bb1da0eb9c6b8704b9a7b236001b0363593b00dc8f56a995df1f5e300cd524",
+    "agents/core/llm/data_handling.py": "729a63f139ec69e5a23219cf826d5f63d82da748f77deb03d3f389748f346a8c",
+    "agents/core/llm/vision_policy.py": "454cb2dbf542c8b6db6380b2b9521323987047fc5815da10b77b0763b5751474",
+    "agents/core/routers/security.py": "958cb822298348d6561b10ed0f74df1aed0f61a4812a9f247432d8dbeb666f82",
+    "frontend/src/panels/data-handling.tsx": "afc8e27a05a99c65aa0baa6e6c5d27c569214154c7a414b2904f1df24fc999f6",
+    "frontend/src/test/governance-posture-panel.test.tsx": "784b18438308e25220e020a8c4fbed1d9c03e1718fe6edf699753febf8d9c882",
+    "frontend/src/api/schema.gen.ts": "4e81cbb89313874a511f44deb132b174fe0e1674db8d7e7356262e6ce6249243",
+    "agents/web/v2/index.html": "e76af88936c5e982b5742dd30add18fce4e8097f56bec6a231a80b6d7269aafd",
+    "agents/web/v2/sw-v2.js": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c",
+    "agents/web/v2/manifest.webmanifest": "c2d642afdc2d01e79fe147118fc92dfbefa66b7c503406efb5e5479f7c101c69",
+    "agents/web/v2/assets/gap-CRmHOa-v.js": "aaa8b87547933532f0130abd2c3690beb07684bf781d620293d19af0f732e0e3",
+    "agents/web/v2/assets/modes3-FIqVqrrl.js": "ea64eb03ff8bb920c1e38bb9f72ce4e33a8f1429edd7088794fb1164ec2dce4a",
+    "agents/web/v2/assets/modes2-CniZF_KI.js": "d8aa7e0964fcec032e9f3485ad7e62cf0e1078b114d6c4e90bba1fc69d0fd84a",
+    "agents/web/v2/assets/soul-edit-BVVaOyCV.js": "8221c9fab9d7ec43cba6e0c17868a3ee899eba2abfb2d29b69f85bdf0331ee83",
+    "agents/web/v2/assets/jobs-UvrJfY-6.js": "4668f31d287655bbda0e26b1b0e154e854a2277c1cd6a6b93f414149be7e921c",
+    "agents/web/v2/assets/jetbrains-mono-latin-var-B9CIFXIH.woff2": "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e",
+    "agents/web/v2/assets/modes_world-D2BYjtt4.js": "1522256ad732652c15e45ff7d7a421b7a22d639f8a95222fbe7163fd615d89d6",
+    "agents/web/v2/assets/index-ldxH5Xm9.css": "a4851f9c57ea8630fad9196f3eb2c84181e4286232c396ede73290e4b272bbd1",
+    "agents/web/v2/assets/space-grotesk-latin-var-BhU9QXUp.woff2": "0640890476fc1198ab4de571fb658de443c4d85b66466ec09534a8737ab1ce9d",
+    "agents/web/v2/assets/modes-DqOxZhgM.js": "41a192c4efb618ea19294acdf86c845a2924785f38990478ea70bdd00a729ddc",
+    "agents/web/v2/assets/index-CkaTajh4.js": "ae0ca2af4d0f1e1ff2a7e160000256d23de1d7c275ed1673efca84756548b2df",
+    "agents/web/v2/assets/modes4-BqyYVd3a.js": "b286f1bda4d6bb7af68e60454777e89db4b2c59b99f28ca0ca253c482e0c2d45",
+    "agents/web/v2/assets/panel-kit-gf7swuoi.js": "ca4602b0da8dd2cd9c694b306cbffd87257b759a4d8b20772fbdebc25a3e819f",
+    "agents/web/v2/assets/client-C3wAcB0V.js": "40c77894e27ed04d3fb085a9e3840df283c0c404e29ccabfd52f980c67e1cbca"
+  },
+  "security": {
+    "bandit": {
+      "exit_code": 0,
+      "scope": "agents/scripts against existing baseline",
+      "log": "/tmp/nerva-h513-camera-bandit.log"
+    },
+    "gitleaks": {
+      "exit_code": 0,
+      "files": 29,
+      "snapshot": "/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/nerva-h513-camera-source-a9oi60yb",
+      "log": "/tmp/nerva-h513-camera-gitleaks.log"
+    }
+  },
+  "graft": {
+    "check": "passed",
+    "scope": [
+      "agents/core/autonomy",
+      "agents/core/llm",
+      "agents/core/kernel",
+      "agents/core/acquisition",
+      "agents/core/house",
+      "agents/core/ingestion",
+      "agents/core/routers",
+      "agents/core/channels",
+      "agents/core/cameras",
+      "agents/core/observability"
+    ],
+    "deep_index": false,
+    "log": "/tmp/nerva-h513-camera-graft-check.log"
+  },
+  "review_corrections": [
+    "The original household privacy lease is now rechecked at native request hooks and retries, not only around logical generation.",
+    "Borrowed native backend remains open across repeated descriptions; only per-description owned clients are closed.",
+    "In-process camera reality probes retain an explicitly synthetic callback seam and never write owner grants or construct native provider clients.",
+    "Frozen inventory contract was re-read; independent product follow-ups are preserved without silently expanding H513 acceptance."
+  ],
+  "limitations": [
+    "No live camera/model-provider/native-mobile acceptance; suite socket restrictions remained enabled and blocked legacy fixture connection attempts.",
+    "Standard camera provisioning is still incomplete because camera keys are absent from shipped settings defaults.",
+    "Camera config uses the effective orchestrator settings view, refreshed periodically; stale cached runtime refuses changed effective config until rebuilt. Role revocation reads its store on dispatch.",
+    "The hermetic camera reality pack proves synthetic privacy/masking, not provider consent or HTTP transport; the H513 native tests cover that separate boundary.",
+    "Production independent vision paths do not populate router last_used; unknown custom policies remain unknown after acknowledgment.",
+    "Remote embeddings, durable vector migration, native client controls and unwired optional callers remain separate project work; no provider terms certified.",
+    "No new H277 mutation campaign, commit, push, merge or deployment."
+  ],
+  "final_documentation_verification": {
+    "tests": 92,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "path": "/tmp/nerva-h513-camera-final-docs.xml",
+    "sha256": "7e134645acb3f64cb7e13278ff8fbd698457ff2b957cb2bf9e6849f87c91eb19",
+    "status_sync": "in_sync backend=19229 frontend=1822 mobile=142",
+    "hermes": "123/697 code-equivalent; H513 accepted, overall goal unfinished"
+  }
+}
