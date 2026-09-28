@@ -21,8 +21,13 @@ all*, and the answers to that are deliberate:
 * **The planner is a checklist, from the approved goal, by default** — read
   back from the goal's own approval task (H464b): the task named in the run's
   ``approved_by`` is re-read from the durable queue, re-checked (a human accepted
-  it, and its payload still fingerprints to what was approved) and bound to this
-  run (same approval, title, deadline and budget). Any doubt is an EMPTY plan.
+  it) and bound to this run (same approval, title, deadline and budget, and — H464c
+  — the very fingerprint the run pinned when it opened, never the one the payload
+  now carries about itself). A read that fails just now HOLDS the run (no step, no
+  park, no grade; the next sweep reads again); a goal that provably does not bind —
+  a policy decision, an edit, another run's goal, a run opened with no pin — STOPS
+  it with the reason on its record, and so does an approved row the planner has to
+  refuse. Neither is ever graded as a finished checklist.
   The plan the owner read on the card is the plan that runs. A model planner is available
   and must be passed in explicitly: "let a model decide what to do all night" is
   precisely the thing that has to be opted into rather than defaulted to.
@@ -33,6 +38,8 @@ all*, and the answers to that are deliberate:
   same act.
 * **A sweep never raises into the scheduler.** One bad run must not silently
   unregister the job that would have recovered it.
+* **Safe mode leaves it out (H464c).** A hub started in safe mode registers no
+  sweep, and a sweep that finds safe mode on (it is read at call time) does nothing.
 * **A parked run is skipped, not poked (H464).** One :class:`RunBarriers` is built
   over the ledger, the task reader and the webhook store, and its check is handed
   to both the scheduler and the supervisor. It is not an orchestrator slot: it
@@ -55,9 +62,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from agents.core.autonomy.company_planner import ChecklistPlanner
-from agents.core.autonomy.company_supervisor import CompanySupervisor, SupervisorConfig
+from agents.core.autonomy.company_supervisor import CompanySupervisor, Hold, SupervisorConfig
 from agents.core.autonomy.pending_requests import PendingRequests
-from agents.core.autonomy.run_barriers import RunBarriers
+from agents.core.autonomy.run_barriers import GRADE_MARGIN_SECONDS, RunBarriers
 from agents.core.autonomy.schedule_runtime import ScheduleConfig, ScheduleRuntime
 from agents.core.autonomy.work_runs import FLAG, WorkRunLedger
 
@@ -113,6 +120,11 @@ class CompanyRuntime:
         """
         if not self._enabled():
             return {"ok": True, "swept": 0, "reason": "company mode is off"}
+        from agents.core import safe_mode
+
+        if safe_mode.enabled():
+            safe_mode.note("company_mode")
+            return {"ok": True, "swept": 0, "reason": "safe mode is on"}
         try:
             result = await self.parts.scheduler.sweep()
         except Exception as exc:
@@ -191,42 +203,62 @@ def _governed_intake(orch: Any, enqueue: Any) -> Callable[..., Any] | None:
     )
 
 
-def _approved_goal_for(run: Any, read_task: Callable[[int], Any] | None) -> Any:
+@dataclass(frozen=True)
+class _ReadBack:
+    """What reading a run's approved goal back from its approval task found.
+
+    ``goal`` when it binds. Otherwise ``reason`` names why not, and ``transient``
+    says whether that is "cannot tell right now" (hold, read again next tick) or
+    provable (the run is stopped with the reason)."""
+
+    goal: Any = None
+    reason: str = ""
+    transient: bool = False
+
+
+def _read_back(run: Any, read_task: Callable[[int], Any] | None) -> _ReadBack:
     """The goal this run was opened for, read back from its own approval task.
 
-    The runs table keeps no plan: only ``approved_by = "task:<id>:<decider>"``.
-    So the approval task is re-read from the durable queue and re-minted through
-    :func:`approve_from_task`, which re-checks that a human accepted this very
-    task and that its payload still fingerprints to what was approved. The goal
-    is then bound to THIS run — the same approval, title, deadline and budget —
-    and given the run's own ``goal_id`` (``approve_from_task`` mints a random one,
-    and the judge's goal-identity rule needs the run's).
+    The runs table keeps no plan: only ``approved_by = "task:<id>:<decider>"`` and,
+    since H464c, the fingerprint of the goal the owner approved, pinned when the run
+    opened. So the approval task is re-read from the durable queue and re-minted
+    through :func:`approve_from_task` (a human accepted this very task), then bound
+    to THIS run — the same approval, title, deadline and budget, and a payload that
+    fingerprints to the PINNED value. The fingerprint the payload carries about
+    itself proves nothing on its own: an edit can drop or recompute it. The goal is
+    given the run's own ``goal_id`` (``approve_from_task`` mints a random one, and
+    the judge's goal-identity rule needs the run's).
 
-    ``None`` on any doubt: a run opened outside the goal contract, no reader, a
-    task that cannot be read or is gone (H262 retention may have purged it), a
+    Transient — the run holds: no reader bound, or a read that raised. Provable —
+    the run is stopped: a run not opened from a goal card, a run with no pin (opened
+    before it existed), a task that is gone (H262 retention may have purged it), a
     policy decision, an edited payload, or a goal that belongs to another run.
-    The caller turns ``None`` into an EMPTY checklist, never an open one.
     """
     from agents.core.autonomy.goal_contract import GoalContractError, approve_from_task
 
     match = _APPROVED_BY_TASK.match(str(getattr(run, "approved_by", "") or ""))
-    if match is None or read_task is None:
-        return None
+    if match is None:
+        return _ReadBack(reason="not_opened_from_a_goal_card")
+    pinned = str(getattr(run, "approved_fingerprint", "") or "")
+    if not pinned:
+        return _ReadBack(reason="no_approved_fingerprint")
+    if read_task is None:
+        return _ReadBack(reason="no_task_queue", transient=True)
     task_id = int(match.group(1))
     try:
         task = read_task(task_id)
     except Exception:
         logger.warning("could not read the approval task %s for run %s", task_id,
                        getattr(run, "id", "?"), exc_info=True)
-        return None
+        return _ReadBack(reason="approval_task_unreadable", transient=True)
     if task is None:
-        return None
+        return _ReadBack(reason="approval_task_gone")
     try:
         goal = approve_from_task(task)
     except GoalContractError as exc:
         logger.info("approval task %s cannot drive run %s: %s", task_id,
                     getattr(run, "id", "?"), exc.reason)
-        return None
+        return _ReadBack(reason=exc.reason)
     try:
         bound = (
             goal.approved_by == run.approved_by
@@ -239,37 +271,63 @@ def _approved_goal_for(run: Any, read_task: Callable[[int], Any] | None) -> Any:
     if not bound:
         logger.warning("approved goal does not match run %s (approval task %s)",
                        getattr(run, "id", "?"), task_id)
-        return None
-    return dataclasses.replace(goal, goal_id=run.goal_id)
+        return _ReadBack(reason="goal_does_not_match_run")
+    if goal.approved_fingerprint != pinned:
+        logger.warning("approval task %s no longer holds what was approved for run %s",
+                       task_id, getattr(run, "id", "?"))
+        return _ReadBack(reason="approved_goal_changed")
+    return _ReadBack(goal=dataclasses.replace(goal, goal_id=run.goal_id))
 
 
-def _plan_for(
-    ledger: Any, run: Any, goals: Any, read_task: Callable[[int], Any] | None = None
-) -> ChecklistPlanner:
-    """The planner for one run: the checklist the owner approved, and no more.
+def _approved_goal_for(run: Any, read_task: Callable[[int], Any] | None) -> Any:
+    """The bound goal from :func:`_read_back`, or ``None`` on any doubt."""
+    return _read_back(run, read_task).goal
 
-    ``goals`` wins when it is given; otherwise the goal is read back from its own
-    approval task (:func:`_approved_goal_for`). An unreadable or missing goal
-    yields an EMPTY checklist rather than an unrestricted one. A planner that
-    proposes nothing wastes a night; a planner that proposes anything, because it
-    could not read what it was allowed to do, is the failure this whole chain
-    exists to prevent.
+
+def _checklist(ledger: Any, goal: Any) -> ChecklistPlanner:
+    """The planner for one goal: the checklist the owner approved, and no more.
+
+    An unreadable plan yields an EMPTY checklist rather than an unrestricted one. A
+    planner that proposes nothing wastes a night; a planner that proposes anything,
+    because it could not read what it was allowed to do, is the failure this whole
+    chain exists to prevent.
     """
     steps: list[Any] = []
     scope: frozenset[str] = frozenset()
-    try:
-        goal = goals(run.goal_id) if callable(goals) else _approved_goal_for(run, read_task)
-    except Exception:
-        logger.warning("could not read the approved goal for %s", run.goal_id, exc_info=True)
-        goal = None
     if goal is not None:
         try:
             steps = goal.plan_steps()
             scope = goal.scope_kinds
         except Exception:
-            logger.warning("approved goal for %s is unreadable", run.goal_id, exc_info=True)
+            logger.warning("approved goal is unreadable", exc_info=True)
             steps = []
     return ChecklistPlanner(steps, scope_kinds=scope, ledger=ledger)
+
+
+def _plan_for(ledger: Any, run: Any, goals: Any) -> ChecklistPlanner:
+    """The checklist of an injected goal reader (``goals=``): an unreadable or
+    missing goal is an EMPTY checklist, as before H464c."""
+    try:
+        goal = goals(run.goal_id)
+    except Exception:
+        logger.warning("could not read the approved goal for %s", run.goal_id, exc_info=True)
+        goal = None
+    return _checklist(ledger, goal)
+
+
+async def _walk(checklist: ChecklistPlanner, context: Any) -> Any:
+    """The next approved row — or, when the planner has to refuse one, a stop.
+
+    An approved row outside the goal's scope (its kind, or the kind of the task it
+    would queue) can never run, so the checklist can never be finished: that is not
+    "nothing left to do", and grading it as such would call a half-run plan done
+    (H464c). The run is stopped with the refusal on its record instead.
+    """
+    action = await checklist(context)
+    decision = checklist.last
+    if action is None and decision is not None and decision.refusal == "out_of_scope":
+        return Hold(f"approved row refused: {decision.detail}", stop=True)
+    return action
 
 
 def build_company_runtime(
@@ -284,12 +342,18 @@ def build_company_runtime(
     judge_wait: Callable[[str], Any] | None = None,
     config: ScheduleConfig | None = None,
     supervisor_config: SupervisorConfig | None = None,
+    sweep_seconds: float | None = None,
 ) -> CompanyRuntime | None:
     """Build the chain, or return ``None`` and say why in the log.
 
     ``None`` is not an error: it is the ordinary state of a product where nobody
     turned company mode on. Every reason it can return is a *named* one, because
     "company mode did nothing last night" is a question that has to be answerable.
+
+    ``sweep_seconds`` is how often the scheduler will call :meth:`CompanyRuntime.sweep`
+    (the per-run interval when not given): the hub's park before grading stops at
+    least one sweep and a minute short of the run's end, so the sweep after it can
+    still grade the run (H464c).
     """
     if not flag_enabled():
         logger.debug("company mode is off; no runtime built")
@@ -301,7 +365,6 @@ def build_company_runtime(
         return None
 
     reader = _queue_reader(orch, read_task)
-    ledger.bind_approval_task_reader(reader)
     reasons: list[str] = []
     if reader is None:
         # Without a queue reader an approved task can never unblock its run, so the
@@ -316,18 +379,32 @@ def build_company_runtime(
     if intake is None:
         logger.warning("company mode is on but no governed intake is bound; nothing will run")
         return None
+    # Only now that the runtime builds (H464c, N2): the reader turns H487 approval
+    # credit on for every user of this shared ledger, the report routes included.
+    ledger.bind_approval_task_reader(reader)
+    schedule = config or ScheduleConfig(enabled=True)
 
     def _plan_next(context):
         run_id = dict(context.get("run") or {}).get("id")
         run = ledger.get(run_id) if run_id else None
         if run is None:
             return None
-        chosen = planner or _plan_for(ledger, run, goals, reader)
-        return chosen(context)
+        if planner is not None:
+            return planner(context)
+        if callable(goals):
+            return _walk(_plan_for(ledger, run, goals), context)
+        found = _read_back(run, reader)
+        if found.goal is None:
+            return Hold(found.reason, stop=not found.transient)
+        return _walk(_checklist(ledger, found.goal), context)
 
     # Without a queue reader a task trigger is refused rather than guessed; the
-    # webhook store is resolved only when a hook trigger is actually used.
-    barriers = RunBarriers(ledger, read_task=reader, hooks=_webhook_store)
+    # webhook store is resolved only when a hook trigger is actually used. The
+    # hub's park leaves at least one sweep (and a minute) to grade in (H464c).
+    barriers = RunBarriers(
+        ledger, read_task=reader, hooks=_webhook_store,
+        grade_floor=float(sweep_seconds or schedule.interval_seconds) + GRADE_MARGIN_SECONDS,
+    )
     supervisor = CompanySupervisor(
         ledger,
         enqueue=intake,
@@ -342,7 +419,7 @@ def build_company_runtime(
         ledger,
         tick=supervisor.tick,
         reconcile=(reconciler.sweep if reconciler is not None else None),
-        config=config or ScheduleConfig(enabled=True),
+        config=schedule,
         barrier_active=barriers.active,
     )
     if planner is not None:

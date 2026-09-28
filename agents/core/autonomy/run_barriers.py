@@ -116,6 +116,24 @@ _MODEL_SOURCES = frozenset({"planner", "judge"})
 # ``blocked`` instead, and a terminal status means the work is done.
 IN_FLIGHT_TASK_STATUSES = frozenset({"approved", "running"})
 
+# The room a hub park leaves at the end of a run's time so the run can still be
+# graded (H464c): the park is taken BEFORE grading, and a park that ran to the very
+# end of the budget or the deadline left no tick in which to grade — the run ended
+# spent with no verdict. The margin is the longest of a minute, a tenth of the
+# run's wall-clock budget, and the floor the runtime passes (one sweep interval
+# plus a minute, so the sweep after the cap still falls inside the run's time and
+# grades it). When the time left is not more
+# than the margin the hub does not park at all (``no_time_left``), and the run is
+# graded now. Only the hub's own park reserves it: a planner's or judge's wait is
+# the model's choice and stays capped by the budget as before.
+GRADE_MARGIN_SECONDS = 60.0
+GRADE_MARGIN_SHARE = 0.10
+
+
+def grade_margin(max_seconds: float, floor: float = GRADE_MARGIN_SECONDS) -> float:
+    """Seconds a hub park leaves before the end of the run's time (H464c)."""
+    return max(float(floor), GRADE_MARGIN_SHARE * float(max_seconds))
+
 
 class RunBarriersError(WorkRunError):
     """A refused barrier request. ``reason`` is a bounded, public code.
@@ -273,10 +291,12 @@ class RunBarriers:
         clock: Callable[[], float] | None = None,
         pid_probe: Callable[[Mapping[str, Any]], str] | None = None,
         proc_identity: Callable[[int], Mapping[str, str] | None] | None = None,
+        grade_floor: float = GRADE_MARGIN_SECONDS,
     ) -> None:
         self._ledger = ledger
         self._read_task = read_task
         self._hooks = hooks
+        self._grade_floor = max(GRADE_MARGIN_SECONDS, float(grade_floor))
         self._clock = clock or getattr(ledger, "_clock", None) or time.time
         self._pid_probe = pid_probe or default_pid_probe
         self._proc_identity = proc_identity or default_proc_identity
@@ -323,12 +343,16 @@ class RunBarriers:
         # A deadline carries its own end, so its own wait is the furthest any
         # barrier may reach; the run's deadline and the time its budget has left
         # (H487: approval waits are credited back) cap it either way, silently —
-        # the budget check then ends the run honestly.
+        # the budget check then ends the run honestly. The hub's park, taken just
+        # before grading, stops the grading margin short of both (H464c).
         own = MAX_BARRIER_SECONDS if kind == "deadline" else max_wait
+        reserve = (
+            grade_margin(run.budget.max_seconds, self._grade_floor) if source == "hub" else 0.0
+        )
         cap_at = min(
             now + own,
-            run.deadline_at or math.inf,
-            now + float(budget["seconds_left"]),
+            (run.deadline_at or math.inf) - reserve,
+            now + float(budget["seconds_left"]) - reserve,
         )
         if cap_at <= now:
             raise RunBarriersError("no_time_left")
@@ -359,7 +383,10 @@ class RunBarriers:
         finish while that task is still executing; grading then would spend the
         run's single verdict on work that has not landed. The hub waits on it
         instead: a ``task:<id>`` trigger, ``source="hub"``, with the default wait
-        (capped by the run's deadline and the time its budget has left).
+        (capped by the run's deadline and the time its budget has left, each less
+        the grading margin — :func:`grade_margin` — so the run can still be graded
+        when the wait runs out; with no time to spare past the margin it is refused
+        ``no_time_left`` and the caller grades now, H464c).
 
         Returns :meth:`state`, or None when there is nothing to wait on — no reader
         bound, no task of this run in flight, or every in-flight task already used.
@@ -713,6 +740,8 @@ class RunBarriers:
 __all__ = [
     "BARRIER_KINDS",
     "DEFAULT_WAIT_SECONDS",
+    "GRADE_MARGIN_SECONDS",
+    "GRADE_MARGIN_SHARE",
     "IN_FLIGHT_TASK_STATUSES",
     "MAX_BACKGROUND",
     "MAX_BARRIERS_PER_RUN",
@@ -726,5 +755,6 @@ __all__ = [
     "default_pid_probe",
     "default_proc_identity",
     "describe",
+    "grade_margin",
     "until",
 ]

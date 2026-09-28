@@ -1680,8 +1680,10 @@ class AutonomyCoordinator:
                 )
             except WorkRunError as exc:
                 return {"status": "refused", "reason": exc.reason}
+            # H464c: one approval opens one run, so a retry gets the run the first
+            # attempt opened — reported with that run's goal id, not the retry's.
             return {"status": "ok", "kind": "goal.approve", "run_id": run.id,
-                    "goal_id": goal.goal_id}
+                    "goal_id": run.goal_id}
 
         executor.register("goal.approve", _open_approved_goal)
 

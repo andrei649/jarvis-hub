@@ -10,7 +10,10 @@ against the goal before it ever becomes an :class:`Action`:
 
 * **Scope is enforced at proposal time**, not just at judgement time. A model that
   suggests running a shell command for a research-only goal is refused here, so
-  the run never spends a step on work the judge would reject at the end.
+  the run never spends a step on work the judge would reject at the end. The
+  task an action would queue is held to the same scope (H464c): its kind must be
+  a scope kind or sit under one (``research.collect`` under ``research``), so a
+  ``research`` row cannot queue a ``file.write`` task.
 * **The step budget is respected before proposing.** With no budget left the
   planner returns ``None`` (nothing left to do) rather than proposing work that
   the ledger will refuse — a refusal loop is not a plan.
@@ -44,6 +47,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from agents.core.autonomy.company_supervisor import Action
+from agents.core.autonomy.goal_contract import task_kind_in_scope
 
 logger = logging.getLogger("jarvis.company_planner")
 
@@ -150,6 +154,15 @@ class _ClampedPlanner:
             return PlanDecision(
                 None, "out_of_scope",
                 f"{action.kind} is not in {sorted(self.scope_kinds)}",
+            )
+        if "kind" in action.task and not task_kind_in_scope(
+            action.task["kind"], self.scope_kinds
+        ):
+            # The row's kind is in scope; the task it would queue is not (H464c).
+            return PlanDecision(
+                None, "out_of_scope",
+                f"task kind {str(action.task['kind'])[:64]} is not in "
+                f"{sorted(self.scope_kinds)}",
             )
         if self._already_done(context, action):
             return PlanDecision(None, "already_done", action.summary[:120])

@@ -334,16 +334,26 @@ class SchedulerService:
         autonomous work should never happen because a config file changed while
         nobody was looking — it takes a restart, which is a person's decision.
 
+        Safe mode leaves it out too (H464c): no runtime is built and no sweep is
+        registered, and a sweep that finds safe mode on does nothing.
+
         The job itself only sequences. Every effect a run arranges still enters
         the approval queue and crosses the Action Kernel, and opening a run still
         requires an owner-approved goal decided in the inbox: there is no path
         from this timer to an unapproved action.
         """
+        from agents.core import safe_mode
         from agents.core.env_config import env_flag
 
         if env_flag("JARVIS_TESTING"):
             return
         if not env_flag("JARVIS_COMPANY_MODE"):
+            return
+        if safe_mode.enabled():
+            # H464c: like the owner's jobs, a night of autonomous work is left out
+            # of a hub started to recover a broken install; nothing is built.
+            safe_mode.note("company_mode")
+            logger.warning("Safe mode: the company-mode sweep is not scheduled")
             return
         sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
         if sched is None:
@@ -354,13 +364,15 @@ class SchedulerService:
                 bind_external_orchestrator_attribute,
             )
 
-            runtime = build_company_runtime(self._orch)
+            interval = max(60, int(self._orch.get_setting("autonomy.company_tick_seconds", 300)))
+            # H464c: the runtime is told the sweep's cadence, so the hub's park before
+            # grading leaves at least one sweep in which the run can still be graded.
+            runtime = build_company_runtime(self._orch, sweep_seconds=interval)
             if runtime is None:
                 # build_company_runtime already logged the named reason. Registering
                 # a job that can only no-op would report a working night shift.
                 return
             bind_external_orchestrator_attribute(self._orch, "company_runtime", runtime)
-            interval = max(60, int(self._orch.get_setting("autonomy.company_tick_seconds", 300)))
             sched.add_job(runtime.sweep, "interval", seconds=interval,
                           id="company-mode-sweep", replace_existing=True)
             logger.info("Scheduled company-mode sweep every %ss", interval)

@@ -51,15 +51,15 @@ EXTERNAL_BINDING_WRITERS: Mapping[str, tuple[ExternalBindingCallsite, ...]] = Ma
         "channel_replies": (("agents/core/autonomy_coordinator.py", 1529, 8),),
         "call_broker": (("agents/core/autonomy_coordinator.py", 1549, 8),),
         "node_mesh": (("agents/core/autonomy_coordinator.py", 1569, 8),),
-        "subagents": (("agents/core/autonomy_coordinator.py", 1732, 8),),
-        "task_executor": (("agents/core/autonomy_coordinator.py", 1752, 8),),
-        "last_memory_maintenance": (("agents/core/scheduler_service.py", 557, 8),),
+        "subagents": (("agents/core/autonomy_coordinator.py", 1734, 8),),
+        "task_executor": (("agents/core/autonomy_coordinator.py", 1754, 8),),
+        "last_memory_maintenance": (("agents/core/scheduler_service.py", 569, 8),),
         "channel_inbox": (("agents/web.py", 502, 4),),
         "oracle_bridge": (("agents/core/plugin_manager.py", 189, 8),),
         "permission_ledger": (("agents/core/autonomy_coordinator.py", 1622, 12),),
         "work_runs": (("agents/core/autonomy_coordinator.py", 1643, 12),),
         "argus": (("agents/core/plugin_manager.py", 194, 8),),
-        "company_runtime": (("agents/core/scheduler_service.py", 362, 12),),
+        "company_runtime": (("agents/core/scheduler_service.py", 375, 12),),
     }
 )
 

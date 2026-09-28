@@ -38,6 +38,10 @@ Safe mode only takes things away. It leaves out, at boot and at every later relo
   TTS/STT command providers (``voice.tts_command`` / ``voice.stt_command``) are not run,
   and the route that would ask to set one refuses.
 
+- (H464c) company mode: with ``JARVIS_COMPANY_MODE`` set, no company runtime is built
+  and no sweep is scheduled, and a sweep that finds safe mode on does nothing — no run
+  takes a step, parks or is graded until the hub restarts without it.
+
 There are no shell hooks to leave out: Nerva runs no owner-configured hook commands (the
 voice command providers above are the one owner-configured program, and they stay off).
 
@@ -75,6 +79,8 @@ LAYERS = (
     # owner's approved TTS/STT command providers (the in-process Piper package stays on).
     "voice_piper_binary",
     "voice_commands",
+    # H464c — the company-mode night shift: no sweep is scheduled, none runs.
+    "company_mode",
 )
 #: H490 — settings an owner can set looser than the shipped default (an approval that
 #: stops being asked, a wider tool offer, a bigger budget), each with how to take the

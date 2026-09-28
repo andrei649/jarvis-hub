@@ -663,10 +663,14 @@ async def test_the_goal_read_back_keeps_the_run_s_goal_id(world):
 
 
 def _open_from(ledger, *, approved_by, draft, title=None, deadline=None, budget=None):
-    """A run opened from a goal object that is NOT the approval's own read-back."""
+    """A run opened from a goal object that is NOT the approval's own read-back.
+
+    It pins the draft's own fingerprint (H464c), so each case below is refused by
+    the check it names rather than by a missing pin."""
     goal = types.SimpleNamespace(
         goal_id="g-other", title=title or draft.title, approved_by=approved_by,
         deadline_at=draft.deadline_at if deadline is None else deadline,
+        approved_fingerprint=draft.fingerprint(),
     )
     return ledger.open_run(goal, budget=budget or draft.budget,
                            deadline_at=draft.deadline_at if deadline is None else deadline)

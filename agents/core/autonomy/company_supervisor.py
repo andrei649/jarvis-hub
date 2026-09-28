@@ -50,10 +50,18 @@ The rules it enforces, none of which the planner or the model can talk it out of
   it finishes, and grading then would spend the run's only verdicts on work that
   has not landed (H464b). At most once per task per run, never on a task the
   owner let the run go from, and any failure to check or set it falls through to
-  grading exactly as before.
+  grading exactly as before. The park spends wall-clock time, never a step or a
+  verdict, and it stops a grading margin short of the run's end so the run can
+  still be graded when it runs out (H464c).
 
 The planner is injected (``plan_next``) and returns either an :class:`Action` or
-``None`` meaning "nothing left to do" — at which point the run goes to grading.
+``None`` meaning "nothing left to do" — at which point the run goes to grading —
+or a :class:`Hold` meaning "I cannot say what is next" (H464c), which is never
+read as "done": a plan that cannot be read just now holds the tick (no step, no
+park, no grade; the next tick asks again), and one that provably cannot be run —
+its approval does not bind, or an approved row is refused — stops the run with the
+reason on its record, the way a stuck run is stopped, rather than grading a
+checklist nobody can prove was finished.
 """
 
 from __future__ import annotations
@@ -139,6 +147,22 @@ class Action:
     def parks(self) -> bool:
         """True when this action asks to park the run rather than do anything."""
         return self.barrier is not None
+
+
+@dataclass(frozen=True)
+class Hold:
+    """The planner cannot say what the run should do next (H464c).
+
+    ``stop=False``: it cannot tell *right now* (the approval task could not be
+    read). The tick does nothing — no step, no park, no grade — and says so; the
+    next tick asks again. ``stop=True``: it can prove the plan cannot be run (the
+    approval does not bind to this run, or an approved row is refused). The run
+    is stopped with ``reason`` on its record. Either way the run is never graded
+    as though its checklist were finished.
+    """
+
+    reason: str
+    stop: bool = False
 
 
 @dataclass(frozen=True)
@@ -271,6 +295,8 @@ class CompanySupervisor:
             # So a model planner can learn why its last wait was not set.
             context["last_wait_refused"] = self._last_refused[run_id]
         action = await _maybe_await(self._plan_next(context))
+        if isinstance(action, Hold):
+            return self._hold(run_id, action)
         if action is None:
             self._reset_free_refusals(run_id)
             return await self._grade(run_id)
@@ -364,6 +390,23 @@ class CompanySupervisor:
         else:
             self._last_refused.pop(run_id, None)
         return TickResult("waiting", f"parked: {state.get('waiting_on') or 'a barrier'}", run_id)
+
+    def _hold(self, run_id: str, hold: Hold) -> TickResult:
+        """The planner cannot say what is next: do nothing now, or end the run with
+        the reason — never grade it (H464c)."""
+        reason = str(hold.reason or "the plan cannot be read")[:160]
+        if not hold.stop:
+            logger.info("run %s held: %s", run_id, reason)
+            return TickResult("idle", f"held: {reason}", run_id)
+        self._streaks.pop(run_id, None)
+        self._reset_free_refusals(run_id)
+        try:
+            self._ledger.request_stop(run_id, reason=f"plan not bound to its approval: {reason}")
+            self._ledger.settle_stop(run_id)
+        except WorkRunError as exc:
+            return TickResult("idle", f"stop refused: {exc.reason}", run_id)
+        logger.warning("run %s stopped: its plan cannot be proven (%s)", run_id, reason)
+        return TickResult("stopped", f"the approved plan cannot be proven: {reason}", run_id)
 
     def _free_refusal(self, run_id: str, reason: str) -> TickResult:
         """A planner wait refused for a reason that is not the planner's fault: free,
@@ -492,8 +535,10 @@ class CompanySupervisor:
 
         ``RunBarriers.park_in_flight`` picks the oldest task this run queued that
         was approved and has not finished, at most once per task and never one the
-        owner let the run go from. The park is an event, not a step: no budget, no
-        plan, no verdict. Anything it refuses (a spent budget, no time left, the
+        owner let the run go from. The park is an event, not a step: no step, no
+        plan, no verdict. It does spend wall-clock time, so it ends the grading
+        margin short of the run's end and the run can still be graded (H464c).
+        Anything it refuses (a spent budget, no time left, the
         barrier limit, a queue that cannot be read) or raises reads as "not
         waiting", and the run goes on to grading exactly as it did before — a check
         that cannot answer never wedges a run.
@@ -557,6 +602,7 @@ __all__ = [
     "TICK_OUTCOMES",
     "Action",
     "CompanySupervisor",
+    "Hold",
     "SupervisorConfig",
     "TickResult",
 ]

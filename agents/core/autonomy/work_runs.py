@@ -53,6 +53,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import sqlite3
 import threading
 import time
@@ -147,6 +148,10 @@ BARRIER_CLEAR_REASONS = (
     "probe_error", "owner", "replaced", "budget_spent",
 )
 BARRIER_CLEARED_BY = ("check", "owner", "ledger", "scheduler")
+
+# H464c — an approval ref as the goal contract writes it (``task:<id>:<decider>``):
+# one durable human decision on one task. Such an approval opens ONE run, ever.
+_APPROVAL_TASK_REF = re.compile(r"^task:(\d+):")
 
 
 def _exceeded(run: WorkRun, moment: float, *, credit: float = 0.0) -> str | None:
@@ -254,6 +259,11 @@ class WorkRun:
     deadline_at: float = 0.0
     stop_reason: str = ""
     fingerprint: str = ""
+    # H464c: the fingerprint of the goal the owner approved, pinned when the run
+    # opened (``ApprovedGoal.approved_fingerprint``); "" for a run opened before the
+    # pin existed or from anything else. The approved checklist is only ever read
+    # back against it, never against what the approval task now says about itself.
+    approved_fingerprint: str = ""
     # H464: what the run is parked on, or None. Deliberately NOT in identity():
     # parking and un-parking are ordinary life, and fingerprinting them would make
     # every set or clear read as a hand-edited row.
@@ -267,8 +277,11 @@ class WorkRun:
         return max(0.0, float(now) - self.started_at)
 
     def identity(self) -> dict[str, Any]:
-        """The fields the fingerprint covers — what a tamper must not change."""
-        return {
+        """The fields the fingerprint covers — what a tamper must not change.
+
+        The approved fingerprint is covered once a run carries one (H464c); a run
+        written before it existed keeps the identity it was fingerprinted with."""
+        identity = {
             "id": self.id,
             "goal_id": self.goal_id,
             "title": self.title,
@@ -277,6 +290,9 @@ class WorkRun:
             "started_at": self.started_at,
             "deadline_at": self.deadline_at,
         }
+        if self.approved_fingerprint:
+            identity["approved_fingerprint"] = self.approved_fingerprint
+        return identity
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -448,7 +464,13 @@ def _v4(conn: sqlite3.Connection) -> None:
         PRIMARY KEY(run_id, marker))""")
 
 
-MIGRATIONS = [_v1, _v2, _v3, _v4]
+def _v5(conn: sqlite3.Connection) -> None:
+    """H464c — the approved goal's fingerprint, pinned when the run opens. Nullable:
+    a run opened before it existed reads as unpinned and drives no checklist."""
+    column_adder("runs", "approved_fingerprint", "TEXT")(conn)
+
+
+MIGRATIONS = [_v1, _v2, _v3, _v4, _v5]
 
 
 # ── the ledger ───────────────────────────────────────────────────────────────
@@ -512,6 +534,35 @@ class WorkRunLedger:
                 tasks[tid] = None
         return tasks
 
+    def _open_wait_tasks(self, run_id: str) -> dict:
+        """Read-only credit (H464c): only the tasks an OPEN approval-wait source is
+        still on. A closed source already carries its end, so a finished run — or
+        one that never waited on the owner — reads no task at all."""
+        reader = self._approval_task_reader
+        if reader is None:
+            return {}
+        ids: set[int] = set()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT metadata FROM approval_wait_epochs WHERE run_id=?", (run_id,)
+            ).fetchall()
+        for row in rows:
+            try:
+                sources = self._wait_decode(row[0])["sources"]
+                ids.update(s["task"] for s in sources
+                           if s.get("end") is None and type(s.get("task")) is int)
+            except (ValueError, KeyError, TypeError, AttributeError):
+                continue
+        tasks: dict = {'_observed': {}}
+        for tid in sorted(ids)[:1000]:
+            observed = self._now()
+            try:
+                tasks[tid] = reader(tid)
+                tasks['_observed'][tid] = observed
+            except Exception:
+                tasks[tid] = None
+        return tasks
+
     @staticmethod
     def _wait_identity(task: Any) -> tuple[str, str] | None:
         from .queue import Task
@@ -559,8 +610,13 @@ class WorkRunLedger:
             raise ValueError('corrupt wait metadata')
         return meta
 
-    def _wait_credit_locked(self, run: WorkRun, now: float, tasks: dict) -> float:
-        """Refresh bounded union windows in the caller's settlement transaction."""
+    def _wait_credit_locked(self, run: WorkRun, now: float, tasks: dict, *,
+                            persist: bool = True) -> float:
+        """Refresh bounded union windows in the caller's settlement transaction.
+
+        ``persist=False`` (H464c) computes the same credit and writes nothing: the
+        observations are not stored and no window is opened or extended — that is
+        the tick path's job, never a report's."""
         if self._approval_task_reader is None or not math.isfinite(now) or now < run.started_at:
             return 0.0
         run_row = self._conn.execute('SELECT approval_block_seq FROM runs WHERE id=?', (run.id,)).fetchone()
@@ -633,13 +689,15 @@ class WorkRunLedger:
                 meta['last'] = max(last, max(s['last'] for s in meta['sources']))
                 meta['observed'] = max(meta.get('observed', last), now)
                 meta['closed'] = meta['closed'] or not active
-                self._conn.execute('UPDATE approval_wait_epochs SET metadata=? WHERE run_id=? AND marker=?',
-                                   (self._wait_encode(meta), run.id, row['marker']))
+                if persist:
+                    self._conn.execute('UPDATE approval_wait_epochs SET metadata=? WHERE run_id=? AND marker=?',
+                                       (self._wait_encode(meta), run.id, row['marker']))
                 windows.extend(intervals)
             except (ValueError, TypeError, KeyError, OverflowError):
                 # Persistently disable corrupt epochs: later reads cannot reopen them.
                 continue
-        if (marker is not None and run.status == 'blocked' and not run.stop_reason and not run.barrier):
+        if (persist and marker is not None and run.status == 'blocked' and not run.stop_reason
+                and not run.barrier):
             if marker not in seen:
                 sources = []
                 for step in self._conn.execute("SELECT * FROM steps WHERE run_id=? AND seq>=? AND outcome='queued' LIMIT 1000",
@@ -734,6 +792,15 @@ class WorkRunLedger:
         exposing ``goal_id``, ``title`` and an ``approved_by`` ref). A goal with
         no approval ref is refused: the ledger is where an approved decision
         becomes durable work, never where work invents its own approval.
+
+        H464c: the goal's ``approved_fingerprint`` (an ``ApprovedGoal`` carries
+        one) is pinned on the run. And a goal-contract approval
+        (``task:<id>:<decider>``) opens ONE run, ever: opening it again — the
+        ``goal.approve`` retry mints a new goal id from the same task — returns
+        the run it already opened when that run pinned the same fingerprint, and
+        is refused ``approval_already_used`` otherwise. The check and the insert
+        are one write transaction, and a failure anywhere rolls the insert back,
+        so a commit that raised leaves nothing behind for the retry to double.
         """
         approved_by = getattr(goal, "approved_by", None)
         if approved_by is None:
@@ -747,6 +814,7 @@ class WorkRunLedger:
         if deadline and deadline <= now:
             raise WorkRunError("deadline_in_the_past")
         limits = budget if isinstance(budget, Budget) else Budget.from_dict(budget)
+        pinned = getattr(goal, "approved_fingerprint", None)
         run = WorkRun(
             id=uuid.uuid4().hex[:16],
             goal_id=goal_id,
@@ -757,25 +825,57 @@ class WorkRunLedger:
             started_at=now,
             updated_at=now,
             deadline_at=deadline,
+            approved_fingerprint=pinned if isinstance(pinned, str) and len(pinned) == 64 else "",
         )
         run = WorkRun(**{**run.__dict__, "fingerprint": _fingerprint(run.identity())})
+        approval = _APPROVAL_TASK_REF.match(run.approved_by)
         with self._lock:
-            if self._open_for_goal(goal_id) is not None:
-                raise WorkRunError("run_already_open_for_goal")
-            self._conn.execute(
-                """INSERT INTO runs (id, goal_id, title, status, approved_by, budget,
-                       steps_used, interrupts_used, started_at, updated_at, deadline_at,
-                       stop_reason, fingerprint)
-                   VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, '', ?)""",
-                (
-                    run.id, run.goal_id, run.title, run.status, run.approved_by,
-                    _canonical(run.budget.as_dict()), run.started_at, run.updated_at,
-                    run.deadline_at, run.fingerprint,
-                ),
-            )
-            self._conn.commit()
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                if approval is not None:
+                    existing = self._run_for_approval_locked(int(approval.group(1)))
+                    if existing is not None:
+                        if not run.approved_fingerprint or (
+                            existing.approved_fingerprint != run.approved_fingerprint
+                        ):
+                            raise WorkRunError("approval_already_used")
+                        self._conn.commit()        # nothing was written
+                        logger.info("work run %s already open for approval %s",
+                                    existing.id, run.approved_by)
+                        return existing
+                if self._open_for_goal(goal_id) is not None:
+                    raise WorkRunError("run_already_open_for_goal")
+                self._conn.execute(
+                    """INSERT INTO runs (id, goal_id, title, status, approved_by, budget,
+                           steps_used, interrupts_used, started_at, updated_at, deadline_at,
+                           stop_reason, fingerprint)
+                       VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, '', ?)""",
+                    (
+                        run.id, run.goal_id, run.title, run.status, run.approved_by,
+                        _canonical(run.budget.as_dict()), run.started_at, run.updated_at,
+                        run.deadline_at, run.fingerprint,
+                    ),
+                )
+                if run.approved_fingerprint:
+                    # The pin, in the same transaction as the row it belongs to.
+                    self._conn.execute(
+                        "UPDATE runs SET approved_fingerprint = ? WHERE id = ?",
+                        (run.approved_fingerprint, run.id),
+                    )
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
         logger.info("work run opened: %s for goal %s", run.id, run.goal_id)
         return run
+
+    def _run_for_approval_locked(self, task_id: int) -> WorkRun | None:
+        """The run a goal-contract approval of task ``task_id`` already opened."""
+        row = self._conn.execute(
+            "SELECT * FROM runs WHERE approved_by LIKE ? ORDER BY started_at, id LIMIT 1",
+            (f"task:{int(task_id)}:%",),
+        ).fetchone()
+        return self._row_to_run(row) if row is not None else None
 
     def _open_for_goal(self, goal_id: str) -> str | None:
         row = self._conn.execute(
@@ -849,6 +949,7 @@ class WorkRunLedger:
             started_at=row["started_at"], updated_at=row["updated_at"],
             deadline_at=row["deadline_at"], stop_reason=row["stop_reason"],
             fingerprint=row["fingerprint"],
+            approved_fingerprint=row["approved_fingerprint"] or "",
             # A corrupt blob reads as "not parked": the safe direction, since a
             # barrier only ever suppresses work.
             barrier=_load(row["barrier"]) or None,
@@ -856,13 +957,27 @@ class WorkRunLedger:
 
     # ── budget ───────────────────────────────────────────────────────────
 
-    def budget_state(self, run_id: str, *, now: float | None = None) -> dict[str, Any]:
+    def budget_state(
+        self, run_id: str, *, now: float | None = None, settle: bool = True
+    ) -> dict[str, Any]:
         """What is left, and which limit (if any) is already spent.
 
         ``exceeded`` names the FIRST limit that is out — steps, then seconds, then
         deadline, then interrupts — so a caller reports one honest reason rather
         than a list.
+
+        ``settle=False`` (H464c) is the read-only view a report takes: the same
+        numbers, from only the tasks an open approval wait is on, in no write
+        transaction and writing nothing.
         """
+        if not settle:
+            tasks = self._open_wait_tasks(run_id)
+            moment = self._now() if now is None else float(now)
+            with self._lock:
+                run = self._run_locked(run_id)
+                credit = self._wait_credit_locked(run, moment, tasks, persist=False)
+                budget_moment = self._budget_moment_locked(run, moment)
+            return self._budget_view(run, moment, budget_moment, credit)
         tasks = self._approval_tasks(run_id)
         moment = self._now() if now is None else float(now)
         with self._lock:
@@ -876,6 +991,11 @@ class WorkRunLedger:
             except BaseException:
                 self._conn.rollback()
                 raise
+        return self._budget_view(run, moment, budget_moment, credit)
+
+    @staticmethod
+    def _budget_view(run: WorkRun, moment: float, budget_moment: float,
+                     credit: float) -> dict[str, Any]:
         used_seconds = max(0.0, run.seconds_used(budget_moment) - credit)
         exceeded = _exceeded(run, budget_moment, credit=credit)
         return {
@@ -1609,14 +1729,20 @@ class WorkRunLedger:
     # ── reporting ────────────────────────────────────────────────────────
 
     def snapshot(self, run_id: str, *, step_limit: int = 100) -> dict[str, Any]:
-        """Everything a report or a HUD needs about one run, in one read."""
+        """Everything a report or a HUD needs about one run, in one read.
+
+        Read-only: it writes nothing and reads a queue task only where an open
+        approval wait is still on one (H464c) — none for a finished run or one not
+        waiting on the owner — so a list route no longer reads every task of every
+        run and opens a write transaction per run to show them."""
         run = self.get(run_id)
         if run is None:
             raise WorkRunError("unknown_run")
         steps = self.steps(run_id, limit=step_limit)
         return {
             "run": run.as_dict(),
-            "budget": self.budget_state(run_id),
+            # Read-only (H464c): a report never settles credit or opens a write.
+            "budget": self.budget_state(run_id, settle=False),
             "steps": [step.as_dict() for step in steps],
             "verdicts": [verdict.as_dict() for verdict in self.verdicts(run_id)],
             "tampered": self.tampered(run_id),
