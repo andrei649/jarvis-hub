@@ -250,7 +250,14 @@ python scripts/hermes_status.py list --state partial --cluster media
 python scripts/hermes_status.py show H515
 python scripts/hermes_status.py write
 python scripts/hermes_status.py check
+python scripts/hermes_restamp.py drift --all-stale
+python scripts/hermes_restamp.py cite H464
+python scripts/hermes_restamp.py stamp --patch review.json
 ```
+
+`hermes_restamp.py` (2026-09-28) arată, pentru un rând `needs_review`, commit-ul care
+conține versiunea fixată a fiecărei dovezi și unde a ajuns fiecare citare `path:line`;
+`stamp` scrie numai un patch revizuit și refuză o evaluare care nu trece de `hermes_status`.
 
 Pagina principală și lista completă sunt generate împreună. Testele de integritate
 verifică numitorul, excluderile, identitatea rândurilor, dovezile modificate și
