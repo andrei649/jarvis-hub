@@ -1390,3 +1390,44 @@ content into either is a design change. Options: (a) a model-driven "save what m
 pass over the evicted turns through the H314 memory tool (audited, undoable, refused on a
 tainted turn); (b) an interlock over the LivingMemory digests only; (c) keep the raw archive
 and add a read path from recall / `session_search`.
+
+## P31 — H464: three decisions before "park a run" can count as equivalent (H464b, 2026-09-28)
+
+H464b made one park path real in the shipped product: with `JARVIS_COMPANY_MODE` set at
+boot, the company runtime builds from the orchestrator's own queue and intake, walks the
+checklist you approved (read back from its own approval task), and parks a finished plan on
+its own approved tasks that are still running — no step and no verdict (only wall-clock time,
+stopping a grading margin short of the run's end since H464c), at most once per task, and
+your "stop waiting" sticks. The row stays **partial**: what is left needs you.
+
+### P31.1 — H464: must a pid wait be reachable for "equivalent"?
+
+Hermes parks a goal on a process (`/goal wait <pid>`). Nerva has the pid kind built and
+tested, but nothing in the hub starts run-owned background work and registers its pid
+(`register_process` has no caller outside tests), and on macOS/BSD every pid wait is refused
+`pid_unprovable` (no start token). Options: (a) accept the own-task / webhook trigger as the
+adaptation of Hermes's pid/session barrier and say so on the row; (b) require a pid wait —
+then the first producer is `terminal_run` with `background: true` on the local-host transport
+(needs H302's background mode, a reaper for stopped runs, a lifetime cap with `killpg`, and a
+`KillMode` change in `deploy/systemd/jarvis-hub.service`, since today a restart kills the
+child and the barrier clears as `exited`, which looks like success), plus a macOS start
+token verified on macOS hardware or a macOS CI runner.
+
+### P31.2 — H464: may a local model judge (and optionally plan) a company run unattended?
+
+The judge's `wait` verdict needs a model rubric, and a planner wait needs a model planner;
+the shipped runtime has neither (and no graders at all, so after the hub's park a run idles
+until its budget ends). Running a model unattended falls under the H513 data-handling policy.
+Decide whether a local model may act as the company judge's rubric, and optionally as the
+planner, without you watching — and if so, which model and provider (strict-local, under
+`auxiliary_request_scope`, with `security.data_training_ack` where it applies), behind opt-in
+settings forced off in safe mode. A model planner also needs the rest of the intake
+arguments clamped first: since H464c the task's kind is scope-checked as well as the action's,
+but the task's agent, title and payload still reach the intake unchanged.
+
+### P31.3 — H464: should you be able to park a run by hand?
+
+Hermes lets the user set a wait (`/goal wait <pid> [reason]`). The accepted row text does not
+require it. If you want it, it would be limited to a clock or one of the run's own tasks —
+never an owner-typed pid, which would contradict "only processes the hub registered for this
+run" — and it needs a new route (so the route snapshots change).

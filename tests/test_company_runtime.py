@@ -33,6 +33,7 @@ from agents.core.autonomy.company_runtime import (
     build_company_runtime,
 )
 from agents.core.autonomy.goal_contract import GoalDraft, SuccessCheck
+from agents.core.autonomy.schedule_runtime import ScheduleConfig
 from agents.core.autonomy.work_runs import Budget, WorkRunLedger
 
 pytestmark = pytest.mark.asyncio
@@ -410,3 +411,468 @@ async def test_the_judge_wait_probe_is_passed_through(ledger, monkeypatch):
     assert (await runtime.parts.supervisor.tick(run.id)).outcome == "waiting"
     assert asked == [run.id]
     assert ledger.get(run.id).barrier["source"] == "judge"
+
+
+# ── H464b C2: built from the names the real orchestrator actually has ────────
+
+def _intake(calls, queue=None):
+    """The governed intake as a spy. With a real queue it does what the real one
+    ends in for an ``ask`` task: a durable row, blocked on the owner's decision."""
+
+    def govern_enqueue(**kwargs):
+        calls.append(dict(kwargs))
+        if queue is None:
+            return len(calls)
+        from agents.core.autonomy.queue import TaskStatus
+
+        tid = queue.enqueue(kwargs["agent"], kwargs["kind"], kwargs["title"],
+                            dict(kwargs.get("payload") or {}))
+        queue.transition(tid, TaskStatus.BLOCKED)
+        return tid
+
+    return govern_enqueue
+
+
+class _RealOrch:
+    """Shaped like the shipped orchestrator and nothing more: the queue is
+    ``autonomy_queue`` (orchestrator.py) and the governed intake is
+    ``autonomy.govern_enqueue`` (worker.py). No ``task_queue``, ``queue`` or
+    ``govern_enqueue`` attribute exists on the real one."""
+
+    def __init__(self, ledger, *, queue=None, read=None):
+        self.work_runs = ledger
+        self.company_runtime = None
+        get = read or (queue.get if queue is not None else (lambda tid: None))
+        self.autonomy_queue = types.SimpleNamespace(get=get)
+        self.autonomy = types.SimpleNamespace(calls=[])
+        self.autonomy.govern_enqueue = _intake(self.autonomy.calls, queue)
+
+
+_ROW = {
+    "kind": "research", "summary": "collect the figures",
+    "task": {"agent": "jarvis", "kind": "research.collect", "title": "Collect the figures",
+             "payload": {"source": "q3"}},
+}
+
+
+async def test_the_runtime_builds_from_the_real_orchestrator_attribute_names(ledger, monkeypatch):
+    """The shipped orchestrator never had ``task_queue``/``govern_enqueue``, so the
+    runtime never built in production and no sweep job was ever registered."""
+    monkeypatch.setenv("JARVIS_COMPANY_MODE", "1")
+    orch = _RealOrch(ledger)
+    runtime = build_company_runtime(orch)
+    assert runtime is not None
+    assert runtime.parts.reconciler is not None
+    assert not any("can never be resumed" in r for r in runtime.parts.reasons)
+    # H487's approval-wait credit reads the same durable queue
+    assert ledger._approval_task_reader is orch.autonomy_queue.get
+
+
+async def test_the_sweep_job_is_registered_for_a_real_shaped_orchestrator(ledger, monkeypatch):
+    monkeypatch.setenv("JARVIS_COMPANY_MODE", "1")
+    monkeypatch.delenv("JARVIS_TESTING", raising=False)
+    from agents.core.scheduler_service import SchedulerService
+
+    sched = _Sched()
+    orch = _RealOrch(ledger)
+    orch.heartbeat_scheduler = types.SimpleNamespace(scheduler=sched)
+    orch.get_setting = lambda key, default=None: default
+    SchedulerService(orch).schedule_company_mode()
+    assert [job[2] for job in sched.jobs] == ["company-mode-sweep"]
+    assert orch.company_runtime is not None
+
+
+async def test_the_real_intake_is_the_one_steps_go_to(ledger, monkeypatch):
+    monkeypatch.setenv("JARVIS_COMPANY_MODE", "1")
+    goal = _approved(_draft(plan=[_ROW]))
+    run = ledger.open_run(_goal_obj())
+    orch = _RealOrch(ledger)
+    runtime = build_company_runtime(orch, goals=lambda _gid: goal)
+    await runtime.sweep()
+    assert orch.autonomy.calls == [_ROW["task"]]
+    assert [s.summary for s in ledger.steps(run.id)] == ["collect the figures"]
+
+
+
+class _EmptyQueue:
+    """A queue that is present but falsy (nothing in it): presence, not truthiness."""
+
+    def __len__(self):
+        return 0
+
+    def get(self, tid):
+        return None
+
+
+class _FalsyWorker(types.SimpleNamespace):
+    """An autonomy worker that happens to be falsy (nothing queued yet)."""
+
+    def __len__(self):
+        return 0
+
+
+class _FalsyIntake:
+    """A callable intake that happens to be falsy."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __len__(self):
+        return 0
+
+    def __call__(self, **kwargs):
+        self.calls.append(kwargs)
+        return 1
+
+
+@pytest.mark.parametrize("name", ["task_queue", "queue", "autonomy_queue"])
+async def test_each_queue_name_is_read_in_order_and_presence_is_what_counts(
+    ledger, monkeypatch, name
+):
+    monkeypatch.setenv("JARVIS_COMPANY_MODE", "1")
+    orch = types.SimpleNamespace(work_runs=ledger, company_runtime=None,
+                                 govern_enqueue=lambda **kw: 1)
+    queue = _EmptyQueue()
+    setattr(orch, name, queue)
+    runtime = build_company_runtime(orch)
+    assert runtime is not None and runtime.parts.reconciler is not None
+    assert ledger._approval_task_reader == queue.get
+
+
+async def test_the_queue_names_are_tried_in_order_and_the_explicit_reader_wins(
+    ledger, monkeypatch
+):
+    monkeypatch.setenv("JARVIS_COMPANY_MODE", "1")
+    first, second, third = _EmptyQueue(), _EmptyQueue(), _EmptyQueue()
+    orch = types.SimpleNamespace(work_runs=ledger, company_runtime=None, task_queue=first,
+                                 queue=second, autonomy_queue=third,
+                                 govern_enqueue=lambda **kw: 1)
+    build_company_runtime(orch)
+    assert ledger._approval_task_reader == first.get
+    del orch.task_queue
+    build_company_runtime(orch)
+    assert ledger._approval_task_reader == second.get
+    orch.queue = types.SimpleNamespace(get="not callable")     # only a callable counts
+    build_company_runtime(orch)
+    assert ledger._approval_task_reader == third.get
+
+    def explicit(_tid):
+        return None
+
+    build_company_runtime(orch, read_task=explicit)
+    assert ledger._approval_task_reader is explicit
+
+
+async def test_the_intake_is_the_explicit_one_then_the_orchestrator_s_then_the_worker_s(
+    ledger, monkeypatch
+):
+    monkeypatch.setenv("JARVIS_COMPANY_MODE", "1")
+    goal = _approved(_draft(plan=[_ROW]))
+    worker = _FalsyIntake()
+    orch = types.SimpleNamespace(
+        work_runs=ledger, company_runtime=None, autonomy_queue=_EmptyQueue(),
+        govern_enqueue="not callable", autonomy=_FalsyWorker(govern_enqueue=worker),
+    )
+    run = ledger.open_run(_goal_obj())
+    await build_company_runtime(orch, goals=lambda _gid: goal).sweep()
+    assert worker.calls == [_ROW["task"]]           # a falsy intake is still the intake
+    assert [s.summary for s in ledger.steps(run.id)] == ["collect the figures"]
+
+    own = _FalsyIntake()
+    orch.govern_enqueue = own
+    runtime = build_company_runtime(orch, goals=lambda _gid: goal)
+    assert runtime.parts.supervisor._enqueue is own
+
+    def explicit(**_kw):
+        return 1
+
+    runtime = build_company_runtime(orch, enqueue=explicit, goals=lambda _gid: goal)
+    assert runtime.parts.supervisor._enqueue is explicit
+    orch.govern_enqueue = None
+    orch.autonomy = types.SimpleNamespace(govern_enqueue=None)
+    assert build_company_runtime(orch) is None
+
+
+# ── H464b C3: the checklist is read back from the goal's own approval task ────
+
+@pytest.fixture
+def world(tmp_path, monkeypatch):
+    """A real task queue and a ledger on ONE clock (H487's ``world`` pattern): the
+    goal is proposed, decided and read back through the durable queue."""
+    from datetime import UTC, datetime
+
+    from agents.core.autonomy.queue import TaskQueue
+
+    clock = [1_800_000_000.0]
+    monkeypatch.setattr("agents.core.autonomy.queue._now",
+                        lambda: datetime.fromtimestamp(clock[0], UTC).isoformat())
+    monkeypatch.setattr("agents.core.autonomy.queue._approval_now",
+                        lambda supplied=None: supplied or datetime.fromtimestamp(clock[0], UTC))
+    monkeypatch.setenv("JARVIS_COMPANY_MODE", "1")
+    q = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    store = WorkRunLedger(tmp_path / "work.db", clock=lambda: clock[0])
+    yield types.SimpleNamespace(clock=clock, q=q, ledger=store)
+    store.close()
+    q.close()
+
+
+def _goal_task(q, draft, decided_by="owner"):
+    """The goal card as the inbox carries it, decided by ``decided_by``."""
+    from agents.core.autonomy.queue import TaskStatus
+
+    payload = draft.as_payload()
+    payload["fingerprint"] = draft.fingerprint()
+    tid = q.enqueue("jarvis", "goal.approve", f"Approve goal: {draft.title}", payload)
+    q.transition(tid, TaskStatus.APPROVED, decided_by=decided_by, decision="accept",
+                 human_reason=None)
+    return tid
+
+
+def _approved_run(q, ledger, draft, decided_by="owner"):
+    """Propose, approve and open, exactly as the ``goal.approve`` handler does."""
+    from agents.core.autonomy.goal_contract import approve_from_task
+
+    goal = approve_from_task(q.get(_goal_task(q, draft, decided_by)))
+    return ledger.open_run(goal, budget=goal.budget, deadline_at=goal.deadline_at)
+
+
+async def test_the_approved_checklist_is_read_from_its_own_approval_task(world):
+    """No ``goals=`` is injected: the shipped runtime has none, so the checklist
+    must come back from the approval task, or nothing ever runs."""
+    run = _approved_run(world.q, world.ledger, _draft(plan=[_ROW]))
+    orch = _RealOrch(world.ledger, queue=world.q)
+    await build_company_runtime(orch).sweep()
+    assert orch.autonomy.calls == [_ROW["task"]]
+    steps = world.ledger.steps(run.id)
+    assert [s.summary for s in steps] == ["collect the figures"]
+    assert steps[0].outcome == "queued"
+    assert world.ledger.get(run.id).status == "blocked"
+
+
+async def test_the_goal_read_back_keeps_the_run_s_goal_id(world):
+    """``approve_from_task`` mints a fresh goal id; the judge's goal-identity rule
+    needs the run's own."""
+    from agents.core.autonomy.company_runtime import _approved_goal_for
+
+    run = _approved_run(world.q, world.ledger, _draft(plan=[_ROW]))
+    goal = _approved_goal_for(run, world.q.get)
+    assert goal is not None
+    assert goal.goal_id == run.goal_id
+    assert goal.approved_by == run.approved_by
+    assert [s.summary for s in goal.plan_steps()] == ["collect the figures"]
+
+
+def _open_from(ledger, *, approved_by, draft, title=None, deadline=None, budget=None):
+    """A run opened from a goal object that is NOT the approval's own read-back.
+
+    It pins the draft's own fingerprint (H464c), so each case below is refused by
+    the check it names rather than by a missing pin."""
+    goal = types.SimpleNamespace(
+        goal_id="g-other", title=title or draft.title, approved_by=approved_by,
+        deadline_at=draft.deadline_at if deadline is None else deadline,
+        approved_fingerprint=draft.fingerprint(),
+    )
+    return ledger.open_run(goal, budget=budget or draft.budget,
+                           deadline_at=draft.deadline_at if deadline is None else deadline)
+
+
+def _case_legacy(world, draft):
+    return _open_from(world.ledger, approved_by="owner:accept:7", draft=draft), None
+
+
+def _case_missing(world, draft):
+    return _open_from(world.ledger, approved_by="task:9999:owner", draft=draft), None
+
+
+def _case_reader_raises(world, draft):
+    tid = _goal_task(world.q, draft)
+
+    def read(task_id):
+        if int(task_id) == tid:
+            raise RuntimeError("the queue db is locked")
+        return world.q.get(task_id)
+
+    return _open_from(world.ledger, approved_by=f"task:{tid}:owner", draft=draft), read
+
+
+def _case_policy(world, draft):
+    tid = _goal_task(world.q, draft, decided_by="policy")
+    return _open_from(world.ledger, approved_by=f"task:{tid}:policy", draft=draft), None
+
+
+def _case_edited(world, draft):
+    run = _approved_run(world.q, world.ledger, draft)
+    tid = int(run.approved_by.split(":")[1])
+    payload = dict(world.q.get(tid).payload)
+    payload["plan"] = [dict(_ROW, summary="collect ALL the figures")]
+    world.q.update_payload(tid, payload)
+    return run, None
+
+
+def _case_title(world, draft):
+    tid = _goal_task(world.q, draft)
+    return _open_from(world.ledger, approved_by=f"task:{tid}:owner", draft=draft,
+                      title="Another goal"), None
+
+
+def _case_deadline(world, draft):
+    tid = _goal_task(world.q, draft)
+    return _open_from(world.ledger, approved_by=f"task:{tid}:owner", draft=draft,
+                      deadline=draft.deadline_at - 60), None
+
+
+def _case_budget(world, draft):
+    tid = _goal_task(world.q, draft)
+    return _open_from(world.ledger, approved_by=f"task:{tid}:owner", draft=draft,
+                      budget=Budget(max_steps=7)), None
+
+
+def _case_decider(world, draft):
+    tid = _goal_task(world.q, draft, decided_by="owner")
+    return _open_from(world.ledger, approved_by=f"task:{tid}:someone-else", draft=draft), None
+
+
+def _case_another_task(world, draft):
+    from agents.core.autonomy.queue import TaskStatus
+
+    other = world.q.enqueue("jarvis", "research.collect", "Collect", {})
+    world.q.transition(other, TaskStatus.APPROVED, decided_by="owner", decision="accept",
+                       human_reason=None)
+    return _open_from(world.ledger, approved_by=f"task:{other}:owner", draft=draft), None
+
+
+def _case_reader_swaps(world, draft):
+    """The reader hands back a DIFFERENT approved goal task than the one asked for
+    (an id reused after a purge): same content, another approval."""
+    asked = _goal_task(world.q, draft)
+    other = _goal_task(world.q, draft)
+
+    def read(task_id):
+        return world.q.get(other if int(task_id) == asked else task_id)
+
+    return _open_from(world.ledger, approved_by=f"task:{asked}:owner", draft=draft), read
+
+
+@pytest.mark.parametrize("case", [
+    _case_legacy, _case_missing, _case_reader_raises, _case_policy, _case_edited,
+    _case_title, _case_deadline, _case_budget, _case_decider, _case_another_task,
+    _case_reader_swaps,
+], ids=lambda c: c.__name__.removeprefix("_case_"))
+async def test_a_goal_that_cannot_be_bound_to_its_run_drives_nothing(world, case):
+    """Any doubt is an EMPTY checklist, never an open one: a policy-decided goal,
+    an edited payload, or a goal that belongs to another run cannot drive this one."""
+    draft = _draft(plan=[_ROW])
+    run, read = case(world, draft)
+    orch = _RealOrch(world.ledger, queue=world.q, read=read)
+    runtime = build_company_runtime(orch)
+    assert runtime is not None
+    await runtime.sweep()
+    assert orch.autonomy.calls == []
+    assert [s for s in world.ledger.steps(run.id) if s.outcome == "queued"] == []
+    from agents.core.autonomy.company_runtime import _approved_goal_for
+
+    assert _approved_goal_for(world.ledger.get(run.id), read or world.q.get) is None
+
+
+async def test_an_explicit_goal_reader_still_wins(world):
+    """Tests and callers that inject ``goals=`` keep that exact meaning."""
+    run = _approved_run(world.q, world.ledger, _draft(plan=[_ROW]))
+    orch = _RealOrch(world.ledger, queue=world.q)
+    await build_company_runtime(orch, goals=lambda _gid: None).sweep()
+    assert orch.autonomy.calls == []
+    assert world.ledger.steps(run.id) == []
+
+
+# ── H464b C4 (AC11): the shipped chain parks a run on its own approved task ────
+
+def _record_ticks(runtime):
+    """Observe what each tick answered. Observation only: the chain is the shipped
+    one, built with no injected callable."""
+    seen = []
+    tick = runtime.parts.scheduler._tick
+
+    async def _tick(run_id):
+        result = await tick(run_id)
+        seen.append(result)
+        return result
+
+    runtime.parts.scheduler._tick = _tick
+    return seen
+
+
+async def _sweep(runtime):
+    runtime.parts.scheduler._last.clear()      # the interval is not what is under test
+    return await runtime.sweep()
+
+
+def _hub_sets(ledger, run_id):
+    return ledger.barrier_sets(run_id, source="hub")
+
+
+async def _parked_on_the_approved_step(world):
+    """Steps 1-4: approve a one-row goal, sweep, the owner accepts the step's task,
+    sweep again — the run is parked on that task by the hub."""
+    from agents.core.autonomy.queue import TaskStatus
+
+    run = _approved_run(world.q, world.ledger, _draft(plan=[_ROW]))
+    orch = _RealOrch(world.ledger, queue=world.q)
+    runtime = build_company_runtime(orch, config=ScheduleConfig(enabled=True))
+    ticks = _record_ticks(runtime)
+
+    await _sweep(runtime)
+    assert world.ledger.get(run.id).status == "blocked"
+    step = world.ledger.steps(run.id)[0]
+    assert orch.autonomy.calls == [_ROW["task"]]
+
+    world.clock[0] += 30
+    world.q.transition(step.task_id, TaskStatus.APPROVED, decided_by="owner",
+                       decision="accept", human_reason=None)
+    ticks.clear()
+    await _sweep(runtime)
+    assert [(t.outcome, t.detail) for t in ticks] == [
+        ("waiting", f"parked: task {step.task_id} to finish")]
+    barrier = world.ledger.get(run.id).barrier
+    assert (barrier["kind"], barrier["target"], barrier["source"]) == (
+        "trigger", f"task:{step.task_id}", "hub")
+    assert barrier["reason"] == f"task {step.task_id} is still running"
+    return run, step, runtime, ticks
+
+
+async def test_the_shipped_chain_parks_a_run_on_its_approved_task_and_moves_on_when_it_is_done(
+    world,
+):
+    from agents.core.autonomy.queue import TaskStatus
+
+    run, step, runtime, ticks = await _parked_on_the_approved_step(world)
+    steps_used = world.ledger.get(run.id).steps_used
+    assert steps_used == 1                                   # the park spent nothing
+
+    world.q.transition(step.task_id, TaskStatus.RUNNING)
+    ticks.clear()
+    result = await _sweep(runtime)
+    assert result["skipped"] == {run.id: "waiting"} and ticks == []
+    assert world.ledger.get(run.id).steps_used == steps_used
+
+    world.q.transition(step.task_id, TaskStatus.DONE, result={"ok": True})
+    ticks.clear()
+    await _sweep(runtime)
+    cleared = [e["detail"] for e in world.ledger.events(run.id) if e["kind"] == "barrier.cleared"]
+    assert [(c["why"], c["by"]) for c in cleared] == [("fired", "check")]
+    assert [(t.outcome, t.detail) for t in ticks] == [
+        ("idle", "no work left, and no grader is wired to settle the run")]
+    assert len(_hub_sets(world.ledger, run.id)) == 1
+    assert world.ledger.verdicts(run.id) == []
+    assert world.ledger.get(run.id).steps_used == steps_used
+
+
+async def test_an_owner_clear_of_the_hub_park_sticks_in_the_shipped_chain(world):
+    run, step, runtime, ticks = await _parked_on_the_approved_step(world)
+    cleared, _after = runtime.parts.barriers.clear(run.id)
+    assert cleared is True
+    ticks.clear()
+    await _sweep(runtime)
+    assert [t.outcome for t in ticks] == ["idle"]
+    assert world.ledger.get(run.id).barrier is None
+    assert len(_hub_sets(world.ledger, run.id)) == 1
+    assert world.ledger.owner_cleared(run.id) == [
+        {"kind": "trigger", "target": f"task:{step.task_id}"}]

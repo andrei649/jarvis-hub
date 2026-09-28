@@ -186,10 +186,11 @@ INTERRUPT_BUDGET_PER_DAY = 4
 # Known gaps (review round 5, item 5; not fixed here): duplicate EFFECTS the net above
 # cannot prevent. It records one outcome per task; it cannot undo what a broken attempt
 # left behind when the handler's own write is not idempotent and the retry repeats it:
-#   * goal.approve — ``open_run``'s commit raising after its INSERT escapes
-#     ``_open_approved_goal``; the retry mints a new goal_id from the same task and opens
-#     a SECOND run (the first attempt's INSERT is committed by the next commit on the
-#     same connection).
+#   * goal.approve — CLOSED by H464c: ``open_run`` checks and inserts in one write
+#     transaction that rolls back on any failure (a commit that raised leaves no row for
+#     the next commit to write), and a ``task:<id>:…`` approval opens ONE run, ever — the
+#     retry gets the run the first attempt opened (same pinned fingerprint), with that
+#     run's goal id, or ``approval_already_used``.
 #   * permission.grant — ``apply_grant`` runs ``_insert`` then ``_audit``/``commit`` with
 #     no rollback; one of those raising lets the retry insert a SECOND grant.
 #   * channel.reply — ``record_outbound`` raising after the send escapes the broker; the

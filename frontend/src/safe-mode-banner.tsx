@@ -27,6 +27,7 @@ const LABELS: Record<string, string> = {
   project_context: 'project convention files',
   voice_piper_binary: 'the Piper voice program',
   voice_commands: 'voice command providers',
+  company_mode: 'the company-mode night shift',
 };
 
 /** The hub's `safe_mode` field as the HUD holds it; anything malformed is "off". */

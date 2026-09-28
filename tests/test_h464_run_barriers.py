@@ -22,12 +22,17 @@ from __future__ import annotations
 
 import os
 import types
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from agents.core.autonomy.pending_requests import PendingRequests
+from agents.core.autonomy.queue import TaskQueue, TaskStatus
 from agents.core.autonomy.run_barriers import (
     BARRIER_KINDS,
+    DEFAULT_WAIT_SECONDS,
+    IN_FLIGHT_TASK_STATUSES,
     MAX_BARRIER_SECONDS,
     MAX_BARRIERS_PER_RUN,
     MAX_PROCS_PER_RUN,
@@ -181,6 +186,71 @@ def test_every_barrier_is_capped_by_the_wall_clock_budget(ledger, clock):
     state = _barriers(ledger, clock).request(
         run.id, {"kind": "deadline", "target": clock.now + 3_600}, source="planner")
     assert state["cap_at"] == run.started_at + 120
+
+
+# ── the cap is the EFFECTIVE budget: H487's approval-wait credit counts (H464b C1) ──
+
+@pytest.fixture
+def credited(tmp_path, monkeypatch):
+    """A real queue and a ledger on one clock, as H487's ``world`` builds them: the
+    approval-wait credit is only ever proven from durable queue facts."""
+    clock = [1_800_000_000.0]
+    monkeypatch.setattr("agents.core.autonomy.queue._now",
+                        lambda: datetime.fromtimestamp(clock[0], UTC).isoformat())
+    monkeypatch.setattr("agents.core.autonomy.queue._approval_now",
+                        lambda supplied=None: supplied or datetime.fromtimestamp(clock[0], UTC))
+    q = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    led = WorkRunLedger(tmp_path / "runs.db", clock=lambda: clock[0])
+    yield clock, q, led
+    led.close()
+    q.close()
+
+
+def _run_after_a_credited_wait(clock, q, led):
+    """A 30 s budget, then a 100 s wait on the owner's decision: all of it credited."""
+    run = led.open_run(_goal("credited"), budget=Budget(max_seconds=30))
+    led.bind_approval_task_reader(q.get)
+    tid = q.enqueue("jarvis", "test", "Ask", {})
+    q.transition(tid, TaskStatus.BLOCKED)
+    led.record_step(run.id, kind="ask", summary="Ask", outcome="queued", task_id=tid)
+    clock[0] += 100
+    q.transition(tid, TaskStatus.APPROVED, decided_by="owner", decision="accept",
+                 human_reason=None)
+    assert PendingRequests(led, read_task=q.get).reconcile(run.id).resumed
+    state = led.budget_state(run.id)
+    assert state["seconds_left"] == 30 and state["exceeded"] is None
+    return run
+
+
+def test_a_barrier_cap_counts_the_approval_wait_credit(credited):
+    """The budget says 30 s are left; the barrier must agree. Capping by the raw
+    wall clock (started_at + 30, long past) refused this as ``no_time_left``."""
+    clock, q, led = credited
+    run = _run_after_a_credited_wait(clock, q, led)
+    barriers = RunBarriers(led, read_task=q.get)
+    state = barriers.request(
+        run.id, {"kind": "deadline", "target": {"in_seconds": 20}}, source="planner")
+    # a deadline's own wait is its target; the cap is the 30 s the budget has left
+    assert state["target"] == clock[0] + 20
+    assert state["cap_at"] == clock[0] + 30
+    clock[0] += 20
+    assert barriers.active(run.id) is False
+    assert led.events(run.id)[0]["detail"]["why"] == "elapsed"
+
+
+def test_a_long_wait_is_cut_to_the_credited_budget_left(credited):
+    clock, q, led = credited
+    run = _run_after_a_credited_wait(clock, q, led)
+    state = RunBarriers(led, read_task=q.get).request(
+        run.id, {"kind": "deadline", "target": {"in_seconds": 3_600}}, source="planner")
+    assert state["cap_at"] == clock[0] + 30
+    assert state["cap_at"] > run.started_at + 30     # the raw cap is in the past
+    barriers = RunBarriers(led, read_task=q.get)
+    clock[0] += 29
+    assert barriers.active(run.id) is True
+    clock[0] += 1
+    assert barriers.active(run.id) is False
+    assert led.events(run.id)[0]["detail"]["why"] == "cap"
 
 
 # ── what may be parked at all ────────────────────────────────────────────────
@@ -892,3 +962,187 @@ def test_a_clock_wait_days_ahead_is_not_cut_to_the_default_wait(ledger, clock):
     target = clock.now + 2 * 86_400
     barriers.request(run.id, {"kind": "deadline", "target": target}, source="planner")
     assert ledger.get(run.id).barrier["cap_at"] >= target
+
+
+# ── H464b C4: the hub parks a finished plan on its own in-flight tasks ────────
+
+def _run_with_tasks(ledger, *task_ids, goal_id="g-1", budget=None):
+    """A run whose steps queued these tasks, each answered and the run resumed —
+    what the checklist leaves behind once every row is approved."""
+    run = ledger.open_run(_goal(goal_id), budget=budget)
+    for n, task_id in enumerate(task_ids, 1):
+        step = ledger.record_step(run.id, kind="build", summary=f"step {n}", outcome="queued",
+                                  task_id=task_id)
+        ledger.resolve_step(run.id, step.seq, outcome="ok")
+        ledger.resume(run.id)
+    return run
+
+
+class _Flips:
+    """A task reader whose answer for one task changes after its first read: the
+    task finished between the park's two reads."""
+
+    def __init__(self, first, then, **others) -> None:
+        self.answers = {int(k.removeprefix("t")): list(v) for k, v in (first or {}).items()}
+        self.then = then
+        self.others = _Tasks(**others)
+
+    def __call__(self, task_id):
+        queued = self.answers.get(int(task_id))
+        if queued:
+            status = queued.pop(0)
+            return types.SimpleNamespace(id=task_id, status=status)
+        if int(task_id) in self.answers:
+            return types.SimpleNamespace(id=task_id, status=self.then)
+        return self.others(task_id)
+
+
+def test_in_flight_means_decided_yes_and_not_finished():
+    assert frozenset({"approved", "running"}) == IN_FLIGHT_TASK_STATUSES
+
+
+def test_barrier_sets_lists_each_park_oldest_first_and_by_source(ledger, clock):
+    run = _run_with_tasks(ledger, 7)
+    other = _run_with_tasks(ledger, 9, goal_id="g-2")
+    barriers = _barriers(ledger, clock, tasks=_Tasks(t7="running", t9="running"))
+    barriers.request(run.id, {"kind": "deadline", "target": {"in_seconds": 60}},
+                     source="planner")
+    clock.advance(1)
+    barriers.request(run.id, {"kind": "trigger", "target": "task:7"}, source="hub")
+    clock.advance(1)
+    barriers.request(run.id, {"kind": "deadline", "target": {"in_seconds": 60}}, source="judge")
+    barriers.request(other.id, {"kind": "trigger", "target": "task:9"}, source="hub")
+    sets = ledger.barrier_sets(run.id)
+    assert [(s["source"], s["kind"]) for s in sets] == [
+        ("planner", "deadline"), ("hub", "trigger"), ("judge", "deadline")]
+    hub = ledger.barrier_sets(run.id, source="hub")
+    assert [s["target"] for s in hub] == ["task:7"]
+    assert set(hub[0]) >= {"id", "kind", "target", "cap_at", "source", "reason"}
+    assert ledger.barrier_sets(run.id, source="owner") == []
+    assert ledger.barrier_sets("nope") == []
+
+
+def test_park_in_flight_parks_on_the_oldest_approved_or_running_task(ledger, clock):
+    run = _run_with_tasks(ledger, 7, 8, 9)
+    ledger.record_step(run.id, kind="plan", summary="a failed plan", outcome="failed")
+    before = ledger.get(run.id)
+    barriers = _barriers(ledger, clock, tasks=_Tasks(t7="done", t8="running", t9="approved"))
+    state = barriers.park_in_flight(run.id)
+    assert state["kind"] == "trigger" and state["target"] == "task:8"
+    assert state["source"] == "hub"
+    assert state["reason"] == "task 8 is still running"
+    assert state["waiting_on"] == "task 8 to finish"
+    # the default wait, never more than the budget left
+    assert state["cap_at"] == clock.now + DEFAULT_WAIT_SECONDS
+    after = ledger.get(run.id)
+    assert (after.steps_used, after.interrupts_used) == (before.steps_used, before.interrupts_used)
+    assert len(ledger.steps(run.id)) == 4                      # a park is never a step
+    assert barriers.active(run.id) is True
+    # an approved task that has not started is in flight too
+    fresh = _run_with_tasks(ledger, 9, goal_id="g-2")
+    assert barriers.park_in_flight(fresh.id)["target"] == "task:9"
+
+
+@pytest.mark.parametrize("status", [
+    "proposed", "blocked", "deferred", None, "done", "failed", "rejected", "quarantined",
+    "expired",
+])
+def test_park_in_flight_ignores_undecided_missing_and_terminal_tasks(ledger, clock, status):
+    """Undecided asks keep the run ``blocked`` instead; finished work is done."""
+    run = _run_with_tasks(ledger, 7)
+    statuses = {} if status is None else {"t7": status}
+    barriers = _barriers(ledger, clock, tasks=_Tasks(**statuses))
+    assert barriers.park_in_flight(run.id) is None
+    assert ledger.get(run.id).barrier is None
+    assert ledger.barrier_sets(run.id) == []
+
+
+def test_park_in_flight_never_waits_on_the_same_task_twice(ledger, clock):
+    """At most one hub wait per task per run: a wait that hit its cap is not renewed."""
+    run = _run_with_tasks(ledger, 8, 9, budget=Budget(max_seconds=3 * DEFAULT_WAIT_SECONDS))
+    barriers = _barriers(ledger, clock, tasks=_Tasks(t8="running", t9="running"))
+    assert barriers.park_in_flight(run.id)["target"] == "task:8"
+    clock.advance(DEFAULT_WAIT_SECONDS)
+    assert barriers.active(run.id) is False
+    assert _events(ledger, run.id)[0][1]["why"] == "cap"
+    assert barriers.park_in_flight(run.id)["target"] == "task:9"
+    clock.advance(DEFAULT_WAIT_SECONDS)
+    assert barriers.active(run.id) is False
+    assert barriers.park_in_flight(run.id) is None
+    assert [s["target"] for s in ledger.barrier_sets(run.id, source="hub")] == [
+        "task:8", "task:9"]
+
+
+def test_park_in_flight_skips_a_task_the_owner_let_the_run_go_from(ledger, clock):
+    """The owner's "stop waiting" binds the hub too: once the owner let the run go
+    from ``task:8`` — whoever set that wait — the hub never parks on it again."""
+    run = _run_with_tasks(ledger, 8, 9)
+    tasks = _Tasks(t8="running", t9="running")
+    barriers = _barriers(ledger, clock, tasks=tasks)
+    barriers.request(run.id, {"kind": "trigger", "target": "task:8"}, source="planner")
+    assert barriers.clear(run.id)[0] is True
+    assert barriers.park_in_flight(run.id)["target"] == "task:9"
+    assert barriers.clear(run.id)[0] is True
+    assert barriers.park_in_flight(run.id) is None
+    # and when the other task is not in flight, nothing is left to park on
+    quiet = _run_with_tasks(ledger, 8, 9, goal_id="g-2")
+    only = _barriers(ledger, clock, tasks=_Tasks(t8="running", t9="done"))
+    only.request(quiet.id, {"kind": "trigger", "target": "task:8"}, source="judge")
+    only.clear(quiet.id)
+    assert only.park_in_flight(quiet.id) is None
+    assert ledger.get(quiet.id).barrier is None
+
+
+def test_park_in_flight_without_a_reader_is_none_and_a_raising_reader_is_a_refusal(
+    ledger, clock
+):
+    run = _run_with_tasks(ledger, 7)
+    assert _barriers(ledger, clock).park_in_flight(run.id) is None
+    locked = _barriers(ledger, clock, tasks=_Raises(RuntimeError("database is locked")))
+    with pytest.raises(RunBarriersError) as exc:
+        locked.park_in_flight(run.id)
+    assert exc.value.reason == "trigger_unavailable"
+    assert ledger.get(run.id).barrier is None
+    assert ledger.barrier_sets(run.id) == []
+
+
+def test_park_in_flight_skips_a_task_that_finished_between_the_reads(ledger, clock):
+    run = _run_with_tasks(ledger, 8, 9)
+    flips = _Flips({"t8": ["running"]}, "done", t9="running")
+    state = _barriers(ledger, clock, tasks=flips).park_in_flight(run.id)
+    assert state["target"] == "task:9"
+    alone = _run_with_tasks(ledger, 8, goal_id="g-2")
+    flips = _Flips({"t8": ["running"]}, "done")
+    assert _barriers(ledger, clock, tasks=flips).park_in_flight(alone.id) is None
+    assert ledger.get(alone.id).barrier is None
+
+
+def test_park_in_flight_passes_any_other_refusal_on(ledger, clock):
+    """Only "it finished in between" moves on; a spent run, a full barrier count or
+    an unparkable run is the caller's to handle."""
+    run = _run_with_tasks(ledger, 8, budget=Budget(max_seconds=60))
+    barriers = _barriers(ledger, clock, tasks=_Tasks(t8="running"))
+    clock.advance(60)
+    with pytest.raises(RunBarriersError) as exc:
+        barriers.park_in_flight(run.id)
+    assert exc.value.reason == "budget_spent"
+
+
+def test_park_in_flight_survives_a_restart(tmp_path, clock):
+    """The hub's wait history is the append-only audit, so a restart never buys a
+    task a second wait."""
+    path = tmp_path / "runs.db"
+    first = WorkRunLedger(path, clock=clock)
+    run = _run_with_tasks(first, 8, 9)
+    tasks = _Tasks(t8="running", t9="done")
+    assert _barriers(first, clock, tasks=tasks).park_in_flight(run.id)["target"] == "task:8"
+    clock.advance(DEFAULT_WAIT_SECONDS)
+    assert _barriers(first, clock, tasks=tasks).active(run.id) is False
+    first.close()
+    again = WorkRunLedger(path, clock=clock)
+    try:
+        assert _barriers(again, clock, tasks=tasks).park_in_flight(run.id) is None
+        assert len(again.barrier_sets(run.id, source="hub")) == 1
+    finally:
+        again.close()
+

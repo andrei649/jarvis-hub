@@ -146,6 +146,18 @@
 
   Reviewed adversarially (4 lenses): 21 findings confirmed (6 MAJOR, 11 MINOR, 4 NIT), closed in a verified fix round; the verification found 3 more (1 MINOR, 2 NIT), closed red-first. 72 mutants, all killed (16 by cases added after a first pass). Test manual: CHN-189, CHN-190.
   Tests: backend 18,150 → 18,269; vitest 1,772 → 1,783.
+- 2026-09-28 H464b the shipped company runtime parks a finished plan on its own running tasks: company mode builds in production at last, walks the checklist the owner approved, and waits on work that has not landed before grading (partial, still; headline 190/697).
+
+  With `JARVIS_COMPANY_MODE` set at boot, none of this happened in production: the runtime looked for a `task_queue` and a `govern_enqueue` the orchestrator never had, so it never built and no sweep ran. Now:
+  - **It builds from the orchestrator's own parts.** The queue reader is `autonomy_queue.get` and the intake is `autonomy.govern_enqueue` (explicit arguments still win; presence, not truthiness; only a callable counts). The same reader turns H487's approval-wait credit on and backs the reconciler and the barriers. Every step still goes through the governed intake.
+  - **The checklist is the one the owner approved.** It is read back from the goal's own approval task (`approved_by = task:<id>:<decider>`), re-checked (a human accepted that very task; the payload still fingerprints to what was approved) and bound to the run: the same approval and decider, title, deadline and budget, with the run's own goal id. Any doubt — a legacy run, a missing, purged or unreadable task, a policy decision, an edited payload, a goal of another run — is an empty plan, never an open one.
+  - **A finished plan waits on its own running work.** The checklist moves on when a step's task is approved, not when it finishes. When nothing is left to plan but a task the run queued is approved or running, the hub parks the run on `task:<id>` before any grader is asked: no step, no budget, no plan, no verdict. At most once per task, capped at 6 h and the budget left; the owner's "stop waiting" sticks; any refusal or error falls through to grading as before. The run resumes on the first sweep after the task finishes.
+  - **Barrier caps use the effective budget.** A cap is now the earliest of its own wait, the deadline and `now + seconds_left`, so H487's credited approval wait counts; before, such a run was refused `no_time_left`.
+
+  Still partial: no process producer registers a run's background process (owner decision 1, blocked on H302), the judge's `wait` and planner waits need a model rubric or planner under H513 (owner decision 2), no graders are wired in production (after the park a run idles until its budget ends), and wake-on-fire, `job:<id>`, an owner-set wait (owner decision 3) and waiting between checklist steps stay deferred. The three decisions are in `docs/OWNER_TASKS.md`.
+
+  36 mutants, all killed. Test manual: GOV-297.
+  Tests: backend 19,826 → 19,879; vitest 1,835 (unchanged).
 - 2026-09-27 H464 a work run is parked on real async work instead of poked: a process, a trigger or a clock (partial, still; #1207; headline 189/697).
 
   A run waiting on a build, a deploy or a cooldown used to be ticked every sweep. Each tick spent a step, and eventually budget, asking "is it done yet". Now:

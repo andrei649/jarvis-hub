@@ -53,7 +53,7 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 | [H696](#h696) | A small default skill bundle with a large on-demand catalog, re-pinned to the current release | partial | 6 | [21](#critic-note-21), [25](#critic-note-25) |
 | [H334](#h334) | Importing skills from an upstream project at a verified pin | partial | 7 | [25](#critic-note-25) |
 | [H427](#h427) | Fail-closed pre-compression checkpoint — never discard a transcript unless the extraction durably landed | missing | 8 | [13](#critic-note-13) |
-| [H464](#h464) | Park a run on real async work instead of poking it | partial (built in #1207; needs a process producer and wired graders) | 8 |  |
+| [H464](#h464) | Park a run on real async work instead of poking it | partial (#1207 + H464b: shipped chain parks on in-flight tasks; needs a process producer and a model judge rubric) | 8 |  |
 | [H277](#h277) | Separate models for separate jobs (vision, video, approval judging) | partial | 9 |  |
 | [H487](#h487) | Ask a human on whatever surface they are on, carry their reason back, and fail closed on silence | partial | 9 | [27](#critic-note-27) |
 | [H513](#h513) | Restrict a capability to the surface it belongs on, and let the owner acknowledge a data-handling tradeoff without silencing the warning | partial | 9 | [9](#critic-note-9) |
@@ -249,14 +249,18 @@ Plan: 1. In agents/core/context_compressor.py, define a CheckpointProvider proto
 
 **Park a run on real async work instead of poking it** (automation) — partial, ~8 h.
 
-Owner gate: none
+Owner gate: none for the H464b slice; the remaining work needs owner decisions (H464 in `docs/OWNER_TASKS.md`)
 
 Files: `agents/core/autonomy/work_runs.py`, `agents/core/autonomy/schedule_runtime.py`, `agents/core/autonomy/company_supervisor.py`, `agents/core/autonomy/work_judge.py`, `tests/test_schedule_runtime.py`, `tests/test_company_supervisor.py`, `tests/test_work_run_ledger.py`
 
 Plan: 1. Add a nullable `barrier` JSON column to the runs table in work_runs.py: {kind: pid|trigger|deadline, target, set_at}. Add WorkRunLedger.set_barrier(run_id, kind, target) and clear_barrier(run_id), each logged as a zero-budget step or event. 2. Add barrier_active(run), which clears the barrier itself when it is stale: the pid no longer exists (os.kill(pid, 0) raises ProcessLookupError), the trigger id has fired (injected predicate), or now ≥ deadline. 3. In ScheduleRuntime.due, return a new 'waiting' skip reason before the budget check while barrier_active(run) is true. Add 'waiting' to SKIP_REASONS. 4. In CompanySupervisor.tick, return TickResult('waiting', ...) before _plan_next and before _grade, so no step, budget or judge call is spent. 5. Let the planner return Action(kind='wait', barrier=…), which sets the barrier instead of enqueueing. Let the judge return a `wait` outcome that does the same. Include the run's registered background pids in the judge's input. 6. Red-first test in tests/test_schedule_runtime.py: a run with barrier {kind: deadline, target: now+600} reports 'waiting' and is not ticked. It currently has no barrier concept and is ticked. 7. Also test that a dead pid clears on the next sweep, that the supervisor spends no budget and makes no judge call while waiting, and that an elapsed deadline resumes the run.
 
 
-**Built in #1207 (2026-09-27), still partial:** all three barrier kinds, the zero-cost `waiting` skip, stale clearing, the planner `wait` action, the judge `wait` verdict with the background-process list and the owner clear shipped. Remaining: nothing in the hub registers a run's background process yet (pid waits reachable only from Python), and the shipped runtime wires no model planner or graders. `python3 scripts/hermes_status.py show H464`.
+**Built in #1207 (2026-09-27), still partial:** all three barrier kinds, the zero-cost `waiting` skip, stale clearing, the planner `wait` action, the judge `wait` verdict with the background-process list and the owner clear shipped.
+
+**H464b (2026-09-28), still partial:** one park path is now real in the shipped product. With `JARVIS_COMPANY_MODE` set at boot, the company runtime builds from the orchestrator's own queue (`autonomy_queue`) and governed intake (`autonomy.govern_enqueue`) — before, it never built and no sweep job was registered. The approved checklist is read back from the goal's own approval task (re-checked and bound to the run; any doubt is an empty plan). When the checklist is done but a task the run queued is approved and still executing, the hub parks the run on `task:<id>` before grading (no step, budget, plan or verdict; at most once per task; capped at 6 h and the effective budget left; the owner's "stop waiting" sticks) and it resumes on the first sweep after the task finishes. Barrier caps now use the H487-credited budget. 36 mutants, all killed; test manual GOV-297.
+
+Remaining: no process producer registers a run's background process (owner decision 1, blocked on H302: `terminal_run` background mode, a reaper, systemd `KillMode`; macOS needs a pid start token), the judge's `wait` and planner waits need a model rubric/planner under H513 (owner decision 2), no graders are wired in production (after the park a run idles until its budget ends), and wake-on-fire, `job:<id>`, an output-pattern trigger, an owner-set wait (owner decision 3) and waiting between checklist steps stay deferred. `python3 scripts/hermes_status.py show H464`.
 ## H507
 
 Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H507`.

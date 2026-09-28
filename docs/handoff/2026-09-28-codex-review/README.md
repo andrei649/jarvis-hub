@@ -74,8 +74,11 @@ the URL monitor deadline test made robust on a loaded runner.
 
 ## Known gaps (documented, not fixed)
 
-1. **goal.approve:** a retry after `open_run`'s commit raises opens a second run with a new
-   goal_id.
+1. **goal.approve:** ~~a retry after `open_run`'s commit raises opens a second run with a new
+   goal_id.~~ **Closed by H464c (2026-09-28):** `open_run` checks and inserts in one write
+   transaction that rolls back on any failure, and a `task:<id>:…` approval opens one run,
+   ever — the retry gets the first attempt's run (and its goal id) or `approval_already_used`
+   (`tests/test_h464c_company_run_binding.py`).
 2. **permission.grant:** `_audit` or `commit` raising after `_insert` lets a retry insert a
    second grant.
 3. **channel.reply:** `record_outbound` raising after the send lets a retry send again.

@@ -286,15 +286,43 @@ restart** — a capability that can start a night of autonomous work should not 
 because a config file changed while nobody was looking. Nothing is registered if the
 chain cannot be built, and every refusal is named in the log: no work-run ledger, no
 governed intake. A missing task queue is reported rather than fatal — the runtime
-builds, but a blocked run could never be resumed, so it says so.
+builds, but a blocked run could never be resumed, so it says so. The runtime is
+built from the **orchestrator's own queue and intake** (`autonomy_queue`,
+`autonomy.govern_enqueue`; H464b — before that it looked for names the orchestrator
+never had, so in production it never built and no sweep ran). **Safe mode leaves it
+out** (H464c): no runtime is built and no sweep is scheduled, and a sweep that finds
+safe mode on does nothing.
 
 **What it will actually do.** The planner is the **checklist the owner read on the
 approval card** (`GoalDraft.plan`, inside the payload fingerprint, so editing it
 invalidates the approval). A goal approved with **no** plan and no explicitly-passed
 model planner **proposes nothing** and goes straight to grading: "you approved a goal
 with no plan, so nothing happened" is a better outcome than a model improvising a
-night's work from a one-line title. A goal that cannot be read yields an *empty*
-plan, never an unrestricted one.
+night's work from a one-line title. The checklist is **read back from the goal's own
+approval task** (the task in the run's `approved_by`): a human must have accepted
+that very task, the goal must match the run (approval, title, deadline, budget), and
+its payload must fingerprint to **the fingerprint the run pinned when it opened**
+(H464c) — never merely to the one the payload now carries about itself. **One
+approval task opens one run**: a retried `goal.approve` gets the run it already
+opened. A read that **fails just now holds** the run (no step, no park, no grade —
+the next sweep reads again); a goal that **provably does not bind** (a policy
+decision, an edit, another run's goal, a run opened before the pin existed) **stops**
+the run with the reason on its record (`stopped (plan not bound to its approval: …)`),
+and so does an approved row the planner must refuse — neither is ever graded as a
+finished checklist. A row's queued task kind must be inside the goal's scope (it is
+a scope kind or sits under one: `research.collect` under `research`), or the card is
+refused.
+
+**When the checklist is done.** A step's task counts as done for the checklist once
+it is *approved*, so the plan can finish while that work is still running. A
+finished plan then **waits on its own approved tasks that are still running** — no
+step and no verdict, only wall-clock time (at most once per task; "stop waiting"
+sticks): the run is parked on `task:<id>` and resumes on the first sweep after the
+task finishes. The wait is capped at 6 h and at the time left **less a grading
+margin** (H464c: the longest of one sweep interval plus a minute and a tenth of the
+budget), so the run can still be graded when it runs out; with no time to spare past
+the margin it does not wait at all. Production still has **no grader wired**, so after that the run idles
+("no work left, and no grader is wired") until its budget ends.
 
 **Cost:** an active run consumes its own budget — steps, elapsed seconds, deadline and
 a hard cap on how many times it may interrupt you. With the runtime's authoritative
