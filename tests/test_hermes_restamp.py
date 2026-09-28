@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import textwrap
@@ -262,6 +263,61 @@ def test_crlf_lone_cr_and_non_utf8_blobs_are_hashed_like_the_working_tree(repo):
         assert example["non_utf8"] == 1
 
 
+def test_drift_finds_a_pin_that_only_a_merge_result_held(repo):
+    # Each side changes a different end of the file; the clean merge holds a blob neither
+    # parent ever had, and only a per-parent diff of the merge commit shows it.
+    git(repo.root, "checkout", "-q", "-b", "side")
+    put(repo.root, EXAMPLE, ["# side header", *V3])
+    commit(repo.root, "side: a header")
+    git(repo.root, "checkout", "-q", "main")
+    put(repo.root, EXAMPLE, [*V3, "MAIN = 1"])
+    commit(repo.root, "main: a trailer")
+    git(repo.root, "merge", "-q", "--no-edit", "side")
+    merge = git(repo.root, "rev-parse", "HEAD")
+    merged = ["# side header", *V3, "MAIN = 1"]
+    assert (repo.root / EXAMPLE).read_text(encoding="utf-8") == "\n".join(merged) + "\n"
+    put(repo.root, EXAMPLE, V3)
+    commit(repo.root, "after the merge")
+    repin(repo.root, "H002", EXAMPLE, digest_of(repo.tmp, merged))
+    example = pins(hr.drift(repo.root, ["H002"])[0])[EXAMPLE]
+    assert example["found"] == "found" and [c["sha"] for c in example["commits"]] == [merge]
+
+
+def test_drift_finds_a_pin_on_a_side_branch_that_a_merge_discarded(repo):
+    # `merge -s ours` keeps main's file, so the merge is TREESAME to its first parent and
+    # default history simplification never walks the (deleted) side branch behind it.
+    # Mutation note (N01, dropping --full-history): equivalent. --diff-merges=separate
+    # already switches history simplification off (git 2.43: this history, a side edit
+    # later reverted, and two sides reaching the same file all read the same without it);
+    # the flag stays because the spec names it and it costs nothing.
+    git(repo.root, "checkout", "-q", "-b", "side")
+    side_text = [*V3, "SIDE = 1"]
+    put(repo.root, EXAMPLE, side_text)
+    side = commit(repo.root, "side: an edit the merge discards")
+    git(repo.root, "checkout", "-q", "main")
+    git(repo.root, "merge", "-q", "-s", "ours", "--no-edit", "side")
+    git(repo.root, "branch", "-q", "-D", "side")
+    repin(repo.root, "H002", EXAMPLE, digest_of(repo.tmp, side_text))
+    example = pins(hr.drift(repo.root, ["H002"])[0])[EXAMPLE]
+    assert example["found"] == "found" and [c["sha"] for c in example["commits"]] == [side]
+    assert example["commits"][0]["on_head"] is True   # reachable through the merge's second parent
+
+
+def test_drift_finds_a_pin_held_only_by_a_remote_tracking_ref(repo):
+    git(repo.root, "checkout", "-q", "-b", "side", repo.c1)
+    side_text = V1[:7] + ["    return compute(value, remote=True)"] + V1[8:]
+    put(repo.root, EXAMPLE, side_text)
+    side = commit(repo.root, "a version only origin has")
+    git(repo.root, "checkout", "-q", "main")
+    git(repo.root, "update-ref", "refs/remotes/origin/side", side)
+    git(repo.root, "branch", "-q", "-D", "side")
+    repin(repo.root, "H002", EXAMPLE, digest_of(repo.tmp, side_text))
+    example = pins(hr.drift(repo.root, ["H002"])[0])[EXAMPLE]
+    assert example["found"] == "found" and [c["sha"] for c in example["commits"]] == [side]
+    assert example["commits"][0]["on_head"] is False
+    assert example["commits"][0]["branches"] == ["origin/side"]
+
+
 def test_drift_follows_renames_and_deletes(repo):
     report = pins(hr.drift(repo.root, ["H004"])[0])
     renamed, gone = report["agents/core/old_name.py"], report["agents/core/gone.py"]
@@ -297,7 +353,8 @@ def test_cite_classifies_unchanged_moved_edited_deleted_and_ambiguous_lines(repo
     report = cited(hr.cite(repo.root, "H002"))
     assert report["example.py:1"]["class"] == "unchanged" and report["example.py:1"]["now"] == [1, 1]
     moved = report["example.py:3-4"]
-    assert moved["class"] == "moved" and moved["now"] == [14, 15] and moved["anchored"] is True
+    # Only the neighbour below agrees (v2 put epsilon() above alpha): placed, but flagged.
+    assert moved["class"] == "moved" and moved["now"] == [14, 15] and moved["anchored"] is False
     assert moved["suggest"] == "example.py:14-15" and moved["resolves"] is True
     edited = report["agents/core/example.py:8"]
     assert edited["class"] == "edited" and edited["now"] == [19, 19]
@@ -324,6 +381,7 @@ def test_cite_prints_only_the_diff_hunks_that_touch_cited_lines(repo, capsys):
     for label in ("[unchanged]", "[moved]", "[edited]", "[deleted]", "[ambiguous]", "@@ -"):
         assert label in out
     assert "agents/core/elsewhere.py:9999" in out   # listed as ignored, never classified
+    assert "example.py:3-4 -> example.py:14-15 (neighbours differ: confirm by reading)" in out
 
 
 @pytest.mark.parametrize("line,shown", [(30, False), (31, True)])
@@ -335,6 +393,42 @@ def test_a_hunk_is_shown_exactly_when_it_reaches_a_cited_line(repo, line, shown)
     save(repo.root, data)
     hunks = hr.cite(repo.root, "H002")["files"][EXAMPLE]["hunks"]
     assert ("+CONSTANT_11 = 110" in "\n".join(hunks)) is shown
+
+
+def test_a_crlf_working_tree_shows_only_the_hunks_that_changed(repo):
+    # hermes_status reads CRLF as LF, so the diff must too, or every line is a change.
+    put(repo.root, EXAMPLE, ("\r\n".join(V3) + "\r\n").encode())
+    report = hr.cite(repo.root, "H002")
+    assert cited(report)["agents/core/example.py:8"]["class"] == "edited"
+    hunks = "\n".join(report["files"][EXAMPLE]["hunks"])
+    assert "-    return compute(value)" in hunks and "+    return compute(value, strict=True)" in hunks
+    assert "CONSTANT_11" not in hunks
+
+
+def test_hunks_are_matched_on_git_line_numbers_past_unicode_line_separators(repo):
+    # str.splitlines (hermes_status's numbering) also breaks at U+2028; git breaks at \n only.
+    sep, name = " ", "agents/core/unicode.py"
+    v1 = [f"S{i} = 'a{sep}b'" for i in range(1, 6)] + [f"L{i} = {i}" for i in range(6, 31)]
+    v1[17] = f"L18 = 'x{sep}y'"   # a separator inside the cited hunk's context, too
+    put(repo.root, name, v1)
+    commit(repo.root, "a file with line separators inside its lines")
+    git_line = v1.index("L20 = 20") + 1
+    hs_line = "\n".join(v1).splitlines().index("L20 = 20") + 1
+    assert (git_line, hs_line) == (20, 26)
+    data = hs.load(repo.root)[1]
+    item = next(r for r in data["reviews"] if r["id"] == "H002")
+    item["summary"] = f"The value lives at unicode.py:{hs_line}."
+    item["evidence"] = [{"path": name, "sha256": hs.file_digest(repo.root / name)}]
+    save(repo.root, data)
+    v2 = [{"L20 = 20": "L20 = 200", "L28 = 28": "L28 = 280"}.get(line, line) for line in v1]
+    put(repo.root, name, v2)   # two separate hunks: the cited one at git line 20, another at 28
+    report = hr.cite(repo.root, "H002")
+    assert cited(report)[f"unicode.py:{hs_line}"]["pinned_text"] == ["L20 = 20"]
+    [hunk] = report["files"][name]["hunks"]
+    lines = hunk.split("\n")
+    assert lines[0].startswith("@@ -17,7 +17,7 @@")
+    assert lines[1:] == [" L17 = 17", f" L18 = 'x{sep}y'", " L19 = 19", "-L20 = 20", "+L20 = 200",
+                         " L21 = 21", " L22 = 22", " L23 = 23"]
 
 
 @pytest.mark.parametrize("start,count,shown", [
@@ -351,6 +445,16 @@ def test_cite_follows_a_renamed_file_and_reports_a_deleted_one(repo):
     assert renamed["class"] == "moved" and renamed["now_path"] == "agents/core/new_name.py"
     assert renamed["now"] == [2, 2] and renamed["suggest"] == "agents/core/new_name.py:2"
     assert report["gone.py:1"]["class"] == "deleted"
+
+
+def test_a_file_renamed_twice_is_followed_to_where_it_lives_now(repo):
+    git(repo.root, "mv", "agents/core/new_name.py", "agents/core/newest_name.py")
+    commit(repo.root, "rename it again")
+    renamed = pins(hr.drift(repo.root, ["H004"])[0])["agents/core/old_name.py"]
+    assert renamed["moved_to"] == ["agents/core/newest_name.py"] and renamed["removed_in"] == repo.c2
+    placed = cited(hr.cite(repo.root, "H004"))["old_name.py:2"]
+    assert placed["class"] == "moved" and placed["now_path"] == "agents/core/newest_name.py"
+    assert placed["suggest"] == "agents/core/newest_name.py:2"
 
 
 def test_unpinned_and_ambiguous_names_are_ignored_exactly_as_hermes_status_ignores_them(repo):
@@ -410,6 +514,102 @@ def test_a_block_rewritten_in_place_is_ambiguous_not_deleted():
     assert result["class"] == "ambiguous" and result["candidates"] == [[2, 14]] and result["now"] is None
     gone = ["def f():", "    pass", "def g():"]
     assert hr.classify(pinned, 2, 7, gone)["class"] == "deleted"
+    # Rewritten in place and also copied, lightly edited, past a long unchanged tail that
+    # keeps the anchors where they were: both places are answers.
+    head, tail = [f"HEADER_{i} = {i}" for i in range(5)], [f"TRAILER_{i} = {i}" for i in range(5)]
+    copy = ["def f_old():", *("    c = 300" if line == "    c = 3" else line for line in body)]
+    result = hr.classify([*head, *pinned, *tail], 7, 12, [*head, *current, *tail, *copy])
+    assert result["class"] == "ambiguous" and result["candidates"] == [[7, 19], [27, 32]]
+
+
+def test_an_unchanged_file_places_every_citation_where_it_was():
+    # The pin holds: repeated lines with identical neighbours are no reason to doubt it.
+    same = ["def test_x(client):", "    r = client.get('/a')", "    assert r.ok", "    r = client.get('/a')",
+            "    assert r.ok", "    r = client.get('/a')", "    assert r.ok"]
+    result = hr.classify(same, 3, 3, list(same))
+    assert (result["class"], result["now"], result["candidates"]) == ("unchanged", [3, 3], [])
+
+
+MOVED_V1 = ["def a():", "    return 1", "", "def b(value):", "    total = compute(value, mode='fast')",
+            "    return total", "", "def c():", "    x = 1", "    y = 2", "    return x + y", ""]
+MOVED_V2 = ["def a():", "    return 1", "", "def c():", "    x = 1", "    y = 2", "    return x + y", "",
+            "def b(value):", "    total = compute(value, mode='safe')", "    return total", ""]
+
+
+@pytest.mark.parametrize("first,last,now", [(5, 5, [10, 10]), (4, 6, [9, 11])])
+def test_a_block_moved_and_edited_is_found_away_from_its_anchors_not_deleted(first, last, now):
+    # b() moved below c() and one argument changed: nothing resembles it between its old
+    # anchors, but most of it is still in the file, verbatim.
+    result = hr.classify(MOVED_V1, first, last, MOVED_V2)
+    assert (result["class"], result["now"], result["anchored"]) == ("edited", now, False)
+    twice = [*MOVED_V2, "def b(value):", "    total = compute(value, mode='safe')", "    return total"]
+    result = hr.classify(MOVED_V1, first, last, twice)   # two equally good places: not guessed
+    assert result["class"] == "ambiguous" and result["now"] is None
+    assert result["candidates"] == [now, [now[0] + 4, now[1] + 4]]
+    item = {**result, "citation": f"m.py:{first}", "suggest": None, "resolves": None, "first": first,
+            "pinned_text": MOVED_V1[first - 1:last], "current_text": []}
+    assert "not guessed" in hr._render_citation(item)[0]
+
+
+def test_away_from_its_anchors_only_a_vouched_place_counts():
+    # doomed_helper() was deleted; alpha() and epsilon() have its shape, and "return None"
+    # still flanks epsilon, but one unchanged line is not enough to call a place its new home.
+    assert hr.classify(V1, 15, 16, V3)["class"] == "deleted"
+    # A closer look-alike that nothing vouches for (a stray copy with a trailing space, first
+    # in the file) neither wins nor hides the place that its neighbours vouch for.
+    stray = ["    total = compute(value, mode='fast') ", "", *MOVED_V2]
+    result = hr.classify(MOVED_V1, 5, 5, stray)
+    assert (result["class"], result["now"], result["anchored"]) == ("edited", [12, 12], False)
+
+
+def test_an_edit_found_away_from_its_anchors_is_flagged():
+    result = hr.classify(MOVED_V1, 5, 5, MOVED_V2)
+    item = {**result, "citation": "m.py:5", "suggest": "m.py:10", "resolves": True, "first": 5,
+            "pinned_text": [MOVED_V1[4]], "current_text": [MOVED_V2[9]]}
+    assert "(away from its anchors: confirm by reading)" in hr._render_citation(item)[0]
+
+
+def test_a_unique_copy_is_not_placed_over_an_edit_where_the_line_was():
+    # gamma()'s line was edited in place; a new delta() happens to hold the old text.
+    pinned = ["def gamma():", "    return None", "", "def omega():", "    return 'omega'"]
+    current = ["def gamma():", "    return 0", "", "def delta():", "    return None", "", "def omega():",
+               "    return 'omega'"]
+    result = hr.classify(pinned, 2, 2, current)
+    assert result["class"] == "ambiguous" and result["candidates"] == [[2, 2], [5, 5]]
+    assert result["now"] is None
+    # The same copy with no rival where the line was is placed, flagged: one neighbour differs.
+    moved = ["def omega():", "    return 'omega'", "", "def gamma():", "    return None"]
+    result = hr.classify(pinned, 2, 2, moved)
+    assert (result["class"], result["now"], result["anchored"]) == ("moved", [5, 5], False)
+    # Both neighbours agreeing is what anchors a copy.
+    both = ["import os", "", "def gamma():", "    return None", "", "def omega():", "    return 'omega'"]
+    result = hr.classify(pinned, 2, 2, both)
+    assert (result["class"], result["now"], result["anchored"]) == ("moved", [4, 4], True)
+
+
+def test_two_edits_scoring_alike_are_ambiguous():
+    pinned = ["def f():", "    value = compute(alpha, b0)", "    return value"]
+    current = ["def f():", "    value = compute(alpha, b1)", "    value = compute(alpha, b2)", "    return value"]
+    result = hr.classify(pinned, 2, 2, current)
+    assert result["class"] == "ambiguous" and result["candidates"] == [[2, 2], [3, 3]]
+
+
+def test_a_gap_wider_than_max_region_is_a_rewrite_not_a_location():
+    pinned = ["def top():", "    value = compute(alpha, beta)", "def bottom():"]
+    steps = [f"    step_{i}()" for i in range(hr.MAX_REGION + 50)]
+    current = ["def top():", *steps, "    value = compute(alpha, gamma)", "def bottom():"]
+    result = hr.classify(pinned, 2, 2, current)
+    assert result["class"] == "ambiguous" and result["candidates"] == [[2, len(steps) + 2]]
+
+
+def test_a_suggestion_that_would_not_resolve_is_flagged():
+    # The best window starts on a blank line, and hermes_status rejects a citation there.
+    pinned = ["def f():", "    a = compute(1)", "    b = compute(2)", "def g():"]
+    current = ["def f():", "", "    b = compute(2)", "def g():"]
+    view = {"_pinned": pinned, "_current": current, "now_path": "m.py", "state": "drifted", "found": "found"}
+    entry = hr._place("m.py:2-3", "m.py", "m.py", 2, 3, view)
+    assert (entry["class"], entry["now"], entry["resolves"]) == ("edited", [2, 3], False)
+    assert "(would NOT resolve)" in hr._render_citation(entry)[0]
 
 
 # --- stamp ---------------------------------------------------------------------------------
@@ -501,6 +701,8 @@ def _stale(monkeypatch):
     ("bad citation", lambda mp: [reread_h002(summary="Re-read: see agents/core/example.py:999.")], "citation"),
     ("equivalent with work left", lambda mp: [reread_h002(status="equivalent")], "unfinished"),
     ("whitespace remaining", lambda mp: [reread_h002(remaining=" \n\t ")], "whitespace"),
+    # hermes_status accepts a whitespace-only `remaining` on a missing row; only the helper refuses it.
+    ("whitespace remaining, missing", lambda mp: [reread_h002(status="missing", remaining="  ")], "whitespace"),
     ("excluded", lambda mp: [reread_h002(status="excluded", remaining="")], "excluded"),
     ("needs_review", lambda mp: [reread_h002(status="needs_review")], "needs_review"),
     ("would be stale", _stale, "stale"),
@@ -522,12 +724,113 @@ def test_stamp_refuses_and_writes_nothing(repo, monkeypatch, capsys, case, items
     assert sorted(os.listdir(target.parent)) == listing   # no temp file left behind
 
 
-def test_stamp_refuses_a_file_it_could_not_rewrite_byte_identically(repo, capsys):
+@pytest.mark.parametrize("reshape", [
+    lambda raw: json.dumps(json.loads(raw), ensure_ascii=False).encode(),   # compact
+    lambda raw: raw.rstrip(b"\n"),                                          # no final newline
+])
+def test_stamp_refuses_a_file_it_could_not_rewrite_byte_identically(repo, capsys, reshape):
     target = repo.root / hs.ASSESSMENT
-    compact = json.dumps(json.loads(target.read_bytes()), ensure_ascii=False).encode()
-    target.write_bytes(compact)
+    reshaped = reshape(target.read_bytes())
+    target.write_bytes(reshaped)
     assert stamp(repo, [reread_h002()]) == 1
-    assert "round-trip" in capsys.readouterr().err and target.read_bytes() == compact
+    assert "round-trip" in capsys.readouterr().err and target.read_bytes() == reshaped
+
+
+def test_stamp_accepts_the_last_inventory_row(repo, capsys):
+    last = f"H{len(CAPS):03}"   # reopened, so a review may now record it
+    item = {"id": last, "status": "missing", "summary": "Nothing governs it yet; agents/core/stable.py:2 is unrelated.",
+            "remaining": "Build it, with tests.", "evidence": ["agents/core/stable.py"]}
+    assert stamp(repo, [item]) == 0, capsys.readouterr().err
+    rows = {row["id"]: row for row in hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)}
+    assert rows[last]["basis"] == "reviewed"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_stamp_keeps_the_records_file_mode(repo):
+    target = repo.root / hs.ASSESSMENT
+    target.chmod(0o640)   # mkstemp creates 0600: the rename must not narrow who can read the records
+    assert stamp(repo, [reread_h002()]) == 0
+    assert stat.S_IMODE(target.stat().st_mode) == 0o640
+
+
+# --- stamp pins only what a commit holds -----------------------------------------------------
+
+@pytest.mark.parametrize("case", ["edited", "staged"])
+def test_stamp_refuses_uncommitted_evidence_unless_told_to_allow_it(repo, capsys, case):
+    # base_sha would not hold the pinned bytes: every clean checkout would read the row stale.
+    target = repo.root / hs.ASSESSMENT
+    before = target.read_bytes()
+    if case == "edited":
+        name, items = EXAMPLE, [reread_h002()]
+        put(repo.root, EXAMPLE, [*V3, "LOCAL_EDIT = 1"])
+    else:
+        name = "agents/core/staged.py"
+        items = [reread_h002(evidence=[EXAMPLE, "tests/test_example.py", name])]
+        put(repo.root, name, ["def staged():", "    return 1"])
+        git(repo.root, "add", name)
+    assert stamp(repo, items) == 1
+    err = capsys.readouterr().err
+    assert "uncommitted" in err and name in err and "--allow-uncommitted" in err
+    assert target.read_bytes() == before
+    assert stamp(repo, items, "--allow-uncommitted", "--dry-run") == 0
+    out = capsys.readouterr().out
+    assert f"UNCOMMITTED {name}" in out and "would stamp H002" in out
+    assert out.index(f"UNCOMMITTED {name}") < out.index("@@")   # listed ahead of the diff
+    assert target.read_bytes() == before
+    assert stamp(repo, items, "--allow-uncommitted") == 0
+    out = capsys.readouterr().out
+    assert f"UNCOMMITTED {name}" in out and "stamped H002" in out
+    recorded = next(r for r in hs.load(repo.root)[1]["reviews"] if r["id"] == "H002")
+    assert {"path": name, "sha256": hs.file_digest(repo.root / name)} in recorded["evidence"]
+
+
+@pytest.mark.parametrize("ignored", [True, False])
+def test_stamp_refuses_untracked_or_ignored_evidence_even_when_uncommitted_is_allowed(repo, capsys, ignored):
+    put(repo.root, ".gitignore", ["scratch/"])
+    commit(repo.root, "ignore scratch/")
+    name = "scratch/notes.py" if ignored else "agents/core/notes.py"
+    put(repo.root, name, ["def notes():", "    return 'never committed'"])
+    target = repo.root / hs.ASSESSMENT
+    before = target.read_bytes()
+    for extra in ((), ("--allow-uncommitted",)):
+        assert stamp(repo, [reread_h002(evidence=[EXAMPLE, "tests/test_example.py", name])], *extra) == 1
+        err = capsys.readouterr().err
+        assert ("gitignored" if ignored else "untracked") in err and name in err, err
+    assert target.read_bytes() == before
+
+
+@pytest.mark.parametrize("base", ["c2", "unknown"])
+def test_stamp_refuses_a_base_sha_that_does_not_hold_the_evidence(repo, capsys, base):
+    sha = getattr(repo, base, "b" * 40)   # c2 holds v2 of example.py; the tree holds v3
+    target = repo.root / hs.ASSESSMENT
+    before = target.read_bytes()
+    assert stamp(repo, [reread_h002()], "--base-sha", sha) == 1
+    err = capsys.readouterr().err
+    assert "uncommitted" in err and EXAMPLE in err and sha[:12] in err
+    assert target.read_bytes() == before
+
+
+LINKED = "docs/records.json"   # a symlink to the records file
+
+
+@pytest.mark.parametrize("name", [hs.ASSESSMENT, "HERMES_STATUS.md", "docs/HERMES_CAPABILITIES.md", LINKED])
+def test_stamp_refuses_evidence_that_the_stamp_or_its_reports_rewrite(repo, capsys, name):
+    ledger, data = hs.load(repo.root)
+    assert name in (hs.ASSESSMENT, LINKED) or name in hs.reports(hs.assess(ledger, data, repo.root), data)
+    if name == LINKED:
+        if os.name == "nt":
+            pytest.skip("symlinks need privileges on Windows")
+        (repo.root / LINKED).symlink_to("hermes/assessment.json")
+        commit(repo.root, "link the records")
+    elif name != hs.ASSESSMENT:
+        put(repo.root, name, ["# written by hermes_status write"])
+        commit(repo.root, f"add {name}")
+    target = repo.root / hs.ASSESSMENT
+    before = target.read_bytes()
+    assert stamp(repo, [reread_h002(evidence=[EXAMPLE, "tests/test_example.py", name])]) == 1
+    err = capsys.readouterr().err
+    assert "generated" in err and name in err, err
+    assert target.read_bytes() == before
 
 
 # --- the real repository, read-only --------------------------------------------------------

@@ -16,6 +16,20 @@ always recomputed from the working tree, and the result must pass hermes_status 
 patched row current, or nothing is written. A hash-only restamp stays forbidden
 (docs/HERMES_SPRINT.md): re-read the row, then stamp what you read.
 
+cite and stamp read the working tree, as hermes_status does. So a stamp also refuses
+evidence that only this checkout holds, which every other checkout would read as stale:
+  - evidence that is untracked or gitignored (always);
+  - evidence whose bytes the recorded base_sha does not hold (an uncommitted edit, a
+    staged new file, a --base-sha older than the file), unless --allow-uncommitted is
+    given; then each such file is printed as UNCOMMITTED, ahead of any --dry-run diff;
+  - evidence the stamp itself rewrites (docs/hermes/assessment.json) or that
+    `hermes_status.py write` regenerates (hs.reports()): it would be stale on arrival.
+
+cite numbers lines as hermes_status does (str.splitlines, which also breaks at U+2028 and
+friends) and moves each cited range onto git's \\n-only numbering before it meets a hunk.
+A place it finds away from the lines that anchored a citation (moved and edited), or a
+unique copy only one unchanged neighbour vouches for, is flagged "confirm by reading".
+
 Exit codes: 0 done; 1 refused or unknown row; 2 error (unreadable records, git failure).
 """
 
@@ -50,6 +64,7 @@ CUTOFF = 0.6      # below this difflib ratio the cited text is gone, not edited
 TIE = 0.05        # two places scoring this close cannot be told apart: ambiguous
 MAX_REGION = 400  # an anchored gap wider than this is a rewrite, not a location
 SHORT = 3         # blocks up to this many lines are compared character by character
+VOUCHED = 2       # unchanged lines that must vouch for a place found away from the anchors
 SHOWN = 5         # commits listed per pin; the rest are counted
 
 
@@ -136,10 +151,12 @@ class Pin:
     moved_to: list[str] = field(default_factory=list)
     removed_in: str = ""
     text: str | None = None       # the pinned version, as hermes_status reads it
+    raw: str | None = None        # the same, newlines untranslated, as git numbers its lines
 
     def public(self) -> dict:
         view = asdict(self)
         view.pop("text")
+        view.pop("raw")
         return view
 
 
@@ -289,7 +306,8 @@ class History:
         pin.found = "found"
         commits = [commit for sha in pin.blobs for commit in blobs[sha]["introduced"]]
         pin.commits, pin.more_commits = self.describe(list(dict.fromkeys(commits)))
-        pin.text = blob_text(self.git("cat-file", "blob", pin.blobs[0]).stdout)
+        data = self.git("cat-file", "blob", pin.blobs[0]).stdout
+        pin.text, pin.raw = blob_text(data), data.decode("utf-8")   # it hashed, so it decodes
         return pin
 
 
@@ -354,17 +372,29 @@ def _result(kind: str, *, now: list[int] | None = None, candidates: list[list[in
             "similarity": similarity}
 
 
+def _agreement(context: tuple[str | None, str | None], current: list[str], j: int, n: int) -> int:
+    """How many of the pinned neighbours (0, 1 or 2) still flank current[j:j + n]."""
+    return sum(a == b for a, b in zip(context, _neighbours(current, j, j + n), strict=True))
+
+
 def classify(pinned: list[str], first: int, last: int, current: list[str]) -> dict[str, Any]:
     """Where pinned lines first..last (1-based, inclusive) sit in `current`, by content only.
 
-    An exact unique copy wins. Several exact copies are told apart only by unchanged
-    neighbours on both sides; otherwise the citation is ambiguous. With no exact copy,
-    the whole-file alignment bounds where the text can be, and a difflib ratio inside
-    those bounds finds it (edited). When nothing there resembles it, it is deleted, unless
-    a third of its lines still sit between the same anchors: then it was rewritten in
-    place and the whole region is the (ambiguous) answer. Nothing is ever guessed.
+    A file that did not change places every citation where it was. An exact unique copy
+    wins when both unchanged neighbours still flank it; with fewer, an edit where the
+    lines were, flanked at least as well, makes it ambiguous, and a copy with no such
+    rival is placed but flagged (anchored False). Several exact copies are told apart only
+    by unchanged neighbours on both sides; otherwise the citation is ambiguous. With no
+    exact copy, the whole-file alignment bounds where the text can be, and a difflib
+    ratio inside those bounds finds it (edited). When nothing there resembles it, the
+    whole file is searched, since the block may have moved as well as changed (edited,
+    flagged). When nothing anywhere resembles it, it is deleted, unless a third of its
+    lines still sit between the same anchors: then it was rewritten in place and the
+    whole region is the (ambiguous) answer. Nothing is ever guessed.
     """
     start, end = first - 1, last
+    if pinned == current:   # the pin holds: every line is where it was, repeated or not
+        return _result("unchanged", now=[first, last], anchored=True)
     block = pinned[start:end]
     size = len(block)
     context = _neighbours(pinned, start, end)
@@ -374,8 +404,14 @@ def classify(pinned: list[str], first: int, last: int, current: list[str]) -> di
         return _result("unchanged" if j == start else "moved", now=[j + 1, j + size], anchored=anchored)
 
     if len(hits) == 1:
-        near = _neighbours(current, hits[0], hits[0] + size)
-        return at(hits[0], any(a == b for a, b in zip(context, near, strict=True)))
+        hit = hits[0]
+        agree = _agreement(context, current, hit, size)
+        if agree < 2:
+            rivals = [[j + 1, j + n] for j, n in _in_place(pinned, start, end, current, (hit, hit + size))
+                      if _agreement(context, current, j, n) >= agree]
+            if rivals:
+                return _result("ambiguous", candidates=sorted([[hit + 1, hit + size], *rivals]))
+        return at(hit, agree == 2)
     if hits:
         agreed = [j for j in hits if _neighbours(current, j, j + size) == context]
         if len(agreed) == 1:
@@ -384,7 +420,9 @@ def classify(pinned: list[str], first: int, last: int, current: list[str]) -> di
     return _nearest(pinned, start, end, current)
 
 
-def _nearest(pinned: list[str], start: int, end: int, current: list[str]) -> dict[str, Any]:
+def _region(pinned: list[str], start: int, end: int, current: list[str]) -> tuple[int, int, bool]:
+    """current[lo:hi], between the nearest lines around pinned[start:end] the whole-file
+    alignment kept unchanged, and whether any such anchor exists."""
     kept: dict[int, int] = {}
     for tag, i1, i2, j1, _ in difflib.SequenceMatcher(None, pinned, current).get_opcodes():
         if tag == "equal":
@@ -393,10 +431,18 @@ def _nearest(pinned: list[str], start: int, end: int, current: list[str]) -> dic
     below = next((i for i in range(end, len(pinned)) if i in kept), None)
     lo = kept[above] + 1 if above is not None else 0
     hi = kept[below] if below is not None else len(current)
-    anchored = above is not None or below is not None
-    if hi - lo > MAX_REGION:
-        return _result("ambiguous", candidates=[[lo + 1, hi]], anchored=anchored)
-    size = end - start
+    return lo, hi, above is not None or below is not None
+
+
+def _scan(block: list[str], current: list[str], lo: int, hi: int, *, rising: bool = True,
+          skip: tuple[int, int] | None = None) -> list[tuple[float, int, int]]:
+    """(ratio, first index, length) of the windows of current[lo:hi] that resemble `block`.
+
+    With `rising`, a window must also come within TIE of the best one seen so far, which
+    only prunes windows that could never tie with the best. Windows overlapping `skip`
+    (a [first, end) index pair) are not scored.
+    """
+    size = len(block)
     # A few lines compare as characters, so a one-line edit still resembles itself; a longer
     # block compares whitespace-stripped lines, so re-indenting is not an edit and a
     # 40-line citation does not cost minutes.
@@ -405,13 +451,13 @@ def _nearest(pinned: list[str], start: int, end: int, current: list[str]) -> dic
     def shape(lines: list[str]) -> str | list[str]:
         return "\n".join(lines) if short else [line.strip() for line in lines]
 
-    target = shape(pinned[start:end])
-    scored: list[tuple[float, int, int]] = []   # (ratio, first index, window length)
+    target = shape(block)
+    scored: list[tuple[float, int, int]] = []
     floor = CUTOFF
     for length in sorted({max(1, size - 1), size, size + 1}):
         for j in range(lo, max(lo, hi - length) + 1):
             window = current[j:min(j + length, hi)]
-            if not window:
+            if not window or (skip and j < skip[1] and j + len(window) > skip[0]):
                 continue
             matcher = difflib.SequenceMatcher(None, target, shape(window), autojunk=False)
             if matcher.real_quick_ratio() < floor or matcher.quick_ratio() < floor:
@@ -419,21 +465,76 @@ def _nearest(pinned: list[str], start: int, end: int, current: list[str]) -> dic
             ratio = matcher.ratio()
             if ratio >= floor:
                 scored.append((ratio, j, len(window)))
-                floor = max(floor, ratio - TIE)
-    if not scored:
-        region = {line.strip() for line in current[lo:hi]}
-        lines = [line.strip() for line in pinned[start:end] if line.strip()]
-        if lines and 3 * sum(line in region for line in lines) >= len(lines):
-            return _result("ambiguous", candidates=[[lo + 1, hi]], anchored=anchored)   # rewritten
-        return _result("deleted", anchored=anchored)
-    best = max(scored, key=lambda s: (s[0], s[2] == size, -s[1]))
-    rivals = {(s[1], s[2]) for s in scored if s[0] >= best[0] - TIE
-              and (s[1] >= best[1] + best[2] or s[1] + s[2] <= best[1])}
+                if rising:
+                    floor = max(floor, ratio - TIE)
+    return scored
+
+
+def _spots(scored: list[tuple[float, int, int]], size: int) -> list[tuple[float, int, int]]:
+    """The best-scoring window of each non-overlapping place, best first; at equal scores
+    a window of the cited length, then the earlier one, wins."""
+    chosen: list[tuple[float, int, int]] = []
+    for ratio, j, n in sorted(scored, key=lambda s: (-s[0], s[2] != size, s[1])):
+        if all(j >= cj + cn or j + n <= cj for _, cj, cn in chosen):
+            chosen.append((ratio, j, n))
+    return chosen
+
+
+def _choose(scored: list[tuple[float, int, int]], size: int, anchored: bool) -> dict[str, Any]:
+    """edited at the best place, or ambiguous when another place scores within TIE of it."""
+    best, *others = _spots(scored, size)
+    rivals = [spot for spot in others if spot[0] >= best[0] - TIE]
     if rivals:
-        spots = sorted({(best[1], best[2]), *rivals})
-        return _result("ambiguous", candidates=[[j + 1, j + n] for j, n in spots], anchored=anchored)
+        return _result("ambiguous", candidates=sorted([j + 1, j + n] for _, j, n in (best, *rivals)),
+                       anchored=anchored)
     return _result("edited", now=[best[1] + 1, best[1] + best[2]], anchored=anchored,
                    similarity=round(best[0], 2))
+
+
+def _in_place(pinned: list[str], start: int, end: int, current: list[str],
+              skip: tuple[int, int]) -> list[tuple[int, int]]:
+    """Places between the cited lines' anchors that resemble them, other than `skip`:
+    where an in-place edit would be. A region wider than MAX_REGION is no place."""
+    lo, hi, _ = _region(pinned, start, end, current)
+    if hi - lo > MAX_REGION:
+        return []
+    scored = _scan(pinned[start:end], current, lo, hi, rising=False, skip=skip)
+    return [(j, n) for _, j, n in _spots(scored, end - start)]
+
+
+def _vouched(pinned: list[str], start: int, end: int, current: list[str], j: int, n: int) -> int:
+    """Unchanged lines vouching for current[j:j + n] as the new place of pinned[start:end]:
+    the block's own non-blank lines found verbatim in it, plus the pinned neighbours that
+    still flank it."""
+    lines = {line.strip() for line in current[j:j + n]}
+    own = {line.strip() for line in pinned[start:end] if line.strip()}
+    return len(own & lines) + _agreement(_neighbours(pinned, start, end), current, j, n)
+
+
+def _nearest(pinned: list[str], start: int, end: int, current: list[str]) -> dict[str, Any]:
+    lo, hi, anchored = _region(pinned, start, end, current)
+    if hi - lo > MAX_REGION:
+        return _result("ambiguous", candidates=[[lo + 1, hi]], anchored=anchored)
+    block = pinned[start:end]
+    scored = _scan(block, current, lo, hi)
+    if scored:
+        return _choose(scored, len(block), anchored)
+    # Nothing between the anchors resembles it: it may have moved as well as changed. Away
+    # from its anchors a look-alike is cheap (every `def x():\n    return y` resembles every
+    # other), so a place there also needs two unchanged lines vouching for it.
+    far = [] if (lo, hi) == (0, len(current)) else [
+        spot for spot in _scan(block, current, 0, len(current), rising=False)
+        if _vouched(pinned, start, end, current, spot[1], spot[2]) >= VOUCHED]
+    region = {line.strip() for line in current[lo:hi]}
+    lines = [line.strip() for line in block if line.strip()]
+    rewritten = bool(lines) and 3 * sum(line in region for line in lines) >= len(lines)
+    if rewritten:   # rewritten in place, and perhaps also copied elsewhere: never guessed
+        best = max((ratio for ratio, _, _ in far), default=0.0)
+        spots = [[j + 1, j + n] for ratio, j, n in _spots(far, len(block)) if ratio >= best - TIE]
+        return _result("ambiguous", candidates=sorted([[lo + 1, hi], *spots]), anchored=anchored)
+    if far:
+        return _choose(far, len(block), anchored=False)   # found away from its anchors
+    return _result("deleted", anchored=anchored)
 
 
 def _overlaps(start: int, count: int, first: int, last: int) -> bool:
@@ -442,16 +543,39 @@ def _overlaps(start: int, count: int, first: int, last: int) -> bool:
     return start <= last and start + count - 1 >= first
 
 
+def _git_lines(raw: str) -> list[int]:
+    """The 1-based line git numbers each line hermes_status numbers, in one file's text.
+
+    hermes_status numbers lines with str.splitlines(), which also breaks at a lone CR, \\v,
+    \\f, \\x1c-\\x1e, \\x85, U+2028 and U+2029; git breaks at \\n only. `raw` is the text with
+    its newlines untranslated; its splitlines() are exactly hermes_status's lines.
+    """
+    numbers, line = [], 1
+    for piece in raw.splitlines(keepends=True):
+        numbers.append(line)
+        line += piece.count("\n")
+    return numbers
+
+
 def _hunks(history: History, path: str, view: dict, ranges: list[tuple[int, int]]) -> list[str]:
-    """`git diff <pinned commit> -- <path>` hunks whose pinned side overlaps a cited range."""
-    if view["found"] != "found" or not view["commit"] or not view["now_path"] or not ranges:
+    """`git diff <pinned commit> -- <path>` hunks whose pinned side overlaps a cited range.
+
+    Citations count lines as hermes_status does and git counts \\n alone, so each cited
+    range is moved onto git's numbering first, and git's output is split on \\n alone.
+    """
+    numbers = view["_numbers"]
+    if view["found"] != "found" or not view["commit"] or not view["now_path"] or numbers is None:
+        return []
+    spans = [(numbers[first - 1], numbers[last - 1]) for first, last in ranges
+             if 1 <= first <= last <= len(numbers)]
+    if not spans:
         return []
     paths = [path] if view["now_path"] == path else [path, view["now_path"]]
     out = history.git("diff", "--no-ext-diff", "--no-color", "--ignore-cr-at-eol", "-M", "-U3",
                       view["commit"], "--", *paths).stdout.decode("utf-8", "replace")
     hunks: list[list[str]] = []
     hunk: list[str] | None = None
-    for line in out.splitlines():
+    for line in out.split("\n"):
         if HUNK.match(line):
             hunk = [line]
             hunks.append(hunk)
@@ -463,7 +587,7 @@ def _hunks(history: History, path: str, view: dict, ranges: list[tuple[int, int]
     for lines in hunks:
         match = HUNK.match(lines[0])
         start, count = int(match.group(1)), int(match.group(2) or 1)
-        if any(_overlaps(start, count, first, last) for first, last in ranges):
+        if any(_overlaps(start, count, first, last) for first, last in spans):
             kept.append("\n".join(lines))
     return kept
 
@@ -480,7 +604,8 @@ def _view(history: History, entry: dict) -> dict:
         current = (history.root / now_path).read_text(encoding="utf-8").splitlines()
     return {"found": pin.found, "state": pin.state, "commit": pin.commits[0]["sha"] if pin.commits else "",
             "now_path": now_path, "hunks": [],
-            "_pinned": pin.text.splitlines() if pin.text is not None else None, "_current": current}
+            "_pinned": pin.text.splitlines() if pin.text is not None else None, "_current": current,
+            "_numbers": _git_lines(pin.raw) if pin.raw is not None else None}
 
 
 def _place(citation: str, name: str, path: str, first: int, last: int, view: dict) -> dict:
@@ -541,7 +666,7 @@ def cite(root: Path, ident: str) -> dict:
     for path, view in files.items():
         ranges = [(c["first"], c["last"]) for c in citations if c["path"] == path]
         view["hunks"] = _hunks(history, path, view, ranges)
-        del view["_pinned"], view["_current"]
+        del view["_pinned"], view["_current"], view["_numbers"]
     return {"id": ident, "name": caps[int(ident[1:]) - 1].get("name", ""), "recorded": item["status"],
             "citations": citations, "ignored": ignored, "files": files}
 
@@ -584,6 +709,46 @@ def _pin(root: Path, ident: str, name: str) -> dict:
     return {"path": name, "sha256": _evidence_digest(file)}
 
 
+def _generated(root: Path, reviews: dict[str, dict], rows: list[dict], result: dict) -> None:
+    """Refuse evidence that this stamp rewrites or `hermes_status.py write` regenerates:
+    the records file and hs.reports()'s pages. Its pin would be stale on arrival."""
+    generated = {(root / name).resolve() for name in (hs.ASSESSMENT, *hs.reports(rows, result))}
+    for ident, review in reviews.items():
+        for entry in review["evidence"]:
+            if (root / entry["path"]).resolve() in generated:
+                raise Refused(f"{ident}: evidence {entry['path']} is generated (by this stamp, or by "
+                              "`hermes_status.py write`), so its pin would be stale on arrival")
+
+
+def _uncommitted(root: Path, base: str, reviews: dict[str, dict]) -> list[str]:
+    """Evidence whose pinned bytes the commit `base` does not hold at that path.
+
+    Untracked or gitignored evidence refuses outright: no commit can hold it. What comes
+    back (an uncommitted edit, a staged new file, a base_sha that predates the file) reads
+    stale on every checkout but this one, so the caller refuses it unless told otherwise.
+    """
+    names = list(dict.fromkeys(entry["path"] for review in reviews.values() for entry in review["evidence"]))
+
+    def listed(*flags: str) -> set[str]:   # (check-ignore would reject --literal-pathspecs)
+        return set(git(root, "ls-files", "-z", *flags, "--", *names).stdout.decode("utf-8", "replace").split("\0"))
+
+    tracked, ignored = listed("--cached"), listed("--others", "--ignored", "--exclude-standard")
+    history = History(root)
+    held: dict[str, str | None] = {}
+    for name in names:
+        if name not in tracked:
+            owner = next(ident for ident, review in reviews.items()
+                         if any(entry["path"] == name for entry in review["evidence"]))
+            raise Refused(f"{owner}: evidence {name} is {'gitignored' if name in ignored else 'untracked'}: "
+                          "no commit holds it, so every other checkout would read the row stale")
+        blob = git(root, "rev-parse", "--verify", "--quiet", f"{base}:{name}",
+                   ok=(0, 1, 128)).stdout.decode("utf-8", "replace").strip()
+        data = history._cat([blob]).get(blob) if blob else None
+        held[name] = blob_digest(data) if data is not None else None
+    return list(dict.fromkeys(entry["path"] for review in reviews.values() for entry in review["evidence"]
+                              if held[entry["path"]] != entry["sha256"]))
+
+
 def _write_atomic(target: Path, payload: bytes) -> None:
     fd, tmp = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
     try:
@@ -600,8 +765,13 @@ def _write_atomic(target: Path, payload: bytes) -> None:
 
 
 def stamp(root: Path, patch: Any, *, base_sha: str | None = None, assessed_at: str | None = None,
-          dry_run: bool = False) -> dict:
-    """Insert or replace the patched reviews, or raise Refused and write nothing."""
+          dry_run: bool = False, allow_uncommitted: bool = False) -> dict:
+    """Insert or replace the patched reviews, or raise Refused and write nothing.
+
+    Evidence is hashed from the working tree; unless `allow_uncommitted`, every pinned file
+    must also be exactly what the recorded base_sha holds, so a clean checkout of that
+    commit reads the rows as stamped. What was allowed anyway comes back as "uncommitted".
+    """
     target = root / hs.ASSESSMENT
     raw = target.read_bytes()
     ledger, data = hs.load(root)
@@ -640,16 +810,23 @@ def stamp(root: Path, patch: Any, *, base_sha: str | None = None, assessed_at: s
         if rows[ident]["basis"] != "reviewed":
             raise Refused(f"{ident} would come out {rows[ident]['basis']} (stale on arrival), "
                           "not reviewed")
+    _generated(root, reviews, list(rows.values()), result)
     untouched = [review for review in result["reviews"] if review["id"] not in reviews]
     if _serialize([untouched, result.get("scope_reopenings")]) != frozen:
         raise Refused("the stamp would rewrite reviews it was not given, or scope_reopenings")
+    uncommitted = _uncommitted(root, result["base_sha"], reviews)
+    if uncommitted and not allow_uncommitted:
+        raise Refused(f"base_sha {result['base_sha'][:12]} does not hold what these files hold now "
+                      f"(uncommitted?): {', '.join(uncommitted)}; commit them first, or pass "
+                      "--allow-uncommitted and commit them before anyone else reads the records")
     payload = _serialize(result)
-    diff = list(difflib.unified_diff(raw.decode("utf-8").splitlines(), payload.decode("utf-8").splitlines(),
+    diff = list(difflib.unified_diff(raw.decode("utf-8").split("\n"), payload.decode("utf-8").split("\n"),
                                      f"{hs.ASSESSMENT} (now)", f"{hs.ASSESSMENT} (stamped)", lineterm="", n=1))
     if not dry_run:
         _write_atomic(target, payload)
     return {"stamped": list(reviews), "base_sha": result["base_sha"],
-            "assessed_at": result["assessed_at"], "written": not dry_run, "diff": diff}
+            "assessed_at": result["assessed_at"], "written": not dry_run, "diff": diff,
+            "uncommitted": uncommitted}
 
 
 # --- rendering and CLI -----------------------------------------------------------------------
@@ -717,11 +894,15 @@ def _span(pair: list[int]) -> str:
 def _render_citation(item: dict) -> list[str]:
     head = f"    [{item['class']}] {item['citation']}"
     if item["suggest"] and item["suggest"] != item["citation"]:
-        head += f" -> {item['suggest']}" + ("" if item["resolves"] else " (would NOT resolve)")
+        head += f" -> {item['suggest']}"
+    if item["suggest"] and item["resolves"] is False:   # even when the numbers stay the same
+        head += " (would NOT resolve)"
     if item["similarity"] is not None:
         head += f" (similarity {item['similarity']})"
     if item["class"] == "moved" and item["anchored"] is False:
         head += " (neighbours differ: confirm by reading)"
+    if item["class"] == "edited" and item["anchored"] is False:
+        head += " (away from its anchors: confirm by reading)"
     if item["candidates"]:
         head += " candidates " + ", ".join(_span(c) for c in item["candidates"]) + ": not guessed"
     lines = [head]
@@ -747,7 +928,7 @@ def render_cite(report: dict) -> str:
                 out.extend(_render_citation(item))
         if view["hunks"]:
             out.append(f"    git diff {_short(view['commit'])} (working tree), hunks touching cited lines:")
-            out.extend(f"      {line}" for hunk in view["hunks"] for line in hunk.splitlines())
+            out.extend(f"      {line}" for hunk in view["hunks"] for line in hunk.split("\n"))
     return "\n".join(out)
 
 
@@ -769,6 +950,8 @@ def main(argv: list[str] | None = None) -> int:
     stamp_cmd.add_argument("--base-sha", help="default: git rev-parse HEAD")
     stamp_cmd.add_argument("--assessed-at", help="default: now, UTC, %%Y-%%m-%%dT%%H:%%M:%%SZ")
     stamp_cmd.add_argument("--dry-run", action="store_true", help="show the change, write nothing")
+    stamp_cmd.add_argument("--allow-uncommitted", action="store_true",
+                           help="pin evidence that base_sha does not hold (each file is listed as UNCOMMITTED)")
     ns = parser.parse_args(argv)
     if ns.command == "drift" and bool(ns.ids) == ns.all_stale:
         parser.error("drift takes row ids or --all-stale, not both and not neither")
@@ -782,10 +965,15 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(report, ensure_ascii=False, indent=2) if ns.json else render_cite(report))
         else:
             patch = json.loads(ns.patch.read_text(encoding="utf-8"))
-            done = stamp(root, patch, base_sha=ns.base_sha, assessed_at=ns.assessed_at, dry_run=ns.dry_run)
+            done = stamp(root, patch, base_sha=ns.base_sha, assessed_at=ns.assessed_at, dry_run=ns.dry_run,
+                         allow_uncommitted=ns.allow_uncommitted)
             verb = "stamped" if done["written"] else "would stamp"
             print(f"{verb} {', '.join(done['stamped'])} in {hs.ASSESSMENT} "
                   f"(base_sha {done['base_sha']}, assessed_at {done['assessed_at']})")
+            if done["uncommitted"]:
+                print(f"WARNING: base_sha {done['base_sha']} does not hold these pinned bytes; every other "
+                      "checkout reads their rows stale until they are committed:")
+                print("\n".join(f"  UNCOMMITTED {name}" for name in done["uncommitted"]))
             if done["written"]:
                 print("next: python3.12 scripts/hermes_status.py write && python3.12 scripts/hermes_status.py check")
             else:
