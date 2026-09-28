@@ -1,5 +1,5 @@
 import { appUrl } from './base-path';
-import React, { useState as uS2, useEffect as uE2 } from 'react';
+import React, { useState as uS2, useEffect as uE2, useMemo } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic, ICONS as IK, Glyph as Gl } from './ui';
 import { installSkill, getAutonomyMode, setAutonomyMode, getNorthStar } from './api/actions';
@@ -111,6 +111,8 @@ function AutonomyMode({ t }){
 function BuildMode({ t }){
   const B = V2.BUILD;
   const W = B.workflow;
+  // Bolt Optimization: Pre-build an O(1) Map lookup for workflow nodes to avoid linear O(N) array scans per edge during render
+  const nodeMap = useMemo(() => new Map((W.nodes || []).map((n: any) => [n.id, n])), [W.nodes]);
   const [skills,setSkills]=uS2(B.skills);
   const [pending,setPending]=uS2(null); // index currently installing
   // INSTALL is REAL: POST /api/skills/marketplace/install {name} (admin, signed +
@@ -133,7 +135,7 @@ function BuildMode({ t }){
       <SubH>WORKFLOW · {W.name} <span className="wf-status">{W.status}</span></SubH>
       <div className="wf-canvas">
         <svg viewBox="0 0 860 240" preserveAspectRatio="xMidYMid meet" style={{width:'100%',height:240}}>
-          {W.edges.map((e,i)=>{ const a=W.nodes.find(n=>n.id===e[0]), b=W.nodes.find(n=>n.id===e[1]);
+          {W.edges.map((e,i)=>{ const a=nodeMap.get(e[0]), b=nodeMap.get(e[1]); if (!a || !b) return null;
             return <path key={i} className="wf-edge flow-edge" d={`M${a.x+58},${a.y+16} C${a.x+110},${a.y+16} ${b.x-50},${b.y+16} ${b.x},${b.y+16}`} fill="none"/>; })}
           {W.nodes.map(n=>(
             <g key={n.id} transform={`translate(${n.x},${n.y})`}>

@@ -11,14 +11,14 @@ Din acestea, **23** au fost reevaluate pe cod în această livrare; **108** păs
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 131 | 18.8% |
-| Parțial | 367 | 52.7% |
+| Parțial | 364 | 52.2% |
 | Lipsă | 92 | 13.2% |
 | Exclus intenționat | 107 | 15.4% |
-| De reverificat | 0 | 0.0% |
+| De reverificat | 3 | 0.4% |
 
 **Ținta acceptată în produs:** 590 rânduri; progres 131/590 = **22.2%**. Cele 107 excluderi rămân vizibile, nu sunt numărate ca implementări.
 
-**Acoperirea reevaluării curente:** 224/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 221/697 rânduri. Restul păstrează auditul inițial. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -29,8 +29,8 @@ Din acestea, **23** au fost reevaluate pe cod în această livrare; **108** păs
 | cli | 56 | 16 | 27 | 3 | 10 | 0 |
 | gateway | 33 | 5 | 18 | 5 | 5 | 0 |
 | platforms | 39 | 5 | 22 | 4 | 8 | 0 |
-| web | 40 | 9 | 19 | 5 | 7 | 0 |
-| desktop | 54 | 6 | 32 | 10 | 6 | 0 |
+| web | 40 | 9 | 18 | 5 | 7 | 1 |
+| desktop | 54 | 6 | 31 | 10 | 6 | 1 |
 | tui | 25 | 2 | 12 | 2 | 9 | 0 |
 | config | 18 | 4 | 10 | 3 | 1 | 0 |
 | env | 28 | 2 | 19 | 2 | 5 | 0 |
@@ -45,7 +45,7 @@ Din acestea, **23** au fost reevaluate pe cod în această livrare; **108** păs
 | acp-mcp-dev | 33 | 3 | 13 | 11 | 6 | 0 |
 | docs-features | 48 | 9 | 25 | 5 | 9 | 0 |
 | rest-api | 33 | 12 | 15 | 2 | 4 | 0 |
-| delta | 42 | 5 | 26 | 6 | 5 | 0 |
+| delta | 42 | 5 | 25 | 6 | 5 | 1 |
 
 ## Actualizare
 
