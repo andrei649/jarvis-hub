@@ -18,5 +18,10 @@ reports. Each prompt merges and regenerates before every push, but running them 
 costs merge work. Run at most two at a time, and prefer pairing a records bucket (equivalent or
 needs_review) with a build bucket (missing or partial).
 
-Owner-only work stays out of all four: `agents/core/security/**` and `agents/core/kernel/**`, rows that
-need network or hardware, and the decisions in `docs/OWNER_TASKS.md`.
+Owner-only work stays out of all four:
+- every path in `selfdev-policy.json` → `protected_paths`, including `agents/core/kernel/**`,
+  `agents/core/security/**`, `agents/core/secrets/**`, `AGENTS.md` and `.github/workflows/**`;
+- rows that need network or hardware;
+- the decisions in `docs/OWNER_TASKS.md`.
+
+A single driver session can run all four in order: see `docs/handoff/2026-09-28-handover/PROMPT.md`.

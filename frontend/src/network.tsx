@@ -31,14 +31,15 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
     return pos;
   }, [agents]);
 
-  // collab beziers
+  // Bolt Optimization: Precompute control points (cx, cy) and endpoints (px, py, qx, qy) on links
+  // so the 60ms animation loop avoids recalculating quadratic bezier control points every frame.
   const COLLAB = (V2 && V2.COLLAB) || [];
   const links = useMemo(() => COLLAB.filter(([a,b]) => layout[a] && layout[b]).map(([a,b]) => {
     const p = layout[a], q = layout[b];
     const mx = (p.x+q.x)/2, my = (p.y+q.y)/2;
     // bow toward center for organic feel
     const cx = mx + (CX-mx)*0.32, cy = my + (CY-my)*0.32;
-    return { a, b, d:`M${p.x},${p.y} Q${cx},${cy} ${q.x},${q.y}` };
+    return { a, b, px: p.x, py: p.y, qx: q.x, qy: q.y, cx, cy, d:`M${p.x},${p.y} Q${cx},${cy} ${q.x},${q.y}` };
   }), [layout]);
 
   // packet animation tick
@@ -48,10 +49,10 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
     return () => clearInterval(i);
   }, [motion]);
 
-  // which packets are live (a few links pulse)
+  // Bolt Optimization: Use a Set for active agent lookup to avoid O(Links * Active) array scans
   const livePackets = useMemo(() => {
-    const active = agents.filter(a=>a.status==='active'||a.status==='busy').map(a=>a.id);
-    return links.filter(l => active.includes(l.a) || active.includes(l.b)).slice(0,6);
+    const activeSet = new Set(agents.filter(a=>a.status==='active'||a.status==='busy').map(a=>a.id));
+    return links.filter(l => activeSet.has(l.a) || activeSet.has(l.b)).slice(0,6);
   }, [links, agents]);
 
   const focused = focusId;
@@ -100,14 +101,23 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
   const drawTasks = focused ? focusedTaskPos : positionedTasks;
   const taskColor = s => (s==='running'||s==='active') ? 'var(--accent)' : (s==='blocked'||s==='held'||s==='pending') ? 'var(--amber)' : (s==='error'||s==='failed'||s==='denied') ? 'var(--red)' : 'var(--ink-3)';
 
-  function hexPath(cx, cy, r){
+  // Bolt Optimization: Pre-generate constant hexagon path to eliminate per-frame trig calculations
+  const hexPath = (cx, cy, r) => {
     let p='';
     for(let i=0;i<6;i++){ const a=(i*60-90)*Math.PI/180; p+=(i?'L':'M')+(cx+Math.cos(a)*r)+','+(cy+Math.sin(a)*r); }
     return p+'Z';
-  }
+  };
+  const HEX_PATH_15 = useMemo(() => hexPath(0, 0, 15), []);
 
-  const activeCount = agents.filter(a=>a.status==='active').length;
-  const busyCount = agents.filter(a=>a.status==='busy').length;
+  // Bolt Optimization: Memoize agent status counts to avoid scanning agents array twice on every frame
+  const { activeCount, busyCount } = useMemo(() => {
+    let active = 0, busy = 0;
+    for (let i = 0; i < agents.length; i++) {
+      if (agents[i].status === 'active') active++;
+      else if (agents[i].status === 'busy') busy++;
+    }
+    return { activeCount: active, busyCount: busy };
+  }, [agents]);
 
   return (
     <div className="net-wrap">
@@ -151,13 +161,10 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
         {/* live packets */}
         {motion!=='calm' && livePackets.map((l,i)=>{
           const prog = ((tick*1.4 + i*22) % 100)/100;
-          // approximate point on quadratic bezier
-          const p=layout[l.a], q=layout[l.b];
-          const mx=(p.x+q.x)/2, my=(p.y+q.y)/2;
-          const cx=mx+(CX-mx)*0.32, cy=my+(CY-my)*0.32;
+          // approximate point on quadratic bezier using precalculated control point & endpoints
           const u=1-prog;
-          const x=u*u*p.x+2*u*prog*cx+prog*prog*q.x;
-          const y=u*u*p.y+2*u*prog*cy+prog*prog*q.y;
+          const x=u*u*l.px+2*u*prog*l.cx+prog*prog*l.qx;
+          const y=u*u*l.py+2*u*prog*l.cy+prog*prog*l.qy;
           return <circle key={i} className={'pkt'+(dimLink(l)?' net-dim':'')} cx={x} cy={y} r="1.8" opacity={Math.sin(prog*Math.PI)}/>;
         })}
 
@@ -196,7 +203,7 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
             <g key={a.id} className={cls} transform={`translate(${p.x},${p.y})`}
               onClick={()=>{ onSelect(a.id); setFocusId(focused===a.id?null:a.id); }}
               onMouseEnter={()=>{ setHover(a.id); setTip({a, x:p.x, y:p.y}); }}>
-              <path className="net-hex" d={hexPath(0,0,15)}/>
+              <path className="net-hex" d={HEX_PATH_15}/>
               <path className="net-glyph" d={V2.glyphFor(a.id)} transform="scale(.9)"
                 stroke={a.status==='active'||activeId===a.id?'var(--accent-light)':a.status==='busy'?'var(--amber)':'var(--ink-3)'}/>
               {(a.status==='active') && <circle r="20" fill="none" stroke="var(--accent)" strokeWidth=".7" opacity=".4" className="ambient-anim" style={{animation:motion==='calm'?'none':'pulse-green 2.6s infinite'}}/>}
