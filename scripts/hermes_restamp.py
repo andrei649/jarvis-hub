@@ -19,8 +19,9 @@ patched row current, or nothing is written. A hash-only restamp stays forbidden
 cite and stamp read the working tree, as hermes_status does. So a stamp also refuses
 evidence that only this checkout holds, which every other checkout would read as stale:
   - evidence reached through a symlink, file or directory (always): hs hashes the target's
-    text, git holds the link, and a checkout without symlinks holds a text file there;
-    pin the file it points to instead;
+    text, git holds the link, and a checkout without symlinks (core.symlinks=false,
+    Windows' default) holds a text file there, which the index still records as a link,
+    so both are refused; pin the file it points to instead;
   - evidence that is untracked or gitignored (always);
   - evidence whose bytes the recorded base_sha does not hold (an uncommitted edit, a
     staged new file, a --base-sha older than the file), unless --allow-uncommitted is
@@ -31,10 +32,14 @@ evidence that only this checkout holds, which every other checkout would read as
 cite numbers lines as hermes_status does (str.splitlines, which also breaks at U+2028 and
 friends) and moves each cited range onto git's \\n-only numbering before it meets a hunk.
 A place it finds away from the lines that anchored a citation (moved and edited), or a
-unique copy only one unchanged neighbour vouches for, is flagged "confirm by reading".
-Cited text still at its own line numbers is unchanged, whatever was added beside it; a
-look-alike inserted right above it is, by design, a rival (ambiguous), since it reads
-exactly like the line edited in place with a copy added below.
+unique copy (unchanged or moved) that a pinned neighbour no longer flanks, is flagged
+"confirm by reading". Cited text still at its own line numbers is unchanged, whatever was
+added beside it, unless an edit that both pinned neighbours still flank sits where the
+lines were (a function copied above itself, then the original edited): the copy may have
+taken the cited numbers, so both places are candidates (ambiguous). A look-alike inserted
+right above a line is, by design, such a rival too, since it reads exactly like the line
+edited in place with a copy added below. A file renamed to several files is never
+followed to one of them.
 
 Exit codes: 0 done; 1 refused or unknown row; 2 error (unreadable records, git failure).
 """
@@ -389,8 +394,10 @@ def classify(pinned: list[str], first: int, last: int, current: list[str]) -> di
     """Where pinned lines first..last (1-based, inclusive) sit in `current`, by content only.
 
     A file that did not change places every citation where it was. So does a unique exact
-    copy still at the cited numbers, whatever changed or was added around it: the citation
-    still names that very text (anchored says whether both neighbours stayed too). An exact
+    copy still at the cited numbers, whatever was added around it (anchored says whether
+    both neighbours stayed too), unless both unchanged neighbours still flank an edit
+    between the anchors: the copy may then be a look-alike that took the cited numbers
+    (a function copied above itself, the original then edited), so it is ambiguous. An exact
     unique copy elsewhere wins when both unchanged neighbours still flank it; with fewer,
     an edit where the lines were, flanked at least as well, makes it ambiguous, as does,
     for a copy that kept neither neighbour, a region between the anchors too wide to
@@ -421,8 +428,12 @@ def classify(pinned: list[str], first: int, last: int, current: list[str]) -> di
     if len(hits) == 1:
         hit = hits[0]
         agree = _agreement(context, current, hit, size)
-        if agree < 2 and hit != start:   # at the cited numbers, nothing else was "where it was"
-            rivals = _in_place(pinned, start, end, current, (hit, hit + size), agree)
+        if agree < 2:
+            # Away from the cited numbers an edit flanked as well as the copy is a rival. At them
+            # only one that both pinned neighbours still flank is: then the copy may be a
+            # look-alike that took the cited numbers, and the edit the cited line itself.
+            need = agree if hit != start else 2
+            rivals = _in_place(pinned, start, end, current, (hit, hit + size), need)
             if rivals:
                 return _result("ambiguous", candidates=sorted([[hit + 1, hit + size], *rivals]))
         return at(hit, agree == 2)
@@ -508,23 +519,23 @@ def _choose(scored: list[tuple[float, int, int]], size: int, anchored: bool) -> 
 
 
 def _in_place(pinned: list[str], start: int, end: int, current: list[str],
-              skip: tuple[int, int], agree: int) -> list[list[int]]:
+              skip: tuple[int, int], need: int) -> list[list[int]]:
     """Where an in-place edit of pinned[start:end] could be (1-based [first, last] pairs):
     the places between its anchors that resemble it, other than the exact copy at `skip`,
-    that its pinned neighbours flank at least as well as they flank that copy (`agree`).
+    that at least `need` (0, 1 or 2) of its pinned neighbours still flank.
 
     Only windows flanked that well are scored, and all of them (no rising floor): the
-    best-scoring window at a place may be flanked worse than a weaker one. So a copy that
-    kept a neighbour is checked cheaply between anchors of any width. A copy that kept
-    neither makes every window a candidate: a region wider than MAX_REGION is then a
-    rewrite, as in _nearest, not searched, and all of it is the answer.
+    best-scoring window at a place may be flanked worse than a weaker one. So a rival that
+    must keep a neighbour is checked cheaply between anchors of any width. With need 0
+    every window is a candidate: a region wider than MAX_REGION is then a rewrite, as in
+    _nearest, not searched, and all of it is the answer.
     """
     lo, hi, _ = _region(pinned, start, end, current)
-    if not agree and hi - lo > MAX_REGION:
+    if not need and hi - lo > MAX_REGION:
         return [[lo + 1, hi]]
     context = _neighbours(pinned, start, end)
     scored = _scan(pinned[start:end], current, lo, hi, rising=False, skip=skip,
-                   keep=lambda j, n: _agreement(context, current, j, n) >= agree)
+                   keep=lambda j, n: _agreement(context, current, j, n) >= need)
     return [[j + 1, j + n] for _, j, n in _spots(scored, end - start)]
 
 
@@ -639,7 +650,7 @@ def _view(history: History, entry: dict) -> dict:
     if now_path and pin.state != "non-utf8":
         current = (history.root / now_path).read_text(encoding="utf-8").splitlines()
     return {"found": pin.found, "state": pin.state, "commit": pin.commits[0]["sha"] if pin.commits else "",
-            "now_path": now_path, "hunks": [],
+            "now_path": now_path, "moved_to": pin.moved_to, "hunks": [],
             "_pinned": pin.text.splitlines() if pin.text is not None else None, "_current": current,
             "_numbers": _git_lines(pin.raw) if pin.raw is not None else None}
 
@@ -659,8 +670,9 @@ def _place(citation: str, name: str, path: str, first: int, last: int, view: dic
         entry["class"] = "invalid"   # it never resolved, even in the version it pinned
         return entry
     entry["pinned_text"] = pinned[first - 1:last]
-    if current is None:
-        entry["class"] = "deleted" if view["state"] != "non-utf8" else "non-utf8"
+    if current is None:   # not UTF-8 now, renamed to several files (never picked), or deleted
+        entry["class"] = "non-utf8" if view["state"] == "non-utf8" else \
+            "ambiguous" if len(view["moved_to"]) > 1 else "deleted"
         return entry
     entry.update(classify(pinned, first, last, current))
     if entry["now"]:
@@ -756,11 +768,29 @@ def _generated(root: Path, reviews: dict[str, dict], rows: list[dict], result: d
                               "`hermes_status.py write`), so its pin would be stale on arrival")
 
 
-def _symlink(root: Path, name: str) -> str:
-    """The first leading part of the repository path `name` that is a symlink, or ""."""
+def _prefixes(name: str) -> list[str]:
+    """Every leading part of the repository path `name`, shortest first, itself last."""
     parts = name.split("/")
-    return next(("/".join(parts[:k]) for k in range(1, len(parts) + 1)
-                 if root.joinpath(*parts[:k]).is_symlink()), "")
+    return ["/".join(parts[:k]) for k in range(1, len(parts) + 1)]
+
+
+def _index_links(root: Path, names: list[str]) -> set[str]:
+    """The paths git's index records as symlinks (mode 120000) at or under any leading part
+    of `names`; _symlink asks only about the leading parts themselves.
+
+    A checkout without symlinks (core.symlinks=false, Windows' default) writes a committed
+    link as a plain text file holding its target's path, so only the index still knows.
+    """
+    wanted = dict.fromkeys(prefix for name in names for prefix in _prefixes(name))
+    out = git(root, "ls-files", "-s", "-z", "--", *wanted).stdout.decode("utf-8", "replace")
+    records = (record.partition("\t") for record in out.split("\0"))   # "<mode> <object> <stage>\t<path>"
+    return {path for meta, _, path in records if meta.split(" ", 1)[0] == "120000"}
+
+
+def _symlink(root: Path, name: str, links: set[str]) -> str:
+    """The first leading part of the repository path `name` that is a symlink, or "": one
+    this checkout holds as a link, or one the index records as a link (`links`)."""
+    return next((prefix for prefix in _prefixes(name) if prefix in links or (root / prefix).is_symlink()), "")
 
 
 def _uncommitted(root: Path, base: str, reviews: dict[str, dict]) -> list[str]:
@@ -768,10 +798,10 @@ def _uncommitted(root: Path, base: str, reviews: dict[str, dict]) -> list[str]:
 
     Evidence reached through a symlink, untracked or gitignored refuses outright: git holds
     a link's target path, not the text hermes_status hashes (and a checkout without
-    symlinks writes the link as a text file), and no commit can hold an untracked file.
-    What comes back (an uncommitted edit, a staged new file, a base_sha that predates the
-    file) reads stale on every checkout but this one, so the caller refuses it unless told
-    otherwise.
+    symlinks writes the link as a text file, which the index still records as a link), and
+    no commit can hold an untracked file. What comes back (an uncommitted edit, a staged new
+    file, a base_sha that predates the file) reads stale on every checkout but this one, so
+    the caller refuses it unless told otherwise.
     """
     names = list(dict.fromkeys(entry["path"] for review in reviews.values() for entry in review["evidence"]))
 
@@ -779,8 +809,9 @@ def _uncommitted(root: Path, base: str, reviews: dict[str, dict]) -> list[str]:
         return next(ident for ident, review in reviews.items()
                     if any(entry["path"] == name for entry in review["evidence"]))
 
+    links = _index_links(root, names)
     for name in names:
-        link = _symlink(root, name)
+        link = _symlink(root, name, links)
         if link:
             raise Refused(f"{owner(name)}: evidence {name} is reached through the symlink {link}: "
                           "git holds the link, not the text hermes_status hashes, so no pin through it "
@@ -955,7 +986,7 @@ def _render_citation(item: dict) -> list[str]:
         head += " (would NOT resolve)"
     if item["similarity"] is not None:
         head += f" (similarity {item['similarity']})"
-    if item["class"] == "moved" and item["anchored"] is False:
+    if item["class"] in ("unchanged", "moved") and item["anchored"] is False:
         head += " (neighbours differ: confirm by reading)"
     if item["class"] == "edited" and item["anchored"] is False:
         head += " (away from its anchors: confirm by reading)"
@@ -977,7 +1008,9 @@ def render_cite(report: dict) -> str:
         source = {"holds": "the pin holds", "found": f"pinned version from {_short(view['commit'])}"}.get(
             view["found"], f"pinned version {view['found']}")
         if view["now_path"] != path:
-            source += f"; now at {view['now_path']}" if view["now_path"] else "; gone from the working tree"
+            source += f"; now at {view['now_path']}" if view["now_path"] else \
+                f"; renamed to {', '.join(view['moved_to'])}: not guessed" if len(view["moved_to"]) > 1 else \
+                "; gone from the working tree"
         out.extend(["", f"  {path}: {source}"])
         for item in report["citations"]:
             if item["path"] == path:

@@ -343,8 +343,45 @@ def test_drift_all_stale_names_exactly_the_rows_hermes_status_demoted(repo, caps
 def test_drift_explains_a_reopened_row_and_refuses_an_unknown_one(repo, capsys):
     assert hr.main(["--root", str(repo.root), "drift", "H003"]) == 0
     assert "no review" in capsys.readouterr().out
-    assert hr.main(["--root", str(repo.root), "drift", "H999"]) == 1
-    assert "unknown row" in capsys.readouterr().err
+    for command in ("drift", "cite"):
+        for ident in ("H999", "H000", f"H{len(CAPS) + 1:03}", "H2"):   # H000 would name the last row
+            assert hr.main(["--root", str(repo.root), command, ident]) == 1, (command, ident)
+            assert "unknown row" in capsys.readouterr().err
+
+
+def test_the_commits_that_hold_a_pin_are_listed_newest_first(repo, monkeypatch):
+    # v1 came back later (a revert), so two commits introduced the pinned blob. The list is cut
+    # at SHOWN, so the newest must come first; commit dates decide it, not the order git gave.
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2030-01-01T00:00:00Z")
+    put(repo.root, EXAMPLE, V1)
+    back = commit(repo.root, "bring v1 back")
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2030-01-02T00:00:00Z")
+    put(repo.root, EXAMPLE, V3)
+    commit(repo.root, "and v3 again")
+    example = pins(hr.drift(repo.root, ["H002"])[0])[EXAMPLE]
+    assert [c["sha"] for c in example["commits"]] == [back, repo.c1]
+    assert [c["date"] for c in example["commits"]][0] == "2030-01-01"
+
+
+def test_a_clone_missing_blobs_never_claims_unrecoverable(repo, capsys):
+    # The v2 blob is gone from the object store (a partial or damaged clone): the pin might be
+    # that very blob, so it is "incomplete", with a hint to fetch, never "unrecoverable".
+    blob = git(repo.root, "rev-parse", f"{repo.c2}:{EXAMPLE}")
+    loose = repo.root / ".git" / "objects" / blob[:2] / blob[2:]   # the fixture never packs
+    loose.chmod(0o644)
+    loose.unlink()
+    repin(repo.root, "H002", EXAMPLE, digest_of(repo.tmp, ["never", "committed"]))
+    example = pins(hr.drift(repo.root, ["H002"])[0])[EXAMPLE]
+    assert (example["found"], example["searched"], example["commits"]) == ("incomplete", 3, [])
+    assert hr.main(["--root", str(repo.root), "drift", "H002"]) == 0
+    assert "some blobs are missing from this clone" in capsys.readouterr().out
+
+
+def test_a_git_failure_exits_2_and_never_a_traceback(repo, monkeypatch, capsys):
+    monkeypatch.setenv("GIT_DIR", str(repo.tmp / "no-such-git-dir"))   # every git command now fails
+    for command in ("drift", "cite"):
+        assert hr.main(["--root", str(repo.root), command, "H002"]) == 2
+        assert capsys.readouterr().err.startswith("hermes_restamp error: git ")
 
 
 # --- cite ----------------------------------------------------------------------------------
@@ -454,11 +491,39 @@ def test_hunk_overlap_boundaries(start, count, shown):
 
 
 def test_cite_follows_a_renamed_file_and_reports_a_deleted_one(repo):
-    report = cited(hr.cite(repo.root, "H004"))
+    full = hr.cite(repo.root, "H004")
+    report = cited(full)
     renamed = report["old_name.py:2"]
     assert renamed["class"] == "moved" and renamed["now_path"] == "agents/core/new_name.py"
     assert renamed["now"] == [2, 2] and renamed["suggest"] == "agents/core/new_name.py:2"
     assert report["gone.py:1"]["class"] == "deleted"
+    # A pure rename changes no line: the diff follows it to its new path, so there is no hunk.
+    assert full["files"]["agents/core/old_name.py"]["hunks"] == []
+    put(repo.root, "agents/core/new_name.py", ['"""Stub module, edited."""', *STUB[1:]])
+    commit(repo.root, "edit the renamed file's first line")
+    [hunk] = hr.cite(repo.root, "H004")["files"]["agents/core/old_name.py"]["hunks"]
+    assert hunk.split("\n") == ["@@ -1,3 +1,3 @@", '-"""Stub module."""', '+"""Stub module, edited."""',
+                                " def stub():", "     raise NotImplementedError"]
+
+
+def test_a_file_renamed_to_several_places_is_not_guessed(repo, monkeypatch, capsys):
+    # git records one rename per deleted path, but should the trail ever fork, no branch of it
+    # is picked: every citation of the file is ambiguous, and its header names both places.
+    put(repo.root, "agents/core/other_name.py", STUB)
+    commit(repo.root, "a second copy of the stub")
+    old, places = "agents/core/old_name.py", ["agents/core/new_name.py", "agents/core/other_name.py"]
+    whereabouts = hr.History.whereabouts
+
+    def forked(self, path, hops=5):
+        return (repo.c2, places) if path == old else whereabouts(self, path, hops)
+
+    monkeypatch.setattr(hr.History, "whereabouts", forked)
+    report = hr.cite(repo.root, "H004")
+    placed = cited(report)["old_name.py:2"]
+    assert (placed["class"], placed["now_path"], placed["suggest"]) == ("ambiguous", None, None)
+    assert report["files"][old]["moved_to"] == places and report["files"][old]["hunks"] == []
+    assert hr.main(["--root", str(repo.root), "cite", "H004"]) == 0
+    assert f"renamed to {', '.join(places)}: not guessed" in capsys.readouterr().out
 
 
 def test_a_file_renamed_twice_is_followed_to_where_it_lives_now(repo):
@@ -642,10 +707,118 @@ def test_a_unique_copy_is_not_placed_over_an_edit_where_the_line_was():
 ], ids=["assignment", "import", "dict entry", "assert", "two lines", "dict, both edited", "edited and added"])
 def test_lines_still_at_their_numbers_stay_unchanged_whatever_was_added_beside_them(pinned, first, last, current):
     # The cited text still sits at the cited numbers, so nothing needs remapping: a look-alike
-    # beside it is no rival for "where the lines were".
+    # beside it is no rival for "where the lines were". A neighbour changed, though, so the
+    # place is not anchored, and cite says so.
     assert current[first - 1:last] == pinned[first - 1:last]
     result = hr.classify(pinned, first, last, current)
     assert (result["class"], result["now"], result["candidates"]) == ("unchanged", [first, last], [])
+    assert result["anchored"] is False
+
+
+def test_a_line_at_its_numbers_whose_neighbours_differ_is_flagged():
+    # a() was deleted and b() moved up: line 2 holds the very text, but it is b()'s line now.
+    # No edit sits where a()'s line was, so nothing competes and it stays unchanged, flagged.
+    pinned = ["def a():", "    return None", "", "def b():", "    return None"]
+    current = ["def b():", "    return None"]
+    result = hr.classify(pinned, 2, 2, current)
+    assert (result["class"], result["now"], result["anchored"]) == ("unchanged", [2, 2], False)
+    item = {**result, "citation": "m.py:2", "suggest": "m.py:2", "resolves": True, "first": 2,
+            "pinned_text": [pinned[1]], "current_text": [current[1]]}
+    assert hr._render_citation(item)[0] == "    [unchanged] m.py:2 (neighbours differ: confirm by reading)"
+    kept = hr.classify(pinned, 2, 2, [*pinned, "", "def c():"])   # both neighbours kept: no flag
+    assert (kept["class"], kept["now"], kept["anchored"]) == ("unchanged", [2, 2], True)
+    assert hr._render_citation({**item, **kept})[0] == "    [unchanged] m.py:2"
+
+
+MIRROR_V1 = ["def test_a():", "    assert run() == 1", "", "def test_b():", "    assert run() == 2"]
+MIRROR_V2 = ["def test_new():", "    assert run() == 1", "", "def test_a():", "    assert run() == 10", "",
+             "def test_b():", "    assert run() == 2"]
+
+
+@pytest.mark.parametrize("pinned,current,rival", [
+    (MIRROR_V1, MIRROR_V2, [5, 5]),
+    (["def gamma():", "    return None", "", "def omega():", "    return 'omega'"],
+     ["def delta():", "    return None", "", "def gamma():", "    return 0", "", "def omega():", "    return 'omega'"],
+     [5, 5]),
+    (["export function load(ok) {", "  if (!ok) return null;", "  return fetchOne();", "}"],
+     ["export function loadAll(ok) {", "  if (!ok) return null;", "  return fetchAll();", "}",
+      "export function load(ok) {", "  if (!ok) return undefined;", "  return fetchOne();", "}"], [6, 6]),
+], ids=["test copied above itself, original edited", "delta() above gamma(), gamma() edited", "TypeScript guard"])
+def test_an_edit_both_neighbours_still_flank_is_a_rival_for_a_copy_at_the_cited_numbers(pinned, current, rival):
+    # A function copied above itself, then the original (now lower) edited: the cited text is
+    # still at the cited numbers, but it belongs to the copy, while the line the citation meant
+    # is the edit that both of its pinned neighbours still flank. git's own diff reads it the
+    # same misleading way (the copy as unchanged context), so it is never guessed.
+    assert current[1] == pinned[1]
+    result = hr.classify(pinned, 2, 2, current)
+    assert (result["class"], result["now"], result["candidates"]) == ("ambiguous", None, [[2, 2], rival])
+
+
+def test_a_copy_at_the_cited_numbers_is_ambiguous_end_to_end(repo, capsys):
+    name = "tests/test_mirror.py"
+    put(repo.root, name, MIRROR_V1)
+    commit(repo.root, "mirror v1")
+    data = hs.load(repo.root)[1]
+    item = next(r for r in data["reviews"] if r["id"] == "H002")
+    item["summary"] = "test_a pins the result at tests/test_mirror.py:2."
+    item["evidence"] = [{"path": name, "sha256": hs.file_digest(repo.root / name)}]
+    save(repo.root, data)
+    put(repo.root, name, MIRROR_V2)
+    commit(repo.root, "copy test_a above itself as test_new, then edit test_a")
+    [placed] = hr.cite(repo.root, "H002")["citations"]
+    assert (placed["class"], placed["suggest"], placed["candidates"]) == ("ambiguous", None, [[2, 2], [5, 5]])
+    assert hr.main(["--root", str(repo.root), "cite", "H002"]) == 0
+    assert "[ambiguous] tests/test_mirror.py:2 candidates 2, 5: not guessed" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("current,rival", [
+    (["def delta():", "    return None", "def gamma():", "    return 0", "", "def omega():", "    pass"], [4, 4]),
+    (["def delta():", "    return None", "", "def gamma():", "    return 0", "    log()", "    audit()", "",
+      "def omega():", "    pass"], [5, 5]),
+], ids=["the edit keeps both neighbours", "the edit keeps one"])
+def test_a_copy_that_moved_up_is_not_placed_over_an_edit_where_the_line_was(current, rival):
+    # The mirror of the gamma()/delta() case: the imports went, so the exact copy in delta()
+    # moved UP past the cited numbers, and gamma()'s own line was edited in place. Away from
+    # the cited numbers an edit flanked as well as the copy is a rival, not only one flanked
+    # by both neighbours (the second case keeps gamma() above it and loses omega() below).
+    pinned = ["import a", "import b", "", "def gamma():", "    return None", "", "def omega():", "    pass"]
+    result = hr.classify(pinned, 5, 5, current)
+    assert (result["class"], result["now"], result["candidates"]) == ("ambiguous", None, [[2, 2], rival])
+
+
+def test_an_edit_that_kept_no_neighbour_is_a_rival_for_a_copy_that_kept_none_either():
+    # Every CONFIG value was bumped and a stray copy of the old retries entry landed in LIMITS:
+    # neither the copy nor the edit kept a pinned neighbour, so neither is flanked better.
+    pinned = ["CONFIG = {", '    "timeout_seconds": 30,', '    "max_retries": 3,', '    "backoff_factor": 2.0,', "}",
+              "", "LIMITS = {", '    "burst": 9,', "}"]
+    current = ["CONFIG = {", '    "timeout_seconds": 60,', '    "max_retries": 5,', '    "backoff_factor": 1.5,', "}",
+               "", "LIMITS = {", '    "burst": 9,', '    "max_retries": 3,', "}"]
+    result = hr.classify(pinned, 3, 3, current)
+    assert (result["class"], result["now"], result["candidates"]) == ("ambiguous", None, [[3, 3], [9, 9]])
+
+
+def test_a_whitespace_only_line_is_no_neighbour():
+    # Line 3 holds only spaces, so it is blank: def b() is the neighbour below, and only the
+    # second copy keeps it. Counted as a line, the spaces would anchor the first copy instead.
+    pinned = ["def a():", "    return None", "    ", "def b():", "    pass"]
+    current = ["def a():", "    return None", "    ", "def c():", "    pass", "", "def a():", "    return None", "",
+               "def b():"]
+    result = hr.classify(pinned, 2, 2, current)
+    assert (result["class"], result["now"], result["anchored"]) == ("moved", [8, 8], True)
+
+
+@pytest.mark.parametrize("width,searched", [(hr.MAX_REGION, True), (hr.MAX_REGION + 1, False)])
+def test_a_region_of_exactly_max_region_lines_is_still_searched(width, searched):
+    # The cited line's edit sits among `width` lines between its anchors; the exact copy far
+    # below kept neither neighbour. Up to MAX_REGION lines the edit itself is found.
+    pinned = ["def top():", "    value = compute(alpha, beta)", "def bottom():", "", "def tail():", "    pass"]
+    steps = [f"    step_{i}()" for i in range(width - 1)]
+    current = ["def top():", *steps[:200], "    value = compute(alpha, gamma)", *steps[200:], "def bottom():",
+               "", "def tail():", "    pass", "", "def moved():", "    value = compute(alpha, beta)"]
+    result = hr.classify(pinned, 2, 2, current)
+    copy = [len(current), len(current)]
+    assert result["class"] == "ambiguous"
+    assert result["candidates"] == ([[202, 202], copy] if searched else [[2, width + 1], copy])
 
 
 def test_a_look_alike_inserted_right_above_a_line_is_ambiguous_by_design():
@@ -735,7 +908,15 @@ def test_a_flanked_window_is_a_rival_even_where_an_unflanked_one_scores_higher()
       "    except Exception:", '        log.warning("stop: flush failed")', "        raise"], 5, 5,
      ["def start():", "    serve()", "", "def stop():", "    try:", "        flush()", "    except Exception:",
       '        log.warning("stop: flush failed")', "        raise"]),
-], ids=["braces", "try-except", "generic neighbours"])
+    # TypeScript again, but save()'s guard sits one level deeper, inside try {}: indentation
+    # does not make `return null;` or `}` distinct.
+    (["export function load(ok: boolean) {", "  if (!ok) {", "    return null;", "  }", "  return fetchAll();", "}",
+      "", "export function save(valid: boolean) {", "  try {", "    if (!valid) {", "      return null;", "    }",
+      "    return store();", "  } catch (e) {", "    return undefined;", "  }", "}"], 2, 4,
+     ["export function load(ok: boolean) {", "  return fetchAll();", "}", "", "export function save(valid: boolean) {",
+      "  try {", "    if (!valid) {", "      return null;", "    }", "    return store();", "  } catch (e) {",
+      "    return undefined;", "  }", "}"]),
+], ids=["braces", "try-except", "generic neighbours", "nested braces"])
 def test_generic_lines_never_vouch_for_a_place_away_from_the_anchors(pinned, first, last, current):
     # `}`, `return null;`, `try:` and `pass` occur more than once in the pinned file: finding
     # them again proves nothing, so a same-shaped block elsewhere is not where these lines went.
@@ -746,6 +927,20 @@ def test_generic_lines_never_vouch_for_a_place_away_from_the_anchors(pinned, fir
 def test_only_non_blank_text_that_occurs_once_in_the_pinned_file_can_vouch():
     lines = ["def f():", "    pass", "", "def g():", "    pass", "  }", "  }"]   # one blank line, too
     assert hr._distinct(lines) == {"def f():", "def g():"}
+    # Indentation aside: a `}` closing a nested block is the same generic text as any other.
+    assert hr._distinct(["  }", "    }", "x = 1"]) == {"x = 1"}
+
+
+def test_a_missing_line_past_the_file_edge_never_vouches():
+    # Above line 1 and below the last line there is no neighbour: two missing ones are not an
+    # unchanged line that agrees (and must not be read as text).
+    pinned = ["import os", "import sys", "def main():"]
+    assert hr._vouched(pinned, 0, 2, list(pinned), 0, 2, hr._distinct(pinned)) == 3   # 2 own lines, 1 below
+    assert hr._vouched(["import os"], 0, 1, ["import os"], 0, 1, {"import os"}) == 1
+    # End to end: a block at the top of both files, searched for away from its anchors.
+    result = hr.classify(["    }", "import os", "    y = 2", "    def m(self):"], 1, 3,
+                         ["    y = 2", "im_ort os", "    def m(self):"])
+    assert (result["class"], result["now"], result["candidates"]) == ("ambiguous", None, [[1, 2]])
 
 
 def test_one_unchanged_line_and_one_neighbour_vouch_together_even_reindented():
@@ -982,23 +1177,54 @@ def test_stamp_refuses_a_base_sha_that_does_not_hold_the_evidence(repo, capsys, 
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
-@pytest.mark.parametrize("link,name", [
-    ("agents/core/example_link.py", "agents/core/example_link.py"),   # the file is a link
-    ("agents/linked", "agents/linked/example.py"),                    # a directory on its path is
+@pytest.mark.parametrize("link,points_to,name,committed", [
+    ("agents/core/example_link.py", "example.py", "agents/core/example_link.py", True),   # the file is a link
+    ("agents/linked", "core", "agents/linked/example.py", True),                          # a directory on its path is
+    ("example_link.py", EXAMPLE, "example_link.py", True),                                # at the top level, too
+    # Not committed yet: the index knows nothing of it, the working tree does, and the link
+    # (not "untracked") is what to fix.
+    ("agents/linked", "core", "agents/linked/example.py", False),
 ])
-def test_stamp_refuses_evidence_reached_through_a_symlink_and_names_the_link(repo, capsys, link, name):
+def test_stamp_refuses_evidence_reached_through_a_symlink_and_names_the_link(repo, capsys, link, points_to, name,
+                                                                             committed):
     # hermes_status hashes the target's text, git holds the link (its target's path), and a
     # checkout without symlinks writes the link as a text file: no pin through it can hold.
-    (repo.root / link).symlink_to("example.py" if link.endswith(".py") else "core")
-    commit(repo.root, "a committed, clean symlink")
-    assert git(repo.root, "status", "--porcelain") == ""
+    (repo.root / link).symlink_to(points_to)
+    if committed:
+        commit(repo.root, "a committed, clean symlink")
+        assert git(repo.root, "status", "--porcelain") == ""
     target = repo.root / hs.ASSESSMENT
     before = target.read_bytes()
     for extra in ((), ("--allow-uncommitted",)):
         assert stamp(repo, [reread_h002(evidence=[EXAMPLE, "tests/test_example.py", name])], *extra) == 1
         err = capsys.readouterr().err
-        assert f"symlink {link}" in err and "pin the file it points to" in err, err
+        assert f"reached through the symlink {link}: " in err and "pin the file it points to" in err, err
         assert "uncommitted" not in err and "untracked" not in err, err
+    assert target.read_bytes() == before
+
+
+def test_stamp_refuses_a_symlink_checked_out_as_a_text_file(repo, capsys):
+    # With core.symlinks=false (Windows' default) git writes a committed link as a text file
+    # holding its target's path. That text hashes like git's blob, so nothing looks
+    # uncommitted, yet every checkout with symlinks would hash example.py's text instead.
+    # Only the index knows it is a link. (Built with plumbing, so it runs on Windows, too.)
+    link = "agents/core/example_link.py"
+    blob = subprocess.run(["git", "-C", str(repo.root), "hash-object", "-w", "--stdin"], input=b"example.py",
+                          check=True, capture_output=True).stdout.decode().strip()
+    git(repo.root, "update-index", "--add", "--cacheinfo", f"120000,{blob},{link}")
+    git(repo.root, "commit", "-q", "-m", "a committed symlink")
+    clone = repo.tmp / "no-symlinks"
+    subprocess.run(["git", "clone", "-q", "-c", "core.symlinks=false", repo.root.as_uri(), str(clone)],
+                   check=True, capture_output=True)
+    assert not (clone / link).is_symlink() and (clone / link).read_text(encoding="utf-8") == "example.py"
+    assert git(clone, "status", "--porcelain") == ""
+    target = clone / hs.ASSESSMENT
+    before = target.read_bytes()
+    patch = write_patch(repo.tmp, [reread_h002(evidence=[EXAMPLE, "tests/test_example.py", link])])
+    for extra in ((), ("--allow-uncommitted",)):
+        assert hr.main(["--root", str(clone), "stamp", "--patch", str(patch), *extra]) == 1
+        err = capsys.readouterr().err
+        assert f"reached through the symlink {link}: " in err, err
     assert target.read_bytes() == before
 
 
