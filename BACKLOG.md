@@ -14,6 +14,18 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-09-28 Codex-sprint review and ledger recovery (Claude, PR #1207): six red-first
+  fix rounds on `beb2ee5a` make capability outcomes honest (failure when an attempt could
+  have touched the world or machinery broke; nothing for a governance refusal/withhold or a
+  configuration deferral; success only from the real handler), plus mediation-store errors,
+  house kernel/driver failures, promotion/quarantine store failures, cloud catalog-only
+  success and broker degraded markers. H117 reason replies are fixed (claimed in the poll
+  loop without side effects, handled in the chat lane, judged by a bounded per-page stamp;
+  service lines never spoken; only the running turn takes the voice mark). The 65 rows whose
+  evidence drifted were restamped and, with 11 more touched by the fixes, content-audited
+  (31 corrections, no downgrades): **190/697 equivalent**. Full backend suite 19,824 tests at
+  `7a7f976a` (the 4 failures fixed since), +2 tests at head. Known gaps and the AGENTS.md
+  owner decision: `docs/handoff/2026-09-28-codex-review/README.md`.
 - 2026-09-27 H487/H513 local continuation: approval reasons, durable action timeout,
   verified owner-registration grouping and exact group rejection are integrated in
   HUD/Telegram. Single-use approval keeps per-request authority; notification
