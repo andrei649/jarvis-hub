@@ -119,20 +119,45 @@ IN_FLIGHT_TASK_STATUSES = frozenset({"approved", "running"})
 # The room a hub park leaves at the end of a run's time so the run can still be
 # graded (H464c): the park is taken BEFORE grading, and a park that ran to the very
 # end of the budget or the deadline left no tick in which to grade — the run ended
-# spent with no verdict. The margin is the longest of a minute, a tenth of the
-# run's wall-clock budget, and the floor the runtime passes (one sweep interval
-# plus a minute, so the sweep after the cap still falls inside the run's time and
-# grades it). When the time left is not more
-# than the margin the hub does not park at all (``no_time_left``), and the run is
-# graded now. Only the hub's own park reserves it: a planner's or judge's wait is
-# the model's choice and stays capped by the budget as before.
+# spent with no verdict. The run's time ends at the earlier of its deadline and the
+# moment its (credited) budget is spent, and the cap stops the margin short of it.
+#
+# How much room is what the scheduler needs to come back, no more (H464d). The
+# tick that parks is the run's last tick, and the scheduler ticks it again only on
+# a sweep that is both at or past the cap (the barrier clears there) and at least
+# one per-run interval after that tick (``ScheduleRuntime.due``). Sweeps fall one
+# cadence apart, so that sweep comes less than one cadence after the cap when the
+# interval is already up, and at most ``ceil(interval / cadence)`` sweeps after the
+# park when it is not — which is never less than one cadence. Leaving that much, plus
+# a minute for a timer that fires late or a sweep that runs long, puts the grading
+# sweep strictly inside the run's time (a budget or deadline is spent AT its end).
+# Two earlier readings were wrong: a tenth of the budget (48 minutes of an 8 h night)
+# graded a run with less than that left before its task had landed, and one sweep
+# plus a minute left a capped run ``not_due`` at a cadence under the interval until
+# it was spent, never graded. When the time left is not more than the margin the
+# hub does not park at all (``no_time_left``) and the run is graded now. Only the
+# hub's own park reserves it: a planner's or judge's wait is the model's choice and
+# stays capped by the budget as before.
 GRADE_MARGIN_SECONDS = 60.0
-GRADE_MARGIN_SHARE = 0.10
 
 
-def grade_margin(max_seconds: float, floor: float = GRADE_MARGIN_SECONDS) -> float:
-    """Seconds a hub park leaves before the end of the run's time (H464c)."""
-    return max(float(floor), GRADE_MARGIN_SHARE * float(max_seconds))
+def grade_margin(*, interval_seconds: Any, sweep_seconds: Any = None) -> float:
+    """Seconds a hub park leaves before the end of the run's time (H464d).
+
+    ``ceil(interval / cadence) * cadence`` plus :data:`GRADE_MARGIN_SECONDS`, where
+    ``interval_seconds`` is the per-run interval the scheduler enforces and the
+    cadence is ``sweep_seconds`` (how often it sweeps; the interval when not given).
+    Keyword-only, so a caller of the old ``grade_margin(max_seconds, floor)`` fails
+    loudly instead of reading a budget as an interval. Without a usable interval
+    it is the minute alone.
+    """
+    interval = _number(interval_seconds)
+    if interval is None or interval <= 0:
+        return GRADE_MARGIN_SECONDS
+    cadence = _number(sweep_seconds)
+    if cadence is None or cadence <= 0:
+        cadence = interval
+    return math.ceil(interval / cadence) * cadence + GRADE_MARGIN_SECONDS
 
 
 class RunBarriersError(WorkRunError):
@@ -279,7 +304,9 @@ class RunBarriers:
     the webhook store, resolved lazily so nothing here builds one at import. Both
     are optional: without them the matching trigger kind is refused rather than
     guessed. ``pid_probe`` and ``proc_identity`` are injectable so the pid kind is
-    testable without spawning a process.
+    testable without spawning a process. ``grade_margin_seconds`` is what the hub's
+    park leaves to grade in — the runtime passes :func:`grade_margin` of its
+    scheduler (H464d); never less than :data:`GRADE_MARGIN_SECONDS`.
     """
 
     def __init__(
@@ -291,12 +318,16 @@ class RunBarriers:
         clock: Callable[[], float] | None = None,
         pid_probe: Callable[[Mapping[str, Any]], str] | None = None,
         proc_identity: Callable[[int], Mapping[str, str] | None] | None = None,
-        grade_floor: float = GRADE_MARGIN_SECONDS,
+        grade_margin_seconds: float = GRADE_MARGIN_SECONDS,
     ) -> None:
         self._ledger = ledger
         self._read_task = read_task
         self._hooks = hooks
-        self._grade_floor = max(GRADE_MARGIN_SECONDS, float(grade_floor))
+        # (H464d) Exactly the margin given — no share of the budget on top — and at
+        # least the minute, so a RunBarriers built without a scheduler still leaves
+        # the sweep after the cap a moment to grade in.
+        margin = _number(grade_margin_seconds)
+        self._grade_margin = max(GRADE_MARGIN_SECONDS, margin if margin is not None else 0.0)
         self._clock = clock or getattr(ledger, "_clock", None) or time.time
         self._pid_probe = pid_probe or default_pid_probe
         self._proc_identity = proc_identity or default_proc_identity
@@ -346,9 +377,7 @@ class RunBarriers:
         # the budget check then ends the run honestly. The hub's park, taken just
         # before grading, stops the grading margin short of both (H464c).
         own = MAX_BARRIER_SECONDS if kind == "deadline" else max_wait
-        reserve = (
-            grade_margin(run.budget.max_seconds, self._grade_floor) if source == "hub" else 0.0
-        )
+        reserve = self._grade_margin if source == "hub" else 0.0
         cap_at = min(
             now + own,
             (run.deadline_at or math.inf) - reserve,
@@ -741,7 +770,6 @@ __all__ = [
     "BARRIER_KINDS",
     "DEFAULT_WAIT_SECONDS",
     "GRADE_MARGIN_SECONDS",
-    "GRADE_MARGIN_SHARE",
     "IN_FLIGHT_TASK_STATUSES",
     "MAX_BACKGROUND",
     "MAX_BARRIERS_PER_RUN",

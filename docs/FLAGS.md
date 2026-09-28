@@ -280,7 +280,7 @@ the judge (after the verifier) can mark a run succeeded.
 **What it takes to actually run.** As of `company_runtime.py`, the flag being set
 **at boot** is what registers the `company-mode-sweep` job
 (`scheduler_service.schedule_company_mode`, every `autonomy.company_tick_seconds`,
-floor 60s). The asymmetry is deliberate: **clearing the flag stops work at the very
+floor 60s; the same cadence sets the grading margin below). The asymmetry is deliberate: **clearing the flag stops work at the very
 next tick** (the runtime re-reads it each sweep), while **setting it needs a
 restart** — a capability that can start a night of autonomous work should not begin
 because a config file changed while nobody was looking. Nothing is registered if the
@@ -309,20 +309,65 @@ the next sweep reads again); a goal that **provably does not bind** (a policy
 decision, an edit, another run's goal, a run opened before the pin existed) **stops**
 the run with the reason on its record (`stopped (plan not bound to its approval: …)`),
 and so does an approved row the planner must refuse — neither is ever graded as a
-finished checklist. A row's queued task kind must be inside the goal's scope (it is
-a scope kind or sits under one: `research.collect` under `research`), or the card is
-refused.
+finished checklist. Once the approval task has been read, **anything that fails while
+the goal is rebuilt from it also stops the run** (H464d) — for example a task edited
+until its budget no longer validates (`… invalid_max_steps`) — because the same task
+would fail the same way on every later sweep; the reason is a short code, never text
+from the task (`approval_task_unusable` when the error carries no code of its own).
+A row's queued task kind must be inside the goal's scope (it is a scope kind or sits
+under one — `research.collect` under `research`, and, H464d, `file.write.append`
+under `file.write`; `file.writer` is not under `file.write`), or the card is refused.
+A row's own step kind must be one of the scope kinds exactly, and the card, the
+planner and the judge all hold it to that; the task-kind rule is one shared check on
+the card and in the planner (the judge looks only at step kinds).
 
 **When the checklist is done.** A step's task counts as done for the checklist once
 it is *approved*, so the plan can finish while that work is still running. A
 finished plan then **waits on its own approved tasks that are still running** — no
 step and no verdict, only wall-clock time (at most once per task; "stop waiting"
 sticks): the run is parked on `task:<id>` and resumes on the first sweep after the
-task finishes. The wait is capped at 6 h and at the time left **less a grading
-margin** (H464c: the longest of one sweep interval plus a minute and a tenth of the
-budget), so the run can still be graded when it runs out; with no time to spare past
-the margin it does not wait at all. Production still has **no grader wired**, so after that the run idles
-("no work left, and no grader is wired") until its budget ends.
+task finishes. The wait is capped at 6 h, and it always ends a **grading margin**
+before the run's time runs out — the run's time ends at its deadline or when its time
+budget is spent (with approval waits credited back), whichever comes first, and the
+same margin is kept from either — so the run can still be graded if the task never
+finishes. The margin is exact (H464d):
+
+> **margin = ⌈300 s ÷ cadence⌉ × cadence + 60 s**, where the cadence is
+> `autonomy.company_tick_seconds` and 300 s is the per-run interval (a run is ticked at
+> most once per 300 s).
+
+The park is taken during a tick, and the run can be ticked again only on a sweep that
+comes after the park has ended *and* at least 300 s after that tick; with sweeps one
+cadence apart, that sweep comes less than ⌈300 ÷ cadence⌉ × cadence after the park
+ends, and a budget or a deadline is spent at the very moment it is reached. The extra
+minute covers a timer that fires late or a sweep that runs long. In practice: a sweep every 60 s or every 300 s (the
+default) leaves 6 min; every 120 s, 7 min; every 240 s, 9 min; every 1200 s, 21 min.
+The margin does not grow with the budget (H464c's "a tenth of the budget" was 48 min
+of an 8 h night, so a run with less than that left was graded before its task had
+finished; and "one sweep plus a minute" was too short when sweeps come faster than the
+300 s interval — a run could then run out of time without ever being graded). When
+the run has no more time left than the margin, it does not wait at all and is graded
+at once, while its task is still running. Only this park keeps the margin; a wait the
+planner or the judge asks for is capped by the run's time as before. Production still
+has **no grader wired**, so after that the run idles ("no work left, and no grader is
+wired") until its budget ends.
+
+**Upgrading from a version before the `_v5` work-run migration (H464c).** Runs
+opened before it carry no pinned fingerprint, so nothing proves which checklist the
+owner approved for them. Each such run that is still open **stops once**, at its next
+planning tick (a blocked run after its question is answered, a parked run after its
+wait ends), with `plan not bound to its approval: no_approved_fingerprint` as its
+stop reason; it is never graded. Its approval card is used up (one approval opens one
+run), so to carry the work on, propose and approve the goal again. Finished runs are
+left as they are.
+
+**Rolling back past `_v5`.** The migration is forward-only. Older code still opens
+the database, but it fingerprints a run without the pin, so every run this version
+opened reads as **tampered**: its report says "its record does not match its own
+fingerprint — treat every claim below as unverified", and the verifier and the judge
+fail it on integrity. The supported rollback is to **restore the backup taken before
+the upgrade** (`docs/UPGRADE.md` → Rollback), not to run older code over the newer
+`work_runs.db`.
 
 **Cost:** an active run consumes its own budget — steps, elapsed seconds, deadline and
 a hard cap on how many times it may interrupt you. With the runtime's authoritative

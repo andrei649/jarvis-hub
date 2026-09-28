@@ -64,9 +64,9 @@ from typing import Any
 from agents.core.autonomy.company_planner import ChecklistPlanner
 from agents.core.autonomy.company_supervisor import CompanySupervisor, Hold, SupervisorConfig
 from agents.core.autonomy.pending_requests import PendingRequests
-from agents.core.autonomy.run_barriers import GRADE_MARGIN_SECONDS, RunBarriers
+from agents.core.autonomy.run_barriers import RunBarriers, grade_margin
 from agents.core.autonomy.schedule_runtime import ScheduleConfig, ScheduleRuntime
-from agents.core.autonomy.work_runs import FLAG, WorkRunLedger
+from agents.core.autonomy.work_runs import FLAG, WorkRunError, WorkRunLedger
 
 logger = logging.getLogger("jarvis.company_runtime")
 
@@ -232,9 +232,11 @@ def _read_back(run: Any, read_task: Callable[[int], Any] | None) -> _ReadBack:
     Transient — the run holds: no reader bound, or a read that raised. Provable —
     the run is stopped: a run not opened from a goal card, a run with no pin (opened
     before it existed), a task that is gone (H262 retention may have purged it), a
-    policy decision, an edited payload, or a goal that belongs to another run.
+    policy decision, an edited payload, a goal that belongs to another run, or
+    anything at all that raises while the task that WAS read is re-minted or bound
+    (H464d).
     """
-    from agents.core.autonomy.goal_contract import GoalContractError, approve_from_task
+    from agents.core.autonomy.goal_contract import GoalContractError
 
     match = _APPROVED_BY_TASK.match(str(getattr(run, "approved_by", "") or ""))
     if match is None:
@@ -254,11 +256,47 @@ def _read_back(run: Any, read_task: Callable[[int], Any] | None) -> _ReadBack:
     if task is None:
         return _ReadBack(reason="approval_task_gone")
     try:
-        goal = approve_from_task(task)
-    except GoalContractError as exc:
-        logger.info("approval task %s cannot drive run %s: %s", task_id,
-                    getattr(run, "id", "?"), exc.reason)
-        return _ReadBack(reason=exc.reason)
+        return _bind(run, task, task_id, pinned)
+    except Exception as exc:
+        # (H464d) The task WAS read, so re-minting and binding it is a function of
+        # what the queue holds: whatever raised here raises again on every later
+        # sweep. Only GoalContractError used to be caught, so an approval task edited
+        # until Budget(...) no longer validates (WorkRunError) failed every tick and
+        # left the run planning forever. Any failure is "provably not bound": the
+        # run stops, with a public code on its record — never the exception's text,
+        # which can carry the payload's.
+        reason = _refusal_code(exc)
+        logger.log(logging.INFO if isinstance(exc, GoalContractError) else logging.WARNING,
+                   "approval task %s cannot drive run %s: %s (%s)", task_id,
+                   getattr(run, "id", "?"), reason, exc.__class__.__name__)
+        return _ReadBack(reason=reason)
+
+
+# A code the read-back may put on a run's record (H464d): the bare, bounded codes
+# the contract's and the ledger's refusals carry — nothing with a space or markup.
+_PUBLIC_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+def _refusal_code(exc: Exception) -> str:
+    """The stop reason for a re-mint or bind that raised: the refusal's own code
+    when it is a :class:`GoalContractError` or :class:`WorkRunError` carrying a bare
+    code (``invalid_max_steps``), else ``approval_task_unusable``."""
+    from agents.core.autonomy.goal_contract import GoalContractError
+
+    reason = getattr(exc, "reason", None)
+    if (isinstance(exc, (GoalContractError, WorkRunError)) and isinstance(reason, str)
+            and _PUBLIC_CODE.match(reason)):
+        return reason
+    return "approval_task_unusable"
+
+
+def _bind(run: Any, task: Any, task_id: int, pinned: str) -> _ReadBack:
+    """Re-mint the goal from the approval task that was read, and bind it to this
+    run (:func:`_read_back`). Raises whatever re-minting raises; the caller turns it
+    into a stop."""
+    from agents.core.autonomy.goal_contract import approve_from_task
+
+    goal = approve_from_task(task)
     try:
         bound = (
             goal.approved_by == run.approved_by
@@ -351,9 +389,11 @@ def build_company_runtime(
     "company mode did nothing last night" is a question that has to be answerable.
 
     ``sweep_seconds`` is how often the scheduler will call :meth:`CompanyRuntime.sweep`
-    (the per-run interval when not given): the hub's park before grading stops at
-    least one sweep and a minute short of the run's end, so the sweep after it can
-    still grade the run (H464c).
+    (the per-run interval when not given). With the scheduler's per-run interval it
+    sets how far short of the run's end the hub's park before grading stops
+    (:func:`~agents.core.autonomy.run_barriers.grade_margin`, H464d): the whole sweeps
+    until the one the interval lets tick the run again, plus a minute — so a park
+    that runs to its cap is still graded inside the run's time.
     """
     if not flag_enabled():
         logger.debug("company mode is off; no runtime built")
@@ -400,10 +440,14 @@ def build_company_runtime(
 
     # Without a queue reader a task trigger is refused rather than guessed; the
     # webhook store is resolved only when a hook trigger is actually used. The
-    # hub's park leaves at least one sweep (and a minute) to grade in (H464c).
+    # hub's park leaves room for the sweep that grades the run (H464d): one sweep
+    # was not enough when the cadence is under the per-run interval, since due()
+    # keeps the run not_due until the interval is up.
     barriers = RunBarriers(
         ledger, read_task=reader, hooks=_webhook_store,
-        grade_floor=float(sweep_seconds or schedule.interval_seconds) + GRADE_MARGIN_SECONDS,
+        grade_margin_seconds=grade_margin(
+            interval_seconds=schedule.interval_seconds, sweep_seconds=sweep_seconds,
+        ),
     )
     supervisor = CompanySupervisor(
         ledger,

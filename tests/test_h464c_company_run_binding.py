@@ -390,7 +390,7 @@ async def test_approval_refs_outside_the_goal_contract_keep_their_meaning(world)
 async def test_the_hub_park_ends_early_enough_for_the_run_to_be_graded(world, bound, sweep):
     """The park's cap used to be the exact end of the budget (or the deadline): a task
     approved but never started ate the time left and the run was never graded."""
-    from agents.core.autonomy.run_barriers import GRADE_MARGIN_SECONDS, grade_margin
+    from agents.core.autonomy.run_barriers import grade_margin
 
     if bound == "budget":
         draft = _draft(plan=[_ROW], budget=Budget(max_seconds=3_600.0))
@@ -414,8 +414,9 @@ async def test_the_hub_park_ends_early_enough_for_the_run_to_be_graded(world, bo
     await _sweep(runtime)
     parked = world.ledger.get(run.id).barrier
     assert parked is not None and parked["source"] == "hub"
-    margin = grade_margin(draft.budget.max_seconds, cadence + GRADE_MARGIN_SECONDS)
-    assert margin == max(cadence + 60.0, 0.1 * draft.budget.max_seconds)
+    # H464d: whole sweeps to the next due one, plus a minute — no share of the budget.
+    margin = grade_margin(interval_seconds=config.interval_seconds, sweep_seconds=sweep)
+    assert margin == -(-config.interval_seconds // cadence) * cadence + 60.0
     if bound == "budget":
         left = world.ledger.budget_state(run.id)["seconds_left"]
         assert parked["cap_at"] == pytest.approx(world.clock[0] + left - margin)
@@ -435,8 +436,10 @@ async def test_the_hub_park_ends_early_enough_for_the_run_to_be_graded(world, bo
 
 
 async def test_no_park_when_the_time_left_is_all_needed_to_grade(world):
-    """Nothing to spare past the grading margin: the hub does not park at all."""
-    draft = _draft(plan=[_ROW], deadline=T0 + 400.0)
+    """Nothing to spare past the grading margin: the hub does not park at all. The
+    plan finishes at T0 + 30 with exactly the margin left (H464d: 360 s at the
+    default interval and cadence)."""
+    draft = _draft(plan=[_ROW], deadline=T0 + 30.0 + 360.0)
     tid = _goal_task(world.q, draft)
     run = _open(world, tid)
     _finish(world.q, tid)
@@ -456,14 +459,29 @@ async def test_no_park_when_the_time_left_is_all_needed_to_grade(world):
     assert world.ledger.barrier_sets(run.id, source="hub") == []
 
 
-async def test_the_grading_margin_is_a_tenth_of_the_budget_or_the_floor():
-    from agents.core.autonomy.run_barriers import GRADE_MARGIN_SECONDS, grade_margin
+async def test_the_grading_margin_is_whole_sweeps_to_the_next_due_one_plus_a_minute(world):
+    """H464d: ``ceil(interval / cadence) * cadence + 60 s`` — the interval counts, the
+    budget does not, and a RunBarriers built with no margin keeps the minute."""
+    from agents.core.autonomy import run_barriers
+    from agents.core.autonomy.run_barriers import GRADE_MARGIN_SECONDS, RunBarriers, grade_margin
 
     assert GRADE_MARGIN_SECONDS == 60.0
-    assert grade_margin(100.0) == 60.0
-    assert grade_margin(3_600.0) == 360.0
-    assert grade_margin(3_600.0, 300.0) == 360.0
-    assert grade_margin(600.0, 300.0) == 300.0
+    assert not hasattr(run_barriers, "GRADE_MARGIN_SHARE")
+    for cadence, margin in ((60.0, 360.0), (120.0, 420.0), (240.0, 540.0),
+                            (300.0, 360.0), (450.0, 510.0), (1_200.0, 1_260.0),
+                            (None, 360.0)):
+        assert grade_margin(interval_seconds=300.0, sweep_seconds=cadence) == margin
+    for broken in (None, 0, -5.0, float("nan"), "300", True):
+        assert grade_margin(interval_seconds=broken, sweep_seconds=60.0) == 60.0
+    with pytest.raises(TypeError):
+        grade_margin(3_600.0)      # the old (max_seconds, floor) call fails loudly
+    assert RunBarriers(world.ledger)._grade_margin == 60.0
+    assert RunBarriers(world.ledger, grade_margin_seconds=10.0)._grade_margin == 60.0
+    assert RunBarriers(world.ledger, grade_margin_seconds=540.0)._grade_margin == 540.0
+    for cadence, margin in ((None, 360.0), (240.0, 540.0), (1_200.0, 1_260.0)):
+        runtime = build_company_runtime(_RealOrch(world), config=ScheduleConfig(enabled=True),
+                                        sweep_seconds=cadence)
+        assert runtime.parts.barriers._grade_margin == margin
 
 
 # ── M4: safe mode leaves the company sweep out ───────────────────────────────
@@ -507,7 +525,8 @@ async def test_the_scheduler_tells_the_runtime_its_sweep_cadence(world, monkeypa
     orch.get_setting = lambda key, default=None: 1_200 if "company_tick" in key else default
     SchedulerService(orch).schedule_company_mode()
     assert sched.jobs == ["company-mode-sweep"]
-    assert orch.company_runtime.parts.barriers._grade_floor == 1_260.0
+    # 1 200 s sweeps against the 300 s interval: one sweep and a minute (H464d).
+    assert orch.company_runtime.parts.barriers._grade_margin == 1_260.0
 
 
 async def test_a_sweep_does_nothing_while_safe_mode_is_on(world, monkeypatch):

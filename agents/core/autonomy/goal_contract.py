@@ -96,13 +96,22 @@ def task_kind_in_scope(task_kind: Any, scope_kinds: Any) -> bool:
     of the scope kinds, or sit under one (``research.collect`` under ``research``).
     ``file.write`` is not inside ``research``, and a kind that is not a string is
     inside nothing. An empty scope is the explicitly unrestricted goal.
+
+    "Under" is a whole dotted prefix (H464d): a dotted scope kind admits its own
+    children too — ``file.write.append`` under ``file.write`` — where the first
+    segment alone used to be compared, and refused it. ``file.writer`` is not under
+    ``file.write``, and a parent (``file``) is not inside its child. The card
+    (``GoalDraft``) and the planner clamp both call this, so they cannot disagree.
     """
     scope = frozenset(scope_kinds or ())
     if not scope:
         return True
     if not isinstance(task_kind, str):
         return False
-    return task_kind in scope or task_kind.split(".", 1)[0] in scope
+    return any(
+        task_kind == kind or task_kind.startswith(f"{kind}.")
+        for kind in scope if isinstance(kind, str)
+    )
 
 
 @dataclass(frozen=True)
