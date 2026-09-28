@@ -34,6 +34,10 @@ Governance (MOONSHOT §5):
   ``stopping`` or a terminal status clears it in the same write, so a stop always
   wins. Validation and probing live in :mod:`agents.core.autonomy.run_barriers`;
   this module only stores, and re-checks the bounds under its own lock.
+* **A hold is an event too (H464d).** A tick whose planner cannot say what is next
+  just now does nothing; ``note_hold`` writes one ``hold.started`` for it (not one
+  per tick) and ``end_hold`` a ``hold.ended`` when the plan answers again, so the
+  record and the brief can say the run is held, and why. Never a step, never budget.
 
 Runtime flag: ``JARVIS_COMPANY_MODE`` (default off). Off, nothing in this module
 is constructed by the runtime; the ledger itself stays usable in tests and in a
@@ -152,6 +156,12 @@ BARRIER_CLEARED_BY = ("check", "owner", "ledger", "scheduler")
 # H464c — an approval ref as the goal contract writes it (``task:<id>:<decider>``):
 # one durable human decision on one task. Such an approval opens ONE run, ever.
 _APPROVAL_TASK_REF = re.compile(r"^task:(\d+):")
+
+# H464d — a hold's audit, in ``run_events`` beside the barrier events: when a hold
+# began (and why) and when it ended. The reason is bounded like the tick's detail.
+HOLD_STARTED = "hold.started"
+HOLD_ENDED = "hold.ended"
+_MAX_HOLD_REASON = 160
 
 
 def _exceeded(run: WorkRun, moment: float, *, credit: float = 0.0) -> str | None:
@@ -764,6 +774,27 @@ class WorkRunLedger:
                 continue
         return moment
 
+    def _observe_open_waits_locked(self, run: WorkRun, now: float, tasks: dict) -> None:
+        """Record how far a blocked run's OPEN approval wait got, in the caller's
+        transaction, before a stop or a hand resume closes it (H464d).
+
+        :meth:`_close_waits_locked` ends an open source at its last observation.
+        Since H464c no read observes (the report routes are read-only) and the tick
+        path never looks at a blocked run, so a stop or a resume closed the wait
+        where it began and credited none of the owner's wait. This is the persisted
+        observation every other settlement already makes (``record_step``,
+        ``resolve_step``, ``resume_after_asks``, ``settle_expired_ask``), with the
+        same proofs, so it never widens the credit: only while the run is blocked
+        with no other hold, only for the very task that was asked and still
+        undecided, never past 360 s, the ask's deadline or the moment the task was
+        read. A task that cannot be read proves nothing: the wait closes where it
+        was last proven. ``tasks`` is :meth:`_open_wait_tasks`, read before the lock.
+        """
+        if run.status == "blocked" and not run.stop_reason and any(
+            key != "_observed" for key in tasks
+        ):
+            self._wait_credit_locked(run, now, tasks)
+
     def _close_waits_locked(self, run_id: str, now: float) -> None:
         for row in self._conn.execute('SELECT marker,metadata FROM approval_wait_epochs WHERE run_id=?', (run_id,)).fetchall():
             try:
@@ -1270,15 +1301,26 @@ class WorkRunLedger:
         return self._row_to_step(row)
 
     def resume(self, run_id: str) -> WorkRun:
-        """Move a blocked run back to working — after its outstanding ask resolved."""
+        """Move a blocked run back to working — after its outstanding ask resolved.
+
+        An approval wait still open when the run is resumed by hand ends at the
+        resume, observed first as any settlement observes it (H464d,
+        :meth:`_observe_open_waits_locked`), in the same transaction as the move."""
+        tasks = self._open_wait_tasks(run_id)
         with self._lock:
-            row = self._conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
-            if row is None:
-                raise WorkRunError("unknown_run")
-            run = self._row_to_run(row)
-            if run.status != "blocked":
-                raise WorkRunError("run_not_blocked")
-            return self._transition_locked(run, "working", self._now())
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                run = self._run_locked(run_id)
+                if run.status != "blocked":
+                    raise WorkRunError("run_not_blocked")
+                now = self._now()
+                self._observe_open_waits_locked(run, now, tasks)
+                result = self._transition_locked(run, "working", now, commit=False)
+                self._conn.commit()
+                return result
+            except BaseException:
+                self._conn.rollback()
+                raise
 
     def resume_after_asks(self, run_id: str, *, answered_seqs: list[int]) -> WorkRun:
         """Reconciler-only resume; manual resume retains its original contract."""
@@ -1369,19 +1411,30 @@ class WorkRunLedger:
         A run that has not started yet, or one already stopping, settles straight
         to ``stopped``; a working run goes to ``stopping`` so an in-flight step
         can unwind and the supervisor can close it out.
+
+        A stop that ends an OPEN approval wait records where the wait ended — the
+        stop, observed first as any settlement observes it — so the run is credited
+        the wait the owner imposed, not the last time something happened to look
+        (H464d, :meth:`_observe_open_waits_locked`). Same transaction as the move.
         """
+        tasks = self._open_wait_tasks(run_id)
         with self._lock:
-            row = self._conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
-            if row is None:
-                raise WorkRunError("unknown_run")
-            run = self._row_to_run(row)
-            if run.terminal:
-                raise WorkRunError(f"run_{run.status}")
-            now = self._now()
-            detail = _text(reason, "reason", max_chars=200, required=False) or "owner"
-            if run.status == "stopping":
-                return self._transition_locked(run, "stopped", now, stop_reason=detail)
-            return self._transition_locked(run, "stopping", now, stop_reason=detail)
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                run = self._run_locked(run_id)
+                if run.terminal:
+                    raise WorkRunError(f"run_{run.status}")
+                now = self._now()
+                detail = _text(reason, "reason", max_chars=200, required=False) or "owner"
+                self._observe_open_waits_locked(run, now, tasks)
+                target = "stopped" if run.status == "stopping" else "stopping"
+                result = self._transition_locked(run, target, now, stop_reason=detail,
+                                                 commit=False)
+                self._conn.commit()
+                return result
+            except BaseException:
+                self._conn.rollback()
+                raise
 
     def settle_stop(self, run_id: str) -> WorkRun:
         """Close out a stopping run once its in-flight work has unwound."""
@@ -1620,8 +1673,8 @@ class WorkRunLedger:
         return [detail for detail in sets if detail.get("source") == source]
 
     def events(self, run_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
-        """The run's barrier audit, newest first. Append-only: there is no API to
-        rewrite or delete an event."""
+        """The run's barrier and hold audit, newest first. Append-only: there is no
+        API to rewrite or delete an event."""
         limit = max(1, min(int(limit), 500))
         with self._lock:
             rows = self._conn.execute(
@@ -1633,6 +1686,103 @@ class WorkRunLedger:
              "detail": _load(row["detail"])}
             for row in rows
         ]
+
+    # ── holds (H464d) ────────────────────────────────────────────────────
+
+    def note_hold(self, run_id: str, reason: str) -> bool:
+        """Record that the run is held: its planner cannot say what is next just now
+        (its approval task, or its own steps, could not be read), so the tick did
+        nothing.
+
+        One event per hold, not one per tick: a ``hold.started`` is written only when
+        the run's latest hold event is not already a ``hold.started`` for the same
+        reason at the same step count. A new reason, or the same one again after the
+        run took a step or the hold ended, is a new event; a hold that lasts all night
+        is one line, stamped when it began. The check runs again under the write
+        lock, so two ticks racing write one event. A finished run takes none. An
+        event, never a step: nothing is spent. Returns whether this call wrote one.
+        """
+        why = _text(reason, "reason", max_chars=_MAX_HOLD_REASON, required=False) or "held"
+        with self._lock:
+            # A plain read first: a long hold's every tick ends here, without
+            # taking the write lock.
+            if not self._hold_is_new_locked(run_id, why):
+                return False
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                if not self._hold_is_new_locked(run_id, why):
+                    self._conn.commit()
+                    return False
+                steps_used = self._run_locked(run_id).steps_used
+                self._event_locked(run_id, HOLD_STARTED, self._now(),
+                                   {"reason": why, "steps_used": steps_used})
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
+        logger.info("run %s held: %s", run_id, why)
+        return True
+
+    def end_hold(self, run_id: str) -> bool:
+        """Record that the run's hold is over — its planner answered again (H464d).
+        A no-op unless the latest hold event is a ``hold.started``; every tick that
+        plans calls it, so the common case is one plain read. Returns whether this
+        call wrote a ``hold.ended``."""
+        with self._lock:
+            last = self._last_hold_locked(run_id)
+            if last is None or last["kind"] != HOLD_STARTED:
+                return False
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                last = self._last_hold_locked(run_id)
+                if last is None or last["kind"] != HOLD_STARTED:
+                    self._conn.commit()
+                    return False
+                self._event_locked(run_id, HOLD_ENDED, self._now(),
+                                   {"reason": last["detail"].get("reason")})
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
+        return True
+
+    def current_hold(self, run_id: str) -> dict[str, Any] | None:
+        """The run's hold as it stands, or ``None`` (H464d): ``{reason, since,
+        steps_used}`` from the latest ``hold.started``, while no ``hold.ended`` and
+        no step came after it. Read-only; whether a run's status still makes a hold
+        worth reporting is the report's call."""
+        with self._lock:
+            last = self._last_hold_locked(run_id)
+            row = self._conn.execute(
+                "SELECT steps_used FROM runs WHERE id = ?", (run_id,)
+            ).fetchone()
+        if last is None or last["kind"] != HOLD_STARTED or row is None:
+            return None
+        if last["detail"].get("steps_used") != row["steps_used"]:
+            return None
+        return {"reason": str(last["detail"].get("reason") or ""), "since": last["at"],
+                "steps_used": row["steps_used"]}
+
+    def _last_hold_locked(self, run_id: str) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT kind, at, detail FROM run_events WHERE run_id = ? AND kind IN (?, ?) "
+            "ORDER BY seq DESC LIMIT 1",
+            (run_id, HOLD_STARTED, HOLD_ENDED),
+        ).fetchone()
+        if row is None:
+            return None
+        return {"kind": row["kind"], "at": row["at"], "detail": _load(row["detail"])}
+
+    def _hold_is_new_locked(self, run_id: str, reason: str) -> bool:
+        run = self._run_locked(run_id)
+        if run.terminal:
+            return False
+        last = self._last_hold_locked(run_id)
+        return not (
+            last is not None and last["kind"] == HOLD_STARTED
+            and last["detail"].get("reason") == reason
+            and last["detail"].get("steps_used") == run.steps_used
+        )
 
     def add_process(self, run_id: str, record: Mapping[str, Any]) -> None:
         """Store a process the hub spawned for this run. Storage only — the
@@ -1749,6 +1899,8 @@ class WorkRunLedger:
             # H464: the barrier audit. Events are not steps, so they never count
             # toward budget or toward the unauthorised list below.
             "events": self.events(run_id),
+            # H464d: the hold the run is in, if any — a plain read, like the rest.
+            "hold": self.current_hold(run_id),
             # A run is only "authorised throughout" when every step that changed
             # something names the durable task that was approved to change it.
             "unauthorised_steps": [
@@ -1760,6 +1912,8 @@ class WorkRunLedger:
 __all__ = [
     "BARRIER_KINDS",
     "FLAG",
+    "HOLD_ENDED",
+    "HOLD_STARTED",
     "KIND",
     "MAX_BARRIERS_PER_RUN",
     "MIGRATIONS",

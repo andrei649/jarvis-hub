@@ -22,6 +22,13 @@ Waking is not a licence, so the rules are about restraint, not throughput:
   steps budget spent while parked must read ``budget_spent``, never ``waiting`` —
   and the scheduler clears that run's barrier itself (``why=budget_spent``,
   ``by=scheduler``), since a spent run is never ticked for the check to clear it.
+* **A spent run is settled, not left open (H464d).** Settling used to happen only
+  inside a tick, and a spent run is never ticked — so a run held or parked when its
+  budget ran out stayed open forever. The sweep now settles it itself, with the
+  supervisor's own :func:`settle_exhausted` (``budget:<limit>`` on the record, the
+  same outcome), after re-reading the budget: a budget that cannot be read is
+  skipped as spent but never settled on a guess. Best effort — nothing it raises
+  leaves the sweep — and idempotent, since a settled run is no longer listed.
 * **Night hours are quiet hours for attention, not for work.** During the night
   window a run may still take steps, but a step that would interrupt the owner is
   deferred to the morning. This mirrors `is_night_window` in the existing worker
@@ -48,6 +55,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from agents.core.autonomy.company_supervisor import settle_exhausted
 from agents.core.autonomy.work_runs import TERMINAL_STATUSES
 
 logger = logging.getLogger("jarvis.schedule_runtime")
@@ -220,6 +228,28 @@ class ScheduleRuntime:
         except Exception:
             logger.debug("scheduler could not clear a spent run's barrier", exc_info=True)
 
+    def _settle_spent(self, run: Any) -> str:
+        """Settle a run the sweep found spent, as a tick would (H464d); the outcome,
+        or ``""`` when nothing was settled.
+
+        ``due`` reads a budget it cannot read as spent, so that the run is not
+        ticked; that is not a reason to END it, so the budget is read again here
+        and only a named spent limit settles. :func:`settle_exhausted` is the
+        supervisor's own settle, so a run ends the same way whoever found it spent.
+        """
+        try:
+            limit = self._ledger.budget_state(run.id)["exceeded"]
+        except Exception:
+            logger.debug("scheduler could not re-read a spent budget", exc_info=True)
+            return ""
+        if not limit:
+            return ""
+        try:
+            return str(settle_exhausted(self._ledger, run.id, str(limit)).outcome)
+        except Exception:
+            logger.warning("scheduler could not settle spent run %s", run.id, exc_info=True)
+            return ""
+
     def quiet_hours(self) -> bool:
         """True when a step that would interrupt the owner should wait.
 
@@ -263,10 +293,13 @@ class ScheduleRuntime:
         for run in runs:
             reason = self.due(run, now=now)
             if reason:
+                outcome = ""
                 if reason == "budget_spent":
-                    # Only the sweep writes this, never a status read (snapshot).
+                    # Only the sweep writes these, never a status read (snapshot):
+                    # the barrier first (its own audit), then the settle (H464d).
                     self._clear_spent_barrier(run)
-                entries.append(SweepEntry(run.id, False, reason))
+                    outcome = self._settle_spent(run)
+                entries.append(SweepEntry(run.id, False, reason, outcome))
                 continue
             if advanced >= self.config.max_concurrent:
                 # Not an error: the next sweep picks it up. Reported so a run that

@@ -36,6 +36,13 @@ Two proposers ship. :class:`ChecklistPlanner` walks a fixed list written when th
 goal was approved — fully deterministic, and the one to use when the owner wants
 the run to do a known thing. :class:`ModelPlanner` wraps an injected async
 callable (an LLM) behind the same clamps.
+
+A checklist row is done once it reached the queue (H464d), not once anything was
+recorded for it: a row whose intake failed (no durable task) is asked again on a
+later tick, at most :data:`MAX_ROW_ATTEMPTS` times, and then the run stops with a
+readable reason; a row the queue answered — approved, refused, lost or expired
+unanswered — is done, because asking again would be a duplicate ask. And "I could
+not read what was done" is never "nothing was done": the tick holds instead.
 """
 
 from __future__ import annotations
@@ -46,10 +53,25 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from agents.core.autonomy.company_supervisor import Action
+from agents.core.autonomy.company_supervisor import Action, Hold
 from agents.core.autonomy.goal_contract import task_kind_in_scope
 
 logger = logging.getLogger("jarvis.company_planner")
+
+# H464d — how many times one approved checklist row may fail to reach the queue
+# (the governed intake raised, or handed back no durable task) before the planner
+# stops the run instead of asking a fourth time. Durable: counted from the ledger's
+# failed steps, so it holds across restarts and whatever the failures said. It is
+# the backstop to the supervisor's streak rule (``max_consecutive_failures``, also
+# 3 by default), which is in memory and needs the SAME failure in a row: a row
+# failing identically three ticks running is stopped by the streak on its third
+# failure ("stuck: …"); one whose failures differ, or straddle a restart or another
+# outcome, is stopped here before its fourth attempt ("approved row failed too
+# often: …"). Whichever is reached first ends the run; neither lets a row be tried
+# more than three times with the defaults.
+MAX_ROW_ATTEMPTS = 3
+#: The transient hold when the run's steps cannot be read (H464d).
+STEPS_UNREADABLE = "the run's steps could not be read"
 
 # Why a proposal was refused. Every one is reported; a silently dropped proposal
 # would look identical to "the model had no ideas", which is a different thing.
@@ -82,11 +104,16 @@ class PlanStep:
 
 @dataclass(frozen=True)
 class PlanDecision:
-    """What the planner decided, and why — refusals included."""
+    """What the planner decided, and why — refusals included.
+
+    ``hold`` (H464d) is the planner saying it cannot answer: it is what the planner
+    returns in place of an action, and it is neither "nothing left to do" nor a
+    refusal of a proposal."""
 
     action: Action | None
     refusal: str = ""
     detail: str = ""
+    hold: Hold | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -97,6 +124,9 @@ class PlanDecision:
             },
             "refusal": self.refusal,
             "detail": self.detail,
+            "hold": None if self.hold is None else {
+                "reason": self.hold.reason, "stop": self.hold.stop, "cause": self.hold.cause,
+            },
         }
 
 
@@ -124,12 +154,15 @@ class _ClampedPlanner:
         """Empty scope means unrestricted — a decision the goal's author makes."""
         return not self.scope_kinds or kind in self.scope_kinds
 
-    async def __call__(self, context: Mapping[str, Any]) -> Action | None:
+    async def __call__(self, context: Mapping[str, Any]) -> Action | Hold | None:
         decision = await self.decide(context)
         self.last = decision
         if decision.refusal:
             logger.info("planner refused a proposal: %s (%s)",
                         decision.refusal, decision.detail)
+        if decision.hold is not None:
+            logger.info("planner holds the run: %s", decision.hold.reason)
+            return decision.hold
         return decision.action
 
     async def decide(self, context: Mapping[str, Any]) -> PlanDecision:
@@ -142,6 +175,11 @@ class _ClampedPlanner:
         except Exception as exc:
             logger.warning("planner proposer failed", exc_info=True)
             return PlanDecision(None, "proposer_failed", exc.__class__.__name__)
+        if isinstance(proposed, Hold):
+            # "Cannot say" goes to the supervisor as it is (H464d): never coerced
+            # into an action, never read as "nothing left to do". A Hold only ever
+            # narrows — it does nothing now, or stops the run.
+            return PlanDecision(None, hold=proposed)
         if proposed is None:
             return PlanDecision(None)
 
@@ -219,7 +257,16 @@ class _ClampedPlanner:
             logger.debug("planner could not read prior steps", exc_info=True)
             return False
         want = _fingerprint(action.kind, action.summary)
-        return any(_fingerprint(step.kind, step.summary) == want for step in steps)
+        return any(
+            _fingerprint(step.kind, step.summary) == want and self._counts_as_done(step)
+            for step in steps
+        )
+
+    def _counts_as_done(self, step: Any) -> bool:
+        """Whether a recorded step makes a proposal like it a repeat. Any step, for
+        a proposer the planner cannot bound: repeating one is how a model loops
+        while looking busy. :class:`ChecklistPlanner` narrows it (H464d)."""
+        return True
 
 
 class ChecklistPlanner(_ClampedPlanner):
@@ -246,22 +293,57 @@ class ChecklistPlanner(_ClampedPlanner):
         Position is derived from the ledger rather than from a counter, so a
         planner rebuilt after a restart resumes where the run actually is instead
         of starting the checklist again.
+
+        H464d: a row is taken once it reached the queue (:meth:`_counts_as_done`);
+        one whose intake failed is proposed again, until it has failed
+        ``MAX_ROW_ATTEMPTS`` times — then the run is stopped with the row named, as
+        a stop Hold (``cause="retries"``). Steps that cannot be read are a
+        transient Hold: "cannot tell" is not "nothing done", and reading it as
+        that re-asked row 1 — a duplicate ask to the owner.
         """
-        done = self._done_fingerprints(context)
+        steps = self._recorded_steps(context)
+        if steps is None:
+            return Hold(STEPS_UNREADABLE)
+        done = self._done_fingerprints(steps)
         for step in self._steps:
-            if _fingerprint(step.kind, step.summary) not in done:
-                return step
+            want = _fingerprint(step.kind, step.summary)
+            if want in done:
+                continue
+            # Not done, so every recorded step like it is a failed attempt.
+            attempts = sum(1 for s in steps if _fingerprint(s.kind, s.summary) == want)
+            if attempts >= MAX_ROW_ATTEMPTS:
+                return Hold(f"{step.summary[:120]} ({attempts} attempts)", stop=True,
+                            cause="retries")
+            return step
         return None
 
-    def _done_fingerprints(self, context: Mapping[str, Any]) -> set[str]:
+    def _recorded_steps(self, context: Mapping[str, Any]) -> list[Any] | None:
+        """The run's steps, ``[]`` with no ledger or run to read, ``None`` when the
+        read failed."""
         run_id = dict(context.get("run") or {}).get("id")
         if self._ledger is None or not run_id:
-            return set()
+            return []
         try:
-            return {_fingerprint(s.kind, s.summary) for s in self._ledger.steps(run_id)}
+            return list(self._ledger.steps(run_id))
         except Exception:
-            logger.debug("planner could not read prior steps", exc_info=True)
-            return set()
+            logger.warning("planner could not read the run's steps; holding", exc_info=True)
+            return None
+
+    def _done_fingerprints(self, steps: Sequence[Any]) -> set[str]:
+        """The rows the run has taken: a step counts only once it reached the queue
+        (H464d, :meth:`_counts_as_done`)."""
+        return {_fingerprint(s.kind, s.summary) for s in steps if self._counts_as_done(s)}
+
+    def _counts_as_done(self, step: Any) -> bool:
+        """A row is done once it reached the queue (H464d): queued, approved (``ok``)
+        or refused by the owner — or failed AFTER it was queued (it carries its
+        durable task: the task vanished, or the ask expired unanswered). Asking
+        again would be a duplicate ask. Only a failure with no durable task — the
+        governed intake raised or answered nothing — never reached anyone, and is
+        tried again (bounded by ``MAX_ROW_ATTEMPTS``)."""
+        if str(getattr(step, "outcome", "")) != "failed":
+            return True
+        return getattr(step, "task_id", None) is not None
 
 
 class ModelPlanner(_ClampedPlanner):
@@ -290,7 +372,9 @@ class ModelPlanner(_ClampedPlanner):
 
 
 __all__ = [
+    "MAX_ROW_ATTEMPTS",
     "REFUSALS",
+    "STEPS_UNREADABLE",
     "ChecklistPlanner",
     "ModelPlanner",
     "PlanDecision",

@@ -15,6 +15,10 @@ hardest ones to leave out:
   while the barrier is in force, though: past its cap (or, for a clock, past its
   time) the run reads as it would without one, even when no sweep has run to
   clear the stale record. That is a plain clock comparison, never a probe.
+* **A held run says it is held, and why (H464d).** A run whose plan cannot be
+  read just now does nothing on every sweep; without a line in the brief it would
+  read as quietly "in progress". The hold comes from the ledger's own hold record
+  (``snapshot["hold"]``), and only for a run that is still planning or working.
 * **Nothing is inferred.** Every number comes from the ledger. When the ledger
   has nothing — no runs at all — the brief says so rather than rendering a row
   of zeros under a confident heading.
@@ -100,6 +104,17 @@ def _waiting_on(run: Mapping[str, Any], now: float) -> str | None:
     return describe(barrier)
 
 
+def _held(snapshot: Mapping[str, Any]) -> str | None:
+    """Why a live run is held, or None (H464d). Read from the ledger's hold record,
+    never inferred; a run that is no longer planning or working is not held, whatever
+    its last hold event says — a stop or a spent budget is the news then."""
+    run = dict(snapshot.get("run") or {})
+    hold = snapshot.get("hold")
+    if not isinstance(hold, Mapping) or run.get("status") not in {"planning", "working"}:
+        return None
+    return _clip(hold.get("reason"), 160) or "its plan cannot be read just now"
+
+
 def _run_headline(snapshot: Mapping[str, Any], now: float) -> str:
     """One sentence: what happened to this run, worst news first."""
     run = dict(snapshot.get("run") or {})
@@ -119,6 +134,9 @@ def _run_headline(snapshot: Mapping[str, Any], now: float) -> str:
         # when capped earlier, contradict it.
         cap = until(run.get("barrier")) if run["barrier"].get("kind") != "deadline" else ""
         return f"parked — waiting on {waiting_on}" + (f" (at most until {cap})" if cap else "")
+    held = _held(snapshot)
+    if held:
+        return f"held — {held}"
     text = _STATUS_TEXT.get(status, status or "in an unknown state")
     if status == "exhausted":
         limit = str(run.get("stop_reason") or "").removeprefix("budget:")
@@ -169,6 +187,7 @@ def build_run_summary(
         "status": run.get("status"),
         "headline": _run_headline(snapshot, now),
         "waiting_on": _waiting_on(run, now),
+        "held": _held(snapshot),
         "steps": len(steps),
         "outcomes": outcomes,
         "steps_left": budget.get("steps_left"),
@@ -221,6 +240,8 @@ def build_company_brief(
         "needs_you": [r["run_id"] for r in needs_you],
         # Parked on real async work (H464): not stuck, not needing you — waiting.
         "parked": [r["run_id"] for r in runs if r.get("waiting_on")],
+        # Held (H464d): doing nothing because its plan cannot be read just now.
+        "held": [r["run_id"] for r in runs if r.get("held")],
         "unauthorised": [r["run_id"] for r in unauthorised],
         "runs": runs,
     }
@@ -248,6 +269,10 @@ def render_company_brief(brief: Mapping[str, Any]) -> str:
     parked = [r for r in brief.get("runs") or () if r.get("waiting_on")]
     if parked:
         lines += [f"⏸ {r['title']} is parked, waiting on {r['waiting_on']}." for r in parked]
+        lines.append("")
+    held = [r for r in brief.get("runs") or () if r.get("held")]
+    if held:
+        lines += [f"✋ {r['title']} is held: {r['held']}." for r in held]
         lines.append("")
 
     for run in brief.get("runs") or ():
