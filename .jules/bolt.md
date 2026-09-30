@@ -11,3 +11,7 @@
 ## 2026-04-02 - Per-frame Canvas Text Layout Measurements (ctx.measureText) and O(N*M) Roster Scans
 **Learning:** Calling `ctx.measureText()` inside Canvas 2D `requestAnimationFrame` loops at 60 FPS triggers browser font layout engine calculations on every frame. Additionally, resolving task-to-tier mappings via nested `Array.includes()` scans creates O(Tasks * Tiers * Agents) work on state updates.
 **Action:** Cache `ctx.measureText` results on cluster/node state objects until text strings actually change, and build an `agentToTier` `Map` during roster indexing to keep task resolution O(1).
+
+## 2026-04-03 - Per-frame Map Allocations and Array Slices in Canvas Task Fan Loops
+**Learning:** In Canvas 2D components (`NeuralMesh` in `frontend/src/mesh.tsx`), helper functions in `draw()` like `drawTaskFan()` allocated a `new Map()` and `.slice()` array copies on every 60 FPS frame (~3,600 allocations/min). In addition, `taskColor()` created single-element `[t]` arrays to call `runningTasks([t])`.
+**Action:** Pre-group tasks on the state ref (`S.current.tasksByOwner`) inside `useEffect` on task state changes, and evaluate task status directly (`task.state === 'running'`) to achieve zero allocations during frame rendering.
