@@ -18,8 +18,8 @@
     "@modelcontextprotocol/sdk": "latest"
   },
   "devDependencies": {
-    "@types/node": "26.6.2",
-    "tsx": "^4.23.13",
+    "@types/node": "26.6.3",
+    "tsx": "^4.23.15",
     "typescript": "7.0.2"
   }
 }
