@@ -94,6 +94,10 @@ revocation during client cleanup, unsigned task execution, and the handler's
 noncanonical-task contract. No isolated pre-feature baseline test run is claimed;
 the old commit's missing consumer is static baseline evidence.
 
+The later [configured provider-chain increment](h277-video-provider-chain-2026-10-02.md)
+extends this milestone. Its tests and limits are recorded separately. The following
+risks describe the original snapshot above.
+
 ## Remaining Risks:
 
 H277 remains partial. Native `video_url` support depends on the chosen model;

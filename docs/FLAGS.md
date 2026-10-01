@@ -586,7 +586,7 @@ of silently selecting another destination. With no vision configuration, the exi
 explicit video-model route remains available. It reads one file within `JARVIS_FILE_ROOTS` or one public HTTP(S) video
 URL, then sends a native `video_url` message. The configured model must understand
 that native payload; listing an adapter does not prove the installed model supports
-video. There is no frame extraction, Ollama video adapter, runtime provider retry,
+video. There is no frame extraction, Ollama video adapter, same-provider retry,
 inbound attachment ingestion, or video generation in this consumer.
 
 The tool is offered through the `video` job toolset when enabled, and every execution
@@ -611,6 +611,48 @@ and local-only agents still forbid remote model use; safe mode refuses this tool
 Both feature flags default to off. This control
 does not turn on a model or authorize a paid service. Provider/model behavior still
 requires a separate live acceptance run.
+
+An optional `JARVIS_ROLE_VIDEO_FALLBACKS` JSON array configures up to four ordered
+fallbacks. Every record must contain exactly `provider`, `model` and `base_url`;
+only the native `lm-studio` and `openai-compatible` adapters are supported. The raw
+array is capped at 8192 UTF-8 bytes; model names at 256 characters, URLs at 2048,
+and fixed slot keys at 4096 printable ASCII characters. Blank/`auto` models,
+extra fields, incompatible protocol hosts, URL credentials/query/fragment and
+remote HTTP refuse the entire chain, including an invalid candidate that would
+otherwise remain unused. LM Studio endpoints must be loopback.
+
+Credentials come only from `JARVIS_ROLE_VIDEO_FALLBACK_1_KEY` through `_4_KEY`.
+Empty keys support keyless local/custom servers. Fallbacks never borrow primary,
+vision or main-model credentials. Security Posture exposes independently scoped
+**Video fallback 1–4** controls for configured candidates. Each remote destination
+needs its own current acknowledgment as well as the existing remote and cost
+permissions, even if the primary is local. Unconfigured slots remain hidden.
+Adding, removing, reordering or changing a configured route invalidates the task
+approval; changing its destination/model/key also invalidates that candidate's
+consent. With an empty chain, the existing primary approval and consent format
+remains unchanged. Configuration and consent do not establish provider entitlement.
+Approval notices show origin-only destinations; long chains use compact model/origin
+labels with a digest to fit the existing 200-character ToolRPC label limit. The
+complete ordered identities remain bound to the signed approval.
+
+The approved chain sends once per candidate and only advances after recognized
+provider failures: authentication, payment/quota, rate limits, narrowly classified
+model incompatibility, or owned transport timeout/connection failures. Body-based
+classification reads bounded structured error fields; a generic 400/403/5xx,
+malformed successful JSON or an empty answer does not select another provider.
+Neither source failures nor kernel, consent, request-integrity or cancellation
+failures permit fallback. SDK-specific recovery and same-provider retries remain
+outside this native HTTPX increment.
+
+One 180-second execution deadline includes source access, model attempts and
+cleanup. Each model attempt has a 65-second ceiling and a 60-second native HTTPX
+timeout; the source download retains its 35-second sub-limit. Model responses,
+including error bodies, are capped at 512,000 bytes. Each client closes before the
+next lane. Authority and the whole approved chain are rechecked at transitions,
+physical sends and disclosure. The prepared video and question are reused without
+fetching a URL source again; local-file checks can reread bytes to verify their
+approved hash. Results expose fixed attempt categories and the successful model,
+without failed provider bodies, destination paths or credentials.
 
 **The approval judge** (`JARVIS_ROLE_APPROVAL_JUDGE_MODEL` set): each tool call queued on
 the action-approval queue is shown to that model **after** the card exists; its risk

@@ -1,5 +1,11 @@
 # Handoff — H277 in progress on PR #1207 (2026-09-27)
 
+## Local configured-chain continuation (2026-10-02)
+
+The [provider-chain report](../../hermes/h277-video-provider-chain-2026-10-02.md) tracks
+explicit fallback configuration, independent consent and runtime integration. Earlier
+receipts below retain their original source scope; H277 remains partial.
+
 ## Local video continuation (2026-10-02)
 
 An approved native `video_analyze` consumer and independent video-role consent are

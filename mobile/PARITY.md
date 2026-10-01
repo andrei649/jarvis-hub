@@ -257,7 +257,8 @@ model, destination and credentials. It does not enable remote judging. Native mo
 still uses the web panel for consent management; no native acceptance was run.
 
 Video analysis (H277, 2026-10-02) adds a separate consent row to the responsive web
-Security Posture panel and uses existing Decision Inbox task approvals. Native
+Security Posture panel and uses existing Decision Inbox task approvals. Configured
+video fallbacks have separate consent/revoke controls in that web panel. Native
 mobile has no video source picker, role editor, or dedicated video-consent control;
 use the responsive web panel. Native-device and live video-provider acceptance
 remain unverified.

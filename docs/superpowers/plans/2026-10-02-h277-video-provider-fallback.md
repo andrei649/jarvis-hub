@@ -35,10 +35,10 @@
 
 **Interfaces:** `VideoFallbackRoute` is frozen and contains `slot`, `provider`, `model`, `base_url`, and `api_key` with secret fields excluded from repr. `resolve_video_fallbacks(env=None) -> tuple[VideoFallbackRoute, ...]` reads only the bounded JSON list and the fixed slot-key variables through env_config (or the supplied mapping). It raises a sanitized `VideoRouteConfigError` for invalid configuration. It creates no clients and reads no main/vision credentials.
 
-- [ ] Write failing parser tests: absent/empty list, four ordered keyless/custom routes, dedicated keys, invalid JSON/extra keys/types, blank/auto models, unsupported providers, invalid URLs and oversized input. Include whitespace/default-port normalization without changing the primary route's native URL convention.
-- [ ] Run `python -m pytest tests/test_h277_video_routes.py -q` and retain the expected missing-behavior failures.
-- [ ] Implement the pure parser and frozen records. Reject credential-bearing URL/query/fragment, non-loopback LM Studio and remote HTTP; permit valid keyless endpoints. Bound raw JSON before parsing and each field's length; never log input values.
-- [ ] Run the new suite, existing H277 role/fallback tests and scoped Ruff. Report exact diffs and tests for coordinator review; do not stage another writer's files.
+- [x] Write failing parser tests: absent/empty list, four ordered keyless/custom routes, dedicated keys, invalid JSON/extra keys/types, blank/auto models, unsupported providers, invalid URLs and oversized input. Include whitespace/default-port normalization without changing the primary route's native URL convention.
+- [x] Run `python -m pytest tests/test_h277_video_routes.py -q` and retain the expected missing-behavior failures.
+- [x] Implement the pure parser and frozen records. Reject credential-bearing URL/query/fragment, non-loopback LM Studio and remote HTTP; permit valid keyless endpoints. Bound raw JSON before parsing and each field's length; never log input values.
+- [x] Run the new suite, existing H277 role/fallback tests and scoped Ruff. Report exact diffs and tests for coordinator review; do not stage another writer's files.
 
 ## Task 2: Independent candidate identity, consent and posture
 
@@ -46,11 +46,11 @@
 
 **Interfaces:** `describe_video_route_set() -> tuple[VideoIdentity, ...]` returns the primary then all validated fallbacks or refuses; a missing primary cannot create a fallback-only tool. `describe_video_data_target(target_id=VIDEO_TARGET)` preserves the old call while resolving a finite configured candidate. The primary target remains `role:video_analysis`; fallback targets are `role:video_fallback_1` through `_4`. `authorization_check` resolves the descriptor by its target ID. All candidates retain separate actual-use accounting.
 
-- [ ] Write red tests for distinct candidate scopes, independent acknowledgment/revocation, stale configuration during audit, missing/unreadable store, unknown target IDs, key secrecy, and preservation of other role entries.
-- [ ] Run the focused tests to demonstrate missing candidate behavior.
-- [ ] Extend the finite target map and API literal without changing the flat stored-map shape. Resolve every candidate from current server configuration; refuse stale scope before and after audit. Hide unconfigured fallback rows while retaining existing primary/unrelated role posture behavior.
-- [ ] Add clear HUD labels and per-candidate controls; reuse the existing acknowledgment request shape. Test that acknowledging a fallback sends its target ID and cannot authorize another candidate.
-- [ ] Run candidate-consent, H513 role-consent/security API and targeted HUD tests. Coordinator reviews authority changes before consumer integration.
+- [x] Write red tests for distinct candidate scopes, independent acknowledgment/revocation, stale configuration during audit, missing/unreadable store, unknown target IDs, key secrecy, and preservation of other role entries.
+- [x] Run the focused tests to demonstrate missing candidate behavior.
+- [x] Extend the finite target map and API literal without changing the flat stored-map shape. Resolve every candidate from current server configuration; refuse stale scope before and after audit. Hide unconfigured fallback rows while retaining existing primary/unrelated role posture behavior.
+- [x] Add clear HUD labels and per-candidate controls; reuse the existing acknowledgment request shape. Test that acknowledging a fallback sends its target ID and cannot authorize another candidate.
+- [x] Run candidate-consent, H513 role-consent/security API and targeted HUD tests. Coordinator reviews authority changes before consumer integration.
 
 ## Task 3: Signed full-chain approval and bounded native attempts
 
@@ -58,13 +58,13 @@
 
 **Interfaces:** The approved class binds the ordered full identity tuple. The notice names every candidate with sanitized destination information. An internal attempt receives one frozen identity plus the immutable media/prompt; it returns a complete buffered answer or a typed eligible model failure. Guard/source/cancellation failures do not become model failures. Existing no-chain result fields stay compatible; additional attempt metadata is bounded and contains no failed response text or secrets.
 
-- [ ] Write red signed ToolRPC/worker tests for local primary failure followed by approved fallback, primary success without a second call, exhaustion and full-chain configuration changes. Use offline HTTPX transports and actual queued decisions. Pin the current no-chain class/consent format so an unchanged existing approval remains usable after upgrade.
-- [ ] Write refusal tests before implementation: unconsented remote fallback, missing allow_remote, strict-local/local-only/safe-mode restrictions, policy or source failure, changed route/key/order during close, arbitrary validation/JSON/empty-response failures and generic HTTP 503. Include an injected kernel/store TimeoutError that must not trigger failover.
-- [ ] Verify the tests fail for absent chain behavior.
-- [ ] Resolve/authorize the entire chain before intake and before source/model sends; HMAC all identities with existing source/args/roots. Reuse one materialized source. Execute candidates sequentially, close each before transitioning and retain physical URL/auth/body/cookie/direct-transport checks.
-- [ ] Classify bounded HTTPX status/body evidence using pinned Hermes predicates: connection/transport timeout, payment/quota and rate-limit failures, recognized model incompatibility, and authentication only onto an explicitly configured next lane. Do not classify arbitrary HTTP 400/403/5xx or exception text as permission to switch. Record the exact supported categories and any still-untranslated SDK semantics.
-- [ ] Bound total execution by one monotonic deadline and each attempt by a smaller timeout; at most one send per configured lane in this increment. Distinguish an expired owned timeout from unrelated exceptions. Reject over-limit bodies before classification or disclosure.
-- [ ] Run chain tests plus all video, role, consent, signed mediation and image-dispatch regressions. Add red regressions for concrete review findings before correction.
+- [x] Write red signed ToolRPC/worker tests for local primary failure followed by approved fallback, primary success without a second call, exhaustion and full-chain configuration changes. Use offline HTTPX transports and actual queued decisions. Pin the current no-chain class/consent format so an unchanged existing approval remains usable after upgrade.
+- [x] Write refusal tests before implementation: unconsented remote fallback, missing allow_remote, strict-local/local-only/safe-mode restrictions, policy or source failure, changed route/key/order during close, arbitrary validation/JSON/empty-response failures and generic HTTP 503. Include an injected kernel/store TimeoutError that must not trigger failover.
+- [x] Verify the tests fail for absent chain behavior.
+- [x] Resolve/authorize the entire chain before intake and before source/model sends; HMAC all identities with existing source/args/roots. Reuse one materialized source. Execute candidates sequentially, close each before transitioning and retain physical URL/auth/body/cookie/direct-transport checks.
+- [x] Classify bounded HTTPX status/body evidence using pinned Hermes predicates: connection/transport timeout, payment/quota and rate-limit failures, recognized model incompatibility, and authentication only onto an explicitly configured next lane. Do not classify arbitrary HTTP 400/403/5xx or exception text as permission to switch. Record the exact supported categories and any still-untranslated SDK semantics.
+- [x] Bound total execution by one monotonic deadline and each attempt by a smaller timeout; at most one send per configured lane in this increment. Distinguish an expired owned timeout from unrelated exceptions. Reject over-limit bodies before classification or disclosure.
+- [x] Run chain tests plus all video, role, consent, signed mediation and image-dispatch regressions. Add red regressions for concrete review findings before correction.
 
 ## Task 4: Coherent integration, evidence and continuation
 

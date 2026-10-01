@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import inspect
 import json
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -179,9 +180,21 @@ def class_binding(identity: VideoIdentity, args: dict, roots: tuple[str, ...]) -
     return "video." + digest[:56]
 
 
+def chain_class_binding(identities: tuple[VideoIdentity, ...], args: dict,
+                        roots: tuple[str, ...]) -> str:
+    """Bind every ordered destination; retain the original class for one lane."""
+    if len(identities) == 1:
+        return class_binding(identities[0], args, roots)
+    material = json.dumps([[(identity.target_id, identity.binding) for identity in identities],
+                           args, roots], sort_keys=True, separators=(",", ":")).encode()
+    digest = hmac.new(_scope_key(), b"H277:video-approval:chain:v1\0" + material,
+                      hashlib.sha256).hexdigest()
+    return "video." + digest[:56]
+
+
 @contextmanager
 def native_video_request_scope(identity: VideoIdentity, client: httpx.AsyncClient, *,
-                               expected_body: dict, check, record_use=None):
+                               expected_body: dict, check, record_use=None, mark_dispatch=None):
     """Recheck authority and exact native request at each physical send and cleanup."""
     marker = object()
     # Freeze before the adapter sees the mutable json kwargs. A later mutation of
@@ -190,9 +203,17 @@ def native_video_request_scope(identity: VideoIdentity, client: httpx.AsyncClien
         expected_body, sort_keys=True, separators=(",", ":"),
         ensure_ascii=False, allow_nan=False).encode()).digest()
 
-    def physical(request: httpx.Request):
-        require_direct_async_transport(client, request.url)
+    def guarded_check():
         try:
+            check()
+        except VideoPolicyRefused:
+            raise
+        except Exception as exc:
+            raise VideoPolicyRefused("video authority check refused") from exc
+
+    def validate(request: httpx.Request, *, marked: bool):
+        try:
+            require_direct_async_transport(client, request.url)
             body = json.loads(request.content)
             actual_digest = hashlib.sha256(json.dumps(
                 body, sort_keys=True, separators=(",", ":"),
@@ -200,17 +221,54 @@ def native_video_request_scope(identity: VideoIdentity, client: httpx.AsyncClien
             valid = hmac.compare_digest(actual_digest, expected_digest)
         except (TypeError, ValueError, httpx.RequestNotRead):
             valid = False
-        if (request.extensions.get("nerva_video_request") is marker
+        except Exception as exc:
+            raise VideoPolicyRefused("video physical request refused") from exc
+        if ((request.extensions.get("nerva_video_request") is marker) != marked
                 or request.method != "POST" or str(request.url) != identity.request_url
                 or request.headers.get("Authorization", "") != identity.authorization
                 or request.headers.get("Cookie") or not valid):
             raise VideoPolicyRefused("video physical request changed")
-        request.extensions["nerva_video_request"] = marker
-        if record_use is not None:
-            record_use()
 
-    check()
+    def physical(request: httpx.Request):
+        validate(request, marked=False)
+        request.extensions["nerva_video_request"] = marker
+
+    async def last_request_hook(request: httpx.Request):
+        # The egress recorder runs physical() before transport. A user hook added
+        # after that recorder may still fail or mutate the request. This final
+        # hook proves all earlier hooks finished before counting a real send.
+        if client.event_hooks["request"][-1] is not last_request_hook:
+            raise VideoPolicyRefused("video request hooks changed")
+        guarded_check()
+        validate(request, marked=True)
+        if mark_dispatch is not None:
+            mark_dispatch()
+        if record_use is not None:
+            try:
+                record_use()
+            except Exception as exc:
+                raise VideoPolicyRefused("video actual-use refused") from exc
+
+    guarded_check()
     require_direct_async_transport(client, identity.request_url)
-    with physical_request_scope(check, request_check=physical):
-        yield
-        check()
+    response_hooks = client.event_hooks["response"]
+    wrapped_response_hooks = []
+    for hook in response_hooks:
+        async def guarded_response_hook(response, callback=hook):
+            try:
+                result = callback(response)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception as exc:
+                raise VideoPolicyRefused("video response hook refused") from exc
+
+        wrapped_response_hooks.append(guarded_response_hook)
+    client.event_hooks["response"] = wrapped_response_hooks
+    client.event_hooks["request"].append(last_request_hook)
+    try:
+        with physical_request_scope(guarded_check, request_check=physical):
+            yield
+            guarded_check()
+    finally:
+        client.event_hooks["request"].remove(last_request_hook)
+        client.event_hooks["response"] = response_hooks

@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import stat
 from pathlib import Path
 from urllib.parse import parse_qsl, urljoin, urlsplit
@@ -17,12 +18,14 @@ import httpx
 
 from .file_tools import FileScope, FileScopeError
 from .http_client import PluginHTTPClient, PluginTimeouts
+from .llm.data_handling import authorize_role_target
 from .llm.egress import llm_async_client
+from .llm.video_failures import provider_failure_category, transport_failure_category
 from .llm.video_policy import (
     VideoPolicyRefused,
     authorization_check,
-    class_binding,
-    describe_video_data_target,
+    chain_class_binding,
+    describe_video_route_set,
     native_video_request_scope,
 )
 from .tool_rpc import ToolRPCValidationError
@@ -36,6 +39,9 @@ MAX_URL_CHARS = 2048
 MAX_QUESTION_CHARS = 4000
 MAX_ANSWER_CHARS = 16_000
 MAX_MODEL_RESPONSE_BYTES = 512_000
+VIDEO_EXECUTION_TIMEOUT = 180
+VIDEO_MODEL_ATTEMPT_TIMEOUT = 65
+VIDEO_NATIVE_CLIENT_TIMEOUT = 60
 INPUT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -47,6 +53,22 @@ INPUT_SCHEMA = {
     "required": ["video_url", "question"],
     "additionalProperties": False,
 }
+
+
+class _EligibleModelFailure(Exception):
+    """A fixed category established by one native model request."""
+
+    def __init__(self, category: str):
+        self.category = category
+        super().__init__(category)
+
+
+def _short_notice_value(value: str, limit: int) -> str:
+    value = re.sub(r"[\x00-\x1f\x7f]", "?", value)
+    if len(value) <= limit:
+        return value
+    digest = hashlib.sha256(value.encode()).hexdigest()[:6]
+    return value[:limit - 7] + "~" + digest
 
 
 def is_video_task(task) -> bool:
@@ -205,24 +227,51 @@ class VideoAnalysisTool:
     def _binding(self, args, *, source_data=None, actor=""):
         scope = FileScope.from_env()
         kind, source, _ = _source(args["video_url"], scope)
-        identity = describe_video_data_target()
-        if identity is None:
+        identities = describe_video_route_set()
+        if not identities:
             raise VideoPolicyRefused("video role model is not configured")
-        authorization_check(identity, allow_remote=args["allow_remote"],
-                            confirm_expensive=args["confirm_expensive"], router=self.router,
-                            actor=actor)
+        for identity in identities:
+            authorization_check(identity, allow_remote=args["allow_remote"],
+                                confirm_expensive=args["confirm_expensive"], router=self.router,
+                                actor=actor)
         source_key = args["video_url"]
         if kind == "file":
             data = _read_scoped(source, scope) if source_data is None else source_data
             source_key = [str(source), hashlib.sha256(data).hexdigest()]
         material = {**args, "video_url": source_key}
-        cls = class_binding(identity, material, tuple(map(str, scope.roots)))
-        return cls, identity
+        cls = chain_class_binding(identities, material, tuple(map(str, scope.roots)))
+        return cls, identities
 
     def classifier(self, args):
-        cls, identity = self._binding(args)
-        destination = "local" if identity.local else "remote"
-        return {"class": cls, "notice": f"Analyze video on {destination} {identity.provider}/{identity.model}"}
+        cls, identities = self._binding(args)
+        if len(identities) == 1:
+            identity = identities[0]
+            destination = "local" if identity.local else "remote"
+            notice = f"Analyze video on {destination} {identity.provider}/{identity.model}"
+        else:
+            lanes = []
+            for identity in identities:
+                origin = urlsplit(identity.request_url)
+                provider = re.sub(r"[\x00-\x1f\x7f]", "?", identity.provider)[:64]
+                model = re.sub(r"[\x00-\x1f\x7f]", "?", identity.model)[:256]
+                lanes.append(f"{len(lanes) + 1}. {'local' if identity.local else 'remote'} "
+                             f"{provider}/{model} at {origin.scheme}://{origin.netloc}")
+            notice = "Analyze video with approved routes: " + "; ".join(lanes)
+            if len(notice) > 200:
+                prefix = "Video routes (lm=LM Studio,oc=OpenAI-compatible): "
+                per_lane = (200 - len(prefix) - 2 * (len(identities) - 1)) // len(identities)
+                compact = []
+                for index, identity in enumerate(identities, 1):
+                    origin = urlsplit(identity.request_url)
+                    origin_text = f"{origin.scheme}://{origin.netloc}"
+                    code = "lm" if identity.provider == "lm-studio" else "oc"
+                    label = f"{index}{'L' if identity.local else 'R'}:{code}/"
+                    available = per_lane - len(label) - 1  # one separator before origin
+                    model_budget = max(7, available // 3)
+                    compact.append(f"{label}{_short_notice_value(identity.model, model_budget)}@"
+                                   f"{_short_notice_value(origin_text, available - model_budget)}")
+                notice = prefix + "; ".join(compact)
+        return {"class": cls, "notice": notice}
 
     def intake(self, actor, args):
         """Submit the exact classed payload under the canonical signed tool.rpc kind."""
@@ -248,69 +297,141 @@ class VideoAnalysisTool:
         except Exception as exc:
             raise ToolRPCValidationError("video_proposal_refused") from exc
 
+    async def _attempt(self, identity, prompt, data_url, check):
+        """Send once on one frozen lane; close before returning or selecting another."""
+        body = {"model": identity.model, "messages": [{"role": "user", "content": [
+            {"type": "text", "text": prompt}, {"type": "video_url", "video_url": {"url": data_url}},
+        ]}], "stream": False}
+        physical_send = False
+
+        def record_use():
+            authorize_role_target(self.router, identity, actual_use=True)
+
+        def mark_dispatch():
+            nonlocal physical_send
+            if physical_send:
+                raise VideoPolicyRefused("video lane already sent")
+            physical_send = True
+
+        # Factory failures have no transport-origin proof and must not switch lanes.
+        client = self.model_client_factory(
+            identity.provider, trust_env=False, follow_redirects=False,
+            timeout=httpx.Timeout(VIDEO_NATIVE_CLIENT_TIMEOUT))
+        attempt_timeout = asyncio.timeout(VIDEO_MODEL_ATTEMPT_TIMEOUT)
+        request_timeout = False
+        try:
+            async with attempt_timeout:
+                try:
+                    async with client:
+                        with native_video_request_scope(identity, client, expected_body=body,
+                                                        check=check, record_use=record_use,
+                                                        mark_dispatch=mark_dispatch):
+                            try:
+                                async with client.stream(
+                                        "POST", identity.request_url, json=body,
+                                        headers={"Authorization": identity.authorization}
+                                        if identity.authorization else {}) as response:
+                                    result = bytearray()
+                                    async for chunk in response.aiter_bytes():
+                                        check()
+                                        result.extend(chunk)
+                                        if len(result) > MAX_MODEL_RESPONSE_BYTES:
+                                            raise VideoPolicyRefused("video model response too large")
+                                    check()
+                                    if not 200 <= response.status_code < 300:
+                                        category = provider_failure_category(response.status_code, bytes(result))
+                                        if category is not None:
+                                            raise _EligibleModelFailure(category)
+                                        raise VideoPolicyRefused("video model status refused")
+                                    answer = json.loads(result)["choices"][0]["message"]["content"]
+                            except asyncio.CancelledError:
+                                request_timeout = attempt_timeout.expired()
+                                raise
+                            except httpx.HTTPError as exc:
+                                category = transport_failure_category(exc) if physical_send else None
+                                if category is not None:
+                                    raise _EligibleModelFailure(category) from None
+                                raise
+                finally:
+                    check()  # Includes cleanup, revocation, and complete chain freshness.
+        except TimeoutError:
+            if attempt_timeout.expired() and request_timeout and physical_send:
+                raise _EligibleModelFailure("timeout") from None
+            raise
+        if not isinstance(answer, str) or not answer.strip():
+            raise VideoPolicyRefused("video model returned no text")
+        return answer
+
     async def execute(self, args):
-        task = self.approved_task()
-        if not is_video_task(task) or not self.execution_check(task):
-            return {"ok": False, "reason": "trusted_execution_required"}
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + VIDEO_EXECUTION_TIMEOUT
+        try:
+            task = self.approved_task()
+            if not is_video_task(task) or not self.execution_check(task):
+                return {"ok": False, "reason": "trusted_execution_required"}
+        except Exception:
+            return {"ok": False, "reason": "video_analysis_refused"}
 
         def check():
-            if (self.queue is None or self.queue.mediation_mode != "enforce"
-                    or self.queue.classify_mediation("tool.rpc") is not True):
-                raise VideoPolicyRefused("signed video mediation is unavailable")
-            if not self.execution_check(task):
-                raise VideoPolicyRefused("video approval was revoked")
-            if self.kernel_check(args, task):
-                raise VideoPolicyRefused("video kernel denied the action")
-            cls, current = self._binding(args, actor=task.agent)
-            if cls != task.payload.get("class"):
-                raise VideoPolicyRefused("video source or role changed after approval")
-            return current
+            try:
+                if loop.time() >= deadline:
+                    raise VideoPolicyRefused("video execution deadline expired")
+                if (self.queue is None or self.queue.mediation_mode != "enforce"
+                        or self.queue.classify_mediation("tool.rpc") is not True):
+                    raise VideoPolicyRefused("signed video mediation is unavailable")
+                if not self.execution_check(task):
+                    raise VideoPolicyRefused("video approval was revoked")
+                if self.kernel_check(args, task):
+                    raise VideoPolicyRefused("video kernel denied the action")
+                cls, current = self._binding(args, actor=task.agent)
+                if cls != task.payload.get("class"):
+                    raise VideoPolicyRefused("video source or role changed after approval")
+                if loop.time() >= deadline:
+                    raise VideoPolicyRefused("video execution deadline expired")
+                return current
+            except VideoPolicyRefused:
+                raise
+            except Exception as exc:
+                raise VideoPolicyRefused("video authority check refused") from exc
 
         try:
-            identity = check()
-            scope = FileScope.from_env()
-            kind, source, mime = _source(args["video_url"], scope)
-            if kind == "file":
-                data = _read_scoped(source, scope)
-                actual_class, _ = self._binding(args, source_data=data, actor=task.agent)
-                if actual_class != task.payload.get("class"):
-                    raise VideoPolicyRefused("video bytes changed after approval")
-            else:
-                data = await _read_url(source, check, client_factory=self.source_client_factory)
-            check()
-            data_url = "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii")
-            prompt = ("Fully describe and explain everything happening in this video, including visual "
-                      "content, motion, audio cues, text overlays, and scene transitions. "
-                      "Then answer the following question:\n\n" + args["question"])
-            body = {"model": identity.model, "messages": [{"role": "user", "content": [
-                {"type": "text", "text": prompt}, {"type": "video_url", "video_url": {"url": data_url}},
-            ]}], "stream": False}
-            async with self.model_client_factory(identity.provider, trust_env=False, follow_redirects=False,
-                                                 timeout=httpx.Timeout(60)) as client:
-                from .llm.data_handling import authorize_role_target
-
-                with native_video_request_scope(
-                        identity, client, expected_body=body, check=check,
-                        record_use=lambda: authorize_role_target(self.router, identity, actual_use=True)):
-                    async with asyncio.timeout(65):
-                        async with client.stream(
-                                "POST", identity.request_url, json=body,
-                                headers={"Authorization": identity.authorization}
-                                if identity.authorization else {}) as response:
-                            response.raise_for_status()
-                            result = bytearray()
-                            async for chunk in response.aiter_bytes():
-                                check()
-                                result.extend(chunk)
-                                if len(result) > MAX_MODEL_RESPONSE_BYTES:
-                                    raise VideoPolicyRefused("video model response too large")
-                            check()
-                            answer = json.loads(result)["choices"][0]["message"]["content"]
+            async with asyncio.timeout_at(deadline):
+                identities = check()
+                scope = FileScope.from_env()
+                kind, source, mime = _source(args["video_url"], scope)
+                if kind == "file":
+                    data = _read_scoped(source, scope)
+                    actual_class, _ = self._binding(args, source_data=data, actor=task.agent)
+                    if actual_class != task.payload.get("class"):
+                        raise VideoPolicyRefused("video bytes changed after approval")
+                else:
+                    data = await _read_url(source, check, client_factory=self.source_client_factory)
                 check()
-            check()  # A close hook or transport cleanup can revoke authority.
-            if not isinstance(answer, str) or not answer.strip():
-                raise VideoPolicyRefused("video model returned no text")
-            return {"ok": True, "analysis": answer[:MAX_ANSWER_CHARS]}
-        except (VideoPolicyRefused, ToolRPCValidationError, FileScopeError, OSError,
-                httpx.HTTPError, TimeoutError, KeyError, IndexError, TypeError, ValueError):
+                data_url = "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii")
+                prompt = ("Fully describe and explain everything happening in this video, including visual "
+                          "content, motion, audio cues, text overlays, and scene transitions. "
+                          "Then answer the following question:\n\n" + args["question"])
+                failures = []
+                for identity in identities:
+                    check()
+                    try:
+                        answer = await self._attempt(identity, prompt, data_url, check)
+                    except _EligibleModelFailure as exc:
+                        failures.append({"target_id": identity.target_id, "category": exc.category})
+                        if len(failures) == len(identities):
+                            break
+                        continue
+                    check()
+                    result = {"ok": True, "analysis": answer[:MAX_ANSWER_CHARS]}
+                    if len(identities) > 1:
+                        result.update({"attempts": failures, "chosen_route": identity.target_id,
+                                       "chosen_provider": identity.provider, "chosen_model": identity.model})
+                    return result
+                check()
+                result = {"ok": False, "reason": "video_analysis_refused"}
+                if len(identities) > 1:
+                    result["attempts"] = failures
+                return result
+        except Exception:
+            # Never disclose provider bodies, credentials, guard text, or traceback.
             return {"ok": False, "reason": "video_analysis_refused"}

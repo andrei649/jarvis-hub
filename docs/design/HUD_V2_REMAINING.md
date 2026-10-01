@@ -26,7 +26,8 @@ claim of a live model or native mobile acceptance run.
 
 H277 video continuation (2026-10-02): the default-off `video_analyze` tool uses the
 existing Decision Inbox approval surface. Security Posture has an independent
-Video analysis consent row. A dedicated video picker/preview, an in-HUD role editor,
+Video analysis consent row and independent Video fallback 1–4 controls for configured
+candidates. A dedicated video picker/preview, an in-HUD role editor,
 inbound video ingestion, and live native-video model acceptance remain open.
 
 - **Runtime verification.** Nothing was verified against a *running* backend (the build sandbox has

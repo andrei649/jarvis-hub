@@ -1901,8 +1901,12 @@
   bounded vision-route inheritance; see the [video verification report](docs/hermes/h277-video-analysis-2026-10-02.md).
   Video mutation verification on `92905443` detected 29 of 31 valid mutations, with two
   documented survivors and 168 passing baseline tests; all source hashes were restored.
-  Wider provider/runtime fallback and live acceptance remain unfinished; this does not
-  close H277 or HEQ-1.
+  An explicit ordered native provider chain now has separate candidate consent, signed
+  route binding, bounded failure categories and sequential single-send attempts. The
+  focused integration has 627 passing cases; final full-suite verification is recorded
+  in the [chain report](docs/hermes/h277-video-provider-chain-2026-10-02.md). Wider adapters,
+  shared auxiliary routing and live acceptance remain unfinished; this does not close
+  H277 or HEQ-1.
 
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.

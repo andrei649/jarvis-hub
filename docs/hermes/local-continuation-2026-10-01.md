@@ -60,8 +60,10 @@ Current video mutation coverage is frozen on `92905443`: 29 detected, two docume
 survivors and zero invalid mutations; 168 baseline tests pass and all 4,130 archived
 source hashes were restored. See the [exact campaign](evidence/h277-video-mutations-verified-2026-10-02/report.md).
 
-Next action: implement the [governed provider fallback plan](../superpowers/plans/2026-10-02-h277-video-provider-fallback.md),
+Current increment: implement the [governed provider fallback plan](../superpowers/plans/2026-10-02-h277-video-provider-fallback.md),
 then continue the accepted Hermes queue with fresh source review and bounded implementation. Broader native
 providers/runtime fallback and live model acceptance remain separate requirements;
 the current evidence counts 172 equivalent, 254 partial, 64 missing and 207 requiring
 review out of all 697 accepted rows. Preserve the existing local checkpoints.
+
+Provider-chain integration and verification are tracked in the [current report](h277-video-provider-chain-2026-10-02.md); prior full-suite and mutation snapshots above retain their original scope.
