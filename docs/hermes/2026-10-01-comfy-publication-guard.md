@@ -31,8 +31,14 @@ under both off and enforce kernel modes. Scoped Ruff and whitespace checks passe
 An independent review inspected provider dispatch, runtime authority binding,
 failure classification and atomic publication; it found no blocker.
 
-Full repository verification is recorded in the pull request. Tests use synthetic
-PNG data and mocked HTTP transport; no live ComfyUI or billed-provider call was made.
+Full backend verification on `959ade72918e9e67e87084ce56975072668f2b92` passed:
+20,048 passed, 35 skipped, zero failures/errors (20,083 collected). The tracked
+backend count matches the JUnit result. The command was
+`python -m pytest tests/ -n 8 --dist loadfile --timeout=90 -q --tb=short --junitxml=RESULT.xml`.
+An earlier run overlapped the evidence update and failed one status assertion;
+all 48 status tests and this subsequent complete run pass on the unchanged commit.
+GitHub CI is verified separately before merge. Tests use synthetic PNG data and
+mocked HTTP transport; no live ComfyUI or billed-provider call was made.
 
 ## Limits and continuation
 
