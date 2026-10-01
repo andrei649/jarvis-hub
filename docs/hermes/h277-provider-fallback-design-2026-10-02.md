@@ -43,6 +43,10 @@ chain. Current video tests and their limitations are in the
    lists every candidate's provider/model and a sanitized destination without
    credentials or query data. One accepted card permits only that exact chain.
    Existing task receipt, kernel and persisted-decision checks remain authoritative.
+   With no configured fallback, preserve the existing single-route class material
+   and primary consent scope exactly. Adding/removing/reordering a chain is an
+   intentional configuration change that invalidates old approval; merely upgrading
+   code with the same primary and no chain must not invent that change.
 5. Every candidate must pass its own privacy, cost, protocol and consent checks
    before intake succeeds. A remote fallback requires the remote per-call flag and
    role opt-in even with a local primary. Safe mode, strict-local, local-only agents

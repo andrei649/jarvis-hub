@@ -16,6 +16,7 @@
 - Use `/tmp/nerva-pr-python-20261001/bin/python`; preserve repository pytest addopts.
 - At most two Sol High implementation agents; coordinator owns shared interfaces, generated artifacts and commits.
 - Existing primary resolution and no-chain behavior remain compatible.
+- No-chain approval-class bytes and the primary consent scope remain identical to the current format; introducing a chain intentionally stales earlier approval.
 - Four explicit fallback slots maximum; no provider or credential discovery from the main model.
 - Unsupported native adapters remain required future work and refuse explicitly now.
 - Full H277 parity is not established by this bounded chain increment.
@@ -57,7 +58,7 @@
 
 **Interfaces:** The approved class binds the ordered full identity tuple. The notice names every candidate with sanitized destination information. An internal attempt receives one frozen identity plus the immutable media/prompt; it returns a complete buffered answer or a typed eligible model failure. Guard/source/cancellation failures do not become model failures. Existing no-chain result fields stay compatible; additional attempt metadata is bounded and contains no failed response text or secrets.
 
-- [ ] Write red signed ToolRPC/worker tests for local primary failure followed by approved fallback, primary success without a second call, exhaustion and full-chain configuration changes. Use offline HTTPX transports and actual queued decisions.
+- [ ] Write red signed ToolRPC/worker tests for local primary failure followed by approved fallback, primary success without a second call, exhaustion and full-chain configuration changes. Use offline HTTPX transports and actual queued decisions. Pin the current no-chain class/consent format so an unchanged existing approval remains usable after upgrade.
 - [ ] Write refusal tests before implementation: unconsented remote fallback, missing allow_remote, strict-local/local-only/safe-mode restrictions, policy or source failure, changed route/key/order during close, arbitrary validation/JSON/empty-response failures and generic HTTP 503. Include an injected kernel/store TimeoutError that must not trigger failover.
 - [ ] Verify the tests fail for absent chain behavior.
 - [ ] Resolve/authorize the entire chain before intake and before source/model sends; HMAC all identities with existing source/args/roots. Reuse one materialized source. Execute candidates sequentially, close each before transitioning and retain physical URL/auth/body/cookie/direct-transport checks.
