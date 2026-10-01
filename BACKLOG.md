@@ -1897,7 +1897,10 @@
   review. Historical duplicates stay intact and revoked authority stays revoked.
   See [mutation evidence](docs/hermes/evidence/h277-current-2026-10-01/report.md) and
   [grant replay contract](docs/hermes/permission-grant-replay-2026-10-01.md).
-  H277 video understanding and wider provider/fallback parity remain in progress.
+  H277 now has local approved native video dispatch, independent role consent and
+  bounded vision-route inheritance; see the [video verification report](docs/hermes/h277-video-analysis-2026-10-02.md).
+  Wider provider/runtime fallback, video mutation coverage and live acceptance remain
+  unfinished; this does not close H277 or HEQ-1.
 
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.

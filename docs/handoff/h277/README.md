@@ -1,5 +1,14 @@
 # Handoff — H277 in progress on PR #1207 (2026-09-27)
 
+## Local video continuation (2026-10-02)
+
+An approved native `video_analyze` consumer and independent video-role consent are
+implemented locally, including bounded inheritance from the effective vision route.
+See the [current implementation and verification report](../../hermes/h277-video-analysis-2026-10-02.md).
+H277 remains partial: broader auxiliary routing, video mutation coverage and live
+native-video model acceptance are unfinished. The dated sections below retain their
+original snapshot scope.
+
 ## Current-source verification (2026-10-01)
 
 After PR #1207 and the dependency/reliability updates reached main, the 14 shared

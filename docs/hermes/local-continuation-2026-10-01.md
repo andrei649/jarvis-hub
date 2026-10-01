@@ -45,5 +45,12 @@ Rollback a local feature commit independently; retain prior user work and
 historical evidence. Do not promote H277 or any compound row to equivalent while
 accepted requirements remain unimplemented or unverified.
 
-Next action: inspect current mutation results and the permission regression;
-settle the video source/authority interfaces before assigning code ownership.
+Progress: the 14 shared-judge mutations were killed on the exact base snapshot;
+permission replay and restore-token durability are committed locally as `b7a15e89`
+and `d2e065c4`. Video understanding now has approved native dispatch, independent
+role consent and bounded vision-route inheritance. See the
+[video implementation and verification report](h277-video-analysis-2026-10-02.md).
+
+Next action: finish the immutable full-backend milestone, then continue the accepted
+Hermes queue with fresh source review. Video mutation coverage, broader native
+providers/runtime fallback and live model acceptance remain separate requirements.
