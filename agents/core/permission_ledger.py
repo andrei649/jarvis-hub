@@ -875,6 +875,12 @@ class PermissionLedger:
                 }) != authority_hash:
                     self._conn.rollback()
                     return {"status": "refused", "reason": "contract_denied", "detail": "task_binding_mismatch"}
+                if grant.surface == "os_input" and not replayed:
+                    # Store before the SQL commit. A failed/ambiguous commit may
+                    # leave an orphan token, but restore_token() cannot use it
+                    # without the committed active grant. A committed grant is
+                    # never left without its token by a crash in this window.
+                    self._secrets().set(self._secret_name(grant.id), _secrets.token_urlsafe(24))
                 self._conn.commit()
             except Exception:
                 if transaction_started:
@@ -893,15 +899,7 @@ class PermissionLedger:
                 # In particular, a retry after revoke must never mint a new token.
                 out["restore_token_stored"] = self.restore_token(grant.id) is not None
             else:
-                token = _secrets.token_urlsafe(24)
-                try:
-                    self._secrets().set(self._secret_name(grant.id), token)
-                    out["restore_token_stored"] = True
-                except Exception:
-                    # `token` is deliberately NOT logged; only the grant id is.
-                    # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
-                    logger.warning("os_input restore token could not be stored for %s", grant.id)
-                    out["restore_token_stored"] = False
+                out["restore_token_stored"] = True
         return out
 
     def _insert(self, grant: Grant) -> None:

@@ -518,6 +518,91 @@ async def test_os_input_replay_after_revoke_does_not_restore_token(tmp_path):
         ledger.close()
 
 
+async def test_os_input_ambiguous_commit_keeps_original_restore_token(tmp_path):
+    class RecordingSecrets(_Secrets):
+        def __init__(self):
+            super().__init__()
+            self.set_count = 0
+
+        def set(self, name, value):
+            self.set_count += 1
+            super().set(name, value)
+
+    store = RecordingSecrets()
+    ledger = pl.PermissionLedger(tmp_path / "p.db", enabled=True, secret_store=store)
+    payload = {"surface": "os_input", "key": "keyboard", "scope": "always", "requested_by": "desktop"}
+    real = ledger._conn
+
+    class AmbiguousCommit:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def commit(self):
+            assert store.set_count == 1  # token must precede the durable grant
+            real.commit()
+            raise RuntimeError("commit outcome unknown")
+
+    try:
+        ledger._conn = AmbiguousCommit()
+        with pytest.raises(RuntimeError, match="commit outcome unknown"):
+            await ledger.apply_grant(_task(payload, task_id=51))
+        ledger._conn = real
+        (name, token), = store.data.items()
+        grant_id = name.removeprefix("permission.os_input.")
+        assert ledger.restore_token(grant_id) == token
+        replay = await ledger.apply_grant(_task(payload, task_id=51))
+        assert replay["grant_id"] == grant_id
+        assert replay["restore_token_stored"] is True
+        assert ledger.restore_token(grant_id) == token
+        assert store.set_count == 1
+        assert len(ledger.list_grants(include_inactive=True)) == 1
+    finally:
+        ledger.close()
+
+
+async def test_os_input_precommit_failure_leaves_no_usable_authority(tmp_path):
+    store = _Secrets()
+    ledger = pl.PermissionLedger(tmp_path / "p.db", enabled=True, secret_store=store)
+    payload = {"surface": "os_input", "key": "keyboard", "scope": "always", "requested_by": "desktop"}
+    real = ledger._conn
+
+    class FailedCommit:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def commit(self):
+            raise RuntimeError("commit failed before write")
+
+    try:
+        ledger._conn = FailedCommit()
+        with pytest.raises(RuntimeError, match="commit failed before write"):
+            await ledger.apply_grant(_task(payload, task_id=52))
+        ledger._conn = real
+        assert ledger.check("os_input", "keyboard") == "ask"
+        assert ledger.list_grants(include_inactive=True) == []
+        assert len(store.data) == 1  # an orphan secret is inert without a grant
+        assert all(ledger.restore_token(name.removeprefix("permission.os_input.")) is None
+                   for name in store.data)
+    finally:
+        ledger.close()
+
+
+async def test_os_input_secret_store_failure_does_not_commit_grant(tmp_path):
+    class BrokenSecrets(_Secrets):
+        def set(self, name, value):
+            raise RuntimeError("secret store unavailable")
+
+    ledger = pl.PermissionLedger(tmp_path / "p.db", enabled=True, secret_store=BrokenSecrets())
+    payload = {"surface": "os_input", "key": "keyboard", "scope": "always", "requested_by": "desktop"}
+    try:
+        with pytest.raises(RuntimeError, match="secret store unavailable"):
+            await ledger.apply_grant(_task(payload, task_id=53))
+        assert ledger.check("os_input", "keyboard") == "ask"
+        assert ledger.list_grants(include_inactive=True) == []
+    finally:
+        ledger.close()
+
+
 async def test_os_input_grant_keeps_its_restore_token_in_the_secret_store(tmp_path):
     secrets = _Secrets()
     led = pl.PermissionLedger(tmp_path / "p.db", enabled=True, secret_store=secrets)
