@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/NousResearch/hermes-agent",
+  "revision": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "inspected_at": "2026-10-01",
+  "files": {
+    "agent/auxiliary_client.py": "736dc25cab3ee014c88d156449ed16596bf214a0f70966e78582e71f86bb2c68",
+    "tools/vision_tools.py": "baf2ec9e09422ca2437dc603b3fe3b7b7c170dbc9d884ce9ff0e2d67aca7f288"
+  },
+  "scope": "Video understanding and auxiliary model routing; not video generation."
+}

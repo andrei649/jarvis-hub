@@ -1890,6 +1890,15 @@
   provider or VRAM orchestration acceptance is claimed. See
   [implementation and verification](docs/hermes/2026-10-01-comfy-publication-guard.md).
 
+- 2026-10-02 HEQ-1 local continuation: revalidated H277 shared-judge scheduling with
+  14 killed mutations on the exact main snapshot and 310 focused current regressions.
+  Permission-grant replay now retains one task-bound effect across audit/commit
+  failure, restart and concurrent instances, with 106 focused tests and independent
+  review. Historical duplicates stay intact and revoked authority stays revoked.
+  See [mutation evidence](docs/hermes/evidence/h277-current-2026-10-01/report.md) and
+  [grant replay contract](docs/hermes/permission-grant-replay-2026-10-01.md).
+  H277 video understanding and wider provider/fallback parity remain in progress.
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
   Reassess inherited judgments, finish the full accepted

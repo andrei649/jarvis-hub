@@ -1,0 +1,58 @@
+[
+  {
+    "label": "queue_snapshot_is_stored_item",
+    "anchor_count": 1
+  },
+  {
+    "label": "queue_judge_inherits_caller_context",
+    "anchor_count": 1
+  },
+  {
+    "label": "queue_short_lived_loop_not_judged_on_hub",
+    "anchor_count": 1
+  },
+  {
+    "label": "N1_post_slot_status_stale",
+    "anchor_count": 1
+  },
+  {
+    "label": "N1_post_slot_wants_dropped",
+    "anchor_count": 1
+  },
+  {
+    "label": "N1_skip_revoked_counter_dropped",
+    "anchor_count": 1
+  },
+  {
+    "label": "N2_finish_pending_not_cleared",
+    "anchor_count": 1
+  },
+  {
+    "label": "N1_disk_pending_recheck_dropped",
+    "anchor_count": 1
+  },
+  {
+    "label": "N1_memory_pending_recheck_dropped",
+    "anchor_count": 1
+  },
+  {
+    "label": "N2_capacity_released_on_decide",
+    "anchor_count": 1
+  },
+  {
+    "label": "shared_pending_limit_dropped",
+    "anchor_count": 1
+  },
+  {
+    "label": "shared_concurrency_limit_raised",
+    "anchor_count": 1
+  },
+  {
+    "label": "shared_external_capacity_ignored",
+    "anchor_count": 1
+  },
+  {
+    "label": "shared_capacity_release_dropped",
+    "anchor_count": 1
+  }
+]

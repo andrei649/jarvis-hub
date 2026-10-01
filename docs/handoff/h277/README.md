@@ -1,5 +1,15 @@
 # Handoff — H277 in progress on PR #1207 (2026-09-27)
 
+## Current-source verification (2026-10-01)
+
+After PR #1207 and the dependency/reliability updates reached main, the 14 shared
+judge mutations were rerun on commit `9d5b3add`: all 14 were killed, with 203 baseline
+tests passing and all 3,982 snapshot file hashes restored. A separate current H277
+selection passed 310 tests. See [the new exact-snapshot report](../../hermes/evidence/h277-current-2026-10-01/report.md).
+The old mutation campaigns below retain their original scope and fingerprints.
+H277 remains partial: the video-analysis consumer and broader auxiliary routing
+are unfinished at this snapshot. This continuation is local only.
+
 ## Local Codex continuation (2026-09-27)
 
 The original Claude handoff below is preserved as dated history. Round2 is now

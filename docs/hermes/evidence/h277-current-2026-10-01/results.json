@@ -1,0 +1,373 @@
+{
+  "source_sha256": "f87d23fba5410bff8231c682ed6fdce1ad9f23dc6a97b1425a06c71d5a0a6e8c",
+  "baseline": [
+    {
+      "returncode": 0,
+      "elapsed_seconds": 4.32,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/baseline.log",
+      "raw_log_sha256": "500a22f84a1c0da484723a145b31ceeb88e12ad6b7f86b1e7eecc3402e07f251"
+    }
+  ],
+  "counts": {
+    "killed": 14,
+    "survived": 0,
+    "superseded": 0,
+    "invalid": 0
+  },
+  "results": [
+    {
+      "label": "queue_snapshot_is_stored_item",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.15,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/queue_snapshot_is_stored_item.log",
+      "raw_log_sha256": "acb4d3f83667602bd9b870953162b4a8fc1d5f31cb9ef150bcfa6a112ae4b582"
+    },
+    {
+      "label": "queue_judge_inherits_caller_context",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.12,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/queue_judge_inherits_caller_context.log",
+      "raw_log_sha256": "93afae605877c4be1bdf3b23cc29fc094f8fb12941ed98c9f9eef3dae89e0ca8"
+    },
+    {
+      "label": "queue_short_lived_loop_not_judged_on_hub",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.25,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/queue_short_lived_loop_not_judged_on_hub.log",
+      "raw_log_sha256": "f38e575156abdbe12a3a000e36a3c6ed14cb4ca0ae7887ae44bd4392b804d0e9"
+    },
+    {
+      "label": "N1_post_slot_status_stale",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.33,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/N1_post_slot_status_stale.log",
+      "raw_log_sha256": "08cbc93ddb438459aaf82495d3486049f9bb57267edf361e4e12b76e89499542"
+    },
+    {
+      "label": "N1_post_slot_wants_dropped",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.2,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/N1_post_slot_wants_dropped.log",
+      "raw_log_sha256": "eb2b828cdc2e559dc45bc4f9f09858046da46c0de4942daedcf6fe61d5246d39"
+    },
+    {
+      "label": "N1_skip_revoked_counter_dropped",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.5,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/N1_skip_revoked_counter_dropped.log",
+      "raw_log_sha256": "d2cca968b5c9bb77706885b29110674522bede47ba0001beee6663f27843c649"
+    },
+    {
+      "label": "N2_finish_pending_not_cleared",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "generation": "N2",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.23,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/N2_finish_pending_not_cleared.log",
+      "raw_log_sha256": "243f8e2215352d0e3b321743f4fb3a657d5f73c9e65e683c7d7d9cef27822917"
+    },
+    {
+      "label": "N1_disk_pending_recheck_dropped",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Action storage/decision adapter still participates in shared runner dispatch/capacity contract.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.28,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/N1_disk_pending_recheck_dropped.log",
+      "raw_log_sha256": "7c24f0199b807337ea2513ecbf40d75e1fdc5e2be8fd7403f137841f1e1be900"
+    },
+    {
+      "label": "N1_memory_pending_recheck_dropped",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Action storage/decision adapter still participates in shared runner dispatch/capacity contract.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.31,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/N1_memory_pending_recheck_dropped.log",
+      "raw_log_sha256": "c27e212bc6ea43fe226285a0707f179286f75cabbeb0f2725d1eee39f122b8e0"
+    },
+    {
+      "label": "N2_capacity_released_on_decide",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "generation": "N2",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Capacity is now held in a shared pool; release both tracking and shared reservation before generation finishes. Current source also clears pending on expiry; bind only the explicit decide() event block, rather than replacing both indentation contexts.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.33,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/N2_capacity_released_on_decide.log",
+      "raw_log_sha256": "e7dc8654e13678340198dd54a3b34580b38611a04318a57f25f15e80debf2f54"
+    },
+    {
+      "label": "shared_pending_limit_dropped",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "shared_runner",
+      "mapping": "Drop global pending bound across action/task adapters.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.19,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/shared_pending_limit_dropped.log",
+      "raw_log_sha256": "ab75d8aaaf7d02820fd8d9548392f2541b809b7914c19042ffcd18a3da026c17"
+    },
+    {
+      "label": "shared_concurrency_limit_raised",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "shared_runner",
+      "mapping": "Increase shared generation semaphore above allowed two slots.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.47,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/shared_concurrency_limit_raised.log",
+      "raw_log_sha256": "a584ceaac158dcc78b628441993e496fb74a36a63bdf16df1fa4cf332ff13b47"
+    },
+    {
+      "label": "shared_external_capacity_ignored",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "shared_runner",
+      "mapping": "Ignore supplied shared pool and retain each adapter private pool.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.34,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/shared_external_capacity_ignored.log",
+      "raw_log_sha256": "3f984ed438929ffc9b4405621f70f793891afa53c09a3400ab68ab428f68476e"
+    },
+    {
+      "label": "shared_capacity_release_dropped",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "shared_runner",
+      "mapping": "Fail to return reservation after completed/skipped work.",
+      "result": "killed",
+      "returncode": 1,
+      "elapsed_seconds": 4.24,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "log": "docs/hermes/evidence/h277-current-2026-10-01/logs/shared_capacity_release_dropped.log",
+      "raw_log_sha256": "d8fab7e550ff14a95b066a83bbf48602b204e83af7b9bed5a2b883d1e72a5766"
+    }
+  ]
+}

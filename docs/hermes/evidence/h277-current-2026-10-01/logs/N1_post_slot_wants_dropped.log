@@ -1,0 +1,107 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py", "tests/test_h277_task_judge.py"]
+........................................................................ [ 35%]
+...................................................F.....F.............. [ 70%]
+...........................................................              [100%]
+=================================== FAILURES ===================================
+___________ test_waiting_judgement_rechecks_live_policy[True-taint] ____________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-571/test_waiting_judgement_recheck5')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c68e0f0>
+revoke = 'taint', persisted = True
+
+    @pytest.mark.parametrize("revoke", ["allow_remote", "fallback", "safe_mode", "decide", "strict_local", "taint"])
+    @pytest.mark.parametrize("persisted", [True, False])
+    async def test_waiting_judgement_rechecks_live_policy(tmp_path, monkeypatch, revoke, persisted):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        backend = FakeBackend(gate=release)
+        backend.probe = lambda: occupied.set() if len(backend.calls) == 2 else None
+        policy = {"fallback": "on-demand"}
+        judge = remote_judge(monkeypatch, backend, settings=lambda *a: policy["fallback"])
+        q = queue(tmp_path, judge) if persisted else aa_mod.ActionApprovalQueue()
+        if not persisted:
+            q.attach_judge(judge)
+        items = [q.request(dict(json.loads(json.dumps(ACTION)), summary=str(i))) for i in range(4)]
+        await asyncio.wait_for(occupied.wait(), 2)
+        if revoke == "allow_remote":
+            monkeypatch.delenv("JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE")
+        elif revoke == "fallback":
+            policy["fallback"] = "never"
+        elif revoke == "safe_mode":
+            monkeypatch.setenv("JARVIS_SAFE_MODE", "1")
+        elif revoke == "strict_local":
+            monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+        elif revoke == "decide":
+            for item in items[2:]:
+                q.decide(item["id"], False)
+        else:
+            with q._lock:
+                for item in items[2:]:
+                    q._items[item["id"]]["args"]["tainted"] = True
+                q._save()
+        release.set()
+        await drain(q)
+        assert len(backend.calls) == 2
+>       assert q.judge_status_public()["skipped_revoked"] == 2
+E       assert 0 == 2
+
+tests/test_h277_approval_judge.py:1145: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  jarvis.llm.data_handling:data_handling.py:280 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+WARNING  jarvis.llm.data_handling:data_handling.py:280 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+WARNING  jarvis.llm.data_handling:data_handling.py:280 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+WARNING  jarvis.llm.data_handling:data_handling.py:280 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+WARNING  jarvis.llm.data_handling:data_handling.py:280 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+WARNING  jarvis.llm.data_handling:data_handling.py:280 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+___________ test_waiting_judgement_rechecks_live_policy[False-taint] ___________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-571/test_waiting_judgement_recheck11')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c562f00>
+revoke = 'taint', persisted = False
+
+    @pytest.mark.parametrize("revoke", ["allow_remote", "fallback", "safe_mode", "decide", "strict_local", "taint"])
+    @pytest.mark.parametrize("persisted", [True, False])
+    async def test_waiting_judgement_rechecks_live_policy(tmp_path, monkeypatch, revoke, persisted):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        backend = FakeBackend(gate=release)
+        backend.probe = lambda: occupied.set() if len(backend.calls) == 2 else None
+        policy = {"fallback": "on-demand"}
+        judge = remote_judge(monkeypatch, backend, settings=lambda *a: policy["fallback"])
+        q = queue(tmp_path, judge) if persisted else aa_mod.ActionApprovalQueue()
+        if not persisted:
+            q.attach_judge(judge)
+        items = [q.request(dict(json.loads(json.dumps(ACTION)), summary=str(i))) for i in range(4)]
+        await asyncio.wait_for(occupied.wait(), 2)
+        if revoke == "allow_remote":
+            monkeypatch.delenv("JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE")
+        elif revoke == "fallback":
+            policy["fallback"] = "never"
+        elif revoke == "safe_mode":
+            monkeypatch.setenv("JARVIS_SAFE_MODE", "1")
+        elif revoke == "strict_local":
+            monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+        elif revoke == "decide":
+            for item in items[2:]:
+                q.decide(item["id"], False)
+        else:
+            with q._lock:
+                for item in items[2:]:
+                    q._items[item["id"]]["args"]["tainted"] = True
+                q._save()
+        release.set()
+        await drain(q)
+        assert len(backend.calls) == 2
+>       assert q.judge_status_public()["skipped_revoked"] == 2
+E       assert 0 == 2
+
+tests/test_h277_approval_judge.py:1145: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  jarvis.llm.data_handling:data_handling.py:280 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+WARNING  jarvis.llm.data_handling:data_handling.py:280 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+WARNING  jarvis.llm.data_handling:data_handling.py:280 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+WARNING  jarvis.llm.data_handling:data_handling.py:280 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+WARNING  jarvis.llm.data_handling:data_handling.py:280 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+WARNING  jarvis.llm.data_handling:data_handling.py:280 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[True-taint]
+FAILED tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy[False-taint]
+2 failed, 201 passed in 3.75s
