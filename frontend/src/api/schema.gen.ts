@@ -10840,7 +10840,7 @@ export interface components {
             /** Scope */
             scope: string;
             /** Target */
-            target?: ("role:approval_judge" | "role:telegram_media_reader" | "role:camera_descriptions" | "role:video_analysis") | null;
+            target?: ("role:approval_judge" | "role:telegram_media_reader" | "role:camera_descriptions" | "role:video_analysis" | "role:video_fallback_1" | "role:video_fallback_2" | "role:video_fallback_3" | "role:video_fallback_4") | null;
         };
         /** DatasetRunBody */
         DatasetRunBody: {

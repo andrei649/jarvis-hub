@@ -28,7 +28,14 @@ JUDGE_TARGET = "role:approval_judge"
 MEDIA_TARGET = "role:telegram_media_reader"
 CAMERA_TARGET = "role:camera_descriptions"
 VIDEO_TARGET = "role:video_analysis"
-ROLE_TARGETS = {JUDGE_TARGET: "Approval judge", MEDIA_TARGET: "Telegram image descriptions", CAMERA_TARGET: "Camera descriptions", VIDEO_TARGET: "Video analysis"}
+VIDEO_FALLBACK_TARGETS = tuple(f"role:video_fallback_{slot}" for slot in range(1, 5))
+ROLE_TARGETS = {
+    JUDGE_TARGET: "Approval judge",
+    MEDIA_TARGET: "Telegram image descriptions",
+    CAMERA_TARGET: "Camera descriptions",
+    VIDEO_TARGET: "Video analysis",
+    **{target: f"Video fallback {slot}" for slot, target in enumerate(VIDEO_FALLBACK_TARGETS, 1)},
+}
 COVERAGE = (
     "routed agent dispatch, synthesis, tool-loop requests, Gemini cache writes, "
     "session titles, recall query rewriting, background/on-demand review, context compression, "
@@ -239,9 +246,9 @@ def _role_target(router, target, *, role_context=None):
     if target == CAMERA_TARGET:
         from .vision_policy import describe_camera_data_target
         return describe_camera_data_target(role_context)
-    if target == VIDEO_TARGET:
+    if target == VIDEO_TARGET or target in VIDEO_FALLBACK_TARGETS:
         from .video_policy import describe_video_data_target
-        return describe_video_data_target()
+        return describe_video_data_target(target)
     raise ValueError("invalid role target")
 
 

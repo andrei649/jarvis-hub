@@ -23,6 +23,7 @@ from .data_handling import (
 from .direct_transport import require_direct_async_transport
 from .model_roles import RoleConfigError, _is_loopback_base, resolve_video_route
 from .providers import get_profile
+from .video_routes import VideoRouteConfigError, resolve_video_fallbacks
 
 
 class VideoPolicyRefused(DataHandlingRefused):
@@ -43,7 +44,7 @@ class VideoIdentity:
     binding: tuple = field(repr=False)
 
 
-def describe_video_data_target() -> VideoIdentity | None:
+def _describe_primary_video_target() -> VideoIdentity | None:
     """The exact currently configured role; listing never enables the tool."""
     try:
         route = resolve_video_route()
@@ -95,6 +96,44 @@ def describe_video_data_target() -> VideoIdentity | None:
                          local, request_url, authorization, binding)
 
 
+def describe_video_route_set() -> tuple[VideoIdentity, ...]:
+    """Resolve the complete configured chain before exposing any usable candidate."""
+    try:
+        fallbacks = resolve_video_fallbacks()
+    except VideoRouteConfigError as exc:
+        raise VideoPolicyRefused("invalid video fallback configuration") from exc
+    primary = _describe_primary_video_target()
+    if primary is None:
+        if fallbacks:
+            raise VideoPolicyRefused("video fallback requires a configured primary")
+        return ()
+    identities = [primary]
+    for route in fallbacks:
+        local = _is_loopback_base(route.base_url)
+        profile = get_profile(route.provider)
+        policy, note = profile.data_policy_for(route.model)
+        if route.provider == "openai-compatible" or not local:
+            policy, note = "unknown", "Video endpoint data handling is unknown."
+        base = route.base_url.rstrip("/")
+        request_url = str(httpx.URL(
+            base + ("/chat/completions" if base.endswith("/v1") else "/v1/chat/completions")))
+        authorization = f"Bearer {route.api_key}" if route.api_key else ""
+        binding = (route.provider, route.model, route.base_url, request_url, authorization,
+                   local, policy, note, env_flag("JARVIS_ROLE_VIDEO_ALLOW_REMOTE"))
+        identities.append(VideoIdentity(f"role:video_fallback_{route.slot}", route.provider,
+                                        route.model, "dedicated", policy, note, local,
+                                        request_url, authorization, binding))
+    return tuple(identities)
+
+
+def describe_video_data_target(target_id: str = VIDEO_TARGET) -> VideoIdentity | None:
+    """Return a current finite candidate descriptor, or refuse an unknown target."""
+    if target_id not in (VIDEO_TARGET, *(f"role:video_fallback_{slot}" for slot in range(1, 5))):
+        raise VideoPolicyRefused("unknown video target")
+    return next((identity for identity in describe_video_route_set()
+                 if identity.target_id == target_id), None)
+
+
 def authorization_check(identity: VideoIdentity, *, allow_remote: bool,
                         confirm_expensive: bool, router=None, actor: str = "") -> None:
     """Call at intake, execution, each physical send, and before result disclosure."""
@@ -107,8 +146,8 @@ def authorization_check(identity: VideoIdentity, *, allow_remote: bool,
 
     if safe_mode.enabled():
         raise VideoPolicyRefused("video analysis is unavailable in safe mode")
-    current = describe_video_data_target()
-    if current is None or current.binding != identity.binding:
+    current = describe_video_data_target(identity.target_id)
+    if current is None or current != identity:
         raise VideoPolicyRefused("video role configuration changed")
     if not current.local:
         if not (allow_remote is True and env_flag("JARVIS_ROLE_VIDEO_ALLOW_REMOTE")):

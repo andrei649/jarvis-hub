@@ -294,7 +294,7 @@ def test_inherited_video_role_listing_matches_physical_locality_and_model(monkey
     assert identity.request_url == "http://127.0.0.1:8200/custom/v1/chat/completions"
 
 
-def test_only_the_approved_video_policy_consumes_the_video_role():
+def test_video_configuration_is_confined_to_policy_and_pure_route_parser():
     offenders = []
     for path in (REPO / "agents").rglob("*.py"):
         if path.name == "model_roles.py":
@@ -302,7 +302,9 @@ def test_only_the_approved_video_policy_consumes_the_video_role():
         text = path.read_text(encoding="utf-8", errors="replace")
         if re.search(r"resolve\(\s*[\"']video[\"']", text) or "JARVIS_ROLE_VIDEO" in text:
             offenders.append(str(path.relative_to(REPO)))
-    assert offenders == ["agents/core/llm/video_policy.py"]
+    assert sorted(offenders) == [
+        "agents/core/llm/video_policy.py", "agents/core/llm/video_routes.py",
+    ]
 
 
 # ── 8. the table is frozen ────────────────────────────────────────────────────────────
