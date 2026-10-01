@@ -1882,9 +1882,17 @@
 
 - 2026-09-15 attachment preview lifecycle: pending fetch/body work is aborted and late object URL allocation is suppressed when a card unmounts during gallery search or navigation. Two failing regressions reproduced the leak; four new tests, independent review and the 1,266-test frontend suite pass. Existing authentication, byte limits and artifact mutations are preserved. [Evidence](frontend/docs/h12-attachment-preview-lifecycle.md).
 
+- 2026-10-01 HEQ-1 ComfyUI authority repair: the actual provider now forwards the runtime
+  guard and rechecks configuration and authority after download and immediately before
+  atomic PNG publication. Governance revocation withholds the image; machinery failures
+  retain their failure reason. Red-first backend and signed-worker regressions cover
+  both kernel modes and temporary-file cleanup. H515/H517 remain partial; no live
+  provider or VRAM orchestration acceptance is claimed. See
+  [implementation and verification](docs/hermes/2026-10-01-comfy-publication-guard.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
-  owner-prioritized sprint; keep all 697 rows visible, with 590 accepted and 107
-  intentionally excluded. Reassess inherited judgments, finish the full accepted
+  owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
+  Reassess inherited judgments, finish the full accepted
   contract of each row, preserve authority boundaries, and update code evidence and
   the status in the implementation PR. First slices: job editing, configured-target
   messaging, image controls/gallery, SDK S2/S3, then K0 (a sandbox run's authority)

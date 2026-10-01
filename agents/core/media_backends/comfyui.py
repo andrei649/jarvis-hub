@@ -447,7 +447,7 @@ class ComfyUIBackend:
             raise ImageGenerationError("invalid_response")
         return name
 
-    async def generate(self, prompt, options):
+    async def generate(self, prompt, options, *, guard=None):
         self.config.fingerprint()
         opts = validate_options(prompt, options)
         # Resolved before a socket is opened. An unusable reference must not cost a
@@ -503,7 +503,15 @@ class ComfyUIBackend:
             raise ImageGenerationError("generation_timeout_submission_may_continue") from None
         except httpx.HTTPError:
             raise ImageGenerationError("backend_unavailable_submission_may_continue") from None
-        return save_artifact(self.config.output_root, data, width, height, prompt_id=prompt_id)
+        def recheck():
+            self.config.fingerprint()
+            if guard is not None:
+                guard()
+
+        withheld = withheld_after_generation(recheck)
+        withheld()
+        return save_artifact(self.config.output_root, data, width, height,
+                             prompt_id=prompt_id, guard=withheld)
 
 
 def save_artifact(output_root, data, width, height, *, prompt_id=None, guard=None):

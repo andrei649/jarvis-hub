@@ -85,8 +85,10 @@ the URL monitor deadline test made robust on a loaded runner.
 4. **Credential:** `credential_not_configured` also covers a secret that cannot be decrypted.
    The fix belongs in the protected `agents/core/security/secret_broker.py`, so it is **owner,
    security last**.
-5. **ComfyUI:** the provider drops the post-request guard (`media_backends/registry.py`), so a
-   kernel change mid-generation still publishes.
+5. **ComfyUI:** **Closed on 2026-10-01:** the provider now forwards the guard, rechecks
+   configuration and authority after download and immediately before atomic publication.
+   Revoked authority withholds the image; machinery failures retain their failure reason.
+   See [implementation and verification](../../hermes/2026-10-01-comfy-publication-guard.md).
 6. **skill.install:** a reconciled install reads as `promotion_refused`.
 7. **DONE transition:** when it fails, the handler runs again. Only the record is correct.
 8. **Model removed:** removing the approved image model mid-request records a failure

@@ -40,6 +40,8 @@ def composed(tmp_path, monkeypatch, request):
                 "status": {"status_str": "success", "completed": True},
                 "outputs": {"9": {"images": [{"filename": "image.png", "subfolder": "", "type": "output"}]}},
             }})
+        if req.url.path == "/view" and hooks.view is not None:
+            hooks.view()
         return httpx.Response(200, content=PNG, headers={"content-type": "image/png"})
 
     backend = image.ComfyUIBackend
@@ -52,13 +54,15 @@ def composed(tmp_path, monkeypatch, request):
                            kill_switch=None, capabilities=None, budget_ledger=None,
                            loop_detector=None, permission_gate=None)
     actions = []
-    hooks = SimpleNamespace(effect=None)
+    hooks = SimpleNamespace(effect=None, view=None)
     kernel = make_action_kernel(orch)
 
     def observed(action, **kwargs):
         actions.append(action)
         if action.payload.get("effect") == "local_image" and hooks.effect is not None:
-            hooks.effect(action)
+            decision = hooks.effect(action)
+            if decision is not None:
+                return decision
         return kernel(action, **kwargs)
 
     # This is the real composition omitted by the initial image-only fixture.
@@ -139,11 +143,34 @@ async def test_authenticated_http_proposal_approval_worker_and_artifact(composed
         assert response.content == PNG
         assert response.headers["x-content-type-options"] == "nosniff"
     assert sum(r.method == "POST" for r in composed.requests) == 1
-    assert len([a for a in composed.actions if a.payload.get("effect") == "local_image"]) == 1
+    assert len([a for a in composed.actions if a.payload.get("effect") == "local_image"]) == 3
     if composed.queue.mediation_mode == "enforce":
         stats = composed.queue.verified_mediation_stats()
         assert stats["valid"] and stats["authorized_enqueue"] == stats["governed"] == 1
         assert task.mediation_receipt["kind"] == "tool.rpc"
+
+
+@pytest.mark.asyncio
+async def test_completed_comfy_image_is_withheld_when_kernel_denies_at_download(composed):
+    from agents.core.autonomy.worker import is_withheld
+    from agents.core.kernel import Decision, Verdict
+
+    task_id = (await proposal(composed))["task_id"]
+    await composed.worker.apply_decision(task_id, "accept", decided_by="andrei")
+
+    def revoke():
+        composed.hooks.effect = lambda _action: Decision(Verdict.DENY, reason="halted", tier=3)
+
+    composed.hooks.view = revoke
+    await composed.worker.tick()
+    result = composed.queue.get(task_id).result
+    assert result["status"] == "failed"
+    assert result["reason"] == "withheld_after_generation"
+    assert result["detail"] == "kernel_denied"
+    assert is_withheld("tool.rpc", result)
+    assert sum(req.method == "POST" for req in composed.requests) == 1
+    generated = composed.root / "media" / "generated"
+    assert not generated.exists() or list(generated.iterdir()) == []
 
 
 @pytest.mark.parametrize("origin", ["generated", "manual", "inbound", "recall:untrusted"])
