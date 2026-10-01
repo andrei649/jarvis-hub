@@ -27,7 +27,7 @@ _ENV_NAMES = (
     *(f"JARVIS_ROLE_{role}_{field}" for role in ("MAIN", "DEEP", "VISION", "VIDEO", "APPROVAL_JUDGE")
       for field in ("PROVIDER", "MODEL", "BASE_URL")),
     "JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE", "JARVIS_ROLE_APPROVAL_JUDGE_TIMEOUT",
-    "JARVIS_ROLE_VISION_KEY", "JARVIS_ROLE_APPROVAL_JUDGE_KEY",
+    "JARVIS_ROLE_VISION_KEY", "JARVIS_ROLE_VIDEO_KEY", "JARVIS_ROLE_APPROVAL_JUDGE_KEY",
 )
 
 
@@ -276,6 +276,22 @@ def test_video_role_validates_its_provider(monkeypatch):
     with pytest.raises(RoleConfigError) as exc:
         model_roles.resolve("video")
     assert exc.value.reason == "role_provider_unsupported"
+
+
+def test_inherited_video_role_listing_matches_physical_locality_and_model(monkeypatch):
+    from agents.core.llm.video_policy import describe_video_data_target
+
+    monkeypatch.setenv("JARVIS_ROLE_VISION_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_BASE_URL", "http://127.0.0.1:8200/custom/v1")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_MODEL", "configured-vision")
+    role = model_roles.resolve("video")
+    identity = describe_video_data_target()
+    row = next(r for r in model_roles.describe() if r["role"] == "video")
+    assert role.provider_id == row["provider"] == identity.provider == "openai-compatible"
+    assert role.model == row["model"] == identity.model == "configured-vision"
+    assert role.local == row["local"] == identity.local is True
+    assert role.data_policy == row["data_policy"] == identity.policy == "unknown"
+    assert identity.request_url == "http://127.0.0.1:8200/custom/v1/chat/completions"
 
 
 def test_only_the_approved_video_policy_consumes_the_video_role():

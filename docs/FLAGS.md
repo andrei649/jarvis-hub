@@ -550,7 +550,7 @@ is a frozen table of five roles; the new names win when set, the old ones are fa
 | `main` | none (`JARVIS_ROLE_MAIN_*` is **ignored**, the doctor says so) | settings `llm.*` | not env-selectable: the main model is chosen on the H378-guarded settings surfaces | the router |
 | `deep` | `JARVIS_ROLE_DEEP_MODEL` | `JARVIS_DEEP_MODEL`, then `deepseek-r1-distill-qwen-32b` | none (the router's local backend; `_PROVIDER`/`_BASE_URL` ignored) | the deep slot |
 | `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_MODEL` / `_BASE_URL` | `JARVIS_VLM_BACKEND` / `JARVIS_VLM_MODEL` / `JARVIS_VLM_URL` | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`) | `resolve_vlm_config` and all its consumers |
-| `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio`, `openai-compatible` | opt-in, owner-approved `video_analyze` ToolRPC |
+| `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | resolved vision route when video provider/base are unset | `lm-studio`, `openai-compatible` | opt-in, owner-approved `video_analyze` ToolRPC |
 | `approval_judge` | `JARVIS_ROLE_APPROVAL_JUDGE_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio` (default), `ollama`, `openai-compatible` | `autonomy/approval_judge.py` |
 
 A provider value is a ProviderProfile id: an unknown one refuses `role_provider_unknown`
@@ -565,7 +565,7 @@ and no other goes to the judge's address; without it, an `lm-studio` / `ollama` 
 no key, and an `openai-compatible` judge gets `OPENAI_API_KEY` only when its base URL has
 the scheme, host and port of `OPENAI_BASE_URL` (else of `https://api.openai.com/v1`).
 Base URLs: vision keeps the VLM `/v1` convention (LM Studio default
-`http://localhost:1234/v1`, never `JARVIS_LM_STUDIO_URL`); the judge and video use the
+`http://localhost:1234/v1`, never `JARVIS_LM_STUDIO_URL`); the judge and explicit video routes use the
 provider profile's address (`JARVIS_LM_STUDIO_URL` / `JARVIS_OLLAMA_URL` / `OPENAI_BASE_URL`,
 else `http://localhost:1234` / `http://localhost:11434` / `https://api.openai.com/v1`).
 `python scripts/doctor.py` lists every role (row `model_roles`) and warns on a bad
@@ -577,19 +577,29 @@ setup every vision consumer refuses (`vlm_model_unset`, `vlm_url_unset`,
 Local addresses in doctor/judge status expose only the loopback HTTP origin;
 userinfo, path, query and fragment are never displayed. The roles API omits URLs entirely.
 
-**Video understanding** requires `JARVIS_VIDEO_ANALYSIS=1` and an explicitly configured
-video model. It reads one file within `JARVIS_FILE_ROOTS` or one public HTTP(S) video
+**Video understanding** requires `JARVIS_VIDEO_ANALYSIS=1` and a valid resolved video
+route. When both video provider and base URL are unset, a configured vision route
+supplies its actual native endpoint; a nonblank, non-`auto` video model overrides its
+model, otherwise video inherits the resolved vision model. An explicit video provider
+or base URL needs its own model. An invalid configured vision route refuses instead
+of silently selecting another destination. With no vision configuration, the existing
+explicit video-model route remains available. It reads one file within `JARVIS_FILE_ROOTS` or one public HTTP(S) video
 URL, then sends a native `video_url` message. The configured model must understand
 that native payload; listing an adapter does not prove the installed model supports
-video. There is no frame extraction, Ollama video adapter, automatic vision-model
-fallback, inbound attachment ingestion, or video generation in this consumer.
+video. There is no frame extraction, Ollama video adapter, runtime provider retry,
+inbound attachment ingestion, or video generation in this consumer.
 
 The tool is offered through the `video` job toolset when enabled, and every execution
 requires its own Decision Inbox approval and signed task mediation. Configure
-`JARVIS_TASK_MEDIATION=enforce`; mediation `off` refuses video intake and execution.
+`JARVIS_TASK_MEDIATION=enforce`; other mediation modes refuse video intake and execution.
 The source, question, role configuration
-and credentials are bound to that approval. `JARVIS_ROLE_VIDEO_KEY` is the only
-credential used; a global provider key is never inherited. Local files use bounded,
+and credentials are bound to that approval. `JARVIS_ROLE_VIDEO_KEY` wins when set;
+otherwise video may inherit the vision adapter's guarded effective key only for the
+same provider and normalized complete native request URL. Same-host/different-path
+destinations cannot borrow that key; no raw global provider key is read. Changing
+inherited configuration invalidates the approval before network dispatch and withholds
+late results. Recomputing the approval class can still read the scoped local file to
+verify its content hash. Local files use bounded,
 descriptor-scoped reads on POSIX systems. Public URL reads validate DNS and redirects,
 refuse embedded credentials, and cap the download at 37,500,000 bytes (50,000,000
 base64 characters). Private-network URL sources are refused.

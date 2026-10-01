@@ -21,7 +21,7 @@ from .data_handling import (
     physical_request_scope,
 )
 from .direct_transport import require_direct_async_transport
-from .model_roles import _is_loopback_base, resolve
+from .model_roles import RoleConfigError, _is_loopback_base, resolve_video_route
 from .providers import get_profile
 
 
@@ -45,7 +45,11 @@ class VideoIdentity:
 
 def describe_video_data_target() -> VideoIdentity | None:
     """The exact currently configured role; listing never enables the tool."""
-    role = resolve("video")
+    try:
+        route = resolve_video_route()
+    except RoleConfigError as exc:
+        raise VideoPolicyRefused("invalid video role configuration") from exc
+    role = route.role
     if not role.configured:
         return None
     if role.provider_id not in {"lm-studio", "openai-compatible"}:
@@ -60,7 +64,8 @@ def describe_video_data_target() -> VideoIdentity | None:
         if (role.provider_id == "lm-studio" and not local) or (not local and url.scheme != "https"):
             raise ValueError("video role locality or TLS changed")
         base = role.base_url.rstrip("/")
-        request_url = base + ("/chat/completions" if base.endswith("/v1") else "/v1/chat/completions")
+        request_url = (route.request_url if route.inherited else
+                       base + ("/chat/completions" if base.endswith("/v1") else "/v1/chat/completions"))
     except Exception as exc:
         raise VideoPolicyRefused("invalid video role destination") from exc
     profile = get_profile(role.provider_id)
@@ -68,6 +73,21 @@ def describe_video_data_target() -> VideoIdentity | None:
     if role.provider_id == "openai-compatible" or not local:
         policy, note = "unknown", "Video endpoint data handling is unknown."
     key = env_str("JARVIS_ROLE_VIDEO_KEY", "").strip()
+    if not key:
+        # Only the vision adapter's guarded effective key may cross to video,
+        # and only onto its own exact native endpoint and provider.
+        try:
+            from .vision_policy import VisionPolicyUnavailable
+            from .vision_policy import describe as describe_vision
+            from .vlm import VLMNotConfigured, resolve_vlm_config
+
+            vision = resolve_vlm_config()
+            native = describe_vision(vision)
+            if (native.provider == role.provider_id
+                    and str(httpx.URL(native.request_url)) == str(httpx.URL(request_url))):
+                key = vision.api_key
+        except (ValueError, VLMNotConfigured, VisionPolicyUnavailable):
+            pass
     authorization = f"Bearer {key}" if key else ""
     binding = (role.provider_id, role.model, role.base_url, request_url, authorization,
                local, policy, note, env_flag("JARVIS_ROLE_VIDEO_ALLOW_REMOTE"))
