@@ -15,3 +15,7 @@
 ## 2026-04-03 - Per-frame Map Allocations and Array Slices in Canvas Task Fan Loops
 **Learning:** In Canvas 2D components (`NeuralMesh` in `frontend/src/mesh.tsx`), helper functions in `draw()` like `drawTaskFan()` allocated a `new Map()` and `.slice()` array copies on every 60 FPS frame (~3,600 allocations/min). In addition, `taskColor()` created single-element `[t]` arrays to call `runningTasks([t])`.
 **Action:** Pre-group tasks on the state ref (`S.current.tasksByOwner`) inside `useEffect` on task state changes, and evaluate task status directly (`task.state === 'running'`) to achieve zero allocations during frame rendering.
+
+## 2026-04-04 - High-frequency Array Iteration Closures in Canvas Animation Loops
+**Learning:** In canvas components like `NeuralBurst` (`frontend/src/burst.tsx`), nested `.forEach()` calls across cluster dendrites and synapse nodes execute ~500+ times per frame (~30,000 callback closures/sec at 60 FPS). This causes function closure allocation overhead and CPU cycle overhead in main-thread frame rendering.
+**Action:** Use indexed `for` loops (`for (let i = 0; i < len; i++)`) in Canvas 2D `draw()` animation loops to avoid closure creation overhead entirely.
