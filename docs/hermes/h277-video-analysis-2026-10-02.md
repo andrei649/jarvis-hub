@@ -5,10 +5,11 @@
 - Base: `9d5b3add85bd8c172bfe38ed1506a2852e2d6e5a`.
 - Branch: `codex/local-hermes-continuation-20261001`.
 - Initial implementation: `ee52e2fa`; canonical-task hardening: `e2e8617b`;
-  isolated title-test fixture: `732f34ac`.
+  isolated title-test fixture: `732f34ac`; vision inheritance: `bddf2172`.
+- Final full-backend snapshot: `78780b6439d0cea1ed66d924127b6a8a888df7a5`.
 - Publication: none. No push, merge, deployment, live model call or paid provider call.
-- Status: explicit video routes and bounded vision-route inheritance are implemented;
-  final backend milestone verification is pending.
+- Status: this bounded video milestone passed final local verification. Full H277
+  and Hermes parity remain unfinished.
 
 ## Execution Plan:
 
@@ -62,11 +63,20 @@
 - Running the stream-fanout tests before the H413 owner-title test reproduced the
   checkpoint contamination. The isolated fixture then passed all 135 ordered
   stream-fanout/H413 cases. The updated Hermes status tests passed all 48 cases.
-- Final full backend verification: pending.
+- Final full backend verification on the immutable snapshot above: **20,108 passed,
+  34 skipped, one expected failure, zero unexpected failures**, with 61 warnings in
+  981.55 seconds. All 4,014 tracked regular files matched their pre-run hashes.
+  Backend and frontend counts matched the generated project status; Hermes reports,
+  generated status, scoped Ruff and diff checks passed. The
+  [machine-readable receipt](evidence/h277-video-integration-2026-10-02.json) records
+  source and test-artifact hashes plus the exact verification scope.
 - Vision-route inheritance passed 307 focused tests with repository guards retained,
   including 19 new fallback cases. The initial new suite had seven expected failures
   before implementation. Scoped Ruff found three import-order issues during parent
   review; those were corrected before final verification.
+- Parent verification after import-order cleanup passed 188 tests. Independent
+  bounded review of the resolver, key inheritance and signed-dispatch tests found
+  no concrete blocker; that reviewer did not run tests.
 - The separate fresh mutation campaign killed 14/14 mutants with 203 baseline
   tests on `9d5b3add`. It predates video and does not establish video mutation coverage.
 
@@ -84,6 +94,9 @@ mocked transport tests do not establish live model acceptance. Local files requi
 POSIX descriptor support. New video mutation coverage, broader auxiliary providers,
 runtime provider fallback, inbound video ingestion and native mobile controls remain
 separate work. Mediation must be `enforce`; both video feature flags default off.
+Existing backend warnings include deprecations and an unawaited-coroutine warning;
+they were not treated as proof of a clean warning baseline. Local raw test artifacts
+remain in `/tmp`; the committed receipt preserves outcomes and hashes.
 
 The [bounded fallback plan](h277-video-fallback-plan-2026-10-02.md) selects one
 destination before approval. Without video provider/base overrides, video inherits

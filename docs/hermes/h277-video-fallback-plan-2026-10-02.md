@@ -1,6 +1,8 @@
 # H277 video → vision route fallback plan (2026-10-02)
 
-Status: implementation and focused tests complete; final full-suite verification pending.
+Status: implementation and focused tests complete; final full backend passed on
+`78780b64` (20,108 passed, 34 skipped, one expected failure). See the
+[milestone report](h277-video-analysis-2026-10-02.md) for exact scope and remaining work.
 Base implementation: `732f34ac`. Coordinator decisions: use existing Nerva role/VLM
 variables only; do not add Hermes environment aliases or config.yaml import. An
 explicit video provider/base retains its own routing and requires its own model.

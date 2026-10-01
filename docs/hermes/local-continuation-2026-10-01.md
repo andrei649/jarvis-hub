@@ -51,6 +51,13 @@ and `d2e065c4`. Video understanding now has approved native dispatch, independen
 role consent and bounded vision-route inheritance. See the
 [video implementation and verification report](h277-video-analysis-2026-10-02.md).
 
-Next action: finish the immutable full-backend milestone, then continue the accepted
-Hermes queue with fresh source review. Video mutation coverage, broader native
-providers/runtime fallback and live model acceptance remain separate requirements.
+The immutable full-backend milestone passed on `78780b64`: 20,108 passed, 34 skipped
+and one expected failure, with 1,836 frontend tests passing separately. Source hashes
+were unchanged through the full backend run. PR reconciliation left zero open PRs;
+the new continuation commits remain local on the branch above.
+
+Next action: add current-snapshot video mutation coverage, then continue the accepted
+Hermes queue with fresh source review and bounded implementation. Broader native
+providers/runtime fallback and live model acceptance remain separate requirements;
+the current evidence counts 172 equivalent, 253 partial, 64 missing and 208 requiring
+review out of all 697 accepted rows. Preserve the existing local checkpoints.
