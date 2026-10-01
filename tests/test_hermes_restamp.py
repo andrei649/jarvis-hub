@@ -134,7 +134,8 @@ def repo(tmp_path, isolated_git):
     root.mkdir()
     git(root, "init", "-q", "-b", "main")
     for key, value in (("user.name", "Fixture"), ("user.email", "fixture@example.invalid"),
-                       ("commit.gpgsign", "false"), ("tag.gpgsign", "false"), ("core.autocrlf", "false")):
+                       ("commit.gpgsign", "false"), ("tag.gpgsign", "false"),
+                       ("core.autocrlf", "false"), ("gc.auto", "0")):
         git(root, "config", key, value)
     ledger = {"generated": "2026-09-07", "capabilities": CAPS}
     put(root, hs.LEDGER, json.dumps(ledger, ensure_ascii=False, indent=2).splitlines())
@@ -367,16 +368,13 @@ def test_a_clone_missing_blobs_never_claims_unrecoverable(repo, capsys):
     # The v2 blob is gone from the object store (a partial or damaged clone): the pin might be
     # that very blob, so it is "incomplete", with a hint to fetch, never "unrecoverable".
     blob = git(repo.root, "rev-parse", f"{repo.c2}:{EXAMPLE}")
-    loose = repo.root / ".git" / "objects" / blob[:2] / blob[2:]   # loose object
-    if loose.exists():
-        loose.chmod(0o644)
-        loose.unlink()
-    pack_dir = repo.root / ".git" / "objects" / "pack"
-    if pack_dir.exists():
-        for p in pack_dir.iterdir():
-            if p.is_file():
-                p.chmod(0o644)
-                p.unlink()
+    loose = repo.root / ".git" / "objects" / blob[:2] / blob[2:]
+    assert loose.is_file()   # auto packing is disabled; remove only this blob
+    loose.chmod(0o644)
+    loose.unlink()
+    assert git(repo.root, "log", "--all", "--format=%H", "--", EXAMPLE).splitlines() == [
+        repo.c3, repo.c2, repo.c1
+    ]
     repin(repo.root, "H002", EXAMPLE, digest_of(repo.tmp, ["never", "committed"]))
     example = pins(hr.drift(repo.root, ["H002"])[0])[EXAMPLE]
     assert (example["found"], example["searched"], example["commits"]) == ("incomplete", 3, [])
