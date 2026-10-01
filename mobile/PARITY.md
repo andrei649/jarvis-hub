@@ -256,6 +256,12 @@ Approval-judge consent is a separate responsive-web row, keyed to its configured
 model, destination and credentials. It does not enable remote judging. Native mobile
 still uses the web panel for consent management; no native acceptance was run.
 
+Video analysis (H277, 2026-10-02) adds a separate consent row to the responsive web
+Security Posture panel and uses existing Decision Inbox task approvals. Native
+mobile has no video source picker, role editor, or dedicated video-consent control;
+use the responsive web panel. Native-device and live video-provider acceptance
+remain unverified.
+
 The responsive-web image composer now displays provider-policy warnings alongside
 the reviewed destination and successful answer. Its request-scoped remote
 acknowledgment is unchanged. Native image-policy warning parity remains open;

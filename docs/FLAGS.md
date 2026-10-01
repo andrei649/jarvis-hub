@@ -550,7 +550,7 @@ is a frozen table of five roles; the new names win when set, the old ones are fa
 | `main` | none (`JARVIS_ROLE_MAIN_*` is **ignored**, the doctor says so) | settings `llm.*` | not env-selectable: the main model is chosen on the H378-guarded settings surfaces | the router |
 | `deep` | `JARVIS_ROLE_DEEP_MODEL` | `JARVIS_DEEP_MODEL`, then `deepseek-r1-distill-qwen-32b` | none (the router's local backend; `_PROVIDER`/`_BASE_URL` ignored) | the deep slot |
 | `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_MODEL` / `_BASE_URL` | `JARVIS_VLM_BACKEND` / `JARVIS_VLM_MODEL` / `JARVIS_VLM_URL` | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`) | `resolve_vlm_config` and all its consumers |
-| `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio`, `ollama`, `openai-compatible` | **nothing**: declared; nothing reads video yet |
+| `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio`, `openai-compatible` | opt-in, owner-approved `video_analyze` ToolRPC |
 | `approval_judge` | `JARVIS_ROLE_APPROVAL_JUDGE_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio` (default), `ollama`, `openai-compatible` | `autonomy/approval_judge.py` |
 
 A provider value is a ProviderProfile id: an unknown one refuses `role_provider_unknown`
@@ -576,6 +576,31 @@ setup every vision consumer refuses (`vlm_model_unset`, `vlm_url_unset`,
 `VLMConfig.is_local` (a loopback custom VLM is local).
 Local addresses in doctor/judge status expose only the loopback HTTP origin;
 userinfo, path, query and fragment are never displayed. The roles API omits URLs entirely.
+
+**Video understanding** requires `JARVIS_VIDEO_ANALYSIS=1` and an explicitly configured
+video model. It reads one file within `JARVIS_FILE_ROOTS` or one public HTTP(S) video
+URL, then sends a native `video_url` message. The configured model must understand
+that native payload; listing an adapter does not prove the installed model supports
+video. There is no frame extraction, Ollama video adapter, automatic vision-model
+fallback, inbound attachment ingestion, or video generation in this consumer.
+
+The tool is offered through the `video` job toolset when enabled, and every execution
+requires its own Decision Inbox approval and signed task mediation. Configure
+`JARVIS_TASK_MEDIATION=enforce`; mediation `off` refuses video intake and execution.
+The source, question, role configuration
+and credentials are bound to that approval. `JARVIS_ROLE_VIDEO_KEY` is the only
+credential used; a global provider key is never inherited. Local files use bounded,
+descriptor-scoped reads on POSIX systems. Public URL reads validate DNS and redirects,
+refuse embedded credentials, and cap the download at 37,500,000 bytes (50,000,000
+base64 characters). Private-network URL sources are refused.
+
+Remote destinations require HTTPS, `JARVIS_ROLE_VIDEO_ALLOW_REMOTE=1`, per-call
+`allow_remote=true`, and an independent, configuration-bound **Video analysis**
+acknowledgment in Security Posture. Strict-local mode, `llm.cloud_fallback=never`,
+and local-only agents still forbid remote model use; safe mode refuses this tool.
+Both feature flags default to off. This control
+does not turn on a model or authorize a paid service. Provider/model behavior still
+requires a separate live acceptance run.
 
 **The approval judge** (`JARVIS_ROLE_APPROVAL_JUDGE_MODEL` set): each tool call queued on
 the action-approval queue is shown to that model **after** the card exists; its risk

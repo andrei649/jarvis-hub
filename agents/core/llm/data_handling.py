@@ -27,12 +27,13 @@ ROLE_SETTING = ("security", "data_training_role_ack")
 JUDGE_TARGET = "role:approval_judge"
 MEDIA_TARGET = "role:telegram_media_reader"
 CAMERA_TARGET = "role:camera_descriptions"
-ROLE_TARGETS = {JUDGE_TARGET: "Approval judge", MEDIA_TARGET: "Telegram image descriptions", CAMERA_TARGET: "Camera descriptions"}
+VIDEO_TARGET = "role:video_analysis"
+ROLE_TARGETS = {JUDGE_TARGET: "Approval judge", MEDIA_TARGET: "Telegram image descriptions", CAMERA_TARGET: "Camera descriptions", VIDEO_TARGET: "Video analysis"}
 COVERAGE = (
     "routed agent dispatch, synthesis, tool-loop requests, Gemini cache writes, "
     "session titles, recall query rewriting, background/on-demand review, context compression, "
     "acquisition drafting/generation, the optional presence explanation seam, the approval judge, "
-    "interactive composer vision, strict-local describe/screen-reflex, unattended Telegram image descriptions, strict-local camera descriptions, and local-only embeddings; "
+    "interactive composer vision, strict-local describe/screen-reflex, unattended Telegram image descriptions, strict-local camera descriptions, approved video analysis, and local-only embeddings; "
     "unscoped multimodal library clients excluded"
 )
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
@@ -238,6 +239,9 @@ def _role_target(router, target, *, role_context=None):
     if target == CAMERA_TARGET:
         from .vision_policy import describe_camera_data_target
         return describe_camera_data_target(role_context)
+    if target == VIDEO_TARGET:
+        from .video_policy import describe_video_data_target
+        return describe_video_data_target()
     raise ValueError("invalid role target")
 
 

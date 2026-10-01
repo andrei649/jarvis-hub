@@ -318,3 +318,19 @@ describe('PosturePanel — separate camera model-data consent', () => {
     expect(screen.queryByRole('button', { name: /for Camera descriptions/ })).toBeNull();
   });
 });
+
+describe('PosturePanel — separate video analysis consent', () => {
+  it('sends the video role target and explains the separate approval', async () => {
+    const target = { target_id: 'role:video_analysis', provider: 'openai-compatible', model: 'video-model',
+      mode: 'dedicated', policy: 'unknown', warning: 'Unknown video policy',
+      scope: 'e'.repeat(64), acknowledged: false, can_acknowledge: true };
+    const fn = mockFetch({ data_handling: { role_settings_readable: true, targets: [target] } });
+    render(<PosturePanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Allow unattended use for Video analysis' }));
+    await waitFor(() => expect(fn.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(true));
+    const post = fn.mock.calls.find(([, options]) => options?.method === 'POST');
+    expect(JSON.parse(post[1].body)).toEqual({ target: 'role:video_analysis', provider: 'openai-compatible',
+      scope: target.scope, acknowledged: true });
+    expect(screen.getByText(/separate owner-approved tool call/)).toBeTruthy();
+  });
+});

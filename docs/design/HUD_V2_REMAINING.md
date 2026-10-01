@@ -20,9 +20,14 @@ H277 (2026-09-27): Decision Inbox renders advisory risk scores, escaped rational
 judge identity/locality and truncation/flag warnings. Pending opinions poll with
 an independent wall-clock limit per task; decision controls remain available.
 Role configuration is shown beside Model Fingerprints through authenticated
-`/api/llm/roles`; a role settings editor and video consumer remain open. Offline component tests cover
+`/api/llm/roles`; a role settings editor remains open. Offline component tests cover
 late results, refreshes, failed reads and browser-throttled timers; this is not a
 claim of a live model or native mobile acceptance run.
+
+H277 video continuation (2026-10-02): the default-off `video_analyze` tool uses the
+existing Decision Inbox approval surface. Security Posture has an independent
+Video analysis consent row. A dedicated video picker/preview, an in-HUD role editor,
+inbound video ingestion, and live native-video model acceptance remain open.
 
 - **Runtime verification.** Nothing was verified against a *running* backend (the build sandbox has
   no `fastapi`). Run `python serve.py` → open `/v2`, click **every mode + every Console (▦) panel**,

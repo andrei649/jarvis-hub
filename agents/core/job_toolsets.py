@@ -8,6 +8,7 @@ CATALOG = MappingProxyType({
     'basic': ('echo', 'time'),
     'files': ('file_read', 'file_list', 'file_search', 'file_write', 'file_delete'),
     'terminal': ('terminal_run',),
+    'video': ('video_analyze',),
 })
 
 
@@ -17,7 +18,7 @@ def validate(value):
     if (not isinstance(value, list) or len(value) > len(CATALOG)
             or any(not isinstance(item, str) or item not in CATALOG for item in value)
             or len(set(value)) != len(value)):
-        raise ValueError('enabled_toolsets must be null or unique known toolset IDs: basic, files, terminal')
+        raise ValueError('enabled_toolsets must be null or unique known toolset IDs: basic, files, terminal, video')
     return tuple(value)
 
 

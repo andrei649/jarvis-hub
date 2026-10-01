@@ -254,17 +254,21 @@ def test_main_role_is_not_env_selectable(monkeypatch):
     assert model_roles.ROLES["main"].providers is None
 
 
-# ── 7. video is declared honestly ─────────────────────────────────────────────────────
+# ── 7. video has an opt-in consumer and refuses unsupported adapters ────────────────
 
-def test_video_role_has_no_consumer_and_says_so(monkeypatch):
-    assert model_roles.ROLES["video"].consumers == ()
-    monkeypatch.setenv("JARVIS_ROLE_VIDEO_PROVIDER", "ollama")
-    monkeypatch.setenv("JARVIS_ROLE_VIDEO_MODEL", "llava")
+def test_video_role_names_its_consumer_and_refuses_ollama(monkeypatch):
+    assert "video_analysis.py" in model_roles.ROLES["video"].consumers[0]
+    monkeypatch.setenv("JARVIS_ROLE_VIDEO_PROVIDER", "lm-studio")
+    monkeypatch.setenv("JARVIS_ROLE_VIDEO_MODEL", "video-model")
     role = model_roles.resolve("video")
-    assert role.configured is True and role.provider_id == "ollama"
-    assert role.base_url == "http://localhost:11434" and role.local is True
+    assert role.configured is True and role.provider_id == "lm-studio"
+    assert role.base_url == "http://localhost:1234" and role.local is True
     row = next(r for r in model_roles.describe() if r["role"] == "video")
-    assert "nothing reads video yet" in row["note"]
+    assert "video_analyze" in row["note"]
+    monkeypatch.setenv("JARVIS_ROLE_VIDEO_PROVIDER", "ollama")
+    with pytest.raises(RoleConfigError) as exc:
+        model_roles.resolve("video")
+    assert exc.value.reason == "role_provider_unsupported"
 
 
 def test_video_role_validates_its_provider(monkeypatch):
@@ -274,7 +278,7 @@ def test_video_role_validates_its_provider(monkeypatch):
     assert exc.value.reason == "role_provider_unsupported"
 
 
-def test_nothing_outside_model_roles_consumes_the_video_role():
+def test_only_the_approved_video_policy_consumes_the_video_role():
     offenders = []
     for path in (REPO / "agents").rglob("*.py"):
         if path.name == "model_roles.py":
@@ -282,7 +286,7 @@ def test_nothing_outside_model_roles_consumes_the_video_role():
         text = path.read_text(encoding="utf-8", errors="replace")
         if re.search(r"resolve\(\s*[\"']video[\"']", text) or "JARVIS_ROLE_VIDEO" in text:
             offenders.append(str(path.relative_to(REPO)))
-    assert offenders == []
+    assert offenders == ["agents/core/llm/video_policy.py"]
 
 
 # ── 8. the table is frozen ────────────────────────────────────────────────────────────

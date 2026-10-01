@@ -22,8 +22,8 @@ What is *not* here, on purpose:
 - ``deep`` has no provider: it is served by the router's detected local backend, so
   ``JARVIS_ROLE_DEEP_PROVIDER`` / ``_BASE_URL`` are reported as ignored and never raise
   (boot cannot break on the deep slot).
-- ``video`` is declared with no consumer: nothing in Nerva reads video yet (inbound video
-  is not read, ``/api/media`` reports ``video: false``). The listing says so.
+- ``video`` is consumed by the opt-in, owner-approved ``video_analyze`` ToolRPC path.
+  Inbound video and ``/api/media`` ingestion remain separate work.
 - A key never follows an address it was not issued for. Vision keeps ``JARVIS_VLM_KEY``
   exactly as before for the legacy URL; a ``JARVIS_ROLE_VISION_BASE_URL`` receives it only
   when it has the same scheme, host and port as the address that key served
@@ -57,8 +57,8 @@ __all__ = ["ROLES", "RoleSpec", "ResolvedRole", "RoleConfigError", "resolve", "d
 # own base URL instead (``http://localhost:1234``, no ``/v1``), like ``HybridRouter.detect``.
 LMSTUDIO_VLM_BASE = "http://localhost:1234/v1"
 
-VIDEO_NOTE = ("declared; nothing reads video yet in Nerva (inbound video is not read: "
-              "channels/inbound_media.py; /api/media reports video: false)")
+VIDEO_NOTE = ("opt-in video_analyze ToolRPC consumer; inbound video is not read "
+              "(channels/inbound_media.py; /api/media reports video: false)")
 
 _FIELDS = ("provider", "model", "base_url")
 
@@ -117,8 +117,9 @@ ROLES: Mapping[str, RoleSpec] = MappingProxyType({
         frozenset({"lm-studio", "openai-compatible"}),
         ("agents/core/llm/vlm.py resolve_vlm_config",)),
     "video": RoleSpec(
-        "video", "would read video; nothing does yet", "JARVIS_ROLE_VIDEO", MappingProxyType({}),
-        frozenset({"lm-studio", "ollama", "openai-compatible"}), ()),
+        "video", "reads approved video sources through video_analyze", "JARVIS_ROLE_VIDEO", MappingProxyType({}),
+        frozenset({"lm-studio", "openai-compatible"}),
+        ("agents/core/video_analysis.py video_analyze ToolRPC",)),
     "approval_judge": RoleSpec(
         "approval_judge", "scores a queued tool-call approval (advisory only)",
         "JARVIS_ROLE_APPROVAL_JUDGE", MappingProxyType({}),
