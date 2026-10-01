@@ -1,7 +1,8 @@
 # H277 governed auxiliary fallback — implementation design
 
-Status: planned, not implemented. This is the next local increment after current
-video mutation verification. It does not redefine the goal of full Hermes parity.
+Status: implemented and locally verified in the [configured-chain report](h277-video-provider-chain-2026-10-02.md).
+This bounded increment does not complete H277 or redefine full Hermes parity.
+The baseline discussion below records the state when this design was written.
 
 ## Goal and evidence
 
@@ -14,8 +15,8 @@ Pinned reference: Hermes `59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e`.
 `tools/vision_tools.py` sends video through the auxiliary `vision` task.
 `agent/auxiliary_client.py` resolves a configured fallback chain and classifies the
 failure before selecting another lane. Its hashes remain recorded in the earlier
-[resolution-fallback plan](h277-video-fallback-plan-2026-10-02.md). Nerva currently
-resolves one destination before approval and sends once; it has no provider-failure
+[resolution-fallback plan](h277-video-fallback-plan-2026-10-02.md). At the design baseline, Nerva
+resolved one destination before approval and sent once, without a provider-failure
 chain. Current video tests and their limitations are in the
 [milestone report](h277-video-analysis-2026-10-02.md).
 

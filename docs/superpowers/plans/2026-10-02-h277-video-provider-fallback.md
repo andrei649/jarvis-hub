@@ -70,11 +70,13 @@
 
 **Files:** `.env.example`, `docs/FLAGS.md`, H277 assessment/reports, `BACKLOG.md`, the current local handover, generated schema/HUD/status artifacts, and a new exact-snapshot verification receipt.
 
-- [ ] Document the owner configuration and fixed per-slot key variables, independent consent, actual failure categories, limits and unsupported providers. Do not claim paid-provider or subscription entitlement.
-- [ ] Regenerate OpenAPI/schema, build HUD and run its full tests/typecheck when frontend changes are final.
-- [ ] Re-read affected Hermes rows and stamp only reviewed evidence. Preserve partial status while native adapters, shared auxiliary routing, auto discovery, retries/credential recovery or live acceptance remain outstanding.
-- [ ] Freeze source, record hashes, and run the full backend suite once with normal guards. Fix actual failures, then repeat the necessary verification. Verify generated counts and source identity independently of test return code.
-- [ ] Scan the exact committed/staged scope; include docs/tests in the evidence scan rather than relying solely on the repository's broad path allowlist. Keep synthetic/hash false-positive adjudication explicit.
-- [ ] Commit the coherent local implementation and resumable report. Rollback preserves the prior single-destination consumer, signed receipts, permission ledger and historical evidence.
+- [x] Document the owner configuration and fixed per-slot key variables, independent consent, actual failure categories, limits and unsupported providers. Do not claim paid-provider or subscription entitlement.
+- [x] Regenerate OpenAPI/schema, build HUD and run its full tests/typecheck when frontend changes are final.
+- [x] Re-read affected Hermes rows and stamp only reviewed evidence. Preserve partial status while native adapters, shared auxiliary routing, auto discovery, retries/credential recovery or live acceptance remain outstanding.
+- [x] Freeze source, record hashes, and run the full backend suite once with normal guards. Fix actual failures, then repeat the necessary verification. Verify generated counts and source identity independently of test return code.
+- [x] Scan the exact committed/staged scope; include docs/tests in the evidence scan rather than relying solely on the repository's broad path allowlist. Keep synthetic/hash false-positive adjudication explicit.
+- [x] Commit the coherent local implementation and resumable report. Rollback preserves the prior single-destination consumer, signed receipts, permission ledger and historical evidence.
 
-The next implementation begins only after the current mutation regressions are frozen and the coordinator assigns non-overlapping files. This plan is an implementation dependency, not a completion claim.
+This bounded plan is complete locally. Runtime commit 591c9e15 and full verification
+snapshot a38d7546 are recorded in the [integration report](../../hermes/h277-video-provider-chain-2026-10-02.md).
+Full H277/Hermes parity remains active; the next adapter needs its own bounded contract.

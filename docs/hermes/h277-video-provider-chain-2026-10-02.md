@@ -5,7 +5,8 @@
 - Base: `9290544390b151108948ae2af325bd955e508aae`.
 - Parser commit: `2a69eb2678b9459850cc7706ca6114d05e29c4ae`.
 - Consent/API/HUD commit: `2d9a3c39d3e4391fc5a35e3a6ff93567660afbe7`.
-- Runtime head and final verification: pending final integration below.
+- Runtime commit: `591c9e15d56bea7b57005847ce5b500933a8561d`.
+- Full-backend snapshot: `a38d7546aa7955a74746b32f1f13409944084aa1`.
 - Publication: local only; no live or paid model calls.
 - Status: H277 remains partial; this is a bounded native adapter increment.
 
@@ -51,7 +52,10 @@ attempt, and close the owned client before advancing.
   overflow/control characters, and approval lookup outside the execution deadline.
   Other acceptance cases cover cancellation, cleanup-time revocation, bounded responses
   and source reuse; no unrun pre-fix failures are claimed.
-- Full-backend verification remains pending source freeze and final review.
+- Full backend on the frozen snapshot: **20,306 passed, 34 skipped,
+  1 expected failure, zero unexpected failures**. All 4,218 tracked regular
+  file hashes remained unchanged; checkout and commit stayed fixed throughout the run.
+  See the [machine-readable receipt](evidence/h277-video-chain-integration-2026-10-02.json).
 
 The preceding [video mutation campaign](evidence/h277-video-mutations-verified-2026-10-02/report.md)
 pins `92905443`: 29 detected mutations, two explained survivors, zero invalid cases,
@@ -76,3 +80,26 @@ bound by the signed identity. Long chains/models/origins use compact labels and
 six-character digests within the existing 200-character ToolRPC limit. This retains
 route distinction but reduces human-readable detail; it does not change authority. Generic HTTP errors, source/consent/policy failures,
 cancellation and hook/store failures must not authorize a switch of provider.
+
+## Review and decisions
+
+Sol High implementers owned bounded files; the coordinator retained final integration
+and critical review, with separate narrow Luna Medium reviews. This follows the
+repository resource plan; its tradeoff is less independent breadth than a second
+full high-effort review. No whole-repository independent audit is claimed.
+
+The classifier helper/tests started alongside consent work because they had no shared
+files. Runtime edits waited for the consent interface freeze. This saved serial work
+but could have required helper rework if the interface changed.
+
+Approval display omits URL paths and shortens long models/origins with a digest to
+fit the existing label cap. The cost is reduced readable destination detail, while
+the complete destination/credential and chain order remain cryptographically bound.
+
+The next [provider investigation](h277-next-provider-review-2026-10-02.md) records
+a reproduced omission in the pinned Hermes Gemini converter and protocol/MIME
+questions to resolve before another adapter. It does not credit new provider support.
+
+The full backend run emitted 61 warnings, including deprecations and an unawaited
+AsyncMock coroutine warning. No warning-free baseline or live-provider acceptance
+is claimed. New code is committed locally; remote main remains separate.
