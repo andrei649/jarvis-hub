@@ -33,14 +33,14 @@ Din acestea, **64** au fost reevaluate pe cod în această livrare; **108** păs
 | desktop | 54 | 9 | 27 | 6 | 0 | 12 |
 | tui | 25 | 4 | 9 | 2 | 0 | 10 |
 | config | 18 | 5 | 7 | 3 | 0 | 3 |
-| env | 28 | 6 | 11 | 1 | 0 | 10 |
+| env | 28 | 5 | 11 | 1 | 0 | 11 |
 | tools — the agent-callable surface | 32 | 7 | 12 | 1 | 0 | 12 |
 | skills | 33 | 13 | 9 | 2 | 0 | 9 |
 | providers | 27 | 8 | 8 | 1 | 0 | 10 |
 | agent-core | 36 | 10 | 8 | 8 | 0 | 10 |
 | memory | 27 | 11 | 8 | 0 | 0 | 8 |
 | automation | 32 | 3 | 15 | 2 | 0 | 12 |
-| security | 34 | 9 | 11 | 2 | 0 | 12 |
+| security | 34 | 10 | 11 | 2 | 0 | 11 |
 | media | 27 | 7 | 15 | 3 | 0 | 2 |
 | acp-mcp-dev | 33 | 3 | 12 | 11 | 0 | 7 |
 | docs-features | 48 | 11 | 22 | 3 | 0 | 12 |
@@ -49,7 +49,7 @@ Din acestea, **64** au fost reevaluate pe cod în această livrare; **108** păs
 
 ## Actualizare
 
-Evaluare: `2026-10-01T22:12:01Z`. Cod inspectat: `c60918ed1382ccae260706b4ee6a28184535f73e`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-10-01T23:28:07Z`. Cod inspectat: `591c9e15d56bea7b57005847ce5b500933a8561d`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
 

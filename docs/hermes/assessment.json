@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "c60918ed1382ccae260706b4ee6a28184535f73e",
-  "assessed_at": "2026-10-01T22:12:01Z",
+  "base_sha": "591c9e15d56bea7b57005847ce5b500933a8561d",
+  "assessed_at": "2026-10-01T23:28:07Z",
   "reviews": [
     {
       "id": "H001",
@@ -3363,8 +3363,8 @@
       "id": "H277",
       "row_sha256": "ec811f318985a04ae87406e63230f447d3ad253fb3d5fac2b2fc3f5e6bb9c0c7",
       "status": "partial",
-      "summary": "Named main/deep/vision/video/approval_judge roles resolve legacy-compatible configuration. Authenticated roles API omits all URLs and reports no reachability; the HUD displays role configuration. VLM describe refuses non-loopback dispatch and checks the actual selected model. Optional advisory judging covers both action approvals and persisted BLOCKED Decision Inbox tasks through one bounded runner (2 calls, 32 reservations), separate SQLite annotations/revisions, fresh contexts, live policy/taint rechecks and compare-and-store. Opinions cannot authorize or mutate signed execution bytes. Edits revoke stale opinions, notification bookkeeping does not, and invalid decisions preserve pending state. Browser cards show escaped opinions and bounded per-card polling. Round2 mutation and post-refactor verification artifacts record exact snapshots and limitations. H487/H513 integration review: grouped requests retain independent authority and advisory fields, task membership settlement is atomic, and provider request guards are scoped to model dispatch rather than ToolRPC or spawned advisory work. Focused H277/approval/worker and complete frontend regressions pass; the prior mutation evidence remains tied to its recorded snapshot. Subsequent H487 chat-outcome review: queue additions are separate observational tables and optional initial-intake status CAS; signed receipts and execution fingerprints remain unchanged. The combined 776-test regression includes task-judge, mediation and worker coverage. Prior mutation results still describe their original recorded snapshots. Approval-judge dispatch now uses separate audited role consent bound to its actual model, destination and Authorization. Pure posture resolves configuration without constructing clients; each physical request rechecks consent, policy, adapter identity and queue eligibility. Late revocation during client cleanup also discards the verdict. Unknown adapters, cookies and custom HTTP auth fail closed. Provider grants cannot authorize this role; the responsive HUD has independent role controls. Focused integration passed 456 cases, including 34 new runtime cases, with separate store/API and HUD regressions. Physical request validation independently pins POST URL and Authorization, rejects cookies and redirected/reused requests, while existing cleanup-only scopes preserve DELETE behavior. An offline 307 regression reproduced the gap before correction. H487 expiry review: task judge validity now checks the persisted deadline at scheduling, send and annotation boundaries. Expiry clears pending advisory keys without creating human decisions; halt defers durable side effects. Existing kernel/role authority is unchanged. No new mutation campaign or live-provider acceptance is claimed. Direct-transport follow-up: owned composer and approval-judge clients disable environment proxies; native HTTPX route selection, actual mounts and exact pool type are checked before dispatch and on retries. Unsupported custom clients/selectors and proxy pools refuse. Borrowed ACTIVE judge clients remain unchanged and open; ordinary local-backend constructor defaults and positional arguments are preserved. Offline real-client regressions and bounded independent review pass; full snapshot evidence is recorded separately. Interactive VLM follow-up preserves role/model selection guards while adding strict-local actual-dispatch checks, sanitized status and honest failure responses. The focused role-route fixtures use native offline HTTPX transports; no wider provider/video parity is claimed. Video consumer review (2026-10-02): the default-off video_analyze tool now creates a canonical human-approved tool.rpc task under enforced signed mediation. A secret-keyed approval class binds scoped source bytes or public source URL, question, roots and effective model destination/credential configuration. POSIX descriptor reads and DNS-pinned redirect-checked downloads are bounded. Native video_url requests use an immutable exact-body digest, URL/authorization checks and direct transport; current task, kernel, consent and privacy posture are checked at physical requests and after cleanup. Model responses are streamed with byte/time limits. Remote use requires independent role:video_analysis consent, environment opt-in and the per-call flag; strict-local, local-only agents, cloud_fallback=never and safe mode are retained. Security Posture exposes the separate consent row. Focused offline tests and full frontend checks passed; live native-video model behavior is unverified. The fresh 14-mutation campaign targets base 9d5b3add only, before the video consumer. Full backend milestone results are recorded separately. Vision inheritance review (2026-10-02): without explicit video provider/base, the shared resolver selects the effective vision native endpoint and model, with a nonblank non-auto video-model override. Invalid configured vision refuses. Explicit video routes require their own model. A dedicated video key wins; otherwise only the vision resolver effective key crosses onto an identical provider and normalized complete native URL. No provider-failure retry occurs. Inherited configuration changes stale the HMAC class and separate role consent before network dispatch and withhold late answers; class verification may reread the scoped local file to recompute its hash. The focused integration passed 307 cases, including 19 new fallback cases; parent verification passed 188 cases after import-order cleanup, and independent bounded review found no blocker. Live video-model behavior remains unverified.",
-      "remaining": "The full pinned Hermes auxiliary provider/runtime fallback contract, additional native provider adapters and live video model acceptance remain unfinished. The consumer requires enforced signed mediation and POSIX local-file access; Ollama video is unsupported. Native mobile role/opinion controls and inbound video ingestion are separate broader project work. Historical and fresh base-snapshot mutation results do not establish mutation coverage of this new video path.",
+      "summary": "Named main/deep/vision/video/approval_judge roles resolve legacy-compatible configuration. Authenticated roles API omits all URLs and reports no reachability; the HUD displays role configuration. VLM describe refuses non-loopback dispatch and checks the actual selected model. Optional advisory judging covers both action approvals and persisted BLOCKED Decision Inbox tasks through one bounded runner (2 calls, 32 reservations), separate SQLite annotations/revisions, fresh contexts, live policy/taint rechecks and compare-and-store. Opinions cannot authorize or mutate signed execution bytes. Edits revoke stale opinions, notification bookkeeping does not, and invalid decisions preserve pending state. Browser cards show escaped opinions and bounded per-card polling. Round2 mutation and post-refactor verification artifacts record exact snapshots and limitations. H487/H513 integration review: grouped requests retain independent authority and advisory fields, task membership settlement is atomic, and provider request guards are scoped to model dispatch rather than ToolRPC or spawned advisory work. Focused H277/approval/worker and complete frontend regressions pass; the prior mutation evidence remains tied to its recorded snapshot. Subsequent H487 chat-outcome review: queue additions are separate observational tables and optional initial-intake status CAS; signed receipts and execution fingerprints remain unchanged. The combined 776-test regression includes task-judge, mediation and worker coverage. Prior mutation results still describe their original recorded snapshots. Approval-judge dispatch now uses separate audited role consent bound to its actual model, destination and Authorization. Pure posture resolves configuration without constructing clients; each physical request rechecks consent, policy, adapter identity and queue eligibility. Late revocation during client cleanup also discards the verdict. Unknown adapters, cookies and custom HTTP auth fail closed. Provider grants cannot authorize this role; the responsive HUD has independent role controls. Focused integration passed 456 cases, including 34 new runtime cases, with separate store/API and HUD regressions. Physical request validation independently pins POST URL and Authorization, rejects cookies and redirected/reused requests, while existing cleanup-only scopes preserve DELETE behavior. An offline 307 regression reproduced the gap before correction. H487 expiry review: task judge validity now checks the persisted deadline at scheduling, send and annotation boundaries. Expiry clears pending advisory keys without creating human decisions; halt defers durable side effects. Existing kernel/role authority is unchanged. No new mutation campaign or live-provider acceptance is claimed. Direct-transport follow-up: owned composer and approval-judge clients disable environment proxies; native HTTPX route selection, actual mounts and exact pool type are checked before dispatch and on retries. Unsupported custom clients/selectors and proxy pools refuse. Borrowed ACTIVE judge clients remain unchanged and open; ordinary local-backend constructor defaults and positional arguments are preserved. Offline real-client regressions and bounded independent review pass; full snapshot evidence is recorded separately. Interactive VLM follow-up preserves role/model selection guards while adding strict-local actual-dispatch checks, sanitized status and honest failure responses. The focused role-route fixtures use native offline HTTPX transports; no wider provider/video parity is claimed. Video consumer review (2026-10-02): the default-off video_analyze tool now creates a canonical human-approved tool.rpc task under enforced signed mediation. A secret-keyed approval class binds scoped source bytes or public source URL, question, roots and effective model destination/credential configuration. POSIX descriptor reads and DNS-pinned redirect-checked downloads are bounded. Native video_url requests use an immutable exact-body digest, URL/authorization checks and direct transport; current task, kernel, consent and privacy posture are checked at physical requests and after cleanup. Model responses are streamed with byte/time limits. Remote use requires independent role:video_analysis consent, environment opt-in and the per-call flag; strict-local, local-only agents, cloud_fallback=never and safe mode are retained. Security Posture exposes the separate consent row. Focused offline tests and full frontend checks passed; live native-video model behavior is unverified. The fresh 14-mutation campaign targets base 9d5b3add only, before the video consumer. Full backend milestone results are recorded separately. Vision inheritance review (2026-10-02): without explicit video provider/base, the shared resolver selects the effective vision native endpoint and model, with a nonblank non-auto video-model override. Invalid configured vision refuses. Explicit video routes require their own model. A dedicated video key wins; otherwise only the vision resolver effective key crosses onto an identical provider and normalized complete native URL. That earlier inheritance slice had no provider-failure retry. Inherited configuration changes stale the HMAC class and separate role consent before network dispatch and withhold late answers; class verification may reread the scoped local file to recompute its hash. The focused integration passed 307 cases, including 19 new fallback cases; parent verification passed 188 cases after import-order cleanup, and independent bounded review found no blocker. Live video-model behavior remains unverified. Configured-chain review (2026-10-02, runtime 591c9e15): up to four explicit fallback slots have strict pure configuration, isolated keys and independent audited role consent. The signed class binds the complete ordered chain; native single-send attempts reuse prepared media and recheck authority at source access, dispatch, cleanup and disclosure. Only reviewed bounded native status/body and transport failures advance; hook/guard failures refuse. One total deadline includes source and cleanup, with smaller attempt limits. No-chain class/scope/result compatibility is retained. 627 focused cases and 1838 frontend cases passed; full milestone results are recorded separately. The separate video mutation snapshot 92905443 detected 29 of 31 valid mutations with two documented survivors and 168 baseline cases; it predates this new chain.",
+      "remaining": "Additional native adapters, shared auxiliary routing, pinned upstream automatic provider discovery, same-provider retries and SDK credential recovery remain unfinished. Live video-model acceptance is unverified. Enforced signed mediation and POSIX local-file access are required; Ollama video is unsupported. Native mobile controls and inbound video ingestion remain broader project work. Mutation evidence pins its earlier 92905443 snapshot and does not cover the newly added configured provider chain.",
       "evidence": [
         {
           "path": "agents/core/llm/model_roles.py",
@@ -3420,7 +3420,7 @@
         },
         {
           "path": "tests/test_h277_model_roles.py",
-          "sha256": "7b482ab8760265a86cf6fa57bbeaf618c99f28f13a7fe696fb50c6a32486fb9e"
+          "sha256": "4a7bfd8b99a931a2ca0a9b2746697ddda52f77b95fef8b929e83f9fdde290e4c"
         },
         {
           "path": "tests/test_h277_role_routes.py",
@@ -3468,11 +3468,11 @@
         },
         {
           "path": "agents/core/video_analysis.py",
-          "sha256": "44b5ffa68fe629038764e1101ac45eda7430fdfe148913c0cf82f9bfd7f62b48"
+          "sha256": "8a9cbf9fd769502facbbe6505a134b9da205324206c31ccf1dd8efa901e716db"
         },
         {
           "path": "agents/core/llm/video_policy.py",
-          "sha256": "393619b7f1c8b997bd685dceb46d9df2dafc7224df7c9a5976d06785bf603bf0"
+          "sha256": "9cc1764df3388c06b0a1393e50e624f1c0ccb483e05d716b06bcbafdda51c50d"
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
@@ -3484,19 +3484,19 @@
         },
         {
           "path": "agents/core/llm/data_handling.py",
-          "sha256": "fe5a86362e6a67c657a30773685e1304811adbdaf995528d66c85323b0623c32"
+          "sha256": "93fd8f550218a2248dbc30bb9659335a317e53ba6d919cc476209b7450035166"
         },
         {
           "path": "agents/core/routers/security.py",
-          "sha256": "8455c6268c6269097ffff9918397affe9dc896ad881f776ca78f57180ae9ca2a"
+          "sha256": "c0852d0329b60043c5a9723fd1f682bf79814da0a1b09a0af7e2f474a6c4c1a8"
         },
         {
           "path": "frontend/src/panels/data-handling.tsx",
-          "sha256": "9603f70f98f038f9a4cefb610d5986f16a5dd2a3c452c3a6e214cafa77d5afe4"
+          "sha256": "8e54bb45bd42d7c9476d792bade1f1800bb58694ad03caa2b19b581ddab21a65"
         },
         {
           "path": "frontend/src/test/governance-posture-panel.test.tsx",
-          "sha256": "d3631d25530ff2da9d99e1e8b794fadb020033a55d3cf8a8c1291a253f4bb0c4"
+          "sha256": "81f2cb85e1b217325a116cb34b56ec8ac85c5a6edfc79863a8cd6177b857e894"
         },
         {
           "path": "tests/test_h277_video_analysis.py",
@@ -3513,6 +3513,38 @@
         {
           "path": "tests/test_h277_video_fallback.py",
           "sha256": "ac7ffe79859adf7600fd8e3744a2c0a20886479221829643dc1333e91d82f85f"
+        },
+        {
+          "path": "agents/core/llm/video_routes.py",
+          "sha256": "96c22749ec03560344c7fd5e360fa5b62bf38f8b25267ee9a71e4671c72b3624"
+        },
+        {
+          "path": "agents/core/llm/video_failures.py",
+          "sha256": "ac1e352dd544bcfca261fda3aa19ec8e0ab32408b51509df99e0c8476ec95a07"
+        },
+        {
+          "path": "tests/test_h277_video_routes.py",
+          "sha256": "47498cc117249ee3576ce3251b171c8d53b9ac157a9e666c7fcd5cef60ed8597"
+        },
+        {
+          "path": "tests/test_h277_video_candidate_consent.py",
+          "sha256": "292fb905d8f95305f6b600832a0449135c8d02c1dc04bd05ea7b88c27a3ea700"
+        },
+        {
+          "path": "tests/test_h277_video_provider_chain.py",
+          "sha256": "5a6a9ba90a52027ca5bcece54fec886ddc622a294f8c24dbc0f3e0268f169646"
+        },
+        {
+          "path": "tests/test_h277_video_failures.py",
+          "sha256": "136ca0a53f492530ffb0a54ee55c8f2fb8f5e49b1e3110252a6cb71b1c4d798f"
+        },
+        {
+          "path": "tests/test_h277_video_boundaries.py",
+          "sha256": "a2f2550e47f8926b7124ca5dddfcc77f017168468bd4f10b3b68988684e886e1"
+        },
+        {
+          "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/report.md",
+          "sha256": "69dead16aab5dee17edf2a146a29fcff15341eff828e875dd024b3ca87fe6183"
         }
       ]
     },
@@ -7982,7 +8014,7 @@
       "id": "H513",
       "row_sha256": "d74009083bea038b56e826ef9709e28602cadac7223713d3119ddf4977d4b3b6",
       "status": "equivalent",
-      "summary": "Frozen H513 code contract satisfied: existing centralized surface/principal tool profiles and kernel mediation retain capability scoping; pinned dependencies remain the accepted no-runtime-install posture. Actual provider/model/account metadata, including compatible substitutions and off-loopback local profiles, determines visible policy warnings. Unattended unknown/training use requires an admin-audited durable configuration-bound HMAC acknowledgment; malformed settings, unavailable scopes, changed configuration and audit/write failure cannot grant. Provider and finite judge/Telegram/camera role grants are independent. Warnings remain visible after acknowledgment in actual-use notices/logs and responsive Security Posture. Dispatch scopes cover routed/tool-loop/cache/auxiliary/native vision paths and recheck physical sends/retries and awaited cleanup. Camera checks the original household privacy lease independently; owned clients close and borrowed native clients remain reusable. The complete camera milestone passed 19194 backend tests with 35 skips and 1822 frontend tests; typecheck/build/scoped scans passed. This is code equivalence, not live-provider terms/device certification. docs/hermes/h513-code-equivalence-review.md preserves the original acceptance mapping and separately unimplemented remote embedding/vector migration, native-client, unwired-library and H31 provisioning/live follow-ups without removing them from the overall project objective. Speech prerequisite documentation review: FLAGS only adds the voice-command strict mediation and original approval wait semantics; existing model-data/role consent flags and the frozen H513 behavior are unchanged. Named speech compatibility review: settings adds only the bounded STT provider selector and validation, while FLAGS documents named command revisions and limits. Model-data consent, encrypted acknowledgments and finite role policy semantics are unchanged.",
+      "summary": "Frozen H513 code contract satisfied: existing centralized surface/principal tool profiles and kernel mediation retain capability scoping; pinned dependencies remain the accepted no-runtime-install posture. Actual provider/model/account metadata, including compatible substitutions and off-loopback local profiles, determines visible policy warnings. Unattended unknown/training use requires an admin-audited durable configuration-bound HMAC acknowledgment; malformed settings, unavailable scopes, changed configuration and audit/write failure cannot grant. Provider and finite judge/Telegram/camera role grants are independent. Warnings remain visible after acknowledgment in actual-use notices/logs and responsive Security Posture. Dispatch scopes cover routed/tool-loop/cache/auxiliary/native vision paths and recheck physical sends/retries and awaited cleanup. Camera checks the original household privacy lease independently; owned clients close and borrowed native clients remain reusable. The complete camera milestone passed 19194 backend tests with 35 skips and 1822 frontend tests; typecheck/build/scoped scans passed. This is code equivalence, not live-provider terms/device certification. docs/hermes/h513-code-equivalence-review.md preserves the original acceptance mapping and separately unimplemented remote embedding/vector migration, native-client, unwired-library and H31 provisioning/live follow-ups without removing them from the overall project objective. Speech prerequisite documentation review: FLAGS only adds the voice-command strict mediation and original approval wait semantics; existing model-data/role consent flags and the frozen H513 behavior are unchanged. Named speech compatibility review: settings adds only the bounded STT provider selector and validation, while FLAGS documents named command revisions and limits. Model-data consent, encrypted acknowledgments and finite role policy semantics are unchanged. Re-read 2026-10-02 at 591c9e15: 68 of 74 existing evidence files remain identical. Six drifted files were reviewed: the pinned Starlette/Uvicorn lock refresh retains no-runtime-install semantics; video-only FLAGS additions and finite API/data-handling/HUD target additions retain independent HMAC scopes, warnings and audit/revocation. Configured video primary/fallback roles now use the same finite consent contract; unknown targets still refuse. The candidate integration passed 194 cases, followed by 627 video/authority regressions and 1838 frontend tests. No new live-provider policy certification is claimed.",
       "remaining": "",
       "evidence": [
         {
@@ -8003,7 +8035,7 @@
         },
         {
           "path": "agents/core/routers/security.py",
-          "sha256": "958cb822298348d6561b10ed0f74df1aed0f61a4812a9f247432d8dbeb666f82"
+          "sha256": "c0852d0329b60043c5a9723fd1f682bf79814da0a1b09a0af7e2f474a6c4c1a8"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -8011,7 +8043,7 @@
         },
         {
           "path": "requirements-beta.lock",
-          "sha256": "dbe20ec476961aaf6dd5ef81516d738b19f8236194c9c2c1f200701aa2dfaa43"
+          "sha256": "ccd5f0ba20f3b9fed69a7658f704a11137df1d2a0f4b0da8455544010c22b27a"
         },
         {
           "path": ".github/workflows/lockfile.yml",
@@ -8019,7 +8051,7 @@
         },
         {
           "path": "docs/FLAGS.md",
-          "sha256": "597f33322e782f1a68838fe4ccb9272390ed69f3120a6890fd6b0fdc915a8731"
+          "sha256": "394cfa682dab6dd890a99c0f7a00d7dc97844c84a7e4f6d81f1c80df113806c9"
         },
         {
           "path": "tests/test_tool_profiles.py",
@@ -8051,7 +8083,7 @@
         },
         {
           "path": "agents/core/llm/data_handling.py",
-          "sha256": "729a63f139ec69e5a23219cf826d5f63d82da748f77deb03d3f389748f346a8c"
+          "sha256": "93fd8f550218a2248dbc30bb9659335a317e53ba6d919cc476209b7450035166"
         },
         {
           "path": "agents/core/llm/egress.py",
@@ -8075,11 +8107,11 @@
         },
         {
           "path": "frontend/src/panels/data-handling.tsx",
-          "sha256": "afc8e27a05a99c65aa0baa6e6c5d27c569214154c7a414b2904f1df24fc999f6"
+          "sha256": "8e54bb45bd42d7c9476d792bade1f1800bb58694ad03caa2b19b581ddab21a65"
         },
         {
           "path": "frontend/src/test/governance-posture-panel.test.tsx",
-          "sha256": "784b18438308e25220e020a8c4fbed1d9c03e1718fe6edf699753febf8d9c882"
+          "sha256": "81f2cb85e1b217325a116cb34b56ec8ac85c5a6edfc79863a8cd6177b857e894"
         },
         {
           "path": "tests/test_h513_data_handling.py",
@@ -8280,6 +8312,22 @@
         {
           "path": "docs/hermes/h513-code-equivalence-review.md",
           "sha256": "35ab7d7b2bdf6cdd0efc588a6cb2dcb41276b5c096d8378dd29a6dbd2ae5902a"
+        },
+        {
+          "path": "agents/core/llm/video_policy.py",
+          "sha256": "9cc1764df3388c06b0a1393e50e624f1c0ccb483e05d716b06bcbafdda51c50d"
+        },
+        {
+          "path": "agents/core/llm/video_routes.py",
+          "sha256": "96c22749ec03560344c7fd5e360fa5b62bf38f8b25267ee9a71e4671c72b3624"
+        },
+        {
+          "path": "tests/test_h277_video_candidate_consent.py",
+          "sha256": "292fb905d8f95305f6b600832a0449135c8d02c1dc04bd05ea7b88c27a3ea700"
+        },
+        {
+          "path": "tests/test_h277_video_provider_chain.py",
+          "sha256": "5a6a9ba90a52027ca5bcece54fec886ddc622a294f8c24dbc0f3e0268f169646"
         }
       ]
     },
