@@ -132,7 +132,7 @@ class ComfyImageProvider(ImageProvider):
                                      output_root=output_root)
 
     async def generate(self, config, prompt, options, *, guard, backend_factories):
-        return await backend_factories[self.protocol](config).generate(prompt, options)
+        return await backend_factories[self.protocol](config).generate(prompt, options, guard=guard)
 
 
 class OpenAIImageProvider(ImageProvider):

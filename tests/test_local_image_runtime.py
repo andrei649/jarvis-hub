@@ -89,7 +89,8 @@ async def test_real_worker_requires_exact_human_approval_and_rechecks_kernel(rig
     assert "path" not in artifact
     assert sum(r.method == "POST" for r in rig.requests) == 1
     effects = [a for a in rig.actions if a.payload.get("effect") == "local_image"]
-    assert len(effects) == 1
+    # Before submission, after validated bytes, and immediately before publication.
+    assert len(effects) == 3
     assert effects[0].payload["risk_tier"] >= rig.queue.get(task_id).risk_tier
     assert len(list((rig.root / "media" / "image_approvals").glob("*.attempt"))) == 1
 

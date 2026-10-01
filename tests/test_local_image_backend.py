@@ -208,6 +208,68 @@ async def test_fixed_local_workflow_produces_validated_artifact(tmp_path):
     assert sum(req.method == "POST" for req in requests) == 1
 
 
+@pytest.mark.parametrize("decline, expected", [
+    ("kernel_denied", "withheld_after_generation"),
+    ("kernel_error", "kernel_error"),
+])
+@pytest.mark.asyncio
+async def test_comfy_provider_rechecks_after_generated_image(tmp_path, decline, expected):
+    module = backend_module()
+    from agents.core.media_backends.registry import ComfyImageProvider
+
+    image_returned = False
+
+    def service(request):
+        nonlocal image_returned
+        response = successful_service(request)
+        if request.url.path == "/view":
+            image_returned = True
+        return response
+
+    def guard():
+        if image_returned:
+            raise module.ImageGenerationError(decline)
+
+    provider = ComfyImageProvider("comfyui", "http://127.0.0.1:8188", ("sd-v1.safetensors",))
+    backend_factories = {"comfyui": lambda config: module.ComfyUIBackend(
+        config, transport=httpx.MockTransport(service))}
+    with pytest.raises(module.ImageGenerationError) as caught:
+        await provider.generate(configured(tmp_path), "boat", {}, guard=guard,
+                                backend_factories=backend_factories)
+    assert caught.value.reason == expected
+    if decline == "kernel_denied":
+        assert caught.value.cause == decline
+    assert image_returned
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_comfy_rechecks_after_temp_flush_before_publication(tmp_path, monkeypatch):
+    module = backend_module()
+    original_fsync = module.os.fsync
+    revoked = False
+    checks = 0
+
+    def revoke_after_flush(fd):
+        nonlocal revoked
+        original_fsync(fd)
+        revoked = True
+
+    def guard():
+        nonlocal checks
+        checks += 1
+        if revoked:
+            raise module.ImageGenerationError("kernel_denied")
+
+    monkeypatch.setattr(module.os, "fsync", revoke_after_flush)
+    backend = module.ComfyUIBackend(configured(tmp_path), transport=httpx.MockTransport(successful_service))
+    with pytest.raises(module.ImageWithheldAfterGeneration) as caught:
+        await backend.generate("boat", {}, guard=guard)
+    assert caught.value.cause == "kernel_denied"
+    assert checks == 2
+    assert list(tmp_path.iterdir()) == []
+
+
 @pytest.mark.parametrize("url", [
     "https://example.com", "http://192.168.1.2:8188", "http://localhost:8188",
     "http://127.0.0.1:8188@evil.example", "http://user:pass@127.0.0.1:8188",
