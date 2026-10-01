@@ -1,0 +1,28 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_boundaries.py::test_redirect_validation_prevents_private_second_physical_get", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/redirect_revalidation_removed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_redirect_validation_prevents_private_second_physical_get _________
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-745/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-745/test_redirect_validation_preve0/clip.mp4'), requests=[])
+
+    @pytest.mark.asyncio
+    async def test_redirect_validation_prevents_private_second_physical_get(rig):
+        seen = []
+
+        def transport(request):
+            seen.append((str(request.url), request.headers.get("Host", "")))
+            if len(seen) == 1:
+                return httpx.Response(302, headers={"location": "http://127.0.0.1/private.mp4"})
+            return httpx.Response(200, content=b"forbidden synthetic second GET")
+
+        def factory(plugin, **kw):
+            return VideoHTTPClient(plugin, resolver=lambda host, mode: (["8.8.8.8"], None),
+                                   transport_factory=lambda target: httpx.MockTransport(transport), **kw)
+
+>       with pytest.raises(ToolRPCValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ToolRPCValidationError
+
+tests/test_h277_video_boundaries.py:220: Failed
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_boundaries.py::test_redirect_validation_prevents_private_second_physical_get

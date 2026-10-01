@@ -1,0 +1,42 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_boundaries.py::test_signed_worker_refuses_changed_physical_model_request[cookie]", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/native_cookie_guard_removed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_signed_worker_refuses_changed_physical_model_request[cookie] _______
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-753/test_.../test_signed_worker_refuses_cha0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])
+rewrite = 'cookie'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("rewrite", ["url", "method", "authorization", "cookie"])
+    async def test_signed_worker_refuses_changed_physical_model_request(rig, rewrite):
+        """Adapter event hooks can rewrite the final wire request after approval."""
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        assert proposal["reason"] == "approval_required", proposal
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+
+        async def alter(request):
+            if rewrite == "url":
+                request.url = httpx.URL("http://127.0.0.1:1234/v1/other")
+            elif rewrite == "method":
+                request.method = "GET"
+            elif rewrite == "authorization":
+                request.headers["Authorization"] = "Bearer altered-synthetic-key"
+            else:
+                request.headers["Cookie"] = "synthetic=1"
+
+        rig.video.model_client_factory = lambda backend, **kw: llm_async_client(
+            backend, transport=httpx.MockTransport(lambda request: (
+                rig.requests.append(request) or httpx.Response(200, json={
+                    "choices": [{"message": {"content": "should not send"}}]}))),
+            event_hooks={"request": [alter]}, **kw)
+        await rig.worker.tick()
+>       assert rig.requests == []
+E       AssertionError: assert [<Request('PO...ompletions')>] == []
+E
+E         Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>
+E         Use -v to get more diff
+
+tests/test_h277_video_boundaries.py:43: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_boundaries.py::test_signed_worker_refuses_changed_physical_model_request[cookie]

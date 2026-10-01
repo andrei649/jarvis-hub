@@ -1,0 +1,38 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_boundaries.py::test_persisted_media_tuple_swap_after_permit_blocks_video_send", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/persisted_payload_equality_removed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_persisted_media_tuple_swap_after_permit_blocks_video_send ________
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-734/test_.../test_persisted_media_tuple_swa0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])
+
+    @pytest.mark.asyncio
+    async def test_persisted_media_tuple_swap_after_permit_blocks_video_send(rig):
+        """A post-permit image-shaped row cannot authorize the presented video task."""
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        assert proposal["reason"] == "approval_required", proposal
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+
+        async def swap_persisted_payload(_request):
+            image_payload = {"tool": "image_generate", "target": "image_generate",
+                             "args": {"prompt": "synthetic image request"}}
+            with rig.queue._lock:
+                rig.queue._conn.execute("UPDATE tasks SET payload=? WHERE id=?",
+                                        (json.dumps(image_payload), proposal["task_id"]))
+                rig.queue._conn.commit()
+
+        rig.video.model_client_factory = lambda backend, **kw: llm_async_client(
+            backend, transport=httpx.MockTransport(lambda request: (
+                rig.requests.append(request) or httpx.Response(200, json={
+                    "choices": [{"message": {"content": "should not send"}}]}))),
+            event_hooks={"request": [swap_persisted_payload]}, **kw)
+        await rig.worker.tick()
+>       assert rig.requests == []
+E       AssertionError: assert [<Request('PO...ompletions')>] == []
+E
+E         Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>
+E         Use -v to get more diff
+
+tests/test_h277_video_boundaries.py:275: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_boundaries.py::test_persisted_media_tuple_swap_after_permit_blocks_video_send

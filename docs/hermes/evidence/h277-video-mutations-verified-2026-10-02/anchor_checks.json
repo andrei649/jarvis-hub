@@ -1,0 +1,126 @@
+[
+  {
+    "anchor_count": 1,
+    "label": "canonical_kind_ignored"
+  },
+  {
+    "anchor_count": 1,
+    "label": "canonical_target_ignored"
+  },
+  {
+    "anchor_count": 1,
+    "label": "unsigned_intake_allowed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "unsigned_execute_allowed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "receipt_validation_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "persisted_payload_equality_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "toolrpc_class_compare_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "kernel_denial_ignored"
+  },
+  {
+    "anchor_count": 1,
+    "label": "remote_call_approval_ignored"
+  },
+  {
+    "anchor_count": 1,
+    "label": "remote_role_consent_ignored"
+  },
+  {
+    "anchor_count": 1,
+    "label": "strict_local_ignored"
+  },
+  {
+    "anchor_count": 1,
+    "label": "local_only_actor_ignored"
+  },
+  {
+    "anchor_count": 1,
+    "label": "private_source_url_allowed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "secret_query_allowed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "descriptor_nofollow_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "local_file_byte_cap_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "redirect_revalidation_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "http_stream_byte_cap_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "source_physical_recheck_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "actual_file_hash_compare_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "native_direct_transport_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "native_url_guard_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "native_method_guard_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "native_auth_guard_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "native_cookie_guard_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "native_body_guard_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "cleanup_disclosure_recheck_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "inherited_provider_route_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "video_model_precedence_removed"
+  },
+  {
+    "anchor_count": 1,
+    "label": "full_url_key_gate_reduced_to_provider"
+  },
+  {
+    "anchor_count": 1,
+    "label": "invalid_vision_falls_back_to_default"
+  }
+]

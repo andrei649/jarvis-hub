@@ -56,8 +56,12 @@ and one expected failure, with 1,836 frontend tests passing separately. Source h
 were unchanged through the full backend run. PR reconciliation left zero open PRs;
 the new continuation commits remain local on the branch above.
 
-Next action: add current-snapshot video mutation coverage, then continue the accepted
-Hermes queue with fresh source review and bounded implementation. Broader native
+Current video mutation coverage is frozen on `92905443`: 29 detected, two documented
+survivors and zero invalid mutations; 168 baseline tests pass and all 4,130 archived
+source hashes were restored. See the [exact campaign](evidence/h277-video-mutations-verified-2026-10-02/report.md).
+
+Next action: implement the [governed provider fallback plan](../superpowers/plans/2026-10-02-h277-video-provider-fallback.md),
+then continue the accepted Hermes queue with fresh source review and bounded implementation. Broader native
 providers/runtime fallback and live model acceptance remain separate requirements;
-the current evidence counts 172 equivalent, 253 partial, 64 missing and 208 requiring
+the current evidence counts 172 equivalent, 254 partial, 64 missing and 207 requiring
 review out of all 697 accepted rows. Preserve the existing local checkpoints.

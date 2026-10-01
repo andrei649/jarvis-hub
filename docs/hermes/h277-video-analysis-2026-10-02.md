@@ -79,6 +79,13 @@
   no concrete blocker; that reviewer did not run tests.
 - The separate fresh mutation campaign killed 14/14 mutants with 203 baseline
   tests on `9d5b3add`. It predates video and does not establish video mutation coverage.
+- The later immutable video campaign on `92905443` passed 168 baseline tests and
+  detected 29 of 31 validated mutations: two survived, zero were invalid. Both
+  survivors passed all 168 tests under mutation; their overlapping current guards
+  are explained in the [bounded report](evidence/h277-video-mutations-verified-2026-10-02/report.md).
+  One kill proves a changed refusal reason only, not unsigned egress. All 4,130
+  archived source hashes were restored. Fifteen new boundary cases also passed
+  within a 322-test focused selection; this is separate from the full suite above.
 
 The first video production draft preceded its tests, contrary to the planned TDD
 order. Later review regressions were demonstrated failing before their fixes:
@@ -91,7 +98,7 @@ the old commit's missing consumer is static baseline evidence.
 
 H277 remains partial. Native `video_url` support depends on the chosen model;
 mocked transport tests do not establish live model acceptance. Local files require
-POSIX descriptor support. New video mutation coverage, broader auxiliary providers,
+POSIX descriptor support. Broader auxiliary providers,
 runtime provider fallback, inbound video ingestion and native mobile controls remain
 separate work. Mediation must be `enforce`; both video feature flags default off.
 Existing backend warnings include deprecations and an unawaited-coroutine warning;

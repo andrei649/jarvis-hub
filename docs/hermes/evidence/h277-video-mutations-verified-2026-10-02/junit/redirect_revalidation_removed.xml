@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.335" timestamp="2026-10-02T01:32:59.667129+03:00" hostname="Macmini">
+    <testcase classname="tests.test_h277_video_boundaries" name="test_redirect_validation_prevents_private_second_physical_get" time="0.731">
+      <failure message="Failed: DID NOT RAISE ToolRPCValidationError">rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-745/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-745/test_redirect_validation_preve0/clip.mp4'), requests=[])
+
+    @pytest.mark.asyncio
+    async def test_redirect_validation_prevents_private_second_physical_get(rig):
+        seen = []
+
+        def transport(request):
+            seen.append((str(request.url), request.headers.get("Host", "")))
+            if len(seen) == 1:
+                return httpx.Response(302, headers={"location": "http://127.0.0.1/private.mp4"})
+            return httpx.Response(200, content=b"forbidden synthetic second GET")
+
+        def factory(plugin, **kw):
+            return VideoHTTPClient(plugin, resolver=lambda host, mode: (["8.8.8.8"], None),
+                                   transport_factory=lambda target: httpx.MockTransport(transport), **kw)
+
+&gt;       with pytest.raises(ToolRPCValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ToolRPCValidationError
+
+tests/test_h277_video_boundaries.py:220: Failed</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

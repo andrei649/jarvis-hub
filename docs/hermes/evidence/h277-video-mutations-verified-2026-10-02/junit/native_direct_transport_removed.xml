@@ -1,0 +1,43 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.369" timestamp="2026-10-02T01:33:06.839610+03:00" hostname="Macmini">
+    <testcase classname="tests.test_h277_video_boundaries" name="test_signed_worker_refuses_transport_substitution_after_initial_proof" time="0.794">
+      <failure message="AssertionError: assert [&lt;Request('PO...ompletions')&gt;] == []&#10;  &#10;  Left contains one more item: &lt;Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')&gt;&#10;  Use -v to get more diff">rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-749/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-749/test_signed_worker_refuses_tra0/clip.mp4'), requests=[])
+
+    @pytest.mark.asyncio
+    async def test_signed_worker_refuses_transport_substitution_after_initial_proof(rig):
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        assert proposal["reason"] == "approval_required", proposal
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+        sent = []
+
+        class OpaqueTransport(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request):
+                sent.append(request)
+                return httpx.Response(200, json={"choices": [{"message": {"content": "unsafe"}}]})
+
+        def factory(backend, **kw):
+            client = llm_async_client(backend, transport=httpx.MockTransport(
+                lambda request: httpx.Response(500)), **kw)
+
+            async def swap(_request):
+                # Initial scope proof saw the direct MockTransport; the physical
+                # request proof must notice this later route replacement.
+                client._transport = OpaqueTransport()
+
+            client.event_hooks["request"].insert(0, swap)
+            return client
+
+        rig.video.model_client_factory = factory
+        await rig.worker.tick()
+&gt;       assert sent == []
+E       AssertionError: assert [&lt;Request('PO...ompletions')&gt;] == []
+E
+E         Left contains one more item: &lt;Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')&gt;
+E         Use -v to get more diff
+
+tests/test_h277_video_boundaries.py:74: AssertionError</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

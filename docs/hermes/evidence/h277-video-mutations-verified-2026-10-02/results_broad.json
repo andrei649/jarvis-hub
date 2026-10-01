@@ -1,0 +1,89 @@
+{
+  "head": "9290544390b151108948ae2af325bd955e508aae",
+  "results": [
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h277_video_boundaries.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/unsigned_execute_allowed__broad.xml"
+      ],
+      "elapsed_seconds": 3.6,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/unsigned_execute_allowed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 168
+      },
+      "label": "unsigned_execute_allowed",
+      "log": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/unsigned_execute_allowed__broad.log",
+      "normalization": "Each saved log/XML line capped at 2000 characters, then trailing ASCII spaces/tabs stripped; raw and pre-whitespace hashes retained",
+      "pre_whitespace_junit_sha256": "0e39d7531ab579d04b24a947cf02f3b6cb094603672b53deaf957def8be8bb12",
+      "pre_whitespace_log_sha256": "ac0b7ba86f0e18872f8a20fc1e03210d5490c194f41e97bec3069c9e83f99369",
+      "provisional": "survived",
+      "raw_junit_sha256": "fd0b42217e40e5cefd68dd91dfb5f7a8f300a6a9fddd02358584e405f7723e70",
+      "raw_log_sha256": "ac0b7ba86f0e18872f8a20fc1e03210d5490c194f41e97bec3069c9e83f99369",
+      "returncode": 0,
+      "saved_junit_sha256": "0e39d7531ab579d04b24a947cf02f3b6cb094603672b53deaf957def8be8bb12",
+      "saved_log_sha256": "ac0b7ba86f0e18872f8a20fc1e03210d5490c194f41e97bec3069c9e83f99369",
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h277_video_boundaries.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h277_video_boundaries.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/remote_role_consent_ignored__broad.xml"
+      ],
+      "elapsed_seconds": 3.59,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/remote_role_consent_ignored__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 168
+      },
+      "label": "remote_role_consent_ignored",
+      "log": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/remote_role_consent_ignored__broad.log",
+      "normalization": "Each saved log/XML line capped at 2000 characters, then trailing ASCII spaces/tabs stripped; raw and pre-whitespace hashes retained",
+      "pre_whitespace_junit_sha256": "90632dc63a29da4e377d209f32c5a55e2f80b97e71c0f86b44818481d88de3dc",
+      "pre_whitespace_log_sha256": "b8e77eca2b7c13ccb3714388ffca3bbd27bbf6d11f9b0d0f308b1ccf8dda3343",
+      "provisional": "survived",
+      "raw_junit_sha256": "6f3c13e8d2d36fe98f559f8bd919090d24d3f2126a36b3fd41bf240dc906c2f7",
+      "raw_log_sha256": "b8e77eca2b7c13ccb3714388ffca3bbd27bbf6d11f9b0d0f308b1ccf8dda3343",
+      "returncode": 0,
+      "saved_junit_sha256": "90632dc63a29da4e377d209f32c5a55e2f80b97e71c0f86b44818481d88de3dc",
+      "saved_log_sha256": "b8e77eca2b7c13ccb3714388ffca3bbd27bbf6d11f9b0d0f308b1ccf8dda3343",
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h277_video_boundaries.py"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.315" timestamp="2026-10-02T01:33:01.455659+03:00" hostname="Macmini">
+    <testcase classname="tests.test_h277_video_boundaries" name="test_http_video_stream_without_content_length_is_byte_bounded" time="0.740">
+      <failure message="Failed: DID NOT RAISE VideoPolicyRefused">rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-746/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-746/test_http_video_stream_without0/clip.mp4'), requests=[])
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10ff49190&gt;
+
+    @pytest.mark.asyncio
+    async def test_http_video_stream_without_content_length_is_byte_bounded(rig, monkeypatch):
+        from agents.core import video_analysis
+
+        monkeypatch.setattr(video_analysis, "MAX_VIDEO_BYTES", 5)
+        seen = []
+
+        class Chunks(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                yield b"123"
+                yield b"456"
+
+        def factory(plugin, **kw):
+            return VideoHTTPClient(plugin, resolver=lambda host, mode: (["8.8.8.8"], None),
+                                   transport_factory=lambda target: httpx.MockTransport(
+                                       lambda request: (seen.append(request) or
+                                                        httpx.Response(200, stream=Chunks()))), **kw)
+
+&gt;       with pytest.raises(VideoPolicyRefused, match="too large"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE VideoPolicyRefused
+
+tests/test_h277_video_boundaries.py:111: Failed</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,70 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_analysis.py::test_revocation_during_model_client_cleanup_withholds_answer", "tests/test_h277_video_fallback.py::test_inherited_key_change_during_client_cleanup_withholds_answer", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/cleanup_disclosure_recheck_removed.xml"]
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_revocation_during_model_client_cleanup_withholds_answer _________
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-755/test_.../test_revocation_during_model_c0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c49d580>
+
+    @pytest.mark.asyncio
+    async def test_revocation_during_model_client_cleanup_withholds_answer(rig, monkeypatch):
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+        original_factory = rig.video.model_client_factory
+
+        def factory(*args, **kwargs):
+            client = original_factory(*args, **kwargs)
+            close = client._transport.aclose
+
+            async def revoke_on_close():
+                monkeypatch.setenv("JARVIS_ROLE_VIDEO_MODEL", "revoked-model")
+                await close()
+
+            client._transport.aclose = revoke_on_close
+            return client
+
+        rig.video.model_client_factory = factory
+        await rig.worker.tick()
+        assert len(rig.requests) == 1
+>       assert rig.queue.get(proposal["task_id"]).result["status"] != "ok"
+E       AssertionError: assert 'ok' != 'ok'
+
+tests/test_h277_video_analysis.py:242: AssertionError
+_______ test_inherited_key_change_during_client_cleanup_withholds_answer _______
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-755/test_.../test_inherited_key_change_duri0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c49ddc0>
+
+    @pytest.mark.asyncio
+    async def test_inherited_key_change_during_client_cleanup_withholds_answer(rig, monkeypatch):
+        local_vision(monkeypatch)
+        for name in ("JARVIS_ROLE_VIDEO_PROVIDER", "JARVIS_ROLE_VIDEO_MODEL",
+                     "JARVIS_ROLE_VIDEO_BASE_URL"):
+            monkeypatch.delenv(name, raising=False)
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+        original_factory = rig.video.model_client_factory
+
+        def factory(*args, **kwargs):
+            client = original_factory(*args, **kwargs)
+            close = client._transport.aclose
+
+            async def revoke_on_close():
+                monkeypatch.setenv("JARVIS_ROLE_VISION_KEY", "revoked-secret")
+                await close()
+
+            client._transport.aclose = revoke_on_close
+            return client
+
+        rig.video.model_client_factory = factory
+        await rig.worker.tick()
+        assert len(rig.requests) == 1
+>       assert rig.queue.get(proposal["task_id"]).result["status"] != "ok"
+E       AssertionError: assert 'ok' != 'ok'
+
+tests/test_h277_video_fallback.py:231: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_analysis.py::test_revocation_during_model_client_cleanup_withholds_answer
+FAILED tests/test_h277_video_fallback.py::test_inherited_key_change_during_client_cleanup_withholds_answer

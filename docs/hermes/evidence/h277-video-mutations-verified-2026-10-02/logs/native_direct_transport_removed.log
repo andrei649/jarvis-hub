@@ -1,0 +1,43 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_boundaries.py::test_signed_worker_refuses_transport_substitution_after_initial_proof", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/native_direct_transport_removed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_signed_worker_refuses_transport_substitution_after_initial_proof _____
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-749/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-749/test_signed_worker_refuses_tra0/clip.mp4'), requests=[])
+
+    @pytest.mark.asyncio
+    async def test_signed_worker_refuses_transport_substitution_after_initial_proof(rig):
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        assert proposal["reason"] == "approval_required", proposal
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+        sent = []
+
+        class OpaqueTransport(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request):
+                sent.append(request)
+                return httpx.Response(200, json={"choices": [{"message": {"content": "unsafe"}}]})
+
+        def factory(backend, **kw):
+            client = llm_async_client(backend, transport=httpx.MockTransport(
+                lambda request: httpx.Response(500)), **kw)
+
+            async def swap(_request):
+                # Initial scope proof saw the direct MockTransport; the physical
+                # request proof must notice this later route replacement.
+                client._transport = OpaqueTransport()
+
+            client.event_hooks["request"].insert(0, swap)
+            return client
+
+        rig.video.model_client_factory = factory
+        await rig.worker.tick()
+>       assert sent == []
+E       AssertionError: assert [<Request('PO...ompletions')>] == []
+E
+E         Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>
+E         Use -v to get more diff
+
+tests/test_h277_video_boundaries.py:74: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_boundaries.py::test_signed_worker_refuses_transport_substitution_after_initial_proof

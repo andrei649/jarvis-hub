@@ -1899,8 +1899,10 @@
   [grant replay contract](docs/hermes/permission-grant-replay-2026-10-01.md).
   H277 now has local approved native video dispatch, independent role consent and
   bounded vision-route inheritance; see the [video verification report](docs/hermes/h277-video-analysis-2026-10-02.md).
-  Wider provider/runtime fallback, video mutation coverage and live acceptance remain
-  unfinished; this does not close H277 or HEQ-1.
+  Video mutation verification on `92905443` detected 29 of 31 valid mutations, with two
+  documented survivors and 168 passing baseline tests; all source hashes were restored.
+  Wider provider/runtime fallback and live acceptance remain unfinished; this does not
+  close H277 or HEQ-1.
 
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.

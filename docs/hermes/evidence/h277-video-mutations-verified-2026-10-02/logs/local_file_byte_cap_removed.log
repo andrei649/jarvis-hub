@@ -1,0 +1,44 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_boundaries.py::test_scoped_file_read_requests_at_most_cap_plus_one_byte", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/local_file_byte_cap_removed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_scoped_file_read_requests_at_most_cap_plus_one_byte ___________
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-744/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-744/test_scoped_file_read_requests0/clip.mp4'), requests=[])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10da15b80>
+
+    def test_scoped_file_read_requests_at_most_cap_plus_one_byte(rig, monkeypatch):
+        from agents.core import video_analysis
+
+        monkeypatch.setattr(video_analysis, "MAX_VIDEO_BYTES", 5)
+        rig.source.write_bytes(b"1234")
+        real_fdopen = video_analysis.os.fdopen
+        requested = []
+
+        class ObservedStream:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+
+            def fileno(self):
+                return self.stream.fileno()
+
+            def read(self, size=-1):
+                requested.append(size)
+                return self.stream.read(size)
+
+        monkeypatch.setattr(video_analysis.os, "fdopen", lambda *args, **kw: ObservedStream(
+            real_fdopen(*args, **kw)))
+        assert _read_scoped(rig.source, FileScope.from_env()) == b"1234"
+>       assert len(requested) == 1 and 0 <= requested[0] <= 6
+E       assert (1 == 1 and 0 <= -1)
+E        +  where 1 = len([-1])
+
+tests/test_h277_video_boundaries.py:145: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_boundaries.py::test_scoped_file_read_requests_at_most_cap_plus_one_byte

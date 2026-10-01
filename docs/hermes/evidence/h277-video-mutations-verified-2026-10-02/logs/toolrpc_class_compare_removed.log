@@ -1,0 +1,31 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_analysis.py::test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/toolrpc_class_compare_removed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads ____
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-735/test_.../test_server_owned_class_and_di0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])
+
+    @pytest.mark.asyncio
+    async def test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads(rig):
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        task = rig.queue.get(proposal["task_id"])
+        assert task.payload["tool"] == task.payload["target"] == "video_analyze"
+        assert task.payload["class"].startswith("video.")
+        assert task.payload["class"] == rig.video.classifier(task.payload["args"])["class"]
+        wrong = SimpleNamespace(kind="tool.rpc", payload={"tool": "echo", "target": "echo", "args": {}},
+                                id=task.id, agent=task.agent)
+        denied = await rig.coordinator._approved_image_tool_rpc_execute(wrong)
+        assert denied == {"status": "failed", "reason": "image_task_required"}
+        await rig.worker.apply_decision(task.id, "accept", decided_by="andrei")
+        rig.orch.tool_rpc._tools["video_analyze"]["classifier"] = lambda args: {"class": "video." + "0" * 56}
+        await rig.worker.tick()
+>       assert rig.requests == []
+E       AssertionError: assert [<Request('PO...ompletions')>] == []
+E
+E         Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>
+E         Use -v to get more diff
+
+tests/test_h277_video_analysis.py:281: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_analysis.py::test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads

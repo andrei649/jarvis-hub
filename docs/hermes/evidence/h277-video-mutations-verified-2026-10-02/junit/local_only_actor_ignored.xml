@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.298" timestamp="2026-10-02T01:32:50.845421+03:00" hostname="Macmini">
+    <testcase classname="tests.test_h277_video_analysis" name="test_remote_role_cannot_override_shared_privacy_posture[local_only_agent]" time="0.719">
+      <failure message="Failed: DID NOT RAISE VideoPolicyRefused">tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-740/test_remote_role_cannot_overri0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x110100530&gt;
+posture = 'local_only_agent'
+
+    @pytest.mark.parametrize("posture", ["strict_local", "cloud_fallback_never", "safe_mode", "local_only_agent"])
+    def test_remote_role_cannot_override_shared_privacy_posture(tmp_path, monkeypatch, posture):
+        from agents.core import safe_mode, settings_db
+        from agents.core.llm import data_handling as dh
+        from agents.core.llm import video_policy
+        from tests.test_h513_data_handling import Audit, router
+
+        monkeypatch.setattr(settings_db, "DB_PATH", tmp_path / "settings.db")
+        monkeypatch.setattr(settings_db, "_initialized", False)
+        settings_db.init_db(force=True)
+        monkeypatch.setattr(dh, "_scope_key", lambda: b"synthetic-video-consent-key")
+        monkeypatch.setenv("JARVIS_VIDEO_ANALYSIS", "1")
+        monkeypatch.setenv("JARVIS_ROLE_VIDEO_PROVIDER", "openai-compatible")
+        monkeypatch.setenv("JARVIS_ROLE_VIDEO_MODEL", "remote-video")
+        monkeypatch.setenv("JARVIS_ROLE_VIDEO_BASE_URL", "https://model.example/v1")
+        monkeypatch.setenv("JARVIS_ROLE_VIDEO_ALLOW_REMOTE", "1")
+        target = video_policy.describe_video_data_target()
+        dh.acknowledge(router(), target.provider, True, dh.role_target_scope(target), Audit(),
+                       target=dh.VIDEO_TARGET)
+        if posture == "strict_local":
+            monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+        elif posture == "cloud_fallback_never":
+            monkeypatch.setattr(safe_mode, "get_value", lambda *args: "never")
+        elif posture == "safe_mode":
+            monkeypatch.setenv("JARVIS_SAFE_MODE", "1")
+        actor = "ultron" if posture == "local_only_agent" else "jarvis"
+&gt;       with pytest.raises(video_policy.VideoPolicyRefused):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE VideoPolicyRefused
+
+tests/test_h277_video_analysis.py:345: Failed</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

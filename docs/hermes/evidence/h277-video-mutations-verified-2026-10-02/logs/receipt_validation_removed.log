@@ -1,0 +1,39 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_boundaries.py::test_durable_receipt_revoked_at_physical_model_hook_blocks_send", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/receipt_validation_removed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_durable_receipt_revoked_at_physical_model_hook_blocks_send ________
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-733/test_.../test_durable_receipt_revoked_a0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])
+
+    @pytest.mark.asyncio
+    async def test_durable_receipt_revoked_at_physical_model_hook_blocks_send(rig):
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        assert proposal["reason"] == "approval_required", proposal
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+
+        async def revoke_receipt(_request):
+            with rig.queue._lock:
+                row = rig.queue._conn.execute(
+                    "SELECT mediation_receipt FROM tasks WHERE id=?", (proposal["task_id"],)).fetchone()
+                receipt = json.loads(row[0])
+                receipt["signature"] = "invalid-synthetic-signature"
+                rig.queue._conn.execute("UPDATE tasks SET mediation_receipt=? WHERE id=?",
+                                        (json.dumps(receipt), proposal["task_id"]))
+                rig.queue._conn.commit()
+
+        rig.video.model_client_factory = lambda backend, **kw: llm_async_client(
+            backend, transport=httpx.MockTransport(lambda request: (
+                rig.requests.append(request) or httpx.Response(200, json={
+                    "choices": [{"message": {"content": "should not send"}}]}))),
+            event_hooks={"request": [revoke_receipt]}, **kw)
+        await rig.worker.tick()
+>       assert rig.requests == []
+E       AssertionError: assert [<Request('PO...ompletions')>] == []
+E
+E         Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>
+E         Use -v to get more diff
+
+tests/test_h277_video_boundaries.py:249: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_boundaries.py::test_durable_receipt_revoked_at_physical_model_hook_blocks_send

@@ -5,8 +5,11 @@
 An approved native `video_analyze` consumer and independent video-role consent are
 implemented locally, including bounded inheritance from the effective vision route.
 See the [current implementation and verification report](../../hermes/h277-video-analysis-2026-10-02.md).
-H277 remains partial: broader auxiliary routing, video mutation coverage and live
-native-video model acceptance are unfinished. The dated sections below retain their
+The later [video mutation campaign](../../hermes/evidence/h277-video-mutations-verified-2026-10-02/report.md)
+on `92905443` detected 29 of 31 validated mutations, with two documented survivors,
+zero invalid cases and 168 passing baseline tests. All 4,130 source hashes were restored.
+H277 remains partial: broader auxiliary routing and live native-video model acceptance
+are unfinished. The dated sections below retain their
 original snapshot scope.
 
 ## Current-source verification (2026-10-01)
