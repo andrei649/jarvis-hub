@@ -1,0 +1,9 @@
+{
+  "counts": {
+    "invalid": 2,
+    "killed": 14,
+    "survived": 15
+  },
+  "source_sha256": "51af4e4e969b7d0162ea3ec7b284ee66dbca5c6da8f17ce2889d47414daed166",
+  "status": "adjudicated"
+}

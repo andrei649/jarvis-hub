@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.270" timestamp="2026-10-02T01:12:48.597575+03:00" hostname="Macmini"><testcase classname="tests.test_h277_video_fallback" name="test_invalid_configured_vision_does_not_select_another_video_destination" time="0.682"><failure message="AssertionError: assert not True&#10; +  where True = ResolvedRole(role='video', configured=True, provider_id='lm-studio', model='video-model', base_url='http://localhost:1...E_VIDEO_MODEL', 'provider': 'default', 'base_url': 'default'}), local=True, data_policy='local', reason='', ignored=()).configured">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10bb34fb0&gt;
+
+    def test_invalid_configured_vision_does_not_select_another_video_destination(monkeypatch):
+        monkeypatch.setenv("JARVIS_ROLE_VISION_PROVIDER", "openai-compatible")
+        monkeypatch.setenv("JARVIS_ROLE_VIDEO_MODEL", "video-model")
+        role = model_roles.resolve("video")
+&gt;       assert not role.configured
+E       AssertionError: assert not True
+E        +  where True = ResolvedRole(role='video', configured=True, provider_id='lm-studio', model='video-model', base_url='http://localhost:1...E_VIDEO_MODEL', 'provider': 'default', 'base_url': 'default'}), local=True, data_policy='local', reason='', ignored=()).configured
+
+tests/test_h277_video_fallback.py:95: AssertionError</failure></testcase></testsuite></testsuites>

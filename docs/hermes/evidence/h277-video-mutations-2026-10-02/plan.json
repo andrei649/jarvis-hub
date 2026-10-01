@@ -1,0 +1,327 @@
+{
+  "source_ref": "c60918ed1382ccae260706b4ee6a28184535f73e",
+  "snapshot_policy": "Pinned git archive only, no dirty overlay. Serial mutations in /tmp; finally restore and hash every archived file.",
+  "required_untracked": [],
+  "baseline_tests": [
+    "tests/test_h277_video_analysis.py",
+    "tests/test_h277_video_fallback.py",
+    "tests/test_h277_model_roles.py",
+    "tests/test_h277_role_routes.py"
+  ],
+  "mutations": [
+    {
+      "label": "canonical_kind_ignored",
+      "file": "agents/core/video_analysis.py",
+      "a": "getattr(task, \"kind\", None) == \"tool.rpc\" and isinstance(payload, dict)",
+      "b": "isinstance(payload, dict)",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_video_handler_refuses_noncanonical_task_even_if_context_is_trusted"
+      ],
+      "invariant": "Only canonical tool.rpc video tasks may execute."
+    },
+    {
+      "label": "canonical_target_ignored",
+      "file": "agents/core/video_analysis.py",
+      "a": "payload.get(\"tool\") == payload.get(\"target\") == \"video_analyze\"",
+      "b": "payload.get(\"tool\") == \"video_analyze\"",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads"
+      ],
+      "invariant": "Video tool and target must both be server-owned video_analyze."
+    },
+    {
+      "label": "unsigned_intake_allowed",
+      "file": "agents/core/video_analysis.py",
+      "a": "if (self.queue is None or self.queue.mediation_mode != \"enforce\"\n                or self.queue.classify_mediation(\"tool.rpc\") is not True):",
+      "b": "if (self.queue is None or self.queue.classify_mediation(\"tool.rpc\") is not True):",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_accepted_unsigned_canonical_video_row_cannot_run_with_mediation_off"
+      ],
+      "invariant": "Intake requires enforce-mode signed mediation."
+    },
+    {
+      "label": "unsigned_execute_allowed",
+      "file": "agents/core/video_analysis.py",
+      "a": "if (self.queue is None or self.queue.mediation_mode != \"enforce\"\n                    or self.queue.classify_mediation(\"tool.rpc\") is not True):",
+      "b": "if (self.queue is None or self.queue.classify_mediation(\"tool.rpc\") is not True):",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_signed_row_cannot_run_after_mediation_mode_changes_to_off"
+      ],
+      "invariant": "Execution rechecks enforce-mode signed mediation."
+    },
+    {
+      "label": "receipt_validation_removed",
+      "file": "agents/core/autonomy_coordinator.py",
+      "a": "if not queue.validate_mediated_execution(\n                            task, queue.execution_fingerprint(task)):",
+      "b": "if False:",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval",
+        "tests/test_h277_video_analysis.py::test_accepted_unsigned_canonical_video_row_cannot_run_with_mediation_off"
+      ],
+      "invariant": "Coordinator validates durable mediation receipt before trusted execution."
+    },
+    {
+      "label": "persisted_payload_equality_removed",
+      "file": "agents/core/autonomy_coordinator.py",
+      "a": "and persisted.payload == getattr(task, \"payload\", None)",
+      "b": "and True",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads"
+      ],
+      "invariant": "Trusted execution is bound to the persisted exact payload."
+    },
+    {
+      "label": "toolrpc_class_compare_removed",
+      "file": "agents/core/tool_rpc.py",
+      "a": "if labels.get(\"class\") != payload.get(\"class\"):",
+      "b": "if False:",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads"
+      ],
+      "invariant": "ToolRPC compares server-recomputed class with approved class."
+    },
+    {
+      "label": "kernel_denial_ignored",
+      "file": "agents/core/video_analysis.py",
+      "a": "if self.kernel_check(args, task):",
+      "b": "if False:",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval"
+      ],
+      "invariant": "Video execution rechecks the action kernel."
+    },
+    {
+      "label": "remote_call_approval_ignored",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "allow_remote is True and env_flag(\"JARVIS_ROLE_VIDEO_ALLOW_REMOTE\")",
+      "b": "env_flag(\"JARVIS_ROLE_VIDEO_ALLOW_REMOTE\")",
+      "tests": [
+        "tests/test_h277_video_fallback.py::test_inherited_remote_route_needs_video_consent_and_privacy_controls"
+      ],
+      "invariant": "Every remote call needs explicit per-call allow_remote."
+    },
+    {
+      "label": "remote_role_consent_ignored",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "if not identity.local and not row[\"acknowledged\"]:",
+      "b": "if False:",
+      "tests": [
+        "tests/test_h277_video_fallback.py::test_inherited_remote_route_needs_video_consent_and_privacy_controls"
+      ],
+      "invariant": "Remote video role needs independent consent."
+    },
+    {
+      "label": "strict_local_ignored",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "if env_flag(\"JARVIS_STRICT_LOCAL\"):",
+      "b": "if False:",
+      "tests": [
+        "tests/test_h277_video_fallback.py::test_inherited_remote_route_needs_video_consent_and_privacy_controls"
+      ],
+      "invariant": "Strict-local mode refuses remote video."
+    },
+    {
+      "label": "local_only_actor_ignored",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "if str(actor or \"\").strip().lower() in LOCAL_ONLY_AGENTS:",
+      "b": "if False:",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_remote_role_cannot_override_shared_privacy_posture[local_only_agent]"
+      ],
+      "invariant": "Local-only actor cannot send video to remote role."
+    },
+    {
+      "label": "private_source_url_allowed",
+      "file": "agents/core/video_analysis.py",
+      "a": "or is_private_ip(parts.hostname):",
+      "b": "or False:",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_unsafe_video_urls_refused_at_intake[http://127.0.0.1/clip.mp4]"
+      ],
+      "invariant": "A private-IP source is refused before fetch."
+    },
+    {
+      "label": "secret_query_allowed",
+      "file": "agents/core/video_analysis.py",
+      "a": "for key, _ in parse_qsl(parts.query, keep_blank_values=True))):",
+      "b": "for key, _ in [])):",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_unsafe_video_urls_refused_at_intake[https://video.example/clip.mp4?token=secret]"
+      ],
+      "invariant": "Credential-bearing query parameters are rejected."
+    },
+    {
+      "label": "descriptor_nofollow_removed",
+      "file": "agents/core/video_analysis.py",
+      "a": "os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd",
+      "b": "os.O_RDONLY | os.O_NONBLOCK, dir_fd=fd",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_workspace_source_is_descriptor_scoped_and_rejects_symlink_swap"
+      ],
+      "invariant": "Final workspace descriptor cannot follow a symlink."
+    },
+    {
+      "label": "local_file_byte_cap_removed",
+      "file": "agents/core/video_analysis.py",
+      "a": "data = stream.read(MAX_VIDEO_BYTES + 1)",
+      "b": "data = stream.read()",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_actual_file_bytes_must_match_the_approved_snapshot"
+      ],
+      "invariant": "Local source reads stay bounded before encoding."
+    },
+    {
+      "label": "redirect_revalidation_removed",
+      "file": "agents/core/video_analysis.py",
+      "a": "_source(current, FileScope.from_env())",
+      "b": "None",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_public_url_uses_pinned_client_and_rejects_private_redirect"
+      ],
+      "invariant": "Each redirect target is validated before next DNS/GET."
+    },
+    {
+      "label": "http_stream_byte_cap_removed",
+      "file": "agents/core/video_analysis.py",
+      "a": "if len(data) > MAX_VIDEO_BYTES:",
+      "b": "if False:",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_public_url_refuses_stream_byte_overflow"
+      ],
+      "invariant": "Streaming HTTP video source is byte bounded."
+    },
+    {
+      "label": "source_physical_recheck_removed",
+      "file": "agents/core/video_analysis.py",
+      "a": "self._video_check()\n                if request.headers.get(\"Authorization\")",
+      "b": "None\n                if request.headers.get(\"Authorization\")",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_role_revoked_at_physical_source_get_blocks_model"
+      ],
+      "invariant": "Authority is checked at physical source GET."
+    },
+    {
+      "label": "actual_file_hash_compare_removed",
+      "file": "agents/core/video_analysis.py",
+      "a": "if actual_class != task.payload.get(\"class\"):",
+      "b": "if False:",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_actual_file_bytes_must_match_the_approved_snapshot"
+      ],
+      "invariant": "Actual file bytes must match the approved signed class."
+    },
+    {
+      "label": "native_direct_transport_removed",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "require_direct_async_transport(client, request.url)",
+      "b": "None",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval"
+      ],
+      "invariant": "Model request must use a direct transport."
+    },
+    {
+      "label": "native_url_guard_removed",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "or request.method != \"POST\" or str(request.url) != identity.request_url",
+      "b": "or request.method != \"POST\"",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval"
+      ],
+      "invariant": "Physical model URL exactly matches approved native endpoint."
+    },
+    {
+      "label": "native_method_guard_removed",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "or request.method != \"POST\" or str(request.url) != identity.request_url",
+      "b": "or str(request.url) != identity.request_url",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval"
+      ],
+      "invariant": "Physical model method is POST."
+    },
+    {
+      "label": "native_auth_guard_removed",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "or request.headers.get(\"Authorization\", \"\") != identity.authorization",
+      "b": "or False",
+      "tests": [
+        "tests/test_h277_video_fallback.py::test_signed_toolrpc_worker_uses_inherited_route"
+      ],
+      "invariant": "Physical Authorization header matches approved identity."
+    },
+    {
+      "label": "native_cookie_guard_removed",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "or request.headers.get(\"Cookie\") or not valid):",
+      "b": "or not valid):",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval"
+      ],
+      "invariant": "Physical model request carries no Cookie header."
+    },
+    {
+      "label": "native_body_guard_removed",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "or request.headers.get(\"Cookie\") or not valid):",
+      "b": "or request.headers.get(\"Cookie\")):",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_physical_model_guard_rejects_extra_unapproved_message",
+        "tests/test_h277_video_analysis.py::test_adapter_cannot_mutate_expected_body_before_physical_send"
+      ],
+      "invariant": "Native request body is an immutable exact approved payload."
+    },
+    {
+      "label": "cleanup_disclosure_recheck_removed",
+      "file": "agents/core/video_analysis.py",
+      "a": "check()  # A close hook or transport cleanup can revoke authority.",
+      "b": "None  # A close hook or transport cleanup can revoke authority.",
+      "tests": [
+        "tests/test_h277_video_analysis.py::test_revocation_during_model_client_cleanup_withholds_answer",
+        "tests/test_h277_video_fallback.py::test_inherited_key_change_during_client_cleanup_withholds_answer"
+      ],
+      "invariant": "Consent/configuration is checked after client cleanup before disclosure."
+    },
+    {
+      "label": "inherited_provider_route_removed",
+      "file": "agents/core/llm/model_roles.py",
+      "a": "if provider or base:",
+      "b": "if provider or base or True:",
+      "tests": [
+        "tests/test_h277_video_fallback.py::test_video_inherits_resolved_vision_route_and_uses_video_model_override",
+        "tests/test_h277_video_fallback.py::test_signed_toolrpc_worker_uses_inherited_route"
+      ],
+      "invariant": "Unpinned video route inherits the resolved vision provider and URL."
+    },
+    {
+      "label": "video_model_precedence_removed",
+      "file": "agents/core/llm/model_roles.py",
+      "a": "chosen_model = model or vision.model",
+      "b": "chosen_model = vision.model",
+      "tests": [
+        "tests/test_h277_video_fallback.py::test_video_inherits_resolved_vision_route_and_uses_video_model_override"
+      ],
+      "invariant": "Explicit video model overrides resolved vision model."
+    },
+    {
+      "label": "full_url_key_gate_reduced_to_provider",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "and str(httpx.URL(native.request_url)) == str(httpx.URL(request_url))):",
+      "b": "and True):",
+      "tests": [
+        "tests/test_h277_video_fallback.py::test_exact_native_endpoint_and_provider_required_to_borrow_vision_key"
+      ],
+      "invariant": "Vision key crosses only to identical provider and complete native URL."
+    },
+    {
+      "label": "invalid_vision_falls_back_to_default",
+      "file": "agents/core/llm/model_roles.py",
+      "a": "if vision_selected:\n        source =",
+      "b": "if vision_selected and not model:\n        source =",
+      "tests": [
+        "tests/test_h277_video_fallback.py::test_invalid_configured_vision_does_not_select_another_video_destination"
+      ],
+      "invariant": "Invalid selected vision route never silently selects default video destination."
+    }
+  ]
+}

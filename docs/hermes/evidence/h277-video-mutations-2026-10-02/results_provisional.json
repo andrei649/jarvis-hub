@@ -1,0 +1,1021 @@
+{
+  "head": "c60918ed1382ccae260706b4ee6a28184535f73e",
+  "results": [
+    {
+      "anchor_sha256": "40ba2576f5e8356d8c964d160bc607b81cc763f133c3727550d007771c29e26b",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_video_handler_refuses_noncanonical_task_even_if_context_is_trusted",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/canonical_kind_ignored.xml"
+      ],
+      "elapsed_seconds": 11.71,
+      "failure_excerpts": [
+        "test_video_handler_refuses_noncanonical_task_even_if_context_is_trusted [failure] assert True is False\nrig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-634/test_.../test_video_handler_refuses_non0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])\n\n    @pytest.mark.asyncio\n    async def test_video_handler_refuses_noncanonical_task_even_if_context_is_trusted(rig):\n        args = rig.video.preflight({\"video_url\": str(rig.source), \"question\": \"What happens?\"})\n        task = SimpleNamespace(kind=\"toolrpc.terminal_run\", agent=\"jarvis\", payload={\n            \"tool\": \"video_analyze\", \"target\": \"vi"
+      ],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Only canonical tool.rpc video tasks may execute.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/canonical_kind_ignored.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "canonical_kind_ignored",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/canonical_kind_ignored.log",
+      "log_sha256": "79710ff404f8a10a26e64c7050938d52965aa2060971a78afdc4736bbd07c8df",
+      "provisional": "assertion_failure",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_video_handler_refuses_noncanonical_task_even_if_context_is_trusted"
+      ]
+    },
+    {
+      "anchor_sha256": "bcc465cefd7575ae8fcd470b93ff2d96cfe59aab45344695a9a5212cf46a0f88",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/canonical_target_ignored.xml"
+      ],
+      "elapsed_seconds": 1.79,
+      "failure_excerpts": [],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Video tool and target must both be server-owned video_analyze.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/canonical_target_ignored.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "canonical_target_ignored",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/canonical_target_ignored.log",
+      "log_sha256": "183875db850688350fa9a99e5b312b2d6f305547a0e7ad79602a44c0b2ab9662",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads"
+      ]
+    },
+    {
+      "anchor_sha256": "612fd99b81e9e1d828cfd528bee1cbf9a500d664f50f043dcdbc5985a8fef9e3",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_accepted_unsigned_canonical_video_row_cannot_run_with_mediation_off",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_intake_allowed.xml"
+      ],
+      "elapsed_seconds": 1.77,
+      "failure_excerpts": [],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Intake requires enforce-mode signed mediation.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_intake_allowed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "unsigned_intake_allowed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/unsigned_intake_allowed.log",
+      "log_sha256": "510c07c9b6c548563cebf2f398516819021d2120244a208f8bbe2220082f5d3a",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_accepted_unsigned_canonical_video_row_cannot_run_with_mediation_off"
+      ]
+    },
+    {
+      "anchor_sha256": "22b4cb20a9a72bb92ec3ef3aef3e02a5712224b212016807d164a54ee0e56ae7",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_signed_row_cannot_run_after_mediation_mode_changes_to_off",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_execute_allowed.xml"
+      ],
+      "elapsed_seconds": 1.74,
+      "failure_excerpts": [],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Execution rechecks enforce-mode signed mediation.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_execute_allowed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "unsigned_execute_allowed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/unsigned_execute_allowed.log",
+      "log_sha256": "a60725d08eb8357036534b14168c0e3fe73d8eff33d1f8b300824f5d948ee446",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_signed_row_cannot_run_after_mediation_mode_changes_to_off"
+      ]
+    },
+    {
+      "anchor_sha256": "59a57329370b56d43e0e70d87c4901ee37aac3c5d5c4971b5581762ba1de329b",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval",
+        "tests/test_h277_video_analysis.py::test_accepted_unsigned_canonical_video_row_cannot_run_with_mediation_off",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/receipt_validation_removed.xml"
+      ],
+      "elapsed_seconds": 1.94,
+      "failure_excerpts": [],
+      "file": "agents/core/autonomy_coordinator.py",
+      "invariant": "Coordinator validates durable mediation receipt before trusted execution.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/receipt_validation_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 2
+      },
+      "label": "receipt_validation_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/receipt_validation_removed.log",
+      "log_sha256": "0cc59cc4fe63f24285e7901c60f3d0dfdcafbfeb78b6ed2d81ee8010d965e8a5",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval",
+        "tests/test_h277_video_analysis.py::test_accepted_unsigned_canonical_video_row_cannot_run_with_mediation_off"
+      ]
+    },
+    {
+      "anchor_sha256": "4ab7cabc19dfc37e9c6d67cc409c73de27b44896e57ac62e8b9cf2a39f1c49a3",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/persisted_payload_equality_removed.xml"
+      ],
+      "elapsed_seconds": 1.89,
+      "failure_excerpts": [],
+      "file": "agents/core/autonomy_coordinator.py",
+      "invariant": "Trusted execution is bound to the persisted exact payload.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/persisted_payload_equality_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "persisted_payload_equality_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/persisted_payload_equality_removed.log",
+      "log_sha256": "07a7b8529247c5c1ed14255d1514a18dfc3bc651b4bc651e29316f6a54f01e71",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads"
+      ]
+    },
+    {
+      "anchor_sha256": "3a181bfff51fd7fbc6167e67fd02f910cc661701ab9800c77fc9a77dffb995d6",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/toolrpc_class_compare_removed.xml"
+      ],
+      "elapsed_seconds": 1.95,
+      "failure_excerpts": [
+        "test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads [failure] AssertionError: assert [<Request('PO...ompletions')>] == []\n  \n  Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>\n  Use -v to get more diff\nrig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-641/test_.../test_server_owned_class_and_di0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])\n\n    @pytest.mark.asyncio\n    async def test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads(rig):\n        proposal = await rig.orch.tool_rpc.handle({\"tool\": \"video_analyz"
+      ],
+      "file": "agents/core/tool_rpc.py",
+      "invariant": "ToolRPC compares server-recomputed class with approved class.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/toolrpc_class_compare_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "toolrpc_class_compare_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/toolrpc_class_compare_removed.log",
+      "log_sha256": "0585345afed46a8962a8be063999a914fc621810047b1a7499f59516b2185b7f",
+      "provisional": "assertion_failure",
+      "raw_log_sha256": "d66c041d320d872b546ed08739c0e74d67c3f77dd9eb9a1b551f325353ec2e29",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads"
+      ]
+    },
+    {
+      "anchor_sha256": "64606f4cb4176a1f7f5f5137d93effbaf279453089b81641e336b7e2f84ca3d6",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/kernel_denial_ignored.xml"
+      ],
+      "elapsed_seconds": 1.85,
+      "failure_excerpts": [],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Video execution rechecks the action kernel.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/kernel_denial_ignored.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "kernel_denial_ignored",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/kernel_denial_ignored.log",
+      "log_sha256": "8442dbe32ef47060d33be201299174a627b5ab5c40fb39e44cf02ee9df84f75b",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval"
+      ]
+    },
+    {
+      "anchor_sha256": "2649ee428fd0a6f209743a8926b9c9b8124140aabb80ed9d451d0da9c6383108",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_fallback.py::test_inherited_remote_route_needs_video_consent_and_privacy_controls",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/remote_call_approval_ignored.xml"
+      ],
+      "elapsed_seconds": 1.76,
+      "failure_excerpts": [
+        "test_inherited_remote_route_needs_video_consent_and_privacy_controls [failure] agents.core.llm.data_handling.DataHandlingRefused: openai-compatible: data handling is unknown; prompts may be retained or used for training. Video analysis use requires the owner's audited role acknowledgment.\ntmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-643/test_inherited_remote_route_ne0')\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bc28c80>\n\n    def test_inherited_remote_route_needs_video_consent_and_privacy_controls(tmp_path, monkeypatch):\n        from agents.core import settings_db\n        from agents.core.llm import data_handling "
+      ],
+      "file": "agents/core/llm/video_policy.py",
+      "invariant": "Every remote call needs explicit per-call allow_remote.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/remote_call_approval_ignored.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "remote_call_approval_ignored",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/remote_call_approval_ignored.log",
+      "log_sha256": "f9ada00d1637d80fe244258a10fb40270ef6c308db202c4b0ab5a341cfe2a013",
+      "provisional": "invalid",
+      "raw_log_sha256": "ca2bdd48ece477426b964fac04a1d2c8841dab192c32cbfd4c8d77eec7fb6f8f",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_fallback.py::test_inherited_remote_route_needs_video_consent_and_privacy_controls"
+      ]
+    },
+    {
+      "anchor_sha256": "598f6c5828859f31dadbdc64014303ca8a3a8bd3ed73af3855f007462c7213df",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_fallback.py::test_inherited_remote_route_needs_video_consent_and_privacy_controls",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/remote_role_consent_ignored.xml"
+      ],
+      "elapsed_seconds": 1.72,
+      "failure_excerpts": [],
+      "file": "agents/core/llm/video_policy.py",
+      "invariant": "Remote video role needs independent consent.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/remote_role_consent_ignored.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "remote_role_consent_ignored",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/remote_role_consent_ignored.log",
+      "log_sha256": "e34ccc2044a27fce056e16b080f68cd09f7bdf7bb780c38b38f8f7f355c44cfa",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_fallback.py::test_inherited_remote_route_needs_video_consent_and_privacy_controls"
+      ]
+    },
+    {
+      "anchor_sha256": "7b3fd6fbd08652d4a404e4b2fb30b5384cad32404caefb181ba6c8a22e29114e",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_fallback.py::test_inherited_remote_route_needs_video_consent_and_privacy_controls",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/strict_local_ignored.xml"
+      ],
+      "elapsed_seconds": 1.77,
+      "failure_excerpts": [
+        "test_inherited_remote_route_needs_video_consent_and_privacy_controls [failure] Failed: DID NOT RAISE VideoPolicyRefused\ntmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-645/test_inherited_remote_route_ne0')\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e3f8d70>\n\n    def test_inherited_remote_route_needs_video_consent_and_privacy_controls(tmp_path, monkeypatch):\n        from agents.core import settings_db\n        from agents.core.llm import data_handling as dh\n        from tests.test_h513_data_handling import Audit, router\n    \n        monkeypatch.setattr(settings_db, \"DB_PATH\", tmp_path / \"settings.db\")\n        monkeypat"
+      ],
+      "file": "agents/core/llm/video_policy.py",
+      "invariant": "Strict-local mode refuses remote video.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/strict_local_ignored.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "strict_local_ignored",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/strict_local_ignored.log",
+      "log_sha256": "2f156df2e9dfd681dd14a56f166432b8b9f51c3b8a9fdb594511d94a12da3789",
+      "provisional": "assertion_failure",
+      "raw_log_sha256": "6fdc02827539da79a72753c276d81d666dfd9b69c155e667f2d3e27b1c502b65",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_fallback.py::test_inherited_remote_route_needs_video_consent_and_privacy_controls"
+      ]
+    },
+    {
+      "anchor_sha256": "91e9232ca8014a1f77ae3af10e742bc7f550e0c23f606d7323cd0169ac776c39",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_remote_role_cannot_override_shared_privacy_posture[local_only_agent]",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/local_only_actor_ignored.xml"
+      ],
+      "elapsed_seconds": 1.73,
+      "failure_excerpts": [
+        "test_remote_role_cannot_override_shared_privacy_posture[local_only_agent] [failure] Failed: DID NOT RAISE VideoPolicyRefused\ntmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-646/test_remote_role_cannot_overri0')\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ba200e0>\nposture = 'local_only_agent'\n\n    @pytest.mark.parametrize(\"posture\", [\"strict_local\", \"cloud_fallback_never\", \"safe_mode\", \"local_only_agent\"])\n    def test_remote_role_cannot_override_shared_privacy_posture(tmp_path, monkeypatch, posture):\n        from agents.core import safe_mode, settings_db\n        from agents.core.llm import data_handling as dh\n        "
+      ],
+      "file": "agents/core/llm/video_policy.py",
+      "invariant": "Local-only actor cannot send video to remote role.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/local_only_actor_ignored.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "local_only_actor_ignored",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/local_only_actor_ignored.log",
+      "log_sha256": "650fddf0411c0fa599b7df0a08e43b6c644930f29b1a3bdb73d9f6d914995547",
+      "provisional": "assertion_failure",
+      "raw_log_sha256": "11ceff45b9f786d27fd0a653e58895558ef986d78d3d60a41cbeb4bb588a0e91",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_remote_role_cannot_override_shared_privacy_posture[local_only_agent]"
+      ]
+    },
+    {
+      "anchor_sha256": "8e0fd7d7bed7eee94b1f1e79b7ab1b71e6811ed5ffddc2fba6865ec456ebc0a3",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_unsafe_video_urls_refused_at_intake[http://127.0.0.1/clip.mp4]",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/private_source_url_allowed.xml"
+      ],
+      "elapsed_seconds": 1.75,
+      "failure_excerpts": [
+        "test_unsafe_video_urls_refused_at_intake[http://127.0.0.1/clip.mp4] [failure] Failed: DID NOT RAISE ToolRPCValidationError\nrig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-647/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-647/test_unsafe_video_urls_refused0/clip.mp4'), requests=[])\nurl = 'http://127.0.0.1/clip.mp4'\n\n    @pytest.mark.parametrize(\"url\", [\n        \"http://127.0.0.1/clip.mp4\", \"http://user:pass@video.example/clip.mp4\",\n        \"https://video.example/clip.mp4?token=secret\", \"file:///etc/passwd\",\n    ])\n    def test_unsafe_video_urls_refused_at_intake(rig, url):\n>       with pytest.raises(ToolRP"
+      ],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "A private-IP source is refused before fetch.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/private_source_url_allowed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "private_source_url_allowed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/private_source_url_allowed.log",
+      "log_sha256": "242eb99ba1b1e9a1460995d3a2551024f9f233de72c1295ed49a0bb8792c9e3b",
+      "provisional": "assertion_failure",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_unsafe_video_urls_refused_at_intake[http://127.0.0.1/clip.mp4]"
+      ]
+    },
+    {
+      "anchor_sha256": "2b5f2eb2602ae41811d261528bac83e67795919ee0facb8613f081f135534d02",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_unsafe_video_urls_refused_at_intake[https://video.example/clip.mp4?token=secret]",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/secret_query_allowed.xml"
+      ],
+      "elapsed_seconds": 1.77,
+      "failure_excerpts": [
+        "test_unsafe_video_urls_refused_at_intake[https://video.example/clip.mp4?token=secret] [failure] Failed: DID NOT RAISE ToolRPCValidationError\nrig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-648/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-648/test_unsafe_video_urls_refused0/clip.mp4'), requests=[])\nurl = 'https://video.example/clip.mp4?token=secret'\n\n    @pytest.mark.parametrize(\"url\", [\n        \"http://127.0.0.1/clip.mp4\", \"http://user:pass@video.example/clip.mp4\",\n        \"https://video.example/clip.mp4?token=secret\", \"file:///etc/passwd\",\n    ])\n    def test_unsafe_video_urls_refused_at_intake(rig, url"
+      ],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Credential-bearing query parameters are rejected.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/secret_query_allowed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "secret_query_allowed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/secret_query_allowed.log",
+      "log_sha256": "61ce1812be57913211d144283fb17c6962d9835a01488f64e2a00f446235deb6",
+      "provisional": "assertion_failure",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_unsafe_video_urls_refused_at_intake[https://video.example/clip.mp4?token=secret]"
+      ]
+    },
+    {
+      "anchor_sha256": "3400654693f599913f23c77086577547612db1d3cecb3884b640069c0a06c062",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_workspace_source_is_descriptor_scoped_and_rejects_symlink_swap",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/descriptor_nofollow_removed.xml"
+      ],
+      "elapsed_seconds": 1.7,
+      "failure_excerpts": [],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Final workspace descriptor cannot follow a symlink.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/descriptor_nofollow_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "descriptor_nofollow_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/descriptor_nofollow_removed.log",
+      "log_sha256": "753564564a68e9bd47f2e637597ad85b43c444e07da5fae2ca09e7e5adf5a76c",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_workspace_source_is_descriptor_scoped_and_rejects_symlink_swap"
+      ]
+    },
+    {
+      "anchor_sha256": "5105ce1fb828a8082aadc25f69484c1b58a0c9015e1f5658df6453def694b681",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_actual_file_bytes_must_match_the_approved_snapshot",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/local_file_byte_cap_removed.xml"
+      ],
+      "elapsed_seconds": 1.74,
+      "failure_excerpts": [],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Local source reads stay bounded before encoding.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/local_file_byte_cap_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "local_file_byte_cap_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/local_file_byte_cap_removed.log",
+      "log_sha256": "bd14180d16c5ee30c8839053e677a8f10e5e90a5a2fc71f11d17b465931d6dac",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_actual_file_bytes_must_match_the_approved_snapshot"
+      ]
+    },
+    {
+      "anchor_sha256": "f4c37af253af8642affe0d8427d3326288fac4478ff32f43967a9c099b1c5501",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_public_url_uses_pinned_client_and_rejects_private_redirect",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/redirect_revalidation_removed.xml"
+      ],
+      "elapsed_seconds": 1.76,
+      "failure_excerpts": [
+        "test_public_url_uses_pinned_client_and_rejects_private_redirect [failure] agents.core.llm.video_policy.VideoPolicyRefused: video redirect limit exceeded\nrig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-651/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-651/test_public_url_uses_pinned_cl0/clip.mp4'), requests=[])\n\n    @pytest.mark.asyncio\n    async def test_public_url_uses_pinned_client_and_rejects_private_redirect(rig):\n        from agents.core.video_analysis import VideoHTTPClient, _read_url\n    \n        seen, checks = [], []\n    \n        def transport(request):\n            seen.append(request)\n           "
+      ],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Each redirect target is validated before next DNS/GET.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/redirect_revalidation_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "redirect_revalidation_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/redirect_revalidation_removed.log",
+      "log_sha256": "fdcfbaf66f01f3a9f97335759bab839a218349d1fcc10885a265e26804ee7dd9",
+      "provisional": "invalid",
+      "raw_log_sha256": "c34d0753568e026254dc4025f507e9851d4ce629a07313c2a44b7f2ce957dc7e",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_public_url_uses_pinned_client_and_rejects_private_redirect"
+      ]
+    },
+    {
+      "anchor_sha256": "76956033ffe3f95b394df4727cb9a4358cb282c46aae13c1846aaf286a02ad79",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_public_url_refuses_stream_byte_overflow",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/http_stream_byte_cap_removed.xml"
+      ],
+      "elapsed_seconds": 1.72,
+      "failure_excerpts": [],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Streaming HTTP video source is byte bounded.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/http_stream_byte_cap_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "http_stream_byte_cap_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/http_stream_byte_cap_removed.log",
+      "log_sha256": "ae6eba3a0f530b14dbbde6aab8f111942c1490f8ca873a92b95de2bb3e3ac2f7",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_public_url_refuses_stream_byte_overflow"
+      ]
+    },
+    {
+      "anchor_sha256": "9c76d65bbdbc34539d2667b857661b4c02c59f3038df61e74a3129f2ec06a897",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_role_revoked_at_physical_source_get_blocks_model",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/source_physical_recheck_removed.xml"
+      ],
+      "elapsed_seconds": 1.78,
+      "failure_excerpts": [
+        "test_role_revoked_at_physical_source_get_blocks_model [failure] AssertionError: assert ([<Request('GE...8/clip.mp4')>] == []\n  \n  Left contains one more item: <Request('GET', 'https://8.8.8.8/clip.mp4')>\n  Use -v to get more diff)\nrig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-653/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-653/test_role_revoked_at_physical_0/clip.mp4'), requests=[])\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d8c0200>\n\n    @pytest.mark.asyncio\n    async def test_role_revoked_at_physical_source_get_blocks_model(rig, monkeypatch):\n        from agents.core.video_analysis"
+      ],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Authority is checked at physical source GET.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/source_physical_recheck_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "source_physical_recheck_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/source_physical_recheck_removed.log",
+      "log_sha256": "eb4069a848c1e7b3473705834148d916159cdd7cefcec8fd06dabfe883500f08",
+      "provisional": "assertion_failure",
+      "raw_log_sha256": "7ea9d9eca2e6701d0c678818a21e5f1ff3c54ee74f6c92f3b8177f69c6281a18",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_role_revoked_at_physical_source_get_blocks_model"
+      ]
+    },
+    {
+      "anchor_sha256": "6d52e584f24a6eedd11a30e3e0987eedc747d01d3ab32b28f279307f0de7df8f",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_actual_file_bytes_must_match_the_approved_snapshot",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/actual_file_hash_compare_removed.xml"
+      ],
+      "elapsed_seconds": 1.8,
+      "failure_excerpts": [
+        "test_actual_file_bytes_must_match_the_approved_snapshot [failure] AssertionError: assert [<Request('PO...ompletions')>] == []\n  \n  Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>\n  Use -v to get more diff\nrig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-654/test_.../test_actual_file_bytes_must_ma0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e119220>\n\n    @pytest.mark.asyncio\n    async def test_actual_file_bytes_must_match_the_approved_snapshot(rig, monkeypatch):\n        from agents"
+      ],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Actual file bytes must match the approved signed class.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/actual_file_hash_compare_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "actual_file_hash_compare_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/actual_file_hash_compare_removed.log",
+      "log_sha256": "46f55a7cdc413264e98308cd9269751f8528737e0a9123b77deafdba1cb4423a",
+      "provisional": "assertion_failure",
+      "raw_log_sha256": "23d663a5e72d32e2905f03f01fb0412d73f6e181e7ffe628d488c2a73ed3037a",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_actual_file_bytes_must_match_the_approved_snapshot"
+      ]
+    },
+    {
+      "anchor_sha256": "53e1cb735906e4bb5b7504cfc4223c271556e9d69c311c3bdad8923fd142e807",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_direct_transport_removed.xml"
+      ],
+      "elapsed_seconds": 1.91,
+      "failure_excerpts": [],
+      "file": "agents/core/llm/video_policy.py",
+      "invariant": "Model request must use a direct transport.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_direct_transport_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "native_direct_transport_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/native_direct_transport_removed.log",
+      "log_sha256": "9df9013473d8ac03de9e1bbfa772091d28f007f5a276b8123093c46b8099b058",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval"
+      ]
+    },
+    {
+      "anchor_sha256": "6c2338f883653181472aa624c04f9f5fe4fac90a31014b022aaf069fba1eb6de",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_url_guard_removed.xml"
+      ],
+      "elapsed_seconds": 1.88,
+      "failure_excerpts": [],
+      "file": "agents/core/llm/video_policy.py",
+      "invariant": "Physical model URL exactly matches approved native endpoint.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_url_guard_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "native_url_guard_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/native_url_guard_removed.log",
+      "log_sha256": "68e36015cdb4649205864fbda179de1d223012ddeb6fb76b4f9756f796f92e13",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval"
+      ]
+    },
+    {
+      "anchor_sha256": "6c2338f883653181472aa624c04f9f5fe4fac90a31014b022aaf069fba1eb6de",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_method_guard_removed.xml"
+      ],
+      "elapsed_seconds": 1.79,
+      "failure_excerpts": [],
+      "file": "agents/core/llm/video_policy.py",
+      "invariant": "Physical model method is POST.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_method_guard_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "native_method_guard_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/native_method_guard_removed.log",
+      "log_sha256": "ea3d668ba91111dfc02934ee6416772b137877d82edc3aac8d2f6ac32f5db65b",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval"
+      ]
+    },
+    {
+      "anchor_sha256": "d1ef9c6ffe17789cf852f8654abd9d492a50ec72dc9d4606977615f87fba6f0d",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_fallback.py::test_signed_toolrpc_worker_uses_inherited_route",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_auth_guard_removed.xml"
+      ],
+      "elapsed_seconds": 1.82,
+      "failure_excerpts": [],
+      "file": "agents/core/llm/video_policy.py",
+      "invariant": "Physical Authorization header matches approved identity.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_auth_guard_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "native_auth_guard_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/native_auth_guard_removed.log",
+      "log_sha256": "34c898adb0de5affee275135eee3a38d8502404b5e55348670f579ff09bfa789",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_fallback.py::test_signed_toolrpc_worker_uses_inherited_route"
+      ]
+    },
+    {
+      "anchor_sha256": "df9e0602a9dcc2dce043cda903f33536cef6ded69e8fe0f2adbb7ed0f5f263d9",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_cookie_guard_removed.xml"
+      ],
+      "elapsed_seconds": 1.79,
+      "failure_excerpts": [],
+      "file": "agents/core/llm/video_policy.py",
+      "invariant": "Physical model request carries no Cookie header.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_cookie_guard_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "native_cookie_guard_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/native_cookie_guard_removed.log",
+      "log_sha256": "d919ca31493c350e9b8c061c5976acb9f406aafb0cf8489a52d63901835c9ec5",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_registered_signed_worker_path_sends_native_video_only_after_approval"
+      ]
+    },
+    {
+      "anchor_sha256": "df9e0602a9dcc2dce043cda903f33536cef6ded69e8fe0f2adbb7ed0f5f263d9",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_physical_model_guard_rejects_extra_unapproved_message",
+        "tests/test_h277_video_analysis.py::test_adapter_cannot_mutate_expected_body_before_physical_send",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_body_guard_removed.xml"
+      ],
+      "elapsed_seconds": 1.85,
+      "failure_excerpts": [
+        "test_physical_model_guard_rejects_extra_unapproved_message [failure] AssertionError: assert [<Request('PO...ompletions')>] == []\n  \n  Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>\n  Use -v to get more diff\nrig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-660/test_.../test_physical_model_guard_reje0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])\n\n    @pytest.mark.asyncio\n    async def test_physical_model_guard_rejects_extra_unapproved_message(rig):\n        proposal = await rig.orch.tool_rpc.handle({\"tool\": \"video_analyze\", \"args\": {\n          ",
+        "test_adapter_cannot_mutate_expected_body_before_physical_send [failure] AssertionError: assert [<Request('PO...ompletions')>] == []\n  \n  Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>\n  Use -v to get more diff\nrig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-660/test_.../test_adapter_cannot_mutate_exp0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])\n\n    @pytest.mark.asyncio\n    async def test_adapter_cannot_mutate_expected_body_before_physical_send(rig):\n        proposal = await rig.orch.tool_rpc.handle({\"tool\": \"video_analyze\", \"args\": {\n    "
+      ],
+      "file": "agents/core/llm/video_policy.py",
+      "invariant": "Native request body is an immutable exact approved payload.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_body_guard_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 2,
+        "skipped": 0,
+        "tests": 2
+      },
+      "label": "native_body_guard_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/native_body_guard_removed.log",
+      "log_sha256": "36540af57a7ff4ea9a2f7a2079211db8c3cedb8519af61eff5524325fbd99c11",
+      "provisional": "assertion_failure",
+      "raw_log_sha256": "96284be6d0a30eb2414735be55e8702a2af661da212df65ab65fa0f5bf011a44",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_physical_model_guard_rejects_extra_unapproved_message",
+        "tests/test_h277_video_analysis.py::test_adapter_cannot_mutate_expected_body_before_physical_send"
+      ]
+    },
+    {
+      "anchor_sha256": "28377d93b0ab13af582f1a1baf95d0666e14679b6b49c38bd3b7a6890663d0bf",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py::test_revocation_during_model_client_cleanup_withholds_answer",
+        "tests/test_h277_video_fallback.py::test_inherited_key_change_during_client_cleanup_withholds_answer",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/cleanup_disclosure_recheck_removed.xml"
+      ],
+      "elapsed_seconds": 1.87,
+      "failure_excerpts": [
+        "test_revocation_during_model_client_cleanup_withholds_answer [failure] AssertionError: assert 'ok' != 'ok'\nrig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-661/test_.../test_revocation_during_model_c0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ffd5460>\n\n    @pytest.mark.asyncio\n    async def test_revocation_during_model_client_cleanup_withholds_answer(rig, monkeypatch):\n        proposal = await rig.orch.tool_rpc.handle({\"tool\": \"video_analyze\", \"args\": {\n            \"video_url\": str(rig.source), \"question\": \"What happens?\"}",
+        "test_inherited_key_change_during_client_cleanup_withholds_answer [failure] AssertionError: assert 'ok' != 'ok'\nrig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-661/test_.../test_inherited_key_change_duri0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ffdb290>\n\n    @pytest.mark.asyncio\n    async def test_inherited_key_change_during_client_cleanup_withholds_answer(rig, monkeypatch):\n        local_vision(monkeypatch)\n        for name in (\"JARVIS_ROLE_VIDEO_PROVIDER\", \"JARVIS_ROLE_VIDEO_MODEL\",\n                     \"JARVIS_ROLE_VI"
+      ],
+      "file": "agents/core/video_analysis.py",
+      "invariant": "Consent/configuration is checked after client cleanup before disclosure.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/cleanup_disclosure_recheck_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 2,
+        "skipped": 0,
+        "tests": 2
+      },
+      "label": "cleanup_disclosure_recheck_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/cleanup_disclosure_recheck_removed.log",
+      "log_sha256": "ac50f4e03e875e80feb2640ff492bb4cf4cfd812ee3a499b5c511f0ed5c32131",
+      "provisional": "assertion_failure",
+      "raw_log_sha256": "56fa5461842ffd32e72733b2e256fb1eaec76b48980bbea26880843a0c868e06",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_analysis.py::test_revocation_during_model_client_cleanup_withholds_answer",
+        "tests/test_h277_video_fallback.py::test_inherited_key_change_during_client_cleanup_withholds_answer"
+      ]
+    },
+    {
+      "anchor_sha256": "b06c96d8aea3de128d36b3ac32d9acd759ae2538711530164ba7bffecdb52ee9",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_fallback.py::test_video_inherits_resolved_vision_route_and_uses_video_model_override",
+        "tests/test_h277_video_fallback.py::test_signed_toolrpc_worker_uses_inherited_route",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/inherited_provider_route_removed.xml"
+      ],
+      "elapsed_seconds": 1.89,
+      "failure_excerpts": [
+        "test_video_inherits_resolved_vision_route_and_uses_video_model_override [failure] AssertionError: assert ('', '', '') == ('lm-studio',....0.1:1234/v1')\n  \n  At index 0 diff: '' != 'lm-studio'\n  Use -v to get more diff\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ba92210>\n\n    def test_video_inherits_resolved_vision_route_and_uses_video_model_override(monkeypatch):\n        from agents.core.llm.data_handling import role_target_scope\n    \n        local_vision(monkeypatch)\n        role = model_roles.resolve(\"video\")\n>       assert (role.provider_id, role.model, role.base_url) == (\n            \"lm-studio\", \"vision-model\", \"http://127.0.0.1:1234/v1\")\nE       AssertionError: assert ",
+        "test_signed_toolrpc_worker_uses_inherited_route [failure] AssertionError: {'ok': False, 'reason': 'enqueue_failed', 'tool': 'video_analyze'}\nassert 'enqueue_failed' == 'approval_required'\n  \n  - approval_required\n  + enqueue_failed\nrig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-662/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-662/test_signed_toolrpc_worker_use0/clip.mp4'), requests=[])\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ba93440>\n\n    @pytest.mark.asyncio\n    async def test_signed_toolrpc_worker_uses_inherited_route(rig, monkeypatch):\n        local_vision(monkeypatch)\n        fo"
+      ],
+      "file": "agents/core/llm/model_roles.py",
+      "invariant": "Unpinned video route inherits the resolved vision provider and URL.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/inherited_provider_route_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 2,
+        "skipped": 0,
+        "tests": 2
+      },
+      "label": "inherited_provider_route_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/inherited_provider_route_removed.log",
+      "log_sha256": "6aae4d5420d999e91a2757ac2b91aa4d2591688d35d8e5828054b8c94c1a1c08",
+      "provisional": "assertion_failure",
+      "raw_log_sha256": "e02b7728a9945e5a30654a43e83f538c2c032c9e76f54534994d94ace4193747",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_fallback.py::test_video_inherits_resolved_vision_route_and_uses_video_model_override",
+        "tests/test_h277_video_fallback.py::test_signed_toolrpc_worker_uses_inherited_route"
+      ]
+    },
+    {
+      "anchor_sha256": "376e9586407454ba869a40e12de3a09592352ee424a1518f926d780a8d912f2d",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_fallback.py::test_video_inherits_resolved_vision_route_and_uses_video_model_override",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/video_model_precedence_removed.xml"
+      ],
+      "elapsed_seconds": 1.71,
+      "failure_excerpts": [
+        "test_video_inherits_resolved_vision_route_and_uses_video_model_override [failure] AssertionError: assert 'vision-model' == 'video-override'\n  \n  - video-override\n  + vision-model\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c1dd130>\n\n    def test_video_inherits_resolved_vision_route_and_uses_video_model_override(monkeypatch):\n        from agents.core.llm.data_handling import role_target_scope\n    \n        local_vision(monkeypatch)\n        role = model_roles.resolve(\"video\")\n        assert (role.provider_id, role.model, role.base_url) == (\n            \"lm-studio\", \"vision-model\", \"http://127.0.0.1:1234/v1\")\n        assert role.source[\"model\"] == \"JARVIS_ROLE_VISION_MODEL\"\n    "
+      ],
+      "file": "agents/core/llm/model_roles.py",
+      "invariant": "Explicit video model overrides resolved vision model.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/video_model_precedence_removed.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "video_model_precedence_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/video_model_precedence_removed.log",
+      "log_sha256": "3f739ceafb14722db7b55df141757c9bf301c3dadde2a20fda5694c5b873b939",
+      "provisional": "assertion_failure",
+      "raw_log_sha256": "e04aaad4b045e788b435ed54f80e1b5822a8d745314b8c8b147260b5129ef55b",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_fallback.py::test_video_inherits_resolved_vision_route_and_uses_video_model_override"
+      ]
+    },
+    {
+      "anchor_sha256": "4df08f6ffec1971fb3e197277307f0c573d068c05c24dda57e332e66b6aa1d08",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_fallback.py::test_exact_native_endpoint_and_provider_required_to_borrow_vision_key",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/full_url_key_gate_reduced_to_provider.xml"
+      ],
+      "elapsed_seconds": 1.73,
+      "failure_excerpts": [
+        "test_exact_native_endpoint_and_provider_required_to_borrow_vision_key [failure] AssertionError: assert 'Bearer vision-secret' == ''\n  \n  + Bearer vision-secret\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f86c9b0>\n\n    def test_exact_native_endpoint_and_provider_required_to_borrow_vision_key(monkeypatch):\n        local_vision(monkeypatch)\n        monkeypatch.setenv(\"JARVIS_ROLE_VIDEO_PROVIDER\", \"lm-studio\")\n        monkeypatch.setenv(\"JARVIS_ROLE_VIDEO_MODEL\", \"video-model\")\n        monkeypatch.setenv(\"JARVIS_ROLE_VIDEO_BASE_URL\", \"http://127.0.0.1:1234\")\n        assert video_policy.describe_video_data_target().authorization == \"Bearer vision-secret\"\n        monkeypatch.seten"
+      ],
+      "file": "agents/core/llm/video_policy.py",
+      "invariant": "Vision key crosses only to identical provider and complete native URL.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/full_url_key_gate_reduced_to_provider.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "full_url_key_gate_reduced_to_provider",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/full_url_key_gate_reduced_to_provider.log",
+      "log_sha256": "b5abcf250f4e8c2fba69b388adb9c6138c5dbc4f2659a11a53dfc5aada892388",
+      "provisional": "assertion_failure",
+      "raw_log_sha256": "16fe8ec781e222de549170b7e077248d7d644d3debcae096af5f70fdd8072f11",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_fallback.py::test_exact_native_endpoint_and_provider_required_to_borrow_vision_key"
+      ]
+    },
+    {
+      "anchor_sha256": "19bd754200702c2099ad4bffc47ac07735d2efa6f7d99ab84b319e428aca8215",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_fallback.py::test_invalid_configured_vision_does_not_select_another_video_destination",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/invalid_vision_falls_back_to_default.xml"
+      ],
+      "elapsed_seconds": 1.71,
+      "failure_excerpts": [
+        "test_invalid_configured_vision_does_not_select_another_video_destination [failure] AssertionError: assert not True\n +  where True = ResolvedRole(role='video', configured=True, provider_id='lm-studio', model='video-model', base_url='http://localhost:1...E_VIDEO_MODEL', 'provider': 'default', 'base_url': 'default'}), local=True, data_policy='local', reason='', ignored=()).configured\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bb34fb0>\n\n    def test_invalid_configured_vision_does_not_select_another_video_destination(monkeypatch):\n        monkeypatch.setenv(\"JARVIS_ROLE_VISION_PROVIDER\", \"openai-compatible\")\n        monkeypatch.setenv(\"JARVIS_ROLE_VIDEO_MODEL\", \"video-model\")\n  "
+      ],
+      "file": "agents/core/llm/model_roles.py",
+      "invariant": "Invalid selected vision route never silently selects default video destination.",
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/invalid_vision_falls_back_to_default.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      },
+      "label": "invalid_vision_falls_back_to_default",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/invalid_vision_falls_back_to_default.log",
+      "log_sha256": "c30d43e3e6d63196edb5b653bf3c928648fd9950706f479ef520f6ce60db52f8",
+      "provisional": "assertion_failure",
+      "returncode": 1,
+      "selectors": [
+        "tests/test_h277_video_fallback.py::test_invalid_configured_vision_does_not_select_another_video_destination"
+      ]
+    }
+  ]
+}

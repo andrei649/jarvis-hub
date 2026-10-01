@@ -1,0 +1,2 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_analysis.py::test_workspace_source_is_descriptor_scoped_and_rejects_symlink_swap", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/descriptor_nofollow_removed.xml"]
+.                                                                        [100%]

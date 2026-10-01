@@ -1,0 +1,2 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_analysis.py::test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/persisted_payload_equality_removed.xml"]
+.                                                                        [100%]

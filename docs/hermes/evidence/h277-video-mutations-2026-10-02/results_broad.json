@@ -1,0 +1,515 @@
+{
+  "head": "c60918ed1382ccae260706b4ee6a28184535f73e",
+  "results": [
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/canonical_target_ignored__broad.xml"
+      ],
+      "elapsed_seconds": 3.59,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/canonical_target_ignored__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "canonical_target_ignored",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/canonical_target_ignored__broad.log",
+      "log_sha256": "41eef48290c461cb95b43678077f117e0a3f60978af94ea5cf0c4f8d9864723e",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_intake_allowed__broad.xml"
+      ],
+      "elapsed_seconds": 3.28,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_intake_allowed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "unsigned_intake_allowed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/unsigned_intake_allowed__broad.log",
+      "log_sha256": "72b72a6aea7607980bfe68e96420913fa40f7cd302ab668603fc7a12e6c983d8",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_execute_allowed__broad.xml"
+      ],
+      "elapsed_seconds": 3.27,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_execute_allowed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "unsigned_execute_allowed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/unsigned_execute_allowed__broad.log",
+      "log_sha256": "7d4eaf32d7304f98606cbc6d13c473d2d970e1c095071a72057bb4d8c63abd59",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/receipt_validation_removed__broad.xml"
+      ],
+      "elapsed_seconds": 3.27,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/receipt_validation_removed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "receipt_validation_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/receipt_validation_removed__broad.log",
+      "log_sha256": "064865184a9e2ff57d660d8c9ae6575afb27fbe09ad0d514061d448b09a56d0c",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/persisted_payload_equality_removed__broad.xml"
+      ],
+      "elapsed_seconds": 3.37,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/persisted_payload_equality_removed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "persisted_payload_equality_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/persisted_payload_equality_removed__broad.log",
+      "log_sha256": "d01e693de78a1ebe7cc0ece3d43e4686a640e40c2d4df7d0b438b4ef7a26d487",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/kernel_denial_ignored__broad.xml"
+      ],
+      "elapsed_seconds": 3.33,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/kernel_denial_ignored__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "kernel_denial_ignored",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/kernel_denial_ignored__broad.log",
+      "log_sha256": "89625bc47e6d97d1d9e2beac95f63efdc8478bab12f2c49f125ca3e617cb4e7a",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/remote_role_consent_ignored__broad.xml"
+      ],
+      "elapsed_seconds": 3.3,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/remote_role_consent_ignored__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "remote_role_consent_ignored",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/remote_role_consent_ignored__broad.log",
+      "log_sha256": "718bbf5432657ba22fba5438e3b2719188e67a477a8c73c7696cf74720eec4eb",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/descriptor_nofollow_removed__broad.xml"
+      ],
+      "elapsed_seconds": 3.32,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/descriptor_nofollow_removed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "descriptor_nofollow_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/descriptor_nofollow_removed__broad.log",
+      "log_sha256": "e2e1c83068f1c44a081e10c87f0740eb37aeeff4c80637ee2cb6acc860e329e8",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/local_file_byte_cap_removed__broad.xml"
+      ],
+      "elapsed_seconds": 3.33,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/local_file_byte_cap_removed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "local_file_byte_cap_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/local_file_byte_cap_removed__broad.log",
+      "log_sha256": "f06d258ba93469cbf00c888c48f32fe5c9f6b3d9122baff7d596d8ff9c3750bf",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/http_stream_byte_cap_removed__broad.xml"
+      ],
+      "elapsed_seconds": 3.3,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/http_stream_byte_cap_removed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "http_stream_byte_cap_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/http_stream_byte_cap_removed__broad.log",
+      "log_sha256": "2d3e75eaf889b180ddb378c285774c16398c7695ff776709fa5a453534eed952",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_direct_transport_removed__broad.xml"
+      ],
+      "elapsed_seconds": 3.41,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_direct_transport_removed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "native_direct_transport_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/native_direct_transport_removed__broad.log",
+      "log_sha256": "ae4bc96bbec5cbf0867d4644a1b295889b4c100e9fc35da594d3a4cc21ad62ee",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_url_guard_removed__broad.xml"
+      ],
+      "elapsed_seconds": 3.36,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_url_guard_removed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "native_url_guard_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/native_url_guard_removed__broad.log",
+      "log_sha256": "5e9158f322a33dbb7e38e95c5cc542e43c4f751f644a366152b98389ab40e8c9",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_method_guard_removed__broad.xml"
+      ],
+      "elapsed_seconds": 3.4,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_method_guard_removed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "native_method_guard_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/native_method_guard_removed__broad.log",
+      "log_sha256": "21c57c2ecd800b2831222cc7d4503d139577fbeee9e371397d9715985abee7d7",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_auth_guard_removed__broad.xml"
+      ],
+      "elapsed_seconds": 3.42,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_auth_guard_removed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "native_auth_guard_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/native_auth_guard_removed__broad.log",
+      "log_sha256": "271b5bf1df225014d87fb48e5d4b93eef618b750c195b476395a4d801842bb97",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    },
+    {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-B",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "-q",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_cookie_guard_removed__broad.xml"
+      ],
+      "elapsed_seconds": 3.29,
+      "failure_excerpts": [],
+      "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_cookie_guard_removed__broad.xml",
+      "junit_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 153
+      },
+      "label": "native_cookie_guard_removed",
+      "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/native_cookie_guard_removed__broad.log",
+      "log_sha256": "84ae7f7f2042e3b16d33467839f86b771a5e1c59dc7d26f1b2a16db4c70ea037",
+      "provisional": "survived",
+      "returncode": 0,
+      "selectors": [
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py"
+      ]
+    }
+  ]
+}

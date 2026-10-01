@@ -1,0 +1,25 @@
+{
+  "command": [
+    "/tmp/nerva-pr-python-20261001/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "tests/test_h277_video_analysis.py",
+    "tests/test_h277_video_fallback.py",
+    "tests/test_h277_model_roles.py",
+    "tests/test_h277_role_routes.py",
+    "-q",
+    "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/baseline.xml"
+  ],
+  "elapsed_seconds": 3.53,
+  "junit": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/baseline.xml",
+  "junit_counts": {
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests": 153
+  },
+  "log": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/baseline.log",
+  "log_sha256": "92920c7745eb5fcf95998da92590ca74f0329e10287935486b3c4cbfd2109e67",
+  "returncode": 0
+}
