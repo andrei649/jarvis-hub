@@ -367,9 +367,16 @@ def test_a_clone_missing_blobs_never_claims_unrecoverable(repo, capsys):
     # The v2 blob is gone from the object store (a partial or damaged clone): the pin might be
     # that very blob, so it is "incomplete", with a hint to fetch, never "unrecoverable".
     blob = git(repo.root, "rev-parse", f"{repo.c2}:{EXAMPLE}")
-    loose = repo.root / ".git" / "objects" / blob[:2] / blob[2:]   # the fixture never packs
-    loose.chmod(0o644)
-    loose.unlink()
+    loose = repo.root / ".git" / "objects" / blob[:2] / blob[2:]   # loose object
+    if loose.exists():
+        loose.chmod(0o644)
+        loose.unlink()
+    pack_dir = repo.root / ".git" / "objects" / "pack"
+    if pack_dir.exists():
+        for p in pack_dir.iterdir():
+            if p.is_file():
+                p.chmod(0o644)
+                p.unlink()
     repin(repo.root, "H002", EXAMPLE, digest_of(repo.tmp, ["never", "committed"]))
     example = pins(hr.drift(repo.root, ["H002"])[0])[EXAMPLE]
     assert (example["found"], example["searched"], example["commits"]) == ("incomplete", 3, [])
