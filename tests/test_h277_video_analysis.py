@@ -20,6 +20,21 @@ from agents.core.video_analysis import VideoAnalysisTool, _read_scoped, _source
 from tests.test_task_mediation_evidence import _head_anchor, _signer
 
 
+@pytest.mark.asyncio
+async def test_video_handler_refuses_noncanonical_task_even_if_context_is_trusted(rig):
+    args = rig.video.preflight({"video_url": str(rig.source), "question": "What happens?"})
+    task = SimpleNamespace(kind="toolrpc.terminal_run", agent="jarvis", payload={
+        "tool": "video_analyze", "target": "video_analyze", "args": args,
+        "class": rig.video.classifier(args)["class"],
+    })
+    rig.video.approved_task = lambda: task
+    rig.video.execution_check = lambda task: True
+    rig.video.kernel_check = lambda args, task: None
+    result = await rig.video.execute(args)
+    assert result["ok"] is False
+    assert rig.requests == []
+
+
 @pytest.fixture
 def rig(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path))

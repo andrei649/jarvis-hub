@@ -250,7 +250,7 @@ class VideoAnalysisTool:
 
     async def execute(self, args):
         task = self.approved_task()
-        if task is None or not self.execution_check(task):
+        if not is_video_task(task) or not self.execution_check(task):
             return {"ok": False, "reason": "trusted_execution_required"}
 
         def check():

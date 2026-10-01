@@ -679,6 +679,8 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/routers/model_setup.py",
         # H378: the model-cost line a selection guard asks at reads the stricter value.
         "agents/core/llm/selection_guards.py",
+        # H277: video analysis refuses execution entirely in safe mode.
+        "agents/core/llm/video_policy.py",
         "agents/core/memory_tool.py",
         "agents/core/orchestrator.py",
         "agents/core/plugin_gate.py",
