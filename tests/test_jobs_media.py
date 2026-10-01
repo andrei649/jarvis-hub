@@ -323,19 +323,40 @@ def test_deadline_setting_is_registered_and_can_be_persisted(tmp_path, monkeypat
 
 
 @pytest.mark.asyncio
-async def test_one_deadline_covers_two_media_sends_and_records_first_ack(setup):
+async def test_one_deadline_covers_two_media_sends_and_records_first_ack(setup, monkeypatch):
+    from agents.core.autonomy import jobs_media
+
     s = setup
     s.settings["jobs.media_send_timeout_seconds"] = 1
     other = BinaryArtifactStore().put(PDF + b"\nother")
     job = create(s, media_ids=[s.item["id"], other["id"]])
+    clock = [0.0]
+    monkeypatch.setattr(
+        jobs_media,
+        "time",
+        SimpleNamespace(monotonic=lambda: clock[0], time=jobs_media.time.time),
+    )
+    second_started = asyncio.Event()
 
     async def slow(data, **kwargs):
         s.adapter.calls.append(("media", data))
-        await asyncio.sleep(0.65)
+        if len(s.adapter.calls) == 1:
+            clock[0] = 0.4  # First acknowledgement is inside the shared deadline.
+            return True
+        second_started.set()
+        await asyncio.Event().wait()
         return True
 
     s.adapter.send_media = slow
-    assert (await s.runner.fire(job.id)).status == "failed"
+    task = asyncio.create_task(s.runner.fire(job.id))
+    try:
+        await asyncio.wait_for(second_started.wait(), 5)
+        clock[0] = 1.1  # Expire the original deadline during the second send.
+        assert (await asyncio.wait_for(task, 5)).status == "failed"
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
     status = s.runner.media.public(job.id)
     assert status["status"] == "unknown" and status["sent"] == 1
     assert len(s.adapter.calls) == 2
