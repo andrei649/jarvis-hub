@@ -71,7 +71,8 @@ function taskTitle(t) {
   return String((t && (t.title || t.label || t.kind || t.id)) || 'task');
 }
 function taskColor(t) {
-  return runningTasks([t]).length ? '#41f59b' : '#8aa8be';
+  const s = String((t && (t.state || t.status)) || '').trim().toLowerCase();
+  return s === 'running' ? '#41f59b' : '#8aa8be';
 }
 
 export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion, cinema = false, llm, trust, sources, demo = false, t }: any) {
@@ -196,7 +197,20 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
   }, []);
   useEffect(() => { build(); /* eslint-disable-next-line */ }, [agents, models, cinema]);
   useEffect(() => { S.current.focus = activeId; }, [activeId]);
-  useEffect(() => { S.current.tasks = taskList; }, [taskList]);
+  useEffect(() => {
+    S.current.tasks = taskList;
+    // Bolt Optimization: Group task fan by owner on state ref when taskList updates
+    // to eliminate Map allocations, string operations, and array scans inside the 60 FPS animation loop.
+    const byOwner = new Map<string, any[]>();
+    for (let i = 0; i < taskList.length; i++) {
+      const tk = taskList[i];
+      const owner = taskOwner(tk);
+      const list = byOwner.get(owner) || [];
+      list.push(tk);
+      byOwner.set(owner, list);
+    }
+    S.current.tasksByOwner = byOwner;
+  }, [taskList]);
 
   function draw() {
     const st = S.current, cv = canvasRef.current; if (!cv) return; const ctx = cv.getContext('2d'); if (!ctx) return;
@@ -292,17 +306,8 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
   }
 
   function drawTaskFan(ctx, st, foc) {
-    const raw = Array.isArray(st.tasks) ? st.tasks : [];
-    if (!raw.length) return;
-    const byOwner = new Map();
-    raw.forEach((tk) => {
-      const owner = taskOwner(tk);
-      if (!node(owner)) return;
-      const list = byOwner.get(owner) || [];
-      list.push(tk);
-      byOwner.set(owner, list);
-    });
-    if (!byOwner.size) return;
+    const byOwner = st.tasksByOwner;
+    if (!byOwner || !byOwner.size) return;
     const W = st.w, H = st.h, cx = st.cx, cy = st.cy;
     const outer = Math.min(W, H) * (st.cinema ? 0.48 : 0.46);
     ctx.globalCompositeOperation = 'source-over';
@@ -310,15 +315,16 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     // more tasks than a fixed-size arc can label legibly — cap what's drawn so
     // the fan never degrades into an unreadable overlapping block, no matter
     // how many tasks pile up under one owner.
-    byOwner.forEach((fullList, owner) => {
+    byOwner.forEach((fullList: any[], owner: string) => {
       const origin = node(owner);
       if (!origin) return;
       const focused = foc === owner;
-      const list = fullList.slice(0, MAX_FAN_TASKS);
+      const count = Math.min(fullList.length, MAX_FAN_TASKS);
       const base = Math.atan2(origin.y - cy, origin.x - cx);
-      const span = focused ? Math.PI * 0.42 : Math.min(0.5, list.length * 0.13);
-      list.forEach((tk, i) => {
-        const frac = list.length === 1 ? 0.5 : i / (list.length - 1);
+      const span = focused ? Math.PI * 0.42 : Math.min(0.5, count * 0.13);
+      for (let i = 0; i < count; i++) {
+        const tk = fullList[i];
+        const frac = count === 1 ? 0.5 : i / (count - 1);
         const ang = base + (frac - 0.5) * span;
         const r = focused ? origin._r + 44 : outer;
         const x = focused ? origin.x + Math.cos(ang) * r : cx + Math.cos(ang) * r;
@@ -342,7 +348,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
             ctx.fillText(`+${fullList.length - MAX_FAN_LABELS} MORE`, x, y - 8);
           }
         }
-      });
+      }
     });
     ctx.globalAlpha = 1;
   }
