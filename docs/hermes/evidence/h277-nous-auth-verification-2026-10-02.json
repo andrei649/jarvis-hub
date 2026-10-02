@@ -1,0 +1,231 @@
+{
+  "generated_at": "2026-10-02T07:16:22.238894+00:00",
+  "base": "7a73bf03",
+  "source_commit": "a5b0bdb3891dd2bea015e930abed680bd3f94e98",
+  "source_head": "18d031d561d2a41a186cf6c06d4a3d389e775c35",
+  "pinned_hermes": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "publication": {
+    "push": false,
+    "merge": false,
+    "deploy": false,
+    "live_provider_calls": false
+  },
+  "full": {
+    "tests": 21018,
+    "passed": 20983,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 34,
+    "xfailed": 1,
+    "seconds": 226.677
+  },
+  "frozen_run": {
+    "head": "18d031d561d2a41a186cf6c06d4a3d389e775c35",
+    "head_after": "18d031d561d2a41a186cf6c06d4a3d389e775c35",
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests/",
+      "-n",
+      "4",
+      "--dist",
+      "loadfile",
+      "--timeout=90",
+      "--junitxml=/tmp/nerva-nous-auth-verified-full-20261002.xml"
+    ],
+    "returncode": 0,
+    "seconds": 228.73001541616395,
+    "changed_tracked_files": [],
+    "git_status_after": "",
+    "tracked_regular_files": 4361,
+    "fingerprint": "f285240496bbfc729bbb350d7069db033cfa69edb5473358767675a264ebb75e"
+  },
+  "focused": {
+    "tests": 269,
+    "passed": 266,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 3,
+    "xfailed": 0,
+    "seconds": 5.152
+  },
+  "parity_fix": {
+    "tests": 51,
+    "passed": 51,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "xfailed": 0,
+    "seconds": 1.981
+  },
+  "docs": {
+    "tests": 92,
+    "passed": 92,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "xfailed": 0,
+    "seconds": 3.357
+  },
+  "initial_full": {
+    "counts": {
+      "tests": 21018,
+      "passed": 20981,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1,
+      "seconds": 225.491
+    },
+    "failures": [
+      "tests/test_hud_v2_parity.py::test_every_user_facing_route_has_a_caller_or_is_on_the_punch_list",
+      "tests/test_openapi_parity_guard.py::test_openapi_surface_unchanged"
+    ],
+    "resolution_commit": "1267e809ef2587070db53ffff94a9c0b740af2f2"
+  },
+  "second_full": {
+    "counts": {
+      "tests": 21018,
+      "passed": 20982,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1,
+      "seconds": 225.046
+    },
+    "failures": [
+      "tests/test_doc_reference_integrity.py::test_roadmap_uncalled_route_count_matches_the_punch_list"
+    ],
+    "resolution_commit": "18d031d561d2a41a186cf6c06d4a3d389e775c35"
+  },
+  "final_gates": {
+    "tests": 143,
+    "passed": 143,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "xfailed": 0,
+    "seconds": 4.834
+  },
+  "new_backend_cases": 80,
+  "frontend_runtime_tests_rerun": false,
+  "typescript": "passed",
+  "live_oauth_client_registration_verified": false,
+  "mutation_campaign_run": false,
+  "graph_source_fresh": true,
+  "semantic_context_built": false,
+  "assessment": {
+    "equivalent": 172,
+    "partial": 254,
+    "missing": 64,
+    "needs_review": 207,
+    "excluded": 0,
+    "total": 697,
+    "rows_refreshed": 20,
+    "identical_moved_citations": 26
+  },
+  "changed_paths": [
+    ".env.example",
+    "BACKLOG.md",
+    "GO_LIVE_PLAN.md",
+    "HERMES_STATUS.md",
+    "NERVA.md",
+    "README.md",
+    "STATUS.md",
+    "agents/cli/nerva.py",
+    "agents/cli/nous_auth.py",
+    "agents/core/llm/nous_auth.py",
+    "agents/core/llm/nous_credentials.py",
+    "agents/core/routers/oauth.py",
+    "docs/DEVELOPMENT_ROADMAP.md",
+    "docs/FLAGS.md",
+    "docs/HERMES_CAPABILITIES.md",
+    "docs/design/HUD_V2_REMAINING.md",
+    "docs/hermes/assessment.json",
+    "docs/hermes/h277-nous-auth-plan-2026-10-02.md",
+    "docs/nous-auth.md",
+    "docs/test-manual/14-api-surface-sweep.md",
+    "frontend/src/api/schema.gen.ts",
+    "mobile/PARITY.md",
+    "project-status.json",
+    "tests/_snapshots/openapi_surface.json",
+    "tests/_snapshots/route_auth.json",
+    "tests/_snapshots/route_surface.json",
+    "tests/test_h277_nous_auth.py",
+    "tests/test_h277_nous_auth_surface.py",
+    "tests/test_h277_nous_credentials.py",
+    "tests/test_hud_v2_parity.py",
+    "tests/test_nerva_cli.py"
+  ],
+  "artifacts": {
+    "full_xml": {
+      "path": "/tmp/nerva-nous-auth-verified-full-20261002.xml",
+      "sha256": "a87283c53ca91c903a384d0a03883f9cf215beedb1bbf69ff503db88a25da97a"
+    },
+    "full_log": {
+      "path": "/tmp/nerva-nous-auth-verified-full-20261002.log",
+      "sha256": "adfd062f5d2b17c1ff9724c3f2da11b533575e9be75f964897beb86387560828"
+    },
+    "full_run": {
+      "path": "/tmp/nerva-nous-auth-verified-full-20261002.run.json",
+      "sha256": "22688bafa270b78908cc04a1358c3c3a70ea8e636560cdf867d3f6fab7d23e24"
+    },
+    "full_manifest": {
+      "path": "/tmp/nerva-nous-auth-verified-full-20261002.manifest.json",
+      "sha256": "ead40fc1559ef3d2e8087daae289bbb878749f82bf896aed0047eb78b9aa8d4b"
+    },
+    "initial_full_xml": {
+      "path": "/tmp/nerva-nous-auth-full-20261002.xml",
+      "sha256": "5d02372329c3eacc962465ecaaae50b5461e8d67c9fd018479b211fba68f16af"
+    },
+    "initial_full_run": {
+      "path": "/tmp/nerva-nous-auth-full-20261002.run.json",
+      "sha256": "33e7de1f8064a6d7a61c83f314a8f75d1a70e4143b624ba931740d2e1a07c45c"
+    },
+    "second_full_xml": {
+      "path": "/tmp/nerva-nous-auth-final-full-20261002.xml",
+      "sha256": "da13f2aa3a5722a8907b184b99e02ba4c5c3277ec8fde4c50dc8a63eb75c855b"
+    },
+    "second_full_run": {
+      "path": "/tmp/nerva-nous-auth-final-full-20261002.run.json",
+      "sha256": "54dbb7deb850ef53c590acc593f6f05f65d2f471ef3c42ffb7d45e16e5acb31e"
+    },
+    "final_gates": {
+      "path": "/tmp/nerva-nous-final-gates-20261002.xml",
+      "sha256": "cedade4187d1289e10e302d48d8123fb29f562e6e738267bdba7785390cad135"
+    },
+    "focused": {
+      "path": "/tmp/nerva-nous-final-focused-20261002.xml",
+      "sha256": "6babf11d6f299198895763596c1d998a55d73e6be7c89a7b9cf227d86c81ab0c"
+    },
+    "parity_fix": {
+      "path": "/tmp/nerva-nous-parity-fix-20261002.xml",
+      "sha256": "ff70c54690e6bfe2a7852de63e455603d8b87c7765937905f8cec6be8474a5c7"
+    },
+    "docs": {
+      "path": "/tmp/nerva-nous-docs-20261002.xml",
+      "sha256": "a40b4131e7b80b8c67a499898ecc75c1ca25c07d60bd969a167b1b8c31a5893b"
+    },
+    "typecheck": {
+      "path": "/tmp/nerva-nous-typecheck.log",
+      "sha256": "4be34ed489a8a21324d3820825f37970c5f569bb436ce7a05ef560bca4b87b8a"
+    },
+    "secret_scan": {
+      "path": "/tmp/nerva-strict-nous-roadmap-fix-20261002.receipt.json",
+      "sha256": "7ffbad85cf4ad55a63308d3e4a24ab7107f19bafda94bb7eaba552d3124ac118"
+    },
+    "graft": {
+      "path": "/tmp/nerva-nous-graft-check.json",
+      "sha256": "2867895c2f432b7b1ec943e2a3a6ffd3f012a6cea45c4fad5572f2f40cfe1062"
+    },
+    "malformed_error_red": {
+      "path": "/tmp/nerva-nous-malformed-red.log",
+      "sha256": "c0e3193e909bf9828a72d8a0eb3c28bae46cde170fb9890faef31aae0d2b4f46"
+    },
+    "malformed_jwt_red": {
+      "path": "/tmp/nerva-nous-jwt-red.log",
+      "sha256": "be9a7796b8e233f4e5de9927e0ee13d2a26d03acc158aabe1ce2cb7e8046c790"
+    }
+  }
+}
