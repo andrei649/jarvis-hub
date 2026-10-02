@@ -70,11 +70,14 @@ implementation report and continuation. No runtime overlap with Task 1.
 
 - [x] Review the complete increment against the five focus points; obtain a
   bounded independent read-only review. Fix concrete findings red-first.
-- [ ] Document four optional model IDs and preserved behavior. Re-read affected
+- [x] Document four optional model IDs and preserved behavior. Re-read affected
   Hermes evidence and keep H277 partial; never promote unrelated stale rows.
-- [ ] Commit coherent source, regenerate truthful records/counts, freeze a clean
+- [x] Commit coherent source, regenerate truthful records/counts, freeze a clean
   commit and run the full backend once. Reuse frontend evidence only with source
   and schema equality. Record exact warnings/skips/expected failures separately.
-- [ ] Run documentation/status checks, exact-index secret scans and save a local
+- [x] Run documentation/status checks, exact-index secret scans and save a local
   checkpoint with next action. Preserve reports before deleting only this plan's
   ignored workspace; the full parity goal remains active.
+
+Implementation verified locally; owner-authorized publication is tracked in the PR integration continuation. The full Hermes goal remains active. Source/test evidence and
+remaining work are recorded in [the continuation](../../hermes/local-continuation-2026-10-01.md).

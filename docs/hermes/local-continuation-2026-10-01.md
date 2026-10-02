@@ -5,8 +5,9 @@
 - Base: `9d5b3add85bd8c172bfe38ed1506a2852e2d6e5a`.
 - Branch: `codex/local-hermes-continuation-20261001`.
 - Reference: `59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e`.
-- Publication: none; no push, merge, deployment, paid provider calls or personal
-  profile imports are authorized for this continuation.
+- Publication: owner subsequently authorized pushing, PR reconciliation and merging
+  on 2026-10-02. Deployment, paid/live provider calls and personal profile imports
+  remain outside this integration. See the current publication report below.
 - Head/evidence freshness: the base above starts this batch; subsequent local
   commits and their test snapshots must be recorded separately.
 
@@ -54,7 +55,7 @@ role consent and bounded vision-route inheritance. See the
 The immutable full-backend milestone passed on `78780b64`: 20,108 passed, 34 skipped
 and one expected failure, with 1,836 frontend tests passing separately. Source hashes
 were unchanged through the full backend run. PR reconciliation left zero open PRs;
-the new continuation commits remain local on the branch above.
+the continuation commits were local at that earlier checkpoint.
 
 Current video mutation coverage is frozen on `92905443`: 29 detected, two documented
 survivors and zero invalid mutations; 168 baseline tests pass and all 4,130 archived
@@ -64,7 +65,7 @@ Configured provider-chain milestone: runtime `591c9e15`, full backend snapshot
 `a38d7546`: 20,306 passed, 34 skipped and 1 expected failure. All 4,218
 tracked regular source hashes remained fixed; full frontend has 1,838 passing tests.
 The [current report](h277-video-provider-chain-2026-10-02.md) and its receipt separate
-this proof from the earlier mutation campaign. New continuation commits remain local.
+this proof from the earlier mutation campaign. Those commits were local at that checkpoint.
 
 Native Gemini video milestone: code `0382ef0b`, frozen full-backend commit
 `c4231b64982bbab150e564794b42ee3f7797247f`: **20,402 passed, 34 skipped,
@@ -98,15 +99,44 @@ Read-only GitHub recheck on 2026-10-02 still found zero open PRs and remote `mai
 at `9d5b3add85bd8c172bfe38ed1506a2852e2d6e5a`. All continuation commits remain local;
 no new GitHub CI, live/provider, deployment or paid-service acceptance is claimed.
 
-Next action: design and implement the shared task-aware local auxiliary routing
-identified in the [source map](h277-auxiliary-routing-map-2026-10-02.md), beginning
-with actual session-title and recall-rewrite consumers and independent local model
-selection. Continue broader adapters and the accepted Hermes queue. Empty-output,
-typed first-token/SDK recovery, larger native video upload lifecycle and live
-acceptance remain open. Keep H277 partial. The ledger remains 172 equivalent,
-254 partial, 64 missing and 207 requiring review out of 697 accepted rows.
+Shared local auxiliary milestone: frozen source
+`0307142d37bac7ad812f1738ca12cb75617b6e2e` passed **20,505 backend tests,
+34 skipped and 1 expected failure**, with zero unexpected failures
+and 64 warnings. All 4,290 tracked regular files remained unchanged
+through the full run. The focused selection passed 513 cases including 54 new cases;
+the isolated legacy-console selection passed 40. Frontend source/schema are still
+unchanged from the separately tested 1,838-case snapshot. See the
+[implementation report](h277-local-auxiliary-2026-10-02.md),
+[integration receipt](evidence/h277-local-auxiliary-integration-2026-10-02.json) and
+[evidence review](h277-local-auxiliary-evidence-review-2026-10-02.md).
 
-Rulings for this increment: follow standing autonomous local authorization;
+Session titles, recall rewriting, review and streamed compression can now select
+independent local models through one guarded invocation helper. Each preserves its
+prior default, budget, output and failure behavior. There is no new live-provider,
+installed-model or native-client acceptance claim, and no new mutation campaign.
+
+Next action: continue shared auxiliary routing with acquisition capability/draft
+consumers, preserving their frozen model/backend across JSON attempts and explicitly
+settling job-pin compatibility. Presence explanation is still an optional unwired
+seam with saved binding; do not claim user-facing integration from a selector alone.
+The [expansion investigation](h277-auxiliary-expansion-map-2026-10-02.md) records
+these concrete differences. Broader adapters/discovery/recovery and the remaining
+accepted Hermes queue remain open. H277 stays partial; reviewed counts return to
+172 equivalent, 254 partial, 64 missing and 207 requiring review out of 697 accepted
+rows after the 21 affected evidence updates, with no status promotions.
+
+Local auxiliary rulings: use standing autonomous local development/delegation;
+adopt the four related producers together, at the cost of a broader regression
+surface; accept printable Unicode model IDs as opaque JSON data, with actual
+backend acceptance still unverified. Owner subsequently authorized publication and merging; current remote acceptance must be checked separately.
+
+Earlier video retry rulings: follow standing autonomous local authorization;
 keep retries default-zero and bind enabled policy to task approval; match the
 inspected asynchronous primary-only retry contract while keeping ordinary timeouts
 and fallback candidates outside that retry budget.
+
+Current publication preparation: full backend20505 passed on0307142d,34 skips,
+one expected failure and64 warnings; the prior failed Git fixture run is preserved
+in the integration receipt. See [publication review](publication-review-2026-10-02.md)
+for the aggregate review and source normalization note. GitHub CI and merge status
+are reported separately on the integration PR.

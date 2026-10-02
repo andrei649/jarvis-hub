@@ -15,12 +15,12 @@ claims of full Hermes parity.
 
 - [x] Recheck GitHub: zero open PRs; useful dependency/UI/security fixes are merged.
   Redundant #1212/#1214/#1216/#1217 are already closed. Preserve their history.
-- [ ] Repair the remaining missing-blob test fixture with a red-first packed-object
+- [x] Repair the remaining missing-blob test fixture with a red-first packed-object
   regression and a disposable object database; preserve commit history and actual
   missing-blob assertions. Own `tests/test_hermes_restamp.py` only for runtime fix.
-- [ ] Regenerate test counts and run the backend on a clean frozen commit. Preserve
+- [x] Regenerate test counts and run the backend on a clean frozen commit. Preserve
   the failed aa4865b5 result (20503 passed, one failed,34 skipped,one xfailed).
-- [ ] Finish the 21 affected auxiliary evidence reviews without promoting the
+- [x] Finish the 21 affected auxiliary evidence reviews without promoting the
   original207 stale rows. Update implementation/continuation records and checks.
 - [ ] Scan the exact publication set, push the existing continuation branch, open
   a reviewable PR, inspect every reported CI check, fix concrete failures and merge
