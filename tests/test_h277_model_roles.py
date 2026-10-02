@@ -27,7 +27,7 @@ _ENV_NAMES = (
     *(f"JARVIS_ROLE_{role}_{field}" for role in ("MAIN", "DEEP", "VISION", "VIDEO", "APPROVAL_JUDGE")
       for field in ("PROVIDER", "MODEL", "BASE_URL")),
     "JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE", "JARVIS_ROLE_APPROVAL_JUDGE_TIMEOUT",
-    "JARVIS_ROLE_VISION_KEY", "JARVIS_ROLE_APPROVAL_JUDGE_KEY",
+    "JARVIS_ROLE_VISION_KEY", "JARVIS_ROLE_VIDEO_KEY", "JARVIS_ROLE_APPROVAL_JUDGE_KEY",
 )
 
 
@@ -254,27 +254,49 @@ def test_main_role_is_not_env_selectable(monkeypatch):
     assert model_roles.ROLES["main"].providers is None
 
 
-# ── 7. video is declared honestly ─────────────────────────────────────────────────────
+# ── 7. video has an opt-in consumer and refuses unsupported adapters ────────────────
 
-def test_video_role_has_no_consumer_and_says_so(monkeypatch):
-    assert model_roles.ROLES["video"].consumers == ()
-    monkeypatch.setenv("JARVIS_ROLE_VIDEO_PROVIDER", "ollama")
-    monkeypatch.setenv("JARVIS_ROLE_VIDEO_MODEL", "llava")
+def test_video_role_names_its_consumer_and_refuses_ollama(monkeypatch):
+    assert "video_analysis.py" in model_roles.ROLES["video"].consumers[0]
+    monkeypatch.setenv("JARVIS_ROLE_VIDEO_PROVIDER", "lm-studio")
+    monkeypatch.setenv("JARVIS_ROLE_VIDEO_MODEL", "video-model")
     role = model_roles.resolve("video")
-    assert role.configured is True and role.provider_id == "ollama"
-    assert role.base_url == "http://localhost:11434" and role.local is True
+    assert role.configured is True and role.provider_id == "lm-studio"
+    assert role.base_url == "http://localhost:1234" and role.local is True
     row = next(r for r in model_roles.describe() if r["role"] == "video")
-    assert "nothing reads video yet" in row["note"]
-
-
-def test_video_role_validates_its_provider(monkeypatch):
-    monkeypatch.setenv("JARVIS_ROLE_VIDEO_PROVIDER", "gemini")
+    assert "video_analyze" in row["note"]
+    monkeypatch.setenv("JARVIS_ROLE_VIDEO_PROVIDER", "ollama")
     with pytest.raises(RoleConfigError) as exc:
         model_roles.resolve("video")
     assert exc.value.reason == "role_provider_unsupported"
 
 
-def test_nothing_outside_model_roles_consumes_the_video_role():
+def test_video_role_accepts_explicit_gemini_without_enabling_vision(monkeypatch):
+    monkeypatch.setenv("JARVIS_ROLE_VIDEO_PROVIDER", "gemini")
+    monkeypatch.setenv("JARVIS_ROLE_VIDEO_MODEL", "gemini-2.5-flash")
+    role = model_roles.resolve("video")
+    assert role.provider_id == "gemini"
+    assert role.base_url == "https://generativelanguage.googleapis.com/v1beta"
+    assert "gemini" not in model_roles.ROLES["vision"].providers
+
+
+def test_inherited_video_role_listing_matches_physical_locality_and_model(monkeypatch):
+    from agents.core.llm.video_policy import describe_video_data_target
+
+    monkeypatch.setenv("JARVIS_ROLE_VISION_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_BASE_URL", "http://127.0.0.1:8200/custom/v1")
+    monkeypatch.setenv("JARVIS_ROLE_VISION_MODEL", "configured-vision")
+    role = model_roles.resolve("video")
+    identity = describe_video_data_target()
+    row = next(r for r in model_roles.describe() if r["role"] == "video")
+    assert role.provider_id == row["provider"] == identity.provider == "openai-compatible"
+    assert role.model == row["model"] == identity.model == "configured-vision"
+    assert role.local == row["local"] == identity.local is True
+    assert role.data_policy == row["data_policy"] == identity.policy == "unknown"
+    assert identity.request_url == "http://127.0.0.1:8200/custom/v1/chat/completions"
+
+
+def test_video_configuration_is_confined_to_policy_and_pure_route_parser():
     offenders = []
     for path in (REPO / "agents").rglob("*.py"):
         if path.name == "model_roles.py":
@@ -282,7 +304,10 @@ def test_nothing_outside_model_roles_consumes_the_video_role():
         text = path.read_text(encoding="utf-8", errors="replace")
         if re.search(r"resolve\(\s*[\"']video[\"']", text) or "JARVIS_ROLE_VIDEO" in text:
             offenders.append(str(path.relative_to(REPO)))
-    assert offenders == []
+    assert sorted(offenders) == [
+        "agents/core/llm/video_policy.py", "agents/core/llm/video_retry.py",
+        "agents/core/llm/video_routes.py",
+    ]
 
 
 # ── 8. the table is frozen ────────────────────────────────────────────────────────────

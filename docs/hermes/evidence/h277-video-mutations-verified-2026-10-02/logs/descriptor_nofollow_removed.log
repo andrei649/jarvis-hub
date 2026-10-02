@@ -1,0 +1,23 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_boundaries.py::test_scoped_video_read_refuses_symlink_swapped_after_resolution", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/descriptor_nofollow_removed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_scoped_video_read_refuses_symlink_swapped_after_resolution ________
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-743/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-743/test_scoped_video_read_refuses0/clip.mp4'), requests=[])
+
+    def test_scoped_video_read_refuses_symlink_swapped_after_resolution(rig):
+        scope = FileScope.from_env()
+        kind, resolved, _ = _source(str(rig.source), scope)
+        assert kind == "file" and resolved == rig.source
+        outside = rig.tmp.parent / (rig.tmp.name + "-synthetic-outside.mp4")
+        outside.write_bytes(b"synthetic outside bytes")
+        rig.source.unlink()
+        rig.source.symlink_to(outside)
+        try:
+>           with pytest.raises((OSError, VideoPolicyRefused)):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE any of (OSError, VideoPolicyRefused)
+
+tests/test_h277_video_boundaries.py:87: Failed
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_boundaries.py::test_scoped_video_read_refuses_symlink_swapped_after_resolution

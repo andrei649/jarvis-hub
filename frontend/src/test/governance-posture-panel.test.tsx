@@ -318,3 +318,61 @@ describe('PosturePanel — separate camera model-data consent', () => {
     expect(screen.queryByRole('button', { name: /for Camera descriptions/ })).toBeNull();
   });
 });
+
+describe('PosturePanel — separate video analysis consent', () => {
+  it('sends the video role target and explains the separate approval', async () => {
+    const target = { target_id: 'role:video_analysis', provider: 'openai-compatible', model: 'video-model',
+      mode: 'dedicated', policy: 'unknown', warning: 'Unknown video policy',
+      scope: 'e'.repeat(64), acknowledged: false, can_acknowledge: true };
+    const fn = mockFetch({ data_handling: { role_settings_readable: true, targets: [target] } });
+    render(<PosturePanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Allow unattended use for Video analysis' }));
+    await waitFor(() => expect(fn.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(true));
+    const post = fn.mock.calls.find(([, options]) => options?.method === 'POST');
+    expect(JSON.parse(post[1].body)).toEqual({ target: 'role:video_analysis', provider: 'openai-compatible',
+      scope: target.scope, acknowledged: true });
+    expect(screen.getByText(/separate owner-approved tool call/)).toBeTruthy();
+  });
+});
+
+describe('PosturePanel — configured video fallback consent', () => {
+  it('sends each fallback target and keeps other candidates separate', async () => {
+    const first = { target_id: 'role:video_fallback_1', provider: 'openai-compatible', model: 'first-model',
+      mode: 'dedicated', policy: 'unknown', warning: 'Unknown video policy', scope: '1'.repeat(64),
+      acknowledged: false, can_acknowledge: true };
+    const second = { ...first, target_id: 'role:video_fallback_2', model: 'second-model', scope: '2'.repeat(64) };
+    const primary = { ...first, target_id: 'role:video_analysis', model: 'primary-model', scope: '3'.repeat(64) };
+    const states = { [primary.target_id]: false, [first.target_id]: false, [second.target_id]: false };
+    const fn = vi.fn(async (_, options) => {
+      if (options?.method === 'POST') {
+        const body = JSON.parse(options.body);
+        states[body.target] = body.acknowledged;
+        return { ok: true, status: 200, json: async () => ({ ok: true }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ data_handling: {
+        role_settings_readable: true,
+        targets: [primary, first, second].map(row => ({ ...row, acknowledged: states[row.target_id] })),
+      } }) };
+    });
+    global.fetch = fn;
+    render(<PosturePanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Allow unattended use for Video fallback 1' }));
+    await screen.findByRole('button', { name: 'Revoke unattended use for Video fallback 1' });
+    expect(screen.getByRole('button', { name: 'Allow unattended use for Video fallback 2' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Allow unattended use for Video analysis' })).toBeTruthy();
+    const post = fn.mock.calls.find(([, options]) => options?.method === 'POST');
+    expect(JSON.parse(post[1].body)).toEqual({ target: first.target_id, provider: first.provider,
+      scope: first.scope, acknowledged: true });
+    expect(screen.getByText(/second-model/)).toBeTruthy();
+  });
+
+  it('does not show unconfigured fallbacks when posture omits them', async () => {
+    const primary = { target_id: 'role:video_analysis', provider: 'openai-compatible', model: 'primary-model',
+      mode: 'dedicated', policy: 'unknown', warning: 'Unknown video policy', scope: '3'.repeat(64),
+      acknowledged: false, can_acknowledge: true };
+    mockFetch({ data_handling: { role_settings_readable: true, targets: [primary] } });
+    render(<PosturePanel />);
+    await screen.findByRole('button', { name: 'Allow unattended use for Video analysis' });
+    expect(screen.queryByRole('button', { name: /Video fallback/ })).toBeNull();
+  });
+});

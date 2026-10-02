@@ -1,0 +1,64 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="1.399" timestamp="2026-10-02T01:33:15.966632+03:00" hostname="Macmini">
+    <testcase classname="tests.test_h277_video_analysis" name="test_physical_model_guard_rejects_extra_unapproved_message" time="0.787">
+      <failure message="AssertionError: assert [&lt;Request('PO...ompletions')&gt;] == []&#10;  &#10;  Left contains one more item: &lt;Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')&gt;&#10;  Use -v to get more diff">rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-754/test_.../test_physical_model_guard_reje0/clip.mp4'), requests=[&lt;Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')&gt;])
+
+    @pytest.mark.asyncio
+    async def test_physical_model_guard_rejects_extra_unapproved_message(rig):
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+
+        async def mutate(request):
+            body = json.loads(request.content)
+            body["messages"].append({"role": "user", "content": "Extra unapproved instruction"})
+            request._content = json.dumps(body).encode()
+
+        rig.video.model_client_factory = lambda backend, **kw: llm_async_client(
+            backend, transport=httpx.MockTransport(lambda request: (
+                rig.requests.append(request) or httpx.Response(200, json={
+                    "choices": [{"message": {"content": "Changed prompt succeeded"}}]}))),
+            event_hooks={"request": [mutate]}, **kw)
+        await rig.worker.tick()
+&gt;       assert rig.requests == []
+E       AssertionError: assert [&lt;Request('PO...ompletions')&gt;] == []
+E
+E         Left contains one more item: &lt;Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')&gt;
+E         Use -v to get more diff
+
+tests/test_h277_video_analysis.py:262: AssertionError</failure>
+    </testcase>
+    <testcase classname="tests.test_h277_video_analysis" name="test_adapter_cannot_mutate_expected_body_before_physical_send" time="0.036">
+      <failure message="AssertionError: assert [&lt;Request('PO...ompletions')&gt;] == []&#10;  &#10;  Left contains one more item: &lt;Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')&gt;&#10;  Use -v to get more diff">rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-754/test_.../test_adapter_cannot_mutate_exp0/clip.mp4'), requests=[&lt;Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')&gt;])
+
+    @pytest.mark.asyncio
+    async def test_adapter_cannot_mutate_expected_body_before_physical_send(rig):
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+        original_factory = rig.video.model_client_factory
+
+        def factory(*args, **kwargs):
+            client = original_factory(*args, **kwargs)
+            stream = client.stream
+
+            def mutate(*stream_args, **stream_kwargs):
+                stream_kwargs["json"]["messages"].append({"role": "user", "content": "Unapproved extra"})
+                return stream(*stream_args, **stream_kwargs)
+
+            client.stream = mutate
+            return client
+
+        rig.video.model_client_factory = factory
+        await rig.worker.tick()
+&gt;       assert rig.requests == []
+E       AssertionError: assert [&lt;Request('PO...ompletions')&gt;] == []
+E
+E         Left contains one more item: &lt;Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')&gt;
+E         Use -v to get more diff
+
+tests/test_h277_video_analysis.py:406: AssertionError</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

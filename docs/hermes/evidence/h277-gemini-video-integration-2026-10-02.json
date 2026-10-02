@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-02T00:32:44.001183+00:00",
+  "scope": "Local native Gemini video consumer and corrected container MIME declarations. H277 remains partial. No live/paid provider call or publication.",
+  "full_backend_snapshot": {
+    "commit": "c4231b64982bbab150e564794b42ee3f7797247f",
+    "tracked_regular_files": 4227,
+    "content_manifest_fingerprint": "b66e96e8151a481224eeb647f35e7864059d79c72f2289fdc028b24e52a04dea",
+    "fingerprint_method": "SHA256 of sorted compact JSON mapping tracked regular file paths to SHA256; symlinks excluded",
+    "unchanged_after_run": true,
+    "working_tree_clean_after_run": true,
+    "selected_source_sha256": {
+      "agents/core/llm/model_roles.py": "d96eeef6a8a07b526143e873365645d299860c75e975919fa064367fa8a8815e",
+      "agents/core/llm/video_native.py": "d790e703e79755ee5d5a9d2a8786b72c9aaa0d6a65755b90f012baf4dc73e3d7",
+      "agents/core/llm/video_policy.py": "ddfe9b8598b8f27ddf5983ffc60741052425ac64935b49e034b4a417ae2bdff2",
+      "agents/core/llm/video_routes.py": "46fc79492ad3970d748e47053185b052fd45a2efdee007da474ed4870ad8e91f",
+      "agents/core/video_analysis.py": "7a73eb127d156ab5e5e679958cb9cc92c1142795ba737827746fa517fbe60073",
+      "tests/test_h277_video_native.py": "a0f2fd36c58e500157a585fafd06995a84eeb41e74152d08f5d031db68d9ba96",
+      "tests/test_h277_video_gemini.py": "68a84d384f86620f4bcc1359a6dee30b457bd8e0c63e4b94f81f7aef2a17ac65",
+      "tests/test_h277_model_roles.py": "03d7b74190ab275d4c8a9da4f2b60f3689c00e02e49c8b949ba9ee29fe001ca7"
+    }
+  },
+  "full_backend_command": [
+    "/tmp/nerva-pr-python-20261001/bin/python",
+    "-m",
+    "pytest",
+    "--junitxml=/tmp/nerva-gemini-video-full-20261002.xml"
+  ],
+  "full_backend_seconds": 997.457529834006,
+  "pytest_guards": "Repository pytest.ini and socket/timeout guards unchanged.",
+  "verification": {
+    "full_backend": {
+      "total": 20437,
+      "passed": 20402,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1,
+      "junit_sha256": "a021ad8a735af5633a63aca84a81c35a59c624c93c098ed91c68f34d857f69e4",
+      "artifact": "/tmp/nerva-gemini-video-full-20261002.xml"
+    },
+    "focused": {
+      "total": 707,
+      "passed": 707,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0,
+      "junit_sha256": "d570226823cfc39ddcdd93d6196ab17c4c9cb22b0d5bd73c80f9b5a0dbad4442",
+      "artifact": "/tmp/nerva-gemini-video-focused-20261002.xml"
+    },
+    "records": {
+      "total": 92,
+      "passed": 92,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0,
+      "junit_sha256": "76f0110b1f016031c80618b1792ce306b400079b390d975c3ef9d07f91954490",
+      "artifact": "/tmp/nerva-gemini-records-20261002.xml"
+    }
+  },
+  "frontend": {
+    "unchanged_since_tested_commit": "2d9a3c39d3e4391fc5a35e3a6ff93567660afbe7",
+    "diff_paths": [
+      "frontend",
+      "package.json",
+      "package-lock.json",
+      "contracts"
+    ],
+    "diff_empty": true,
+    "prior_proof": {
+      "artifact": "/tmp/nerva-video-chain-frontend-20261002.json",
+      "sha256": "3038bf75ba25563f94d7aed8193664a683cd42de309fa55375aa65ed79fb67bc",
+      "total": 1838,
+      "passed": 1838,
+      "failed": 0,
+      "pending": 0,
+      "success": true,
+      "source_commit": "2d9a3c39d3e4391fc5a35e3a6ff93567660afbe7",
+      "scope": "Full frontend suite, TypeScript and build; no subsequent frontend source changes."
+    }
+  },
+  "review": {
+    "parent": "Reviewed pure codec and runtime/consent boundary; raw-key validation finding fixed red-first.",
+    "independent": "Bounded Luna read-only source/spec review: no blocking correctness finding; did not rerun tests."
+  },
+  "secret_scan": {
+    "scope": "Exact indexed changed files versus origin/main immediately before frozen commit; strict default rules include docs/tests and ignore allow comments.",
+    "paths": 283,
+    "findings": 250,
+    "verified_manifest_hashes": 250,
+    "unexpected": [],
+    "receipt_sha256": "ffb7c3efdc002ea49f7773a8762380a1d82b0662ddcef2c60bc13687d56034be"
+  },
+  "limitations": [
+    "Offline HTTPX transports, no live Gemini entitlement/model acceptance.",
+    "Extension MIME is a declaration, not media decoding.",
+    "Local native request bound below20,000,000bytes; larger upload lifecycle remains open.",
+    "Prior video mutation campaign predates configured-chain and native Gemini code; no new mutation coverage claimed.",
+    "Broader auxiliary adapters/routing/discovery/retries/SDK recovery and native mobile/inbound integration remain open."
+  ],
+  "changed_paths_since_design_commit": [
+    ".env.example",
+    "BACKLOG.md",
+    "GO_LIVE_PLAN.md",
+    "HERMES_STATUS.md",
+    "NERVA.md",
+    "README.md",
+    "STATUS.md",
+    "agents/core/llm/model_roles.py",
+    "agents/core/llm/video_native.py",
+    "agents/core/llm/video_policy.py",
+    "agents/core/llm/video_routes.py",
+    "agents/core/video_analysis.py",
+    "docs/FLAGS.md",
+    "docs/HERMES_CAPABILITIES.md",
+    "docs/hermes/assessment.json",
+    "docs/hermes/h277-gemini-video-2026-10-02.md",
+    "docs/hermes/h277-gemini-video-design-2026-10-02.md",
+    "docs/hermes/h277-retry-investigation-2026-10-02.md",
+    "docs/superpowers/plans/2026-10-02-h277-gemini-video.md",
+    "project-status.json",
+    "tests/test_h277_model_roles.py",
+    "tests/test_h277_video_gemini.py",
+    "tests/test_h277_video_native.py"
+  ],
+  "full_backend_warnings": 61
+}

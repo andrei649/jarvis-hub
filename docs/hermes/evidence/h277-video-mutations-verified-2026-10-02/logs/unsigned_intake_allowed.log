@@ -1,0 +1,22 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_boundaries.py::test_video_intake_requires_enforce_mode_even_when_hold_classifies_tool_rpc", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/unsigned_intake_allowed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_video_intake_requires_enforce_mode_even_when_hold_classifies_tool_rpc __
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-731/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-731/test_video_intake_requires_enf0/clip.mp4'), requests=[])
+
+    @pytest.mark.asyncio
+    async def test_video_intake_requires_enforce_mode_even_when_hold_classifies_tool_rpc(rig):
+        rig.queue.mediation_mode = "hold"
+        assert rig.queue.classify_mediation("tool.rpc") is True
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+>       assert proposal["reason"] == "signed_video_mediation_required"
+E       AssertionError: assert 'video_proposal_refused' == 'signed_video...tion_required'
+E
+E         - signed_video_mediation_required
+E         + video_proposal_refused
+
+tests/test_h277_video_boundaries.py:285: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_boundaries.py::test_video_intake_requires_enforce_mode_even_when_hold_classifies_tool_rpc

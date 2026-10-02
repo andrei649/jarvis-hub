@@ -1,0 +1,36 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.276" timestamp="2026-10-02T01:33:21.478993+03:00" hostname="Macmini">
+    <testcase classname="tests.test_h277_video_fallback" name="test_video_inherits_resolved_vision_route_and_uses_video_model_override" time="0.701">
+      <failure message="AssertionError: assert 'vision-model' == 'video-override'&#10;  &#10;  - video-override&#10;  + vision-model">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10e059130&gt;
+
+    def test_video_inherits_resolved_vision_route_and_uses_video_model_override(monkeypatch):
+        from agents.core.llm.data_handling import role_target_scope
+
+        local_vision(monkeypatch)
+        role = model_roles.resolve("video")
+        assert (role.provider_id, role.model, role.base_url) == (
+            "lm-studio", "vision-model", "http://127.0.0.1:1234/v1")
+        assert role.source["model"] == "JARVIS_ROLE_VISION_MODEL"
+        identity = video_policy.describe_video_data_target()
+        assert identity.request_url == "http://127.0.0.1:1234/v1/chat/completions"
+        assert identity.authorization == "Bearer vision-secret"
+        assert "vision-secret" not in repr(identity)
+        assert "vision-secret" not in repr(model_roles.describe())
+        old_scope = role_target_scope(identity)
+        old_class = video_policy.class_binding(identity, {"question": "synthetic"}, ("/tmp",))
+        monkeypatch.setenv("JARVIS_ROLE_VISION_KEY", "rotated-secret")
+        changed = video_policy.describe_video_data_target()
+        assert role_target_scope(changed) != old_scope
+        assert video_policy.class_binding(changed, {"question": "synthetic"}, ("/tmp",)) != old_class
+        monkeypatch.setenv("JARVIS_ROLE_VIDEO_MODEL", "video-override")
+&gt;       assert model_roles.resolve("video").model == "video-override"
+E       AssertionError: assert 'vision-model' == 'video-override'
+E
+E         - video-override
+E         + vision-model
+
+tests/test_h277_video_fallback.py:56: AssertionError</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,886 @@
+{
+  "artifacts": [
+    {
+      "junit": {
+        "after_sha256": "83015f084a5948c59e5dc18d0ee29a7daee1de2604e66a0c2504900684987ed3",
+        "before_sha256": "83015f084a5948c59e5dc18d0ee29a7daee1de2604e66a0c2504900684987ed3",
+        "changed": false,
+        "failed_testcases": [],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 168
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/baseline.xml"
+      },
+      "label": "baseline",
+      "log": {
+        "after_sha256": "c28af39eecfbbb7c21bacd378492cf17439d2006fde0352157a191ac23c3201e",
+        "before_sha256": "c28af39eecfbbb7c21bacd378492cf17439d2006fde0352157a191ac23c3201e",
+        "changed": false,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/baseline.log"
+      },
+      "raw_junit_sha256": "5d2eae2ccf600362c90637e3adf65de33d7917bfc544d98f3e4a6f211f3cf683",
+      "raw_log_sha256": "c28af39eecfbbb7c21bacd378492cf17439d2006fde0352157a191ac23c3201e"
+    },
+    {
+      "junit": {
+        "after_sha256": "85de1bb9a46cf340b36eab5409a9edaae93f3b9a7e6edb105bdc0d08f5319e63",
+        "before_sha256": "85de1bb9a46cf340b36eab5409a9edaae93f3b9a7e6edb105bdc0d08f5319e63",
+        "changed": false,
+        "failed_testcases": [
+          "test_video_handler_refuses_noncanonical_task_even_if_context_is_trusted"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/canonical_kind_ignored.xml"
+      },
+      "label": "canonical_kind_ignored",
+      "log": {
+        "after_sha256": "f47d045c5e8b89dc28f755fc1099ab4cf7cd521dcb0bee086ce413e5bf10d6d9",
+        "before_sha256": "f47d045c5e8b89dc28f755fc1099ab4cf7cd521dcb0bee086ce413e5bf10d6d9",
+        "changed": false,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/canonical_kind_ignored.log"
+      },
+      "raw_junit_sha256": "b3ec02dc32b12af28d4d7d20474971ba2518a9b1e20465dfb370f263ba12c0a4",
+      "raw_log_sha256": "f47d045c5e8b89dc28f755fc1099ab4cf7cd521dcb0bee086ce413e5bf10d6d9"
+    },
+    {
+      "junit": {
+        "after_sha256": "a0f58ccdf867c0ba28715124bea443afc802ee7b1971717cddec68e8e62eb8dc",
+        "before_sha256": "a0f58ccdf867c0ba28715124bea443afc802ee7b1971717cddec68e8e62eb8dc",
+        "changed": false,
+        "failed_testcases": [
+          "test_handler_rejects_canonical_kind_with_wrong_video_target"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/canonical_target_ignored.xml"
+      },
+      "label": "canonical_target_ignored",
+      "log": {
+        "after_sha256": "1a5330e2caf444974bdde15fb1d9df2491421835cb4e9fd580e850d200d1c75b",
+        "before_sha256": "1a5330e2caf444974bdde15fb1d9df2491421835cb4e9fd580e850d200d1c75b",
+        "changed": false,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/canonical_target_ignored.log"
+      },
+      "raw_junit_sha256": "bf9c631e6cc078613ff6e458b9742cb4c5bcfced63587e62bb217eea34d45b72",
+      "raw_log_sha256": "1a5330e2caf444974bdde15fb1d9df2491421835cb4e9fd580e850d200d1c75b"
+    },
+    {
+      "junit": {
+        "after_sha256": "1f97f7c95ae932d42de9e33da92fa5f9ed55a3f23528bba07947eceeb5afff74",
+        "before_sha256": "fd861ef8c42c9300a4bb3ac27e639bcc75d05c6763a44bfafa6db8dbc0c048c6",
+        "changed": true,
+        "failed_testcases": [
+          "test_video_intake_requires_enforce_mode_even_when_hold_classifies_tool_rpc"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/unsigned_intake_allowed.xml"
+      },
+      "label": "unsigned_intake_allowed",
+      "log": {
+        "after_sha256": "9917ef4b411343309846391b8665f50a99d322c6cfb20fc910fd39c16874df71",
+        "before_sha256": "04a269c2192966778464e0726f094ab86487a42fba0f4cbf3a362eeb001eccbd",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/unsigned_intake_allowed.log"
+      },
+      "raw_junit_sha256": "149035fe05e9f05640241b55f51ac1145b9c4c424a3a91cc86cb010e60967f10",
+      "raw_log_sha256": "04a269c2192966778464e0726f094ab86487a42fba0f4cbf3a362eeb001eccbd"
+    },
+    {
+      "junit": {
+        "after_sha256": "2be031e58df3b09830e64da8daebf1714bd2864de3f5973060d9db303654d781",
+        "before_sha256": "2be031e58df3b09830e64da8daebf1714bd2864de3f5973060d9db303654d781",
+        "changed": false,
+        "failed_testcases": [],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/unsigned_execute_allowed.xml"
+      },
+      "label": "unsigned_execute_allowed",
+      "log": {
+        "after_sha256": "a35bc71ef4f187757ac232f952eccbce8bedeb03c194ec93c3d31b703db0abae",
+        "before_sha256": "a35bc71ef4f187757ac232f952eccbce8bedeb03c194ec93c3d31b703db0abae",
+        "changed": false,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/unsigned_execute_allowed.log"
+      },
+      "raw_junit_sha256": "81d338ab4f6f7b20d31d7d32860608c8c43951fa25412a5dc0d0c4d094b73ee7",
+      "raw_log_sha256": "a35bc71ef4f187757ac232f952eccbce8bedeb03c194ec93c3d31b703db0abae"
+    },
+    {
+      "junit": {
+        "after_sha256": "38c69c4af1a465145cf3acedbc8a1699fc97dfe7068d1b43684344b3674508ae",
+        "before_sha256": "9a45f0a8e644a4df914f3f81254c6626ea9d7d717bf647093af8a174cf4b9504",
+        "changed": true,
+        "failed_testcases": [
+          "test_durable_receipt_revoked_at_physical_model_hook_blocks_send"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/receipt_validation_removed.xml"
+      },
+      "label": "receipt_validation_removed",
+      "log": {
+        "after_sha256": "dc1c2792c359a404fde731a50e0beb9d6ed9c342090cd651f3e6b738f4d05efb",
+        "before_sha256": "4ff82639ab7fbc05af18ff18a4c7b7a013269a7182504715623daa29e02c06ad",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/receipt_validation_removed.log"
+      },
+      "raw_junit_sha256": "7ac59b5934b936293ba5dfed1313e9f07f5c48583049a4e3ef923814143df83a",
+      "raw_log_sha256": "4ff82639ab7fbc05af18ff18a4c7b7a013269a7182504715623daa29e02c06ad"
+    },
+    {
+      "junit": {
+        "after_sha256": "613f594fc6c6fdb5d7eef6bda547bdcfeccb8f29f9219d034bd5d308a9046d0d",
+        "before_sha256": "45255e5184163a65106080f3a325d775a56c8b46cf462528744926a380a880d5",
+        "changed": true,
+        "failed_testcases": [
+          "test_persisted_media_tuple_swap_after_permit_blocks_video_send"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/persisted_payload_equality_removed.xml"
+      },
+      "label": "persisted_payload_equality_removed",
+      "log": {
+        "after_sha256": "f7b0accd327667f4f413d4f22c60ea185428753642c91156836766c8d04f3018",
+        "before_sha256": "4d498288ef8590503646db662f22433900ef67aa8fd6f48b1a94fc945eccded8",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/persisted_payload_equality_removed.log"
+      },
+      "raw_junit_sha256": "f582c0c74df9c00d23ada660c59b7c27ab67e991cfcb63e24bf5d16a9e81c47b",
+      "raw_log_sha256": "4d498288ef8590503646db662f22433900ef67aa8fd6f48b1a94fc945eccded8"
+    },
+    {
+      "junit": {
+        "after_sha256": "3202f6cadb659ca319676e8076bac7c2a0aad87c132effc96d6bd05f8fecf679",
+        "before_sha256": "5aee8bd059ed50467c6c2fdc2beed225b8a50d93cb786e1e338df5ffa5b5d349",
+        "changed": true,
+        "failed_testcases": [
+          "test_server_owned_class_and_dispatcher_refuse_other_canonical_payloads"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/toolrpc_class_compare_removed.xml"
+      },
+      "label": "toolrpc_class_compare_removed",
+      "log": {
+        "after_sha256": "ddb728fe68bbc83ecaeaa0b164d497155d7d8c8dc4cad4925cdfae10b36bd22c",
+        "before_sha256": "87e64317aa0cab32f98029c82dfaeeba967751356b7c8856f1162ce374604a00",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/toolrpc_class_compare_removed.log"
+      },
+      "raw_junit_sha256": "505e174b0ad9ad1e8b61facf604a7bc2e010d9ca2853737a90b37cb701e56ed3",
+      "raw_log_sha256": "87e64317aa0cab32f98029c82dfaeeba967751356b7c8856f1162ce374604a00"
+    },
+    {
+      "junit": {
+        "after_sha256": "97e40c072f06b16211a36e8def153562fc305b5c75a233a1ae5f7b7a35450aa5",
+        "before_sha256": "c3efe8be5478915b7f0388f21db4a50fc6818a9552dad27a27a1535bd219fea3",
+        "changed": true,
+        "failed_testcases": [
+          "test_signed_worker_kernel_denial_after_acceptance_blocks_model"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/kernel_denial_ignored.xml"
+      },
+      "label": "kernel_denial_ignored",
+      "log": {
+        "after_sha256": "9b1443553ddaea9e4daa026bc04304afa66ad0d74ebb208360b43d4f8779de3f",
+        "before_sha256": "8fa4c83506632bfc44804abe6f4c77b03015ccbb103ef9a8195a1e7cad78d795",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/kernel_denial_ignored.log"
+      },
+      "raw_junit_sha256": "86e59769732a9f8ff647b72966a63ebf8e75251ebb81db086a786cf76c8102d8",
+      "raw_log_sha256": "8fa4c83506632bfc44804abe6f4c77b03015ccbb103ef9a8195a1e7cad78d795"
+    },
+    {
+      "junit": {
+        "after_sha256": "b342d67b79a904f500ee804193ae003956884ebced73d28222483cdbbe9422ff",
+        "before_sha256": "3c356a62d92c56549439eab1055c03e644981e9ddc859ec19d8db5f45eb67019",
+        "changed": true,
+        "failed_testcases": [
+          "test_remote_call_still_needs_per_call_approval_after_video_role_consent"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/remote_call_approval_ignored.xml"
+      },
+      "label": "remote_call_approval_ignored",
+      "log": {
+        "after_sha256": "2674c63a0e0fdd1acebb9fa813971fd8e572b3caa335f0836e65100a17dabd88",
+        "before_sha256": "4b0ea71a0e5bb59741b6fcee787c20c36435b8d2cc66aad0b2570226c6792383",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/remote_call_approval_ignored.log"
+      },
+      "raw_junit_sha256": "187bb38d7d8c18884016bf55bb38b55d4c4c842a6e6dbbb16491fc53061fac9f",
+      "raw_log_sha256": "4b0ea71a0e5bb59741b6fcee787c20c36435b8d2cc66aad0b2570226c6792383"
+    },
+    {
+      "junit": {
+        "after_sha256": "3a187697a6290f0b577ae5879d3d23733b3014fb18e49a6869dad842951c846b",
+        "before_sha256": "3a187697a6290f0b577ae5879d3d23733b3014fb18e49a6869dad842951c846b",
+        "changed": false,
+        "failed_testcases": [],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/remote_role_consent_ignored.xml"
+      },
+      "label": "remote_role_consent_ignored",
+      "log": {
+        "after_sha256": "7a8a5ac115aeef373271830429a4441111fd9f2f857b3d1156a97df0e471eca0",
+        "before_sha256": "7a8a5ac115aeef373271830429a4441111fd9f2f857b3d1156a97df0e471eca0",
+        "changed": false,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/remote_role_consent_ignored.log"
+      },
+      "raw_junit_sha256": "6441ba3dafa4d1f75d2106be297bbcf6d1354192658f1ed88b148b6d8446d0a4",
+      "raw_log_sha256": "7a8a5ac115aeef373271830429a4441111fd9f2f857b3d1156a97df0e471eca0"
+    },
+    {
+      "junit": {
+        "after_sha256": "44d708947129b497c415af7057d5593f401253d5ddf9b7e912d0bd992f81fcfc",
+        "before_sha256": "5f7d824319f2f5b2491d2a28fd4c5c707dd9367c0fbedb6514cb0d4c5f4cec16",
+        "changed": true,
+        "failed_testcases": [
+          "test_inherited_remote_route_needs_video_consent_and_privacy_controls"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/strict_local_ignored.xml"
+      },
+      "label": "strict_local_ignored",
+      "log": {
+        "after_sha256": "2325d95f002a41c8f94d9986e87c743e9d6f36afc25956f3f56ea295953e726f",
+        "before_sha256": "7e397bd915037f453ca236246632ef33a1f9ffe30a86bad1984ae2f7dba8a4aa",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/strict_local_ignored.log"
+      },
+      "raw_junit_sha256": "088f1a013dd3c6ce3671de92b7575f77784f335d97160d317d3869b7d34124bd",
+      "raw_log_sha256": "7e397bd915037f453ca236246632ef33a1f9ffe30a86bad1984ae2f7dba8a4aa"
+    },
+    {
+      "junit": {
+        "after_sha256": "968699d29d29e1eb76565b93a742bd442091834ab5169187a9b5b429c6958f93",
+        "before_sha256": "e77734e8235c53b589f1d104ad68b4b16a6eadcfa9176a12954a31f43248655f",
+        "changed": true,
+        "failed_testcases": [
+          "test_remote_role_cannot_override_shared_privacy_posture[local_only_agent]"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/local_only_actor_ignored.xml"
+      },
+      "label": "local_only_actor_ignored",
+      "log": {
+        "after_sha256": "6d25b69f8cb051afb74d32654d832d892af1c744a6c453f5ce1d59729dfe29bf",
+        "before_sha256": "7f01f8d6f1fba7f057356fbebef791961ce427a7ce39dd5424d11f805029b49c",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/local_only_actor_ignored.log"
+      },
+      "raw_junit_sha256": "831bda8f85e8e3745d1450064b23d93ec7b66bcf690399070a0356dc249740bd",
+      "raw_log_sha256": "7f01f8d6f1fba7f057356fbebef791961ce427a7ce39dd5424d11f805029b49c"
+    },
+    {
+      "junit": {
+        "after_sha256": "a2fc78edd223d7dbdc645911f798ced7b9a49d8b8751e2751f787465b7bc88bb",
+        "before_sha256": "a2fc78edd223d7dbdc645911f798ced7b9a49d8b8751e2751f787465b7bc88bb",
+        "changed": false,
+        "failed_testcases": [
+          "test_unsafe_video_urls_refused_at_intake[http://127.0.0.1/clip.mp4]"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/private_source_url_allowed.xml"
+      },
+      "label": "private_source_url_allowed",
+      "log": {
+        "after_sha256": "ec523f1c34404f3d874eb11904f1563715133036040e20b9ea12243ffb3ba947",
+        "before_sha256": "ec523f1c34404f3d874eb11904f1563715133036040e20b9ea12243ffb3ba947",
+        "changed": false,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/private_source_url_allowed.log"
+      },
+      "raw_junit_sha256": "c187fc422eda60609edbfadf8cb547a2c9f27dedf27cadf6a925f9cb3a249058",
+      "raw_log_sha256": "ec523f1c34404f3d874eb11904f1563715133036040e20b9ea12243ffb3ba947"
+    },
+    {
+      "junit": {
+        "after_sha256": "fa9d2eba62a844753578508123982802ff1eb4d48c08053daf67c1a62556c5d5",
+        "before_sha256": "fa9d2eba62a844753578508123982802ff1eb4d48c08053daf67c1a62556c5d5",
+        "changed": false,
+        "failed_testcases": [
+          "test_unsafe_video_urls_refused_at_intake[https://video.example/clip.mp4?token=secret]"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/secret_query_allowed.xml"
+      },
+      "label": "secret_query_allowed",
+      "log": {
+        "after_sha256": "7bd86707ac725bf4e2317e03d18a21734f4bd535eaac4847e32af2bd0e302630",
+        "before_sha256": "7bd86707ac725bf4e2317e03d18a21734f4bd535eaac4847e32af2bd0e302630",
+        "changed": false,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/secret_query_allowed.log"
+      },
+      "raw_junit_sha256": "2b8167876e6f7b11f07f876dc54cf47edbe5e1771b9a50ac2eed832d0c1da75e",
+      "raw_log_sha256": "7bd86707ac725bf4e2317e03d18a21734f4bd535eaac4847e32af2bd0e302630"
+    },
+    {
+      "junit": {
+        "after_sha256": "87cb0d46610aec7ccc91c1eefa55ff2c45d7cd39bb9d35884861c42b5532d507",
+        "before_sha256": "87cb0d46610aec7ccc91c1eefa55ff2c45d7cd39bb9d35884861c42b5532d507",
+        "changed": false,
+        "failed_testcases": [
+          "test_scoped_video_read_refuses_symlink_swapped_after_resolution"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/descriptor_nofollow_removed.xml"
+      },
+      "label": "descriptor_nofollow_removed",
+      "log": {
+        "after_sha256": "a8e33de59d41c05673b954b39db041362ea9be3b0783aacf11600000c6897fb4",
+        "before_sha256": "a8e33de59d41c05673b954b39db041362ea9be3b0783aacf11600000c6897fb4",
+        "changed": false,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/descriptor_nofollow_removed.log"
+      },
+      "raw_junit_sha256": "39a9ae7ba0f761eab692dfade035514c9ebe832fd0baaf329a60ac6aca5670b2",
+      "raw_log_sha256": "a8e33de59d41c05673b954b39db041362ea9be3b0783aacf11600000c6897fb4"
+    },
+    {
+      "junit": {
+        "after_sha256": "e42d4ea2b4363b62cb1a29f82689d29d04e0ddfb6715588a730bb81f0c15e631",
+        "before_sha256": "df065483ecd4bf802e3e478c5d9bca06384c691fa2e0d33cfd5eef46fbc7c9f0",
+        "changed": true,
+        "failed_testcases": [
+          "test_scoped_file_read_requests_at_most_cap_plus_one_byte"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/local_file_byte_cap_removed.xml"
+      },
+      "label": "local_file_byte_cap_removed",
+      "log": {
+        "after_sha256": "0e20969e683339d335fe5c2adaf7a06746073edad98709e8831f9e5382442d1a",
+        "before_sha256": "1a1041c4893ba1e296a91c43a45fbf30981a6b01952ed428a5376dab7eb7830a",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/local_file_byte_cap_removed.log"
+      },
+      "raw_junit_sha256": "4ae1649458ccc66bbb8ecc88451c27673f3b51a2287b2112ac87aab8b736bacd",
+      "raw_log_sha256": "1a1041c4893ba1e296a91c43a45fbf30981a6b01952ed428a5376dab7eb7830a"
+    },
+    {
+      "junit": {
+        "after_sha256": "98fa0e5edd8b66ee5d37c095897fb9072de6c163375e00d68a5785381a0f3e7b",
+        "before_sha256": "befc75561125c3660bade231dfa3e9b417e267e8f589e7cf3eedc8378a0f4342",
+        "changed": true,
+        "failed_testcases": [
+          "test_redirect_validation_prevents_private_second_physical_get"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/redirect_revalidation_removed.xml"
+      },
+      "label": "redirect_revalidation_removed",
+      "log": {
+        "after_sha256": "6c8657e3dc43fad240663d3551c8ae154760ade66c06757941b92d2f5e6029ad",
+        "before_sha256": "f6f15192ecc1faf3f09b1355599c3c4856f3924f4ab3978dcfec5b470cc3448c",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/redirect_revalidation_removed.log"
+      },
+      "raw_junit_sha256": "cdc1def558881834482ad7d1e3343d7fea6574ac7df5b8cef3f49f175bf9edb0",
+      "raw_log_sha256": "f6f15192ecc1faf3f09b1355599c3c4856f3924f4ab3978dcfec5b470cc3448c"
+    },
+    {
+      "junit": {
+        "after_sha256": "1051e015b8d25fcf56aaa8613c44115535555e56ff96957016b3397d82e615ce",
+        "before_sha256": "603d2173d1d3cd599beff0359d74b2c59b3c46dd82a348866c9c7cca0e9b0b47",
+        "changed": true,
+        "failed_testcases": [
+          "test_http_video_stream_without_content_length_is_byte_bounded"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/http_stream_byte_cap_removed.xml"
+      },
+      "label": "http_stream_byte_cap_removed",
+      "log": {
+        "after_sha256": "376becf1939b7724004f36402debfb6e1593b097f1ff12599a764bbe6b282621",
+        "before_sha256": "b7e5153870ec336efa15a6bd803a36b6d09721ebeb74b56ca0151280fb3348ac",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/http_stream_byte_cap_removed.log"
+      },
+      "raw_junit_sha256": "8e1ad7cbb2130de614650a0881915ed6e032da243451f4419caf476deb443236",
+      "raw_log_sha256": "b7e5153870ec336efa15a6bd803a36b6d09721ebeb74b56ca0151280fb3348ac"
+    },
+    {
+      "junit": {
+        "after_sha256": "76ff279d6163897a1a98885445790d1e25f0598277ab0e44da4072d67106ba2e",
+        "before_sha256": "ab705907e0fedc489ed792de12bcb079ae977280a024b33b709b4289e1994699",
+        "changed": true,
+        "failed_testcases": [
+          "test_role_revoked_at_physical_source_get_blocks_model"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/source_physical_recheck_removed.xml"
+      },
+      "label": "source_physical_recheck_removed",
+      "log": {
+        "after_sha256": "550b703b0f609d8fae4258e94e10e3935141d6fb42727df52e762c633ef042ed",
+        "before_sha256": "a728decf73600c86d5986dda1efe479df5cb1e97696802a52d51361a982e663f",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/source_physical_recheck_removed.log"
+      },
+      "raw_junit_sha256": "b7d3d58a7db1c13c935c04750d24f40733183477a6bddb2482c0895c1da8c015",
+      "raw_log_sha256": "a728decf73600c86d5986dda1efe479df5cb1e97696802a52d51361a982e663f"
+    },
+    {
+      "junit": {
+        "after_sha256": "cc03204ec7488e027d71c1f9e148d852262430186b1392a87218d0cda12c533b",
+        "before_sha256": "bb29d380f87065d52bbe506096a4f4e8408a664d62519e62cfcfe74be54855df",
+        "changed": true,
+        "failed_testcases": [
+          "test_actual_file_bytes_must_match_the_approved_snapshot"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/actual_file_hash_compare_removed.xml"
+      },
+      "label": "actual_file_hash_compare_removed",
+      "log": {
+        "after_sha256": "cd7b8c002cf03ba9ab8e48829fada79ee36829c2147714269d44b8d53dcbfc80",
+        "before_sha256": "34da75eaf13b09fb8393830939006fd88096bcbbf889d587cf0ef6084eaef5d6",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/actual_file_hash_compare_removed.log"
+      },
+      "raw_junit_sha256": "338b11cc1210bc5d3770ef1dda6d1a4c0d5f4018165dc23c7b7c9b28d4d9d258",
+      "raw_log_sha256": "34da75eaf13b09fb8393830939006fd88096bcbbf889d587cf0ef6084eaef5d6"
+    },
+    {
+      "junit": {
+        "after_sha256": "d685511e3c7053969e2a3b67da6ef5acc7d0d3fe2196bd013dddaabbdccb78b9",
+        "before_sha256": "1bc7e44a6ea19c7f19ac6f39591eeb99c4fc6c11b5d8484b1f1c180eb753db6a",
+        "changed": true,
+        "failed_testcases": [
+          "test_signed_worker_refuses_transport_substitution_after_initial_proof"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/native_direct_transport_removed.xml"
+      },
+      "label": "native_direct_transport_removed",
+      "log": {
+        "after_sha256": "11d3828972015e421c04dbe2517de45f3a90b132c98d23cf1076e5ff9cfadc00",
+        "before_sha256": "ecafe023b16c18def4eacc6961b96d8d59333d8390fdcc9de85ad90e9820fec7",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/native_direct_transport_removed.log"
+      },
+      "raw_junit_sha256": "dcba3ea666008ba9af36a9d80a6f373e06dd5878f56bec7058ef3c569caee46e",
+      "raw_log_sha256": "ecafe023b16c18def4eacc6961b96d8d59333d8390fdcc9de85ad90e9820fec7"
+    },
+    {
+      "junit": {
+        "after_sha256": "6eaefd0a92a8915124e06d281f7f959dda790d26fd56e47a01fd108962696cbe",
+        "before_sha256": "1346acd38d3aedad6a3334d530f0aa3309b2f2da2ea0b8c490460380a48e96e5",
+        "changed": true,
+        "failed_testcases": [
+          "test_signed_worker_refuses_changed_physical_model_request[url]"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/native_url_guard_removed.xml"
+      },
+      "label": "native_url_guard_removed",
+      "log": {
+        "after_sha256": "5449cc4720538749f5188c6e820e95c7351b5ed9b08cb9fc76cca47618f148db",
+        "before_sha256": "7245911b7c22a4ff32a6df2ad9ab33d49b7b60a526cf45d558733e7b4bb5bd85",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/native_url_guard_removed.log"
+      },
+      "raw_junit_sha256": "3ae4ce5eeb4537ffbd106915c1b3ecd28df29ce5bd6555c03d542bf024de4939",
+      "raw_log_sha256": "7245911b7c22a4ff32a6df2ad9ab33d49b7b60a526cf45d558733e7b4bb5bd85"
+    },
+    {
+      "junit": {
+        "after_sha256": "642bf99f7f34f09fd1fdea2c675758fb1f26f31c58024018d63733072e40d243",
+        "before_sha256": "e4af1ba33f5fe0d1360140be33d46e3a2f28ed46135f29ba5fcaa684c3bf8c34",
+        "changed": true,
+        "failed_testcases": [
+          "test_signed_worker_refuses_changed_physical_model_request[method]"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/native_method_guard_removed.xml"
+      },
+      "label": "native_method_guard_removed",
+      "log": {
+        "after_sha256": "3617e968acc8fad05cf6f3f9319d7ffb62add5a475e9a3feffd4490ef588d8c8",
+        "before_sha256": "4705622119111a929037adc9087946728fad698ea1ae695d46face1643677294",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/native_method_guard_removed.log"
+      },
+      "raw_junit_sha256": "3e3bbe4da4d9f731103e192445ccdf3beddb90fdf491988b8220baf8840553bd",
+      "raw_log_sha256": "4705622119111a929037adc9087946728fad698ea1ae695d46face1643677294"
+    },
+    {
+      "junit": {
+        "after_sha256": "90fa0c6e0dc3d1d23122a0a3825fa7082e06baa74bde90dacb13ccba3dbe0e76",
+        "before_sha256": "528bb94aab876a545de49467590a110fe82a7bba269daf00df774334a3e374e5",
+        "changed": true,
+        "failed_testcases": [
+          "test_signed_worker_refuses_changed_physical_model_request[authorization]"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/native_auth_guard_removed.xml"
+      },
+      "label": "native_auth_guard_removed",
+      "log": {
+        "after_sha256": "d003ee7921a1e3f83e8f62d733d1f248bdc22009fc0d928500a2057d1d509564",
+        "before_sha256": "75fc2b9baf3aa6e591c612e53550a7c9aab68ce8626217e061dbcc2b3b47667d",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/native_auth_guard_removed.log"
+      },
+      "raw_junit_sha256": "d2fea65a294b89cd4fbe07810634f5c631efa218c0550208c72e74c4f1edd1d2",
+      "raw_log_sha256": "75fc2b9baf3aa6e591c612e53550a7c9aab68ce8626217e061dbcc2b3b47667d"
+    },
+    {
+      "junit": {
+        "after_sha256": "fe1932ccbe5fb4a5413f1a16e97c2538d859a56020255f98217bb408727b6303",
+        "before_sha256": "4993d0437e6fe6ce917fbfef882dcccb7d24bd0fcf224ea718425424ce1df1c1",
+        "changed": true,
+        "failed_testcases": [
+          "test_signed_worker_refuses_changed_physical_model_request[cookie]"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/native_cookie_guard_removed.xml"
+      },
+      "label": "native_cookie_guard_removed",
+      "log": {
+        "after_sha256": "05ea4811afdc3791720bd825674fc4e4f58cadf7c702eeff141576282efe9cce",
+        "before_sha256": "82fd51481cf38c94a721047ff59c399f6b98c5fcb4aec15a3c4c1264451cd74a",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/native_cookie_guard_removed.log"
+      },
+      "raw_junit_sha256": "bbf3bbdb0ec9358c242ea3f3ff861de3610a5ce688e1dae69a7e36838fcf5d3f",
+      "raw_log_sha256": "82fd51481cf38c94a721047ff59c399f6b98c5fcb4aec15a3c4c1264451cd74a"
+    },
+    {
+      "junit": {
+        "after_sha256": "e5410ba1115c5050c4f536c06897c6c17eacba545cf99508baea5a19acb5875f",
+        "before_sha256": "729715cc8ae469bf5ffb743848ec33e57d4fabee9d578269f09104715fc50791",
+        "changed": true,
+        "failed_testcases": [
+          "test_physical_model_guard_rejects_extra_unapproved_message",
+          "test_adapter_cannot_mutate_expected_body_before_physical_send"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 2,
+          "skipped": 0,
+          "tests": 2
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/native_body_guard_removed.xml"
+      },
+      "label": "native_body_guard_removed",
+      "log": {
+        "after_sha256": "4ae3ef139b6ef8878a7fe62a35d2510a727fc1fd845cc8e525e93a4b5e36b10c",
+        "before_sha256": "7bf07c6a12b806187fe5fe22a97f98b1e3e56cebb587fc7bff8f5fd92176b803",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/native_body_guard_removed.log"
+      },
+      "raw_junit_sha256": "0d2aa821bf302a6d4740087c15f220598eacc17b81bdcd97fb7e301fce1b4d06",
+      "raw_log_sha256": "7bf07c6a12b806187fe5fe22a97f98b1e3e56cebb587fc7bff8f5fd92176b803"
+    },
+    {
+      "junit": {
+        "after_sha256": "b1b6406c0b643f81a321a49bbfadf344254be9db933bdbc02ac141b4b01e6c39",
+        "before_sha256": "c801ce2528c0d1b534f13fa8fa7562ca59d293799a9824ec0cd08e716eb73b52",
+        "changed": true,
+        "failed_testcases": [
+          "test_revocation_during_model_client_cleanup_withholds_answer",
+          "test_inherited_key_change_during_client_cleanup_withholds_answer"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 2,
+          "skipped": 0,
+          "tests": 2
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/cleanup_disclosure_recheck_removed.xml"
+      },
+      "label": "cleanup_disclosure_recheck_removed",
+      "log": {
+        "after_sha256": "354101a21509c593dea4fd95b1bca845da067e4b7ac0064b6abad5c3d9a55985",
+        "before_sha256": "3ec4d5d045a3ad6f4abb18ed3e92617ccfd19f62b923526c5ea7105d1eade11f",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/cleanup_disclosure_recheck_removed.log"
+      },
+      "raw_junit_sha256": "f08b2a63a437f42498ca13f8afe4377356e24dcef3ccda1bb0ac1930fce3b369",
+      "raw_log_sha256": "3ec4d5d045a3ad6f4abb18ed3e92617ccfd19f62b923526c5ea7105d1eade11f"
+    },
+    {
+      "junit": {
+        "after_sha256": "9970e6ccf75f9ee068d9246b4571498fe3b195d48d840719faf89f7f7056274e",
+        "before_sha256": "cb35646ba539e5fd30e1b2cb40c3a653a143402d7d6527d98814881a77dc26b4",
+        "changed": true,
+        "failed_testcases": [
+          "test_video_inherits_resolved_vision_route_and_uses_video_model_override",
+          "test_signed_toolrpc_worker_uses_inherited_route"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 2,
+          "skipped": 0,
+          "tests": 2
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/inherited_provider_route_removed.xml"
+      },
+      "label": "inherited_provider_route_removed",
+      "log": {
+        "after_sha256": "504f27982f41afd34bb0bac860573663941cc4ec74ce434fd4f890c1eac1b116",
+        "before_sha256": "24b41a70278f0aa64b93bb250e43f8f02c112677d5cc29af124fc86e70c718b9",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/inherited_provider_route_removed.log"
+      },
+      "raw_junit_sha256": "457862dbddce91d4756a005afc7df46cee52795a2ee7c36b6e53b499fd61bff4",
+      "raw_log_sha256": "24b41a70278f0aa64b93bb250e43f8f02c112677d5cc29af124fc86e70c718b9"
+    },
+    {
+      "junit": {
+        "after_sha256": "0de0c25eed51e6459175c80e9188dfd23120f39de2795d744761aa74934a55e0",
+        "before_sha256": "20e84074a24f42cf964ad4f9d824360f5fa5bd75f9ff2b8ef2b57c867f536f6f",
+        "changed": true,
+        "failed_testcases": [
+          "test_video_inherits_resolved_vision_route_and_uses_video_model_override"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/video_model_precedence_removed.xml"
+      },
+      "label": "video_model_precedence_removed",
+      "log": {
+        "after_sha256": "5926ce1963f2f7a0973ab7a6fd99c6fdbde2b2095ca3940589a4146313158206",
+        "before_sha256": "7b971b0ebc8729f40286938c4ff1bcc2f9945058b620eb273931b6993da2ff56",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/video_model_precedence_removed.log"
+      },
+      "raw_junit_sha256": "4073b126b1fd1607ef30507e605f03bf681bbe25a83e3ad0fe1e3e5c0c4c600a",
+      "raw_log_sha256": "7b971b0ebc8729f40286938c4ff1bcc2f9945058b620eb273931b6993da2ff56"
+    },
+    {
+      "junit": {
+        "after_sha256": "21868c59a3b8927f55bb0b870981d6be80e028c729ce9e7550c00de8f9cd41a2",
+        "before_sha256": "935e04ec3c951ea7d8453ccdf5b0fbb633ec5b0c43e2d3fc1dffb56b8142e1e8",
+        "changed": true,
+        "failed_testcases": [
+          "test_exact_native_endpoint_and_provider_required_to_borrow_vision_key"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/full_url_key_gate_reduced_to_provider.xml"
+      },
+      "label": "full_url_key_gate_reduced_to_provider",
+      "log": {
+        "after_sha256": "7785f56c9e997d9ec0ec945271927fea3b22c51646d63b83bbbd9fcb764b6868",
+        "before_sha256": "14f044a0f9a1a22132f1a00c55453d5f6c95aedbe8806c26dd627616b84ecdbe",
+        "changed": true,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/full_url_key_gate_reduced_to_provider.log"
+      },
+      "raw_junit_sha256": "6d03568215ce65807e0a964c73a2d3c9eb49a88dc34b2587b50160e3ed7a38cd",
+      "raw_log_sha256": "14f044a0f9a1a22132f1a00c55453d5f6c95aedbe8806c26dd627616b84ecdbe"
+    },
+    {
+      "junit": {
+        "after_sha256": "bfe7a847c653ab00d190bcf4923105c5fe7b037b4952a69fbb3e9db37855f13b",
+        "before_sha256": "bfe7a847c653ab00d190bcf4923105c5fe7b037b4952a69fbb3e9db37855f13b",
+        "changed": false,
+        "failed_testcases": [
+          "test_invalid_configured_vision_does_not_select_another_video_destination"
+        ],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/invalid_vision_falls_back_to_default.xml"
+      },
+      "label": "invalid_vision_falls_back_to_default",
+      "log": {
+        "after_sha256": "0fc35776acb7af2334805df7b4d47430015a7a17a37b62d068f89c730ca5fde7",
+        "before_sha256": "0fc35776acb7af2334805df7b4d47430015a7a17a37b62d068f89c730ca5fde7",
+        "changed": false,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/invalid_vision_falls_back_to_default.log"
+      },
+      "raw_junit_sha256": "8f7f7792e55aefcecd06422b33745cf08a187771b948ca1fcb459b630ea444dc",
+      "raw_log_sha256": "0fc35776acb7af2334805df7b4d47430015a7a17a37b62d068f89c730ca5fde7"
+    },
+    {
+      "junit": {
+        "after_sha256": "0e39d7531ab579d04b24a947cf02f3b6cb094603672b53deaf957def8be8bb12",
+        "before_sha256": "0e39d7531ab579d04b24a947cf02f3b6cb094603672b53deaf957def8be8bb12",
+        "changed": false,
+        "failed_testcases": [],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 168
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/unsigned_execute_allowed__broad.xml"
+      },
+      "label": "unsigned_execute_allowed",
+      "log": {
+        "after_sha256": "ac0b7ba86f0e18872f8a20fc1e03210d5490c194f41e97bec3069c9e83f99369",
+        "before_sha256": "ac0b7ba86f0e18872f8a20fc1e03210d5490c194f41e97bec3069c9e83f99369",
+        "changed": false,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/unsigned_execute_allowed__broad.log"
+      },
+      "raw_junit_sha256": "fd0b42217e40e5cefd68dd91dfb5f7a8f300a6a9fddd02358584e405f7723e70",
+      "raw_log_sha256": "ac0b7ba86f0e18872f8a20fc1e03210d5490c194f41e97bec3069c9e83f99369"
+    },
+    {
+      "junit": {
+        "after_sha256": "90632dc63a29da4e377d209f32c5a55e2f80b97e71c0f86b44818481d88de3dc",
+        "before_sha256": "90632dc63a29da4e377d209f32c5a55e2f80b97e71c0f86b44818481d88de3dc",
+        "changed": false,
+        "failed_testcases": [],
+        "junit_counts": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "tests": 168
+        },
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/remote_role_consent_ignored__broad.xml"
+      },
+      "label": "remote_role_consent_ignored",
+      "log": {
+        "after_sha256": "b8e77eca2b7c13ccb3714388ffca3bbd27bbf6d11f9b0d0f308b1ccf8dda3343",
+        "before_sha256": "b8e77eca2b7c13ccb3714388ffca3bbd27bbf6d11f9b0d0f308b1ccf8dda3343",
+        "changed": false,
+        "path": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/remote_role_consent_ignored__broad.log"
+      },
+      "raw_junit_sha256": "6f3c13e8d2d36fe98f559f8bd919090d24d3f2126a36b3fd41bf240dc906c2f7",
+      "raw_log_sha256": "b8e77eca2b7c13ccb3714388ffca3bbd27bbf6d11f9b0d0f308b1ccf8dda3343"
+    }
+  ],
+  "changed_junit": 23,
+  "changed_logs": 23,
+  "junit_counts_and_failure_names_preserved": true,
+  "pairs": 34,
+  "policy": "Trim only trailing ASCII spaces and tabs from each already line-capped saved log/XML line; preserve line endings and raw hashes."
+}

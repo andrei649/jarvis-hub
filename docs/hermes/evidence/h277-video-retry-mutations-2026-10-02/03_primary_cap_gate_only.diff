@@ -1,0 +1,11 @@
+--- a/agents/core/video_analysis.py
++++ b/agents/core/video_analysis.py
+@@ -455,7 +455,7 @@
+                 retry_count = resolve_video_retry_count()
+                 failures = []
+                 for route_index, identity in enumerate(identities):
+-                    max_attempts = 1 + retry_count if route_index == 0 else 1
++                    max_attempts = 1 + retry_count
+                     for attempt in range(1, max_attempts + 1):
+                         check()
+                         try:

@@ -1,0 +1,22 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_fallback.py::test_exact_native_endpoint_and_provider_required_to_borrow_vision_key", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/full_url_key_gate_reduced_to_provider.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_exact_native_endpoint_and_provider_required_to_borrow_vision_key _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d795070>
+
+    def test_exact_native_endpoint_and_provider_required_to_borrow_vision_key(monkeypatch):
+        local_vision(monkeypatch)
+        monkeypatch.setenv("JARVIS_ROLE_VIDEO_PROVIDER", "lm-studio")
+        monkeypatch.setenv("JARVIS_ROLE_VIDEO_MODEL", "video-model")
+        monkeypatch.setenv("JARVIS_ROLE_VIDEO_BASE_URL", "http://127.0.0.1:1234")
+        assert video_policy.describe_video_data_target().authorization == "Bearer vision-secret"
+        monkeypatch.setenv("JARVIS_ROLE_VIDEO_BASE_URL", "http://127.0.0.1:1234/other")
+>       assert video_policy.describe_video_data_target().authorization == ""
+E       AssertionError: assert 'Bearer vision-secret' == ''
+E
+E         + Bearer vision-secret
+
+tests/test_h277_video_fallback.py:86: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_fallback.py::test_exact_native_endpoint_and_provider_required_to_borrow_vision_key

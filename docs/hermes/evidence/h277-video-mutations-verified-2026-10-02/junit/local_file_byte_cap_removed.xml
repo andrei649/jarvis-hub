@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.309" timestamp="2026-10-02T01:32:57.889917+03:00" hostname="Macmini">
+    <testcase classname="tests.test_h277_video_boundaries" name="test_scoped_file_read_requests_at_most_cap_plus_one_byte" time="0.736">
+      <failure message="assert (1 == 1 and 0 &lt;= -1)&#10; +  where 1 = len([-1])">rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-744/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-744/test_scoped_file_read_requests0/clip.mp4'), requests=[])
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10da15b80&gt;
+
+    def test_scoped_file_read_requests_at_most_cap_plus_one_byte(rig, monkeypatch):
+        from agents.core import video_analysis
+
+        monkeypatch.setattr(video_analysis, "MAX_VIDEO_BYTES", 5)
+        rig.source.write_bytes(b"1234")
+        real_fdopen = video_analysis.os.fdopen
+        requested = []
+
+        class ObservedStream:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+
+            def fileno(self):
+                return self.stream.fileno()
+
+            def read(self, size=-1):
+                requested.append(size)
+                return self.stream.read(size)
+
+        monkeypatch.setattr(video_analysis.os, "fdopen", lambda *args, **kw: ObservedStream(
+            real_fdopen(*args, **kw)))
+        assert _read_scoped(rig.source, FileScope.from_env()) == b"1234"
+&gt;       assert len(requested) == 1 and 0 &lt;= requested[0] &lt;= 6
+E       assert (1 == 1 and 0 &lt;= -1)
+E        +  where 1 = len([-1])
+
+tests/test_h277_video_boundaries.py:145: AssertionError</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

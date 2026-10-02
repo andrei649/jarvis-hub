@@ -1,0 +1,11 @@
+--- a/agents/core/llm/video_retry.py
++++ b/agents/core/llm/video_retry.py
+@@ -15,7 +15,7 @@
+     raw = source.get("JARVIS_ROLE_VIDEO_TRANSIENT_RETRIES", "")
+     if not isinstance(raw, str) or len(raw) > 16:
+         raise VideoRetryConfigError("invalid video retry setting")
+-    value = raw.strip(" ")
++    value = raw.strip()
+     if value in {"", "0"}:
+         return 0
+     if value == "1":

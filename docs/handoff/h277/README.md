@@ -1,5 +1,33 @@
 # Handoff — H277 in progress on PR #1207 (2026-09-27)
 
+## Local configured-chain continuation (2026-10-02)
+
+The [provider-chain report](../../hermes/h277-video-provider-chain-2026-10-02.md) tracks
+explicit fallback configuration, independent consent and runtime integration. Earlier
+receipts below retain their original source scope; H277 remains partial.
+
+## Local video continuation (2026-10-02)
+
+An approved native `video_analyze` consumer and independent video-role consent are
+implemented locally, including bounded inheritance from the effective vision route.
+See the [current implementation and verification report](../../hermes/h277-video-analysis-2026-10-02.md).
+The later [video mutation campaign](../../hermes/evidence/h277-video-mutations-verified-2026-10-02/report.md)
+on `92905443` detected 29 of 31 validated mutations, with two documented survivors,
+zero invalid cases and 168 passing baseline tests. All 4,130 source hashes were restored.
+H277 remains partial: broader auxiliary routing and live native-video model acceptance
+are unfinished. The dated sections below retain their
+original snapshot scope.
+
+## Current-source verification (2026-10-01)
+
+After PR #1207 and the dependency/reliability updates reached main, the 14 shared
+judge mutations were rerun on commit `9d5b3add`: all 14 were killed, with 203 baseline
+tests passing and all 3,982 snapshot file hashes restored. A separate current H277
+selection passed 310 tests. See [the new exact-snapshot report](../../hermes/evidence/h277-current-2026-10-01/report.md).
+The old mutation campaigns below retain their original scope and fingerprints.
+H277 remains partial: the video-analysis consumer and broader auxiliary routing
+are unfinished at this snapshot. This continuation is local only.
+
 ## Local Codex continuation (2026-09-27)
 
 The original Claude handoff below is preserved as dated history. Round2 is now

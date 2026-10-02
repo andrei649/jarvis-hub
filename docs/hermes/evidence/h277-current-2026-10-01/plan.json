@@ -1,0 +1,207 @@
+{
+  "status": "prepared",
+  "selected_existing": 10,
+  "additional_shared_capacity": 4,
+  "total": 14,
+  "original_evidence": "../../../handoff/h277/verification/post_refactor/report.md",
+  "snapshot_policy": "Pinned git archive 9d5b3add only; no working-tree overlay. Preserve historical evidence. Unmatched, syntax, import and setup errors are invalid, never kills.",
+  "required_untracked": [],
+  "baseline_tests": [
+    "tests/test_h277_approval_judge.py",
+    "tests/test_h277_task_judge.py"
+  ],
+  "mutations": [
+    {
+      "label": "queue_snapshot_is_stored_item",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "a": "snapshot = normalise_snapshot(item)",
+      "b": "snapshot = item",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner.",
+      "original_file": "agents/core/autonomy/action_approvals.py"
+    },
+    {
+      "label": "queue_judge_inherits_caller_context",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "a": "            self._spawn(running, snapshot, status, fresh)\n",
+      "b": "            self._spawn(running, snapshot, status, contextvars.copy_context())\n",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner."
+    },
+    {
+      "label": "queue_short_lived_loop_not_judged_on_hub",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "a": "if running is not None and (running is loop or not hub_up):",
+      "b": "if running is not None:",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "prepared",
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner."
+    },
+    {
+      "label": "N1_post_slot_status_stale",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "a": "current = judge.status() if judge is not None else None",
+      "b": "current = status",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner."
+    },
+    {
+      "label": "N1_post_slot_wants_dropped",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "a": "or not judge.wants(live, current) or not judge.wants(snapshot, current)",
+      "b": "or False",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner."
+    },
+    {
+      "label": "N1_skip_revoked_counter_dropped",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "a": "self._skipped_revoked += 1",
+      "b": "self._skipped_revoked += 0",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner."
+    },
+    {
+      "label": "N2_finish_pending_not_cleared",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "a": "            self._judge_pending.discard(action_id)\n",
+      "b": "            pass\n",
+      "generation": "N2",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Same behavior extracted from action adapter into shared AdvisoryJudgements runner."
+    },
+    {
+      "label": "N1_disk_pending_recheck_dropped",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "a": "persisted.get(\"status\") != \"pending\"",
+      "b": "False",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Action storage/decision adapter still participates in shared runner dispatch/capacity contract."
+    },
+    {
+      "label": "N1_memory_pending_recheck_dropped",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "a": "if not item or item.get(\"status\") != \"pending\" or \"judge\" in item:",
+      "b": "if not item or \"judge\" in item:",
+      "generation": "N1",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Action storage/decision adapter still participates in shared runner dispatch/capacity contract."
+    },
+    {
+      "label": "N2_capacity_released_on_decide",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "a": "        self._clear_judge_pending(action_id)\n        if event is not None:\n",
+      "b": "        self._clear_judge_pending(action_id)\n        self._judging.discard(action_id)\n        self._judge_capacity.release(self, action_id)\n        if event is not None:\n",
+      "generation": "N2",
+      "run": "py",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "original_file": "agents/core/autonomy/action_approvals.py",
+      "mapping": "Capacity is now held in a shared pool; release both tracking and shared reservation before generation finishes. Current source also clears pending on expiry; bind only the explicit decide() event block, rather than replacing both indentation contexts."
+    },
+    {
+      "label": "shared_pending_limit_dropped",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "a": "if len(self._work) >= JUDGE_MAX_PENDING:",
+      "b": "if False:",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "shared_runner",
+      "mapping": "Drop global pending bound across action/task adapters."
+    },
+    {
+      "label": "shared_concurrency_limit_raised",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "a": "JUDGE_MAX_CONCURRENT = 2",
+      "b": "JUDGE_MAX_CONCURRENT = 3",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "shared_runner",
+      "mapping": "Increase shared generation semaphore above allowed two slots."
+    },
+    {
+      "label": "shared_external_capacity_ignored",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "a": "if capacity is not None:",
+      "b": "if False:",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "shared_runner",
+      "mapping": "Ignore supplied shared pool and retain each adapter private pool."
+    },
+    {
+      "label": "shared_capacity_release_dropped",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "a": "self._work.discard((owner, key))",
+      "b": "pass",
+      "tests": [
+        "tests/test_h277_approval_judge.py",
+        "tests/test_h277_task_judge.py"
+      ],
+      "run": "py",
+      "generation": "shared_runner",
+      "mapping": "Fail to return reservation after completed/skipped work."
+    }
+  ]
+}

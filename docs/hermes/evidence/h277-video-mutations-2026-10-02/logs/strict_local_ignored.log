@@ -1,0 +1,39 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_fallback.py::test_inherited_remote_route_needs_video_consent_and_privacy_controls", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/strict_local_ignored.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_inherited_remote_route_needs_video_consent_and_privacy_controls _____
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-645/test_inherited_remote_route_ne0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10e3f8d70>
+
+    def test_inherited_remote_route_needs_video_consent_and_privacy_controls(tmp_path, monkeypatch):
+        from agents.core import settings_db
+        from agents.core.llm import data_handling as dh
+        from tests.test_h513_data_handling import Audit, router
+
+        monkeypatch.setattr(settings_db, "DB_PATH", tmp_path / "settings.db")
+        monkeypatch.setattr(settings_db, "_initialized", False)
+        settings_db.init_db(force=True)
+        monkeypatch.setattr(dh, "_scope_key", lambda: b"synthetic-video-fallback-consent")
+        monkeypatch.setenv("JARVIS_VIDEO_ANALYSIS", "1")
+        monkeypatch.setenv("JARVIS_ROLE_VIDEO_ALLOW_REMOTE", "1")
+        monkeypatch.setenv("JARVIS_ROLE_VISION_PROVIDER", "openai-compatible")
+        monkeypatch.setenv("JARVIS_ROLE_VISION_MODEL", "remote-video")
+        monkeypatch.setenv("JARVIS_ROLE_VISION_BASE_URL", "https://vision.example/v1")
+        identity = video_policy.describe_video_data_target()
+        assert identity.local is False
+        with pytest.raises(video_policy.VideoPolicyRefused, match="explicit approval"):
+            video_policy.authorization_check(identity, allow_remote=False, confirm_expensive=False)
+        with pytest.raises(dh.DataHandlingRefused):
+            video_policy.authorization_check(identity, allow_remote=True, confirm_expensive=False)
+        dh.acknowledge(router(), identity.provider, True, dh.role_target_scope(identity), Audit(),
+                       target=dh.VIDEO_TARGET)
+        video_policy.authorization_check(identity, allow_remote=True, confirm_expensive=False)
+        monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+>       with pytest.raises(video_policy.VideoPolicyRefused, match="strict-local"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE VideoPolicyRefused
+
+tests/test_h277_video_fallback.py:152: Failed
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_fallback.py::test_inherited_remote_route_needs_video_consent_and_privacy_controls

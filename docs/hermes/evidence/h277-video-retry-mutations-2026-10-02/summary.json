@@ -1,0 +1,11 @@
+{
+  "baseline_tests": 755,
+  "cases": 11,
+  "commit": "5da06db66c837993a644f330f67da385ed7bf835",
+  "final_green": true,
+  "final_source_restored": true,
+  "final_tests": 755,
+  "invalid": 0,
+  "killed": 9,
+  "survived": 2
+}

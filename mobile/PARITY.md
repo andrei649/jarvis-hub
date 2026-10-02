@@ -256,6 +256,20 @@ Approval-judge consent is a separate responsive-web row, keyed to its configured
 model, destination and credentials. It does not enable remote judging. Native mobile
 still uses the web panel for consent management; no native acceptance was run.
 
+Video analysis (H277, 2026-10-02) adds a separate consent row to the responsive web
+Security Posture panel and uses existing Decision Inbox task approvals. Configured
+video fallbacks have separate consent/revoke controls in that web panel. Native
+mobile has no video source picker, role editor, or dedicated video-consent control;
+use the responsive web panel for consent. The primary transient-retry setting also
+has no native editor. Its additional send budget is shown through the existing
+server-generated task approval notice. Native-device and live video-provider acceptance
+remain unverified.
+
+Local auxiliary model selection (H277, 2026-10-02) runs on the server for session
+titles, recall rewriting, conversation review and compression. Existing results
+reach the same clients; the four `JARVIS_AUX_*_MODEL` environment settings have no
+native editor. This adds no native-device or live-model acceptance claim.
+
 The responsive-web image composer now displays provider-policy warnings alongside
 the reviewed destination and successful answer. Its request-scoped remote
 acknowledgment is unchanged. Native image-policy warning parity remains open;

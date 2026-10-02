@@ -628,9 +628,19 @@ class AutonomyCoordinator:
             persisted = queue.get(task_id)
             if persisted is None:
                 return False
+            if is_video_task(persisted):
+                if queue.mediation_mode != "enforce":
+                    return False
+                try:
+                    if not queue.validate_mediated_execution(
+                            task, queue.execution_fingerprint(task)):
+                        return False
+                except Exception:
+                    return False
             return (
                 persisted.status == "running"
-                and (persisted.kind in _TRUSTED_TOOL_RPC_KINDS or is_image_task(persisted))
+                and (persisted.kind in _TRUSTED_TOOL_RPC_KINDS or is_image_task(persisted)
+                     or is_video_task(persisted))
                 and persisted.autonomy_level == "ask"
                 and persisted.decision in {"accept", "edit"}
                 and bool(persisted.decided_by)
@@ -650,6 +660,7 @@ class AutonomyCoordinator:
                 return default
 
         from .image_generation_runtime import LocalImageRuntime, is_image_task
+        from .video_analysis import is_video_task
         from .image_tool_dispatcher import INPUT_SCHEMA, ImageToolDispatcher
 
         image_runtime = LocalImageRuntime(
@@ -676,6 +687,28 @@ class AutonomyCoordinator:
             preflight=image_dispatcher.preflight, trusted_execution=True,
             gated_intake=image_dispatcher.intake,
         )
+        from .env_config import env_flag
+        if env_flag("JARVIS_VIDEO_ANALYSIS"):
+            from .video_analysis import INPUT_SCHEMA as VIDEO_INPUT_SCHEMA, VideoAnalysisTool
+
+            video_tool = VideoAnalysisTool(
+                approved_task=_APPROVED_TASK.get,
+                execution_check=lambda task: _approved_execution_context(execution_token, task),
+                kernel_check=lambda args, task: server._kernel_denial(
+                    "video_analyze", args, getattr(task, "agent", None) or server.agent),
+                enqueue=self._governed_enqueue,
+                queue=getattr(self._orch, "autonomy_queue", None),
+                router=getattr(self._orch, "llm_router", None),
+            )
+            server.register_tool(
+                "video_analyze", video_tool.execute, gated=True,
+                description="Analyze one scoped workspace video or public video URL with the configured video model; owner approval required.",
+                input_schema=VIDEO_INPUT_SCHEMA, capability_id="tool:video_analyze",
+                preflight=video_tool.preflight, classifier=video_tool.classifier,
+                trusted_execution=True, gated_intake=video_tool.intake,
+                untrusted_output=True,
+                max_result_bytes=16_384,
+            )
         # H313 — the model may decide to say one thing aloud on one room's speaker.
         # Default-off (registered only with the Media Director on) and gated like
         # image_generate, with its own intake so the kernel sees the exact row the
@@ -1233,9 +1266,8 @@ class AutonomyCoordinator:
         self._approved_desktop_tool_rpc_execute = _approved_desktop_tool_rpc_execute
 
         async def _approved_image_tool_rpc_execute(task):
-            # Canonical tool.rpc is NOT a generic alias for toolrpc.*. Admit
-            # only this server-owned image payload; other names remain closed.
-            if not is_image_task(task):
+            # Canonical tool.rpc admits only these server-owned media tuples.
+            if not (is_image_task(task) or is_video_task(task)):
                 return {"status": "failed", "reason": "image_task_required"}
             return await _approved_desktop_tool_rpc_execute(task)
 

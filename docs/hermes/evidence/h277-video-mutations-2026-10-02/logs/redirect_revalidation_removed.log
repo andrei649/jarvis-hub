@@ -1,0 +1,72 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_analysis.py::test_public_url_uses_pinned_client_and_rejects_private_redirect", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/redirect_revalidation_removed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_public_url_uses_pinned_client_and_rejects_private_redirect ________
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-651/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-651/test_public_url_uses_pinned_cl0/clip.mp4'), requests=[])
+
+    @pytest.mark.asyncio
+    async def test_public_url_uses_pinned_client_and_rejects_private_redirect(rig):
+        from agents.core.video_analysis import VideoHTTPClient, _read_url
+
+        seen, checks = [], []
+
+        def transport(request):
+            seen.append(request)
+            return httpx.Response(302, headers={"location": "http://127.0.0.1/private.mp4"})
+
+        def factory(plugin, **kw):
+            return VideoHTTPClient(plugin, resolver=lambda host, mode: (["8.8.8.8"], None),
+                                   transport_factory=lambda target: httpx.MockTransport(transport), **kw)
+
+        with pytest.raises(ToolRPCValidationError):
+>           await _read_url("https://video.example/clip.mp4", lambda: checks.append(1),
+                            client_factory=factory)
+
+tests/test_h277_video_analysis.py:147:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+source = 'https://video.example/clip.mp4'
+check = <function test_public_url_uses_pinned_client_and_rejects_private_redirect.<locals>.<lambda> at 0x10c1a8fe0>
+client_factory = <function test_public_url_uses_pinned_client_and_rejects_private_redirect.<locals>.factory at 0x10c1a8f40>
+
+    async def _read_url(source: str, check, *, client_factory=VideoHTTPClient) -> bytes:
+        current = source
+        client = client_factory("video_analysis", check=check,
+                                timeouts=PluginTimeouts(connect=5, read=10, total=30))
+        try:
+            async with asyncio.timeout(35):
+                for _ in range(5):
+                    check()
+                    # One hop per call: validate the next URL and current authority before
+                    # every new DNS resolution and physical GET, including redirects.
+                    async with client.stream("GET", current, follow_redirects=False,
+                                             headers={"Accept": "video/*"}) as response:
+                        check()
+                        if response.status_code in {301, 302, 303, 307, 308}:
+                            location = response.headers.get("location")
+                            if not location:
+                                raise VideoPolicyRefused("video redirect has no location")
+                            current = urljoin(current, location)
+                            None
+                            continue
+                        response.raise_for_status()
+                        size = response.headers.get("content-length", "")
+                        if size.isdecimal() and int(size) > MAX_VIDEO_BYTES:
+                            raise VideoPolicyRefused("video source too large")
+                        data = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            check()
+                            data.extend(chunk)
+                            if len(data) > MAX_VIDEO_BYTES:
+                                raise VideoPolicyRefused("video source too large")
+                        check()
+                        if not data:
+                            raise VideoPolicyRefused("video source is empty")
+                        return bytes(data)
+>           raise VideoPolicyRefused("video redirect limit exceeded")
+E           agents.core.llm.video_policy.VideoPolicyRefused: video redirect limit exceeded
+
+agents/core/video_analysis.py:173: VideoPolicyRefused
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_analysis.py::test_public_url_uses_pinned_client_and_rejects_private_redirect

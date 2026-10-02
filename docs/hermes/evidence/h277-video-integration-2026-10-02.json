@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-01T22:05:35.174739+00:00",
+  "scope": "Local H277 approved native video analysis, exact-destination vision inheritance, safe-mode inventory and H413 fixture isolation. H277 and full Hermes parity remain partial.",
+  "full_backend_snapshot": {
+    "commit": "78780b6439d0cea1ed66d924127b6a8a888df7a5",
+    "tracked_regular_files": 4014,
+    "content_manifest_fingerprint": "d34dbb49e56b4ac5c0abd5716a8a2444597aafaf78c5055cafe731a6369e7ac1",
+    "fingerprint_method": "SHA256 of sorted compact JSON mapping tracked regular file paths to SHA256; symlinks excluded",
+    "unchanged_after_run": true,
+    "working_tree_clean_after_run": true,
+    "selected_source_sha256": {
+      "agents/core/video_analysis.py": "44b5ffa68fe629038764e1101ac45eda7430fdfe148913c0cf82f9bfd7f62b48",
+      "agents/core/llm/video_policy.py": "393619b7f1c8b997bd685dceb46d9df2dafc7224df7c9a5976d06785bf603bf0",
+      "agents/core/llm/model_roles.py": "87cb05d4e8f334784421770675aca7eb9c6f2d9d48cf6c52fc4e81939dfb447b",
+      "agents/core/autonomy_coordinator.py": "1c9f11237f8df0962801f12b0daede0109e87605b95c85236d6cdff93b97226b",
+      "agents/core/llm/data_handling.py": "fe5a86362e6a67c657a30773685e1304811adbdaf995528d66c85323b0623c32",
+      "tests/test_h277_video_analysis.py": "3915dc822d05547f9b957a26bf0cb5b8dbe63565519dcb0b324073139d24374e",
+      "tests/test_h277_video_fallback.py": "ac7ffe79859adf7600fd8e3744a2c0a20886479221829643dc1333e91d82f85f",
+      "tests/test_h277_model_roles.py": "7b482ab8760265a86cf6fa57bbeaf618c99f28f13a7fe696fb50c6a32486fb9e",
+      "tests/test_h275_safe_mode.py": "cbde920c81ea80f7bef954de36b762e3f5f0a759cb5dd338aa158dadfc468efe",
+      "tests/test_h413_session_titles.py": "731432e29bca37229604ba9cb52ec35b0801d26251771d8a5b9b21137e02f1cb"
+    }
+  },
+  "full_backend_command": "/tmp/nerva-pr-python-20261001/bin/python -m pytest --junitxml=/tmp/nerva-video-final-backend-20261002.xml",
+  "pytest_guards": "Repository addopts retained, including socket and timeout restrictions; no live or paid model calls.",
+  "verification": [
+    {
+      "artifact": "/tmp/nerva-h277-fallback-focused-20261002.xml",
+      "sha256": "ac3e6219142bd720e5037b5e6eedcd72cf2bb2d30b5aa12088602c6f9020d7db",
+      "tests": 307,
+      "passed": 307,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0,
+      "seconds": 4.0
+    },
+    {
+      "artifact": "/tmp/nerva-h277-parent-fallback-20261002.xml",
+      "sha256": "aa217f4d63584a0b6a73271419a5975c6620f62dbf829f2ea5e6e90d1ec23551",
+      "tests": 188,
+      "passed": 188,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0,
+      "seconds": 2.477
+    },
+    {
+      "artifact": "/tmp/nerva-video-final-backend-20261002.xml",
+      "sha256": "329546181c0c8d8e84d6b34a8313eb17be8871f19d07a50e1e4bce693cca8749",
+      "tests": 20143,
+      "passed": 20108,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1,
+      "seconds": 980.539
+    }
+  ],
+  "frontend": {
+    "artifact": "/tmp/nerva-video-frontend-20261002.json",
+    "sha256": "c645bb1649de0def566430e8cd5b16d2754d9027e3d4d2572ec13ca44e663304",
+    "total": 1836,
+    "passed": 1836,
+    "failed": 0,
+    "success": true,
+    "scope": "Full frontend run before backend-only fallback changes; typecheck and production build passed, existing large-chunk advisory remains."
+  },
+  "independent_review": "Bounded read-only review of fallback resolver, native destination/key identity and regressions found no concrete blocker; reviewer did not run tests.",
+  "diagnostic_run": {
+    "result": "20083 passed, 34 skipped, 1 xfailed, 4 failed",
+    "scope": "Mixed changing tree, not final proof. Failures: safe-mode reader inventory, shared checkpoint fixture, two stale Hermes-report assertions. All corrected before final immutable run."
+  },
+  "limits": [
+    "Native video_url model support not verified against a live provider.",
+    "No Ollama native video adapter, wider auxiliary-provider parity or failure-driven provider retries.",
+    "Approval-class verification may reread the scoped local file once after configuration changes; no network request or answer disclosure proceeds.",
+    "Fresh 14-mutant campaign is pinned to 9d5b3add before video and is not mutation coverage of this consumer.",
+    "POSIX local file descriptors required; inbound ingestion and native mobile controls remain separate work.",
+    "61 warnings remain in the full backend run, including existing deprecations and an unawaited coroutine warning.",
+    "Raw local test logs and JUnit artifacts are in /tmp and not a durable attachment; this receipt records their hashes and outcomes.",
+    "No push, merge, deployment or live provider acceptance in this local continuation."
+  ]
+}

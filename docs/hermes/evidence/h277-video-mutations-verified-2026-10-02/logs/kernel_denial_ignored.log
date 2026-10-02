@@ -1,0 +1,30 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_boundaries.py::test_signed_worker_kernel_denial_after_acceptance_blocks_model", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/kernel_denial_ignored.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_signed_worker_kernel_denial_after_acceptance_blocks_model ________
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-736/test_.../test_signed_worker_kernel_deni0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])
+
+    @pytest.mark.asyncio
+    async def test_signed_worker_kernel_denial_after_acceptance_blocks_model(rig):
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        assert proposal["reason"] == "approval_required", proposal
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+        calls = []
+
+        def deny_video_execution(args, task):
+            calls.append((args["question"], task.id))
+            return "synthetic kernel denial"
+
+        rig.video.kernel_check = deny_video_execution
+        await rig.worker.tick()
+>       assert rig.requests == []
+E       AssertionError: assert [<Request('PO...ompletions')>] == []
+E
+E         Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>
+E         Use -v to get more diff
+
+tests/test_h277_video_boundaries.py:162: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_boundaries.py::test_signed_worker_kernel_denial_after_acceptance_blocks_model

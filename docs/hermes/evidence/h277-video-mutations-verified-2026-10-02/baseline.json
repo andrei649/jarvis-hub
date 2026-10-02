@@ -1,0 +1,32 @@
+{
+  "command": [
+    "/tmp/nerva-pr-python-20261001/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "tests/test_h277_video_analysis.py",
+    "tests/test_h277_video_fallback.py",
+    "tests/test_h277_model_roles.py",
+    "tests/test_h277_role_routes.py",
+    "tests/test_h277_video_boundaries.py",
+    "-q",
+    "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/baseline.xml"
+  ],
+  "elapsed_seconds": 3.86,
+  "junit": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/baseline.xml",
+  "junit_counts": {
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests": 168
+  },
+  "log": "docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/logs/baseline.log",
+  "normalization": "Each saved log/XML line capped at 2000 characters, then trailing ASCII spaces/tabs stripped; raw and pre-whitespace hashes retained",
+  "pre_whitespace_junit_sha256": "83015f084a5948c59e5dc18d0ee29a7daee1de2604e66a0c2504900684987ed3",
+  "pre_whitespace_log_sha256": "c28af39eecfbbb7c21bacd378492cf17439d2006fde0352157a191ac23c3201e",
+  "raw_junit_sha256": "5d2eae2ccf600362c90637e3adf65de33d7917bfc544d98f3e4a6f211f3cf683",
+  "raw_log_sha256": "c28af39eecfbbb7c21bacd378492cf17439d2006fde0352157a191ac23c3201e",
+  "returncode": 0,
+  "saved_junit_sha256": "83015f084a5948c59e5dc18d0ee29a7daee1de2604e66a0c2504900684987ed3",
+  "saved_log_sha256": "c28af39eecfbbb7c21bacd378492cf17439d2006fde0352157a191ac23c3201e"
+}

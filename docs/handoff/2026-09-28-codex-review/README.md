@@ -79,8 +79,10 @@ the URL monitor deadline test made robust on a loaded runner.
    transaction that rolls back on any failure, and a `task:<id>:…` approval opens one run,
    ever — the retry gets the first attempt's run (and its goal id) or `approval_already_used`
    (`tests/test_h464c_company_run_binding.py`).
-2. **permission.grant:** `_audit` or `commit` raising after `_insert` lets a retry insert a
-   second grant.
+2. **permission.grant:** **Fixed locally on 2026-10-02:** task-bound receipts and a
+   SQLite transaction prevent duplicate grants on retry, including an uncertain
+   commit outcome. Replay preserves consumed/revoked authority. OS-input tokens
+   precede the grant commit. [Verification and remaining storage limits](../../hermes/permission-grant-replay-2026-10-01.md).
 3. **channel.reply:** `record_outbound` raising after the send lets a retry send again.
 4. **Credential:** `credential_not_configured` also covers a secret that cannot be decrypted.
    The fix belongs in the protected `agents/core/security/secret_broker.py`, so it is **owner,

@@ -1,0 +1,96 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py", "tests/test_h277_task_judge.py"]
+........................................................................ [ 35%]
+..........................................................F............. [ 70%]
+........................................F.....F............              [100%]
+=================================== FAILURES ===================================
+_______________ test_judge_pending_is_public_runtime_state_only ________________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-573/test_judge_pending_is_public_r0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fecb0e0>
+
+    async def test_judge_pending_is_public_runtime_state_only(tmp_path, monkeypatch):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        backend = FakeBackend(gate=release, probe=occupied.set)
+        q = queue(tmp_path, local_judge(monkeypatch, backend))
+        items = [q.request(ACTION) for _ in range(3)]
+        try:
+            await asyncio.wait_for(occupied.wait(), 2)
+            assert all(item.get("judge_pending") is True for item in items)
+            assert all(q.get(item["id"]).get("judge_pending") is True for item in items)
+            assert all(item.get("judge_pending") is True for item in q.list())
+            assert "judge_pending" not in (tmp_path / "action_approvals.json").read_text()
+            assert q.decide(items[2]["id"], False).get("judge_pending", False) is False
+            assert q.get(items[2]["id"]).get("judge_pending", False) is False
+        finally:
+            release.set()
+            await drain(q)
+>       assert all(not q.get(item["id"]).get("judge_pending", False) for item in items)
+E       assert False
+E        +  where False = all(<generator object test_judge_pending_is_public_runtime_state_only.<locals>.<genexpr> at 0x10fddd9a0>)
+
+tests/test_h277_approval_judge.py:1165: AssertionError
+___ test_result_is_discarded_after_pending_state_or_snapshot_changes[revoke] ___
+
+q = <agents.core.autonomy.queue.TaskQueue object at 0x10ffc7110>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ffc5eb0>
+change = 'revoke'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('change', ['accept', 'reject', 'defer', 'edit', 'revoke'])
+    async def test_result_is_discarded_after_pending_state_or_snapshot_changes(q, monkeypatch, change):
+        backend = Backend(asyncio.Event())
+        worker, adapter = bind(q, judge(monkeypatch, backend))
+        task = await worker.submit('jarvis', 'delete_file', 'Delete', {'path': 'old'}, attention_mode='none')
+        for _ in range(20):
+            if backend.calls:
+                break
+            await asyncio.sleep(0)
+        assert len(backend.calls) == 1
+        if change == 'edit':
+            q.update_payload(task.id, {'path': 'new'})
+        elif change == 'revoke':
+            monkeypatch.delenv('JARVIS_ROLE_APPROVAL_JUDGE_MODEL')
+        else:
+            await worker.apply_decision(task.id, change)
+        backend.gate.set()
+        await drain(adapter)
+        assert 'judge' not in adapter.project(q.get(task.id))
+>       assert 'judge_pending' not in adapter.project(q.get(task.id))
+E       AssertionError: assert 'judge_pending' not in {'id': 1, 'agent': 'jarvis', 'kind': 'delete_file', 'title': 'Delete', ...}
+E        +  where {'id': 1, 'agent': 'jarvis', 'kind': 'delete_file', 'title': 'Delete', ...} = project(Task(id=1, agent='jarvis', kind='delete_file', title='Delete', payload={'path': 'old'}, risk_tier=3, status='blocked',...e, kernel_intake_id=None, kernel_intake_evidence=None, human_decision=None, approval_deadline_at=None, expired_at=None))
+E        +    where project = <agents.core.autonomy.task_approval_judge.TaskApprovalJudge object at 0x10ffb54c0>.project
+E        +    and   Task(id=1, agent='jarvis', kind='delete_file', title='Delete', payload={'path': 'old'}, risk_tier=3, status='blocked',...e, kernel_intake_id=None, kernel_intake_evidence=None, human_decision=None, approval_deadline_at=None, expired_at=None) = get(1)
+E        +      where get = <agents.core.autonomy.queue.TaskQueue object at 0x10ffc7110>.get
+E        +      and   1 = Task(id=1, agent='jarvis', kind='delete_file', title='Delete', payload={'path': 'old'}, risk_tier=3, status='blocked',...e, kernel_intake_id=None, kernel_intake_evidence=None, human_decision=None, approval_deadline_at=None, expired_at=None).id
+
+tests/test_h277_task_judge.py:147: AssertionError
+_________ test_timeout_failure_clears_pending_and_keeps_task_decidable _________
+
+q = <agents.core.autonomy.queue.TaskQueue object at 0x10ffb79e0>
+
+    @pytest.mark.asyncio
+    async def test_timeout_failure_clears_pending_and_keeps_task_decidable(q):
+        class SlowJudge:
+            def status(self):
+                return JudgeStatus(True, '', timeout=0.01, local=True)
+
+            def wants(self, snapshot, status):
+                return True
+
+            async def score(self, snapshot, status):
+                await asyncio.Event().wait()
+
+        worker, adapter = bind(q, SlowJudge())
+        task = await worker.submit('jarvis', 'delete_file', 'Delete', attention_mode='none')
+        await drain(adapter)
+>       assert 'judge_pending' not in adapter.project(task)
+E       AssertionError: assert 'judge_pending' not in {'id': 1, 'agent': 'jarvis', 'kind': 'delete_file', 'title': 'Delete', ...}
+E        +  where {'id': 1, 'agent': 'jarvis', 'kind': 'delete_file', 'title': 'Delete', ...} = project(Task(id=1, agent='jarvis', kind='delete_file', title='Delete', payload={}, risk_tier=3, status='blocked', autonomy_lev...e, kernel_intake_id=None, kernel_intake_evidence=None, human_decision=None, approval_deadline_at=None, expired_at=None))
+E        +    where project = <agents.core.autonomy.task_approval_judge.TaskApprovalJudge object at 0x10ff46b40>.project
+
+tests/test_h277_task_judge.py:265: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_judge_pending_is_public_runtime_state_only
+FAILED tests/test_h277_task_judge.py::test_result_is_discarded_after_pending_state_or_snapshot_changes[revoke]
+FAILED tests/test_h277_task_judge.py::test_timeout_failure_clears_pending_and_keeps_task_decidable
+3 failed, 200 passed in 3.75s

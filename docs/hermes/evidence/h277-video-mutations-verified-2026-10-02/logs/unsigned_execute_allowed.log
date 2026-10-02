@@ -1,0 +1,2 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_analysis.py::test_signed_row_cannot_run_after_mediation_mode_changes_to_off", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/unsigned_execute_allowed.xml"]
+.                                                                        [100%]

@@ -6,6 +6,11 @@ const ROLE_LABELS = {
   'role:approval_judge': 'Approval judge',
   'role:telegram_media_reader': 'Telegram image descriptions',
   'role:camera_descriptions': 'Camera descriptions',
+  'role:video_analysis': 'Video analysis',
+  'role:video_fallback_1': 'Video fallback 1',
+  'role:video_fallback_2': 'Video fallback 2',
+  'role:video_fallback_3': 'Video fallback 3',
+  'role:video_fallback_4': 'Video fallback 4',
 };
 
 export function DataHandling({ value, reload }) {
@@ -58,6 +63,14 @@ export function DataHandling({ value, reload }) {
       Unknown or training policies require separate model-data acknowledgment.
       Acknowledgment does not enable camera capture, event description or remote destinations,
       and does not replace household consent.
+    </p>}
+    {targets.some(t => t.target_id === 'role:video_analysis') && <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+      Video analysis requires a separate owner-approved tool call. Remote model use also
+      requires explicit approval and this role's configuration-bound consent.
+    </p>}
+    {targets.some(t => /^role:video_fallback_[1-4]$/.test(t.target_id)) && <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+      Each configured video fallback has separate model-data consent. Acknowledging one candidate
+      does not authorize another candidate or approve a video tool call.
     </p>}
     {[...providers, ...targets].map((p, index) => <div key={`${identity(p)}:${p.scope || ''}:${index}`} style={{ padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
       <span style={mono}>{p.target_id ? ROLE_LABELS[p.target_id] : p.provider}</span>{' '}

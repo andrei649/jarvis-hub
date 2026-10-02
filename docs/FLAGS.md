@@ -550,7 +550,7 @@ is a frozen table of five roles; the new names win when set, the old ones are fa
 | `main` | none (`JARVIS_ROLE_MAIN_*` is **ignored**, the doctor says so) | settings `llm.*` | not env-selectable: the main model is chosen on the H378-guarded settings surfaces | the router |
 | `deep` | `JARVIS_ROLE_DEEP_MODEL` | `JARVIS_DEEP_MODEL`, then `deepseek-r1-distill-qwen-32b` | none (the router's local backend; `_PROVIDER`/`_BASE_URL` ignored) | the deep slot |
 | `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_MODEL` / `_BASE_URL` | `JARVIS_VLM_BACKEND` / `JARVIS_VLM_MODEL` / `JARVIS_VLM_URL` | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`) | `resolve_vlm_config` and all its consumers |
-| `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio`, `ollama`, `openai-compatible` | **nothing**: declared; nothing reads video yet |
+| `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | resolved vision route when video provider/base are unset | `lm-studio`, `openai-compatible`, `gemini` | opt-in, owner-approved `video_analyze` ToolRPC |
 | `approval_judge` | `JARVIS_ROLE_APPROVAL_JUDGE_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio` (default), `ollama`, `openai-compatible` | `autonomy/approval_judge.py` |
 
 A provider value is a ProviderProfile id: an unknown one refuses `role_provider_unknown`
@@ -565,9 +565,11 @@ and no other goes to the judge's address; without it, an `lm-studio` / `ollama` 
 no key, and an `openai-compatible` judge gets `OPENAI_API_KEY` only when its base URL has
 the scheme, host and port of `OPENAI_BASE_URL` (else of `https://api.openai.com/v1`).
 Base URLs: vision keeps the VLM `/v1` convention (LM Studio default
-`http://localhost:1234/v1`, never `JARVIS_LM_STUDIO_URL`); the judge and video use the
+`http://localhost:1234/v1`, never `JARVIS_LM_STUDIO_URL`); the judge and explicit video routes use the
 provider profile's address (`JARVIS_LM_STUDIO_URL` / `JARVIS_OLLAMA_URL` / `OPENAI_BASE_URL`,
 else `http://localhost:1234` / `http://localhost:11434` / `https://api.openai.com/v1`).
+Explicit Gemini video defaults to `https://generativelanguage.googleapis.com/v1beta`;
+this video-only default does not change the chat backend or vision role.
 `python scripts/doctor.py` lists every role (row `model_roles`) and warns on a bad
 provider id, a shadowed legacy name (compared exactly; only the provider selector ignores
 case) or an ignored variable. Its vision line is `resolve_vlm_config`'s own verdict: a
@@ -576,6 +578,143 @@ setup every vision consumer refuses (`vlm_model_unset`, `vlm_url_unset`,
 `VLMConfig.is_local` (a loopback custom VLM is local).
 Local addresses in doctor/judge status expose only the loopback HTTP origin;
 userinfo, path, query and fragment are never displayed. The roles API omits URLs entirely.
+
+**Video understanding** requires `JARVIS_VIDEO_ANALYSIS=1` and a valid resolved video
+route. When both video provider and base URL are unset, a configured vision route
+supplies its actual native endpoint; a nonblank, non-`auto` video model overrides its
+model, otherwise video inherits the resolved vision model. An explicit video provider
+or base URL needs its own model. When inheriting vision, an invalid configured vision route refuses instead
+of silently selecting another destination. With no vision configuration, the existing
+explicit video-model route remains available. It reads one file within `JARVIS_FILE_ROOTS` or one public HTTP(S) video
+URL, then sends a `video_url` message to LM Studio/OpenAI-compatible, or native
+`contents`/`inline_data` to an explicit Gemini route. The configured model must understand
+that native payload; listing an adapter does not prove the installed model supports
+video. There is no frame extraction, Ollama video adapter,
+inbound attachment ingestion, or video generation in this consumer.
+
+The tool is offered through the `video` job toolset when enabled, and every execution
+requires its own Decision Inbox approval and signed task mediation. Configure
+`JARVIS_TASK_MEDIATION=enforce`; other mediation modes refuse video intake and execution.
+The source, question, role configuration
+and credentials are bound to that approval. `JARVIS_ROLE_VIDEO_KEY` wins when set;
+otherwise video may inherit the vision adapter's guarded effective key only for the
+same provider and normalized complete native request URL. Same-host/different-path
+destinations cannot borrow that key; no raw global provider key is read. Changing
+inherited configuration invalidates the approval before network dispatch and withholds
+late results. Explicit Gemini video uses only `JARVIS_ROLE_VIDEO_KEY` as
+`x-goog-api-key`; it never reads `GEMINI_API_KEY` or inherits a vision key/configuration.
+Its primary key, like fallback keys, is limited to 4096 printable ASCII characters.
+Gemini models accept an optional `models/` prefix followed by one ASCII model slug
+using letters, digits, dots, underscores and hyphens; the slug starts alphanumerically.
+Recomputing the approval class can still read the scoped local file to
+verify its content hash. Local files use bounded,
+descriptor-scoped reads on POSIX systems. Public URL reads validate DNS and redirects,
+refuse embedded credentials, and cap the download at 37,500,000 bytes (50,000,000
+base64 characters). Private-network URL sources are refused.
+
+Container MIME declarations follow the extension: MP4 `video/mp4`, WebM `video/webm`,
+MOV `video/quicktime`, AVI `video/avi`, MKV `video/x-matroska`, MPEG/MPG `video/mpeg`.
+This is a declaration, not media decoding or verification. Gemini refuses Matroska;
+if any configured candidate cannot accept the declared MIME, intake refuses the chain.
+Native Gemini JSON must be **strictly below 20,000,000 UTF-8 bytes**, including prompt
+and base64. This conservative local implementation bound is checked before any model
+client or lane send and again on actual request bytes. Larger upload/lifecycle support
+remains open. A Gemini success must contain one unblocked STOP candidate and nonempty
+visible text; thought parts are omitted. Blocked, malformed or empty success neither
+discloses an answer nor authorizes fallback.
+
+Remote destinations require HTTPS, `JARVIS_ROLE_VIDEO_ALLOW_REMOTE=1`, per-call
+`allow_remote=true`, and an independent, configuration-bound **Video analysis**
+acknowledgment in Security Posture. Strict-local mode, `llm.cloud_fallback=never`,
+and local-only agents still forbid remote model use; safe mode refuses this tool.
+Both feature flags default to off. This control
+does not turn on a model or authorize a paid service. Provider/model behavior still
+requires a separate live acceptance run.
+
+An optional `JARVIS_ROLE_VIDEO_FALLBACKS` JSON array configures up to four ordered
+fallbacks. Every record must contain exactly `provider`, `model` and `base_url`;
+the native `lm-studio`, `openai-compatible` and `gemini` adapters are supported. The raw
+array is capped at 8192 UTF-8 bytes; model names at 256 characters, URLs at 2048,
+and fixed slot keys at 4096 printable ASCII characters. Blank/`auto` models,
+extra fields, incompatible protocol hosts, URL credentials/query/fragment and
+remote HTTP refuse the entire chain, including an invalid candidate that would
+otherwise remain unused. LM Studio endpoints must be loopback.
+
+Credentials come only from `JARVIS_ROLE_VIDEO_FALLBACK_1_KEY` through `_4_KEY`.
+Empty keys support keyless local/custom servers. Fallbacks never borrow primary,
+vision or main-model credentials. Security Posture exposes independently scoped
+**Video fallback 1–4** controls for configured candidates. Each remote destination
+needs its own current acknowledgment as well as the existing remote and cost
+permissions, even if the primary is local. Unconfigured slots remain hidden.
+Adding, removing, reordering or changing a configured route invalidates the task
+approval; changing its destination/model/key also invalidates that candidate's
+consent. With an empty chain, the existing primary approval and consent format
+remains unchanged. Configuration and consent do not establish provider entitlement.
+Approval notices show origin-only destinations; long chains use compact model/origin
+labels with a digest to fit the existing 200-character ToolRPC label limit. The
+complete ordered identities remain bound to the signed approval.
+
+By default the approved chain sends once per candidate and only advances after recognized
+provider failures: authentication, payment/quota, rate limits, narrowly classified
+model incompatibility, or owned transport timeout/connection failures. Body-based
+classification reads bounded structured error fields; a generic 400/403/5xx,
+malformed successful JSON or an empty answer does not select another provider.
+Neither source failures nor kernel, consent, request-integrity or cancellation
+failures permit fallback. SDK-specific credential/parameter recovery and
+empty-output retry remain outside this native HTTPX increment.
+
+`JARVIS_ROLE_VIDEO_TRANSIENT_RETRIES=1` permits **one additional primary attempt**
+after an owned typed connection/remote-protocol failure or a bounded HTTP 408/5xx
+response. It never retries a fallback candidate or an ordinary timeout; timeout
+retains the existing approved fallback behavior. After retry exhaustion, connection
+failures may use that existing fallback, while generic HTTP 408/5xx refuses without
+switching provider. Auth/payment/rate/model failures use the existing fallback
+directly. Source, factory, hook, policy, consent, kernel, cancellation, cleanup,
+oversized-response and malformed/blocked/empty-success failures never retry.
+
+The setting accepts only `0` or `1` (unset/blank means `0`); surrounding ASCII
+spaces are normalized, controls/non-ASCII/overlong values refuse. Enabled policy is
+bound into each task approval and displayed in its notice. Changing it invalidates
+pending execution. Destination/model/key consent scopes stay unchanged, and zero
+retains the existing approval class, notice and result format. An enabled call
+reports failed attempts with a one-based `attempt` per route and, on success,
+chosen-route/provider/model plus `chosen_attempt`, including single-route calls.
+The retry reconstructs the body and client after cleanup and fresh authority checks,
+without fetching the source URL again. No backoff or SDK retry is hidden underneath.
+
+One 180-second execution deadline includes source access, model attempts and
+cleanup. Each model attempt has a 65-second ceiling and a 60-second native HTTPX
+timeout; the source download retains its 35-second sub-limit. Model responses,
+including error bodies, are capped at 512,000 bytes. Each client closes before the
+next attempt or lane. Authority and the whole approved chain are rechecked at transitions,
+physical sends and disclosure. The prepared video and question are reused without
+fetching a URL source again; local-file checks can reread bytes to verify their
+approved hash. Results expose fixed attempt categories and the successful model,
+without failed provider bodies, destination paths or credentials.
+
+**Shared local auxiliary models (H277).** Four optional model IDs select a model
+on the router's existing local backend independently of the conversation model:
+
+| Setting | Consumer | Fallback when unset or ASCII-space-only |
+|---|---|---|
+| `JARVIS_AUX_SESSION_TITLE_MODEL` | Session title generation | Active local model, then `qwen3:7b` |
+| `JARVIS_AUX_QUERY_REWRITE_MODEL` | Recall query rewriting | Active local model, then `qwen3:7b` |
+| `JARVIS_AUX_REVIEW_MODEL` | Background/on-demand conversation review | Active local model, then `google/gemma-4-31b-a4b` |
+| `JARVIS_AUX_COMPRESSION_MODEL` | Context compression summary | Active local model, then `qwen3:7b` |
+
+Read at each invocation; changing one does not change the active conversation
+model or the other auxiliary tasks. Values are opaque printable Unicode model IDs,
+at most 256 raw characters; surrounding ASCII spaces are removed. Invalid types,
+controls/nonprintable characters or oversized values refuse that auxiliary call without echoing
+the value or silently selecting another model. These settings do not install a
+model, choose a provider/URL/key, enable a feature, or add retries/cloud fallback.
+
+The shared invocation retains the existing H513 policy checks at physical
+requests and the job-model-pin exclusion. Titles and rewriting keep their token
+budgets and Qwen3 `/no_think` behavior; review keeps its bounded learning settings;
+compression keeps streamed activity, inactivity/hold limits and offline digest
+fallback. There is no model-ID editor or auxiliary listing in the HUD/native app
+for these environment settings. Broader auxiliary discovery/recovery remains open.
 
 **The approval judge** (`JARVIS_ROLE_APPROVAL_JUDGE_MODEL` set): each tool call queued on
 the action-approval queue is shown to that model **after** the card exists; its risk

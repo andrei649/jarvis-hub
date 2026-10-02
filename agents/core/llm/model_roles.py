@@ -22,8 +22,8 @@ What is *not* here, on purpose:
 - ``deep`` has no provider: it is served by the router's detected local backend, so
   ``JARVIS_ROLE_DEEP_PROVIDER`` / ``_BASE_URL`` are reported as ignored and never raise
   (boot cannot break on the deep slot).
-- ``video`` is declared with no consumer: nothing in Nerva reads video yet (inbound video
-  is not read, ``/api/media`` reports ``video: false``). The listing says so.
+- ``video`` is consumed by the opt-in, owner-approved ``video_analyze`` ToolRPC path.
+  Inbound video and ``/api/media`` ingestion remain separate work.
 - A key never follows an address it was not issued for. Vision keeps ``JARVIS_VLM_KEY``
   exactly as before for the legacy URL; a ``JARVIS_ROLE_VISION_BASE_URL`` receives it only
   when it has the same scheme, host and port as the address that key served
@@ -42,23 +42,24 @@ from __future__ import annotations
 
 import ipaddress
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from urllib.parse import urlsplit
 
 from ..env_config import env_str
 from .providers import BUILTIN_PROVIDER_IDS, get_profile
+from .video_native import GEMINI_VIDEO_BASE
 
 __all__ = ["ROLES", "RoleSpec", "ResolvedRole", "RoleConfigError", "resolve", "describe",
-           "vision_env_view", "same_origin", "LMSTUDIO_VLM_BASE", "VIDEO_NOTE"]
+           "vision_env_view", "resolve_video_route", "same_origin", "LMSTUDIO_VLM_BASE", "VIDEO_NOTE"]
 
 # LM Studio's OpenAI-compatible server with the ``/v1`` suffix the VLM adapter posts under
 # (re-exported by ``vlm`` under the same name). The judge and video roles use the profile's
 # own base URL instead (``http://localhost:1234``, no ``/v1``), like ``HybridRouter.detect``.
 LMSTUDIO_VLM_BASE = "http://localhost:1234/v1"
 
-VIDEO_NOTE = ("declared; nothing reads video yet in Nerva (inbound video is not read: "
-              "channels/inbound_media.py; /api/media reports video: false)")
+VIDEO_NOTE = ("opt-in video_analyze ToolRPC consumer; inbound video is not read "
+              "(channels/inbound_media.py; /api/media reports video: false)")
 
 _FIELDS = ("provider", "model", "base_url")
 
@@ -93,6 +94,19 @@ class ResolvedRole:
     ignored: tuple[str, ...] = ()        # env names set that have no effect for this role
 
 
+@dataclass(frozen=True)
+class ResolvedVideoRoute:
+    """One read of the effective video role and its inherited native endpoint.
+
+    A credential is deliberately absent; the policy may use the vision adapter's
+    guarded effective key only after comparing complete native request URLs.
+    """
+
+    role: ResolvedRole
+    request_url: str = field(default="", repr=False)
+    inherited: bool = False
+
+
 class RoleConfigError(ValueError):
     """A role's provider is not a provider id, or not one the role can use."""
 
@@ -117,8 +131,9 @@ ROLES: Mapping[str, RoleSpec] = MappingProxyType({
         frozenset({"lm-studio", "openai-compatible"}),
         ("agents/core/llm/vlm.py resolve_vlm_config",)),
     "video": RoleSpec(
-        "video", "would read video; nothing does yet", "JARVIS_ROLE_VIDEO", MappingProxyType({}),
-        frozenset({"lm-studio", "ollama", "openai-compatible"}), ()),
+        "video", "reads approved video sources through video_analyze", "JARVIS_ROLE_VIDEO", MappingProxyType({}),
+        frozenset({"lm-studio", "openai-compatible", "gemini"}),
+        ("agents/core/video_analysis.py video_analyze ToolRPC",)),
     "approval_judge": RoleSpec(
         "approval_judge", "scores a queued tool-call approval (advisory only)",
         "JARVIS_ROLE_APPROVAL_JUDGE", MappingProxyType({}),
@@ -313,6 +328,9 @@ def _resolve_env_role(read, spec: RoleSpec) -> ResolvedRole:
     base = read(spec.env_name("base_url")).strip()
     if base:
         source["base_url"] = spec.env_name("base_url")
+    elif spec.name == "video" and provider == "gemini":
+        base = GEMINI_VIDEO_BASE
+        source["base_url"] = "default"
     else:
         profile = get_profile(provider)
         env_base = read(profile.base_url_env).strip() if profile.base_url_env else ""
@@ -323,6 +341,97 @@ def _resolve_env_role(read, spec: RoleSpec) -> ResolvedRole:
                             "role_model_unset")
     local, policy = _locality(provider, model, base)
     return ResolvedRole(spec.name, True, provider, model, base, MappingProxyType(source), local, policy)
+
+
+def resolve_video_route(env: Mapping[str, str] | None = None) -> ResolvedVideoRoute:
+    """Resolve the video role from its own route or a valid vision route.
+
+    Explicit video provider/base selects the dedicated route. An explicit video
+    model alone may use a profile default only when vision has not been selected;
+    a broken configured vision route never causes a silent destination switch.
+    """
+    read = _reader(env)
+    spec = ROLES["video"]
+    model = read(spec.env_name("model")).strip()
+    if model.lower() == "auto":
+        model = ""
+    provider = read(spec.env_name("provider")).strip()
+    base = read(spec.env_name("base_url")).strip()
+    if provider or base:
+        if not model:
+            source = {"model": "default", "provider": spec.env_name("provider") if provider else "default",
+                      "base_url": spec.env_name("base_url") if base else "default"}
+            # Even an incomplete explicit route still validates its provider id.
+            if provider:
+                _validate(spec, provider)
+            return ResolvedVideoRoute(ResolvedRole("video", False, "", "", "",
+                           MappingProxyType(source), None, "", "role_model_unset"))
+        dedicated = _resolve_env_role(read, spec)
+        local = _is_loopback_base(dedicated.base_url)
+        policy = ("unknown" if dedicated.provider_id == "openai-compatible" or not local
+                  else dedicated.data_policy)
+        return ResolvedVideoRoute(replace(dedicated, local=local, data_policy=policy))
+
+    vision_selected = any(read(name).strip() for name in (
+        "JARVIS_ROLE_VISION_PROVIDER", "JARVIS_ROLE_VISION_MODEL", "JARVIS_ROLE_VISION_BASE_URL",
+        "JARVIS_VLM_BACKEND", "JARVIS_VLM_URL", "JARVIS_VLM_MODEL", "JARVIS_VLM_PRESET"))
+    try:
+        vision = _resolve_vision(read, ROLES["vision"], env)
+    except RoleConfigError as exc:
+        return ResolvedVideoRoute(ResolvedRole("video", False, "", "", "",
+                                  MappingProxyType({"provider": "JARVIS_ROLE_VISION_PROVIDER",
+                                                    "model": "default", "base_url": "default"}),
+                                  None, "", exc.reason))
+    if vision.configured:
+        from .vision_policy import VisionPolicyUnavailable
+        from .vision_policy import describe as describe_vision
+        from .vlm import VLMNotConfigured, resolve_vlm_config
+
+        try:
+            config = resolve_vlm_config(env=env)
+        except VLMNotConfigured as exc:
+            raise RoleConfigError("video_vision_changed") from exc
+        if (vision.provider_id != _VISION_PROVIDER_OF[config.backend]
+                or vision.model != config.model or vision.base_url != config.base_url):
+            raise RoleConfigError("video_vision_changed")
+        try:
+            native = describe_vision(config)
+        except (ValueError, VisionPolicyUnavailable) as exc:
+            raise RoleConfigError("video_vision_invalid") from exc
+        try:
+            parts = urlsplit(vision.base_url)
+            if (parts.scheme not in {"http", "https"} or not parts.hostname or parts.username
+                    or parts.password or parts.query or parts.fragment
+                    or (vision.provider_id == "lm-studio" and not _is_loopback_base(vision.base_url))
+                    or (not _is_loopback_base(vision.base_url) and parts.scheme != "https")):
+                raise ValueError("invalid native video destination")
+        except ValueError as exc:
+            raise RoleConfigError("video_vision_invalid") from exc
+        source = dict(vision.source)
+        source["model"] = spec.env_name("model") if model else vision.source["model"]
+        chosen_model = model or vision.model
+        local = bool(config.is_local)
+        policy = ("unknown" if vision.provider_id == "openai-compatible" or not local
+                  else get_profile(vision.provider_id).data_policy_for(chosen_model)[0])
+        return ResolvedVideoRoute(ResolvedRole("video", True, vision.provider_id, chosen_model,
+                                  vision.base_url, MappingProxyType(source), local, policy),
+                                  native.request_url, True)
+    if vision_selected:
+        source = {"provider": vision.source.get("provider", "default"),
+                  "base_url": vision.source.get("base_url", "default"),
+                  "model": spec.env_name("model") if model else vision.source.get("model", "default")}
+        return ResolvedVideoRoute(ResolvedRole("video", False, "", "", "",
+                                  MappingProxyType(source), None, "", vision.reason))
+    if not model:
+        return ResolvedVideoRoute(ResolvedRole("video", False, "", "", "",
+                                  MappingProxyType({"provider": "default", "model": "default",
+                                                    "base_url": "default"}), None, "",
+                                  "role_model_unset"))
+    dedicated = _resolve_env_role(read, spec)
+    local = _is_loopback_base(dedicated.base_url)
+    policy = ("unknown" if dedicated.provider_id == "openai-compatible" or not local
+              else dedicated.data_policy)
+    return ResolvedVideoRoute(replace(dedicated, local=local, data_policy=policy))
 
 
 def resolve(role: str, env: Mapping[str, str] | None = None) -> ResolvedRole:
@@ -344,6 +453,8 @@ def resolve(role: str, env: Mapping[str, str] | None = None) -> ResolvedRole:
                             MappingProxyType({"model": src}), None, "", "", ignored)
     if role == "vision":
         return _resolve_vision(read, spec, env)
+    if role == "video":
+        return resolve_video_route(env).role
     return _resolve_env_role(read, spec)
 
 

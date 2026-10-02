@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.328" timestamp="2026-10-02T01:32:34.738067+03:00" hostname="Macmini">
+    <testcase classname="tests.test_h277_video_boundaries" name="test_video_intake_requires_enforce_mode_even_when_hold_classifies_tool_rpc" time="0.752">
+      <failure message="AssertionError: assert 'video_proposal_refused' == 'signed_video...tion_required'&#10;  &#10;  - signed_video_mediation_required&#10;  + video_proposal_refused">rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-731/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-731/test_video_intake_requires_enf0/clip.mp4'), requests=[])
+
+    @pytest.mark.asyncio
+    async def test_video_intake_requires_enforce_mode_even_when_hold_classifies_tool_rpc(rig):
+        rig.queue.mediation_mode = "hold"
+        assert rig.queue.classify_mediation("tool.rpc") is True
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+&gt;       assert proposal["reason"] == "signed_video_mediation_required"
+E       AssertionError: assert 'video_proposal_refused' == 'signed_video...tion_required'
+E
+E         - signed_video_mediation_required
+E         + video_proposal_refused
+
+tests/test_h277_video_boundaries.py:285: AssertionError</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

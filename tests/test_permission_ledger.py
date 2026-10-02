@@ -15,7 +15,9 @@ Pins the governance rules, not the plumbing:
 
 from __future__ import annotations
 
+import asyncio
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -51,12 +53,13 @@ class _Secrets:
 class _Enqueue:
     """A govern_enqueue fake that records the call and mints a task id."""
 
-    def __init__(self):
+    def __init__(self, start=100):
         self.calls = []
+        self.start = start
 
     def __call__(self, **kw):
         self.calls.append(kw)
-        return 100 + len(self.calls)
+        return self.start + len(self.calls)
 
 
 def _task(payload, *, decided_by="owner", decision="accept", kind=pl.KIND, task_id=7):
@@ -74,7 +77,8 @@ def ledger(tmp_path):
 
 
 async def _grant(ledger, surface, key, scope, *, requested_by="browser", decided_by="owner"):
-    enq = _Enqueue()
+    prior_requests = sum(r["event"] == "grant.requested" for r in ledger.audit_rows(limit=1000))
+    enq = _Enqueue(start=100 + prior_requests)
     task_id = ledger.request(surface, key, scope, requested_by, enq)
     payload = enq.calls[-1]["payload"]
     out = await ledger.apply_grant(_task(payload, decided_by=decided_by, task_id=task_id))
@@ -330,6 +334,273 @@ async def test_apply_grant_records_the_owner_and_task(ledger):
     assert ledger.check("file_root", "/home/owner/projects") == "allow"
     applied = [r for r in ledger.audit_rows() if r["event"] == "grant.applied"]
     assert applied and applied[0]["actor"] == "admin" and applied[0]["task_id"] == 101
+
+
+async def test_apply_grant_replay_after_restart_keeps_one_effect(tmp_path):
+    path = tmp_path / "p.db"
+    payload = {"surface": "site", "key": "example.com", "scope": "always", "requested_by": "browser"}
+    first = pl.PermissionLedger(path, enabled=True, secret_store=_Secrets())
+    try:
+        original = await first.apply_grant(_task(payload, task_id=41))
+    finally:
+        first.close()
+    again = pl.PermissionLedger(path, enabled=True, secret_store=_Secrets())
+    try:
+        replay = await again.apply_grant(_task(payload, task_id=41))
+        assert replay["grant_id"] == original["grant_id"]
+        assert replay["grant_status"] == "active"
+        assert len(again.list_grants(include_inactive=True)) == 1
+        assert [r["event"] for r in again.audit_rows()] == ["grant.applied"]
+    finally:
+        again.close()
+
+
+@pytest.mark.parametrize("scope,final_status", [("once", "consumed"), ("always", "revoked")])
+async def test_apply_grant_replay_does_not_restore_narrowed_authority(ledger, scope, final_status):
+    payload = {"surface": "site", "key": "example.com", "scope": scope, "requested_by": "browser"}
+    original = await ledger.apply_grant(_task(payload, task_id=42))
+    if final_status == "consumed":
+        assert ledger.check("site", "example.com") == "allow"
+    else:
+        ledger.revoke(original["grant_id"])
+    replay = await ledger.apply_grant(_task(payload, task_id=42))
+    assert replay["grant_id"] == original["grant_id"]
+    assert replay["grant_status"] == final_status
+    assert ledger.check("site", "example.com") == "ask"
+    assert len(ledger.list_grants(include_inactive=True)) == 1
+    changed = {**payload, "scope": "always" if scope == "once" else "once"}
+    assert (await ledger.apply_grant(_task(changed, task_id=42)))["status"] == "refused"
+    assert ledger.check("site", "example.com") == "ask"
+
+
+async def test_apply_grant_audit_failure_rolls_back_before_retry(ledger):
+    payload = {"surface": "site", "key": "example.com", "scope": "always", "requested_by": "browser"}
+    ledger._conn.execute("""CREATE TRIGGER reject_applied BEFORE INSERT ON audit
+        WHEN NEW.event='grant.applied' BEGIN SELECT RAISE(ABORT, 'audit failed'); END""")
+    ledger._conn.commit()
+    with pytest.raises(Exception, match="audit failed"):
+        await ledger.apply_grant(_task(payload, task_id=43))
+    ledger._conn.execute("DROP TRIGGER reject_applied")
+    ledger._conn.commit()
+    assert ledger.list_grants(include_inactive=True) == []
+    replay = await ledger.apply_grant(_task(payload, task_id=43))
+    assert replay["status"] == "ok"
+    assert len(ledger.list_grants(include_inactive=True)) == 1
+
+
+async def test_apply_grant_commit_outcome_uncertainty_replays_original(ledger):
+    payload = {"surface": "site", "key": "example.com", "scope": "always", "requested_by": "browser"}
+    real = ledger._conn
+
+    class AmbiguousCommit:
+        def __init__(self):
+            self.once = True
+
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def commit(self):
+            real.commit()
+            if self.once:
+                self.once = False
+                raise RuntimeError("commit outcome unknown")
+
+    ledger._conn = AmbiguousCommit()
+    with pytest.raises(RuntimeError, match="commit outcome unknown"):
+        await ledger.apply_grant(_task(payload, task_id=44))
+    ledger._conn = real
+    replay = await ledger.apply_grant(_task(payload, task_id=44))
+    assert replay["status"] == "ok"
+    assert replay["grant_id"] == ledger.list_grants(include_inactive=True)[0].id
+    assert len(ledger.list_grants(include_inactive=True)) == 1
+    assert [r["event"] for r in ledger.audit_rows()] == ["grant.applied"]
+
+
+async def test_apply_grant_two_ledger_instances_share_task_receipt(tmp_path):
+    path = tmp_path / "p.db"
+    first = pl.PermissionLedger(path, enabled=True, secret_store=_Secrets())
+    second = pl.PermissionLedger(path, enabled=True, secret_store=_Secrets())
+    payload = {"surface": "site", "key": "example.com", "scope": "always", "requested_by": "browser"}
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(asyncio.run, ledger.apply_grant(_task(payload, task_id=45)))
+                       for ledger in (first, second)]
+            results = [f.result() for f in futures]
+        assert results[0]["grant_id"] == results[1]["grant_id"]
+        assert len(first.list_grants(include_inactive=True)) == 1
+    finally:
+        first.close()
+        second.close()
+
+
+def _insert_legacy_grant(ledger, *, task_id, grant_id):
+    grant = pl.Grant(
+        id=grant_id, surface="site", key="example.com", scope="always", status="active",
+        requested_by="browser", granted_by="owner", task_id=task_id,
+        boot_id=ledger.boot_id, created_at=100.0, updated_at=100.0,
+    )
+    with ledger._lock:
+        ledger._insert(grant)
+        ledger._conn.commit()
+    return grant
+
+
+async def test_apply_grant_adopts_one_matching_legacy_grant(tmp_path):
+    path = tmp_path / "p.db"
+    old = pl.PermissionLedger(path, enabled=True, secret_store=_Secrets())
+    legacy = _insert_legacy_grant(old, task_id=46, grant_id="legacy-grant")
+    with old._lock:
+        old._conn.execute("DROP TABLE grant_task_receipts")
+        old._conn.execute("PRAGMA user_version=1")
+        old._conn.commit()
+    old.close()
+    reborn = pl.PermissionLedger(path, enabled=True, secret_store=_Secrets())
+    payload = {"surface": "site", "key": "example.com", "scope": "always", "requested_by": "browser"}
+    try:
+        replay = await reborn.apply_grant(_task(payload, task_id=46))
+        assert replay["grant_id"] == legacy.id
+        assert len(reborn.list_grants(include_inactive=True)) == 1
+        changed = {**payload, "scope": "once"}
+        assert (await reborn.apply_grant(_task(changed, task_id=46)))["status"] == "refused"
+    finally:
+        reborn.close()
+
+
+async def test_apply_grant_ambiguous_legacy_task_refused_but_ledger_stays_open(tmp_path):
+    path = tmp_path / "p.db"
+    old = pl.PermissionLedger(path, enabled=True, secret_store=_Secrets())
+    _insert_legacy_grant(old, task_id=47, grant_id="legacy-a")
+    _insert_legacy_grant(old, task_id=47, grant_id="legacy-b")
+    old.close()
+    reborn = pl.PermissionLedger(path, enabled=True, secret_store=_Secrets())
+    payload = {"surface": "site", "key": "example.com", "scope": "always", "requested_by": "browser"}
+    try:
+        assert (await reborn.apply_grant(_task(payload, task_id=47)))["status"] == "refused"
+        unrelated = await reborn.apply_grant(_task(payload, task_id=48))
+        assert unrelated["status"] == "ok"
+        assert len(reborn.list_grants(include_inactive=True)) == 3
+    finally:
+        reborn.close()
+
+
+async def test_apply_grant_requires_durable_task_id(ledger):
+    payload = {"surface": "site", "key": "example.com", "scope": "always", "requested_by": "browser"}
+    assert (await ledger.apply_grant(_task(payload, task_id=None)))["status"] == "refused"
+    assert ledger.list_grants(include_inactive=True) == []
+
+
+async def test_apply_grant_replay_refuses_changed_governed_payload(ledger):
+    payload = {
+        "surface": "site", "key": "example.com", "scope": "always",
+        "requested_by": "browser", "risk_tier": 2,
+    }
+    original = await ledger.apply_grant(_task(payload, task_id=50))
+    changed = {**payload, "risk_tier": 0}
+    replay = await ledger.apply_grant(_task(changed, task_id=50))
+    assert replay["status"] == "refused"
+    assert [g.id for g in ledger.list_grants(include_inactive=True)] == [original["grant_id"]]
+
+
+async def test_os_input_replay_after_revoke_does_not_restore_token(tmp_path):
+    store = _Secrets()
+    ledger = pl.PermissionLedger(tmp_path / "p.db", enabled=True, secret_store=store)
+    payload = {"surface": "os_input", "key": "keyboard", "scope": "always", "requested_by": "desktop"}
+    try:
+        first = await ledger.apply_grant(_task(payload, task_id=49))
+        assert first["restore_token_stored"] is True
+        ledger.revoke(first["grant_id"])
+        replay = await ledger.apply_grant(_task(payload, task_id=49))
+        assert replay["grant_id"] == first["grant_id"]
+        assert replay["grant_status"] == "revoked"
+        assert replay["restore_token_stored"] is False
+        assert store.data == {}
+    finally:
+        ledger.close()
+
+
+async def test_os_input_ambiguous_commit_keeps_original_restore_token(tmp_path):
+    class RecordingSecrets(_Secrets):
+        def __init__(self):
+            super().__init__()
+            self.set_count = 0
+
+        def set(self, name, value):
+            self.set_count += 1
+            super().set(name, value)
+
+    store = RecordingSecrets()
+    ledger = pl.PermissionLedger(tmp_path / "p.db", enabled=True, secret_store=store)
+    payload = {"surface": "os_input", "key": "keyboard", "scope": "always", "requested_by": "desktop"}
+    real = ledger._conn
+
+    class AmbiguousCommit:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def commit(self):
+            assert store.set_count == 1  # token must precede the durable grant
+            real.commit()
+            raise RuntimeError("commit outcome unknown")
+
+    try:
+        ledger._conn = AmbiguousCommit()
+        with pytest.raises(RuntimeError, match="commit outcome unknown"):
+            await ledger.apply_grant(_task(payload, task_id=51))
+        ledger._conn = real
+        (name, token), = store.data.items()
+        grant_id = name.removeprefix("permission.os_input.")
+        assert ledger.restore_token(grant_id) == token
+        replay = await ledger.apply_grant(_task(payload, task_id=51))
+        assert replay["grant_id"] == grant_id
+        assert replay["restore_token_stored"] is True
+        assert ledger.restore_token(grant_id) == token
+        assert store.set_count == 1
+        assert len(ledger.list_grants(include_inactive=True)) == 1
+    finally:
+        ledger.close()
+
+
+async def test_os_input_precommit_failure_leaves_no_usable_authority(tmp_path):
+    store = _Secrets()
+    ledger = pl.PermissionLedger(tmp_path / "p.db", enabled=True, secret_store=store)
+    payload = {"surface": "os_input", "key": "keyboard", "scope": "always", "requested_by": "desktop"}
+    real = ledger._conn
+
+    class FailedCommit:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def commit(self):
+            raise RuntimeError("commit failed before write")
+
+    try:
+        ledger._conn = FailedCommit()
+        with pytest.raises(RuntimeError, match="commit failed before write"):
+            await ledger.apply_grant(_task(payload, task_id=52))
+        ledger._conn = real
+        assert ledger.check("os_input", "keyboard") == "ask"
+        assert ledger.list_grants(include_inactive=True) == []
+        assert len(store.data) == 1  # an orphan secret is inert without a grant
+        assert all(ledger.restore_token(name.removeprefix("permission.os_input.")) is None
+                   for name in store.data)
+    finally:
+        ledger.close()
+
+
+async def test_os_input_secret_store_failure_does_not_commit_grant(tmp_path):
+    class BrokenSecrets(_Secrets):
+        def set(self, name, value):
+            raise RuntimeError("secret store unavailable")
+
+    ledger = pl.PermissionLedger(tmp_path / "p.db", enabled=True, secret_store=BrokenSecrets())
+    payload = {"surface": "os_input", "key": "keyboard", "scope": "always", "requested_by": "desktop"}
+    try:
+        with pytest.raises(RuntimeError, match="secret store unavailable"):
+            await ledger.apply_grant(_task(payload, task_id=53))
+        assert ledger.check("os_input", "keyboard") == "ask"
+        assert ledger.list_grants(include_inactive=True) == []
+    finally:
+        ledger.close()
 
 
 async def test_os_input_grant_keeps_its_restore_token_in_the_secret_store(tmp_path):

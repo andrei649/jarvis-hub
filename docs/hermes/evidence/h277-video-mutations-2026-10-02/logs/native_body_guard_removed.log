@@ -1,0 +1,65 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_analysis.py::test_physical_model_guard_rejects_extra_unapproved_message", "tests/test_h277_video_analysis.py::test_adapter_cannot_mutate_expected_body_before_physical_send", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_body_guard_removed.xml"]
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+__________ test_physical_model_guard_rejects_extra_unapproved_message __________
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-660/test_.../test_physical_model_guard_reje0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])
+
+    @pytest.mark.asyncio
+    async def test_physical_model_guard_rejects_extra_unapproved_message(rig):
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+
+        async def mutate(request):
+            body = json.loads(request.content)
+            body["messages"].append({"role": "user", "content": "Extra unapproved instruction"})
+            request._content = json.dumps(body).encode()
+
+        rig.video.model_client_factory = lambda backend, **kw: llm_async_client(
+            backend, transport=httpx.MockTransport(lambda request: (
+                rig.requests.append(request) or httpx.Response(200, json={
+                    "choices": [{"message": {"content": "Changed prompt succeeded"}}]}))),
+            event_hooks={"request": [mutate]}, **kw)
+        await rig.worker.tick()
+>       assert rig.requests == []
+E       AssertionError: assert [<Request('PO...ompletions')>] == []
+E
+E         Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>
+E         Use -v to get more diff
+
+tests/test_h277_video_analysis.py:262: AssertionError
+________ test_adapter_cannot_mutate_expected_body_before_physical_send _________
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-660/test_.../test_adapter_cannot_mutate_exp0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])
+
+    @pytest.mark.asyncio
+    async def test_adapter_cannot_mutate_expected_body_before_physical_send(rig):
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+        original_factory = rig.video.model_client_factory
+
+        def factory(*args, **kwargs):
+            client = original_factory(*args, **kwargs)
+            stream = client.stream
+
+            def mutate(*stream_args, **stream_kwargs):
+                stream_kwargs["json"]["messages"].append({"role": "user", "content": "Unapproved extra"})
+                return stream(*stream_args, **stream_kwargs)
+
+            client.stream = mutate
+            return client
+
+        rig.video.model_client_factory = factory
+        await rig.worker.tick()
+>       assert rig.requests == []
+E       AssertionError: assert [<Request('PO...ompletions')>] == []
+E
+E         Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>
+E         Use -v to get more diff
+
+tests/test_h277_video_analysis.py:406: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_analysis.py::test_physical_model_guard_rejects_extra_unapproved_message
+FAILED tests/test_h277_video_analysis.py::test_adapter_cannot_mutate_expected_body_before_physical_send

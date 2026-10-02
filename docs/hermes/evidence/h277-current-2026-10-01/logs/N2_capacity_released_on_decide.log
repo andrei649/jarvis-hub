@@ -1,0 +1,29 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py", "tests/test_h277_task_judge.py"]
+........................................................................ [ 35%]
+........................................................................ [ 70%]
+...............................F...........................              [100%]
+=================================== FAILURES ===================================
+______________ test_round2_decided_tasks_keep_the_capacity_bound _______________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-576/test_round2_decided_tasks_keep0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1101255e0>
+
+    async def test_round2_decided_tasks_keep_the_capacity_bound(tmp_path, monkeypatch):
+        release, occupied = asyncio.Event(), asyncio.Event()
+        backend = FakeBackend(gate=release, probe=occupied.set)
+        q = queue(tmp_path, local_judge(monkeypatch, backend))
+        items = [q.request(ACTION) for _ in range(aa_mod.JUDGE_MAX_PENDING)]
+        try:
+            await asyncio.wait_for(occupied.wait(), 2)
+            for item in items:
+                q.decide(item["id"], False)
+            overflow = q.request(ACTION)
+>           assert not overflow.get("judge_pending", False)
+E           AssertionError: assert not True
+E            +  where True = <built-in method get of dict object at 0x110166840>('judge_pending', False)
+E            +    where <built-in method get of dict object at 0x110166840> = {'id': '9a042e38bdce', 'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', ...}.get
+
+tests/test_h277_approval_judge.py:1319: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_round2_decided_tasks_keep_the_capacity_bound
+1 failed, 202 passed in 3.86s

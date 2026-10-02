@@ -30,7 +30,11 @@ class DataHandlingAck(BaseModel):
     provider: StrictStr = Field(min_length=1, max_length=64)
     acknowledged: StrictBool
     scope: StrictStr = Field(pattern=r"^[0-9a-f]{64}$")
-    target: Literal["role:approval_judge", "role:telegram_media_reader", "role:camera_descriptions"] | None = None
+    target: Literal[
+        "role:approval_judge", "role:telegram_media_reader", "role:camera_descriptions",
+        "role:video_analysis", "role:video_fallback_1", "role:video_fallback_2",
+        "role:video_fallback_3", "role:video_fallback_4",
+    ] | None = None
 
 
 @router.post("/api/security/data-handling/ack", dependencies=[Depends(admin_guard)])

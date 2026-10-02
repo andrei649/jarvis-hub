@@ -1,0 +1,2 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_analysis.py::test_accepted_unsigned_canonical_video_row_cannot_run_with_mediation_off", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_intake_allowed.xml"]
+.                                                                        [100%]

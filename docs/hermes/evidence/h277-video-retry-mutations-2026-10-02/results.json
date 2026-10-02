@@ -1,0 +1,655 @@
+[
+  {
+    "diff": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/01_enabled_policy_hmac.diff",
+    "edits": [
+      {
+        "anchor": "        if retry_count:\n            material = {**material, \"_internal_video_retry_policy\": \"primary-once:v1\"}\n",
+        "anchor_count": 1,
+        "replacement": "        if False:\n            material = {**material, \"_internal_video_retry_policy\": \"primary-once:v1\"}\n"
+      }
+    ],
+    "file": "agents/core/video_analysis.py",
+    "id": "01_enabled_policy_hmac",
+    "intent": "Remove the enabled policy marker from signed class material.",
+    "mutant_sha256": "23750176b24355ca80357af236555ec0fd1ef03b5a3ddc3cc07a95799f9bf39c",
+    "original_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "restored": true,
+    "restored_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "status": "KILLED",
+    "test": {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_boundaries.py",
+        "tests/test_h277_video_candidate_consent.py",
+        "tests/test_h277_video_failures.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_video_gemini.py",
+        "tests/test_h277_video_native.py",
+        "tests/test_h277_video_provider_chain.py",
+        "tests/test_h277_video_retry.py",
+        "tests/test_h277_video_routes.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_task_mediation_evidence.py",
+        "tests/test_image_mediation_composition.py",
+        "tests/test_cloud_image_tool.py",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/01_enabled_policy_hmac.xml"
+      ],
+      "cwd": "/private/tmp/nerva-h277-video-mutations-b8svo6q7",
+      "duration_seconds": 17.615,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_video_retry::test_enabled_policy_change_invalidates_signed_pending_task",
+        "tests.test_h277_video_retry::test_close_time_policy_drift_blocks_second_primary_send"
+      ],
+      "failures": 2,
+      "junit": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/01_enabled_policy_hmac.xml",
+      "log": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/01_enabled_policy_hmac.log",
+      "returncode": 1,
+      "skipped": 0,
+      "tests": 755,
+      "timed_out": false
+    }
+  },
+  {
+    "diff": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/02_primary_attempt_budget.diff",
+    "edits": [
+      {
+        "anchor": "                    max_attempts = 1 + retry_count if route_index == 0 else 1\n",
+        "anchor_count": 1,
+        "replacement": "                    max_attempts = 2 + retry_count if route_index == 0 else 1\n"
+      }
+    ],
+    "file": "agents/core/video_analysis.py",
+    "id": "02_primary_attempt_budget",
+    "intent": "Raise the primary physical attempt cap by one.",
+    "mutant_sha256": "b37f6a91291cb9259a18f65d15f0b468f7adafd0e907165f15882f7e4b588fd8",
+    "original_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "restored": true,
+    "restored_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "status": "KILLED",
+    "test": {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_boundaries.py",
+        "tests/test_h277_video_candidate_consent.py",
+        "tests/test_h277_video_failures.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_video_gemini.py",
+        "tests/test_h277_video_native.py",
+        "tests/test_h277_video_provider_chain.py",
+        "tests/test_h277_video_retry.py",
+        "tests/test_h277_video_routes.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_task_mediation_evidence.py",
+        "tests/test_image_mediation_composition.py",
+        "tests/test_cloud_image_tool.py",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/02_primary_attempt_budget.xml"
+      ],
+      "cwd": "/private/tmp/nerva-h277-video-mutations-b8svo6q7",
+      "duration_seconds": 17.861,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_video_fallback::test_model_failure_does_not_retry_with_another_provider",
+        "tests.test_h277_video_provider_chain::test_noneligible_status_or_answer_never_switches_routes[503-{\"error\":{\"message\":\"quota exceeded\"}}]",
+        "tests.test_h277_video_provider_chain::test_transport_read_error_after_dispatch_can_use_approved_fallback",
+        "tests.test_h277_video_retry::test_primary_connection_retries_once_then_uses_existing_fallback",
+        "tests.test_h277_video_retry::test_primary_http_503_retries_once_without_provider_fallback",
+        "tests.test_h277_video_retry::test_default_zero_still_refuses_generic_http_without_retry",
+        "tests.test_h277_video_retry::test_default_zero_chain_generic_http_keeps_legacy_refusal_shape"
+      ],
+      "failures": 7,
+      "junit": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/02_primary_attempt_budget.xml",
+      "log": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/02_primary_attempt_budget.log",
+      "returncode": 1,
+      "skipped": 0,
+      "tests": 755,
+      "timed_out": false
+    }
+  },
+  {
+    "diff": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/03_primary_cap_gate_only.diff",
+    "edits": [
+      {
+        "anchor": "                    max_attempts = 1 + retry_count if route_index == 0 else 1\n",
+        "anchor_count": 1,
+        "replacement": "                    max_attempts = 1 + retry_count\n"
+      }
+    ],
+    "file": "agents/core/video_analysis.py",
+    "id": "03_primary_cap_gate_only",
+    "intent": "Remove only the primary condition from the attempt cap; retry condition still guards fallback.",
+    "mutant_sha256": "8cfabc6cb087ba4224ffd806d6d76aee8e308ee8c02255d7e4875282be1b9c28",
+    "original_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "restored": true,
+    "restored_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "status": "SURVIVED",
+    "test": {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_boundaries.py",
+        "tests/test_h277_video_candidate_consent.py",
+        "tests/test_h277_video_failures.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_video_gemini.py",
+        "tests/test_h277_video_native.py",
+        "tests/test_h277_video_provider_chain.py",
+        "tests/test_h277_video_retry.py",
+        "tests/test_h277_video_routes.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_task_mediation_evidence.py",
+        "tests/test_image_mediation_composition.py",
+        "tests/test_cloud_image_tool.py",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/03_primary_cap_gate_only.xml"
+      ],
+      "cwd": "/private/tmp/nerva-h277-video-mutations-b8svo6q7",
+      "duration_seconds": 17.658,
+      "errors": 0,
+      "failed_tests": [],
+      "failures": 0,
+      "junit": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/03_primary_cap_gate_only.xml",
+      "log": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/03_primary_cap_gate_only.log",
+      "returncode": 0,
+      "skipped": 0,
+      "tests": 755,
+      "timed_out": false
+    }
+  },
+  {
+    "diff": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/04_primary_retry_condition_gate_only.diff",
+    "edits": [
+      {
+        "anchor": "                            if transient and route_index == 0 and attempt < max_attempts:\n",
+        "anchor_count": 1,
+        "replacement": "                            if transient and attempt < max_attempts:\n"
+      }
+    ],
+    "file": "agents/core/video_analysis.py",
+    "id": "04_primary_retry_condition_gate_only",
+    "intent": "Remove only the primary condition from retry decision; fallback cap remains one.",
+    "mutant_sha256": "c18d4b852b81e9f984ba91cfe87434a0a3f72e6d7061a050c028363cbb78da1d",
+    "original_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "restored": true,
+    "restored_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "status": "SURVIVED",
+    "test": {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_boundaries.py",
+        "tests/test_h277_video_candidate_consent.py",
+        "tests/test_h277_video_failures.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_video_gemini.py",
+        "tests/test_h277_video_native.py",
+        "tests/test_h277_video_provider_chain.py",
+        "tests/test_h277_video_retry.py",
+        "tests/test_h277_video_routes.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_task_mediation_evidence.py",
+        "tests/test_image_mediation_composition.py",
+        "tests/test_cloud_image_tool.py",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/04_primary_retry_condition_gate_only.xml"
+      ],
+      "cwd": "/private/tmp/nerva-h277-video-mutations-b8svo6q7",
+      "duration_seconds": 17.504,
+      "errors": 0,
+      "failed_tests": [],
+      "failures": 0,
+      "junit": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/04_primary_retry_condition_gate_only.xml",
+      "log": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/04_primary_retry_condition_gate_only.log",
+      "returncode": 0,
+      "skipped": 0,
+      "tests": 755,
+      "timed_out": false
+    }
+  },
+  {
+    "diff": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/05_compound_both_primary_gates.diff",
+    "edits": [
+      {
+        "anchor": "                    max_attempts = 1 + retry_count if route_index == 0 else 1\n",
+        "anchor_count": 1,
+        "replacement": "                    max_attempts = 1 + retry_count\n"
+      },
+      {
+        "anchor": "                            if transient and route_index == 0 and attempt < max_attempts:\n",
+        "anchor_count": 1,
+        "replacement": "                            if transient and attempt < max_attempts:\n"
+      }
+    ],
+    "file": "agents/core/video_analysis.py",
+    "id": "05_compound_both_primary_gates",
+    "intent": "COMPOUND: remove BOTH primary-only guards so fallback transient failure can retry.",
+    "mutant_sha256": "e334c5796044ccd9c40f51469e15b7c3981a7b11e0282e730a0f4a5cdba6cb83",
+    "original_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "restored": true,
+    "restored_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "status": "KILLED",
+    "test": {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_boundaries.py",
+        "tests/test_h277_video_candidate_consent.py",
+        "tests/test_h277_video_failures.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_video_gemini.py",
+        "tests/test_h277_video_native.py",
+        "tests/test_h277_video_provider_chain.py",
+        "tests/test_h277_video_retry.py",
+        "tests/test_h277_video_routes.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_task_mediation_evidence.py",
+        "tests/test_image_mediation_composition.py",
+        "tests/test_cloud_image_tool.py",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/05_compound_both_primary_gates.xml"
+      ],
+      "cwd": "/private/tmp/nerva-h277-video-mutations-b8svo6q7",
+      "duration_seconds": 17.312,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_video_retry::test_fallback_connection_never_gets_second_send"
+      ],
+      "failures": 1,
+      "junit": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/05_compound_both_primary_gates.xml",
+      "log": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/05_compound_both_primary_gates.log",
+      "returncode": 1,
+      "skipped": 0,
+      "tests": 755,
+      "timed_out": false
+    }
+  },
+  {
+    "diff": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/06_timeout_as_transient.diff",
+    "edits": [
+      {
+        "anchor": "                raise _EligibleModelFailure(\"timeout\") from None\n",
+        "anchor_count": 1,
+        "replacement": "                raise _TransientModelFailure(\"timeout\") from None\n"
+      }
+    ],
+    "file": "agents/core/video_analysis.py",
+    "id": "06_timeout_as_transient",
+    "intent": "Classify owned request timeout as retryable transient.",
+    "mutant_sha256": "1eaf952e03166e4d2629974d1f4964655c7c227fc913d36d2bb52a47ca0bfb63",
+    "original_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "restored": true,
+    "restored_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "status": "KILLED",
+    "test": {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_boundaries.py",
+        "tests/test_h277_video_candidate_consent.py",
+        "tests/test_h277_video_failures.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_video_gemini.py",
+        "tests/test_h277_video_native.py",
+        "tests/test_h277_video_provider_chain.py",
+        "tests/test_h277_video_retry.py",
+        "tests/test_h277_video_routes.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_task_mediation_evidence.py",
+        "tests/test_image_mediation_composition.py",
+        "tests/test_cloud_image_tool.py",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/06_timeout_as_transient.xml"
+      ],
+      "cwd": "/private/tmp/nerva-h277-video-mutations-b8svo6q7",
+      "duration_seconds": 17.929,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_video_retry::test_owned_attempt_timeout_goes_directly_to_fallback"
+      ],
+      "failures": 1,
+      "junit": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/06_timeout_as_transient.xml",
+      "log": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/06_timeout_as_transient.log",
+      "returncode": 1,
+      "skipped": 0,
+      "tests": 755,
+      "timed_out": false
+    }
+  },
+  {
+    "diff": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/07_http_exhaustion_to_fallback.diff",
+    "edits": [
+      {
+        "anchor": "                            if exc.category == \"transient_http\":\n",
+        "anchor_count": 1,
+        "replacement": "                            if False and exc.category == \"transient_http\":\n"
+      }
+    ],
+    "file": "agents/core/video_analysis.py",
+    "id": "07_http_exhaustion_to_fallback",
+    "intent": "Allow exhausted transient HTTP to continue to the provider fallback.",
+    "mutant_sha256": "9b15fcb3e83832bfcd0c983304d0f49e556f76919e724c0b7d37511718d1f638",
+    "original_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "restored": true,
+    "restored_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "status": "KILLED",
+    "test": {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_boundaries.py",
+        "tests/test_h277_video_candidate_consent.py",
+        "tests/test_h277_video_failures.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_video_gemini.py",
+        "tests/test_h277_video_native.py",
+        "tests/test_h277_video_provider_chain.py",
+        "tests/test_h277_video_retry.py",
+        "tests/test_h277_video_routes.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_task_mediation_evidence.py",
+        "tests/test_image_mediation_composition.py",
+        "tests/test_cloud_image_tool.py",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/07_http_exhaustion_to_fallback.xml"
+      ],
+      "cwd": "/private/tmp/nerva-h277-video-mutations-b8svo6q7",
+      "duration_seconds": 17.992,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_video_provider_chain::test_noneligible_status_or_answer_never_switches_routes[503-{\"error\":{\"message\":\"quota exceeded\"}}]",
+        "tests.test_h277_video_retry::test_primary_http_503_retries_once_without_provider_fallback",
+        "tests.test_h277_video_retry::test_default_zero_chain_generic_http_keeps_legacy_refusal_shape"
+      ],
+      "failures": 3,
+      "junit": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/07_http_exhaustion_to_fallback.xml",
+      "log": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/07_http_exhaustion_to_fallback.log",
+      "returncode": 1,
+      "skipped": 0,
+      "tests": 755,
+      "timed_out": false
+    }
+  },
+  {
+    "diff": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/08_auth_flow_second_send.diff",
+    "edits": [
+      {
+        "anchor": "            if physical_send:\n                raise VideoPolicyRefused(\"video lane already sent\")\n",
+        "anchor_count": 1,
+        "replacement": "            if False:\n                raise VideoPolicyRefused(\"video lane already sent\")\n"
+      }
+    ],
+    "file": "agents/core/video_analysis.py",
+    "id": "08_auth_flow_second_send",
+    "intent": "Remove the one-physical-send latch from an HTTP auth flow.",
+    "mutant_sha256": "ed08cf99e31caf15d4c3387de8e9c7e4fe561cbd2f97c6c95f0939818f092561",
+    "original_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "restored": true,
+    "restored_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "status": "KILLED",
+    "test": {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_boundaries.py",
+        "tests/test_h277_video_candidate_consent.py",
+        "tests/test_h277_video_failures.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_video_gemini.py",
+        "tests/test_h277_video_native.py",
+        "tests/test_h277_video_provider_chain.py",
+        "tests/test_h277_video_retry.py",
+        "tests/test_h277_video_routes.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_task_mediation_evidence.py",
+        "tests/test_image_mediation_composition.py",
+        "tests/test_cloud_image_tool.py",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/08_auth_flow_second_send.xml"
+      ],
+      "cwd": "/private/tmp/nerva-h277-video-mutations-b8svo6q7",
+      "duration_seconds": 17.852,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_video_provider_chain::test_fresh_request_retry_inside_one_lane_is_refused_before_second_send",
+        "tests.test_h277_video_retry::test_enabled_auth_flow_cannot_turn_one_attempt_into_two_sends"
+      ],
+      "failures": 2,
+      "junit": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/08_auth_flow_second_send.xml",
+      "log": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/08_auth_flow_second_send.log",
+      "returncode": 1,
+      "skipped": 0,
+      "tests": 755,
+      "timed_out": false
+    }
+  },
+  {
+    "diff": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/09_parser_whitespace_controls.diff",
+    "edits": [
+      {
+        "anchor": "    value = raw.strip(\" \")\n",
+        "anchor_count": 1,
+        "replacement": "    value = raw.strip()\n"
+      }
+    ],
+    "file": "agents/core/llm/video_retry.py",
+    "id": "09_parser_whitespace_controls",
+    "intent": "Accept tab/newline control whitespace around a retry value.",
+    "mutant_sha256": "c1f583329ef547593bef836fb7a1bba38d063950309dbd5da6114716caabd06c",
+    "original_sha256": "e29e751901f9298172e94243b3d070c744474fde4222f987239391357be613a7",
+    "restored": true,
+    "restored_sha256": "e29e751901f9298172e94243b3d070c744474fde4222f987239391357be613a7",
+    "status": "KILLED",
+    "test": {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_boundaries.py",
+        "tests/test_h277_video_candidate_consent.py",
+        "tests/test_h277_video_failures.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_video_gemini.py",
+        "tests/test_h277_video_native.py",
+        "tests/test_h277_video_provider_chain.py",
+        "tests/test_h277_video_retry.py",
+        "tests/test_h277_video_routes.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_task_mediation_evidence.py",
+        "tests/test_image_mediation_composition.py",
+        "tests/test_cloud_image_tool.py",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/09_parser_whitespace_controls.xml"
+      ],
+      "cwd": "/private/tmp/nerva-h277-video-mutations-b8svo6q7",
+      "duration_seconds": 17.626,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_video_retry::test_retry_setting_refuses_ambiguous_values[\\t1]",
+        "tests.test_h277_video_retry::test_retry_setting_refuses_ambiguous_values[1\\n]"
+      ],
+      "failures": 2,
+      "junit": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/09_parser_whitespace_controls.xml",
+      "log": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/09_parser_whitespace_controls.log",
+      "returncode": 1,
+      "skipped": 0,
+      "tests": 755,
+      "timed_out": false
+    }
+  },
+  {
+    "diff": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/10_parser_small_budget.diff",
+    "edits": [
+      {
+        "anchor": "    if value == \"1\":\n        return 1\n",
+        "anchor_count": 1,
+        "replacement": "    if value in {\"1\", \"2\"}:\n        return int(value)\n"
+      }
+    ],
+    "file": "agents/core/llm/video_retry.py",
+    "id": "10_parser_small_budget",
+    "intent": "Accept an out-of-range retry budget of two.",
+    "mutant_sha256": "d7caf2002b8c8aa09e321f689538859800c269612d12ad1df69ec27d1b9433e5",
+    "original_sha256": "e29e751901f9298172e94243b3d070c744474fde4222f987239391357be613a7",
+    "restored": true,
+    "restored_sha256": "e29e751901f9298172e94243b3d070c744474fde4222f987239391357be613a7",
+    "status": "KILLED",
+    "test": {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_boundaries.py",
+        "tests/test_h277_video_candidate_consent.py",
+        "tests/test_h277_video_failures.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_video_gemini.py",
+        "tests/test_h277_video_native.py",
+        "tests/test_h277_video_provider_chain.py",
+        "tests/test_h277_video_retry.py",
+        "tests/test_h277_video_routes.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_task_mediation_evidence.py",
+        "tests/test_image_mediation_composition.py",
+        "tests/test_cloud_image_tool.py",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/10_parser_small_budget.xml"
+      ],
+      "cwd": "/private/tmp/nerva-h277-video-mutations-b8svo6q7",
+      "duration_seconds": 17.716,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_video_retry::test_retry_setting_refuses_ambiguous_values[2]",
+        "tests.test_h277_video_retry::test_invalid_retry_setting_refuses_proposal_before_send"
+      ],
+      "failures": 2,
+      "junit": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/10_parser_small_budget.xml",
+      "log": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/10_parser_small_budget.log",
+      "returncode": 1,
+      "skipped": 0,
+      "tests": 755,
+      "timed_out": false
+    }
+  },
+  {
+    "diff": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/11_chosen_attempt_provenance.diff",
+    "edits": [
+      {
+        "anchor": "                                result[\"chosen_attempt\"] = attempt\n",
+        "anchor_count": 1,
+        "replacement": "                                pass  # chosen attempt provenance removed\n"
+      }
+    ],
+    "file": "agents/core/video_analysis.py",
+    "id": "11_chosen_attempt_provenance",
+    "intent": "Remove successful route chosen_attempt provenance; this tests result shape, not egress.",
+    "mutant_sha256": "574a4c9e194eaffc9fa9d645b55d44e52f468c6695f77ce4ebd24a1b77439119",
+    "original_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "restored": true,
+    "restored_sha256": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+    "status": "KILLED",
+    "test": {
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_h277_video_analysis.py",
+        "tests/test_h277_video_boundaries.py",
+        "tests/test_h277_video_candidate_consent.py",
+        "tests/test_h277_video_failures.py",
+        "tests/test_h277_video_fallback.py",
+        "tests/test_h277_video_gemini.py",
+        "tests/test_h277_video_native.py",
+        "tests/test_h277_video_provider_chain.py",
+        "tests/test_h277_video_retry.py",
+        "tests/test_h277_video_routes.py",
+        "tests/test_h277_model_roles.py",
+        "tests/test_h277_role_routes.py",
+        "tests/test_h513_data_handling.py",
+        "tests/test_task_mediation_evidence.py",
+        "tests/test_image_mediation_composition.py",
+        "tests/test_cloud_image_tool.py",
+        "-p",
+        "no:cacheprovider",
+        "--tb=short",
+        "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/11_chosen_attempt_provenance.xml"
+      ],
+      "cwd": "/private/tmp/nerva-h277-video-mutations-b8svo6q7",
+      "duration_seconds": 17.879,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_video_retry::test_primary_connection_retries_once_then_uses_existing_fallback",
+        "tests.test_h277_video_retry::test_primary_once_success_has_provenance_and_fresh_client",
+        "tests.test_h277_video_retry::test_gemini_primary_http_408_retries_same_native_wire"
+      ],
+      "failures": 3,
+      "junit": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/11_chosen_attempt_provenance.xml",
+      "log": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/11_chosen_attempt_provenance.log",
+      "returncode": 1,
+      "skipped": 0,
+      "tests": 755,
+      "timed_out": false
+    }
+  }
+]

@@ -16,6 +16,7 @@ import stat
 import subprocess
 import sys
 import textwrap
+import zlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -364,14 +365,37 @@ def test_the_commits_that_hold_a_pin_are_listed_newest_first(repo, monkeypatch):
     assert [c["date"] for c in example["commits"]][0] == "2030-01-01"
 
 
-def test_a_clone_missing_blobs_never_claims_unrecoverable(repo, capsys):
+@pytest.mark.parametrize("repack", [False, True], ids=["as-created", "packed"])
+def test_a_clone_missing_blobs_never_claims_unrecoverable(repo, monkeypatch, capsys, repack):
     # The v2 blob is gone from the object store (a partial or damaged clone): the pin might be
     # that very blob, so it is "incomplete", with a hint to fetch, never "unrecoverable".
+    if repack:
+        git(repo.root, "repack", "-ad")
     blob = git(repo.root, "rev-parse", f"{repo.c2}:{EXAMPLE}")
-    loose = repo.root / ".git" / "objects" / blob[:2] / blob[2:]
-    assert loose.is_file()   # auto packing is disabled; remove only this blob
-    loose.chmod(0o644)
-    loose.unlink()
+    oids = [line.split(" ", 1)[0] for line in git(repo.root, "rev-list", "--objects", "--all").splitlines()]
+    assert blob in oids
+    objects = repo.tmp / "incomplete-objects"
+    objects.mkdir()
+    for oid in oids:
+        if oid == blob:
+            continue
+        kind = git(repo.root, "cat-file", "-t", oid)
+        data = subprocess.run(
+            ["git", "-C", str(repo.root), "cat-file", kind, oid],
+            check=True, capture_output=True,
+        ).stdout
+        raw = f"{kind} {len(data)}\0".encode() + data
+        digest = (
+            hashlib.sha1(raw, usedforsecurity=False) if len(oid) == 40 else hashlib.sha256(raw)
+        )
+        assert digest.hexdigest() == oid
+        destination = objects / oid[:2] / oid[2:]
+        destination.parent.mkdir(exist_ok=True)
+        destination.write_bytes(zlib.compress(raw))
+    monkeypatch.setenv("GIT_OBJECT_DIRECTORY", str(objects))
+    assert subprocess.run(
+        ["git", "-C", str(repo.root), "cat-file", "-e", blob], capture_output=True,
+    ).returncode != 0
     assert git(repo.root, "log", "--all", "--format=%H", "--", EXAMPLE).splitlines() == [
         repo.c3, repo.c2, repo.c1
     ]

@@ -1,0 +1,301 @@
+{
+  "method": "Trailing whitespace removed per line and one final newline for repository whitespace gate; JUnit testcase outcomes unchanged.",
+  "raw_backup": "/tmp/nerva-h277-video-mutations-raw-20261002",
+  "changed_artifacts": [
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/actual_file_hash_compare_removed.log",
+      "raw_sha256": "23d663a5e72d32e2905f03f01fb0412d73f6e181e7ffe628d488c2a73ed3037a",
+      "saved_sha256": "46f55a7cdc413264e98308cd9269751f8528737e0a9123b77deafdba1cb4423a"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/cleanup_disclosure_recheck_removed.log",
+      "raw_sha256": "56fa5461842ffd32e72733b2e256fb1eaec76b48980bbea26880843a0c868e06",
+      "saved_sha256": "ac50f4e03e875e80feb2640ff492bb4cf4cfd812ee3a499b5c511f0ed5c32131"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/full_url_key_gate_reduced_to_provider.log",
+      "raw_sha256": "16fe8ec781e222de549170b7e077248d7d644d3debcae096af5f70fdd8072f11",
+      "saved_sha256": "b5abcf250f4e8c2fba69b388adb9c6138c5dbc4f2659a11a53dfc5aada892388"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/inherited_provider_route_removed.log",
+      "raw_sha256": "e02b7728a9945e5a30654a43e83f538c2c032c9e76f54534994d94ace4193747",
+      "saved_sha256": "6aae4d5420d999e91a2757ac2b91aa4d2591688d35d8e5828054b8c94c1a1c08"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/local_only_actor_ignored.log",
+      "raw_sha256": "11ceff45b9f786d27fd0a653e58895558ef986d78d3d60a41cbeb4bb588a0e91",
+      "saved_sha256": "650fddf0411c0fa599b7df0a08e43b6c644930f29b1a3bdb73d9f6d914995547"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/native_body_guard_removed.log",
+      "raw_sha256": "96284be6d0a30eb2414735be55e8702a2af661da212df65ab65fa0f5bf011a44",
+      "saved_sha256": "36540af57a7ff4ea9a2f7a2079211db8c3cedb8519af61eff5524325fbd99c11"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/redirect_revalidation_removed.log",
+      "raw_sha256": "c34d0753568e026254dc4025f507e9851d4ce629a07313c2a44b7f2ce957dc7e",
+      "saved_sha256": "fdcfbaf66f01f3a9f97335759bab839a218349d1fcc10885a265e26804ee7dd9"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/remote_call_approval_ignored.log",
+      "raw_sha256": "ca2bdd48ece477426b964fac04a1d2c8841dab192c32cbfd4c8d77eec7fb6f8f",
+      "saved_sha256": "f9ada00d1637d80fe244258a10fb40270ef6c308db202c4b0ab5a341cfe2a013"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/source_physical_recheck_removed.log",
+      "raw_sha256": "7ea9d9eca2e6701d0c678818a21e5f1ff3c54ee74f6c92f3b8177f69c6281a18",
+      "saved_sha256": "eb4069a848c1e7b3473705834148d916159cdd7cefcec8fd06dabfe883500f08"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/strict_local_ignored.log",
+      "raw_sha256": "6fdc02827539da79a72753c276d81d666dfd9b69c155e667f2d3e27b1c502b65",
+      "saved_sha256": "2f156df2e9dfd681dd14a56f166432b8b9f51c3b8a9fdb594511d94a12da3789"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/toolrpc_class_compare_removed.log",
+      "raw_sha256": "d66c041d320d872b546ed08739c0e74d67c3f77dd9eb9a1b551f325353ec2e29",
+      "saved_sha256": "0585345afed46a8962a8be063999a914fc621810047b1a7499f59516b2185b7f"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/logs/video_model_precedence_removed.log",
+      "raw_sha256": "e04aaad4b045e788b435ed54f80e1b5822a8d745314b8c8b147260b5129ef55b",
+      "saved_sha256": "3f739ceafb14722db7b55df141757c9bf301c3dadde2a20fda5694c5b873b939"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/actual_file_hash_compare_removed.xml",
+      "raw_sha256": "c4a99f8688cdb334f519696ce4583372157ee95667d10503811e51f5785512fd",
+      "saved_sha256": "4d3b914502e4e480858b4b9e38b7c8694394746d0fdaa558b19f97a9ca1746ff"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/baseline.xml",
+      "raw_sha256": "c96daf078dc17279575b39dc2a67c4201764c767cf5a63095ac9044861f453d5",
+      "saved_sha256": "61d5c360255869ed59a2b963894ac3cfdff66295a9629ea565337deca31c8b87"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/canonical_kind_ignored.xml",
+      "raw_sha256": "0daf495861e3ff070bfd1e7c2efe5d09e1c03f718095f91d1caeeed80f45db43",
+      "saved_sha256": "6d2f39bc924210287d5415365063dff14008b8efe16bb1559f7f75bce68e01ea"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/canonical_target_ignored.xml",
+      "raw_sha256": "df8ea5fc64fc5c32b2850062c6311689afdf5799c719b266d34059977ee1f872",
+      "saved_sha256": "702e1a4cc0024e7ef44ba0586d64ee7b5d7c18d212b027a0fc2e16bd6daca2b4"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/canonical_target_ignored__broad.xml",
+      "raw_sha256": "c249fdf75563e18e76f92a3dba860c36d34f9b16eb0267ffa374c7c66c6caba4",
+      "saved_sha256": "68d28991f117ff789912dcdfe7d71f90a1daea30bc73f247731f944041d0432b"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/cleanup_disclosure_recheck_removed.xml",
+      "raw_sha256": "91cbd24e549afbd194c1c17e16feaa3cc522ad2a90a39a7305c95b6edcd2742e",
+      "saved_sha256": "16fc015fe7be71cb895174c9ea1e43422bbf521204c14c2b03587c1fcd9f5627"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/descriptor_nofollow_removed.xml",
+      "raw_sha256": "086e564442c9d215ad220123275405238ecd4d66b2c85cb3e74c130cf2f7ab21",
+      "saved_sha256": "c15dd9b1f7d950cf247e22ba5e7d8060255db180d4231f9fd10e7e9655d0b10a"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/descriptor_nofollow_removed__broad.xml",
+      "raw_sha256": "56f657808d2400a9f0566ebdb77aceaeb08bf0fa3ec03b8f1a8588f316cdad16",
+      "saved_sha256": "003a97652c9bba7fbf756e808e0d6b7a2b23169e26612d5f1485866b6c3113ff"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/full_url_key_gate_reduced_to_provider.xml",
+      "raw_sha256": "f5f4d2f7f84fcd5fec3178191caf7f0e12595d112c8ac445af48e80ffbc2301d",
+      "saved_sha256": "b93ff24186664560f0affbd339588eafd7691df93a116290fb7aa9e415708638"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/http_stream_byte_cap_removed.xml",
+      "raw_sha256": "c5b31f48dea786392a4610dffc094ec99c747162fd7756382dc211190a12e660",
+      "saved_sha256": "4eda3b0eccb15e28a91261af7d57baaf0f3112557259c7d60db055784839ce71"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/http_stream_byte_cap_removed__broad.xml",
+      "raw_sha256": "bfe15b6cc721dbd3c21e7609b357395a08e4feca20848cdc893302a5b926d389",
+      "saved_sha256": "657c0e16249c261d74ffa823744c1646a3ea02886b7051cdb579dff11af11cf2"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/inherited_provider_route_removed.xml",
+      "raw_sha256": "1790876febf20c0a254a3150ed202973cca67bd5688ff23bb7d5d6216b8b77a3",
+      "saved_sha256": "be49c5a09c13b25733ceb011e72b65b0b6f9f6c587c311703aac15cb92f49d2a"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/invalid_vision_falls_back_to_default.xml",
+      "raw_sha256": "be78282277cee97aa3f6f81741b84d0207bc99b89e5e6e913c960ab712b610b3",
+      "saved_sha256": "d7738b4bbd9a8758f192b1410918f7b8ea34df8b540d1cfa660ed7bf34c2d646"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/kernel_denial_ignored.xml",
+      "raw_sha256": "77733bc3653e439f0a23a0ba9b5e2dc30328e7f695bbeaa6355c66c4438b1a7a",
+      "saved_sha256": "81302d5f2c05959a02ea2bf81443441e4fb715516c121d97b200c78f9a10b85c"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/kernel_denial_ignored__broad.xml",
+      "raw_sha256": "f3160cde7e2d1c88f2fdbee417879387e3f4bdd254f9e0435a4cc2605a9fd2e0",
+      "saved_sha256": "7a3a54dacd6586ebf400e2ef066f8eef3475ddc9cfe8e70fb7a215229a96bd6f"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/local_file_byte_cap_removed.xml",
+      "raw_sha256": "b2e8a4c2984c0d09dc879c644485535590d2d6197e4c56e782938c01a2cb89c8",
+      "saved_sha256": "7eec08dbac7edb946133483b26b41d98c7a81921f6fce118cc7f97041879515d"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/local_file_byte_cap_removed__broad.xml",
+      "raw_sha256": "929853ffdc54dcdcedc654106e68589afc0edbfe9ce540541624d4ea6fbc83b1",
+      "saved_sha256": "f5355574423028f1771692327eff2cdcba09c7942a8a525bcbd39a402cd3df53"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/local_only_actor_ignored.xml",
+      "raw_sha256": "44dd092829c519be592dadac36c4ddb1fc918e77896edae4dfa272a59fbc285c",
+      "saved_sha256": "a74f2f0292e9cba36b8cd91611f8cb3a11e5d3c371a3a35dd61f91e03d522b56"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_auth_guard_removed.xml",
+      "raw_sha256": "0575b6a54905c8f5921bdbea3c23a18eabf44d3dd23225b99486fc9038cc31fa",
+      "saved_sha256": "6571be2f706f9c3a6f70c0d5bc09dee5643d8b9fbbb513f5653a764a260bcfc6"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_auth_guard_removed__broad.xml",
+      "raw_sha256": "0518ca67456a590ba886af5ab39800f879a185652b50d3388207de66ab4b1944",
+      "saved_sha256": "50894d3b00ef3f81fe7779ab772b73cee0996912442242b8e605ede07c2c5941"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_body_guard_removed.xml",
+      "raw_sha256": "5bd28bfaba573538b6f2fd3e43020f1c8444a077e1523317d57875028578a1c9",
+      "saved_sha256": "52d5801ccbfabb107c247293babc14dd5de15f5c9f0c516edf8118a9178e41bf"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_cookie_guard_removed.xml",
+      "raw_sha256": "f305b51df76157514315775b9f6ff556650c6bfed13a15e4e9e0b01ca66f6b84",
+      "saved_sha256": "0018a97afd3bdd74b35a2f8f8e73bc752e0540027affa4a2effa85c639fb1ed5"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_cookie_guard_removed__broad.xml",
+      "raw_sha256": "fb342b586653a82997dbd23aae0df49ff03512a177ef7feb7769e1818abb6514",
+      "saved_sha256": "76bf06e0ce08c4a943c60715c2d4f92c7a518ed4a00edd06e8253d77508220e3"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_direct_transport_removed.xml",
+      "raw_sha256": "a5e1331f4a39bb69aecb519f230c4e549e97d2ca0ec883fbc7da96b03b427745",
+      "saved_sha256": "6135859293df57f7a5e32c339fc087ec433cc937b796d4276ef8f15bef9b8886"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_direct_transport_removed__broad.xml",
+      "raw_sha256": "8d547664ea8e861abcd147eddeea436439cc633eda3ae5afb4c924f663741365",
+      "saved_sha256": "df09e593b84a489c482549f587c6c8d425fedc3477df1ba52741dbf5c0891281"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_method_guard_removed.xml",
+      "raw_sha256": "2aed98c807966e90bb43e9176098b5d552b61b65576ab63853fa722f7b01c275",
+      "saved_sha256": "d15d2c74939961d010031ffd2cb8c7ceae5ff5b504c3cf7222f9b71f9615486e"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_method_guard_removed__broad.xml",
+      "raw_sha256": "bdc91daa7e50d939706e8b2aa48c51e21e682384e78b8d06cbe32e20a3cd6e85",
+      "saved_sha256": "4b09b089309e059d48944fe884a0e191b838cd63c5a00bcc26527accba5835a3"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_url_guard_removed.xml",
+      "raw_sha256": "1a5f1e11fdf5c3330f500bf71e4531fbe9ff55645f594b5f3c66303b779e7b68",
+      "saved_sha256": "0c9ed29118e037098b5104bbc78ae4537b1f5be30235b1f4e38ab89e21f71168"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/native_url_guard_removed__broad.xml",
+      "raw_sha256": "371f1d28398e1838f9e2ded33716cb767ef4d56abc969bb143d9ab1fd0a412e3",
+      "saved_sha256": "54a90ec44fa6a4f2bb27a1eef833778e66e2a3e85d202777c8f7bfe4620c60d6"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/persisted_payload_equality_removed.xml",
+      "raw_sha256": "d3854ebb56a478b8f9d52d1d90ffb8444a61a2103952433d50ae80416069b050",
+      "saved_sha256": "50bbf622dfe05873176b32cdc92538e61e82eacfd311e606e239a4d92ff8f8ce"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/persisted_payload_equality_removed__broad.xml",
+      "raw_sha256": "01b0895bdd5f99d19c4159b5e865e78064227b68820608939c1ac67b8805a8e6",
+      "saved_sha256": "165f2813d5d97e5a7d3ed59719eab23ab389959075744f696eecea679ee6db6b"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/private_source_url_allowed.xml",
+      "raw_sha256": "37763380b9431862f69374be89581c3ede4981f2ede51721008a65966141ee46",
+      "saved_sha256": "26b4b88ba67ff8cac3e8fa2a450bac1552aef01f2cc5fa9ba940bb66e598699f"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/receipt_validation_removed.xml",
+      "raw_sha256": "dc87d46d06d56cbf335604f677b2001e7a87c279212099eccaed737d9d99a9a2",
+      "saved_sha256": "0f747210d35fed8596ddc0eced8d4a44be18d58d18a7c638dfe6c3930d7c34ae"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/receipt_validation_removed__broad.xml",
+      "raw_sha256": "234959f6a21f41cec3234769f7715f38f02a40300ea60aa6981c0d0c93fa0590",
+      "saved_sha256": "5c9c53cc728c398f04bce9c51f05a4c4c62181426ba72b80151f04b57d82360e"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/redirect_revalidation_removed.xml",
+      "raw_sha256": "9eac7483fddeea9741b6eeab48b10d03a0a860208346d2cd35dd70848f2cc521",
+      "saved_sha256": "5c6e08c4cc1b4d98fd6714ab6531bcb7b867817411d256ed5810823720e18afa"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/remote_call_approval_ignored.xml",
+      "raw_sha256": "6aacd21c2d39fb618b746c2889fdf9569cdb45a8f998718a09fa892d7fbf89a9",
+      "saved_sha256": "c95a66d6254dc9e49febb76572c2600be0286310945f692618933de25526862c"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/remote_role_consent_ignored.xml",
+      "raw_sha256": "752e7958ec364d5e632d59a235c7d870407231583041dda6749369c5e679d88d",
+      "saved_sha256": "2473a78768815172c5e7e6b1b35441d20e55b8345c93de88379c0b9a44e4bc03"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/remote_role_consent_ignored__broad.xml",
+      "raw_sha256": "fc181e89b744b62e2141fc72c88f7d51ccd94118fbbe8cb49d0a101000cffb19",
+      "saved_sha256": "752bb22589f2c26eb4b0007b9f23f815a93b3924c1ac64dabc744cbba0df13e6"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/secret_query_allowed.xml",
+      "raw_sha256": "ebf55a5f33263a7ed6604a5d86fffb1f9d3e40ab8a1e9927e3f6cfc9adc82ce0",
+      "saved_sha256": "da3ecd5f00258d3a61e5492452a7e11a7d0855eca49534b5c32863f88be3b2b9"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/source_physical_recheck_removed.xml",
+      "raw_sha256": "66c0d76663aa9523563a5ec245e4880168a437a079dee3ad8cf081c55429a9db",
+      "saved_sha256": "0f1d196388cfb0796b13bbc6d8c5b2beba9c672faa0c8c2ef196ecae96d8d0be"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/strict_local_ignored.xml",
+      "raw_sha256": "102fe859d2e7d7d41ae437991308460156f6f1df396cf2fd7a491e9f6fda2d2c",
+      "saved_sha256": "fa72b77966c269bad64281a527b5c36c3036db85ac467d3315e6da0cac3c97b7"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/toolrpc_class_compare_removed.xml",
+      "raw_sha256": "5450f03aeb78692de0725afa0d03a1571888e05de2fb9fd6817ef2e05f3367a2",
+      "saved_sha256": "01c2917d59b4db753f59250bd17a33bf28751fff0bef1bb0a897549c711fb60f"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_execute_allowed.xml",
+      "raw_sha256": "1d970fadf30964f295af6bfc5c77618d80ef3bfa333decc654f7d13a616f728c",
+      "saved_sha256": "4749aac5fc8d2558edc8d383539955648a454d922e5de870a90c9a50e935d220"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_execute_allowed__broad.xml",
+      "raw_sha256": "43da27c5991a46166e2d925eec1dc98fc53754bdce5c35909509df263e54db0e",
+      "saved_sha256": "871292bb6022b0f88aa45a3b12d9c19c7be6e6ab326493dbe184708fac528372"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_intake_allowed.xml",
+      "raw_sha256": "47d14ff90bb81d37da92ac182a2888f2b9f813c80cc83363e6f22e33aff2e69e",
+      "saved_sha256": "e63b0c0a1aa35441ac14cafc7d681848e2bdcc6497b4859a0050adec1f4346ee"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/unsigned_intake_allowed__broad.xml",
+      "raw_sha256": "ca049db7a1c11e6657c1db318d70c26cbd4ae57cab0a579c5c676f760e56a874",
+      "saved_sha256": "4b0ee1af186e9e58f6d4076686ba1006620db608327bab66bf11a027cbd78a54"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/video_model_precedence_removed.xml",
+      "raw_sha256": "6858cadfc18a636c93e9c6ef8f641124f970725be63c05533bd625933bb94619",
+      "saved_sha256": "754cfe6f810271e6fa74e468d3b462e4184fc04f69967413df9a5227d0b74c10"
+    }
+  ]
+}

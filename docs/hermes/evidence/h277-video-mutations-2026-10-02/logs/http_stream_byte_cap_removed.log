@@ -1,0 +1,2 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_analysis.py::test_public_url_refuses_stream_byte_overflow", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/http_stream_byte_cap_removed.xml"]
+.                                                                        [100%]

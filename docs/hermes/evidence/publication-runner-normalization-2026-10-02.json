@@ -1,0 +1,23 @@
+{
+  "scope": "Publication lint-only normalization: sort imports, remove unused sys, equivalent dict literal. Historical receipts retain original runner hashes; originals remain in the pinned Git commit. No mutation campaign re-executed or outcome changed.",
+  "files": [
+    {
+      "path": "docs/hermes/evidence/h277-current-2026-10-01/run_bounded.py",
+      "original_commit": "aa4865b5d061b52f3cee7e044dab2d922e4a4617",
+      "original_sha256": "d3000523059bc5cc9eaa053841f37fbfed93efab968494aa08bc3f73a64c1f5f",
+      "normalized_sha256": "316d9a636a8d6586500b7ef26cc36eb89699d5e7d07d359ad0d00ee7adfc4736"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-mutations-2026-10-02/build_plan.py",
+      "original_commit": "aa4865b5d061b52f3cee7e044dab2d922e4a4617",
+      "original_sha256": "c1a16a2d459136f9942a3e3a22f7dad16bfc8f77dcdd8cefeddfb9fc6ca7415c",
+      "normalized_sha256": "2cea09643a9f241246ddcad9d11cf1eede8ba70515330fd4cbfc71937eeadc11"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-retry-mutations-2026-10-02/run_mutations.py",
+      "original_commit": "aa4865b5d061b52f3cee7e044dab2d922e4a4617",
+      "original_sha256": "9f52ed639a1f29cf8b4f139936ae8052fc92a1fa17d0ba1d35baaa30a4ebd982",
+      "normalized_sha256": "714a3c4464452c1d402fd66d10d81eb93943e40aeecc3adc6abed245654052b3"
+    }
+  ]
+}

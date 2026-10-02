@@ -25,6 +25,13 @@ from agents.core.llm.providers import get_profile
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # golden_harness lives beside the tests
 
 
+@pytest.fixture(autouse=True)
+def isolated_checkpoint_store(monkeypatch, tmp_path):
+    # Golden orchestrators restore this import-time path. A prior test's session
+    # must not supply the title whose absence this module is exercising.
+    monkeypatch.setattr("agents.core.checkpoint.CHECKPOINT_DIR", tmp_path / "checkpoints")
+
+
 # ── the first-words title ────────────────────────────────────────────────────────
 
 def test_a_short_message_is_its_own_title():

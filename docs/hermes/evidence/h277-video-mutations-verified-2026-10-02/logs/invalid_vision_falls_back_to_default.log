@@ -1,0 +1,18 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_fallback.py::test_invalid_configured_vision_does_not_select_another_video_destination", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/invalid_vision_falls_back_to_default.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_invalid_configured_vision_does_not_select_another_video_destination ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c005df0>
+
+    def test_invalid_configured_vision_does_not_select_another_video_destination(monkeypatch):
+        monkeypatch.setenv("JARVIS_ROLE_VISION_PROVIDER", "openai-compatible")
+        monkeypatch.setenv("JARVIS_ROLE_VIDEO_MODEL", "video-model")
+        role = model_roles.resolve("video")
+>       assert not role.configured
+E       AssertionError: assert not True
+E        +  where True = ResolvedRole(role='video', configured=True, provider_id='lm-studio', model='video-model', base_url='http://localhost:1...E_VIDEO_MODEL', 'provider': 'default', 'base_url': 'default'}), local=True, data_policy='local', reason='', ignored=()).configured
+
+tests/test_h277_video_fallback.py:95: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_fallback.py::test_invalid_configured_vision_does_not_select_another_video_destination

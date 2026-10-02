@@ -1,0 +1,34 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_approval_judge.py", "tests/test_h277_task_judge.py"]
+............................F........................................... [ 35%]
+........................................................................ [ 70%]
+...........................................................              [100%]
+=================================== FAILURES ===================================
+__________________ test_the_judge_never_holds_the_stored_args __________________
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-567/test_the_judge_never_holds_the0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10dfdd820>
+
+    async def test_the_judge_never_holds_the_stored_args(tmp_path, monkeypatch):
+        seen = {}
+
+        class Mutating(FakeBackend):
+            async def generate(self, model, prompt, **kw):
+                seen["prompt"] = prompt
+                return GOOD
+
+        q = queue(tmp_path, local_judge(monkeypatch, Mutating()))
+        args = {"nested": {"k": "v"}}
+        item = q.request({"tool": "t", "agent": "pepper", "args": args})
+        args["nested"]["k"] = "changed after request"
+        await drain(q)
+>       assert "changed after request" not in seen["prompt"]
+E       assert 'changed after request' not in '<<UNTRUSTED... UNTRUSTED>>'
+E
+E         'changed after request' is contained here:
+E           ": {"k": "changed after request"}}}
+E           <<END UNTRUSTED>>
+
+tests/test_h277_approval_judge.py:395: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_the_judge_never_holds_the_stored_args
+1 failed, 202 passed in 3.70s

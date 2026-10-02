@@ -1,0 +1,11 @@
+--- a/agents/core/video_analysis.py
++++ b/agents/core/video_analysis.py
+@@ -254,7 +254,7 @@
+             data = _read_scoped(source, scope) if source_data is None else source_data
+             source_key = [str(source), hashlib.sha256(data).hexdigest()]
+         material = {**args, "video_url": source_key}
+-        if retry_count:
++        if False:
+             material = {**material, "_internal_video_retry_policy": "primary-once:v1"}
+         cls = chain_class_binding(identities, material, tuple(map(str, scope.roots)))
+         return cls, identities

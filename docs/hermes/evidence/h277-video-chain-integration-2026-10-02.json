@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-01T23:46:53.140646+00:00",
+  "scope": "Local explicit ordered video provider chain with independent consent. H277 remains partial. No live or paid provider call.",
+  "full_backend_snapshot": {
+    "commit": "a38d7546aa7955a74746b32f1f13409944084aa1",
+    "tracked_regular_files": 4218,
+    "content_manifest_fingerprint": "42d73bbee35bdbae9853b6118ab76613a40ca4ec08dcb4be81e53ed7cc6451c7",
+    "fingerprint_method": "SHA256 of sorted compact JSON mapping tracked regular file paths to SHA256; symlinks excluded",
+    "unchanged_after_run": true,
+    "working_tree_clean_after_run": true,
+    "selected_source_sha256": {
+      "agents/core/video_analysis.py": "8a9cbf9fd769502facbbe6505a134b9da205324206c31ccf1dd8efa901e716db",
+      "agents/core/llm/video_policy.py": "9cc1764df3388c06b0a1393e50e624f1c0ccb483e05d716b06bcbafdda51c50d",
+      "agents/core/llm/video_routes.py": "96c22749ec03560344c7fd5e360fa5b62bf38f8b25267ee9a71e4671c72b3624",
+      "agents/core/llm/video_failures.py": "ac1e352dd544bcfca261fda3aa19ec8e0ab32408b51509df99e0c8476ec95a07",
+      "agents/core/llm/data_handling.py": "93fd8f550218a2248dbc30bb9659335a317e53ba6d919cc476209b7450035166",
+      "agents/core/routers/security.py": "c0852d0329b60043c5a9723fd1f682bf79814da0a1b09a0af7e2f474a6c4c1a8",
+      "tests/test_h277_video_provider_chain.py": "5a6a9ba90a52027ca5bcece54fec886ddc622a294f8c24dbc0f3e0268f169646",
+      "tests/test_h277_video_candidate_consent.py": "292fb905d8f95305f6b600832a0449135c8d02c1dc04bd05ea7b88c27a3ea700",
+      "tests/test_h277_video_routes.py": "47498cc117249ee3576ce3251b171c8d53b9ac157a9e666c7fcd5cef60ed8597",
+      "tests/test_h277_video_failures.py": "136ca0a53f492530ffb0a54ee55c8f2fb8f5e49b1e3110252a6cb71b1c4d798f",
+      "frontend/src/panels/data-handling.tsx": "8e54bb45bd42d7c9476d792bade1f1800bb58694ad03caa2b19b581ddab21a65",
+      "frontend/src/api/schema.gen.ts": "7d29be0a6a729af264b94e63d1055860468a2b9cb24eef92aa81f2c339d7aafa",
+      "frontend/src/test/governance-posture-panel.test.tsx": "81f2cb85e1b217325a116cb34b56ec8ac85c5a6edfc79863a8cd6177b857e894"
+    }
+  },
+  "full_backend_command": [
+    "/tmp/nerva-pr-python-20261001/bin/python",
+    "-m",
+    "pytest",
+    "--junitxml=/tmp/nerva-video-chain-full-20261002.xml"
+  ],
+  "full_backend_seconds": 990.7696422908921,
+  "pytest_guards": "Repository addopts retained, including socket and timeout guards.",
+  "verification": [
+    {
+      "artifact": "/tmp/nerva-h277-task3-focused.xml",
+      "sha256": "dd3a0bf407f1a5287220249f1a8841b94a5afc8b71c4d70520c1696b23d8122a",
+      "tests": 627,
+      "passed": 627,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    {
+      "artifact": "/tmp/nerva-video-chain-full-20261002.xml",
+      "sha256": "9e70d318d5eb1c59d6fea98a45021959271b2b2a30323550a46c3fbc087e8a61",
+      "tests": 20341,
+      "passed": 20306,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1
+    }
+  ],
+  "frontend": {
+    "artifact": "/tmp/nerva-video-chain-frontend-20261002.json",
+    "sha256": "3038bf75ba25563f94d7aed8193664a683cd42de309fa55375aa65ed79fb67bc",
+    "total": 1838,
+    "passed": 1838,
+    "failed": 0,
+    "pending": 0,
+    "success": true,
+    "source_commit": "2d9a3c39d3e4391fc5a35e3a6ff93567660afbe7",
+    "scope": "Full frontend suite, TypeScript and build; no subsequent frontend source changes."
+  },
+  "checks": [
+    {
+      "artifact": "/tmp/nerva-video-chain-typecheck-20261002.log",
+      "sha256": "4be34ed489a8a21324d3820825f37970c5f569bb436ce7a05ef560bca4b87b8a"
+    },
+    {
+      "artifact": "/tmp/nerva-video-chain-build-20261002.log",
+      "sha256": "e9082c6377efcac79e452109214baeed419d19f0b2a9141f93856429c5ddcbd9"
+    },
+    {
+      "artifact": "/tmp/nerva-chain-records-tests-20261002.log",
+      "sha256": "3a105b429c566a6ab228658f80ae3094d2be8b3cd71c1dc02ddbcc5dceba360f"
+    }
+  ],
+  "review": "Parent critical review plus bounded independent Task1/2/3 reviews. Final Task3 reviewer found no demonstrated load-bearing issue and did not rerun tests.",
+  "limitations": [
+    "Only explicit native LM Studio and OpenAI-compatible video adapters.",
+    "Additional adapters, shared auxiliary routing, automatic discovery, same-provider retries and SDK recovery remain open.",
+    "Old mutation campaign pins92905443 and is not mutation coverage of this new chain.",
+    "Compact approval labels may shorten model/origin with a digest; full ordered identities stay bound.",
+    "No live model acceptance, deployment or new GitHub publication.",
+    "Native mobile controls and inbound video ingestion remain open.",
+    "Raw local logs are in /tmp; this durable receipt retains outcomes and hashes.",
+    "61 backend warnings remain, including deprecations and an unawaited AsyncMock coroutine warning; no warning-free baseline is claimed."
+  ],
+  "full_backend_warnings": 61,
+  "secret_scan": {
+    "scope_commit": "a38d7546aa7955a74746b32f1f13409944084aa1",
+    "indexed_changed_paths_vs_main": 274,
+    "repository_policy_scan": "passed",
+    "strict_default_rules": "250 findings, all cryptographically verified source-manifest hashes; zero other findings",
+    "strict_receipt_artifact": "/tmp/nerva-strict-video-chain-records-20261002.receipt.json"
+  }
+}

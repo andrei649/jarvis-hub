@@ -1,0 +1,20 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_analysis.py::test_unsafe_video_urls_refused_at_intake[http://127.0.0.1/clip.mp4]", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-2026-10-02/junit/private_source_url_allowed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_unsafe_video_urls_refused_at_intake[http://127.0.0.1/clip.mp4] ______
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-647/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-647/test_unsafe_video_urls_refused0/clip.mp4'), requests=[])
+url = 'http://127.0.0.1/clip.mp4'
+
+    @pytest.mark.parametrize("url", [
+        "http://127.0.0.1/clip.mp4", "http://user:pass@video.example/clip.mp4",
+        "https://video.example/clip.mp4?token=secret", "file:///etc/passwd",
+    ])
+    def test_unsafe_video_urls_refused_at_intake(rig, url):
+>       with pytest.raises(ToolRPCValidationError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ToolRPCValidationError
+
+tests/test_h277_video_analysis.py:128: Failed
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_analysis.py::test_unsafe_video_urls_refused_at_intake[http://127.0.0.1/clip.mp4]

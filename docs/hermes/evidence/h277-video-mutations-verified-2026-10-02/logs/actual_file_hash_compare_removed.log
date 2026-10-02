@@ -1,0 +1,34 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_analysis.py::test_actual_file_bytes_must_match_the_approved_snapshot", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/actual_file_hash_compare_removed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_actual_file_bytes_must_match_the_approved_snapshot ____________
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-748/test_.../test_actual_file_bytes_must_ma0/clip.mp4'), requests=[<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f5c8470>
+
+    @pytest.mark.asyncio
+    async def test_actual_file_bytes_must_match_the_approved_snapshot(rig, monkeypatch):
+        from agents.core import video_analysis as video
+
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+        await rig.worker.apply_decision(proposal["task_id"], "accept", decided_by="andrei")
+        original = video._read_scoped
+        calls = []
+
+        def swapped(path, scope):
+            calls.append(1)
+            return b"unapproved swapped bytes" if len(calls) == 3 else original(path, scope)
+
+        monkeypatch.setattr(video, "_read_scoped", swapped)
+        await rig.worker.tick()
+        assert len(calls) >= 3
+>       assert rig.requests == []
+E       AssertionError: assert [<Request('PO...ompletions')>] == []
+E
+E         Left contains one more item: <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>
+E         Use -v to get more diff
+
+tests/test_h277_video_analysis.py:217: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_analysis.py::test_actual_file_bytes_must_match_the_approved_snapshot

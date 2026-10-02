@@ -1,0 +1,33 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "tests/test_h277_video_boundaries.py::test_http_video_stream_without_content_length_is_byte_bounded", "-q", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/docs/hermes/evidence/h277-video-mutations-verified-2026-10-02/junit/http_stream_byte_cap_removed.xml"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_http_video_stream_without_content_length_is_byte_bounded _________
+
+rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-746/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-746/test_http_video_stream_without0/clip.mp4'), requests=[])
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ff49190>
+
+    @pytest.mark.asyncio
+    async def test_http_video_stream_without_content_length_is_byte_bounded(rig, monkeypatch):
+        from agents.core import video_analysis
+
+        monkeypatch.setattr(video_analysis, "MAX_VIDEO_BYTES", 5)
+        seen = []
+
+        class Chunks(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                yield b"123"
+                yield b"456"
+
+        def factory(plugin, **kw):
+            return VideoHTTPClient(plugin, resolver=lambda host, mode: (["8.8.8.8"], None),
+                                   transport_factory=lambda target: httpx.MockTransport(
+                                       lambda request: (seen.append(request) or
+                                                        httpx.Response(200, stream=Chunks()))), **kw)
+
+>       with pytest.raises(VideoPolicyRefused, match="too large"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE VideoPolicyRefused
+
+tests/test_h277_video_boundaries.py:111: Failed
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_boundaries.py::test_http_video_stream_without_content_length_is_byte_bounded

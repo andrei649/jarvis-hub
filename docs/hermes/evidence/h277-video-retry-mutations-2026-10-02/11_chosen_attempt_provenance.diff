@@ -1,0 +1,11 @@
+--- a/agents/core/video_analysis.py
++++ b/agents/core/video_analysis.py
+@@ -481,7 +481,7 @@
+                             result.update({"attempts": failures, "chosen_route": identity.target_id,
+                                            "chosen_provider": identity.provider, "chosen_model": identity.model})
+                             if retry_count:
+-                                result["chosen_attempt"] = attempt
++                                pass  # chosen attempt provenance removed
+                         return result
+                 check()
+                 result = {"ok": False, "reason": "video_analysis_refused"}

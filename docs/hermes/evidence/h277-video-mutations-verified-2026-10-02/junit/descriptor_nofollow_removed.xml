@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.304" timestamp="2026-10-02T01:32:56.139683+03:00" hostname="Macmini">
+    <testcase classname="tests.test_h277_video_boundaries" name="test_scoped_video_read_refuses_symlink_swapped_after_resolution" time="0.729">
+      <failure message="Failed: DID NOT RAISE any of (OSError, VideoPolicyRefused)">rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-743/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-743/test_scoped_video_read_refuses0/clip.mp4'), requests=[])
+
+    def test_scoped_video_read_refuses_symlink_swapped_after_resolution(rig):
+        scope = FileScope.from_env()
+        kind, resolved, _ = _source(str(rig.source), scope)
+        assert kind == "file" and resolved == rig.source
+        outside = rig.tmp.parent / (rig.tmp.name + "-synthetic-outside.mp4")
+        outside.write_bytes(b"synthetic outside bytes")
+        rig.source.unlink()
+        rig.source.symlink_to(outside)
+        try:
+&gt;           with pytest.raises((OSError, VideoPolicyRefused)):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE any of (OSError, VideoPolicyRefused)
+
+tests/test_h277_video_boundaries.py:87: Failed</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

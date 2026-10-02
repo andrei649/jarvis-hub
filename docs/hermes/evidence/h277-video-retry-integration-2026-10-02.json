@@ -1,0 +1,197 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-02T01:11:20.344712+00:00",
+  "scope": "Local approved primary-only transient video retry; default compatibility preserved. H277 remains partial. No live/paid provider call or publication.",
+  "full_backend_snapshot": {
+    "commit": "5da06db66c837993a644f330f67da385ed7bf835",
+    "tracked_regular_files": 4234,
+    "content_manifest_fingerprint": "7f1e0d4c78dd1179ad6b8322679d7093a7b3a8f4a4541e74b36edf58b546b83c",
+    "fingerprint_method": "SHA256 of sorted compact JSON mapping tracked regular file paths to SHA256; symlinks excluded",
+    "unchanged_after_run": true,
+    "working_tree_clean_after_run": true,
+    "selected_source_sha256": {
+      "agents/core/llm/video_retry.py": "e29e751901f9298172e94243b3d070c744474fde4222f987239391357be613a7",
+      "agents/core/llm/video_policy.py": "ddfe9b8598b8f27ddf5983ffc60741052425ac64935b49e034b4a417ae2bdff2",
+      "agents/core/llm/video_failures.py": "ac1e352dd544bcfca261fda3aa19ec8e0ab32408b51509df99e0c8476ec95a07",
+      "agents/core/video_analysis.py": "6e6435d0e5088d0e18f6d0f3b82025866552b7c577088d829cf13f52625f72d7",
+      "tests/test_h277_video_retry.py": "2ec5044b089af99daad59b045d7cc3da5cc0bfb24ea17571ca2f5fd409dfc261",
+      "tests/test_h277_model_roles.py": "487b95a7f5f1775c211fbc6c00c7473a012d9afb4a3b5ddbe642cc3427eeb96c"
+    }
+  },
+  "full_backend_command": [
+    "/tmp/nerva-pr-python-20261001/bin/python",
+    "-m",
+    "pytest",
+    "--junitxml=/tmp/nerva-video-retry-full-20261002.xml"
+  ],
+  "full_backend_seconds": 1037.5833403749857,
+  "pytest_guards": "Repository pytest.ini and socket/timeout guards unchanged.",
+  "verification": {
+    "full_backend": {
+      "total": 20485,
+      "passed": 20450,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1,
+      "junit_sha256": "007896c5584590314713bb655b59f553bc89ebb4ee158b2286825efc9e9f511d",
+      "artifact": "/tmp/nerva-video-retry-full-20261002.xml"
+    },
+    "focused": {
+      "total": 755,
+      "passed": 755,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0,
+      "junit_sha256": "d1e8a2126d0ef431dea0e20522c37fd8bc3ff8307815acab3888fabefc897eeb",
+      "artifact": "/tmp/nerva-video-retry-focused-20261002.xml"
+    },
+    "records": {
+      "total": 92,
+      "passed": 92,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0,
+      "junit_sha256": "48a16d711a9595671a543c537814665afc7c58fe1bd012c0de4e61cb9bc5f407",
+      "artifact": "/tmp/nerva-video-retry-records-20261002.xml"
+    },
+    "final_documentation": {
+      "passed": 92,
+      "failed": 0,
+      "errors": 0,
+      "artifact": "/tmp/nerva-video-retry-final-records-20261002.xml",
+      "junit_sha256": "3cc30e4577c470e111f002bb936f742c7544992434b4247d87a739782bf7d02e"
+    }
+  },
+  "frontend": {
+    "unchanged_since_tested_commit": "2d9a3c39d3e4391fc5a35e3a6ff93567660afbe7",
+    "diff_paths": [
+      "frontend",
+      "package.json",
+      "package-lock.json",
+      "contracts"
+    ],
+    "diff_empty": true,
+    "prior_proof": {
+      "artifact": "/tmp/nerva-video-chain-frontend-20261002.json",
+      "sha256": "3038bf75ba25563f94d7aed8193664a683cd42de309fa55375aa65ed79fb67bc",
+      "total": 1838,
+      "passed": 1838,
+      "failed": 0,
+      "pending": 0,
+      "success": true,
+      "source_commit": "2d9a3c39d3e4391fc5a35e3a6ff93567660afbe7",
+      "scope": "Full frontend suite, TypeScript and build; no subsequent frontend source changes."
+    }
+  },
+  "review": {
+    "parent": "Reviewed retry budget, authority and default compatibility; default-zero HTTP failure-shape finding fixed red-first.",
+    "independent": "Bounded Luna read-only source/spec review: no blocking correctness finding; did not rerun tests."
+  },
+  "secret_scan": {
+    "scope": "Exact indexed changed files versus origin/main immediately before frozen commit; strict default rules include docs/tests and ignore allow comments.",
+    "paths": 290,
+    "findings": 250,
+    "verified_manifest_hashes": 250,
+    "unexpected": [],
+    "receipt_sha256": "ba9d6d3f7ae1059f8d011da3c3161bd5ab5ec575119408e1a243e3cd1307a416"
+  },
+  "limitations": [
+    "Offline HTTPX transports, no live Gemini entitlement/model acceptance.",
+    "Extension MIME is a declaration, not media decoding.",
+    "Retry opt-in applies only to primary typed connection or bounded HTTP408/5xx; ordinary timeouts and fallback candidates do not retry.",
+    "New retry mutation campaign is separately scoped to its exact archive and selected mutants; historical campaigns retain original coverage.",
+    "Shared auxiliary routing/discovery, broader adapters, empty-output/first-token/SDK recovery, larger uploads and native mobile/inbound integration remain open."
+  ],
+  "mutation_verification": {
+    "path": "docs/hermes/evidence/h277-video-retry-mutations-2026-10-02",
+    "summary": {
+      "baseline_tests": 755,
+      "cases": 11,
+      "commit": "5da06db66c837993a644f330f67da385ed7bf835",
+      "final_green": true,
+      "final_source_restored": true,
+      "final_tests": 755,
+      "invalid": 0,
+      "killed": 9,
+      "survived": 2
+    },
+    "source_manifest_matches_full_suite": true,
+    "limits": "Eleven selected mutants, including an explicitly compound removal. Two single-gate survivors retain the other primary-only guard. Provenance-only detection is not egress proof. Not full H277 mutation coverage.",
+    "artifact_sha256": {
+      "01_enabled_policy_hmac.diff": "be06fa3ae99cf31ceea75b03db77e584997358634a596207ece738d98173c67f",
+      "01_enabled_policy_hmac.log": "d1b4751db02636791c869bf1b29ef10485e551aca6d7a97d53e6bceb000d85fb",
+      "01_enabled_policy_hmac.xml": "ac244dc0bedbbbefdd360932f784f8ad5d2674f96619c0b673685876d1def819",
+      "02_primary_attempt_budget.diff": "eb869bb7fff1323c598f13cffc6c2a6741261ee792e95c5c97221441a6846920",
+      "02_primary_attempt_budget.log": "212d57315cf947ae6a0374e6e9bc08ec0e3746447953824583798e54b024a79b",
+      "02_primary_attempt_budget.xml": "5c3ab1ac058f5db23ffb05846030fe8d7c77b78a41598a1d171e1dc439c2a696",
+      "03_primary_cap_gate_only.diff": "0f78e6832f8bbbf413a8a945686febaf8650af36dea07fabea69a709cef53ff7",
+      "03_primary_cap_gate_only.log": "dd6d1e4076c0b6c93a90daa9a50a53ed40647bf613adc6b390611e32ac610956",
+      "03_primary_cap_gate_only.xml": "ce6ad3ad8e00f89a945dd6e1da057442d31d0cf94c73dd33f81f3a42dace9744",
+      "04_primary_retry_condition_gate_only.diff": "d89b01dace7b4387f2170e981dd1d816114933190253f38b7aa2e3b4c7b01d3e",
+      "04_primary_retry_condition_gate_only.log": "d1e7f68292b11aa2106fad392ddc9fb060b0a9d16fb6286b4f248ce4a73f96d4",
+      "04_primary_retry_condition_gate_only.xml": "d71bb0ffa221231b0bfe5ba14a91db8881fe4146ed4056c43d27cabe5c7e7e88",
+      "05_compound_both_primary_gates.diff": "3e3293f91cd0603920d0e29b4ca0742851c3874e29b37c7b5c29dfaff4c9ffc8",
+      "05_compound_both_primary_gates.log": "664ae2102e472c9805a30846ef3c42287ab8d9936c70fd84a281cd67af67e4c1",
+      "05_compound_both_primary_gates.xml": "8edf4f1558273dfde562911ec3fbbb8399b228c365c7b7d9fc154a282b34535f",
+      "06_timeout_as_transient.diff": "4df6e24eee249f7bc2834eaa3e68fab392bea08ad04c5f7141c25a08b6213d69",
+      "06_timeout_as_transient.log": "337d7dff0035e28a58ad1cf1a3fe7e01df2d557dcd8869e89ba23bb566dd5790",
+      "06_timeout_as_transient.xml": "ed80ff42c0eee8b5f9481e9f2ee2811f9ca9ef68618ea5457fc19008c4fa6cd9",
+      "07_http_exhaustion_to_fallback.diff": "90344388afac36dea95d0134ce75728a3173453c8a384752d8e9f9cd8721a9cf",
+      "07_http_exhaustion_to_fallback.log": "a7fb46e1a43d0381641a9c538258e279bbefeb2f3ea42d86353a1fc51c052fad",
+      "07_http_exhaustion_to_fallback.xml": "9e7e31fbf28dce27afcdd6c0c7f7e9e82947947fdb2b1d6a18f709ffd0889da9",
+      "08_auth_flow_second_send.diff": "17b73ce1d3c388c7b91af82ede6d4920432db24f79b2fdf980e11d4a13f8e8bb",
+      "08_auth_flow_second_send.log": "cef561c1b4be3bd4326fc53363849ff7148241f2038a905aadc4af05a3e5df30",
+      "08_auth_flow_second_send.xml": "5796e6ad99cf1e74c2c89626430d5c20f3c722caf7867d7ba110e327766ef8b4",
+      "09_parser_whitespace_controls.diff": "a5d4df3a091c65140bf1a93993859c8ea842d540bdd522a4e9529830a57e0cce",
+      "09_parser_whitespace_controls.log": "55b2f21a0ede7b2956bb6a15aea7752e805c24ebe19924f631b61b1deeb7fbff",
+      "09_parser_whitespace_controls.xml": "d5dd48f0b20c136775dd6db1e1cbf3500e303d8804b09b942390bbdacfec15cc",
+      "10_parser_small_budget.diff": "9f4752ee0ddc4def0f866fa6aa20b091c89c4652d36e824687147e8026ff43ad",
+      "10_parser_small_budget.log": "55f40f91320a054c99828b6baf13d0630f7ef7532f838055a3f32104f255c707",
+      "10_parser_small_budget.xml": "22f7c8da45c1ffdebf5003dbdd841654853d9b8dbd4d2b362cd150002b89ba00",
+      "11_chosen_attempt_provenance.diff": "8a3eed0184ae286f59197d7607b5ae50f27d3e8377fdb6ef19fd89d4cf3dd5fa",
+      "11_chosen_attempt_provenance.log": "36483b270464184cdf7d3f1cb42bbdc691488009b367659defb4530286a74c03",
+      "11_chosen_attempt_provenance.xml": "2c116f17b81acda2a75e49c909555aa1118cbe419bcebc213b452c5418394215",
+      "README.md": "0803fc5d81fe0061a1d1c7dfc41342643a8e445c398cff42a19f79d030ac5d24",
+      "baseline.json": "aa830f2d1e63a34109204fc9f4ea2b7a08c22a3cab05434d83d7deed67751c86",
+      "baseline.log": "876248efb985778accf13383f45081d056744e3d3f18f654be610ba0137dd03e",
+      "baseline.xml": "2236eb152f165e5d065eb08e6ba518a4e09a8691f9c494dd0df2857fa7d6c2ed",
+      "baseline_setup_attempt.log": "926ebdebb8fad3d1a7fa7381901f3c7148967f8d069480231418255f463f98dd",
+      "cases.json": "6da540b07ad114c52a884ed880c86e558ae96867543e710fdb01ae2b605d019c",
+      "final_baseline.log": "c5c0d70139b4aeab1fccb8ea038903779f84c39745063fb8e1c5081acc8d8213",
+      "final_baseline.xml": "763ed40ffe96266934637228da3bc0cbee8b4f74798b11fbe58c9f92b73f6ce9",
+      "report.md": "efadc3f43edc9df7402516722015ec6c209b87a5b711e418411adca93eb9b391",
+      "results.json": "17b8df0fb9961d8d7f45430001a7a589fdc34f134051718cc50f37c83a800909",
+      "run_mutations.py": "9f52ed639a1f29cf8b4f139936ae8052fc92a1fa17d0ba1d35baaa30a4ebd982",
+      "source_manifest.json": "dfea31f5739c9be46fd104b08833938e066c02151ac3f9dc6dd6bf9be4569510",
+      "summary.json": "8ac110e2173eb46ac1142c87ecfb8cfb6dfdf0ded715b9736e15420a0e69a7e7"
+    }
+  },
+  "changed_paths_since_design_commit": [
+    ".env.example",
+    "BACKLOG.md",
+    "GO_LIVE_PLAN.md",
+    "HERMES_STATUS.md",
+    "NERVA.md",
+    "README.md",
+    "STATUS.md",
+    "agents/core/llm/video_retry.py",
+    "agents/core/video_analysis.py",
+    "docs/FLAGS.md",
+    "docs/HERMES_CAPABILITIES.md",
+    "docs/design/HUD_V2_REMAINING.md",
+    "docs/hermes/assessment.json",
+    "docs/hermes/h277-auxiliary-routing-map-2026-10-02.md",
+    "docs/hermes/h277-video-retry-2026-10-02.md",
+    "docs/hermes/h277-video-retry-design-2026-10-02.md",
+    "docs/superpowers/plans/2026-10-02-h277-video-retry.md",
+    "mobile/PARITY.md",
+    "project-status.json",
+    "tests/test_h277_model_roles.py",
+    "tests/test_h277_video_retry.py"
+  ],
+  "full_backend_warnings": 61,
+  "raw_evidence_preservation": "Mutation artifacts copied byte-for-byte from the independently verified campaign. Pytest failure logs/XML and unified diffs retain generated trailing whitespace; scoped git diff --check excludes only campaign *.log, *.xml and *.diff artifacts."
+}

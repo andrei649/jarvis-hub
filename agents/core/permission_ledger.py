@@ -447,7 +447,19 @@ def _v1(conn: sqlite3.Connection) -> None:
     )
 
 
-MIGRATIONS = [_v1]
+def _v2(conn: sqlite3.Connection) -> None:
+    # Existing databases may already contain duplicate grants for one task.
+    # Keep those rows intact; ambiguous legacy tasks are refused individually.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS grant_task_receipts (
+            task_id        INTEGER PRIMARY KEY,
+            grant_id       TEXT NOT NULL UNIQUE,
+            payload_hash   TEXT NOT NULL
+        )"""
+    )
+
+
+MIGRATIONS = [_v1, _v2]
 
 
 # ── the ledger ───────────────────────────────────────────────────────────────
@@ -781,7 +793,16 @@ class PermissionLedger:
             return {"status": "refused", "reason": decision.reason or "contract_denied"}
         scope = str(payload["scope"])
         task_id = getattr(task, "id", None)
-        task_id = int(task_id) if isinstance(task_id, int) and not isinstance(task_id, bool) else None
+        if not isinstance(task_id, int) or isinstance(task_id, bool) or task_id <= 0:
+            return {"status": "refused", "reason": "contract_denied", "detail": "task_id_required"}
+        requested_by = str(payload["requested_by"]).strip()
+        reason = str(payload.get("reason") or "")[:_MAX_REASON]
+        authority = {
+            "surface": str(surface), "key": norm, "scope": scope,
+            "requested_by": requested_by, "granted_by": decided_by, "reason": reason,
+        }
+        authority_hash = _fingerprint(authority)
+        payload_hash = _fingerprint(view)
         now = self._now()
         grant = Grant(
             id=uuid.uuid4().hex,
@@ -789,47 +810,96 @@ class PermissionLedger:
             key=norm,
             scope=scope,
             status="active",
-            requested_by=str(payload["requested_by"]).strip(),
+            requested_by=requested_by,
             granted_by=decided_by,
             task_id=task_id,
             boot_id=self.boot_id,
             created_at=now,
             updated_at=now,
-            reason=str(payload.get("reason") or "")[:_MAX_REASON],
+            reason=reason,
         )
+        replayed = False
         with self._lock:
-            if self._never_row(grant.surface, grant.key) is not None:
-                return {"status": "refused", "reason": "never_entry"}
-            self._insert(grant)
-            self._audit(
-                "grant.applied",
-                grant_id=grant.id,
-                surface=grant.surface,
-                key=grant.key,
-                scope=grant.scope,
-                actor=decided_by,
-                task_id=task_id,
-                detail=f"decision={decision_word}",
-            )
-            self._conn.commit()
+            transaction_started = False
+            try:
+                # A write lock serializes separate ledger instances before either
+                # checks for a receipt or an older grant from this task.
+                self._conn.execute("BEGIN IMMEDIATE")
+                transaction_started = True
+                receipt = self._conn.execute(
+                    "SELECT grant_id, payload_hash FROM grant_task_receipts WHERE task_id=?",
+                    (task_id,),
+                ).fetchone()
+                if receipt is not None:
+                    row = self._conn.execute(
+                        "SELECT * FROM grants WHERE id=?", (receipt["grant_id"],)
+                    ).fetchone()
+                    if row is None or receipt["payload_hash"] != payload_hash:
+                        self._conn.rollback()
+                        return {"status": "refused", "reason": "contract_denied", "detail": "task_binding_mismatch"}
+                    grant = self._row_to_grant(row)
+                    replayed = True
+                else:
+                    legacy = self._conn.execute(
+                        "SELECT * FROM grants WHERE task_id=? LIMIT 2", (task_id,)
+                    ).fetchall()
+                    if len(legacy) > 1:
+                        self._conn.rollback()
+                        return {"status": "refused", "reason": "contract_denied", "detail": "ambiguous_legacy_task"}
+                    if legacy:
+                        grant = self._row_to_grant(legacy[0])
+                        replayed = True
+                    elif self._never_row(grant.surface, grant.key) is not None:
+                        self._conn.rollback()
+                        return {"status": "refused", "reason": "never_entry"}
+                    else:
+                        self._insert(grant)
+                        self._audit(
+                            "grant.applied",
+                            grant_id=grant.id,
+                            surface=grant.surface,
+                            key=grant.key,
+                            scope=grant.scope,
+                            actor=decided_by,
+                            task_id=task_id,
+                            detail=f"decision={decision_word}",
+                        )
+                    self._conn.execute(
+                        "INSERT INTO grant_task_receipts (task_id, grant_id, payload_hash) VALUES (?, ?, ?)",
+                        (task_id, grant.id, payload_hash),
+                    )
+                if grant.task_id != task_id or _fingerprint({
+                    "surface": grant.surface, "key": grant.key, "scope": grant.scope,
+                    "requested_by": grant.requested_by, "granted_by": grant.granted_by,
+                    "reason": grant.reason,
+                }) != authority_hash:
+                    self._conn.rollback()
+                    return {"status": "refused", "reason": "contract_denied", "detail": "task_binding_mismatch"}
+                if grant.surface == "os_input" and not replayed:
+                    # Store before the SQL commit. A failed/ambiguous commit may
+                    # leave an orphan token, but restore_token() cannot use it
+                    # without the committed active grant. A committed grant is
+                    # never left without its token by a crash in this window.
+                    self._secrets().set(self._secret_name(grant.id), _secrets.token_urlsafe(24))
+                self._conn.commit()
+            except Exception:
+                if transaction_started:
+                    self._conn.rollback()
+                raise
         out: dict[str, Any] = {
             "status": "ok",
             "grant_id": grant.id,
             "surface": grant.surface,
             "key": grant.key,
             "scope": grant.scope,
+            "grant_status": grant.status,
         }
         if grant.surface == "os_input":
-            token = _secrets.token_urlsafe(24)
-            try:
-                self._secrets().set(self._secret_name(grant.id), token)
+            if replayed:
+                # In particular, a retry after revoke must never mint a new token.
+                out["restore_token_stored"] = self.restore_token(grant.id) is not None
+            else:
                 out["restore_token_stored"] = True
-            except Exception:
-                # `token` is in scope here and is deliberately NOT logged: only the
-                # grant id is interpolated, so a failed store cannot leak the secret.
-                # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
-                logger.warning("os_input restore token could not be stored for %s", grant.id)
-                out["restore_token_stored"] = False
         return out
 
     def _insert(self, grant: Grant) -> None:

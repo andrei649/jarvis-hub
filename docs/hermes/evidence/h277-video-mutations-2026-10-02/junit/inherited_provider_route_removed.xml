@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="1.427" timestamp="2026-10-02T01:12:43.264455+03:00" hostname="Macmini"><testcase classname="tests.test_h277_video_fallback" name="test_video_inherits_resolved_vision_route_and_uses_video_model_override" time="0.753"><failure message="AssertionError: assert ('', '', '') == ('lm-studio',....0.1:1234/v1')&#10;  &#10;  At index 0 diff: '' != 'lm-studio'&#10;  Use -v to get more diff">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10ba92210&gt;
+
+    def test_video_inherits_resolved_vision_route_and_uses_video_model_override(monkeypatch):
+        from agents.core.llm.data_handling import role_target_scope
+
+        local_vision(monkeypatch)
+        role = model_roles.resolve("video")
+&gt;       assert (role.provider_id, role.model, role.base_url) == (
+            "lm-studio", "vision-model", "http://127.0.0.1:1234/v1")
+E       AssertionError: assert ('', '', '') == ('lm-studio',....0.1:1234/v1')
+E
+E         At index 0 diff: '' != 'lm-studio'
+E         Use -v to get more diff
+
+tests/test_h277_video_fallback.py:41: AssertionError</failure></testcase><testcase classname="tests.test_h277_video_fallback" name="test_signed_toolrpc_worker_uses_inherited_route" time="0.064"><failure message="AssertionError: {'ok': False, 'reason': 'enqueue_failed', 'tool': 'video_analyze'}&#10;assert 'enqueue_failed' == 'approval_required'&#10;  &#10;  - approval_required&#10;  + enqueue_failed">rig = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-662/test_...g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-662/test_signed_toolrpc_worker_use0/clip.mp4'), requests=[])
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10ba93440&gt;
+
+    @pytest.mark.asyncio
+    async def test_signed_toolrpc_worker_uses_inherited_route(rig, monkeypatch):
+        local_vision(monkeypatch)
+        for name in ("JARVIS_ROLE_VIDEO_PROVIDER", "JARVIS_ROLE_VIDEO_MODEL",
+                     "JARVIS_ROLE_VIDEO_BASE_URL"):
+            monkeypatch.delenv(name, raising=False)
+        proposal = await rig.orch.tool_rpc.handle({"tool": "video_analyze", "args": {
+            "video_url": str(rig.source), "question": "What happens?"}})
+&gt;       assert proposal["reason"] == "approval_required", proposal
+E       AssertionError: {'ok': False, 'reason': 'enqueue_failed', 'tool': 'video_analyze'}
+E       assert 'enqueue_failed' == 'approval_required'
+E
+E         - approval_required
+E         + enqueue_failed
+
+tests/test_h277_video_fallback.py:164: AssertionError</failure></testcase></testsuite></testsuites>

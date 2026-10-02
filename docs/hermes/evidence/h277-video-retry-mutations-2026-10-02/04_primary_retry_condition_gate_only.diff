@@ -1,0 +1,11 @@
+--- a/agents/core/video_analysis.py
++++ b/agents/core/video_analysis.py
+@@ -466,7 +466,7 @@
+                                 failure["attempt"] = attempt
+                             failures.append(failure)
+                             transient = isinstance(exc, _TransientModelFailure)
+-                            if transient and route_index == 0 and attempt < max_attempts:
++                            if transient and attempt < max_attempts:
+                                 continue
+                             if exc.category == "transient_http":
+                                 check()

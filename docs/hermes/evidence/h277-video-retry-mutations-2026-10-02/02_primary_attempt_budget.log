@@ -1,0 +1,79 @@
+command: ["/tmp/nerva-pr-python-20261001/bin/python", "-m", "pytest", "tests/test_h277_video_analysis.py", "tests/test_h277_video_boundaries.py", "tests/test_h277_video_candidate_consent.py", "tests/test_h277_video_failures.py", "tests/test_h277_video_fallback.py", "tests/test_h277_video_gemini.py", "tests/test_h277_video_native.py", "tests/test_h277_video_provider_chain.py", "tests/test_h277_video_retry.py", "tests/test_h277_video_routes.py", "tests/test_h277_model_roles.py", "tests/test_h277_role_routes.py", "tests/test_h513_data_handling.py", "tests/test_task_mediation_evidence.py", "tests/test_image_mediation_composition.py", "tests/test_cloud_image_tool.py", "-p", "no:cacheprovider", "--tb=short", "--junitxml=/Users/andrei649/Projects/nerva-pr-worktrees/integration/.superpowers/sdd/2026-10-02-h277-video-retry/mutations/02_primary_attempt_budget.xml"]
+cwd: /private/tmp/nerva-h277-video-mutations-b8svo6q7
+PYTHONDONTWRITEBYTECODE=1
+
+........................................................................ [  9%]
+..............................................................F......... [ 19%]
+........................................................................ [ 28%]
+......................................F.............F................... [ 38%]
+.................FF...FF................................................ [ 47%]
+........................................................................ [ 57%]
+........................................................................ [ 66%]
+........................................................................ [ 76%]
+........................................................................ [ 85%]
+........................................................................ [ 95%]
+...................................                                      [100%]
+=================================== FAILURES ===================================
+___________ test_model_failure_does_not_retry_with_another_provider ____________
+tests/test_h277_video_fallback.py:270: in test_model_failure_does_not_retry_with_another_provider
+    assert len(rig.requests) == 1
+E   AssertionError: assert 2 == 1
+E    +  where 2 = len([<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>, <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])
+E    +    where [<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>, <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>] = namespace(tmp=PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-880/test_...'POST', 'http://127.0.0.1:1234/v1/chat/completions')>, <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>]).requests
+_ test_noneligible_status_or_answer_never_switches_routes[503-{"error":{"message":"quota exceeded"}}] _
+tests/test_h277_video_provider_chain.py:330: in test_noneligible_status_or_answer_never_switches_routes
+    assert [request.url.port for request in requests] == [1234]
+E   assert [1234, 1234] == [1234]
+E     
+E     Left contains one more item: 1234
+E     Use -v to get more diff
+______ test_transport_read_error_after_dispatch_can_use_approved_fallback ______
+tests/test_h277_video_provider_chain.py:527: in test_transport_read_error_after_dispatch_can_use_approved_fallback
+    assert [request.url.port for request in requests] == [1234, 1235]
+E   assert [1234, 1234, 1235] == [1234, 1235]
+E     
+E     At index 1 diff: 1234 != 1235
+E     Left contains one more item: 1235
+E     Use -v to get more diff
+_______ test_primary_connection_retries_once_then_uses_existing_fallback _______
+tests/test_h277_video_retry.py:64: in test_primary_connection_retries_once_then_uses_existing_fallback
+    assert [request.url.port for request in sent] == [1234, 1234, 1235]
+E   assert [1234, 1234, 1234, 1235] == [1234, 1234, 1235]
+E     
+E     At index 2 diff: 1234 != 1235
+E     Left contains one more item: 1235
+E     Use -v to get more diff
+_________ test_primary_http_503_retries_once_without_provider_fallback _________
+tests/test_h277_video_retry.py:89: in test_primary_http_503_retries_once_without_provider_fallback
+    assert [request.url.port for request in sent] == [1234, 1234]
+E   assert [1234, 1234, 1234] == [1234, 1234]
+E     
+E     Left contains one more item: 1234
+E     Use -v to get more diff
+__________ test_default_zero_still_refuses_generic_http_without_retry __________
+tests/test_h277_video_retry.py:177: in test_default_zero_still_refuses_generic_http_without_retry
+    assert len(sent) == 1
+E   AssertionError: assert 2 == 1
+E    +  where 2 = len([<Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>, <Request('POST', 'http://127.0.0.1:1234/v1/chat/completions')>])
+_______ test_default_zero_chain_generic_http_keeps_legacy_refusal_shape ________
+tests/test_h277_video_retry.py:195: in test_default_zero_chain_generic_http_keeps_legacy_refusal_shape
+    assert [request.url.port for request in sent] == [1234]
+E   assert [1234, 1234] == [1234]
+E     
+E     Left contains one more item: 1234
+E     Use -v to get more diff
+=============================== warnings summary ===============================
+../../../tmp/nerva-pr-python-20261001/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /tmp/nerva-pr-python-20261001/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_h277_video_fallback.py::test_model_failure_does_not_retry_with_another_provider
+FAILED tests/test_h277_video_provider_chain.py::test_noneligible_status_or_answer_never_switches_routes[503-{"error":{"message":"quota exceeded"}}]
+FAILED tests/test_h277_video_provider_chain.py::test_transport_read_error_after_dispatch_can_use_approved_fallback
+FAILED tests/test_h277_video_retry.py::test_primary_connection_retries_once_then_uses_existing_fallback
+FAILED tests/test_h277_video_retry.py::test_primary_http_503_retries_once_without_provider_fallback
+FAILED tests/test_h277_video_retry.py::test_default_zero_still_refuses_generic_http_without_retry
+FAILED tests/test_h277_video_retry.py::test_default_zero_chain_generic_http_keeps_legacy_refusal_shape
+7 failed, 748 passed, 1 warning in 17.14s

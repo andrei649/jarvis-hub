@@ -1,0 +1,1055 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-02T01:56:38.663411+00:00",
+  "scope": "Shared task-aware local model selection for session titles, recall rewriting, review and streamed compression. H277 remains partial; local verification preceding owner-authorized publication, no live/provider acceptance.",
+  "full_backend_snapshot": {
+    "commit": "0307142d37bac7ad812f1738ca12cb75617b6e2e",
+    "tracked_regular_files": 4290,
+    "fingerprint": "5e1ff69a7e8188a8353fbf88e6a2afcafc2331ce784e5192727a8f29b78c1a1b",
+    "fingerprint_method": "SHA256 of sorted compact JSON mapping tracked regular paths to SHA256; symlinks excluded",
+    "unchanged_after_run": true,
+    "working_tree_clean_after_run": true,
+    "selected_source_sha256": {
+      "agents/core/llm/auxiliary_text.py": "2a041ff9cb1ffd8dfa6abfb1d9072c33df16347ef3a0f99c1131a82e97fc1e57",
+      "agents/core/orchestrator.py": "35278e6c4410450f47ffb9cebc0482ca8ed694ee2bd0ec57b3652102d3097c94",
+      "agents/core/llm/data_handling.py": "93fd8f550218a2248dbc30bb9659335a317e53ba6d919cc476209b7450035166",
+      "agents/core/compaction_hold.py": "681d834b7a3ece0393e7e3a3cc0e781300293c3f87091b606f2920d12c9b72c6",
+      "agents/core/llm/model_config.py": "06c03a37c0eeac3278ebb3dce23a4e5a00fb0ab0c294ce510f2adcd21dfd9217",
+      "tests/test_h277_local_auxiliary.py": "759f02ed6fc1513552ad4a47e4be380b6400ef349c4555c98edcb60830226340"
+    }
+  },
+  "full_backend_command": [
+    "/tmp/nerva-pr-python-20261001/bin/python",
+    "-m",
+    "pytest",
+    "tests/",
+    "-n",
+    "4",
+    "--dist",
+    "loadfile",
+    "--timeout=90",
+    "--junitxml=/tmp/nerva-local-auxiliary-rerun-20261002.xml"
+  ],
+  "full_backend_seconds": 223.43889545905404,
+  "verification": {
+    "full_backend": {
+      "total": 20540,
+      "passed": 20505,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1,
+      "junit_sha256": "9e7f0cbd9b057e7d5ea2287e9065dc49a105c29321f696d4b0e8343dec525ab7",
+      "artifact": "/tmp/nerva-local-auxiliary-rerun-20261002.xml"
+    },
+    "focused": {
+      "total": 513,
+      "passed": 513,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0,
+      "junit_sha256": "5c01bfbb26938c8a6de8e9645561ec0fc536362dba7a54564aed41c919b61535",
+      "artifact": "/tmp/nerva-local-auxiliary-focused-20261002.xml"
+    },
+    "pre_freeze_records": {
+      "total": 92,
+      "passed": 92,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0,
+      "junit_sha256": "4b78b7aaa01f2c5082bb8d7de3a976c68bc1f7b86773e66efc7cb471d1133f5f",
+      "artifact": "/tmp/nerva-local-auxiliary-records-20261002.xml"
+    }
+  },
+  "frontend": {
+    "source_unchanged_since": "2d9a3c39d3e4391fc5a35e3a6ff93567660afbe7",
+    "source_paths": [
+      "frontend",
+      "package.json",
+      "package-lock.json",
+      "contracts"
+    ],
+    "prior_proof": {
+      "artifact": "/tmp/nerva-video-chain-frontend-20261002.json",
+      "sha256": "3038bf75ba25563f94d7aed8193664a683cd42de309fa55375aa65ed79fb67bc",
+      "total": 1838,
+      "passed": 1838,
+      "failed": 0,
+      "pending": 0,
+      "success": true,
+      "source_commit": "2d9a3c39d3e4391fc5a35e3a6ff93567660afbe7",
+      "scope": "Full frontend suite, TypeScript and build; no subsequent frontend source changes."
+    }
+  },
+  "legacy_console": {
+    "passed": 40,
+    "failed": 0,
+    "pending": 0,
+    "junit_or_json_sha256": "45557135e60365a8992626502c1fdcbd45f703c45456aed995d82dc4b4090e67",
+    "artifact": "/tmp/nerva-local-auxiliary-legacy-tools-20261002.json",
+    "archive_source_commit": "aa4865b5d061b52f3cee7e044dab2d922e4a4617",
+    "unchanged_after_run": true,
+    "manifest_sha256": "2d103ff264951593a07624c0c886cc969fd3e716d6e1b57f91489c73f1e3fbc4",
+    "scope": "Only tests/frontend/tools.test.js; exact commit archive with source files restored unchanged, using already-installed lock-matched root dependency tree."
+  },
+  "evidence_review": {
+    "source_commit": "0307142d37bac7ad812f1738ca12cb75617b6e2e",
+    "reviewed_rows": [
+      "H182",
+      "H227",
+      "H277",
+      "H328",
+      "H329",
+      "H398",
+      "H413",
+      "H428",
+      "H433",
+      "H441",
+      "H465",
+      "H487",
+      "H513",
+      "H579",
+      "H659",
+      "H667",
+      "H670",
+      "H671",
+      "H674",
+      "H677",
+      "H679"
+    ],
+    "changed_methods": [
+      "_compression_summarizer",
+      "_query_rewriter",
+      "_review_llm",
+      "_session_titler"
+    ],
+    "full_test_cases": 20540,
+    "cited_backend_modules": {
+      "H182": {
+        "tests/test_h182_power.py": {
+          "total": 76,
+          "passed": 75,
+          "skipped": 1,
+          "xfailed": 0
+        }
+      },
+      "H227": {
+        "tests/test_inspector.py": {
+          "total": 43,
+          "passed": 43,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H277": {
+        "tests/test_h277_approval_judge.py": {
+          "total": 177,
+          "passed": 177,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_model_roles.py": {
+          "total": 104,
+          "passed": 104,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_role_routes.py": {
+          "total": 4,
+          "passed": 4,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_task_judge.py": {
+          "total": 26,
+          "passed": 26,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_approval_judge_policy.py": {
+          "total": 44,
+          "passed": 44,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_judge_consent.py": {
+          "total": 15,
+          "passed": 15,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_task_expiry_integration.py": {
+          "total": 51,
+          "passed": 51,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_direct_transport.py": {
+          "total": 13,
+          "passed": 13,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_judge_direct_transport.py": {
+          "total": 15,
+          "passed": 15,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_analysis.py": {
+          "total": 26,
+          "passed": 26,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_fallback.py": {
+          "total": 19,
+          "passed": 19,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_routes.py": {
+          "total": 57,
+          "passed": 57,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_candidate_consent.py": {
+          "total": 14,
+          "passed": 14,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_provider_chain.py": {
+          "total": 51,
+          "passed": 51,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_failures.py": {
+          "total": 61,
+          "passed": 61,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_boundaries.py": {
+          "total": 15,
+          "passed": 15,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_native.py": {
+          "total": 66,
+          "passed": 66,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_gemini.py": {
+          "total": 30,
+          "passed": 30,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_retry.py": {
+          "total": 48,
+          "passed": 48,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H328": {
+        "tests/test_h328_skill_visibility.py": {
+          "total": 40,
+          "passed": 40,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H329": {
+        "tests/test_h329_skill_switches.py": {
+          "total": 54,
+          "passed": 54,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H398": {
+        "tests/test_tool_result_taint.py": {
+          "total": 21,
+          "passed": 21,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H413": {
+        "tests/test_h413_session_titles.py": {
+          "total": 131,
+          "passed": 131,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_nerva_cli.py": {
+          "total": 106,
+          "passed": 106,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H428": {
+        "tests/test_recall_gate.py": {
+          "total": 135,
+          "passed": 135,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H433": {
+        "tests/test_query_rewrite.py": {
+          "total": 57,
+          "passed": 57,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H441": {
+        "tests/test_h441_session_recap.py": {
+          "total": 22,
+          "passed": 22,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H465": {
+        "tests/test_h465_refine.py": {
+          "total": 35,
+          "passed": 35,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_slash_commands.py": {
+          "total": 20,
+          "passed": 20,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h465c_refine_review.py": {
+          "total": 9,
+          "passed": 9,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h465d_refine_review.py": {
+          "total": 31,
+          "passed": 31,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_nerva_cli.py": {
+          "total": 106,
+          "passed": 106,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h465e_refine_review.py": {
+          "total": 37,
+          "passed": 37,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h465f_refine_review.py": {
+          "total": 34,
+          "passed": 34,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h465g_refine_review.py": {
+          "total": 18,
+          "passed": 18,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H487": {
+        "tests/test_h10_18_action_approvals.py": {
+          "total": 7,
+          "passed": 7,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_action_approvals_persist.py": {
+          "total": 5,
+          "passed": 5,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_pending_requests.py": {
+          "total": 58,
+          "passed": 58,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_autonomy_inbox.py": {
+          "total": 7,
+          "passed": 7,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h15_1_browser_agent.py": {
+          "total": 42,
+          "passed": 42,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_approval_groups.py": {
+          "total": 39,
+          "passed": 39,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_task_groups.py": {
+          "total": 40,
+          "passed": 40,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_action_reasons.py": {
+          "total": 26,
+          "passed": 26,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_task_reasons.py": {
+          "total": 36,
+          "passed": 36,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_telegram_reasons.py": {
+          "total": 34,
+          "passed": 34,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_telegram_lanes.py": {
+          "total": 2,
+          "passed": 2,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_chat_outcome_store.py": {
+          "total": 28,
+          "passed": 28,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_chat_outcome_integration.py": {
+          "total": 18,
+          "passed": 18,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_task_expiry.py": {
+          "total": 41,
+          "passed": 41,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_task_expiry_integration.py": {
+          "total": 51,
+          "passed": 51,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_model_grouping.py": {
+          "total": 17,
+          "passed": 17,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_model_grouping_integration.py": {
+          "total": 15,
+          "passed": 15,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_human_wait_budget.py": {
+          "total": 38,
+          "passed": 38,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_human_wait_integration.py": {
+          "total": 13,
+          "passed": 13,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h487_decision_clock.py": {
+          "total": 8,
+          "passed": 8,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H513": {
+        "tests/test_tool_profiles.py": {
+          "total": 26,
+          "passed": 26,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_o26_p2_product_posture.py": {
+          "total": 6,
+          "passed": 6,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_openrouter_provider_routing.py": {
+          "total": 30,
+          "passed": 30,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_data_handling.py": {
+          "total": 52,
+          "passed": 52,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_auxiliary_policy.py": {
+          "total": 14,
+          "passed": 14,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_auxiliary_integration.py": {
+          "total": 13,
+          "passed": 13,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h32_llm_synth.py": {
+          "total": 8,
+          "passed": 8,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h30_presence.py": {
+          "total": 12,
+          "passed": 12,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_acquisition_policy.py": {
+          "total": 13,
+          "passed": 13,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_presence_policy.py": {
+          "total": 9,
+          "passed": 9,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_approval_judge_policy.py": {
+          "total": 44,
+          "passed": 44,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_judge_consent.py": {
+          "total": 15,
+          "passed": 15,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_composer_vision_policy.py": {
+          "total": 22,
+          "passed": 22,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_composer_vision.py": {
+          "total": 33,
+          "passed": 33,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_embedding_policy.py": {
+          "total": 37,
+          "passed": 37,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_memory_embeddings.py": {
+          "total": 13,
+          "passed": 13,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_embedding_pipeline.py": {
+          "total": 14,
+          "passed": 14,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_howard_rag.py": {
+          "total": 4,
+          "passed": 4,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_recall_cache.py": {
+          "total": 6,
+          "passed": 6,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_direct_transport.py": {
+          "total": 13,
+          "passed": 13,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_judge_direct_transport.py": {
+          "total": 15,
+          "passed": 15,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_interactive_local_vision.py": {
+          "total": 34,
+          "passed": 34,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_screen_reflex_route.py": {
+          "total": 7,
+          "passed": 7,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_vlm_h13_1.py": {
+          "total": 23,
+          "passed": 23,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_unattended_media_reader.py": {
+          "total": 34,
+          "passed": 34,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_inbound_media_read.py": {
+          "total": 46,
+          "passed": 46,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h31_camera_reality.py": {
+          "total": 4,
+          "passed": 4,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h513_camera_policy.py": {
+          "total": 38,
+          "passed": 38,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_candidate_consent.py": {
+          "total": 14,
+          "passed": 14,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_provider_chain.py": {
+          "total": 51,
+          "passed": 51,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_native.py": {
+          "total": 66,
+          "passed": 66,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_gemini.py": {
+          "total": 30,
+          "passed": 30,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h277_video_retry.py": {
+          "total": 48,
+          "passed": 48,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H579": {
+        "tests/test_h579_context_refs.py": {
+          "total": 70,
+          "passed": 70,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H659": {
+        "tests/test_h659_idempotency.py": {
+          "total": 90,
+          "passed": 90,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H667": {
+        "tests/test_sandbox_child_env.py": {
+          "total": 2,
+          "passed": 2,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_retention.py": {
+          "total": 9,
+          "passed": 9,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_exec_cache.py": {
+          "total": 60,
+          "passed": 60,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_tool_rpc_runtime.py": {
+          "total": 8,
+          "passed": 8,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h667c_exec_cache_review.py": {
+          "total": 55,
+          "passed": 54,
+          "skipped": 1,
+          "xfailed": 0
+        },
+        "tests/test_h667d_exec_cache_review.py": {
+          "total": 30,
+          "passed": 30,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H670": {
+        "tests/test_identity_contract.py": {
+          "total": 18,
+          "passed": 18,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h670b_identity_review.py": {
+          "total": 21,
+          "passed": 21,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_h670c_identity_review.py": {
+          "total": 14,
+          "passed": 14,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H671": {
+        "tests/test_conversation_clock.py": {
+          "total": 28,
+          "passed": 28,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_provider_context_limits.py": {
+          "total": 5,
+          "passed": 5,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_provider_request_profiles.py": {
+          "total": 5,
+          "passed": 5,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_session_birth_persistence.py": {
+          "total": 3,
+          "passed": 3,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_models_review_regressions.py": {
+          "total": 10,
+          "passed": 10,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_compaction_clock.py": {
+          "total": 21,
+          "passed": 21,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_tool_loop_compaction.py": {
+          "total": 9,
+          "passed": 9,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_session_continuation.py": {
+          "total": 50,
+          "passed": 50,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H674": {
+        "tests/test_h674_compaction_hold.py": {
+          "total": 52,
+          "passed": 52,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H677": {
+        "tests/test_h677_boot_and_shutdown.py": {
+          "total": 51,
+          "passed": 51,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      },
+      "H679": {
+        "tests/test_conversation_clock.py": {
+          "total": 28,
+          "passed": 28,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_provider_context_limits.py": {
+          "total": 5,
+          "passed": 5,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_provider_request_profiles.py": {
+          "total": 5,
+          "passed": 5,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_reasoning_vocabulary_registry.py": {
+          "total": 26,
+          "passed": 26,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_session_birth_persistence.py": {
+          "total": 3,
+          "passed": 3,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_models_review_regressions.py": {
+          "total": 10,
+          "passed": 10,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_reasoning_no_escalation.py": {
+          "total": 37,
+          "passed": 37,
+          "skipped": 0,
+          "xfailed": 0
+        },
+        "tests/test_reasoning_empty_contract.py": {
+          "total": 35,
+          "passed": 35,
+          "skipped": 0,
+          "xfailed": 0
+        }
+      }
+    },
+    "citation_changes": [
+      {
+        "id": "H182",
+        "replacements": {}
+      },
+      {
+        "id": "H227",
+        "replacements": {
+          "agents/core/orchestrator.py:3216": "agents/core/orchestrator.py:3198"
+        }
+      },
+      {
+        "id": "H277",
+        "replacements": {}
+      },
+      {
+        "id": "H328",
+        "replacements": {
+          "agents/core/orchestrator.py:3406": "agents/core/orchestrator.py:3388"
+        }
+      },
+      {
+        "id": "H329",
+        "replacements": {}
+      },
+      {
+        "id": "H398",
+        "replacements": {}
+      },
+      {
+        "id": "H413",
+        "replacements": {}
+      },
+      {
+        "id": "H428",
+        "replacements": {
+          "agents/core/orchestrator.py:3133": "agents/core/orchestrator.py:3115",
+          "agents/core/orchestrator.py:3154": "agents/core/orchestrator.py:3136",
+          "agents/core/orchestrator.py:3158": "agents/core/orchestrator.py:3140",
+          "agents/core/orchestrator.py:3052": "agents/core/orchestrator.py:3034",
+          "agents/core/orchestrator.py:3089": "agents/core/orchestrator.py:3071",
+          "agents/core/orchestrator.py:3183": "agents/core/orchestrator.py:3165",
+          "agents/core/orchestrator.py:3097": "agents/core/orchestrator.py:3079",
+          "agents/core/orchestrator.py:3069": "agents/core/orchestrator.py:3051",
+          "agents/core/orchestrator.py:3026": "agents/core/orchestrator.py:3008",
+          "agents/core/orchestrator.py:3184": "agents/core/orchestrator.py:3166",
+          "agents/core/orchestrator.py:3040": "agents/core/orchestrator.py:3022",
+          "agents/core/orchestrator.py:3177": "agents/core/orchestrator.py:3159",
+          "agents/core/orchestrator.py:3014": "agents/core/orchestrator.py:2996",
+          "agents/core/orchestrator.py:3074": "agents/core/orchestrator.py:3056",
+          "agents/core/orchestrator.py:3168": "agents/core/orchestrator.py:3150",
+          "agents/core/orchestrator.py:3091": "agents/core/orchestrator.py:3073",
+          "agents/core/orchestrator.py:3185": "agents/core/orchestrator.py:3167",
+          "agents/core/orchestrator.py:3116": "agents/core/orchestrator.py:3098",
+          "agents/core/orchestrator.py:3164": "agents/core/orchestrator.py:3146"
+        }
+      },
+      {
+        "id": "H433",
+        "replacements": {
+          "agents/core/orchestrator.py:2965": "agents/core/orchestrator.py:2957",
+          "agents/core/orchestrator.py:2983": "agents/core/llm/auxiliary_text.py:48",
+          "agents/core/orchestrator.py:2982": "agents/core/llm/auxiliary_text.py:45",
+          "agents/core/orchestrator.py:2985": "agents/core/llm/auxiliary_text.py:49"
+        }
+      },
+      {
+        "id": "H441",
+        "replacements": {
+          "agents/core/orchestrator.py:3646": "agents/core/orchestrator.py:3621"
+        }
+      },
+      {
+        "id": "H465",
+        "replacements": {
+          "agents/core/orchestrator.py:3494": "agents/core/orchestrator.py:3476",
+          "agents/core/orchestrator.py:3514": "agents/core/orchestrator.py:3496"
+        }
+      },
+      {
+        "id": "H487",
+        "replacements": {}
+      },
+      {
+        "id": "H513",
+        "replacements": {}
+      },
+      {
+        "id": "H579",
+        "replacements": {
+          "agents/core/orchestrator.py:3349": "agents/core/orchestrator.py:3331"
+        }
+      },
+      {
+        "id": "H659",
+        "replacements": {}
+      },
+      {
+        "id": "H667",
+        "replacements": {}
+      },
+      {
+        "id": "H670",
+        "replacements": {
+          "agents/core/orchestrator.py:4098": "agents/core/orchestrator.py:4066"
+        }
+      },
+      {
+        "id": "H671",
+        "replacements": {}
+      },
+      {
+        "id": "H674",
+        "replacements": {
+          "agents/core/orchestrator.py:3808": "agents/core/orchestrator.py:3776",
+          "orchestrator.py:4031": "orchestrator.py:3999",
+          "orchestrator.py:4729": "orchestrator.py:4697",
+          "orchestrator.py:3800": "agents/core/llm/auxiliary_text.py:55"
+        }
+      },
+      {
+        "id": "H677",
+        "replacements": {}
+      },
+      {
+        "id": "H679",
+        "replacements": {}
+      }
+    ],
+    "legacy_tools_passed": 40,
+    "old_frontend_source_unchanged": true,
+    "existing_stale_rows_untouched": 207
+  },
+  "review": {
+    "parent": "Reviewed fixed config, exact model to guard/generator, four-method-only AST diff, preserved defaults/streaming and deterministic concurrent-test barrier.",
+    "independent": "Bounded source/spec review matched all three source hashes and found no load-bearing blocker; tests not rerun by reviewer.",
+    "audit_correction": "Six already-stale rows were removed from an initial over-inclusive candidate list after checking every pin against base. Final21 review does not update original207 stale rows."
+  },
+  "pre_freeze_secret_scan": {
+    "paths": 348,
+    "findings": 340,
+    "verified_manifest_hashes": 340,
+    "unexpected": [],
+    "receipt_sha256": "72bda1775d7d773de88ec565776ee4db275acb5a9b63bec45721b4e1469c126d"
+  },
+  "limitations": [
+    "Offline stub backends and HTTPX MockTransport; no installed-model, entitlement, output-quality or performance acceptance.",
+    "No new mutation campaign; earlier H277 campaigns retain their own exact source snapshots.",
+    "Only four orchestrator consumers adopt the helper; acquisition/presence, broader adapters/discovery/recovery and other accepted Hermes work remain open.",
+    "No HUD/native editor for these environment model IDs.",
+    "No new coverage percentage measured; backend pytest has no configured numeric coverage threshold. Frontend source is unchanged and its earlier suite proof is separate."
+  ],
+  "full_backend_warnings": 64,
+  "previous_failed_full_run": {
+    "result": {
+      "total": 20539,
+      "passed": 20503,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1,
+      "junit_sha256": "8527d6189191a3aef1e57fe8b312aa6035f8de0c0bea533b129d3e9a8677377a",
+      "artifact": "/tmp/nerva-local-auxiliary-full-20261002.xml"
+    },
+    "commit": "aa4865b5d061b52f3cee7e044dab2d922e4a4617",
+    "cause": "Missing-blob fixture assumed loose Git storage; target existed in a pack. Separate incomplete object store now preserves history independently of packing.",
+    "run_receipt_sha256": "4ce7386b10d98729c930b3f922ce17dc30a7ddedd892c416b5bee1b919853883"
+  }
+}
