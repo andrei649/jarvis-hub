@@ -484,6 +484,22 @@ class NousAuthService:
             "has_refresh_token": bool(state.get("refresh_token")),
         }
 
+    def peek_credentials(self, profile: str = "default") -> NousCredentials:
+        """Read a usable owned credential without refresh, network, or mutation."""
+        return self._credentials_from_state(profile, self.store.read(profile))
+
+    def _credentials_from_state(self, profile: str, state: dict[str, Any]) -> NousCredentials:
+        if state.get("quarantine_reason") or not (
+            state.get("access_token") or state.get("agent_key") or state.get("refresh_token")
+        ):
+            raise NousAuthError("reauth_required")
+        if state.get("portal_base_url") != self._portal() or state.get("client_id") != self._client_id():
+            raise NousAuthError("invalid_configuration")
+        token = usable_inference_token(state, now=self._now())
+        if token is None:
+            raise NousAuthError("unusable_token")
+        return self._credentials(profile, token, state)
+
     def logout(self, profile: str = "default") -> dict[str, Any]:
         with self.store.transaction(profile) as state:
             state.clear()

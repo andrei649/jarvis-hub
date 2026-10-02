@@ -62,6 +62,7 @@ class VisionIdentity:
     empty_retries: int = 0
     provider_block: str = field(default="", repr=False)
     selection_findings: tuple[str, ...] = field(default=(), repr=False)
+    wire_mode: str = "chat_completions"
 
     def selection_choice(self, model):
         route = ('data_collection=allow' if self.provider_block
@@ -105,10 +106,10 @@ def canonical_selection_findings(findings):
 
 def describe(config):
     empty_retries = resolve_vision_empty_retries()
-    if config.backend not in ('lmstudio', 'custom', 'openrouter', 'deepinfra') or not isinstance(config.model, str) or not config.model:
+    if config.backend not in ('lmstudio', 'custom', 'openrouter', 'deepinfra', 'nous') or not isinstance(config.model, str) or not config.model:
         raise VisionPolicyUnavailable('invalid vision configuration')
     profile = get_profile({'lmstudio': 'lm-studio', 'custom': 'openai-compatible',
-                           'openrouter': 'openrouter', 'deepinfra': 'deepinfra'}[config.backend])
+                           'openrouter': 'openrouter', 'deepinfra': 'deepinfra', 'nous': 'nous'}[config.backend])
     provider_block = ''
     policy, note = profile.data_policy_for(config.model)
     if config.backend == 'openrouter':
@@ -125,7 +126,12 @@ def describe(config):
     base = native_base_url(config.base_url)
     if bool(config.is_local) != _is_loopback_base(str(base)):
         raise VisionPolicyUnavailable('invalid vision locality')
-    request_url = str(base.copy_with(raw_path=base.raw_path + b'chat/completions'))
+    wire_mode = getattr(config, 'wire_mode', 'chat_completions')
+    if wire_mode not in {'chat_completions', 'anthropic_messages'} or (
+            wire_mode == 'anthropic_messages' and config.backend != 'nous'):
+        raise VisionPolicyUnavailable('invalid vision wire mode')
+    path = b'messages' if wire_mode == 'anthropic_messages' else b'chat/completions'
+    request_url = str(base.copy_with(raw_path=base.raw_path + path))
     auth = authorization(config.base_url, config.api_key)
     warning = ('Vision data handling is unknown; images and prompts may be retained or used for training.'
                if policy == 'unknown' else
@@ -137,8 +143,10 @@ def describe(config):
         binding += ('vision-empty-once:v1',)
     if provider_block:
         binding += ('openrouter-vision:v1', provider_block)
+    if config.backend == 'nous':
+        binding += ('nous-vision:v1', wire_mode)
     identity = VisionIdentity(profile.id, policy, note[:500], warning, str(base), request_url, auth,
-                              binding, empty_retries, provider_block)
+                              binding, empty_retries, provider_block, wire_mode=wire_mode)
     try:
         findings = canonical_selection_findings(sg.evaluate([identity.selection_choice(config.model)]))
     except VisionPolicyUnavailable:
@@ -163,9 +171,10 @@ def _wire_matches(backend, frozen):
         raise VisionDestinationChanged('vision adapter transport changed') from exc
     if (str(native_base_url(backend.base_url)) != frozen.base_url or str(client.base_url) != frozen.base_url
             or authorization(backend.base_url, backend.api_key) != frozen.authorization
-            or (frozen.provider in ('openrouter', 'deepinfra')
+            or getattr(backend, '_wire_mode', 'chat_completions') != frozen.wire_mode
+            or (frozen.provider in ('openrouter', 'deepinfra', 'nous')
                 and getattr(backend, '_provider_id', '') != frozen.provider)
-            or (frozen.provider not in ('openrouter', 'deepinfra') and getattr(backend, '_provider_id', ''))):
+            or (frozen.provider not in ('openrouter', 'deepinfra', 'nous') and getattr(backend, '_provider_id', ''))):
         raise VisionDestinationChanged('vision adapter destination changed')
 
 
@@ -205,7 +214,7 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
                         raise ValueError('duplicate vision request field')
                     result[key] = value
                 return result
-            payload = json.loads(request.content, object_pairs_hook=unique_pairs if frozen.provider_block or frozen.provider == "deepinfra" else dict)
+            payload = json.loads(request.content, object_pairs_hook=unique_pairs if frozen.provider_block or frozen.provider in {"deepinfra", "nous"} else dict)
             same_model = isinstance(payload, dict) and payload.get('model') == config.model
             if frozen.provider_block:
                 same_model = same_model and json.dumps(payload.get('provider'), sort_keys=True,
@@ -218,12 +227,17 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
                 or request.headers.get('Authorization', '') != frozen.authorization
                 or request.headers.get('Cookie')):
             raise VisionDestinationChanged('vision physical request changed')
+        if frozen.provider == 'nous' and (request.headers.get('x-api-key')
+                or request.headers.get('proxy-authorization')
+                or (frozen.wire_mode == 'anthropic_messages'
+                    and request.headers.get('anthropic-version') != '2023-06-01')):
+            raise VisionDestinationChanged('vision physical authentication changed')
         if recovery is not None:
             try:
                 messages = payload.get('messages', [])
                 image_bearing = any(
                     isinstance(message, dict) and isinstance(message.get('content'), list)
-                    and any(isinstance(part, dict) and part.get('type') == 'image_url'
+                    and any(isinstance(part, dict) and part.get('type') in {'image_url', 'image'}
                             for part in message['content']) for message in messages)
                 if recovery.started or image_bearing:
                     recovery.validate(request, marked=marked)
@@ -245,10 +259,11 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
         from agents.core.turn_notices import record_turn_notice
         logger.warning('%s (purpose=%s)', frozen.warning, notice_purpose)
         record_turn_notice(f'data_handling:{notice_purpose}', frozen.warning)
-    scope = vision_retry_scope(backend, config.model, check) if frozen.empty_retries else nullcontext(None)
+    scope = (vision_retry_scope(backend, config.model, check, max_attempts=1 + frozen.empty_retries)
+             if frozen.empty_retries or frozen.provider == 'nous' else nullcontext(None))
     with scope as recovery:
         final_hook_required = (recovery is not None or bool(frozen.provider_block)
-                               or bool(cleared_findings) or frozen.provider == 'deepinfra')
+                               or bool(cleared_findings) or frozen.provider in {'deepinfra', 'nous'})
         if final_hook_required:
             backend.client.event_hooks['request'].append(last_request_hook)
         try:

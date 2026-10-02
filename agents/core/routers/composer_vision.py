@@ -214,6 +214,9 @@ async def composer_status(refresh_catalog: bool = False):
         if env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower() == "deepinfra":
             from agents.core.llm.vision_deepinfra import prepare_config
             config = await prepare_config(force_refresh=refresh_catalog)
+        elif env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower() == "nous":
+            from agents.core.llm.vision_nous import prepare_config
+            config = await prepare_config(force_refresh=refresh_catalog)
         else:
             config = resolve_vlm_config()
         return nocache_json(
@@ -275,7 +278,8 @@ async def composer_describe(body: ComposerVisionBody):
         sg.record(findings, 'composer_vision')
         try:
             backend = VLMBackend(base_url=config.base_url, api_key=config.api_key, composer_auth=True,
-                                 **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra") else {}))
+                                 **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra", "nous") else {}),
+                                 **({"wire_mode": config.wire_mode} if config.backend == "nous" else {}))
             with composer_request_scope(config, backend, resolve_config=resolve_vlm_config,
                                         remote_ack=body.remote_ack, principal=Principal(channel="web", admin=False),
                                         frozen=identity, cleared_findings=identity.selection_findings) as recheck:

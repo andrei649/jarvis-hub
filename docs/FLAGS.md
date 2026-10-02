@@ -578,7 +578,7 @@ is a frozen table of five roles; the new names win when set, the old ones are fa
 |---|---|---|---|---|
 | `main` | none (`JARVIS_ROLE_MAIN_*` is **ignored**, the doctor says so) | settings `llm.*` | not env-selectable: the main model is chosen on the H378-guarded settings surfaces | the router |
 | `deep` | `JARVIS_ROLE_DEEP_MODEL` | `JARVIS_DEEP_MODEL`, then `deepseek-r1-distill-qwen-32b` | none (the router's local backend; `_PROVIDER`/`_BASE_URL` ignored) | the deep slot |
-| `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_MODEL` / `_BASE_URL` | legacy `JARVIS_VLM_*` for LM Studio/custom; none for OpenRouter/DeepInfra | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`), explicit `openrouter` or `deepinfra` | `resolve_vlm_config`; OpenRouter/DeepInfra composer/native backend; other consumers keep their local-only guards |
+| `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_PROFILE` / `_MODEL` / `_BASE_URL` | legacy `JARVIS_VLM_*` for LM Studio/custom; none for OpenRouter/DeepInfra/Nous | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`), explicit `openrouter`, `deepinfra` or `nous` | `resolve_vlm_config`; remote composer/native backend; local-only consumers keep their local guards |
 | `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | resolved vision route when video provider/base are unset | `lm-studio`, `openai-compatible`, `gemini` | opt-in, owner-approved `video_analyze` ToolRPC |
 | `approval_judge` | `JARVIS_ROLE_APPROVAL_JUDGE_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio` (default), `ollama`, `openai-compatible` | `autonomy/approval_judge.py` |
 
@@ -645,6 +645,38 @@ overrides. Account data stays encrypted under the Nerva data root. All four
 `/api/oauth/nous/*` routes require admin authorization; status makes no provider
 request, and logout removes only the selected local profile. Login alone does not
 configure vision or main-chat routing. See [Nous account setup](nous-auth.md).
+
+**Explicit Nous vision** uses `JARVIS_ROLE_VISION_PROVIDER=nous` and an owned
+`JARVIS_ROLE_VISION_PROFILE` (default `default`). The account's Portal and inference
+endpoint own the credential destination. `JARVIS_NOUS_INFERENCE_BASE_URL` is an
+explicit account endpoint override; if `JARVIS_ROLE_VISION_BASE_URL` is also set,
+it must exactly match the prepared account endpoint. A nonempty
+`JARVIS_ROLE_VISION_KEY` refuses configuration: it cannot replace account OAuth.
+The role's explicit `JARVIS_ROLE_VISION_MODEL` wins on the normal inference host;
+the welcome host always selects `nous/welcome`. Login alone enables neither image
+delivery nor main-chat selection.
+
+Without an explicit model, `GET /api/vlm/composer/status` prepares usable account
+credentials off the request loop and discovers a Portal vision recommendation. The
+public recommendation request carries no bearer token. A known free account uses
+only the free recommendation; paid or unknown entitlement tries paid, then free;
+if neither exists, selection falls back to `google/gemini-3.6-flash`. The public
+catalog has a 600-second profile/Portal cache and bounded disk last-good fallback.
+The account entitlement cache is separate and credential-scoped. The status query
+`refresh_catalog=true` refreshes catalog metadata; it does not force OAuth token
+rotation, though unusable credentials may undergo their normal refresh. An explicit
+role model and welcome endpoint bypass recommendation metadata.
+
+Image POSTs and role/policy readers use only the locally prepared selection. They
+do not refresh OAuth or discover a replacement model. Selection is stored under the
+encrypted account profile and becomes unavailable after logout, token/client/issuer
+or relevant configuration drift, or expiry. Remote destination, training and cost
+confirmations still apply to the actual model, endpoint and wire; local-only image
+consumers stay local. Inherited Nous video currently refuses until a video adapter
+exists. `JARVIS_NOUS_ANTHROPIC_WIRE=chat` is the default. `native` uses Messages
+only for `anthropic/*`; `auto` and invalid values currently use chat/completions.
+The wire is included in the reviewed destination identity. Automatic
+main → OpenRouter → Nous → DeepInfra selection remains unfinished.
 
 **Explicit DeepInfra vision** uses `JARVIS_ROLE_VISION_PROVIDER=deepinfra`.
 `JARVIS_ROLE_VISION_MODEL` pins a model and bypasses metadata discovery. Without

@@ -419,8 +419,8 @@ checkbox still names the destination; live routing changes invalidate that
 binding. The composer now displays separate unchecked training/cost confirmations
 when requested by the server, requires all of them before send, and clears them
 on image changes, refresh or draft clear. Unknown/malformed disclosures refuse;
-remote acknowledgment is independent. Automatic provider discovery,
-Nous and signed OpenRouter video remain unfinished.
+remote acknowledgment is independent. Automatic provider discovery
+and signed OpenRouter video remain unfinished.
 
 Explicit DeepInfra vision (H277, 2026-10-02) now uses the existing composer. With
 no explicit model, opening image status prepares a catalog selection; Refresh vision
@@ -431,5 +431,9 @@ Automatic cross-provider discovery and native mobile acceptance remain open.
 
 Nous account lifecycle (H277, 2026-10-02) is currently CLI plus owner API only:
 login/status/poll/logout. The HUD has no Nous account-management controls yet.
-This is explicit UI debt; account authentication alone does not add inference or
-automatic provider discovery to the image composer.
+This is explicit UI debt; account authentication alone does not select a provider.
+Explicit Nous vision now uses the existing image composer, model/destination
+display, refresh and confirmation controls. Status prepares an account-bound
+recommendation; image POST only uses that prepared selection. Chat/Messages wire
+changes invalidate confirmation. No account-management UI or automatic provider
+discovery is claimed by this server integration.

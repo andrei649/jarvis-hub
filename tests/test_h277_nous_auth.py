@@ -533,3 +533,20 @@ def test_device_declared_scope_list_remains_usable_after_completion():
     assert service.poll_login("default", login["login_id"]) == {"state": "complete"}
     assert store.read()["scope"] == ["inference:invoke"]
     assert service.status()["usable"] is True
+
+
+def test_peek_credentials_is_read_only_and_refuses_issuer_or_expiry():
+    now = [1_800_000_000]
+    store = _Store()
+    token = _jwt(now[0] + 3600)
+    store.rows["default"] = {"access_token": token, "refresh_token": "grant", "scope": "inference:invoke",
+                             "portal_base_url": "https://portal.nousresearch.com",
+                             "client_id": "nerva-test-public-client"}
+    called = []
+    service = _service(store, lambda request: called.append(request), now)
+    assert service.peek_credentials().api_key == token
+    assert called == []
+    now[0] += 3600
+    with pytest.raises(NousAuthError) as exc:
+        service.peek_credentials()
+    assert exc.value.reason == "unusable_token" and called == []

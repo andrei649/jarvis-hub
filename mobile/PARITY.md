@@ -326,5 +326,7 @@ provider configuration; native-device and live-provider acceptance remain open.
 
 Nous account lifecycle now has owner-only server routes and a terminal device-code
 flow. No responsive-web or native-mobile login controls are added in this
-prerequisite. Account login does not enable a model route; UI account management,
-provider inference and native-device acceptance remain open.
+prerequisite. Account login does not enable a model route. Explicit Nous vision
+now uses the responsive-web image composer with account-bound recommendations,
+Chat/Messages inference and the existing destination/training/cost confirmations.
+UI account management, native image intake and native-device acceptance remain open.

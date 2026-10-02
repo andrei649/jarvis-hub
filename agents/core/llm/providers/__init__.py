@@ -256,6 +256,14 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         data_policy_note="DeepInfra's data policy has not been verified for this vision route",
     ),
     ProviderProfile(
+        id="nous", display_name="Nous Vision", backend_kind="nous-vision",
+        auth_type="oauth", default_base_url="https://inference-api.nousresearch.com/v1",
+        base_url_env="JARVIS_NOUS_INFERENCE_BASE_URL",
+        capabilities=frozenset({"vision", "model-catalog", "cloud"}),
+        data_policy="unknown",
+        data_policy_note="Nous model data handling has not been verified for this vision route",
+    ),
+    ProviderProfile(
         id="xai", display_name="xAI Grok (Responses)", backend_kind="xai-responses",
         auth_type="bearer", auth_env="XAI_API_KEY", default_base_url="https://api.x.ai/v1",
         fallback_models=("grok-4.6", "grok-4.5"),

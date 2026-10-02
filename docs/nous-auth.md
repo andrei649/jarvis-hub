@@ -1,7 +1,7 @@
 # Nous account setup in Nerva
 
-The account lifecycle is implemented locally; Nous model inference is the next
-integration dependency. Signing in does not change the selected model or enable
+The account lifecycle and explicit Nous image route are implemented locally.
+Signing in alone does not select a vision provider, change the main model or enable
 cloud routing. No live Nous login or provider registration has been verified here.
 
 ## Connect an account
@@ -25,7 +25,7 @@ interval. Complete authorization in your own browser. Ctrl-C stops waiting; the
 pending flow expires without changing an existing account. Status is local and
 makes no network request. Logout clears that profile's local credentials and pending
 flow; it does not revoke the account at the provider. Other profiles remain intact.
-Profile names use1–64 ASCII letters/digits/underscores/hyphens, starting with a letter
+Profile names use 1–64 ASCII letters/digits/underscores/hyphens, starting with a letter
 or digit. Access tokens, refresh tokens and private device codes remain on the hub.
 
 ## Endpoints and persistence
@@ -54,12 +54,38 @@ poll additionally requires the login_id returned by login. Responses are no-stor
 and never return account credentials. No public endpoint returns prepared inference
 credentials or permits manual refresh-token injection.
 
-## Remaining integration
+## Select Nous for images
 
-The internal refresh-aware credentials API is ready for a native Nous consumer.
-Tier-aware recommended vision models, welcome-model routing, Anthropic Messages,
-automatic main → OpenRouter → Nous → DeepInfra selection, credential-pool breadth
-and anonymous-account lifecycle remain unfinished. HUD/native account controls and
-live provider acceptance are separate open work. Tests use synthetic credentials
-and intercepted native HTTP transports; successful tests do not establish that an
-OAuth client registration is accepted by the live provider.
+Set `JARVIS_ROLE_VISION_PROVIDER=nous`. `JARVIS_ROLE_VISION_PROFILE` chooses the
+logged-in account, defaulting to `default`. An explicit
+`JARVIS_ROLE_VISION_MODEL` pins the model on the normal inference endpoint. Without
+one, composer status discovers the Portal's public vision recommendation and saves
+the selection under the encrypted profile; the welcome endpoint uses
+`nous/welcome`. A known free account uses only the free recommendation. Paid or
+unknown entitlement tries paid then free, and an absent recommendation falls back
+to `google/gemini-3.6-flash`.
+
+The account owns its inference endpoint and bearer credential. Set
+`JARVIS_NOUS_INFERENCE_BASE_URL` only as a deliberate account endpoint override.
+Any `JARVIS_ROLE_VISION_BASE_URL` must exactly match the prepared endpoint;
+`JARVIS_ROLE_VISION_KEY` must remain empty. A separate role key cannot silently
+replace OAuth. `JARVIS_NOUS_ANTHROPIC_WIRE=chat` is the default. Setting `native`
+uses Anthropic Messages only for `anthropic/*` models. `auto` and invalid values
+currently stay on chat/completions; the wire choice is part of the reviewed image
+destination.
+
+`GET /api/vlm/composer/status` may prepare credentials and fetch recommendation
+metadata; `refresh_catalog=true` refreshes the public catalog without forcing an
+OAuth token rotation. Normal credential preparation can refresh an unusable token.
+Image POSTs and role/policy reads use the prepared local selection and never
+refresh OAuth or discover a replacement model. A selection expires on logout,
+account or configuration drift, or credential expiry. Remote image sends still
+need the existing destination, training and cost confirmations. Local-only image
+consumers remain local, and inherited Nous video is unavailable until its own
+adapter exists.
+
+Automatic main → OpenRouter → Nous → DeepInfra selection, credential-pool breadth,
+anonymous-account lifecycle, HUD/native account controls and live provider acceptance
+remain separate open work. Tests use synthetic credentials and intercepted native HTTP transports;
+successful tests do not establish that an OAuth client registration is accepted
+by the live provider.

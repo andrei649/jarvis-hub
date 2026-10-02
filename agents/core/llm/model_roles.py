@@ -129,7 +129,7 @@ ROLES: Mapping[str, RoleSpec] = MappingProxyType({
         "vision", "reads screenshots, documents and images", "JARVIS_ROLE_VISION",
         MappingProxyType({"provider": "JARVIS_VLM_BACKEND", "model": "JARVIS_VLM_MODEL",
                           "base_url": "JARVIS_VLM_URL"}),
-        frozenset({"lm-studio", "openai-compatible", "openrouter", "deepinfra"}),
+        frozenset({"lm-studio", "openai-compatible", "openrouter", "deepinfra", "nous"}),
         ("agents/core/llm/vlm.py resolve_vlm_config",)),
     "video": RoleSpec(
         "video", "reads approved video sources through video_analyze", "JARVIS_ROLE_VIDEO", MappingProxyType({}),
@@ -144,7 +144,7 @@ ROLES: Mapping[str, RoleSpec] = MappingProxyType({
 
 # The VLM adapter's backend selector <-> the provider profile id it speaks to.
 _VISION_BACKEND_OF = MappingProxyType({"lm-studio": "lmstudio", "openai-compatible": "custom",
-                                       "openrouter": "openrouter", "deepinfra": "deepinfra"})
+                                       "openrouter": "openrouter", "deepinfra": "deepinfra", "nous": "nous"})
 _VISION_PROVIDER_OF = MappingProxyType({v: k for k, v in _VISION_BACKEND_OF.items()})
 
 
@@ -256,6 +256,11 @@ def vision_env_view(env: Mapping[str, str] | None = None) -> tuple[str, str, str
 
         config = resolve_config(env)
         return config.backend, config.base_url, config.model, config.api_key, ""
+    if role_provider.lower() == "nous":
+        from .vision_nous import resolve_config
+
+        config = resolve_config(env)
+        return config.backend, config.base_url, config.model, config.api_key, ""
     backend = (_VISION_BACKEND_OF[_validate(spec, role_provider)] if role_provider
                else read("JARVIS_VLM_BACKEND"))
     role_url = read(spec.env_name("base_url")).strip()
@@ -351,6 +356,25 @@ def _resolve_vision(read, spec: RoleSpec, env: Mapping[str, str] | None) -> Reso
         return ResolvedRole("vision", True, "deepinfra", config.model, config.base_url,
                             MappingProxyType(source), bool(config.is_local), policy,
                             "", tuple(ignored))
+    if role_provider.lower() == "nous":
+        from .vision_nous import model_source
+        from .vision_nous import resolve_config as resolve_nous
+
+        source = {"provider": spec.env_name("provider"), "model": "nous_recommendation",
+                  "base_url": "JARVIS_NOUS_INFERENCE_BASE_URL" if read("JARVIS_NOUS_INFERENCE_BASE_URL") else "nous_account",
+                  "profile": "JARVIS_ROLE_VISION_PROFILE" if read("JARVIS_ROLE_VISION_PROFILE") else "default",
+                  "wire_mode": "JARVIS_NOUS_ANTHROPIC_WIRE" if read("JARVIS_NOUS_ANTHROPIC_WIRE") else "default"}
+        ignored = [name for name in ("JARVIS_VLM_BACKEND", "JARVIS_VLM_URL", "JARVIS_VLM_MODEL",
+                                    "JARVIS_VLM_KEY", "JARVIS_VLM_PRESET") if read(name).strip()]
+        try:
+            source["model"] = model_source(env)
+            config = resolve_nous(env)
+        except VLMNotConfigured as exc:
+            return ResolvedRole("vision", False, "", "", "", MappingProxyType(source),
+                                None, "", exc.reason, tuple(ignored))
+        return ResolvedRole("vision", True, "nous", config.model, config.base_url,
+                            MappingProxyType(source), bool(config.is_local),
+                            get_profile("nous").data_policy_for(config.model)[0], "", tuple(ignored))
     legacy_backend = read("JARVIS_VLM_BACKEND").strip().lower()
     _url, source["base_url"], shadow = _pick(read, spec, "base_url")
     ignored += shadow
@@ -443,7 +467,7 @@ def resolve_video_route(env: Mapping[str, str] | None = None) -> ResolvedVideoRo
                                                     "model": "default", "base_url": "default"}),
                                   None, "", exc.reason))
     if vision.configured:
-        if vision.provider_id in {"openrouter", "deepinfra"}:
+        if vision.provider_id in {"openrouter", "deepinfra", "nous"}:
             source = dict(vision.source)
             source["model"] = spec.env_name("model") if model else vision.source["model"]
             return ResolvedVideoRoute(ResolvedRole("video", False, "", "", "",
