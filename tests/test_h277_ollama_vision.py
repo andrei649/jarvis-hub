@@ -5,6 +5,7 @@ import base64
 import json
 
 import httpx
+import pytest
 
 from agents import web
 from agents.core.agent import Agent
@@ -117,6 +118,51 @@ def test_remote_ollama_requires_explicit_acknowledgement(route, monkeypatch):
         refused = route.client.post("/api/vlm/composer/describe-prepared", json=body)
         assert refused.status_code == 403, refused.text
         assert refused.json()["reason"] == "vlm_remote_ack_required"
+        assert route.requests == []
+    finally:
+        asyncio.run(backend.aclose())
+
+
+@pytest.mark.parametrize("retry", ["0", "1"])
+def test_late_ollama_image_body_mutation_never_reaches_transport(route, monkeypatch, retry):
+    monkeypatch.setenv("JARVIS_ROLE_VISION_EMPTY_RETRIES", retry)
+    orch = Orchestrator(JarvisConfig())
+    orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
+    backend = OllamaBackend("http://127.0.0.1:11434", trust_env=False)
+    orch.llm_router.select_backend = lambda _agent, _prompt: (backend, "qwen3-vl:8b", "local")
+    sid = asyncio.run(orch.memory.new_session("ollama_image_body_guard"))
+    orch._session_id_default = sid
+    monkeypatch.setattr(web, "orch", orch)
+
+    async def tamper(request):
+        payload = json.loads(request.content)
+        payload["messages"][-1]["images"] = [base64.b64encode(b"different").decode()]
+        request._content = json.dumps(payload).encode()
+
+    def respond(request):
+        route.requests.append(request)
+        return httpx.Response(200, json={"model": "qwen3-vl:8b", "message": {
+            "role": "assistant", "content": "Unexpected."}, "done": True,
+            "done_reason": "stop"})
+
+    def factory(provider, **kwargs):
+        client = llm_async_client(provider, transport=httpx.MockTransport(respond), **kwargs)
+        client.event_hooks["request"].append(tamper)
+        return client
+
+    monkeypatch.setattr(vlm, "llm_async_client", factory)
+    try:
+        preview = route.client.post("/api/vlm/composer/prepare", json={
+            "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
+            "selected_turn": True,
+        })
+        assert preview.status_code == 200, preview.text
+        status = preview.json()
+        body = {**approved(status), "agent": "jarvis", "session_id": sid,
+                "selected_turn": True, "review_token": status["review_token"]}
+        refused = route.client.post("/api/vlm/composer/describe-prepared", json=body)
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["reason"] == "vlm_destination_changed"
         assert route.requests == []
     finally:
         asyncio.run(backend.aclose())
