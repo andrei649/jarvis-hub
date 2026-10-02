@@ -1905,7 +1905,11 @@
   route binding, bounded failure categories and sequential single-send attempts. The
   focused integration has 627 passing cases; final full-suite verification is recorded
   in the [chain report](docs/hermes/h277-video-provider-chain-2026-10-02.md). Wider adapters,
-  shared auxiliary routing and live acceptance remain unfinished; this does not close
+  shared auxiliary routing and live acceptance remain unfinished. Native Gemini video
+  now sends actual inline bytes with isolated scoped credentials, container MIME and
+  pre-send/wire size limits;707focused cases passed and bounded review found no blocker.
+  See the [Gemini increment](docs/hermes/h277-gemini-video-2026-10-02.md) for verification
+  boundaries and open larger-upload/retry work. This does not close
   H277 or HEQ-1.
 
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current

@@ -21,6 +21,13 @@ from .http_client import PluginHTTPClient, PluginTimeouts
 from .llm.data_handling import authorize_role_target
 from .llm.egress import llm_async_client
 from .llm.video_failures import provider_failure_category, transport_failure_category
+from .llm.video_native import (
+    VIDEO_MIME,
+    VideoNativeRefused,
+    gemini_video_answer,
+    gemini_video_body,
+    gemini_video_mime,
+)
 from .llm.video_policy import (
     VideoPolicyRefused,
     authorization_check,
@@ -30,9 +37,6 @@ from .llm.video_policy import (
 )
 from .tool_rpc import ToolRPCValidationError
 
-VIDEO_MIME = {".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/mov",
-              ".avi": "video/mp4", ".mkv": "video/mp4", ".mpeg": "video/mpeg",
-              ".mpg": "video/mpeg"}
 # A 37.5 MiB binary becomes at most 50 MiB in the native base64 payload.
 MAX_VIDEO_BYTES = 37_500_000
 MAX_URL_CHARS = 2048
@@ -226,10 +230,15 @@ class VideoAnalysisTool:
 
     def _binding(self, args, *, source_data=None, actor=""):
         scope = FileScope.from_env()
-        kind, source, _ = _source(args["video_url"], scope)
+        kind, source, mime = _source(args["video_url"], scope)
         identities = describe_video_route_set()
         if not identities:
             raise VideoPolicyRefused("video role model is not configured")
+        if any(identity.provider == "gemini" for identity in identities):
+            try:
+                gemini_video_mime(mime)
+            except VideoNativeRefused as exc:
+                raise VideoPolicyRefused("video format is unavailable for this route") from exc
         for identity in identities:
             authorization_check(identity, allow_remote=args["allow_remote"],
                                 confirm_expensive=args["confirm_expensive"], router=self.router,
@@ -258,13 +267,15 @@ class VideoAnalysisTool:
                              f"{provider}/{model} at {origin.scheme}://{origin.netloc}")
             notice = "Analyze video with approved routes: " + "; ".join(lanes)
             if len(notice) > 200:
-                prefix = "Video routes (lm=LM Studio,oc=OpenAI-compatible): "
+                prefix = ("Video routes (lm=LM Studio,oc=OpenAI-compatible,g=Gemini): "
+                          if any(item.provider == "gemini" for item in identities) else
+                          "Video routes (lm=LM Studio,oc=OpenAI-compatible): ")
                 per_lane = (200 - len(prefix) - 2 * (len(identities) - 1)) // len(identities)
                 compact = []
                 for index, identity in enumerate(identities, 1):
                     origin = urlsplit(identity.request_url)
                     origin_text = f"{origin.scheme}://{origin.netloc}"
-                    code = "lm" if identity.provider == "lm-studio" else "oc"
+                    code = {"lm-studio": "lm", "openai-compatible": "oc", "gemini": "g"}[identity.provider]
                     label = f"{index}{'L' if identity.local else 'R'}:{code}/"
                     available = per_lane - len(label) - 1  # one separator before origin
                     model_budget = max(7, available // 3)
@@ -299,7 +310,7 @@ class VideoAnalysisTool:
 
     async def _attempt(self, identity, prompt, data_url, check):
         """Send once on one frozen lane; close before returning or selecting another."""
-        body = {"model": identity.model, "messages": [{"role": "user", "content": [
+        body = gemini_video_body(prompt, data_url) if identity.provider == "gemini" else {"model": identity.model, "messages": [{"role": "user", "content": [
             {"type": "text", "text": prompt}, {"type": "video_url", "video_url": {"url": data_url}},
         ]}], "stream": False}
         physical_send = False
@@ -329,8 +340,7 @@ class VideoAnalysisTool:
                             try:
                                 async with client.stream(
                                         "POST", identity.request_url, json=body,
-                                        headers={"Authorization": identity.authorization}
-                                        if identity.authorization else {}) as response:
+                                        headers=identity.request_headers) as response:
                                     result = bytearray()
                                     async for chunk in response.aiter_bytes():
                                         check()
@@ -343,7 +353,8 @@ class VideoAnalysisTool:
                                         if category is not None:
                                             raise _EligibleModelFailure(category)
                                         raise VideoPolicyRefused("video model status refused")
-                                    answer = json.loads(result)["choices"][0]["message"]["content"]
+                                    answer = (gemini_video_answer(json.loads(result)) if identity.provider == "gemini"
+                                              else json.loads(result)["choices"][0]["message"]["content"])
                             except asyncio.CancelledError:
                                 request_timeout = attempt_timeout.expired()
                                 raise
@@ -411,6 +422,8 @@ class VideoAnalysisTool:
                 prompt = ("Fully describe and explain everything happening in this video, including visual "
                           "content, motion, audio cues, text overlays, and scene transitions. "
                           "Then answer the following question:\n\n" + args["question"])
+                if any(identity.provider == "gemini" for identity in identities):
+                    gemini_video_body(prompt, data_url)
                 failures = []
                 for identity in identities:
                     check()

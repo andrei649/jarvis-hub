@@ -48,6 +48,7 @@ from urllib.parse import urlsplit
 
 from ..env_config import env_str
 from .providers import BUILTIN_PROVIDER_IDS, get_profile
+from .video_native import GEMINI_VIDEO_BASE
 
 __all__ = ["ROLES", "RoleSpec", "ResolvedRole", "RoleConfigError", "resolve", "describe",
            "vision_env_view", "resolve_video_route", "same_origin", "LMSTUDIO_VLM_BASE", "VIDEO_NOTE"]
@@ -131,7 +132,7 @@ ROLES: Mapping[str, RoleSpec] = MappingProxyType({
         ("agents/core/llm/vlm.py resolve_vlm_config",)),
     "video": RoleSpec(
         "video", "reads approved video sources through video_analyze", "JARVIS_ROLE_VIDEO", MappingProxyType({}),
-        frozenset({"lm-studio", "openai-compatible"}),
+        frozenset({"lm-studio", "openai-compatible", "gemini"}),
         ("agents/core/video_analysis.py video_analyze ToolRPC",)),
     "approval_judge": RoleSpec(
         "approval_judge", "scores a queued tool-call approval (advisory only)",
@@ -327,6 +328,9 @@ def _resolve_env_role(read, spec: RoleSpec) -> ResolvedRole:
     base = read(spec.env_name("base_url")).strip()
     if base:
         source["base_url"] = spec.env_name("base_url")
+    elif spec.name == "video" and provider == "gemini":
+        base = GEMINI_VIDEO_BASE
+        source["base_url"] = "default"
     else:
         profile = get_profile(provider)
         env_base = read(profile.base_url_env).strip() if profile.base_url_env else ""

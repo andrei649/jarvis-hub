@@ -24,6 +24,7 @@ from .data_handling import (
 from .direct_transport import require_direct_async_transport
 from .model_roles import RoleConfigError, _is_loopback_base, resolve_video_route
 from .providers import get_profile
+from .video_native import GEMINI_VIDEO_MAX_REQUEST_BYTES, gemini_request_url
 from .video_routes import VideoRouteConfigError, resolve_video_fallbacks
 
 
@@ -44,6 +45,14 @@ class VideoIdentity:
     authorization: str = field(repr=False)
     binding: tuple = field(repr=False)
 
+    @property
+    def request_headers(self) -> dict[str, str]:
+        if not self.authorization:
+            return {}
+        if self.provider == "gemini":
+            return {"x-goog-api-key": self.authorization}
+        return {"Authorization": self.authorization}
+
 
 def _describe_primary_video_target() -> VideoIdentity | None:
     """The exact currently configured role; listing never enables the tool."""
@@ -54,7 +63,7 @@ def _describe_primary_video_target() -> VideoIdentity | None:
     role = route.role
     if not role.configured:
         return None
-    if role.provider_id not in {"lm-studio", "openai-compatible"}:
+    if role.provider_id not in {"lm-studio", "openai-compatible", "gemini"}:
         raise VideoPolicyRefused("video provider has no native adapter")
     try:
         url = httpx.URL(role.base_url)
@@ -66,7 +75,8 @@ def _describe_primary_video_target() -> VideoIdentity | None:
         if (role.provider_id == "lm-studio" and not local) or (not local and url.scheme != "https"):
             raise ValueError("video role locality or TLS changed")
         base = role.base_url.rstrip("/")
-        request_url = (route.request_url if route.inherited else
+        request_url = (gemini_request_url(role.base_url, role.model) if role.provider_id == "gemini" else
+                       route.request_url if route.inherited else
                        base + ("/chat/completions" if base.endswith("/v1") else "/v1/chat/completions"))
     except Exception as exc:
         raise VideoPolicyRefused("invalid video role destination") from exc
@@ -74,8 +84,11 @@ def _describe_primary_video_target() -> VideoIdentity | None:
     policy, note = profile.data_policy_for(role.model)
     if role.provider_id == "openai-compatible" or not local:
         policy, note = "unknown", "Video endpoint data handling is unknown."
-    key = env_str("JARVIS_ROLE_VIDEO_KEY", "").strip()
-    if not key:
+    raw_key = env_str("JARVIS_ROLE_VIDEO_KEY", "")
+    if role.provider_id == "gemini" and (len(raw_key) > 4096 or any(not 32 <= ord(c) <= 126 for c in raw_key)):
+        raise VideoPolicyRefused("invalid video role key")
+    key = raw_key.strip()
+    if not key and role.provider_id != "gemini":
         # Only the vision adapter's guarded effective key may cross to video,
         # and only onto its own exact native endpoint and provider.
         try:
@@ -90,9 +103,11 @@ def _describe_primary_video_target() -> VideoIdentity | None:
                 key = vision.api_key
         except (ValueError, VLMNotConfigured, VisionPolicyUnavailable):
             pass
-    authorization = f"Bearer {key}" if key else ""
+    authorization = key if role.provider_id == "gemini" else f"Bearer {key}" if key else ""
     binding = (role.provider_id, role.model, role.base_url, request_url, authorization,
                local, policy, note, env_flag("JARVIS_ROLE_VIDEO_ALLOW_REMOTE"))
+    if role.provider_id == "gemini":
+        binding += ("gemini_generate_content", "x-goog-api-key")
     return VideoIdentity(VIDEO_TARGET, role.provider_id, role.model, "dedicated", policy, note,
                          local, request_url, authorization, binding)
 
@@ -116,11 +131,13 @@ def describe_video_route_set() -> tuple[VideoIdentity, ...]:
         if route.provider == "openai-compatible" or not local:
             policy, note = "unknown", "Video endpoint data handling is unknown."
         base = route.base_url.rstrip("/")
-        request_url = str(httpx.URL(
-            base + ("/chat/completions" if base.endswith("/v1") else "/v1/chat/completions")))
-        authorization = f"Bearer {route.api_key}" if route.api_key else ""
+        request_url = (gemini_request_url(base, route.model) if route.provider == "gemini" else
+                       str(httpx.URL(base + ("/chat/completions" if base.endswith("/v1") else "/v1/chat/completions"))))
+        authorization = route.api_key if route.provider == "gemini" else f"Bearer {route.api_key}" if route.api_key else ""
         binding = (route.provider, route.model, route.base_url, request_url, authorization,
                    local, policy, note, env_flag("JARVIS_ROLE_VIDEO_ALLOW_REMOTE"))
+        if route.provider == "gemini":
+            binding += ("gemini_generate_content", "x-goog-api-key")
         identities.append(VideoIdentity(f"role:video_fallback_{route.slot}", route.provider,
                                         route.model, "dedicated", policy, note, local,
                                         request_url, authorization, binding))
@@ -214,6 +231,9 @@ def native_video_request_scope(identity: VideoIdentity, client: httpx.AsyncClien
     def validate(request: httpx.Request, *, marked: bool):
         try:
             require_direct_async_transport(client, request.url)
+            if (identity.provider == "gemini"
+                    and len(request.content) >= GEMINI_VIDEO_MAX_REQUEST_BYTES):
+                raise VideoPolicyRefused("video physical request too large")
             body = json.loads(request.content)
             actual_digest = hashlib.sha256(json.dumps(
                 body, sort_keys=True, separators=(",", ":"),
@@ -225,7 +245,8 @@ def native_video_request_scope(identity: VideoIdentity, client: httpx.AsyncClien
             raise VideoPolicyRefused("video physical request refused") from exc
         if ((request.extensions.get("nerva_video_request") is marker) != marked
                 or request.method != "POST" or str(request.url) != identity.request_url
-                or request.headers.get("Authorization", "") != identity.authorization
+                or request.headers.get_list("Authorization") != ([identity.authorization] if identity.provider != "gemini" and identity.authorization else [])
+                or request.headers.get_list("x-goog-api-key") != ([identity.authorization] if identity.provider == "gemini" and identity.authorization else [])
                 or request.headers.get("Cookie") or not valid):
             raise VideoPolicyRefused("video physical request changed")
 

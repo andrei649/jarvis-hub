@@ -550,7 +550,7 @@ is a frozen table of five roles; the new names win when set, the old ones are fa
 | `main` | none (`JARVIS_ROLE_MAIN_*` is **ignored**, the doctor says so) | settings `llm.*` | not env-selectable: the main model is chosen on the H378-guarded settings surfaces | the router |
 | `deep` | `JARVIS_ROLE_DEEP_MODEL` | `JARVIS_DEEP_MODEL`, then `deepseek-r1-distill-qwen-32b` | none (the router's local backend; `_PROVIDER`/`_BASE_URL` ignored) | the deep slot |
 | `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_MODEL` / `_BASE_URL` | `JARVIS_VLM_BACKEND` / `JARVIS_VLM_MODEL` / `JARVIS_VLM_URL` | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`) | `resolve_vlm_config` and all its consumers |
-| `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | resolved vision route when video provider/base are unset | `lm-studio`, `openai-compatible` | opt-in, owner-approved `video_analyze` ToolRPC |
+| `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | resolved vision route when video provider/base are unset | `lm-studio`, `openai-compatible`, `gemini` | opt-in, owner-approved `video_analyze` ToolRPC |
 | `approval_judge` | `JARVIS_ROLE_APPROVAL_JUDGE_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio` (default), `ollama`, `openai-compatible` | `autonomy/approval_judge.py` |
 
 A provider value is a ProviderProfile id: an unknown one refuses `role_provider_unknown`
@@ -568,6 +568,8 @@ Base URLs: vision keeps the VLM `/v1` convention (LM Studio default
 `http://localhost:1234/v1`, never `JARVIS_LM_STUDIO_URL`); the judge and explicit video routes use the
 provider profile's address (`JARVIS_LM_STUDIO_URL` / `JARVIS_OLLAMA_URL` / `OPENAI_BASE_URL`,
 else `http://localhost:1234` / `http://localhost:11434` / `https://api.openai.com/v1`).
+Explicit Gemini video defaults to `https://generativelanguage.googleapis.com/v1beta`;
+this video-only default does not change the chat backend or vision role.
 `python scripts/doctor.py` lists every role (row `model_roles`) and warns on a bad
 provider id, a shadowed legacy name (compared exactly; only the provider selector ignores
 case) or an ignored variable. Its vision line is `resolve_vlm_config`'s own verdict: a
@@ -581,10 +583,11 @@ userinfo, path, query and fragment are never displayed. The roles API omits URLs
 route. When both video provider and base URL are unset, a configured vision route
 supplies its actual native endpoint; a nonblank, non-`auto` video model overrides its
 model, otherwise video inherits the resolved vision model. An explicit video provider
-or base URL needs its own model. An invalid configured vision route refuses instead
+or base URL needs its own model. When inheriting vision, an invalid configured vision route refuses instead
 of silently selecting another destination. With no vision configuration, the existing
 explicit video-model route remains available. It reads one file within `JARVIS_FILE_ROOTS` or one public HTTP(S) video
-URL, then sends a native `video_url` message. The configured model must understand
+URL, then sends a `video_url` message to LM Studio/OpenAI-compatible, or native
+`contents`/`inline_data` to an explicit Gemini route. The configured model must understand
 that native payload; listing an adapter does not prove the installed model supports
 video. There is no frame extraction, Ollama video adapter, same-provider retry,
 inbound attachment ingestion, or video generation in this consumer.
@@ -598,11 +601,27 @@ otherwise video may inherit the vision adapter's guarded effective key only for 
 same provider and normalized complete native request URL. Same-host/different-path
 destinations cannot borrow that key; no raw global provider key is read. Changing
 inherited configuration invalidates the approval before network dispatch and withholds
-late results. Recomputing the approval class can still read the scoped local file to
+late results. Explicit Gemini video uses only `JARVIS_ROLE_VIDEO_KEY` as
+`x-goog-api-key`; it never reads `GEMINI_API_KEY` or inherits a vision key/configuration.
+Its primary key, like fallback keys, is limited to 4096 printable ASCII characters.
+Gemini models accept an optional `models/` prefix followed by one ASCII model slug
+using letters, digits, dots, underscores and hyphens; the slug starts alphanumerically.
+Recomputing the approval class can still read the scoped local file to
 verify its content hash. Local files use bounded,
 descriptor-scoped reads on POSIX systems. Public URL reads validate DNS and redirects,
 refuse embedded credentials, and cap the download at 37,500,000 bytes (50,000,000
 base64 characters). Private-network URL sources are refused.
+
+Container MIME declarations follow the extension: MP4 `video/mp4`, WebM `video/webm`,
+MOV `video/quicktime`, AVI `video/avi`, MKV `video/x-matroska`, MPEG/MPG `video/mpeg`.
+This is a declaration, not media decoding or verification. Gemini refuses Matroska;
+if any configured candidate cannot accept the declared MIME, intake refuses the chain.
+Native Gemini JSON must be **strictly below 20,000,000 UTF-8 bytes**, including prompt
+and base64. This conservative local implementation bound is checked before any model
+client or lane send and again on actual request bytes. Larger upload/lifecycle support
+remains open. A Gemini success must contain one unblocked STOP candidate and nonempty
+visible text; thought parts are omitted. Blocked, malformed or empty success neither
+discloses an answer nor authorizes fallback.
 
 Remote destinations require HTTPS, `JARVIS_ROLE_VIDEO_ALLOW_REMOTE=1`, per-call
 `allow_remote=true`, and an independent, configuration-bound **Video analysis**
@@ -614,7 +633,7 @@ requires a separate live acceptance run.
 
 An optional `JARVIS_ROLE_VIDEO_FALLBACKS` JSON array configures up to four ordered
 fallbacks. Every record must contain exactly `provider`, `model` and `base_url`;
-only the native `lm-studio` and `openai-compatible` adapters are supported. The raw
+the native `lm-studio`, `openai-compatible` and `gemini` adapters are supported. The raw
 array is capped at 8192 UTF-8 bytes; model names at 256 characters, URLs at 2048,
 and fixed slot keys at 4096 printable ASCII characters. Blank/`auto` models,
 extra fields, incompatible protocol hosts, URL credentials/query/fragment and

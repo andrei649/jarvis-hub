@@ -271,11 +271,13 @@ def test_video_role_names_its_consumer_and_refuses_ollama(monkeypatch):
     assert exc.value.reason == "role_provider_unsupported"
 
 
-def test_video_role_validates_its_provider(monkeypatch):
+def test_video_role_accepts_explicit_gemini_without_enabling_vision(monkeypatch):
     monkeypatch.setenv("JARVIS_ROLE_VIDEO_PROVIDER", "gemini")
-    with pytest.raises(RoleConfigError) as exc:
-        model_roles.resolve("video")
-    assert exc.value.reason == "role_provider_unsupported"
+    monkeypatch.setenv("JARVIS_ROLE_VIDEO_MODEL", "gemini-2.5-flash")
+    role = model_roles.resolve("video")
+    assert role.provider_id == "gemini"
+    assert role.base_url == "https://generativelanguage.googleapis.com/v1beta"
+    assert "gemini" not in model_roles.ROLES["vision"].providers
 
 
 def test_inherited_video_role_listing_matches_physical_locality_and_model(monkeypatch):

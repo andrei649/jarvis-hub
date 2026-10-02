@@ -3,7 +3,8 @@
 Generated 2026-10-02 Europe/Bucharest. Goal: move the approved video consumer toward
 full pinned Hermes auxiliary parity by adding a real Gemini request adapter.
 Base/head: `b3512adf1592c9967267d34f9891606bcd489295`.
-Status: designed, implementation pending. Next action: execute the linked plan.
+Status: implemented with707focused regressions passing and bounded review clear.
+Next action: freeze the integration commit and run the full backend milestone.
 No push, merge, deployment, live provider call, paid spend or credential import.
 
 ## Evidence and decision
