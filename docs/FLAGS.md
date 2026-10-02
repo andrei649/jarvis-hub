@@ -859,7 +859,7 @@ fetching a URL source again; local-file checks can reread bytes to verify their
 approved hash. Results expose fixed attempt categories and the successful model,
 without failed provider bodies, destination paths or credentials.
 
-**Shared local auxiliary models (H277).** Six optional model IDs select a model
+**Shared local auxiliary models (H277).** Seven optional model IDs select a model
 on the router's existing local backend independently of the conversation model:
 
 | Setting | Consumer | Fallback when unset or ASCII-space-only |
@@ -870,6 +870,7 @@ on the router's existing local backend independently of the conversation model:
 | `JARVIS_AUX_COMPRESSION_MODEL` | Context compression summary | Active local model, then `qwen3:7b` |
 | `JARVIS_AUX_ACQUISITION_CAPABILITY_MODEL` | Governed capability generation | Active local model, then `local` |
 | `JARVIS_AUX_ACQUISITION_DRAFT_MODEL` | Grounded acquisition plan drafting | Active local model, then `local` |
+| `JARVIS_AUX_SOUL_DESCRIPTION_MODEL` | Local SOUL description proposal | Active local model, then `qwen3:7b` |
 
 Read when each operation starts; changing one does not change the active
 conversation model or the other auxiliary tasks. Acquisition captures the backend
@@ -878,6 +879,9 @@ at most 256 raw characters; surrounding ASCII spaces are removed. Invalid types,
 controls/nonprintable characters or oversized values refuse that auxiliary call without echoing
 the value or silently selecting another model. These settings do not install a
 model, choose a provider/URL/key, enable a feature, or add retries/cloud fallback.
+SOUL drafts also require a proven direct loopback LM Studio or Ollama transport;
+their private persona text is checked against the selected model, prompt and
+request budget at dispatch.
 
 The shared invocation retains the existing H513 policy checks at every attempt
 and physical request. Titles, rewriting, review and compression reject job-model
