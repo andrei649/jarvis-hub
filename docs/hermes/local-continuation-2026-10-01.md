@@ -167,3 +167,41 @@ Exactly10 previously-current rows were inspected and refreshed; H681 remains
 stale because its orchestrator/coordinator pins were already mismatched at the
 base. The original207 stale rows and all capability statuses remain unchanged.
 No live provider, deployment or remote publication is part of this new batch.
+
+
+## Current local video empty recovery — 2026-10-02
+
+Base `afcc652dcc0f5e0caa6ea8b826fb748848abac41`; runtime
+`45d76bbef62cb347b19d8a89ee68988db74476bc`, branch
+`codex/h277-video-empty-retry-20261002`. Opt-in valid-empty recovery restarts the
+whole approved video chain once, including from a fallback empty, with a signed
+budget and fresh authority on each send. Prepared source/question and total
+180-second deadline stay fixed. Existing nonempty behavior and default-zero
+contracts remain. See the [implementation report](h277-video-empty-retry-2026-10-02.md)
+and [frozen source review](h277-video-empty-source-review-2026-10-02.md).
+
+Full backend on clean `a2ddbbb251175aa6d5bd17debe9440c9c518b253`:
+**20,630 passed, 34 skipped, one expected failure**, with 64 warnings. All 4,306
+tracked regular files and HEAD stayed unchanged. Parent-focused regression:
+647 passed, including 61 new cases; record/doc guards: 92 passed. Exact runtime
+mutation campaign: 12 valid, 10 killed, two redundant-guard survivors, zero invalid;
+both 500-test baselines passed and all archive file hashes were restored. The
+compound removal of both bounds was caught. Pure codec and provenance mutations
+are identified separately in the [mutation report](evidence/h277-video-empty-mutations-2026-10-02.md).
+The [integration receipt](evidence/h277-video-empty-integration-2026-10-02.json)
+preserves commands, source hashes, per-case edits/results and artifact hashes;
+the replayable mutation runner is saved beside the report.
+
+Only previously-current H277/H513 were reevaluated and refreshed, with no status
+changes. Counts remain 172 equivalent, 254 partial, 64 missing and 207 requiring
+review. No frontend source/schema change, live provider/device proof or coverage
+percentage is claimed. The inherited Gemini behavior that ignores malformed
+thought parts beside a visible answer remains separate output-normalization work.
+
+Next action: design the bounded image valid-empty increment from the
+[source investigation](h277-image-empty-investigation-2026-10-02.md), resolving
+interactive/remote/unattended budget and authority differences before modifying
+shared VLM behavior. Continue the full accepted Hermes backlog; this milestone
+does not complete H277. All new commits remain local; canonical main remains at
+cd2aa666. Prior published GitHub Windows CI was still in progress at the last check
+and is not implied green by this local run.

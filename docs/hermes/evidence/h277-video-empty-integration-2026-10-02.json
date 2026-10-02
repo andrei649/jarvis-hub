@@ -1,0 +1,723 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-02T03:40:59.522838+00:00",
+  "base_commit": "afcc652dcc0f5e0caa6ea8b826fb748848abac41",
+  "runtime_commit": "45d76bbef62cb347b19d8a89ee68988db74476bc",
+  "full_backend_snapshot": {
+    "head": "a2ddbbb251175aa6d5bd17debe9440c9c518b253",
+    "head_after": "a2ddbbb251175aa6d5bd17debe9440c9c518b253",
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests/",
+      "-n",
+      "4",
+      "--dist",
+      "loadfile",
+      "--timeout=90",
+      "--junitxml=/tmp/nerva-video-empty-full-20261002.xml"
+    ],
+    "returncode": 0,
+    "seconds": 224.04733054107055,
+    "changed_tracked_files": [],
+    "git_status_after": "",
+    "tracked_regular_files": 4306,
+    "fingerprint": "73d481761615b5255b0ca978be1001a435c10d1c9fec67e6bcab8fc94fc0a466"
+  },
+  "selected_source_sha256": {
+    "agents/core/video_analysis.py": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+    "agents/core/llm/video_retry.py": "c70792012f1d0ad5c6fef270546012c068a43a07a5e4650cd2a868d75dac1969",
+    "agents/core/llm/video_native.py": "48d0e1fc9dfa7c29d0c1bcbf68ada47251fd078cb2048cab035e30f881cf012f",
+    "tests/test_h277_video_empty_retry.py": "bff4f5db190544e5376b156d6ef9ff97a545e3cdf7989ffa06a458b5b26eb74e"
+  },
+  "verification": {
+    "full_backend": {
+      "artifact": "/tmp/nerva-video-empty-full-20261002.xml",
+      "sha256": "84426b33c66be93003a74bdfa6ab6963d90cdbc084de3508e0858a364c84782f",
+      "total": 20665,
+      "passed": 20630,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1
+    },
+    "focused": {
+      "artifact": "/tmp/nerva-video-empty-parent-focused-20261002.xml",
+      "sha256": "55639f1b2bec9da60d6e9b01a1e3000b7a299209305999073b3655dd76983b10",
+      "total": 647,
+      "passed": 647,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "records": {
+      "artifact": "/tmp/nerva-video-empty-records-20261002.xml",
+      "sha256": "cf3362175bdef403f5cc1238edcf49a8754e38b518074ff0cd1f9db8fe96f154",
+      "total": 92,
+      "passed": 92,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "mutation_baseline": {
+      "artifact": "/tmp/nerva-video-empty-mutations-20261002/baseline.xml",
+      "sha256": "d0d0e3b8b7cf79c27e5a9cb5e49a88d49ef9d40972091b4766cdba48ec01da63",
+      "total": 500,
+      "passed": 500,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "mutation_final_baseline": {
+      "artifact": "/tmp/nerva-video-empty-mutations-20261002/final_baseline.xml",
+      "sha256": "fe4c676d17cdb71044977437882d6a33fe6a53f81fc2fe94b5234d114e75b7f5",
+      "total": 500,
+      "passed": 500,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    }
+  },
+  "red_first": {
+    "artifact": "/tmp/nerva-video-empty-red-20261002.xml",
+    "sha256": "ec0439bb09b7b8e935e3627a2fdf1d8a68dd785a739e3db785f7c71c6e788bf5",
+    "total": 4,
+    "passed": 0,
+    "failed": 4,
+    "errors": 0,
+    "skipped": 0,
+    "xfailed": 0
+  },
+  "mutations": {
+    "summary": {
+      "baseline_tests": 500,
+      "cases": 12,
+      "commit": "45d76bbef62cb347b19d8a89ee68988db74476bc",
+      "final_green": true,
+      "final_source_restored": true,
+      "final_tests": 500,
+      "invalid": 0,
+      "killed": 10,
+      "survived": 2
+    },
+    "cases": [
+      {
+        "diff": "/tmp/nerva-video-empty-mutations-20261002/01_empty_policy_hmac.diff",
+        "edits": [
+          {
+            "anchor": "        if empty_count:\n            material = {**material, \"_internal_video_empty_policy\": \"consumer-once:v1\"}\n",
+            "anchor_count": 1,
+            "replacement": "        if False:\n            material = {**material, \"_internal_video_empty_policy\": \"consumer-once:v1\"}\n"
+          }
+        ],
+        "file": "agents/core/video_analysis.py",
+        "id": "01_empty_policy_hmac",
+        "intent": "Remove the enabled consumer policy marker from signed class material.",
+        "mutant_sha256": "17352de3e48f9c6627695ba7fe75553e288b2f2890cf28b26d689b6a682947d6",
+        "original_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "restored": true,
+        "restored_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_video_empty_retry.py::test_setting_flip_after_signed_approval_refuses_before_model_send",
+            "tests/test_h277_video_empty_retry.py::test_setting_flip_on_first_client_close_blocks_restart",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-video-empty-mutations-20261002/01_empty_policy_hmac.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-video-empty-mutations-1dsjwbd0",
+          "duration_seconds": 2.235,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_video_empty_retry::test_setting_flip_after_signed_approval_refuses_before_model_send",
+            "tests.test_h277_video_empty_retry::test_setting_flip_on_first_client_close_blocks_restart"
+          ],
+          "failures": 2,
+          "junit": "/tmp/nerva-video-empty-mutations-20261002/01_empty_policy_hmac.xml",
+          "log": "/tmp/nerva-video-empty-mutations-20261002/01_empty_policy_hmac.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 2,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-video-empty-mutations-20261002/02_empty_notice_disclosure.diff",
+        "edits": [
+          {
+            "anchor": "            elif empty_count:\n                prefix = \"Video full-chain empty restart once: \"\n",
+            "anchor_count": 1,
+            "replacement": "            elif empty_count:\n                prefix = \"Video primary retry once: \"\n"
+          }
+        ],
+        "file": "agents/core/video_analysis.py",
+        "id": "02_empty_notice_disclosure",
+        "intent": "Omit explicit full-chain retry disclosure from the empty-only notice.",
+        "mutant_sha256": "7846417af638cd6d171fb68982c495f142827f6e563dfee38ca045a7f6af0b38",
+        "original_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "restored": true,
+        "restored_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_video_empty_retry.py::test_setting_flip_after_signed_approval_refuses_before_model_send",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-video-empty-mutations-20261002/02_empty_notice_disclosure.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-video-empty-mutations-1dsjwbd0",
+          "duration_seconds": 2.062,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_video_empty_retry::test_setting_flip_after_signed_approval_refuses_before_model_send"
+          ],
+          "failures": 1,
+          "junit": "/tmp/nerva-video-empty-mutations-20261002/02_empty_notice_disclosure.xml",
+          "log": "/tmp/nerva-video-empty-mutations-20261002/02_empty_notice_disclosure.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 1,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-video-empty-mutations-20261002/03_empty_parser_budget_two.diff",
+        "edits": [
+          {
+            "anchor": "    if value == \"1\":\n        return 1\n    raise VideoEmptyRetryConfigError(\"invalid video empty retry setting\")\n",
+            "anchor_count": 1,
+            "replacement": "    if value in {\"1\", \"2\"}:\n        return int(value)\n    raise VideoEmptyRetryConfigError(\"invalid video empty retry setting\")\n"
+          }
+        ],
+        "file": "agents/core/llm/video_retry.py",
+        "id": "03_empty_parser_budget_two",
+        "intent": "Accept owner empty retry budget two, outside the fixed 0/1 contract.",
+        "mutant_sha256": "132faad3d5a0baac06b5e7d4afcc5fd35290cdb418c38adbd63a0425305cfdb0",
+        "original_sha256": "c70792012f1d0ad5c6fef270546012c068a43a07a5e4650cd2a868d75dac1969",
+        "restored": true,
+        "restored_sha256": "c70792012f1d0ad5c6fef270546012c068a43a07a5e4650cd2a868d75dac1969",
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_video_empty_retry.py::test_empty_budget_invalid_values_are_sanitized",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-video-empty-mutations-20261002/03_empty_parser_budget_two.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-video-empty-mutations-1dsjwbd0",
+          "duration_seconds": 2.0,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_video_empty_retry::test_empty_budget_invalid_values_are_sanitized[2]"
+          ],
+          "failures": 1,
+          "junit": "/tmp/nerva-video-empty-mutations-20261002/03_empty_parser_budget_two.xml",
+          "log": "/tmp/nerva-video-empty-mutations-20261002/03_empty_parser_budget_two.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 9,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-video-empty-mutations-20261002/04_consumer_cap_only.diff",
+        "edits": [
+          {
+            "anchor": "                for consumer_call in range(1, 2 + empty_count):\n",
+            "anchor_count": 1,
+            "replacement": "                for consumer_call in range(1, 3 + empty_count):\n"
+          }
+        ],
+        "file": "agents/core/video_analysis.py",
+        "id": "04_consumer_cap_only",
+        "intent": "Raise the loop cap alone; the second-empty terminal guard remains.",
+        "mutant_sha256": "2bbf5a1ee43ff9ad7b93e6f75e654f8f0b415a6c8b23de7b7bbaae39ee955a61",
+        "original_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "restored": true,
+        "restored_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "status": "SURVIVED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_video_empty_retry.py::test_second_empty_is_terminal_and_never_starts_third_call",
+            "tests/test_h277_video_empty_retry.py::test_five_route_chain_never_exceeds_two_full_calls",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-video-empty-mutations-20261002/04_consumer_cap_only.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-video-empty-mutations-1dsjwbd0",
+          "duration_seconds": 2.678,
+          "errors": 0,
+          "failed_tests": [],
+          "failures": 0,
+          "junit": "/tmp/nerva-video-empty-mutations-20261002/04_consumer_cap_only.xml",
+          "log": "/tmp/nerva-video-empty-mutations-20261002/04_consumer_cap_only.log",
+          "returncode": 0,
+          "skipped": 0,
+          "tests": 2,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-video-empty-mutations-20261002/05_second_empty_guard_only.diff",
+        "edits": [
+          {
+            "anchor": "                                if consumer_call > empty_count:\n",
+            "anchor_count": 1,
+            "replacement": "                                if consumer_call > empty_count + 1:\n"
+          }
+        ],
+        "file": "agents/core/video_analysis.py",
+        "id": "05_second_empty_guard_only",
+        "intent": "Relax the terminal guard alone; the two-call loop cap remains.",
+        "mutant_sha256": "0bfdd7f50d45e1668f62e74c00fc5773268f9dac7433cb09b15c8ae8f92c55c1",
+        "original_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "restored": true,
+        "restored_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "status": "SURVIVED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_video_empty_retry.py::test_second_empty_is_terminal_and_never_starts_third_call",
+            "tests/test_h277_video_empty_retry.py::test_five_route_chain_never_exceeds_two_full_calls",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-video-empty-mutations-20261002/05_second_empty_guard_only.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-video-empty-mutations-1dsjwbd0",
+          "duration_seconds": 2.74,
+          "errors": 0,
+          "failed_tests": [],
+          "failures": 0,
+          "junit": "/tmp/nerva-video-empty-mutations-20261002/05_second_empty_guard_only.xml",
+          "log": "/tmp/nerva-video-empty-mutations-20261002/05_second_empty_guard_only.log",
+          "returncode": 0,
+          "skipped": 0,
+          "tests": 2,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-video-empty-mutations-20261002/06_compound_cap_and_terminal.diff",
+        "edits": [
+          {
+            "anchor": "                for consumer_call in range(1, 2 + empty_count):\n",
+            "anchor_count": 1,
+            "replacement": "                for consumer_call in range(1, 3 + empty_count):\n"
+          },
+          {
+            "anchor": "                                if consumer_call > empty_count:\n",
+            "anchor_count": 1,
+            "replacement": "                                if consumer_call > empty_count + 1:\n"
+          }
+        ],
+        "file": "agents/core/video_analysis.py",
+        "id": "06_compound_cap_and_terminal",
+        "intent": "COMPOUND: relax BOTH call-cap guards to allow an actual third consumer call.",
+        "mutant_sha256": "5ce91cb61b6f87a464ae98ffbd7afb5275f396e7bfb1c4f752baa9eb5af98c93",
+        "original_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "restored": true,
+        "restored_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_video_empty_retry.py::test_second_empty_is_terminal_and_never_starts_third_call",
+            "tests/test_h277_video_empty_retry.py::test_five_route_chain_never_exceeds_two_full_calls",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-video-empty-mutations-20261002/06_compound_cap_and_terminal.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-video-empty-mutations-1dsjwbd0",
+          "duration_seconds": 2.716,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_video_empty_retry::test_second_empty_is_terminal_and_never_starts_third_call",
+            "tests.test_h277_video_empty_retry::test_five_route_chain_never_exceeds_two_full_calls"
+          ],
+          "failures": 2,
+          "junit": "/tmp/nerva-video-empty-mutations-20261002/06_compound_cap_and_terminal.xml",
+          "log": "/tmp/nerva-video-empty-mutations-20261002/06_compound_cap_and_terminal.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 2,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-video-empty-mutations-20261002/07_disable_chain_restart.diff",
+        "edits": [
+          {
+            "anchor": "                    if not restart:\n                        break\n",
+            "anchor_count": 1,
+            "replacement": "                    if restart:\n                        break\n"
+          }
+        ],
+        "file": "agents/core/video_analysis.py",
+        "id": "07_disable_chain_restart",
+        "intent": "Prevent the valid-empty second full chain, including fallback-empty restart at primary.",
+        "mutant_sha256": "4e61914056134376adcc8eb42661a00072defa4f6f314a8f74fdaae1dd2e262c",
+        "original_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "restored": true,
+        "restored_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_video_empty_retry.py::test_empty_fallback_restarts_from_primary",
+            "tests/test_h277_video_empty_retry.py::test_signed_compatible_primary_empty_restarts_full_consumer",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-video-empty-mutations-20261002/07_disable_chain_restart.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-video-empty-mutations-1dsjwbd0",
+          "duration_seconds": 2.055,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_video_empty_retry::test_empty_fallback_restarts_from_primary",
+            "tests.test_h277_video_empty_retry::test_signed_compatible_primary_empty_restarts_full_consumer"
+          ],
+          "failures": 2,
+          "junit": "/tmp/nerva-video-empty-mutations-20261002/07_disable_chain_restart.xml",
+          "log": "/tmp/nerva-video-empty-mutations-20261002/07_disable_chain_restart.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 2,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-video-empty-mutations-20261002/08_transient_budget_per_call.diff",
+        "edits": [
+          {
+            "anchor": "                        max_attempts = 1 + retry_count if route_index == 0 else 1\n",
+            "anchor_count": 1,
+            "replacement": "                        max_attempts = 1 + retry_count if route_index == 0 and consumer_call == 1 else 1\n"
+          }
+        ],
+        "file": "agents/core/video_analysis.py",
+        "id": "08_transient_budget_per_call",
+        "intent": "Remove the primary transient retry budget from the second consumer call.",
+        "mutant_sha256": "bb7662926836ee5dc1296ff7614e898a964b55764b441746205d0d53d51b7759",
+        "original_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "restored": true,
+        "restored_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_video_empty_retry.py::test_primary_transient_budget_is_fresh_in_each_consumer_call",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-video-empty-mutations-20261002/08_transient_budget_per_call.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-video-empty-mutations-1dsjwbd0",
+          "duration_seconds": 1.956,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_video_empty_retry::test_primary_transient_budget_is_fresh_in_each_consumer_call"
+          ],
+          "failures": 1,
+          "junit": "/tmp/nerva-video-empty-mutations-20261002/08_transient_budget_per_call.xml",
+          "log": "/tmp/nerva-video-empty-mutations-20261002/08_transient_budget_per_call.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 1,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-video-empty-mutations-20261002/09_chosen_call_provenance.diff",
+        "edits": [
+          {
+            "anchor": "                                    result[\"chosen_call\"] = consumer_call\n",
+            "anchor_count": 1,
+            "replacement": "                                    pass  # chosen_call provenance removed\n"
+          }
+        ],
+        "file": "agents/core/video_analysis.py",
+        "id": "09_chosen_call_provenance",
+        "intent": "Remove chosen consumer-call provenance; a result-shape check, not physical-send proof.",
+        "mutant_sha256": "8d29b5d860743c04e25d021be06a69bf7fb2e96a2893af7b7d6e6cf5ca5ae30f",
+        "original_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "restored": true,
+        "restored_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_video_empty_retry.py::test_enabled_first_call_success_reports_provenance",
+            "tests/test_h277_video_empty_retry.py::test_signed_compatible_primary_empty_restarts_full_consumer",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-video-empty-mutations-20261002/09_chosen_call_provenance.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-video-empty-mutations-1dsjwbd0",
+          "duration_seconds": 2.073,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_video_empty_retry::test_enabled_first_call_success_reports_provenance",
+            "tests.test_h277_video_empty_retry::test_signed_compatible_primary_empty_restarts_full_consumer"
+          ],
+          "failures": 2,
+          "junit": "/tmp/nerva-video-empty-mutations-20261002/09_chosen_call_provenance.xml",
+          "log": "/tmp/nerva-video-empty-mutations-20261002/09_chosen_call_provenance.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 2,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-video-empty-mutations-20261002/10_compatible_finish_exclusion.diff",
+        "edits": [
+          {
+            "anchor": "    if choice.get(\"finish_reason\") != \"stop\" or not isinstance(message, dict) or \"content\" not in message:\n",
+            "anchor_count": 1,
+            "replacement": "    if choice.get(\"finish_reason\") not in {\"stop\", \"length\"} or not isinstance(message, dict) or \"content\" not in message:\n"
+          }
+        ],
+        "file": "agents/core/video_analysis.py",
+        "id": "10_compatible_finish_exclusion",
+        "intent": "Treat length-truncated compatible empty content as an eligible empty success.",
+        "mutant_sha256": "51f80f09ef8ba925ff3eb0bdd24d9949171305aab2c8dc95b2f1e8ba099f85a2",
+        "original_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "restored": true,
+        "restored_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_video_empty_retry.py::test_compatible_invalid_or_nonempty_reasoning_never_restarts",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-video-empty-mutations-20261002/10_compatible_finish_exclusion.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-video-empty-mutations-1dsjwbd0",
+          "duration_seconds": 2.558,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_video_empty_retry::test_compatible_invalid_or_nonempty_reasoning_never_restarts[choice1]"
+          ],
+          "failures": 1,
+          "junit": "/tmp/nerva-video-empty-mutations-20261002/10_compatible_finish_exclusion.xml",
+          "log": "/tmp/nerva-video-empty-mutations-20261002/10_compatible_finish_exclusion.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 15,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-video-empty-mutations-20261002/11_compatible_reasoning_exclusion.diff",
+        "edits": [
+          {
+            "anchor": "        if value is not None and (not isinstance(value, str) or bool(value.strip())):\n",
+            "anchor_count": 1,
+            "replacement": "        if False and value is not None and (not isinstance(value, str) or bool(value.strip())):\n"
+          }
+        ],
+        "file": "agents/core/video_analysis.py",
+        "id": "11_compatible_reasoning_exclusion",
+        "intent": "Allow meaningful reasoning-only output to masquerade as a valid empty answer.",
+        "mutant_sha256": "85bf43144f747df722a4d13a2c47d37c4377e3d77c1c193170a984d2eb4fca9a",
+        "original_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "restored": true,
+        "restored_sha256": "988b827fbd26a9e987381bc3a5235f3f19420314738674f7650783b78b814e91",
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_video_empty_retry.py::test_compatible_invalid_or_nonempty_reasoning_never_restarts",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-video-empty-mutations-20261002/11_compatible_reasoning_exclusion.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-video-empty-mutations-1dsjwbd0",
+          "duration_seconds": 2.466,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_video_empty_retry::test_compatible_invalid_or_nonempty_reasoning_never_restarts[choice5]",
+            "tests.test_h277_video_empty_retry::test_compatible_invalid_or_nonempty_reasoning_never_restarts[choice6]",
+            "tests.test_h277_video_empty_retry::test_compatible_invalid_or_nonempty_reasoning_never_restarts[choice7]"
+          ],
+          "failures": 3,
+          "junit": "/tmp/nerva-video-empty-mutations-20261002/11_compatible_reasoning_exclusion.xml",
+          "log": "/tmp/nerva-video-empty-mutations-20261002/11_compatible_reasoning_exclusion.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 15,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-video-empty-mutations-20261002/12_gemini_finish_exclusion.diff",
+        "edits": [
+          {
+            "anchor": "    if not isinstance(candidate, dict) or candidate.get(\"finishReason\") != \"STOP\":\n",
+            "anchor_count": 1,
+            "replacement": "    if not isinstance(candidate, dict) or candidate.get(\"finishReason\") not in {\"STOP\", \"MAX_TOKENS\"}:\n"
+          }
+        ],
+        "file": "agents/core/llm/video_native.py",
+        "id": "12_gemini_finish_exclusion",
+        "intent": "Treat a truncated Gemini candidate as a typed valid empty response.",
+        "mutant_sha256": "a6c6e2bebee1a5268de154cf6dbbca1f280864de431cfe18bea62f16c5bdb01d",
+        "original_sha256": "48d0e1fc9dfa7c29d0c1bcbf68ada47251fd078cb2048cab035e30f881cf012f",
+        "restored": true,
+        "restored_sha256": "48d0e1fc9dfa7c29d0c1bcbf68ada47251fd078cb2048cab035e30f881cf012f",
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_video_empty_retry.py::test_gemini_invalid_empty_never_gets_typed_recovery",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-video-empty-mutations-20261002/12_gemini_finish_exclusion.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-video-empty-mutations-1dsjwbd0",
+          "duration_seconds": 1.803,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_video_empty_retry::test_gemini_invalid_empty_never_gets_typed_recovery[payload1]"
+          ],
+          "failures": 1,
+          "junit": "/tmp/nerva-video-empty-mutations-20261002/12_gemini_finish_exclusion.xml",
+          "log": "/tmp/nerva-video-empty-mutations-20261002/12_gemini_finish_exclusion.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 9,
+          "timed_out": false
+        }
+      }
+    ],
+    "artifacts_directory": "/tmp/nerva-video-empty-mutations-20261002",
+    "artifact_sha256": {
+      "12_gemini_finish_exclusion.log": "01d3d1ce0e46df5a456fd2674b4afbd45f32fd5f496562f993650f547f29e328",
+      "04_consumer_cap_only.xml": "9eb95503bdb4f2cc999043434ed9e2cb01f0b5e4e4c441ae6d0b7c1881c38f33",
+      "03_empty_parser_budget_two.diff": "aba27308f1d4fbf36502421aba72855e297c3bd04f0332041ca2161af232720d",
+      "summary.json": "cda7d365717269ab94e55e9a8ff27f8e8a80461870f6dd19281af957e359300b",
+      "09_chosen_call_provenance.xml": "51cd0c4839050d3267dc14c20afbacae16658a00d3bfb85af25e48300e93c4ce",
+      "07_disable_chain_restart.log": "e13728562244f54291d2d486cd88f061004817cbf3c6d80a47b4c3c5bfe1fedc",
+      "07_disable_chain_restart.diff": "a92855b17059e2652abce0363cd31773e1c07cfba526598e86e503807c17e2c0",
+      "10_compatible_finish_exclusion.log": "89bfe1e0c35a67a1c71732c12596b3f29eba9326947c7b13f63c88e57d5234b5",
+      "08_transient_budget_per_call.diff": "6d6a9be063eb49d20e43b0bd5f152e8017786a03838ce671b4a8a13abfd99c42",
+      "12_gemini_finish_exclusion.diff": "396e2ffcc7d88a3e7ff3883020f23bd97934a94778d402e231b3b59539062b53",
+      "05_second_empty_guard_only.xml": "b36d4158458f2b3be6f60d164f940c4d7cd2b65211a2dc6847e3279df8cb66da",
+      "final_baseline.log": "99143310e6ec78a4080f377427f106e8b3afa4b82856249614e9059adc063861",
+      "01_empty_policy_hmac.diff": "c84a2805c3f074c90111fb1aabdd28c7b275b31a648d654d8be9170b73042781",
+      "source_manifest.json": "d770d5c5dfecd0223d20ac4064cdaecf0de0de36e9c9bbd5b8524f43263ed76a",
+      "11_compatible_reasoning_exclusion.diff": "613e1a82c1dda7aad05e50a67139452ddeaf1d6972cb55eaf51e58920afe59d6",
+      "05_second_empty_guard_only.diff": "0be797053cc180ca08aec83771a3b2d5893bb2500bddf3b899b89c613d359823",
+      "report.md": "89c81be407de28ce0813d13e394a25aa9dff78016ed8552da1b583973c615f2e",
+      "01_empty_policy_hmac.log": "b9c636bb775966472c0f35972fed04d9f37ccb2f961dcb06d103aa9eb98d28fe",
+      "baseline.xml": "d0d0e3b8b7cf79c27e5a9cb5e49a88d49ef9d40972091b4766cdba48ec01da63",
+      "02_empty_notice_disclosure.xml": "4afc1a1ce9b4426af344a40ba1004c0d4a0a8ff2273e6379417916797f56c282",
+      "02_empty_notice_disclosure.diff": "fca2fc65c4eabf04a9669e20f6054df413cdd086fa2b01b56214d5c555675db9",
+      "11_compatible_reasoning_exclusion.log": "92ff12e2934c8313c80aa34ce1cbf5e29a66318f5ceeed028732391a4e4fd906",
+      "08_transient_budget_per_call.xml": "0ee60a3568314b7115eb19ac8b977386315853e75a78559a4990ca8ba0b4da86",
+      "results.json": "f31625849a583388e1cd593559e7e4d93a6182704abe1f53bd01deb894a006ab",
+      "10_compatible_finish_exclusion.diff": "9eaa8551c0f128fb77cafe593fb3d170088fcee3c64fabf75b26de9633c87c61",
+      "06_compound_cap_and_terminal.log": "05453cd9e4a685c258de087e75bee2072d67102e5df64554e6647b74fea18d84",
+      "run_mutations.py": "9bd90ef6eab8d169f1c3135bce30c35758e52dee4259f3a5ce68dad92d400851",
+      "03_empty_parser_budget_two.log": "239d9a91dbad0da28f8e4f405d81a52b14c02fbacb8591d3ac71285d2a64b123",
+      "04_consumer_cap_only.diff": "b1aeff2c9d7c1d83577fe31096696183134f4401dc316b5a5542cb4fc02d4ea6",
+      "06_compound_cap_and_terminal.diff": "579f89dd35f1e7a72341c87975d8ea35296fc7dab4b911c8cbe657a3099a18ff",
+      "02_empty_notice_disclosure.log": "a62f7250f829b3d9014a49ec22354f2f9a1bfb984c90599e84742c384924e8e7",
+      "01_empty_policy_hmac.xml": "e490b9d3ead260a565ce2ca055c9fef953c4eb495a188f72c9e8e813006ad969",
+      "baseline.log": "79df71e9c1ba363194147f59306723924c4957d6a5056580b7decfea2af3e782",
+      "baseline.json": "af1a71df3f18f6d21ec1bd5026dbd38d0a936bd18ee1071dc5577ef822cfe45d",
+      "11_compatible_reasoning_exclusion.xml": "6da1433c06a318574855ade8619ec3b38e767d59b17dba89e58d07d617e6080a",
+      "08_transient_budget_per_call.log": "01d5104210f9bf0e02cc2c3c24ed22fa0cc988b38a8d44b52e522ec311a5e03e",
+      "06_compound_cap_and_terminal.xml": "d0722a045fd58051b95f1d70646303af87fad15414d16dd7f691c4187ce92030",
+      "cases.json": "b072031c604dd0481d1f38f3509708fed08c0054523b2ff31699d7291aff5c72",
+      "03_empty_parser_budget_two.xml": "4b5f0b2c67c29728904924682ad325a8d8816cd76e9592b9a296805d188bdada",
+      "plan.md": "fa27fed9883e60e14a9c935b48a95f15778e754b0e74eb6fa57c5bcc1fc9d537",
+      "12_gemini_finish_exclusion.xml": "ff3f51ffd0448bc03bb21d76549ea0805f7adf9b227430f34378f33ffa59e814",
+      "04_consumer_cap_only.log": "4fcca677d09992b4460ac1b2a94b88b8e7d22ff20a47d1623da4c1c67e415bbb",
+      "09_chosen_call_provenance.log": "343ab798f43d88bf11b66704c9882d9f5cb3276025638bd30bfe6a42a696e5a5",
+      "07_disable_chain_restart.xml": "17dfb43e3242be68e8a83ad874221aa3265991021dd09e5bd6a8067d22cb968f",
+      "10_compatible_finish_exclusion.xml": "65d4e92628f7fff6e9368923bec923a9782cdcfd6d50684075541e753e7f6669",
+      "09_chosen_call_provenance.diff": "8b13819052534ea5b463f3551200ea4e7d992bd9a60eba140a1ea0b047afe3de",
+      "05_second_empty_guard_only.log": "a0ffe44a722b5e22acb69e1c10bea488b64d49f5890519d61bedf73842e16398",
+      "final_baseline.xml": "fe4c676d17cdb71044977437882d6a33fe6a53f81fc2fe94b5234d114e75b7f5"
+    },
+    "limits": "Two single-cap mutations survived because the other bound remained; the explicitly compound mutation was killed. Gemini finish mutation is codec evidence, chosen_call mutation is provenance evidence; neither alone proves a wire send."
+  },
+  "review": {
+    "artifact": "/tmp/nerva-video-empty-source-review-20261002.md",
+    "sha256": "13b7bfdf1e946b155a783cf3cdbb40a0cc7b2c4f9a82d27330ec2acdc5a3b072",
+    "conclusion": "No blocker at matching frozen hashes; reviewer ran no tests. Parent independently ran647 focused cases."
+  },
+  "reviewed_rows": [
+    "H277",
+    "H513"
+  ],
+  "unchanged_status_counts": {
+    "equivalent": 172,
+    "partial": 254,
+    "missing": 64,
+    "needs_review": 207
+  },
+  "unchanged_frontend": {
+    "same_source_as": "afcc652dcc0f5e0caa6ea8b826fb748848abac41",
+    "fresh_execution": false
+  },
+  "secret_scan": {
+    "paths": 30,
+    "findings": 0,
+    "unexpected": []
+  },
+  "limitations": [
+    "H277 remains partial; no live provider/model or native-device acceptance and no measured coverage percentage.",
+    "Strict malformed/blocked/error/tool exclusion applies to empty-retry classification; old nonempty Gemini thought-part permissiveness remains separate output-normalization work.",
+    "Only previously-current H277/H513 rows refreshed; original207 stale rows unchanged.",
+    "Image/other-adapter recovery, provider discovery/cache, SDK credentials/parameters, progress recovery and larger uploads remain open.",
+    "No push, merge or deployment in this local batch."
+  ]
+}
