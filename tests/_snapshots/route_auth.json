@@ -386,6 +386,7 @@
   "POST /api/house/control/climate": "user",
   "POST /api/house/control/light": "user",
   "POST /api/house/control/security": "user",
+  "POST /api/house/presence/explain": "user",
   "POST /api/house/security/{task_id}/challenge": "admin",
   "POST /api/house/security/{task_id}/confirm": "admin",
   "POST /api/integrations/social": "user",

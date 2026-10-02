@@ -291,6 +291,14 @@ rejected at config load. The origin must resolve **only** to LAN addresses (`:14
 - **FAIL if:** a real name, device id, phone MAC or HA person entity appears anywhere in `presence[]` or on the card → **BLOCKER**.
 - **Evidence:** the `presence[]` array verbatim (it is already pseudonymous; if it is not, that IS the finding — redact before attaching).
 
+#### AIO-019b — Explicit local explanation of one presence decision  🖥👁
+- **Surface:** House card `explain` button → `POST /api/house/presence/explain` (user) · **Auto:** ✅tests/test_h277_presence_route.py, ✅tests/test_h513_presence_policy.py, ✅frontend/src/test/house-panel.test.tsx
+- **Prereq:** AIO-019 has a fresh pseudonymous occupant and a local LM Studio or Ollama model. This probe makes one local model request; it is never part of the periodic state read.
+- **Steps:** Click `explain` for one fresh occupant. Compare the returned deterministic `decision` with the presence row and the model explanation. Repeat after stopping the local model, and after the presence writer or Home Assistant becomes unavailable.
+- **Expected:** the request body contains only `occupant_id: "occ-<32 hex>"`. A live response reports `status:"explained"`, the current deterministic decision and a bounded, clearly labeled model explanation. Private-room decisions contain no room id and no name. A missing/stale occupant, unavailable house, or non-local model refuses without an explanation. No house control is proposed or executed. The local model and final HTTP destination must remain loopback for every physical request.
+- **FAIL if:** the GET state read starts a model call, a raw identity or private room reaches the prompt/response, a cloud endpoint receives the explanation, or model text changes the deterministic presence decision → **BLOCKER**.
+- **Evidence:** the sanitized API result and local egress log; keep the private store and raw household identity out of attachments.
+
 #### AIO-020 — One safe reversible device action: propose → approve → verify → rollback  🖥👁⏱
 - **Surface:** `POST /api/house/control/light` (user) → durable task → executor · **Auto:** ✅tests/test_h30_house_actuation.py
 - **Why it matters:** the core A8 clause — a real physical change, governed, verified, and undone.

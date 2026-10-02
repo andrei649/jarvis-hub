@@ -382,6 +382,7 @@
   "POST /api/house/control/climate",
   "POST /api/house/control/light",
   "POST /api/house/control/security",
+  "POST /api/house/presence/explain",
   "POST /api/house/security/{task_id}/challenge",
   "POST /api/house/security/{task_id}/confirm",
   "POST /api/integrations/social",

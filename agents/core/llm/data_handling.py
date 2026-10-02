@@ -81,7 +81,7 @@ def physical_request_scope(check, *, request_check=None):
 
 
 @contextmanager
-def auxiliary_request_scope(router, backend, model, *, role):
+def auxiliary_request_scope(router, backend, model, *, role, request_check=None):
     """Guard a selected auxiliary generation as internal, including physical retries.
 
     Capture the actual adapter/model, but resolve configuration and consent again
@@ -98,7 +98,7 @@ def auxiliary_request_scope(router, backend, model, *, role):
                          principal=principal, origin=DEFAULT_ACTION_ORIGIN)
 
     check()
-    with physical_request_scope(check):
+    with physical_request_scope(check, request_check=request_check):
         yield
 
 

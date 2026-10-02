@@ -9551,6 +9551,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/house/presence/explain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * House Presence Explain
+         * @description Explain one current private-store decision with the selected local model.
+         */
+        post: operations["house_presence_explain_api_house_presence_explain_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/house/control/light": {
         parameters: {
             query?: never;
@@ -11684,6 +11704,11 @@ export interface components {
             source: string;
             /** Idle Seconds */
             idle_seconds?: number | null;
+        };
+        /** PresenceExplainBody */
+        PresenceExplainBody: {
+            /** Occupant Id */
+            occupant_id: string;
         };
         /** PresentBody */
         PresentBody: {
@@ -26040,6 +26065,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    house_presence_explain_api_house_presence_explain_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresenceExplainBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -3787,6 +3787,12 @@ export function MediaDirectorPanel() {
    service-call seam. Every control below creates a governed proposal. */
 export function HousePanel() {
   const house = useApi('/api/house/state');
+  const [presenceExplanation, setPresenceExplanation] = useState(null);
+  const presenceRequest = useRef(0);
+  useEffect(() => {
+    presenceRequest.current += 1;
+    setPresenceExplanation(null);
+  }, [house.d]);
   const data = house.d || {};
   const loaded = !!house.d;
   const enabled = loaded && !!data.enabled;
@@ -3827,6 +3833,22 @@ export function HousePanel() {
     apiPost(path, body)
       .then(setOutcome)
       .catch((err) => setOutcome({ status: 'denied', reason: err?.message || 'request_failed' }));
+  };
+  const explainPresence = (item) => {
+    const request = ++presenceRequest.current;
+    setPresenceExplanation({ occupant_id: item.occupant_id, status: 'loading' });
+    apiPost('/api/house/presence/explain', { occupant_id: item.occupant_id })
+      .then((result: any) => {
+        if (presenceRequest.current !== request) return;
+        setPresenceExplanation(result.status === 'explained'
+          ? { occupant_id: item.occupant_id, status: 'explained', ...result }
+          : { occupant_id: item.occupant_id, status: 'error', reason: result.reason || 'explanation_unavailable' });
+      })
+      .catch((err) => {
+        if (presenceRequest.current === request) {
+          setPresenceExplanation({ occupant_id: item.occupant_id, status: 'error', reason: err?.message || 'explanation_unavailable' });
+        }
+      });
   };
   const proposeLight = (event) => {
     event.preventDefault();
@@ -3937,9 +3959,25 @@ export function HousePanel() {
               <Tag>{item.status || 'unknown'}</Tag>
               {item.room_id && <Tag>{item.room_id}</Tag>}
               <Tag>{item.privacy || 'household'}</Tag>
+              {data.presence_status === 'live' && item.fresh === true && ['present', 'vacant'].includes(item.status) &&
+                <button className="tool-btn" type="button"
+                  aria-label={`Explain presence …${String(item.occupant_id || '').slice(-8)}`}
+                  disabled={presenceExplanation?.occupant_id === item.occupant_id && presenceExplanation?.status === 'loading'}
+                  onClick={() => explainPresence(item)}>explain</button>}
             </span>
           </Row>
         ))}
+        {presenceExplanation && presence.some((item) => item.occupant_id === presenceExplanation.occupant_id && item.fresh === true) && (
+          presenceExplanation.status === 'explained'
+            ? <div role="status" style={{ ...mono, fontSize: 10, marginTop: 6 }}>
+              model explanation · {presenceExplanation.explanation}
+            </div>
+            : presenceExplanation.status === 'error'
+              ? <div role="alert" style={{ ...mono, fontSize: 10, marginTop: 6 }}>
+                explanation unavailable · {presenceExplanation.reason}
+              </div>
+              : <div role="status" style={{ ...mono, fontSize: 10, marginTop: 6 }}>explaining locally…</div>
+        )}
       </>}
       {live && <>
         <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '12px 0 4px' }}>GOVERNED CONTROLS · PROPOSALS</div>

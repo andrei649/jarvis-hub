@@ -66,6 +66,71 @@ async def test_loopback_or_audited_scope_preserves_limits_and_sanitization(prese
 
 
 @pytest.mark.asyncio
+async def test_explicit_strict_local_explanation_refuses_remote_even_with_consent(presence):
+    presence.backend.base_url = "https://synthetic.invalid/v1"
+    row = dh.posture(presence.router)["providers"][0]
+    dh.acknowledge(presence.router, row["provider"], True, row["scope"], presence.audit)
+
+    with pytest.raises(dh.DataHandlingRefused, match="local"):
+        await LocalPresenceExplainer.from_router(presence.router).explain(
+            presence.decision, strict_local=True,
+        )
+    assert presence.requests == []
+
+
+@pytest.mark.asyncio
+async def test_strict_local_explanation_checks_final_physical_request(presence):
+    from agents.core.llm.egress import llm_async_client
+
+    sent = []
+    client = llm_async_client("lm-studio", transport=httpx.MockTransport(
+        lambda request: (sent.append(request), httpx.Response(200))[1]
+    ))
+
+    async def generate(model, prompt, **kwargs):
+        await client.post("https://synthetic.invalid/v1/chat/completions", json={"prompt": prompt})
+        return "should not arrive"
+
+    presence.backend.generate = generate
+    try:
+        with pytest.raises(dh.DataHandlingRefused, match="local"):
+            await LocalPresenceExplainer.from_router(presence.router).explain(
+                presence.decision, strict_local=True,
+            )
+        assert sent == []
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_strict_local_explanation_rejects_late_backend_rebind(presence):
+    from agents.core.llm.egress import llm_async_client
+
+    sent = []
+    client = llm_async_client("lm-studio", transport=httpx.MockTransport(
+        lambda request: (sent.append(request), httpx.Response(200))[1]
+    ))
+
+    async def generate(model, prompt, **kwargs):
+        presence.backend.base_url = "https://synthetic.invalid/v1"
+        try:
+            await client.post("http://127.0.0.1:1234/v1/chat/completions", json={"prompt": prompt})
+        except dh.DataHandlingRefused:
+            return "adapter swallowed the refusal"
+        return "unexpected success"
+
+    presence.backend.generate = generate
+    try:
+        with pytest.raises(dh.DataHandlingRefused):
+            await LocalPresenceExplainer.from_router(presence.router).explain(
+                presence.decision, strict_local=True,
+            )
+        assert sent == []
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_unbound_constructor_fails_closed(presence):
     explainer = LocalPresenceExplainer(presence.backend, "synthetic-presence")
     with pytest.raises(dh.DataHandlingRefused, match="binding"):

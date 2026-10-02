@@ -382,6 +382,7 @@
   "POST /api/house/control/climate": "house_control_climate_api_house_control_climate_post",
   "POST /api/house/control/light": "house_control_light_api_house_control_light_post",
   "POST /api/house/control/security": "house_control_security_api_house_control_security_post",
+  "POST /api/house/presence/explain": "house_presence_explain_api_house_presence_explain_post",
   "POST /api/house/security/{task_id}/challenge": "house_security_challenge_api_house_security__task_id__challenge_post",
   "POST /api/house/security/{task_id}/confirm": "house_security_confirm_api_house_security__task_id__confirm_post",
   "POST /api/integrations/social": "social_request_api_integrations_social_post",
