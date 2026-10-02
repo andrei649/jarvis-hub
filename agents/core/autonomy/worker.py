@@ -1315,12 +1315,25 @@ class AutonomyWorker:
             await self._maybe_push(task)
         return task
 
-    async def _maybe_push(self, task: Task, *, delivery_id: str | None = None) -> bool:
+    async def _maybe_push(self, task: Task, *, delivery_id: str | None = None,
+                          expected_group_id: str | None = None,
+                          edited_revision: str | None = None) -> bool:
         if not self.notifier:
             return False
         from .inbox import is_decision_notification_leader
 
-        if not is_decision_notification_leader(self.queue, task):
+        def still_pending_leader() -> bool:
+            if expected_group_id is not None:
+                current = self.queue.pending_group_leader(expected_group_id)
+                return bool(current is not None and current.id == task.id
+                            and current.status == TaskStatus.BLOCKED.value and not current.pushed)
+            current = self.queue.get(task.id)
+            return bool(current is not None and current.status == TaskStatus.BLOCKED.value
+                        and (not current.pushed or edited_revision is not None)
+                        and (edited_revision is None or edited_revision == current.updated_at)
+                        and is_decision_notification_leader(self.queue, current))
+
+        if not still_pending_leader():
             return False
         if self.delivery_broker is None:
             logger.warning(
@@ -1328,12 +1341,23 @@ class AutonomyWorker:
                 task.id,
             )
             return False
+        stale_at_dispatch = False
+
+        async def dispatch_current() -> object:
+            nonlocal stale_at_dispatch
+            if not still_pending_leader():
+                stale_at_dispatch = True
+                return False
+            return await self.notifier(task)
+
         result = await self.delivery_broker.dispatch(
             delivery_id or f"task-{task.id}",
             "decision_push",
-            lambda: self.notifier(task),
+            dispatch_current,
         )
-        ok = result.get("status") == "delivered"
+        # A delivered/idempotent broker receipt can recover a crash after send;
+        # a callback skipped for a settled card must never mark it pushed.
+        ok = result.get("status") == "delivered" and not stale_at_dispatch and still_pending_leader()
         if ok:
             self.queue.mark_pushed(task.id)
             self._audit("autonomy.push_decision", task, "pushed to inbox")
@@ -1414,7 +1438,8 @@ class AutonomyWorker:
                     candidate = self.queue.pending_group_leader(effect.group_id)
                     if (self.notifier is not None and candidate
                             and candidate.attention_mode == "interrupt" and not candidate.pushed
-                            and (not approval_is_pending(candidate) or not await self._maybe_push(candidate))):
+                            and (not approval_is_pending(candidate) or not await self._maybe_push(
+                                candidate, expected_group_id=effect.group_id))):
                         continue
                 acknowledged += ack(effect, task)
             except Exception:
@@ -1756,7 +1781,8 @@ class AutonomyWorker:
             try:
                 candidate = self.queue.pending_group_leader(effect.group_id)
                 if (candidate is not None and candidate.attention_mode == 'interrupt'
-                        and not candidate.pushed and not await self._maybe_push(candidate)):
+                        and not candidate.pushed and not await self._maybe_push(
+                            candidate, expected_group_id=effect.group_id)):
                     continue
                 acknowledged += self.queue.ack_approval_promotion_effects((effect,))
             except Exception:
@@ -1899,6 +1925,7 @@ class AutonomyWorker:
                     await self._maybe_push(
                         edited,
                         delivery_id=f"task-{edited.id}-edit-{edited.updated_at}",
+                        edited_revision=edited.updated_at,
                     )
                     self._audit(
                         "autonomy.decision.edit", edited, f"by {decided_by} (re-gated, blocked)"

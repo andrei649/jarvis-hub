@@ -1,7 +1,11 @@
 """A grouped task's next decision card survives notification failure and restart."""
 
+import asyncio
+from datetime import UTC, datetime
+
 import pytest
 
+from agents.core.ambient.policy import AttentionDeliveryBroker, AttentionLedger
 from agents.core.autonomy.queue import TaskQueue, TaskStatus
 from agents.core.autonomy.worker import AutonomyWorker
 from tests.test_h487_task_groups import BODY, submit
@@ -179,4 +183,178 @@ async def test_halted_worker_keeps_effect_for_restart(tmp_path):
         assert (await resumed.approval_housekeeping())["promotion_effects_acked"] == 1
         assert sent == [leader.id, follower.id]
     finally:
+        queue.close()
+
+
+@pytest.mark.asyncio
+async def test_decided_follower_is_not_sent_after_broker_wait(tmp_path):
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    ledger = AttentionLedger(tmp_path / "attention.db", timezone_name="UTC")
+    waiting = asyncio.Event()
+    release = asyncio.Event()
+    sent = []
+    delayed_ids = set()
+
+    async def notify(task):
+        sent.append(task.id)
+        return True
+
+    class DelayedBroker(AttentionDeliveryBroker):
+        async def dispatch(self, delivery_id, category, callback):
+            if delivery_id in delayed_ids:
+                async def delayed():
+                    waiting.set()
+                    await release.wait()
+                    return await callback()
+
+                return await super().dispatch(delivery_id, category, delayed)
+            return await super().dispatch(delivery_id, category, callback)
+
+    try:
+        worker = AutonomyWorker(queue, notifier=notify, delivery_broker=DelayedBroker(ledger))
+        leader, follower = await submit(worker, attention="interrupt"), await submit(
+            worker, attention="interrupt"
+        )
+        delayed_ids.add(f"task-{follower.id}")
+        decision = asyncio.create_task(worker.apply_decision(leader.id, "accept"))
+        await asyncio.wait_for(waiting.wait(), 2)
+        queue.transition(follower.id, TaskStatus.APPROVED, decided_by="owner", decision="accept")
+        release.set()
+        await decision
+        assert sent == [leader.id]
+        assert not queue.get(follower.id).pushed
+        await worker.approval_housekeeping()
+        assert queue.pending_approval_promotion_effects() == ()
+        assert sent == [leader.id]
+    finally:
+        release.set()
+        ledger.close()
+        queue.close()
+
+
+@pytest.mark.asyncio
+async def test_older_edited_card_is_not_sent_after_newer_edit(tmp_path):
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    ledger = AttentionLedger(tmp_path / "attention.db", timezone_name="UTC")
+    waiting = asyncio.Event()
+    release = asyncio.Event()
+    sent = []
+
+    async def notify(task):
+        sent.append((task.id, task.payload["path"]))
+        return True
+
+    class DelayedBroker(AttentionDeliveryBroker):
+        async def dispatch(self, delivery_id, category, callback):
+            if "-edit-" in delivery_id:
+                async def delayed():
+                    waiting.set()
+                    await release.wait()
+                    return await callback()
+
+                return await super().dispatch(delivery_id, category, delayed)
+            return await super().dispatch(delivery_id, category, callback)
+
+    try:
+        worker = AutonomyWorker(queue, notifier=notify, delivery_broker=DelayedBroker(ledger))
+        task = await submit(worker, attention="interrupt")
+        decision = asyncio.create_task(worker.apply_decision(task.id, "edit", payload={"path": "older"}))
+        await asyncio.wait_for(waiting.wait(), 2)
+        edited = queue.get(task.id)
+        await asyncio.sleep(0.001)
+        newer, _ = queue.update_payload_policy_with_group(
+            task.id, {"path": "newer"}, risk_tier=edited.risk_tier,
+            autonomy_level=edited.autonomy_level,
+        )
+        assert newer.updated_at != edited.updated_at
+        release.set()
+        await decision
+        assert sent == [(task.id, "old")]
+        assert queue.get(task.id).payload["path"] == "newer"
+    finally:
+        release.set()
+        ledger.close()
+        queue.close()
+
+
+@pytest.mark.asyncio
+async def test_idempotent_broker_receipt_marks_still_pending_follower(tmp_path):
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    calls = []
+
+    async def notify(task):
+        calls.append(task.id)
+        return True
+
+    class IdempotentBroker:
+        async def dispatch(self, delivery_id, category, callback):
+            return {"status": "delivered", "reason": "idempotent"}
+
+    try:
+        worker = AutonomyWorker(queue)
+        leader, follower = await submit(worker, attention="interrupt"), await submit(
+            worker, attention="interrupt"
+        )
+        queue.transition(leader.id, TaskStatus.APPROVED, decided_by="owner", decision="accept")
+        resumed = AutonomyWorker(queue, notifier=notify, delivery_broker=IdempotentBroker())
+        assert (await resumed.approval_housekeeping())["promotion_effects_acked"] == 1
+        assert queue.get(follower.id).pushed
+        assert calls == []
+    finally:
+        queue.close()
+
+
+@pytest.mark.asyncio
+async def test_expiry_promoted_card_is_not_sent_after_follower_decision(tmp_path, monkeypatch):
+    from agents.core.autonomy import queue as queue_module
+    from agents.core.autonomy.inbox import OwnerTaskRegistrationContext
+
+    original_now = queue_module._approval_now
+    monkeypatch.setattr(queue_module, "_approval_now", lambda now=None: original_now(
+        now or datetime(2026, 9, 27, 11, tzinfo=UTC)
+    ))
+    queue = TaskQueue(str(tmp_path / "tasks.db")).initialize()
+    ledger = AttentionLedger(tmp_path / "attention.db", timezone_name="UTC")
+    waiting = asyncio.Event()
+    release = asyncio.Event()
+    sent = []
+    delayed_ids = set()
+
+    async def notify(task):
+        sent.append(task.id)
+        return True
+
+    class DelayedBroker(AttentionDeliveryBroker):
+        async def dispatch(self, delivery_id, category, callback):
+            if delivery_id in delayed_ids:
+                async def delayed():
+                    waiting.set()
+                    await release.wait()
+                    return await callback()
+
+                return await super().dispatch(delivery_id, category, delayed)
+            return await super().dispatch(delivery_id, category, callback)
+
+    try:
+        worker = AutonomyWorker(queue, notifier=notify, delivery_broker=DelayedBroker(ledger))
+        context = OwnerTaskRegistrationContext.from_request(BODY)
+        leader = await worker.submit(
+            **BODY, attention_mode="interrupt", grouping_context=context,
+            approval_deadline_at="2026-09-27T12:00:00.000000+00:00",
+        )
+        follower = await worker.submit(**BODY, attention_mode="interrupt", grouping_context=context)
+        delayed_ids.add(f"task-{follower.id}")
+        sweep = asyncio.create_task(worker.approval_housekeeping(
+            now=datetime(2026, 9, 27, 12, tzinfo=UTC)
+        ))
+        await asyncio.wait_for(waiting.wait(), 2)
+        queue.transition(follower.id, TaskStatus.APPROVED, decided_by="owner", decision="accept")
+        release.set()
+        await sweep
+        assert sent == [leader.id]
+        assert queue.get(leader.id).status == "expired"
+        assert not queue.get(follower.id).pushed
+    finally:
+        release.set()
+        ledger.close()
         queue.close()
