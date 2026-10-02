@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 import httpx
 
+from .auxiliary_recovery import may_repair_temperature, rejects_temperature
 from .egress import llm_async_client
 from .host_protocol import HostProtocolRefused
 from .repetition_guard import is_repetition_dominated
@@ -525,26 +526,34 @@ class LMStudioBackend(LLMBackend):
         await self.client.aclose()
 
     async def _post_chat(self, payload: dict) -> httpx.Response:
-        """POST a completion, retrying once if the model was unloaded mid-flight.
-
-        The retry is deliberately narrow: only LM Studio's "model unloaded" 400,
-        only once. Anything else — including a second unload — propagates to the
-        caller's degraded-reply handling unchanged.
-        """
-        resp = await self.client.post("/v1/chat/completions", json=payload)
-        try:
-            resp.raise_for_status()
-        except Exception as exc:
-            if not is_model_unloaded_error(exc):
+        """POST a completion with at most one unload and scoped temperature repair."""
+        current = payload
+        unloaded_retried = False
+        temperature_retried = False
+        for _ in range(3):
+            resp = await self.client.post("/v1/chat/completions", json=current)
+            try:
+                resp.raise_for_status()
+                return resp
+            except httpx.HTTPStatusError as exc:
+                if not unloaded_retried and is_model_unloaded_error(exc):
+                    unloaded_retried = True
+                    logger.info(
+                        "LM Studio reported model %r unloaded — retrying once so it can "
+                        "JIT-load rather than serving a degraded reply",
+                        payload.get("model"),
+                    )
+                    current = dict(current)
+                    continue
+                if (not temperature_retried and "temperature" in current
+                        and "tools" not in current
+                        and may_repair_temperature(self, current.get("model"))
+                        and rejects_temperature(exc)):
+                    temperature_retried = True
+                    current = {key: value for key, value in current.items() if key != "temperature"}
+                    continue
                 raise
-            logger.info(
-                "LM Studio reported model %r unloaded — retrying once so it can "
-                "JIT-load rather than serving a degraded reply",
-                payload.get("model"),
-            )
-            resp = await self.client.post("/v1/chat/completions", json=payload)
-            resp.raise_for_status()
-        return resp
+        raise RuntimeError("local completion retry limit exceeded")
 
     async def generate(
         self, model: str, prompt: str, system: str = "",
