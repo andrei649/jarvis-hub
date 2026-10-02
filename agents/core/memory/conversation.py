@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -99,8 +100,12 @@ def restored_media(value: object) -> dict | None:
 
 class ConversationMemory:
     def __init__(self, max_turns: int = 100, persist: bool = True):
+        from agents.core.llm.vision_history import ActiveImageHistory
+
         self.sessions: dict[str, list[Turn]] = {}
         self.instances: dict[str, str] = {}
+        self.active_images = ActiveImageHistory()
+        self._active_image_instances: dict[str, str] = {}
         self.max_turns = max_turns
         self.persist = persist
         self.current_session_id: Optional[str] = None
@@ -137,6 +142,16 @@ class ConversationMemory:
             self.current_session_id = sid
             return sid
 
+    def active_image_instance(self, session_id: str) -> str | None:
+        """Process-local identity; never persisted or inferred from a reused ID."""
+        if session_id not in self.sessions:
+            return None
+        return self._active_image_instances.setdefault(session_id, secrets.token_urlsafe(24))
+
+    def invalidate_active_images(self, session_id: str) -> None:
+        self.active_images.clear(session_id)
+        self._active_image_instances.pop(session_id, None)
+
     async def resume_session(self, session_id: str) -> bool:
         """Make a specific past session current, loading it from disk if needed.
 
@@ -145,6 +160,7 @@ class ConversationMemory:
         """
         async with self._lock:
             if session_id not in self.sessions:
+                self.invalidate_active_images(session_id)
                 snapshot = load_memory_snapshot(session_id)
                 turns_data = snapshot.get("turns", [])
                 if snapshot.get("instance_id"):
@@ -227,9 +243,12 @@ class ConversationMemory:
     async def clear(self, session_id: str = None):
         async with self._lock:
             if session_id:
+                self.invalidate_active_images(session_id)
                 self.sessions.pop(session_id, None)
                 self.instances.pop(session_id, None)
             else:
+                self.active_images.clear()
+                self._active_image_instances.clear()
                 self.sessions.clear()
                 self.instances.clear()
 

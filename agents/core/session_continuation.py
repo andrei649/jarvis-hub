@@ -332,6 +332,7 @@ def _load_locked(orch, sid):
         )
         turn.timestamp = value["timestamp"]
         restored.append(turn)
+    conversation.invalidate_active_images(sid)
     conversation.sessions[sid] = restored
     conversation.instances[sid] = instance
     return turns

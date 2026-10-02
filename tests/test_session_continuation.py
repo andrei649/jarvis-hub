@@ -129,9 +129,16 @@ async def test_coordinator_carries_timestamps_without_switching_defaults_and_pre
     assert orch.session_id == memory.conversation.current_session_id == "default"
     newer = [*SEED, {**SEED[0], "content": "new child turn"}]
     persistence.save_memory(child, newer, instance_id=cp.clock_snapshot(child).instance_id)
+    active = memory.conversation
+    old_instance = active.active_image_instance(child)
+    handle = active.active_images.remember(child, old_instance, "jarvis", "old image", [b"private"])
     memory.conversation.sessions.pop(child)
     await prepare_session(orch, child)
     assert await memory.get_history(child) == newer
+    assert active.active_image_instance(child) != old_instance
+    from agents.core.llm.vision_history import ActiveImageUnavailable
+    with pytest.raises(ActiveImageUnavailable):
+        active.active_images.resolve(child, old_instance, "jarvis", [handle])
     cp.close()
 
 
