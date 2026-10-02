@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "3ea6340551ddcb8901c434e192e571d2fd79f80b",
-  "assessed_at": "2026-10-02T09:06:52Z",
+  "base_sha": "4d08ae6570311f01289125c1580073ce55377b45",
+  "assessed_at": "2026-10-02T09:18:09Z",
   "reviews": [
     {
       "id": "H001",
@@ -7959,6 +7959,31 @@
         {
           "path": "tests/test_nerva_cli.py",
           "sha256": "7ba3ec4d92e0a14ac04d309910e7a1ba876414e507d980f46a4ce8774ee7f5f9"
+        }
+      ]
+    },
+    {
+      "id": "H485",
+      "row_sha256": "83c12d1e488ae3b91e30107e5a2860b70ee32aefb762d719dfa5b5ff8c500790",
+      "status": "partial",
+      "summary": "Source review against pinned Hermes 59b2aeef6c7a (agent/auxiliary_client.py:_smart_approve as captured in the frozen ledger): Nerva already has an optional separate approval_judge model. It receives bounded, fenced untrusted action arguments, applies local-first/provider and data-handling guards, and stores a risk score with a rationale and audited judge identity on pending action approvals (agents/core/autonomy/approval_judge.py:1; agents/core/autonomy/action_approvals.py:142). Focused approval-judge and policy tests passed on 2026-10-02. This is a second model opinion, but it runs after the human card is queued and has no decision authority: an 'approve' reply leaves the item pending and later expires (tests/test_h277_approval_judge.py:297).",
+      "remaining": "Hermes's cheap guardian runs before human escalation and returns a strict APPROVE/DENY/ESCALATE decision for exactly one flagged command. Nerva's judge is advisory only: no pre-card disposition, no one-command grant through kernel.authorize, and no strict tri-state parser or operator smart-policy system-channel contract. Do not count risk-score display or a human's later decision as automatic approval. Live-channel acceptance and forced-redacted observer hooks remain unverified.",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/approval_judge.py",
+          "sha256": "47cbe6be2bfdb5032d2716b86b298dd1b0c128df51e66ed2f2db98058acf7e9e"
+        },
+        {
+          "path": "agents/core/autonomy/action_approvals.py",
+          "sha256": "9ee9d1bbf42dd011b75b51e607750b187bd31ccf5f0a88e99bb5ce016067709b"
+        },
+        {
+          "path": "tests/test_h277_approval_judge.py",
+          "sha256": "e5f32cad56d50bf5f61ed8de43d21ef3397f078b6ecdef230ddbaaca90b51d5e"
+        },
+        {
+          "path": "tests/test_h513_approval_judge_policy.py",
+          "sha256": "0c8251503400ad1b3e69cabbd71091afb55b7b12866628e32a4c66ceda90280c"
         }
       ]
     },
