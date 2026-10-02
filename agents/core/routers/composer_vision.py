@@ -6,9 +6,11 @@ import binascii
 import hashlib
 import io
 import json
+import logging
 import secrets
 import sqlite3
 import time
+from contextlib import suppress
 from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
@@ -219,6 +221,8 @@ class ComposerPrepareBody(BaseModel):
     image_digests: list[Annotated[str, Field(min_length=64, max_length=64,
                                              pattern=r"^[0-9a-f]{64}$")]] | None = Field(
                                                  default=None, min_length=1, max_length=8)
+    active_image_handles: list[Annotated[str, Field(min_length=20, max_length=128)]] = Field(
+        default_factory=list, max_length=8)
 
     @field_validator("prompt")
     @classmethod
@@ -237,19 +241,25 @@ class ComposerPrepareBody(BaseModel):
 
     @model_validator(mode="after")
     def selected_images_bound(self):
-        if self.selected_turn and not self.image_digests:
-            raise ValueError("selected image digests are required")
-        if not self.selected_turn and self.image_digests is not None:
-            raise ValueError("image digests require a selected turn")
+        if self.selected_turn and not (self.image_digests or self.active_image_handles):
+            raise ValueError("selected images are required")
+        if not self.selected_turn and (self.image_digests is not None or self.active_image_handles):
+            raise ValueError("image selection requires a selected turn")
+        if self.image_digests and len(self.image_digests) + len(self.active_image_handles) > 8:
+            raise ValueError("too many selected images")
         return self
 
 
 class PreparedComposerVisionBody(ComposerVisionBody):
+    images: list[Annotated[str, Field(max_length=MAX_URI)]] = Field(default_factory=list,
+                                                                   max_length=8)
     review_token: str = Field(min_length=20, max_length=128)
     agent: str = Field(default="jarvis", min_length=1, max_length=64,
                        pattern=r"^[a-z][a-z0-9_-]*$")
     session_id: str | None = None
     selected_turn: StrictBool = False
+    active_image_handles: list[Annotated[str, Field(min_length=20, max_length=128)]] = Field(
+        default_factory=list, max_length=8)
 
     @field_validator("session_id")
     @classmethod
@@ -258,6 +268,14 @@ class PreparedComposerVisionBody(ComposerVisionBody):
         if value is not None and not is_valid_session_id(value):
             raise ValueError("invalid session_id")
         return value
+
+    @model_validator(mode="after")
+    def images_or_history(self):
+        if not (self.images or self.active_image_handles):
+            raise ValueError("selected images are required")
+        if self.active_image_handles and not self.selected_turn:
+            raise ValueError("active images require a selected turn")
+        return self
 
 
 async def _prepare_config(*, refresh_catalog: bool = False, main_config=None):
@@ -323,13 +341,32 @@ def _review_route(config, turn=None):
     return f"turn:{turn.prompt_digest}:{route}" if turn is not None else route
 
 
-def _review_binding(identity, *, turn=None, image_digests=None):
+def _review_binding(identity, *, turn=None, image_digests=None, active_signature=None):
     if turn is None:
         return identity.binding
+    if active_signature is not None:
+        return identity.binding + ("reviewed-image-history:v1", tuple(image_digests or ()),
+                                   active_signature)
     return identity.binding + ("reviewed-image-digests:v1", tuple(image_digests))
 
 
-def _selected_resolver(turn):
+def _active_history(orch, session_id, agent_id, handles):
+    """Resolve exact active parts and their ordered private review fingerprint."""
+    from agents.core.llm.vision_history import ActiveImageUnavailable
+
+    if orch is None:
+        raise ActiveImageUnavailable()
+    conversation = orch.memory.conversation
+    instance = conversation.active_image_instance(session_id)
+    if instance is None:
+        raise ActiveImageUnavailable()
+    turns = conversation.active_images.resolve_turns(session_id, instance, agent_id, handles)
+    digests = tuple(tuple(hashlib.sha256(image).hexdigest() for image in turn.images)
+                    for turn in turns)
+    return turns, (instance, tuple(handles), digests)
+
+
+def _selected_resolver(turn, *, active_check=None):
     """Synchronous config check used by the final physical-request guard."""
     from agents.core.app_state import get_orch
     from agents.core.env_config import env_str
@@ -341,6 +378,8 @@ def _selected_resolver(turn):
     if (orch is None or orch.session_id != turn.session_id
             or history_fingerprint(orch, turn.session_id) != turn.history_digest):
         raise ValueError("image history changed")
+    if active_check is not None:
+        active_check(orch)
     backend, model, route = orch.llm_router.select_backend(turn.agent_id, turn.prompt)
     if backend is not turn.backend or model != turn.model or route != turn.route:
         raise ValueError("image selected route changed")
@@ -365,9 +404,31 @@ async def composer_status(refresh_catalog: bool = False):
         )
 
 
+@router.get("/api/vlm/composer/active-images")
+async def composer_active_images(session_id: str | None = None, agent: str = "jarvis"):
+    """List private, process-local image handles for the displayed conversation."""
+    from agents.core.app_state import get_orch
+    from agents.core.validation import is_valid_session_id
+
+    orch = get_orch()
+    if orch is None:
+        return nocache_json({"error": "Conversation unavailable",
+                             "reason": "vlm_orchestrator_unavailable"}, status_code=503)
+    sid = session_id or orch.session_id
+    if sid != orch.session_id or not is_valid_session_id(sid) or agent not in orch.agents:
+        return nocache_json({"error": "Image session changed",
+                             "reason": "vlm_session_changed"}, status_code=409)
+    conversation = orch.memory.conversation
+    instance = conversation.active_image_instance(sid)
+    rows = conversation.active_images.list(sid, instance, agent) if instance else []
+    return nocache_json({"session_id": sid, "images": rows})
+
+
 @router.post("/api/vlm/composer/prepare")
 async def composer_prepare(body: ComposerPrepareBody, refresh_catalog: bool = False):
     """Review one prompt's configured destination before image bytes are sent."""
+    from agents.core.app_state import get_orch
+    from agents.core.llm.vision_history import ActiveImageUnavailable
     from agents.core.llm.vision_policy import VisionPolicyUnavailable, describe
     from agents.core.llm.vlm import VLMNotConfigured
 
@@ -376,6 +437,14 @@ async def composer_prepare(body: ComposerPrepareBody, refresh_catalog: bool = Fa
             prompt=body.prompt, agent=body.agent, session_id=body.session_id,
             refresh_catalog=refresh_catalog,
         ) if body.selected_turn else (None, await _prepare_config(refresh_catalog=refresh_catalog)))
+        active_signature = None
+        active_count = 0
+        if body.active_image_handles:
+            active_turns, active_signature = _active_history(
+                get_orch(), turn.session_id, body.agent, body.active_image_handles)
+            active_count = sum(len(row.images) for row in active_turns)
+            if active_count + len(body.image_digests or ()) > 8:
+                raise VisionReviewRefused("vlm_image_limit")
         identity = describe(config)
         public = public_config(config, identity=identity)
         token = _REVIEWS.issue(
@@ -383,16 +452,21 @@ async def composer_prepare(body: ComposerPrepareBody, refresh_catalog: bool = Fa
             agent_id=body.agent,
             prompt=body.prompt, model=config.model,
             route=_review_route(config, turn),
-            binding=_review_binding(identity, turn=turn, image_digests=body.image_digests),
+            binding=_review_binding(identity, turn=turn, image_digests=body.image_digests,
+                                    active_signature=active_signature),
         )
         return nocache_json(dict(configured=True, reachable=None,
                                  review_token=token,
+                                 **({"active_image_count": active_count} if active_signature else {}),
                                  **({"session_id": turn.session_id, "selected_turn": True}
                                     if turn is not None else {}),
                                  **public))
     except VisionReviewRefused as exc:
         return nocache_json({"error": "Vision review unavailable", "reason": exc.reason},
-                            status_code=503)
+                            status_code=422 if exc.reason == "vlm_image_limit" else 503)
+    except ActiveImageUnavailable:
+        return nocache_json({"error": "Active image unavailable; select it again",
+                             "reason": "vlm_active_image_unavailable"}, status_code=409)
     except (VLMNotConfigured, ValueError, VisionPolicyUnavailable, sqlite3.Error, OSError):
         return nocache_json({"error": "Vision model unavailable",
                              "reason": "vlm_not_configured"}, status_code=503)
@@ -405,7 +479,7 @@ async def composer_describe_prepared(body: PreparedComposerVisionBody):
     from agents.core.llm.vlm import VLMNotConfigured
 
     try:
-        turn, config = await _consume_prepared_review(body)
+        turn, config, _, _ = await _consume_prepared_review(body)
     except VisionReviewRefused as exc:
         reason = ("vlm_destination_changed" if exc.reason == "vlm_destination_changed"
                   else exc.reason)
@@ -423,32 +497,57 @@ async def composer_describe_prepared(body: PreparedComposerVisionBody):
 
 
 async def _consume_prepared_review(body: PreparedComposerVisionBody, *, require_main: bool = False):
+    from agents.core.app_state import get_orch
     from agents.core.llm.vision_policy import describe
     from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
     from agents.core.memory.conversation import validated_media
 
-    turn, config = (await _selected_config(
-        prompt=body.prompt, agent=body.agent, session_id=body.session_id,
-    ) if body.selected_turn else (None, resolve_vlm_config()))
-    if require_main and (turn is None or config.route_source != "auto:main"):
-        raise VLMNotConfigured("vlm_main_image_route_unavailable")
-    if require_main:
-        validated_media({"kind": "image", "count": len(body.images),
-                         "model": config.model, "backend": config.backend,
-                         "local": config.is_local})
-    identity = describe(config)
-    _REVIEWS.consume(
-        body.review_token,
-        session_id=turn.session_id if turn is not None else body.session_id or "web",
-        agent_id=body.agent, prompt=body.prompt, model=config.model,
-        route=_review_route(config, turn),
-        binding=_review_binding(
-            identity, turn=turn,
-            image_digests=[hashlib.sha256(image.encode("utf-8")).hexdigest()
-                           for image in body.images] if turn is not None else None,
-        ),
-    )
-    return turn, config
+    orch = get_orch() if body.selected_turn else None
+    sid = body.session_id or (orch.session_id if orch is not None else "web")
+    try:
+        turn, config = (await _selected_config(
+            prompt=body.prompt, agent=body.agent, session_id=body.session_id,
+        ) if body.selected_turn else (None, resolve_vlm_config()))
+        if require_main and (turn is None or config.route_source != "auto:main"):
+            raise VLMNotConfigured("vlm_main_image_route_unavailable")
+        if body.active_image_handles and not require_main:
+            raise VisionReviewRefused("vlm_selected_turn_required")
+        active_turns = ()
+        active_signature = None
+        if body.active_image_handles:
+            active_turns, active_signature = _active_history(
+                orch, turn.session_id, body.agent, body.active_image_handles)
+        image_count = len(body.images) + sum(len(row.images) for row in active_turns)
+        if image_count > 8:
+            raise VisionReviewRefused("vlm_image_limit")
+        if require_main:
+            validated_media({"kind": "image", "count": image_count,
+                             "model": config.model, "backend": config.backend,
+                             "local": config.is_local})
+        identity = describe(config)
+        _REVIEWS.consume(
+            body.review_token,
+            session_id=turn.session_id if turn is not None else body.session_id or "web",
+            agent_id=body.agent, prompt=body.prompt, model=config.model,
+            route=_review_route(config, turn),
+            binding=_review_binding(
+                identity, turn=turn, active_signature=active_signature,
+                image_digests=[hashlib.sha256(image.encode("utf-8")).hexdigest()
+                               for image in body.images] if turn is not None else None,
+            ),
+        )
+        def active_check(orch):
+            if active_signature is not None:
+                _, current = _active_history(
+                    orch, turn.session_id, turn.agent_id, tuple(body.active_image_handles))
+                if current != active_signature:
+                    raise ValueError("active image changed")
+
+        return turn, config, active_turns, active_check if active_signature else None
+    except Exception:
+        with suppress(VisionReviewRefused):
+            _REVIEWS.cancel(body.review_token, session_id=sid)
+        raise
 
 
 @router.post("/api/vlm/composer/chat-prepared")
@@ -471,7 +570,8 @@ async def composer_chat_prepared(body: PreparedComposerVisionBody, request: Requ
             return nocache_json({"error": "Conversation is busy",
                                  "reason": "vlm_turn_busy"}, status_code=409)
         try:
-            turn, config = await _consume_prepared_review(body, require_main=True)
+            turn, config, active_turns, active_check = await _consume_prepared_review(
+                body, require_main=True)
         except VisionReviewRefused as exc:
             return nocache_json({"error": "Vision review changed; review it again",
                                  "reason": exc.reason}, status_code=409)
@@ -484,15 +584,32 @@ async def composer_chat_prepared(body: PreparedComposerVisionBody, request: Requ
                 raise VisionReviewRefused("vlm_client_disconnected")
             await orch.complete_selected_image_turn(
                 session_id=turn.session_id, agent_id=turn.agent_id,
-                question=body.prompt, answer=answer, image_count=len(body.images),
+                question=body.prompt, answer=answer,
+                image_count=len(body.images) + sum(len(row.images) for row in active_turns),
+                reused_image_count=sum(len(row.images) for row in active_turns),
                 model=config.model, backend=config.backend, local=config.is_local,
                 route_name=turn.route, latency=latency,
             )
+            if body.images:
+                try:
+                    conversation = orch.memory.conversation
+                    instance = conversation.active_image_instance(turn.session_id)
+                    if instance:
+                        conversation.active_images.remember(
+                            turn.session_id, instance, turn.agent_id, body.prompt, answer,
+                            [base64.b64decode(image.partition(",")[2]) for image in body.images],
+                        )
+                except Exception:
+                    # This cache is optional and runs after the durable pair was
+                    # committed. Never turn a committed success into a 502.
+                    logging.getLogger(__name__).warning("active image cache unavailable after commit")
 
         return await _composer_describe_with_config(
-            body, config, resolve_config=lambda: _selected_resolver(turn),
+            body, config, resolve_config=lambda: _selected_resolver(
+                turn, active_check=active_check),
             image_prompt=turn.prompt, on_success=commit,
             disconnected=request.is_disconnected,
+            history_turns=active_turns or None,
         )
 
 
@@ -530,7 +647,8 @@ async def _await_image_or_disconnect(operation_factory, disconnected):
 
 
 async def _composer_describe_with_config(body, config, *, resolve_config, image_prompt=None,
-                                         on_success=None, disconnected=None):
+                                         on_success=None, disconnected=None,
+                                         history_turns=None):
     from agents.core.commands import Principal
     from agents.core.llm import selection_guards as sg
     from agents.core.llm.vision_policy import (
@@ -595,6 +713,7 @@ async def _composer_describe_with_config(body, config, *, resolve_config, image_
                         config.model,
                         image_prompt if image_prompt is not None else body.prompt,
                         images=image_bytes,
+                        **({"history": history_turns} if history_turns is not None else {}),
                     )
 
                 answer = (await _await_image_or_disconnect(send, disconnected)

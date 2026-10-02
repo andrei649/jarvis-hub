@@ -98,12 +98,12 @@ more fresh images. The one-use review binds ordered active bytes, fresh image
 digests, route, session instance and transcript. Success commits one user/
 assistant pair and retains only newly attached bytes.
 
-- [ ] Write a failing end-to-end reviewed follow-up through the real route
+- [x] Write a failing end-to-end reviewed follow-up through the real route
   and offline HTTPX transport; prove one physical send and correct durable
   projection.
-- [ ] Add red-first failure tests for all five Review Focus cases, current
+- [x] Add failure tests for all five Review Focus cases, current
   consent and authority revocation, and ordinary text chat not replaying.
-- [ ] Implement the route with the existing session lease, review store and
+- [x] Implement the route with the existing session lease, review store and
   selected physical guard; run focused route/memory/H513 suites; commit Task 3.
 
 ### Task 4: Explicit HUD selection and state
@@ -149,3 +149,24 @@ native/selected-image/H513/memory test selection passed, along with scoped
 Ruff, Graft wiring freshness and `git diff --check`. These are local simulated
 transports, not live provider compatibility proof. The server route and HUD
 remain for Tasks 3 and 4.
+
+## Task 3 evidence
+
+The end-to-end follow-up test first failed because the active-image endpoint
+was absent, then because preparation rejected selected handles. The route now
+lists scoped handles and short labels, resolves prior question/answer/image
+parts only for an explicitly selected review, and binds their order, image
+digests and process-local session instance with the fresh-image digests,
+selected route and transcript. A second check runs at the physical request.
+Only fresh bytes are retained after the durable pair commits; a cache fault
+cannot turn an already committed response into a failure. A follow-up with no
+fresh image records a referenced-image marker, while mixed old/new turns
+record both kinds without storing bytes.
+
+Offline integration tests cover reviewed reuse, mixed media, no implicit replay
+on a new selected turn or ordinary text chat, reordered handles, changed fresh
+bytes, reset with the same session ID, rotated credentials, newly required
+consent, total image count, physical-time eviction, and Client Stop. The broad
+H277/H513/composer/session test selection, scoped Ruff, Graft freshness and
+`git diff --check` passed. The source remains local and provider calls were
+simulated; explicit HUD selection is Task 4.

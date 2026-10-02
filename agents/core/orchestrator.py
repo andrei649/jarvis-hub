@@ -3663,7 +3663,7 @@ class Orchestrator:
     async def complete_selected_image_turn(
         self, *, session_id: str, agent_id: str, question: str, answer: str,
         image_count: int, model: str, backend: str, local: bool,
-        route_name: str, latency: float,
+        route_name: str, latency: float, reused_image_count: int = 0,
     ) -> None:
         """Commit a reviewed image reply through the ordinary conversation seam.
 
@@ -3675,6 +3675,8 @@ class Orchestrator:
 
         if agent_id not in self.agents or not question.strip() or not answer.strip():
             raise ValueError("invalid selected image turn")
+        if (type(reused_image_count) is not int or not 0 <= reused_image_count <= image_count):
+            raise ValueError("invalid selected image history")
         media = validated_media({"kind": "image", "count": image_count,
                                  "model": model, "backend": backend, "local": local})
         session_token = _active_session.set(session_id)
@@ -3692,8 +3694,14 @@ class Orchestrator:
             self._last_cached_tokens = {}
             self._last_prompt_tokens = {}
             self._last_reported_usage = {}
-            marker = "image" if image_count == 1 else "images"
-            user_text = f"{question}\n[{image_count} {marker} attached]"
+            fresh_count = image_count - reused_image_count
+            markers = []
+            if fresh_count:
+                markers.append(f"[{fresh_count} {'image' if fresh_count == 1 else 'images'} attached]")
+            if reused_image_count:
+                markers.append(f"[{reused_image_count} previous "
+                               f"{'image' if reused_image_count == 1 else 'images'} referenced]")
+            user_text = f"{question}\n" + "\n".join(markers)
             await self.memory.add_turn(session_id, "user", user_text, channel="web", media=media)
             self._title_session(question, "web")
             await self._complete_llm_turn(
