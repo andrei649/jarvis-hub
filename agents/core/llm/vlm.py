@@ -155,7 +155,7 @@ class VLMConfig:
     ``label at (x, y)`` contract ever promised.
     """
 
-    backend: str  # "lmstudio" | "custom" | "openrouter" | "deepinfra" | "nous"
+    backend: str  # "lmstudio" | "ollama" | "custom" | "openrouter" | "deepinfra" | "nous"
     base_url: str
     model: str
     api_key: str
@@ -166,8 +166,10 @@ class VLMConfig:
     route_source: str = ""
 
     def __post_init__(self) -> None:
-        if self.wire_mode not in {"chat_completions", "anthropic_messages"} or (
-                self.wire_mode == "anthropic_messages" and self.backend != "nous"):
+        if self.wire_mode not in {"chat_completions", "anthropic_messages", "ollama_chat"} or (
+                self.wire_mode == "anthropic_messages" and self.backend != "nous") or (
+                self.wire_mode == "ollama_chat" and self.backend != "ollama") or (
+                self.backend == "ollama" and self.wire_mode != "ollama_chat"):
             raise ValueError("unsupported vision wire mode")
         if self.convention not in COORDINATE_CONVENTIONS:
             raise ValueError(f"unknown coordinate convention: {self.convention!r}")
@@ -324,10 +326,12 @@ class VLMBackend(LLMBackend):
     def __init__(self, base_url: str = DEFAULT_VLM_BASE, api_key: str = "",
                  client=None, max_image_dim: int = 1024, *, composer_auth: bool = False,
                  provider_id: str = "", wire_mode: str = "chat_completions") -> None:
-        if provider_id not in ("", "openrouter", "deepinfra", "nous"):
+        if provider_id not in ("", "openrouter", "deepinfra", "nous", "ollama"):
             raise ValueError("unsupported native vision provider")
-        if wire_mode not in {"chat_completions", "anthropic_messages"} or (
-                wire_mode == "anthropic_messages" and provider_id != "nous"):
+        if wire_mode not in {"chat_completions", "anthropic_messages", "ollama_chat"} or (
+                wire_mode == "anthropic_messages" and provider_id != "nous") or (
+                wire_mode == "ollama_chat" and provider_id != "ollama") or (
+                provider_id == "ollama" and wire_mode != "ollama_chat"):
             raise ValueError("unsupported vision wire mode")
         self._wire_mode = wire_mode
         self._provider_id = provider_id
@@ -355,7 +359,7 @@ class VLMBackend(LLMBackend):
             api_key=config.api_key,
             client=client,
             max_image_dim=max_image_dim,
-            **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra", "nous") else {}),
+            **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra", "nous", "ollama") else {}),
             wire_mode=config.wire_mode,
         )
         backend.is_local = config.is_local
@@ -386,12 +390,17 @@ class VLMBackend(LLMBackend):
         payload = {"model": model, "messages": messages,
                    "max_tokens": max_tokens, "temperature": temperature, "stream": False}
         native_messages = self._wire_mode == "anthropic_messages"
-        endpoint = "/messages" if native_messages else "/chat/completions"
+        native_ollama = self._wire_mode == "ollama_chat"
+        endpoint = "/messages" if native_messages else "/api/chat" if native_ollama else "/chat/completions"
         answer, empty = compatible_vision_answer, compatible_empty_success
         if native_messages:
             from .vision_nous_wire import messages_payload, messages_answer, messages_empty
             payload = messages_payload(payload)
             answer, empty = messages_answer, messages_empty
+        if native_ollama:
+            from .vision_ollama_wire import chat_payload, chat_answer, chat_empty
+            payload = chat_payload(payload)
+            answer, empty = chat_answer, chat_empty
         if self._provider_id == "openrouter":
             from .vision_openrouter import current_provider_block
             payload["provider"] = current_provider_block()
@@ -400,7 +409,7 @@ class VLMBackend(LLMBackend):
                             for message in messages if isinstance(message.get("content"), list)
                             for part in message["content"])
         recovery = scope if image_bearing else None
-        if recovery is not None or self._provider_id in {"deepinfra", "nous"}:
+        if recovery is not None or self._provider_id in {"deepinfra", "nous", "ollama"}:
             if recovery is not None:
                 recovery.begin(payload)
             async with asyncio.timeout(VISION_GENERATION_TIMEOUT):
@@ -426,10 +435,10 @@ class VLMBackend(LLMBackend):
                     if recovery is not None and attempt + 1 < attempts and empty(data):
                         continue
                     return answer(data)
-        resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
+        resp = await self.client.post(endpoint, json=payload, headers=self._headers())
         resp.raise_for_status()
         data = resp.json()
-        return compatible_vision_answer(data)
+        return answer(data)
 
     async def generate_vision(self, model: str, prompt: str, images=None, system: str = "",
                               max_tokens: int = 1024, temperature: float = 0.2) -> str:

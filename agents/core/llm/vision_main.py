@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
-from .base import LMStudioBackend
+from .base import LMStudioBackend, OllamaBackend
 from .job_selection import _ScopedBackend
 from .openrouter import OpenRouterBackend
 from .vision_openrouter import _validated_base
@@ -43,6 +43,16 @@ def selected_main_config(backend: object, model: str, route: str) -> VLMConfig |
     """
     if isinstance(backend, _ScopedBackend):
         raise VLMNotConfigured("vlm_scoped_backend_unsupported")
+    if isinstance(backend, OllamaBackend):
+        if not isinstance(route, str) or not route.startswith("local"):
+            raise VLMNotConfigured("vlm_route_invalid")
+        selected_model = _model(model)
+        base, local = _base(getattr(backend, "base_url", None))
+        return VLMConfig(
+            backend="ollama", base_url=base, model=selected_model,
+            api_key="", is_local=local, wire_mode="ollama_chat",
+            route_source="auto:main",
+        )
     if isinstance(backend, LMStudioBackend):
         if not isinstance(route, str) or not route.startswith("local"):
             raise VLMNotConfigured("vlm_route_invalid")
