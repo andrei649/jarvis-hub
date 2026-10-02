@@ -160,7 +160,7 @@ temperature rejection on the same route, with one parameter repair and one
 existing unload retry, at most three sends. Initial temperature is preserved;
 repair deliberately omits it. Token caps, request scopes and output rules remain.
 Focused union612 passed including32 new cases; bounded independent review found
-no blocker. Full clean-snapshot validation is the next action. See the
+no blocker. Full clean-snapshot validation passed on `3153217f3856beb3509ee30f995a243b3279cf1f`: 20569 passed,34 skipped and one expected failure; all4302 tracked regular files remained unchanged. The first failed full run and STT fixture correction are preserved in the [integration receipt](evidence/h277-auxiliary-parameter-integration-2026-10-02.json). Next: continue remaining H277 recovery/discovery requirements against the pinned reference. See the
 [implementation report](h277-auxiliary-parameter-2026-10-02.md).
 
 Exactly10 previously-current rows were inspected and refreshed; H681 remains
