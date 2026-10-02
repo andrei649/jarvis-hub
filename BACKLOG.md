@@ -1915,6 +1915,11 @@
   Four orchestrator auxiliary tasks now share guarded invocation with independent
   local model selection;513focused cases passed, including54new regressions. See
   the [local auxiliary increment](docs/hermes/h277-local-auxiliary-2026-10-02.md).
+  Acquisition capability generation and grounded plan drafting now use independently
+  configured local models through the same helper, frozen across JSON retries with
+  fresh authorization per attempt. The focused regression passed 1,026 cases with
+  two skipped, including 32 new acquisition cases; see the
+  [acquisition increment](docs/hermes/h277-acquisition-auxiliary-2026-10-02.md).
   Broader auxiliary routing, SDK recovery and live acceptance remain open. This does not close
   H277 or HEQ-1.
 

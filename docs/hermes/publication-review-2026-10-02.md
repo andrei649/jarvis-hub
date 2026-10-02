@@ -14,15 +14,15 @@ Limits: this was not an exhaustive audit of all 28 commits or generated/historic
 ## Final local verification
 
 Frozen commit `0307142d37bac7ad812f1738ca12cb75617b6e2e`:20505 backend
-tests passed,34 skipped,one expected failure and64 warnings. All4290 tracked
+tests passed,34 skipped,one expected failure and64 warnings. All 4,290 tracked
 regular files remained unchanged. The missing-blob fixture was reproduced red
 with forced packing and repaired with a separate object store:136 module cases
 passed. It no longer assumes loose Git storage or deletes pack files.
 
 The original failed full run on aa4865b5 is retained in the
 [auxiliary integration receipt](evidence/h277-local-auxiliary-integration-2026-10-02.json).
-The four-producer focused selection passed513; the isolated legacy-console tools
-selection passed40. Frontend1838 tests, typecheck and build are earlier proof on
+The four-producer focused selection passed 513; the isolated legacy-console tools
+selection passed 40. Frontend 1,838 tests, typecheck and build are earlier proof on
 unchanged frontend source/schema, not a fresh frontend rerun.
 
 Publication lint found four errors in historical mutation runners: import order,
@@ -31,13 +31,16 @@ passed full Ruff and compilation; historical outcome receipts retain their origi
 hashes. [Normalization provenance](evidence/publication-runner-normalization-2026-10-02.json)
 records original commit/hash and current hash. This is not a new mutation run.
 
-Exactly21 previously-current Hermes evidence rows were re-read and refreshed, with
-no status promotions. The original207 stale rows were not touched. H277 remains
+Exactly 21 previously-current Hermes evidence rows were re-read and refreshed, with
+no status promotions. The original 207 stale rows were not touched. H277 remains
 partial. The next slice is operation-bound acquisition auxiliary model selection;
 presence explanation still lacks a real product caller.
 
-Owner-authorized integration uses a merge commit to preserve independently tested
-source commits referenced by historical receipts. The repository permits this
-method; this is an explicit provenance choice for this batch instead of the
-auto-merge lane's default squash. CI must finish before merge. No deployment or
-live-provider acceptance is included.
+[PR1226](https://github.com/andrei649/jarvis-hub/pull/1226) merged on 2026-10-02
+as `a5b74939d4632c61e007ad64e4df937c44c47bc5` after both CI rounds passed, including
+all seven required checks. The branch rules require linear history and rejected
+the planned merge commit, so integration used squash. The remote branch
+`archive/hermes-integration-source-20261002` preserves original source/evidence
+commits at `64e99339302ccf8ddbc0c8f866cad8563d0c140b`. The canonical local main
+checkout was fast-forwarded to the merged commit. No deployment or live-provider
+acceptance is included; post-merge CI is a separate run.

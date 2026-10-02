@@ -33,9 +33,10 @@ The optional primary transient-retry setting uses existing task notices/results;
 there is no in-HUD editor for that environment setting.
 
 H277 local auxiliary models (2026-10-02): server-side title generation, recall
-rewriting, conversation review and compression can use independent local model
-IDs. Their existing output surfaces are unchanged. The four `JARVIS_AUX_*_MODEL`
-environment settings have no in-HUD editor or configuration listing yet.
+rewriting, conversation review, compression and governed acquisition capability/plan
+generation can use independent local model IDs. Existing output surfaces are
+unchanged. The six `JARVIS_AUX_*_MODEL` environment settings have no in-HUD editor
+or configuration listing yet. Acquisition retains its existing governed routes.
 
 - **Runtime verification.** Nothing was verified against a *running* backend (the build sandbox has
   no `fastapi`). Run `python serve.py` → open `/v2`, click **every mode + every Console (▦) panel**,

@@ -692,7 +692,7 @@ fetching a URL source again; local-file checks can reread bytes to verify their
 approved hash. Results expose fixed attempt categories and the successful model,
 without failed provider bodies, destination paths or credentials.
 
-**Shared local auxiliary models (H277).** Four optional model IDs select a model
+**Shared local auxiliary models (H277).** Six optional model IDs select a model
 on the router's existing local backend independently of the conversation model:
 
 | Setting | Consumer | Fallback when unset or ASCII-space-only |
@@ -701,19 +701,26 @@ on the router's existing local backend independently of the conversation model:
 | `JARVIS_AUX_QUERY_REWRITE_MODEL` | Recall query rewriting | Active local model, then `qwen3:7b` |
 | `JARVIS_AUX_REVIEW_MODEL` | Background/on-demand conversation review | Active local model, then `google/gemma-4-31b-a4b` |
 | `JARVIS_AUX_COMPRESSION_MODEL` | Context compression summary | Active local model, then `qwen3:7b` |
+| `JARVIS_AUX_ACQUISITION_CAPABILITY_MODEL` | Governed capability generation | Active local model, then `local` |
+| `JARVIS_AUX_ACQUISITION_DRAFT_MODEL` | Grounded acquisition plan drafting | Active local model, then `local` |
 
-Read at each invocation; changing one does not change the active conversation
-model or the other auxiliary tasks. Values are opaque printable Unicode model IDs,
+Read when each operation starts; changing one does not change the active
+conversation model or the other auxiliary tasks. Acquisition captures the backend
+and model once for both JSON attempts; a new operation can see later changes. Values are opaque printable Unicode model IDs,
 at most 256 raw characters; surrounding ASCII spaces are removed. Invalid types,
 controls/nonprintable characters or oversized values refuse that auxiliary call without echoing
 the value or silently selecting another model. These settings do not install a
 model, choose a provider/URL/key, enable a feature, or add retries/cloud fallback.
 
-The shared invocation retains the existing H513 policy checks at physical
-requests and the job-model-pin exclusion. Titles and rewriting keep their token
+The shared invocation retains the existing H513 policy checks at every attempt
+and physical request. Titles, rewriting, review and compression reject job-model
+pins. Acquisition retains its existing strict-local behavior independent of job
+pins; these settings do not make a job pin select its acquisition model. Titles and rewriting keep their token
 budgets and Qwen3 `/no_think` behavior; review keeps its bounded learning settings;
 compression keeps streamed activity, inactivity/hold limits and offline digest
-fallback. There is no model-ID editor or auxiliary listing in the HUD/native app
+fallback. Acquisition keeps its two-attempt JSON bound, 2048/1024-token budgets and
+temperature progression from 0.2 to 0; policy, configuration and provider failures
+do not become JSON retries. There is no model-ID editor or auxiliary listing in the HUD/native app
 for these environment settings. Broader auxiliary discovery/recovery remains open.
 
 **The approval judge** (`JARVIS_ROLE_APPROVAL_JUDGE_MODEL` set): each tool call queued on

@@ -22,7 +22,7 @@ import logging
 import re
 from typing import Any
 
-from agents.core.llm.data_handling import auxiliary_request_scope
+from agents.core.llm.auxiliary_text import prepare_local_auxiliary
 
 logger = logging.getLogger("jarvis.acquisition.llm_synth")
 
@@ -47,10 +47,6 @@ def _extract_json(text: str) -> Any:
     raise ValueError("no JSON found in model output")
 
 
-def _model_name(router) -> str:
-    return getattr(router, "active_model", None) or "local"
-
-
 async def generate_capability(prompt: dict, *, router) -> dict:
     """``StrictLocalGenerator``'s ``generate`` callable — strict-local, JSON-only.
 
@@ -61,8 +57,7 @@ async def generate_capability(prompt: dict, *, router) -> dict:
     re-validates everything regardless (stdlib-only imports, forbidden calls,
     no placeholder body, secret/PII scan), so nothing here is trusted on its own.
     """
-    backend = router.local_backend
-    model = _model_name(router)
+    generate = prepare_local_auxiliary(router, "acquisition_capability")
     requirements = "; ".join(str(item) for item in (prompt.get("requirements") or []))
     system = (
         "You write a single Python capability package for a sandboxed, "
@@ -80,11 +75,10 @@ async def generate_capability(prompt: dict, *, router) -> dict:
 
     last_error: Exception | None = None
     for attempt in range(_MAX_ATTEMPTS):
-        with auxiliary_request_scope(router, backend, model, role="acquisition_capability"):
-            raw = await backend.generate(
-                model, user, system=system, max_tokens=2048,
-                temperature=0.2 if attempt == 0 else 0.0,
-            )
+        raw = await generate(
+            prompt=user, system=system, max_tokens=2048,
+            temperature=0.2 if attempt == 0 else 0.0,
+        )
         try:
             parsed = _extract_json(raw)
         except ValueError as exc:
@@ -107,8 +101,7 @@ async def draft_plan(goal: str, references: list[dict], *, router) -> list[dict]
     ``ground_plan()`` regardless: an invented reference id is surfaced as an
     unknown citation, never silently trusted.
     """
-    backend = router.local_backend
-    model = _model_name(router)
+    generate = prepare_local_auxiliary(router, "acquisition_draft")
     catalog = [
         {"id": ref.get("id"), "title": ref.get("title"), "url": ref.get("url")}
         for ref in references
@@ -125,11 +118,10 @@ async def draft_plan(goal: str, references: list[dict], *, router) -> list[dict]
 
     last_error: Exception | None = None
     for attempt in range(_MAX_ATTEMPTS):
-        with auxiliary_request_scope(router, backend, model, role="acquisition_draft"):
-            raw = await backend.generate(
-                model, user, system=system, max_tokens=1024,
-                temperature=0.2 if attempt == 0 else 0.0,
-            )
+        raw = await generate(
+            prompt=user, system=system, max_tokens=1024,
+            temperature=0.2 if attempt == 0 else 0.0,
+        )
         try:
             parsed = _extract_json(raw)
         except ValueError as exc:
