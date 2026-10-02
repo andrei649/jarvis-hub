@@ -131,7 +131,8 @@ async def test_coordinator_carries_timestamps_without_switching_defaults_and_pre
     persistence.save_memory(child, newer, instance_id=cp.clock_snapshot(child).instance_id)
     active = memory.conversation
     old_instance = active.active_image_instance(child)
-    handle = active.active_images.remember(child, old_instance, "jarvis", "old image", [b"private"])
+    handle = active.active_images.remember(child, old_instance, "jarvis", "old image",
+                                           "old answer", [b"private"])
     memory.conversation.sessions.pop(child)
     await prepare_session(orch, child)
     assert await memory.get_history(child) == newer

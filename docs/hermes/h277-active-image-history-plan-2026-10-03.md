@@ -49,12 +49,14 @@ pytest/Vitest.
 to own the store and invalidate it whenever a turn list is cleared/replaced.
 
 **Interfaces:** `ActiveImageHistory` has `remember(session_id, instance,
-agent_id, question, images) -> str | None`, `list(session_id, instance,
+agent_id, question, answer, images) -> str | None`, `list(session_id, instance,
 agent_id) -> list[dict]`, `resolve(session_id, instance, agent_id, handles)
 -> tuple[bytes, ...]`, and `clear(session_id=None)`. `instance` is a process-
 local session-instance token, never a public session ID alone. A successful
 remember returns a random opaque handle; over-capacity returns `None`.
-Resolve raises a fixed `ActiveImageUnavailable` on missing/stale state.
+`resolve_turns` returns the ordered prior question, answer and image tuple;
+`resolve` returns the flattened image bytes for review digests. Both raise a
+fixed `ActiveImageUnavailable` on missing/stale state.
 `ConversationMemory.active_image_instance(session_id)` returns a process-local
 random token for an in-memory session and `None` if the session is absent.
 
@@ -77,11 +79,12 @@ logical user/assistant turns with image parts and an exact current model. It
 uses the existing physical request/empty-retry scope, not a second sender.
 Unsupported or malformed provider history fails before transport.
 
-- [ ] Write one failing real HTTPX test per selected-main native codec for
-  ordered prior image/question/answer plus current question and images.
-- [ ] Write refusal tests for malformed roles, missing image part, oversized
+- [x] Start with a failing ordered-history codec test, then add real offline
+  HTTPX tests per selected-main native codec for prior image/question/answer
+  plus the current question.
+- [x] Write refusal tests for malformed roles, missing image part, oversized
   combined body and provider codec limitations.
-- [ ] Implement wire conversion without changing ordinary single-image
+- [x] Implement wire conversion without changing ordinary single-image
   requests, and run the codec/selected-image/H513 suites green; commit Task 2.
 
 ### Task 3: Reviewed server conversation follow-up
@@ -134,3 +137,15 @@ passed. A deliberate one-line removal of continuation invalidation failed its
 specific regression, then the restored source passed the 97-case selection.
 Scoped Ruff and `git diff --check` passed. This is a private cache primitive;
 there is no active-image replay route or UI yet, and H277 remains partial.
+
+## Task 2 evidence
+
+The first ordered-history codec test failed on Ollama's prior assistant turn
+before conversion. Offline HTTPX regressions now exercise the compatible,
+Ollama, Gemini, OpenAI Responses, xAI and Anthropic Messages transports in
+order. Five codec refusal variants reject malformed role order and missing
+image parts; a 20 MB combined-body refusal proves no request is sent. The
+native/selected-image/H513/memory test selection passed, along with scoped
+Ruff, Graft wiring freshness and `git diff --check`. These are local simulated
+transports, not live provider compatibility proof. The server route and HUD
+remain for Tasks 3 and 4.

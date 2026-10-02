@@ -17,13 +17,17 @@ def _history(**kwargs):
 
 def test_active_images_are_scoped_to_session_instance_and_agent():
     history, unavailable = _history()
-    handle = history.remember("session_a", "instance_a", "jarvis", "What is here?", [b"PNG-1"])
+    handle = history.remember("session_a", "instance_a", "jarvis", "What is here?",
+                              "A red door.", [b"PNG-1"])
 
     assert isinstance(handle, str) and len(handle) >= 24
     assert history.list("session_a", "instance_a", "jarvis") == [
         {"handle": handle, "count": 1, "question": "What is here?"}
     ]
     assert history.resolve("session_a", "instance_a", "jarvis", [handle]) == (b"PNG-1",)
+    turn = history.resolve_turns("session_a", "instance_a", "jarvis", [handle])[0]
+    assert (turn.question, turn.answer, turn.images) == (
+        "What is here?", "A red door.", (b"PNG-1",))
     for session, instance, agent in (
         ("session_b", "instance_a", "jarvis"),
         ("session_a", "instance_b", "jarvis"),
@@ -42,9 +46,9 @@ def test_active_images_expire_and_evict_oldest_without_reusing_handles():
     now = [0.0]
     history, unavailable = _history(clock=lambda: now[0], ttl_seconds=5,
                                     max_bytes=8, max_handles=2)
-    first = history.remember("s", "i", "jarvis", "first", [b"1234"])
-    second = history.remember("s", "i", "jarvis", "second", [b"5678"])
-    third = history.remember("s", "i", "jarvis", "third", [b"ABCD"])
+    first = history.remember("s", "i", "jarvis", "first", "one", [b"1234"])
+    second = history.remember("s", "i", "jarvis", "second", "two", [b"5678"])
+    third = history.remember("s", "i", "jarvis", "third", "three", [b"ABCD"])
     assert len({first, second, third}) == 3
     assert [row["handle"] for row in history.list("s", "i", "jarvis")] == [second, third]
     with pytest.raises(unavailable):
@@ -58,14 +62,15 @@ def test_active_images_expire_and_evict_oldest_without_reusing_handles():
 def test_active_images_copy_mutable_input_and_keep_bytes_out_of_public_shapes():
     history, unavailable = _history(max_bytes=16, max_handles=2, max_image_bytes=8)
     source = bytearray(b"private-image")
-    assert history.remember("s", "i", "jarvis", "oversize", [source]) is None
+    assert history.remember("s", "i", "jarvis", "oversize", "answer", [source]) is None
     source = bytearray(b"secret")
-    handle = history.remember("s", "i", "jarvis", "\n what? \r", [source])
+    handle = history.remember("s", "i", "jarvis", "\n what? \r", "private answer", [source])
     source[:] = b"changed"
     assert history.resolve("s", "i", "jarvis", [handle]) == (b"secret",)
     public = history.list("s", "i", "jarvis")
     assert public == [{"handle": handle, "count": 1, "question": "what?"}]
     assert "secret" not in repr(history) and "secret" not in repr(public)
+    assert "private answer" not in repr(history.resolve_turns("s", "i", "jarvis", [handle]))
     with pytest.raises(unavailable):
         history.resolve("s", "i", "jarvis", [handle, handle])
 
@@ -76,7 +81,8 @@ async def test_conversation_clear_drops_active_images_without_persisting_them():
     await memory.new_session("selected_s")
     assert hasattr(memory, "active_images")
     instance = memory.active_image_instance("selected_s")
-    handle = memory.active_images.remember("selected_s", instance, "jarvis", "question", [b"private"])
+    handle = memory.active_images.remember("selected_s", instance, "jarvis", "question",
+                                           "answer", [b"private"])
     await memory.add_turn("selected_s", "user", "question\n[1 image attached]",
                           media={"kind": "image", "count": 1, "model": "vision-model",
                                  "backend": "lmstudio", "local": True})

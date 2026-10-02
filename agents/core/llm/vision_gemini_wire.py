@@ -15,16 +15,19 @@ IMAGE_MIMES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 def generate_content_payload(compatible: dict) -> dict:
     system: list[str] = []
     contents: list[dict] = []
+    next_role = "user"
+    image_count = 0
     for message in compatible["messages"]:
         if message["role"] == "system":
-            if not isinstance(message["content"], str):
+            if contents or not isinstance(message["content"], str):
                 raise ValueError("invalid Gemini image system message")
             system.append(message["content"])
             continue
-        if message["role"] != "user":
+        role = message["role"]
+        if role != next_role:
             raise ValueError("invalid Gemini image role")
         parts = message["content"]
-        if isinstance(parts, str):
+        if role == "assistant" and isinstance(parts, str):
             parts = [{"type": "text", "text": parts}]
         if not isinstance(parts, list):
             raise ValueError("invalid Gemini image content")
@@ -34,7 +37,8 @@ def generate_content_payload(compatible: dict) -> dict:
                 raise ValueError("invalid Gemini image part")
             if part.get("type") == "text" and isinstance(part.get("text"), str):
                 blocks.append({"text": part["text"]})
-            elif part.get("type") == "image_url" and isinstance(part.get("image_url"), dict):
+            elif (role == "user" and part.get("type") == "image_url"
+                  and isinstance(part.get("image_url"), dict)):
                 uri = part["image_url"].get("url")
                 if not isinstance(uri, str):
                     raise ValueError("invalid Gemini image data")
@@ -50,10 +54,14 @@ def generate_content_payload(compatible: dict) -> dict:
                 except (ValueError, binascii.Error):
                     raise ValueError("invalid Gemini image data") from None
                 blocks.append({"inline_data": {"mime_type": mime, "data": encoded}})
+                image_count += 1
             else:
                 raise ValueError("invalid Gemini image part")
-        contents.append({"role": "user", "parts": blocks})
-    if len(contents) != 1 or not contents[0]["parts"]:
+        if not blocks:
+            raise ValueError("invalid Gemini image turn")
+        contents.append({"role": "model" if role == "assistant" else "user", "parts": blocks})
+        next_role = "user" if role == "assistant" else "assistant"
+    if next_role != "assistant" or not image_count:
         raise ValueError("invalid Gemini image turn")
     payload = {
         "contents": contents,

@@ -29,7 +29,8 @@ a fresh one-use review. Ordinary text chat remains text-only.
 ## In-process ownership
 
 An `ActiveImageHistory` owned by each `ConversationMemory` holds immutable validated
-raster bytes for successful selected image turns only. No global cache or disk,
+raster bytes plus their question/answer text for successful selected image turns
+only. No global cache or disk,
 checkpoint, vector, trace, audit or session-log field contains bytes, base64,
 data URI, raw digest or credential. A handle is random, opaque, non-authorizing
 and only valid for the exact session instance and agent. The store caps each

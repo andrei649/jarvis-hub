@@ -17,18 +17,29 @@ def responses_payload(compatible: dict, *, retention: str | None,
     if retention is not None and retention not in {"in_memory", "24h"}:
         raise ValueError("invalid Responses image retention")
     instructions: list[str] = []
-    user: list[dict] = []
+    turns: list[dict] = []
+    next_role = "user"
+    image_count = 0
     for message in compatible["messages"]:
         if message["role"] == "system":
-            if not isinstance(message["content"], str):
+            if turns or not isinstance(message["content"], str):
                 raise ValueError("invalid Responses image system message")
             instructions.append(message["content"])
             continue
-        if message["role"] != "user" or user:
+        role = message["role"]
+        if role != next_role:
             raise ValueError("invalid Responses image turn")
+        if role == "assistant":
+            answer = message["content"]
+            if not isinstance(answer, str) or not answer:
+                raise ValueError("invalid Responses image assistant message")
+            turns.append({"role": "assistant", "content": [{"type": "output_text", "text": answer}]})
+            next_role = "user"
+            continue
         parts = message["content"]
         if not isinstance(parts, list):
             raise ValueError("invalid Responses image content")
+        user: list[dict] = []
         for part in parts:
             if not isinstance(part, dict):
                 raise ValueError("invalid Responses image part")
@@ -50,14 +61,19 @@ def responses_payload(compatible: dict, *, retention: str | None,
                 except (ValueError, binascii.Error):
                     raise ValueError("invalid Responses image data") from None
                 user.append({"type": "input_image", "image_url": uri, "detail": "auto"})
+                image_count += 1
             else:
                 raise ValueError("invalid Responses image part")
-    if not user or not any(part["type"] == "input_image" for part in user):
+        if not user:
+            raise ValueError("invalid Responses image turn")
+        turns.append({"role": "user", "content": user})
+        next_role = "assistant"
+    if next_role != "assistant" or not image_count:
         raise ValueError("invalid Responses image turn")
     payload = {
         "model": compatible["model"],
         "input": ([{"role": "system", "content": "\n\n".join(instructions)}] if instructions else [])
-                 + [{"role": "user", "content": user}],
+                 + turns,
         "store": False,
         "max_output_tokens": compatible["max_tokens"],
         "temperature": compatible["temperature"],

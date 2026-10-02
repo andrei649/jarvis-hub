@@ -25,9 +25,18 @@ class _Entry:
     session_id: str
     instance: str
     agent_id: str
-    question: str
+    question: str = field(repr=False)
+    answer: str = field(repr=False)
+    label: str = field(repr=False)
     images: tuple[bytes, ...] = field(repr=False)
     expires_at: float = field(repr=False)
+
+
+@dataclass(frozen=True)
+class ActiveImageTurn:
+    question: str = field(repr=False)
+    answer: str = field(repr=False)
+    images: tuple[bytes, ...] = field(repr=False)
 
 
 class ActiveImageHistory:
@@ -72,11 +81,13 @@ class ActiveImageHistory:
                 self._remove(handle)
 
     def remember(self, session_id: str, instance: str, agent_id: str,
-                 question: str, images: list[bytes] | tuple[bytes, ...]) -> str | None:
+                 question: str, answer: str,
+                 images: list[bytes] | tuple[bytes, ...]) -> str | None:
         """Copy a validated selected turn after commit; None means not retained."""
         if not self._identity(session_id, instance, agent_id):
             raise ActiveImageUnavailable()
-        if type(question) is not str or not question.strip():
+        if (type(question) is not str or not 0 < len(question) <= 4000 or not question.strip()
+                or type(answer) is not str or not 0 < len(answer) <= 16000 or not answer.strip()):
             raise ActiveImageUnavailable()
         if type(images) not in (list, tuple) or not 1 <= len(images) <= 8:
             raise ActiveImageUnavailable()
@@ -100,7 +111,8 @@ class ActiveImageHistory:
             while handle in self._entries:
                 handle = secrets.token_urlsafe(24)
             self._entries[handle] = _Entry(
-                session_id, instance, agent_id, label, copied, now + self._ttl)
+                session_id, instance, agent_id, question, answer, label, copied,
+                now + self._ttl)
             self._resident_bytes += size
             return handle
 
@@ -110,14 +122,14 @@ class ActiveImageHistory:
         with self._lock:
             self._expire(self._clock())
             return [
-                {"handle": handle, "count": len(entry.images), "question": entry.question}
+                {"handle": handle, "count": len(entry.images), "question": entry.label}
                 for handle, entry in self._entries.items()
                 if (entry.session_id, entry.instance, entry.agent_id)
                 == (session_id, instance, agent_id)
             ]
 
-    def resolve(self, session_id: str, instance: str, agent_id: str,
-                handles: list[str] | tuple[str, ...]) -> tuple[bytes, ...]:
+    def _select(self, session_id: str, instance: str, agent_id: str,
+                handles: list[str] | tuple[str, ...]) -> list[_Entry]:
         if (not self._identity(session_id, instance, agent_id)
                 or type(handles) not in (list, tuple) or not 1 <= len(handles) <= 8
                 or any(type(handle) is not str for handle in handles)
@@ -125,17 +137,27 @@ class ActiveImageHistory:
             raise ActiveImageUnavailable()
         with self._lock:
             self._expire(self._clock())
-            selected = []
+            selected: list[_Entry] = []
             for handle in handles:
                 entry = self._entries.get(handle)
                 if (entry is None or
                         (entry.session_id, entry.instance, entry.agent_id)
                         != (session_id, instance, agent_id)):
                     raise ActiveImageUnavailable()
-                selected.extend(entry.images)
-            if len(selected) > 8:
+                selected.append(entry)
+            if sum(len(entry.images) for entry in selected) > 8:
                 raise ActiveImageUnavailable()
-            return tuple(selected)
+            return selected
+
+    def resolve(self, session_id: str, instance: str, agent_id: str,
+                handles: list[str] | tuple[str, ...]) -> tuple[bytes, ...]:
+        return tuple(image for entry in self._select(session_id, instance, agent_id, handles)
+                     for image in entry.images)
+
+    def resolve_turns(self, session_id: str, instance: str, agent_id: str,
+                      handles: list[str] | tuple[str, ...]) -> tuple[ActiveImageTurn, ...]:
+        return tuple(ActiveImageTurn(entry.question, entry.answer, entry.images)
+                     for entry in self._select(session_id, instance, agent_id, handles))
 
     def clear(self, session_id: str | None = None) -> None:
         with self._lock:

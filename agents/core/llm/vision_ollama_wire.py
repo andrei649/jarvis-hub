@@ -9,13 +9,21 @@ from .native_response import normalized_vision_text
 
 def chat_payload(compatible: dict) -> dict:
     messages = []
+    next_role = "user"
+    image_count = 0
     for message in compatible["messages"]:
         if message["role"] == "system":
-            if not isinstance(message["content"], str):
+            if next_role != "user" or any(row["role"] != "system" for row in messages) or not isinstance(message["content"], str):
                 raise ValueError("invalid Ollama vision system message")
             messages.append({"role": "system", "content": message["content"]})
             continue
-        if message["role"] != "user" or not isinstance(message["content"], list):
+        if message["role"] == "assistant" and next_role == "assistant":
+            if not isinstance(message["content"], str) or not message["content"]:
+                raise ValueError("invalid Ollama vision assistant message")
+            messages.append({"role": "assistant", "content": message["content"]})
+            next_role = "user"
+            continue
+        if message["role"] != "user" or next_role != "user" or not isinstance(message["content"], list):
             raise ValueError("invalid Ollama vision message")
         texts = []
         images = []
@@ -39,9 +47,16 @@ def chat_payload(compatible: dict) -> dict:
                 images.append(data)
             else:
                 raise ValueError("invalid Ollama vision block")
-        if not images:
-            raise ValueError("Ollama vision image missing")
-        messages.append({"role": "user", "content": "\n".join(texts), "images": images})
+        if not texts and not images:
+            raise ValueError("invalid Ollama vision message")
+        row = {"role": "user", "content": "\n".join(texts)}
+        if images:
+            row["images"] = images
+            image_count += len(images)
+        messages.append(row)
+        next_role = "assistant"
+    if next_role != "assistant" or not image_count:
+        raise ValueError("Ollama vision image missing")
     max_tokens = compatible["max_tokens"]
     return {"model": compatible["model"], "messages": messages, "stream": False,
             "options": {"num_predict": max_tokens if max_tokens > 0 else -1,

@@ -329,6 +329,46 @@ def build_vision_messages(prompt: str, images=None, system: str = "",
     return messages
 
 
+def build_vision_history_messages(prompt: str, images, history, system: str = "",
+                                  max_dim: int = 1024) -> list:
+    """Replay explicitly selected active image turns as ordered native parts."""
+    from .vision_history import ActiveImageTurn
+
+    if type(history) not in (list, tuple) or not 1 <= len(history) <= 8:
+        raise ValueError("invalid active image history")
+    if type(prompt) is not str or not prompt.strip():
+        raise ValueError("invalid active image question")
+    if type(images) not in (list, tuple) or len(images) > 8:
+        raise ValueError("invalid active image selection")
+    messages = [{"role": "system", "content": system}] if system else []
+    image_count = len(images)
+    for turn in history:
+        if isinstance(turn, ActiveImageTurn):
+            question, answer, prior_images = turn.question, turn.answer, turn.images
+        elif type(turn) is tuple and len(turn) == 3:
+            question, answer, prior_images = turn
+        else:
+            raise ValueError("invalid active image history")
+        if (type(question) is not str or not 0 < len(question) <= 4000 or not question.strip()
+                or type(answer) is not str or not 0 < len(answer) <= 16000 or not answer.strip()
+                or type(prior_images) not in (list, tuple) or not 1 <= len(prior_images) <= 8
+                or any(type(image) is not bytes or not image for image in prior_images)):
+            raise ValueError("invalid active image history")
+        image_count += len(prior_images)
+        if image_count > 8:
+            raise ValueError("too many active images")
+        parts = [{"type": "text", "text": question}]
+        parts.extend(encode_image_block(image, max_dim) for image in prior_images)
+        messages.extend(({"role": "user", "content": parts},
+                         {"role": "assistant", "content": answer}))
+    if any(type(image) is not bytes or not image for image in images):
+        raise ValueError("invalid active image selection")
+    parts = [{"type": "text", "text": prompt}]
+    parts.extend(encode_image_block(image, max_dim) for image in images)
+    messages.append({"role": "user", "content": parts})
+    return messages
+
+
 class VLMBackend(LLMBackend):
     """OpenAI-vision-compatible VLM backend (host server is the deployment seam)."""
 
@@ -418,8 +458,12 @@ class VLMBackend(LLMBackend):
         return h
 
     async def generate_vision_checked(self, model: str, prompt: str, images=None, system: str = "",
-                              max_tokens: int = 1024, temperature: float = 0.2) -> str:
-        messages = build_vision_messages(prompt, images, system, self.max_image_dim)
+                              max_tokens: int = 1024, temperature: float = 0.2, *,
+                              history=None) -> str:
+        messages = (build_vision_history_messages(prompt, images or [], history, system,
+                                                  self.max_image_dim)
+                    if history is not None else
+                    build_vision_messages(prompt, images, system, self.max_image_dim))
         payload = {"model": model, "messages": messages,
                    "max_tokens": max_tokens, "temperature": temperature, "stream": False}
         native_messages = self._wire_mode == "anthropic_messages"
@@ -459,12 +503,15 @@ class VLMBackend(LLMBackend):
         if self._provider_id == "openrouter":
             from .vision_openrouter import current_provider_block
             payload["provider"] = current_provider_block()
+        if history is not None and len(json.dumps(
+                payload, separators=(",", ":"), ensure_ascii=False).encode()) > 20_000_000:
+            raise ValueError("active image request too large")
         scope = current_vision_retry(self, model)
         image_bearing = any(isinstance(part, dict) and part.get("type") == "image_url"
                             for message in messages if isinstance(message.get("content"), list)
                             for part in message["content"])
         recovery = scope if image_bearing else None
-        if recovery is not None or self._provider_id in {"deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses", "xai"}:
+        if recovery is not None or history is not None or self._provider_id in {"deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses", "xai"}:
             if recovery is not None:
                 recovery.begin(payload)
             async with asyncio.timeout(VISION_GENERATION_TIMEOUT):

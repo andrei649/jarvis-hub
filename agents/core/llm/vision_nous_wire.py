@@ -1,5 +1,8 @@
 """Nous native Messages image encoding and typed answer normalization."""
 
+import base64
+import binascii
+
 from .native_response import normalized_vision_text
 from .reasoning_effort import apply_anthropic
 
@@ -7,29 +10,53 @@ from .reasoning_effort import apply_anthropic
 def messages_payload(compatible: dict) -> dict:
     messages = []
     system = []
+    next_role = 'user'
+    image_count = 0
     for message in compatible['messages']:
         content = message['content']
         if message['role'] == 'system':
-            if not isinstance(content, str):
+            if messages or not isinstance(content, str):
                 raise ValueError('invalid vision system message')
             system.append(content)
             continue
+        role = message['role']
+        if role != next_role:
+            raise ValueError('invalid native vision role')
+        if role == 'assistant' and (not isinstance(content, str) or not content):
+            raise ValueError('invalid native vision assistant message')
         parts = [{'type': 'text', 'text': content}] if isinstance(content, str) else content
+        if not isinstance(parts, list):
+            raise ValueError('invalid native vision content')
         blocks = []
         for part in parts:
-            if part.get('type') == 'text':
+            if not isinstance(part, dict):
+                raise ValueError('invalid native vision block')
+            if part.get('type') == 'text' and isinstance(part.get('text'), str):
                 blocks.append({'type': 'text', 'text': part['text']})
-            elif part.get('type') == 'image_url':
-                uri = part['image_url']['url']
+            elif (role == 'user' and part.get('type') == 'image_url'
+                  and isinstance(part.get('image_url'), dict)):
+                uri = part['image_url'].get('url')
+                if not isinstance(uri, str):
+                    raise ValueError('invalid native vision image')
                 header, separator, data = uri.partition(',')
                 mime = header.removeprefix('data:').removesuffix(';base64')
                 if not separator or not header.startswith('data:') or not header.endswith(';base64') or mime not in {
                         'image/png', 'image/jpeg', 'image/gif', 'image/webp'} or not data:
                     raise ValueError('invalid native vision image')
+                try:
+                    base64.b64decode(data, validate=True)
+                except (ValueError, binascii.Error):
+                    raise ValueError('invalid native vision image') from None
                 blocks.append({'type': 'image', 'source': {'type': 'base64', 'media_type': mime, 'data': data}})
+                image_count += 1
             else:
                 raise ValueError('invalid native vision block')
-        messages.append({'role': message['role'], 'content': blocks})
+        if not blocks:
+            raise ValueError('invalid native vision content')
+        messages.append({'role': role, 'content': blocks})
+        next_role = 'user' if role == 'assistant' else 'assistant'
+    if next_role != 'assistant' or not image_count:
+        raise ValueError('invalid native vision turn')
     payload = {**compatible, 'messages': messages}
     if system:
         payload['system'] = '\n\n'.join(system)
