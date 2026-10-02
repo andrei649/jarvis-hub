@@ -1,6 +1,6 @@
 import {expect,test} from '@playwright/test';
 const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC';
-const status={configured:true,model:'vision-test',backend:'custom',destination:'https://vision.example/v1',binding:'a'.repeat(64),review_token:'t'.repeat(32),local:false};
+const status={configured:true,model:'vision-test',backend:'custom',destination:'https://vision.example/v1',binding:'a'.repeat(64),review_token:'t'.repeat(32),local:false,selected_turn:true,session_id:'image_session'};
 const result={ok:true,response:'A test screenshot.',model:status.model,backend:status.backend,destination:status.destination,local:false};
 test('training and cost confirmations are independent, transmitted and reset for the next draft',async({page})=>{
   const images:any[]=[];
@@ -18,13 +18,13 @@ test('training and cost confirmations are independent, transmitted and reset for
   await attach();
   await expect(training).not.toBeChecked();await expect(cost).not.toBeChecked();
   await page.locator('.inputbar input').fill('Describe screenshot');
-  await page.getByRole('checkbox',{name:/Send these images to/}).check();
+  await page.getByRole('checkbox',{name:/Send these images and the assembled conversation prompt to/}).check();
   await expect(send).toBeDisabled();
   await training.check();await expect(send).toBeDisabled();
   await cost.check();await send.click();
   await expect(page.getByText('A test screenshot.',{exact:true})).toBeVisible();
   expect(images).toHaveLength(1);
-  expect(images[0]).toMatchObject({expected_binding:binding,review_token:status.review_token,agent:'jarvis',remote_ack:true,acknowledge_training:true,confirm_expensive:true});
+  expect(images[0]).toMatchObject({expected_binding:binding,review_token:status.review_token,agent:'jarvis',remote_ack:true,acknowledge_training:true,confirm_expensive:true,selected_turn:true,session_id:'image_session'});
   expect(images[0]).not.toHaveProperty('selection_requirements');
   await attach();
   await expect(training).not.toBeChecked();await expect(cost).not.toBeChecked();
@@ -53,7 +53,7 @@ test('choose paste drop, explicit remote consent, vision provenance and unchange
   await expect(page.getByAltText('chosen.png',{exact:true})).toHaveCount(0);
   await page.locator('.inputbar input').fill('Describe screenshot');
   await expect(page.getByRole('button',{name:'TRANSMIT',exact:true})).toBeDisabled();expect(images).toHaveLength(0);
-  await page.getByRole('checkbox',{name:/Send these images to https:\/\/vision.example/}).check();
+  await page.getByRole('checkbox',{name:/Send these images and the assembled conversation prompt to https:\/\/vision.example/}).check();
   await page.getByRole('button',{name:'TRANSMIT',exact:true}).click();
   await expect(page.getByText('A test screenshot.',{exact:true})).toBeVisible();
   await expect(page.getByText('VISION ANALYSIS',{exact:true})).toBeVisible();

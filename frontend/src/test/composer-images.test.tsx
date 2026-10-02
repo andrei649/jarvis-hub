@@ -4,7 +4,7 @@ import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {InputBar} from '../cockpit';
 import {describeImages} from '../vision-turn';
 const t={channel:'NERVA',placeholder:'Ask Nerva',transmit:'Send'};
-const status={configured:true,destination:'http://127.0.0.1:1234/v1',binding:'a'.repeat(64),review_token:'r'.repeat(43),model:'vision-test',backend:'custom',local:true};
+const status={configured:true,destination:'http://127.0.0.1:1234/v1',binding:'a'.repeat(64),review_token:'r'.repeat(43),model:'vision-test',backend:'custom',local:true,selected_turn:true,session_id:'image_session'};
 const retryNotice='May retry once with the same images and model after an empty response (at most two model calls).';
 beforeEach(()=>{
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify(status))));
@@ -22,7 +22,9 @@ it('chooses an image with a removable preview and submits an explicit vision dra
   expect(submit.mock.calls[0][0]).toBe('What is shown?');
   expect(submit.mock.calls[0][1]).toMatchObject({names:['shot.png'],expected_destination:status.destination,expected_binding:status.binding});
   expect(submit.mock.calls[0][1].images[0]).toMatch(/^data:image\/png;base64,/);
-  expect(Object.keys(submit.mock.calls[0][1]).sort()).toEqual(['agent','expected_binding','expected_destination','images','names','remote_ack','review_token']);
+  expect(Object.keys(submit.mock.calls[0][1]).sort()).toEqual(['agent','expected_binding','expected_destination','images','names','remote_ack','review_token','selected_turn','session_id']);
+  expect(submit.mock.calls[0][1]).toMatchObject({selected_turn:true,session_id:'image_session'});
+  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))).toMatchObject({selected_turn:true});
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview');
 });
 it('preserves ordinary text submission and nonimage paste without a vision request',()=>{
@@ -121,7 +123,8 @@ it('shows the automatically selected image provider before remote consent',async
   fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
   expect(await screen.findByText(/Automatically selected OpenRouter/)).toBeTruthy();
   expect(screen.getByText(/vendor\/vision/)).toBeTruthy();
-  expect(screen.getByText(/Send these images to https:\/\/openrouter.ai\/api\/v1/)).toBeTruthy();
+  expect(screen.getByText(/Send these images and the assembled conversation prompt to https:\/\/openrouter.ai\/api\/v1/)).toBeTruthy();
+  expect(screen.getByText(/earlier messages, agent context and a checkpoint/)).toBeTruthy();
 });
 it('refuses malformed automatic selection metadata before image submission',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify({
@@ -129,6 +132,17 @@ it('refuses malformed automatic selection metadata before image submission',asyn
   const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
   fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
   await screen.findByText(/Vision model unavailable/);
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
+  expect(submit).not.toHaveBeenCalled();
+});
+
+it('refuses a review that is not bound to the selected conversation session',async()=>{
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify({
+    ...status,selected_turn:false,session_id:undefined,
+  }))));
+  const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  await waitFor(()=>expect(screen.getByText(/Vision model unavailable/)).toBeTruthy());
   expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
   expect(submit).not.toHaveBeenCalled();
 });
@@ -202,14 +216,14 @@ it('requires independent remote, training, and cost confirmations for one image 
   await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false));
   fireEvent.click(screen.getByRole('button',{name:'Send'}));
   expect(submit.mock.calls[0][1]).toMatchObject({remote_ack:true,acknowledge_training:true,confirm_expensive:true});
-  expect(Object.keys(submit.mock.calls[0][1]).sort()).toEqual(['acknowledge_training','agent','confirm_expensive','expected_binding','expected_destination','images','names','remote_ack','review_token']);
+  expect(Object.keys(submit.mock.calls[0][1]).sort()).toEqual(['acknowledge_training','agent','confirm_expensive','expected_binding','expected_destination','images','names','remote_ack','review_token','selected_turn','session_id']);
   const answer=await describeImages('Describe it.',submit.mock.calls[0][1],new AbortController().signal);
   expect(answer.text).toBe('A test image.');
   const request=requests.find(item=>item.url.includes('/composer/describe-prepared'));
   expect(request?.url).toContain('/api/vlm/composer/describe-prepared');
   const body=JSON.parse(String(request?.init.body));
   expect(body).toMatchObject({prompt:'Describe it.',remote_ack:true,acknowledge_training:true,confirm_expensive:true,expected_binding:guarded.binding});
-  expect(Object.keys(body).sort()).toEqual(['acknowledge_training','agent','confirm_expensive','expected_binding','expected_destination','images','prompt','remote_ack','review_token']);
+  expect(Object.keys(body).sort()).toEqual(['acknowledge_training','agent','confirm_expensive','expected_binding','expected_destination','images','prompt','remote_ack','review_token','selected_turn','session_id']);
 });
 
 it('submits only the required training flag and resets it when the image set changes',async()=>{

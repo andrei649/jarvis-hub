@@ -15,9 +15,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
+from agents.core.llm.vision_review import VisionReviewRefused, VisionReviewStore
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
-from agents.core.llm.vision_review import VisionReviewRefused, VisionReviewStore
 
 
 class _BoundedValidationRoute(APIRoute):
@@ -213,6 +213,7 @@ class ComposerPrepareBody(BaseModel):
     agent: str = Field(default="jarvis", min_length=1, max_length=64,
                        pattern=r"^[a-z][a-z0-9_-]*$")
     session_id: str | None = None
+    selected_turn: StrictBool = False
 
     @field_validator("prompt")
     @classmethod
@@ -235,6 +236,7 @@ class PreparedComposerVisionBody(ComposerVisionBody):
     agent: str = Field(default="jarvis", min_length=1, max_length=64,
                        pattern=r"^[a-z][a-z0-9_-]*$")
     session_id: str | None = None
+    selected_turn: StrictBool = False
 
     @field_validator("session_id")
     @classmethod
@@ -245,7 +247,7 @@ class PreparedComposerVisionBody(ComposerVisionBody):
         return value
 
 
-async def _prepare_config(*, refresh_catalog: bool = False):
+async def _prepare_config(*, refresh_catalog: bool = False, main_config=None):
     from agents.core.env_config import env_str
     from agents.core.llm.vlm import resolve_vlm_config
 
@@ -258,7 +260,70 @@ async def _prepare_config(*, refresh_catalog: bool = False):
         return await prepare_config(force_refresh=refresh_catalog)
     if provider == "auto":
         from agents.core.llm.vision_auto import prepare_config
-        return await prepare_config(force_refresh=refresh_catalog)
+        return await prepare_config(force_refresh=refresh_catalog, main_config=main_config)
+    return resolve_vlm_config()
+
+
+async def _selected_config(*, prompt: str, agent: str, session_id: str | None,
+                           refresh_catalog: bool = False):
+    """Rebuild a conversation image turn before issuing or consuming a review."""
+    from agents.core.app_state import get_orch
+    from agents.core.env_config import env_str
+    from agents.core.llm.hybrid_router import LOCAL_ONLY_AGENTS
+    from agents.core.llm.vision_turn import prepare_selected_image_turn
+    from agents.core.llm.vlm import VLMNotConfigured
+
+    orch = get_orch()
+    if orch is None:
+        raise VLMNotConfigured("vlm_orchestrator_unavailable")
+    sid = session_id or orch.session_id
+    if sid != orch.session_id:
+        # The HUD's image draft belongs to the shared conversation currently
+        # displayed. A reset/resume cannot silently send an older session.
+        raise VLMNotConfigured("vlm_session_changed")
+    turn = await prepare_selected_image_turn(orch, question=prompt, agent_id=agent, session_id=sid)
+    main = None
+    if env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower() == "auto":
+        main = _main_candidate(turn.backend, turn.model, turn.route)
+        if main is None and agent in LOCAL_ONLY_AGENTS:
+            raise VLMNotConfigured("vlm_local_only_unavailable")
+    config = await _prepare_config(refresh_catalog=refresh_catalog, main_config=main)
+    if agent in LOCAL_ONLY_AGENTS and not config.is_local:
+        raise VLMNotConfigured("vlm_local_only_unavailable")
+    return turn, config
+
+
+def _main_candidate(backend, model, route):
+    from agents.core.llm.vision_capability import main_vision_eligibility
+    from agents.core.llm.vision_main import selected_main_config
+
+    if main_vision_eligibility(backend, model) is False:
+        return None
+    return selected_main_config(backend, model, route)
+
+
+def _review_route(config, turn=None):
+    route = config.route_source or f"explicit:{config.backend}"
+    return f"turn:{turn.prompt_digest}:{route}" if turn is not None else route
+
+
+def _selected_resolver(turn):
+    """Synchronous config check used by the final physical-request guard."""
+    from agents.core.app_state import get_orch
+    from agents.core.env_config import env_str
+    from agents.core.llm.vision_auto import resolve_config as resolve_auto
+    from agents.core.llm.vision_turn import history_fingerprint
+    from agents.core.llm.vlm import resolve_vlm_config
+
+    orch = get_orch()
+    if (orch is None or orch.session_id != turn.session_id
+            or history_fingerprint(orch, turn.session_id) != turn.history_digest):
+        raise ValueError("image history changed")
+    backend, model, route = orch.llm_router.select_backend(turn.agent_id, turn.prompt)
+    if backend is not turn.backend or model != turn.model or route != turn.route:
+        raise ValueError("image selected route changed")
+    if env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower() == "auto":
+        return resolve_auto(main_config=_main_candidate(backend, model, route))
     return resolve_vlm_config()
 
 
@@ -285,17 +350,24 @@ async def composer_prepare(body: ComposerPrepareBody, refresh_catalog: bool = Fa
     from agents.core.llm.vlm import VLMNotConfigured
 
     try:
-        config = await _prepare_config(refresh_catalog=refresh_catalog)
+        turn, config = (await _selected_config(
+            prompt=body.prompt, agent=body.agent, session_id=body.session_id,
+            refresh_catalog=refresh_catalog,
+        ) if body.selected_turn else (None, await _prepare_config(refresh_catalog=refresh_catalog)))
         identity = describe(config)
         public = public_config(config, identity=identity)
         token = _REVIEWS.issue(
-            session_id=body.session_id or "web", agent_id=body.agent,
+            session_id=turn.session_id if turn is not None else body.session_id or "web",
+            agent_id=body.agent,
             prompt=body.prompt, model=config.model,
-            route=config.route_source or f"explicit:{config.backend}",
+            route=_review_route(config, turn),
             binding=identity.binding,
         )
         return nocache_json(dict(configured=True, reachable=None,
-                                 review_token=token, **public))
+                                 review_token=token,
+                                 **({"session_id": turn.session_id, "selected_turn": True}
+                                    if turn is not None else {}),
+                                 **public))
     except VisionReviewRefused as exc:
         return nocache_json({"error": "Vision review unavailable", "reason": exc.reason},
                             status_code=503)
@@ -311,12 +383,15 @@ async def composer_describe_prepared(body: PreparedComposerVisionBody):
     from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
 
     try:
-        config = resolve_vlm_config()
+        turn, config = (await _selected_config(
+            prompt=body.prompt, agent=body.agent, session_id=body.session_id,
+        ) if body.selected_turn else (None, resolve_vlm_config()))
         identity = describe(config)
         _REVIEWS.consume(
-            body.review_token, session_id=body.session_id or "web",
+            body.review_token,
+            session_id=turn.session_id if turn is not None else body.session_id or "web",
             agent_id=body.agent, prompt=body.prompt, model=config.model,
-            route=config.route_source or f"explicit:{config.backend}",
+            route=_review_route(config, turn),
             binding=identity.binding,
         )
     except VisionReviewRefused as exc:
@@ -327,11 +402,29 @@ async def composer_describe_prepared(body: PreparedComposerVisionBody):
     except (VLMNotConfigured, ValueError, VisionPolicyUnavailable, sqlite3.Error, OSError):
         return nocache_json({"error": "Vision destination changed; review it again",
                              "reason": "vlm_destination_changed"}, status_code=409)
+    if turn is not None:
+        return await _composer_describe_with_config(
+            body, config, resolve_config=lambda: _selected_resolver(turn),
+            image_prompt=turn.prompt,
+        )
     return await composer_describe(body)
 
 
 @router.post("/api/vlm/composer/describe")
 async def composer_describe(body: ComposerVisionBody):
+    from agents.core.llm.vision_policy import VisionPolicyUnavailable
+    from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
+
+    try:
+        config = resolve_vlm_config()
+    except (VLMNotConfigured, ValueError, VisionPolicyUnavailable, sqlite3.Error, OSError):
+        return nocache_json(
+            {"error": "Vision model unavailable", "reason": "vlm_not_configured"}, status_code=503
+        )
+    return await _composer_describe_with_config(body, config, resolve_config=resolve_vlm_config)
+
+
+async def _composer_describe_with_config(body, config, *, resolve_config, image_prompt=None):
     from agents.core.commands import Principal
     from agents.core.llm import selection_guards as sg
     from agents.core.llm.vision_policy import (
@@ -341,10 +434,9 @@ async def composer_describe(body: ComposerVisionBody):
         composer_request_scope,
         describe,
     )
-    from agents.core.llm.vlm import VLMBackend, VLMNotConfigured, resolve_vlm_config
+    from agents.core.llm.vlm import VLMBackend, VLMNotConfigured
 
     try:
-        config = resolve_vlm_config()
         identity = describe(config)
         public = public_config(config, identity=identity)
     except (VLMNotConfigured, ValueError, VisionPolicyUnavailable, sqlite3.Error, OSError):
@@ -382,12 +474,12 @@ async def composer_describe(body: ComposerVisionBody):
             backend = VLMBackend(base_url=config.base_url, api_key=config.api_key, composer_auth=True,
                                  **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra", "nous") else {}),
                                  **({"wire_mode": config.wire_mode} if config.backend == "nous" else {}))
-            with composer_request_scope(config, backend, resolve_config=resolve_vlm_config,
+            with composer_request_scope(config, backend, resolve_config=resolve_config,
                                         remote_ack=body.remote_ack, principal=Principal(channel="web", admin=False),
                                         frozen=identity, cleared_findings=identity.selection_findings) as recheck:
                 answer = await backend.generate_vision_checked(
                     config.model,
-                    body.prompt,
+                    image_prompt if image_prompt is not None else body.prompt,
                     images=[base64.b64decode(image.partition(",")[2]) for image in body.images],
                 )
         finally:

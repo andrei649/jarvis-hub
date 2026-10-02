@@ -17,11 +17,11 @@ def _issue(store, *, session="session-a", prompt="What is shown?", route="local"
 
 
 def _consume(store, token, *, session="session-a", prompt="What is shown?",
-             route="local", binding=None):
+             route="local", binding=None, agent="jarvis"):
     store.consume(
         token,
         session_id=session,
-        agent_id="jarvis",
+        agent_id=agent,
         prompt=prompt,
         model="vision-model",
         route=route,
@@ -50,6 +50,15 @@ def test_cross_session_or_changed_prompt_cannot_use_review():
     token = _issue(store)
     with pytest.raises(VisionReviewRefused, match="vlm_destination_changed"):
         _consume(store, token, prompt="What is behind it?")
+
+
+def test_cross_agent_review_is_refused_and_burned():
+    store = VisionReviewStore()
+    token = _issue(store)
+    with pytest.raises(VisionReviewRefused, match="vlm_destination_changed"):
+        _consume(store, token, agent="athena")
+    with pytest.raises(VisionReviewRefused, match="vlm_review_unavailable"):
+        _consume(store, token)
 
 
 def test_review_is_single_use_and_cancel_removes_it():

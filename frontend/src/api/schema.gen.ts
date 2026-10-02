@@ -10845,6 +10845,11 @@ export interface components {
             agent: string;
             /** Session Id */
             session_id?: string | null;
+            /**
+             * Selected Turn
+             * @default false
+             */
+            selected_turn: boolean;
         };
         /** ComposerVisionBody */
         ComposerVisionBody: {
@@ -11640,6 +11645,11 @@ export interface components {
             agent: string;
             /** Session Id */
             session_id?: string | null;
+            /**
+             * Selected Turn
+             * @default false
+             */
+            selected_turn: boolean;
         };
         /** PresenceBody */
         PresenceBody: {

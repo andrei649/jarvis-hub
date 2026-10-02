@@ -5,9 +5,9 @@ const TYPES=['image/png','image/jpeg','image/gif','image/webp'];
 const MAX_BYTES=4*1024*1024, MAX_IMAGES=8;
 type SelectionNeed='acknowledge_training'|'confirm_expensive';
 type SelectionRequirement={needs:SelectionNeed;message:string};
-export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;review_token:string;agent:string;remote_ack:boolean;acknowledge_training?:true;confirm_expensive?:true};
+export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;review_token:string;agent:string;session_id:string;selected_turn:true;remote_ack:boolean;acknowledge_training?:true;confirm_expensive?:true};
 type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;data?:string;error?:string};
-type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[]};
+type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[];session_id?:string;selected_turn?:boolean};
 
 const AUTO_SOURCES=new Set(['auto:main','auto:override','auto:openrouter','auto:nous','auto:deepinfra']);
 const PROVIDER_NAMES:Record<string,string>={openrouter:'OpenRouter',nous:'Nous',deepinfra:'DeepInfra',lmstudio:'LM Studio',custom:'Custom'};
@@ -83,12 +83,13 @@ export function useComposerImages(prompt='Describe these images.',agent='jarvis'
       if(!active)return;
       const statusPath='/api/vlm/composer/prepare'+(refreshCatalog.current?'?refresh_catalog=true':'');
       refreshCatalog.current=false;
-      apiFetchOnce(statusPath,{method:'POST',body:{prompt,agent},signal:controller.signal}).then(async response=>{
+      apiFetchOnce(statusPath,{method:'POST',body:{prompt,agent,selected_turn:true},signal:controller.signal}).then(async response=>{
       if(!response.ok)throw new Error('Vision status unavailable');
       const text=await response.text();if(text.length>8192)throw new Error('Invalid vision status');
       const data=JSON.parse(text) as Destination;
       if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!/^\w{64}$/.test(data.binding||'')||!/^[-\w]{20,128}$/.test(data.review_token||'')))throw new Error('Invalid vision status');
       if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision status');
+      if(data.configured&&(data.selected_turn!==true||typeof data.session_id!=='string'||data.session_id.length>128||!/^[-_A-Za-z0-9]+$/.test(data.session_id)))throw new Error('Invalid vision status');
       if(data.selection_source!==undefined&&(!AUTO_SOURCES.has(data.selection_source)||
         data.selection_source==='auto:override'&&data.backend!=='custom'||
         !['auto:main','auto:override'].includes(data.selection_source)&&data.selection_source!==`auto:${data.backend}`))throw new Error('Invalid vision status');
@@ -104,6 +105,7 @@ export function useComposerImages(prompt='Describe these images.',agent='jarvis'
   const submission=():VisionDraft|null=>ready?{
     images:images.map(image=>image.data!),names:images.map(image=>image.name),
     expected_destination:destination!.destination!,expected_binding:destination!.binding!,review_token:destination!.review_token!,agent,
+    selected_turn:true,session_id:destination!.session_id!,
     remote_ack:destination!.local!==true&&ack===destination!.binding,
     ...(requirements.some(item=>item.needs==='acknowledge_training')?{acknowledge_training:true as const}:{}),
     ...(requirements.some(item=>item.needs==='confirm_expensive')?{confirm_expensive:true as const}:{}),
@@ -130,7 +132,7 @@ export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImage
     {!!draft.images.length&&<button className="tool-btn" onClick={draft.refresh}>Refresh vision destination</button>}
     {d?.configured&&d.local!==true&&<label style={{display:'block'}}>
       <input type="checkbox" checked={draft.ack===d.binding} onChange={event=>draft.acknowledge(event.target.checked)}/>
-      {`Send these images to ${d.destination}. I acknowledge they leave this host.`}
+      {`Send these images and the assembled conversation prompt to ${d.destination}. The prompt may include earlier messages, agent context and a checkpoint. I acknowledge they leave this host.`}
     </label>}
     {d?.configured&&d.selection_requirements?.map(requirement=><label key={requirement.needs} style={{display:'block'}}>
       <input type="checkbox" checked={draft.consents[requirement.needs]===d.binding} onChange={event=>draft.confirm(requirement.needs,event.target.checked)}/>

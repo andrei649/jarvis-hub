@@ -10,8 +10,8 @@ vi.mock('../api/live',()=>({PREVIEW_MODE_LIVE_KEYS:{},useLiveModes:()=>({live:{}
 vi.mock('../analytics',()=>({initAnalytics:()=>{},trackPageview:()=>{}}));
 vi.mock('../gap',()=>({FirstRunGate:()=>null}));
 vi.mock('../modes3',async()=>{const {Conversation,InputBar}=await import('../cockpit');return {ChatMode:(props:any)=>{submit=props.onSubmit;return <><Conversation {...props}/><InputBar onSubmit={props.onSubmit} t={props.t}/></>;}};});
-const status={configured:true,destination:'http://127.0.0.1:1234/v1',binding:'a'.repeat(64),review_token:'r'.repeat(43),model:'vision-test',backend:'custom',local:true};
-const draft={images:['data:image/png;base64,iVBORw0KGgo='],names:['shot.png'],expected_destination:status.destination,expected_binding:status.binding,review_token:status.review_token,agent:'jarvis',remote_ack:false};
+const status={configured:true,destination:'http://127.0.0.1:1234/v1',binding:'a'.repeat(64),review_token:'r'.repeat(43),model:'vision-test',backend:'custom',local:true,selected_turn:true,session_id:'image_session'};
+const draft={images:['data:image/png;base64,iVBORw0KGgo='],names:['shot.png'],expected_destination:status.destination,expected_binding:status.binding,review_token:status.review_token,agent:'jarvis',remote_ack:false,selected_turn:true,session_id:'image_session'};
 const answer=()=>new Response(JSON.stringify({ok:true,response:'A blue square.',model:'vision-test',backend:'custom',destination:status.destination,local:true}));
 let resolveVision:(r:Response)=>void;let requests:any[]=[];
 beforeEach(()=>{
@@ -34,7 +34,7 @@ it('sends a vision turn from the actual shared input and labels actual provenanc
   await waitFor(()=>expect(send.hasAttribute('disabled')).toBe(false));fireEvent.click(send);
   await waitFor(()=>expect(requests.some(r=>r.path.endsWith('/composer/describe-prepared'))).toBe(true));
   const request=requests.find(r=>r.path.endsWith('/composer/describe-prepared'));
-  expect(JSON.parse(request.body)).toMatchObject({prompt:'Describe these images.',expected_binding:status.binding});
+  expect(JSON.parse(request.body)).toMatchObject({prompt:'Describe these images.',expected_binding:status.binding,selected_turn:true,session_id:'image_session'});
   expect(JSON.parse(request.body)).not.toHaveProperty('names');
   await act(async()=>resolveVision(answer()));
   await screen.findByText('A blue square.');await screen.findByText(/VISION ANALYSIS/);
