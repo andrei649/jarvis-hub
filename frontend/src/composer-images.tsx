@@ -7,7 +7,7 @@ type SelectionNeed='acknowledge_training'|'confirm_expensive';
 type SelectionRequirement={needs:SelectionNeed;message:string};
 export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;review_token:string;agent:string;session_id:string;selected_turn:true;remote_ack:boolean;acknowledge_training?:true;confirm_expensive?:true};
 type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;data?:string;error?:string};
-type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[];session_id?:string;selected_turn?:boolean};
+type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;data_policy_note?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[];session_id?:string;selected_turn?:boolean};
 
 const AUTO_SOURCES=new Set(['auto:main','auto:override','auto:openrouter','auto:nous','auto:deepinfra']);
 const PROVIDER_NAMES:Record<string,string>={openrouter:'OpenRouter',nous:'Nous',deepinfra:'DeepInfra',anthropic:'Anthropic Claude',gemini:'Google Gemini','openai-responses':'OpenAI Responses',lmstudio:'LM Studio',ollama:'Ollama',custom:'Custom'};
@@ -98,6 +98,7 @@ export function useComposerImages(prompt='Describe these images.',agent='jarvis'
         const data=JSON.parse(text) as Destination;
         if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!/^\w{64}$/.test(data.binding||'')||!/^[-\w]{20,128}$/.test(data.review_token||'')))throw new Error('Invalid vision status');
         if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision status');
+        if(data.data_policy_note!==undefined&&(typeof data.data_policy_note!=='string'||data.data_policy_note.length>500))throw new Error('Invalid vision status');
         if(data.configured&&(data.selected_turn!==true||typeof data.session_id!=='string'||data.session_id.length>128||!/^[-_A-Za-z0-9]+$/.test(data.session_id)))throw new Error('Invalid vision status');
         if(data.selection_source!==undefined&&(!AUTO_SOURCES.has(data.selection_source)||
           data.selection_source==='auto:override'&&data.backend!=='custom'||
@@ -137,6 +138,7 @@ export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImage
     </div>)}</div>
     <div role="status">{draft.note || (draft.images.length ? !d?'Checking vision configuration…':!d.configured?'Vision model unavailable. Remove images to send text.':`${d.selection_source?`Automatically selected ${PROVIDER_NAMES[d.backend||'']||d.backend} · `:''}${d.model} · ${d.destination} · ${d.local?'loopback':'remote'} · reachability not probed` : '')}</div>
     {d?.configured&&d.warning&&<div style={{color:'var(--amber)'}}>{d.warning}</div>}
+    {d?.configured&&d.backend==='openai-responses'&&d.data_policy_note&&<div>{d.data_policy_note}</div>}
     {d?.configured&&d.retry_notice&&<div role="status" style={{color:'var(--amber)'}}>{d.retry_notice}</div>}
     {!!draft.images.length&&<button className="tool-btn" onClick={draft.refresh}>Refresh vision destination</button>}
     {d?.configured&&d.local!==true&&<label style={{display:'block'}}>

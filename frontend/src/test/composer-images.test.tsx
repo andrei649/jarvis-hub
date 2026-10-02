@@ -156,6 +156,17 @@ it('shows the automatically selected image provider before remote consent',async
   expect(screen.getByText(/Send these images and the assembled conversation prompt to https:\/\/openrouter.ai\/api\/v1/)).toBeTruthy();
   expect(screen.getByText(/earlier messages, agent context and a checkpoint/)).toBeTruthy();
 });
+it('shows selected Responses prompt-cache retention before remote consent',async()=>{
+  const note="OpenAI API inputs are not used for training by default. Prompt cache retention: 24h.";
+  const chosen={...status,backend:'openai-responses',model:'gpt-4.1',local:false,
+    destination:'https://api.openai.com/v1',selection_source:'auto:main',data_policy_note:note};
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify(chosen))));
+  render(<InputBar onSubmit={()=>{}} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  const disclosure=await screen.findByText(note);
+  expect(disclosure.compareDocumentPosition(screen.getByRole('checkbox',{name:/leave this host/}))&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
+});
 it('refuses malformed automatic selection metadata before image submission',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify({
     ...status,selection_source:'auto:untrusted'}))));
