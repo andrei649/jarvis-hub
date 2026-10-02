@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from agents import web
 from agents.core import settings_db
-from agents.core.llm import model_roles, nous_auth, selection_guards, vlm
+from agents.core.llm import model_roles, nous_auth, selection_guards, vision_deepinfra, vlm
 from agents.core.llm.egress import llm_async_client
 from agents.core.llm.nous_credentials import NousAuthStore
 from agents.core.secrets import SecretStore
@@ -99,6 +99,37 @@ def test_auto_prefers_prepared_nous_when_openrouter_unavailable(route, monkeypat
     assert response.status_code == 200, response.text
     assert len(route.requests) == 1
     assert str(route.requests[0].url) == "https://inference-api.nousresearch.com/v1/chat/completions"
+
+
+def test_auto_status_prepares_deepinfra_catalog_before_review(route, monkeypatch):
+    monkeypatch.setenv("DEEPINFRA_API_KEY", "synthetic-deepinfra-key")
+    catalog_requests = []
+
+    def catalog(request):
+        catalog_requests.append((str(request.url), request.headers.get("authorization")))
+        return httpx.Response(200, json={"data": [
+            {"id": "org/vision", "metadata": {"tags": ["chat", "vision"]}},
+        ]})
+
+    monkeypatch.setattr(vision_deepinfra, "_metadata_transport_factory",
+                        lambda: httpx.MockTransport(catalog))
+    vision_deepinfra.clear_cache()
+    try:
+        status = route.client.get(STATUS).json()
+        assert status["configured"], status
+        assert (status["backend"], status["model"], status["selection_source"]) == (
+            "deepinfra", "org/vision", "auto:deepinfra")
+        assert catalog_requests == [(
+            "https://api.deepinfra.com/v1/openai/models?filter=true&sort_by=hermes",
+            "Bearer synthetic-deepinfra-key",
+        )]
+        response = route.client.post(DESCRIBE, json=approved(status))
+        assert response.status_code == 200, response.text
+        assert len(route.requests) == 1
+        assert str(route.requests[0].url) == "https://api.deepinfra.com/v1/openai/chat/completions"
+        assert len(catalog_requests) == 1
+    finally:
+        vision_deepinfra.clear_cache()
 
 
 def test_auto_switch_after_key_revocation_requires_fresh_review(route, monkeypatch):
