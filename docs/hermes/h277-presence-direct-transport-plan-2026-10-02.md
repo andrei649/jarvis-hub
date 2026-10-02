@@ -32,5 +32,14 @@ and physical checks. The initial House/H513/direct-transport union passed 61
 tests; scoped Ruff and Graft build/check passed after correction. Two runtime
 mutants, one removing the preflight proof and one removing the physical proof,
 were both killed by separate focused tests. The exact source/test fingerprints
-and subprocess outcomes are in the adjacent evidence JSON. Full-suite and
-generated-report results are pending this checkpoint.
+and subprocess outcomes are in the adjacent evidence JSON.
+
+## Integration verification
+
+On committed source `8321e767`, the full backend suite exited 0 with 21,221
+passed, 34 skipped and one expected failure. The frontend suite passed 1,874
+tests in 207 files; TypeScript and E2E TypeScript checks passed. The Hermes
+status test passed 48 cases, the generated 697-row reports check is in sync,
+and project-status collection records 21,256 backend cases. These are offline
+code and test results. No live Home Assistant, local model, or physical proxy
+service was used, and H277 remains partial.
