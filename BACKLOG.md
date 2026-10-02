@@ -1920,6 +1920,10 @@
   fresh authorization per attempt. The focused regression passed 1,026 cases with
   two skipped, including 32 new acquisition cases; see the
   [acquisition increment](docs/hermes/h277-acquisition-auxiliary-2026-10-02.md).
+  Five nonstreaming LM Studio auxiliary consumers now recover a structured temperature
+  rejection with one same-route retry, preserving token caps and fresh H513 checks.
+  The focused union passed 612 cases, including 32 new regressions; see the
+  [parameter-recovery increment](docs/hermes/h277-auxiliary-parameter-2026-10-02.md).
   Broader auxiliary routing, SDK recovery and live acceptance remain open. This does not close
   H277 or HEQ-1.
 

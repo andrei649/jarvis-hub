@@ -206,8 +206,8 @@ curl.exe http://127.0.0.1:8080/status
 <!-- project-status:jarvis-stats:start -->
 - 18 active agents; registry-derived
 - 550 HTTP routes; parity-snapshot-derived
-- Tests: backend **20,572** · frontend **1,838** · mobile **142**
-- Version: **v1.0.0** · source commit `a5b74939d463`
+- Tests: backend **20,604** · frontend **1,838** · mobile **142**
+- Version: **v1.0.0** · source commit `cd2aa666ed0a`
 - Backlog ledger: 289 done · 16 open or blocked of 305 horizon rows — proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist
 - H23 roll-up: 28/30 done, 1 blocked, 1 open; release gates: A1, A3, A4, A6
 <!-- project-status:jarvis-stats:end -->

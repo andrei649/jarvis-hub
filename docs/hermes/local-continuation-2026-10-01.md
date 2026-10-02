@@ -150,3 +150,20 @@ one expected failure and64 warnings; the prior failed Git fixture run is preserv
 in the integration receipt. See [publication review](publication-review-2026-10-02.md)
 for the aggregate review and source normalization note. GitHub CI and merge status
 are reported separately on the integration PR.
+
+## Current local parameter recovery — 2026-10-02
+
+Base main cd2aa666 after PR1227 integration; source5f12b1b8 on
+`codex/h277-auxiliary-recovery-20261002`. The latest goal continuation keeps this
+batch local. Five nonstreaming LM Studio consumers now recover explicit
+temperature rejection on the same route, with one parameter repair and one
+existing unload retry, at most three sends. Initial temperature is preserved;
+repair deliberately omits it. Token caps, request scopes and output rules remain.
+Focused union612 passed including32 new cases; bounded independent review found
+no blocker. Full clean-snapshot validation is the next action. See the
+[implementation report](h277-auxiliary-parameter-2026-10-02.md).
+
+Exactly10 previously-current rows were inspected and refreshed; H681 remains
+stale because its orchestrator/coordinator pins were already mismatched at the
+base. The original207 stale rows and all capability statuses remain unchanged.
+No live provider, deployment or remote publication is part of this new batch.

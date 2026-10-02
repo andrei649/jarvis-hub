@@ -269,7 +269,7 @@ Local auxiliary model selection (H277, 2026-10-02) runs on the server for sessio
 titles, recall rewriting, conversation review, compression and governed acquisition
 capability/plan generation. Existing results reach the same clients; the six
 `JARVIS_AUX_*_MODEL` environment settings have no native editor. Acquisition uses
-its existing governed server workflow; no new native acquisition UI is claimed. This adds no native-device or live-model acceptance claim.
+its existing governed server workflow; no new native acquisition UI is claimed. A structured LM Studio temperature rejection can now recover on these nonstreaming server calls; no native configuration control or device proof was added. This adds no native-device or live-model acceptance claim.
 
 The responsive-web image composer now displays provider-policy warnings alongside
 the reviewed destination and successful answer. Its request-scoped remote

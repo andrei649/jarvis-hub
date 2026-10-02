@@ -36,7 +36,7 @@ H277 local auxiliary models (2026-10-02): server-side title generation, recall
 rewriting, conversation review, compression and governed acquisition capability/plan
 generation can use independent local model IDs. Existing output surfaces are
 unchanged. The six `JARVIS_AUX_*_MODEL` environment settings have no in-HUD editor
-or configuration listing yet. Acquisition retains its existing governed routes.
+or configuration listing yet. Acquisition retains its existing governed routes. The server can retry five nonstreaming auxiliary calls after a typed LM Studio temperature rejection; the requested temperature is initial, and the repaired call uses the provider default. No new HUD control is needed or claimed.
 
 - **Runtime verification.** Nothing was verified against a *running* backend (the build sandbox has
   no `fastapi`). Run `python serve.py` → open `/v2`, click **every mode + every Console (▦) panel**,
