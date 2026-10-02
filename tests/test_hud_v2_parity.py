@@ -538,6 +538,12 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # Nous account operations have a working owner CLI (agents/cli/nous_auth.py).
+    # HUD account controls remain unfinished, recorded in HUD_V2_REMAINING.md.
+    "/api/oauth/nous/login",
+    "/api/oauth/nous/logout",
+    "/api/oauth/nous/poll",
+    "/api/oauth/nous/status",
     # HA-4i-S1: host CLI inspection exists; dedicated HUD/mobile views are pending.
     # The existing acquisition panel does not show this extension projection.
     "/api/plugins/extensions",
