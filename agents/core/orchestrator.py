@@ -2946,19 +2946,11 @@ class Orchestrator:
             return None
 
         async def _generate(*, system: str, prompt: str) -> str:
-            from .llm.job_selection import SelectionError, current_selection
-            from .llm.model_config import DEFAULT_LOCAL_MODEL
+            from .llm.auxiliary_text import generate_local_auxiliary
             from .session_titles import MAX_TOKENS, TEMPERATURE
-            if current_selection() is not None:
-                raise SelectionError("job model pins exclude the auxiliary session title")
-            backend = router.local_backend      # strict-local; raises if none
-            model = router.active_model or DEFAULT_LOCAL_MODEL
-            if "qwen3" in model.lower():
-                prompt = f"{prompt}\n/no_think"
-            from .llm.data_handling import auxiliary_request_scope
-            with auxiliary_request_scope(router, backend, model, role="session_title"):
-                return await backend.generate(model=model, prompt=prompt, system=system,
-                                              max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
+            return await generate_local_auxiliary(
+                router, "session_title", system=system, prompt=prompt,
+                max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
 
         return _generate
 
@@ -2975,21 +2967,11 @@ class Orchestrator:
             return None
 
         async def _generate(*, system: str, prompt: str) -> str:
-            from .llm.job_selection import SelectionError, current_selection
-            from .llm.model_config import DEFAULT_LOCAL_MODEL
+            from .llm.auxiliary_text import generate_local_auxiliary
             from .memory.query_rewrite import MAX_TOKENS, TEMPERATURE
-            if current_selection() is not None:  # as _compression_summarizer does, for any caller
-                raise SelectionError("job model pins exclude the auxiliary recall rewrite")
-            backend = router.local_backend      # strict-local; raises if none
-            model = router.active_model or DEFAULT_LOCAL_MODEL
-            if "qwen3" in model.lower():
-                # Qwen3 (the default local model) thinks before it answers and would
-                # spend the 96 tokens on that; its documented switch turns it off.
-                prompt = f"{prompt}\n/no_think"
-            from .llm.data_handling import auxiliary_request_scope
-            with auxiliary_request_scope(router, backend, model, role="query_rewrite"):
-                return await backend.generate(model=model, prompt=prompt, system=system,
-                                              max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
+            return await generate_local_auxiliary(
+                router, "query_rewrite", system=system, prompt=prompt,
+                max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
 
         return _generate
 
@@ -3533,23 +3515,16 @@ class Orchestrator:
         raw conversation content and must not egress; no local backend up means a
         RuntimeError, and the review pass is skipped."""
         from .settings_db import bounded_learning_int
-        from .llm.job_selection import SelectionError, current_selection
-        from .llm.data_handling import auxiliary_request_scope
+        from .llm.auxiliary_text import generate_local_auxiliary
 
-        if current_selection() is not None:
-            raise SelectionError("job model pins exclude auxiliary review calls")
         router = self.llm_router
-        backend = router.local_backend
-        model = router.active_model or "google/gemma-4-31b-a4b"
         # Within its bounds even for a row that predates them: -1 would mean "until the
         # context is full" to a local backend (review-H465d nit 4).
         max_tokens = bounded_learning_int(
             "review_max_tokens", self.get_setting("learning.review_max_tokens", 512), 512)
-        with auxiliary_request_scope(router, backend, model, role="review"):
-            return await backend.generate(
-                model=model, prompt=prompt,
-                system="You are a precise background reviewer. Output only JSON.",
-                max_tokens=max_tokens, temperature=0.2)
+        return await generate_local_auxiliary(
+            router, "review", system="You are a precise background reviewer. Output only JSON.",
+            prompt=prompt, max_tokens=max_tokens, temperature=0.2)
 
     async def _background_review_task(self, text: str, synthesized: str) -> None:
         """Run one review pass in the background and surface its actions."""
@@ -3783,25 +3758,18 @@ class Orchestrator:
             return None
 
         async def _summarize(prompt: str) -> str:
-            from .llm.job_selection import current_selection, SelectionError
-            if current_selection() is not None:
-                raise SelectionError("job model pins exclude auxiliary compression calls")
-            from .llm.model_config import DEFAULT_LOCAL_MODEL
-            backend = router.local_backend      # strict-local; raises if none
-            model = router.active_model or DEFAULT_LOCAL_MODEL
+            from .llm.auxiliary_text import generate_local_auxiliary
             max_tokens = int(self.get_setting(
                 "memory.compression_summary_max_tokens", 256) or 256)
             # H674: streamed, and cut after the inactivity deadline with nothing
             # received, instead of holding the backend's whole read budget; a
             # degraded reply raises here, so it never becomes the summary.
-            from .compaction_hold import IDLE_SETTING, idle_seconds, stream_summary
-            from .llm.data_handling import auxiliary_request_scope
-            with auxiliary_request_scope(router, backend, model, role="compression"):
-                return await stream_summary(
-                    backend, idle_seconds(self.get_setting(IDLE_SETTING, 60)),
-                    model=model, prompt=prompt,
-                    system="You compress conversation context. Output only the summary.",
-                    max_tokens=max_tokens, temperature=0.2)
+            from .compaction_hold import IDLE_SETTING, idle_seconds
+            return await generate_local_auxiliary(
+                router, "compression", prompt=prompt,
+                system="You compress conversation context. Output only the summary.",
+                max_tokens=max_tokens, temperature=0.2,
+                summary_idle=idle_seconds(self.get_setting(IDLE_SETTING, 60)))
 
         return _summarize
 

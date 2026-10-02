@@ -32,6 +32,11 @@ inbound video ingestion, and live native-video model acceptance remain open.
 The optional primary transient-retry setting uses existing task notices/results;
 there is no in-HUD editor for that environment setting.
 
+H277 local auxiliary models (2026-10-02): server-side title generation, recall
+rewriting, conversation review and compression can use independent local model
+IDs. Their existing output surfaces are unchanged. The four `JARVIS_AUX_*_MODEL`
+environment settings have no in-HUD editor or configuration listing yet.
+
 - **Runtime verification.** Nothing was verified against a *running* backend (the build sandbox has
   no `fastapi`). Run `python serve.py` → open `/v2`, click **every mode + every Console (▦) panel**,
   and compare against `/` (v1) / known values. The **mock‑fallback** design hides wrong‑but‑not‑

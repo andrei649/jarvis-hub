@@ -1912,6 +1912,9 @@
   boundaries and open larger-upload/recovery work. Explicit primary transient retry
   now binds its extra send budget into the task approval and preserves default-zero
   compatibility;755focused cases passed. See the [retry increment](docs/hermes/h277-video-retry-2026-10-02.md).
+  Four orchestrator auxiliary tasks now share guarded invocation with independent
+  local model selection;513focused cases passed, including54new regressions. See
+  the [local auxiliary increment](docs/hermes/h277-local-auxiliary-2026-10-02.md).
   Broader auxiliary routing, SDK recovery and live acceptance remain open. This does not close
   H277 or HEQ-1.
 

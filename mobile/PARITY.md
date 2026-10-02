@@ -265,6 +265,11 @@ has no native editor. Its additional send budget is shown through the existing
 server-generated task approval notice. Native-device and live video-provider acceptance
 remain unverified.
 
+Local auxiliary model selection (H277, 2026-10-02) runs on the server for session
+titles, recall rewriting, conversation review and compression. Existing results
+reach the same clients; the four `JARVIS_AUX_*_MODEL` environment settings have no
+native editor. This adds no native-device or live-model acceptance claim.
+
 The responsive-web image composer now displays provider-policy warnings alongside
 the reviewed destination and successful answer. Its request-scoped remote
 acknowledgment is unchanged. Native image-policy warning parity remains open;
