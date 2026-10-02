@@ -108,7 +108,8 @@ class MemoryManager:
             self.conversation.instances[sid] = instance
 
     async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None,
-                       channel: str = None, tools: list[str] | None = None):
+                       channel: str = None, tools: list[str] | None = None,
+                       media: dict | None = None):
         async with self._lock:
             manager = getattr(self, "_checkpoint_mgr", None)
             if manager is not None and manager._conn is not None:
@@ -123,8 +124,9 @@ class MemoryManager:
                     async with self.conversation._lock:
                         _load_locked(SimpleNamespace(memory=self, checkpoints=manager), session_id)
             self._bind_history_instance(session_id)
-            if tools:
-                await self.conversation.add_turn(session_id, role, content, agent_id, tools=tools)
+            if tools or media is not None:
+                await self.conversation.add_turn(session_id, role, content, agent_id,
+                                                 tools=tools, media=media)
             else:
                 await self.conversation.add_turn(session_id, role, content, agent_id)
 

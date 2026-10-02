@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 
 from .conversation_clock import ClockSnapshot, parse_started_at
-from .memory.conversation import _tool_names
+from .memory.conversation import _tool_names, validated_media
 from .validation import is_valid_session_id
 
 MAX_SEED_BYTES = 512 * 1024
@@ -115,6 +115,11 @@ def seed_json(turns):
         tools = _tool_names(turn.get("tools"))   # H441: names only, absent when none
         if tools:
             carried["tools"] = tools
+        if "media" in turn:
+            try:
+                carried["media"] = validated_media(turn["media"])
+            except ValueError:
+                raise ContinuationRefused("invalid_history") from None
         result.append(carried)
     try:
         value = json.dumps(result, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
@@ -323,7 +328,7 @@ def _load_locked(orch, sid):
     for value in turns:
         turn = Turn(
             value["role"], value["content"], value.get("agent_id"), value.get("token_count", 0),
-            tools=value.get("tools"),
+            tools=value.get("tools"), media=value.get("media"),
         )
         turn.timestamp = value["timestamp"]
         restored.append(turn)
