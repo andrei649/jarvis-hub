@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 
+import httpx
 import pytest
 from PIL import Image
 
@@ -13,6 +14,7 @@ from agents import web
 from agents.core.agent import Agent
 from agents.core.config import JarvisConfig
 from agents.core.llm.base import LMStudioBackend
+from agents.core.llm.egress import llm_async_client
 from agents.core.llm.openrouter import OpenRouterBackend
 from agents.core.llm.providers import DEFAULT_REGISTRY
 from agents.core.llm.vision_review import VisionReviewRefused, VisionReviewStore
@@ -32,6 +34,23 @@ def _bind_local(monkeypatch, agent="jarvis"):
     orch._session_id_default = sid
     monkeypatch.setattr(web, "orch", orch)
     return orch, backend, sid
+
+
+def _local_model_metadata(backend, *, vision: bool, requests=None):
+    asyncio.run(backend.client.aclose())
+
+    def local_models(request):
+        if requests is not None:
+            requests.append(request)
+        return httpx.Response(200, json={"models": [{
+            "key": "local/vision", "type": "llm",
+            "capabilities": {"vision": vision},
+        }]})
+
+    backend.client = llm_async_client(
+        "lm-studio", base_url=backend.base_url, trust_env=False,
+        transport=httpx.MockTransport(local_models),
+    )
 
 
 def test_selected_review_requires_image_digests_before_issuing_token(route, monkeypatch):
@@ -156,7 +175,7 @@ def test_selected_image_turn_refuses_changed_history_before_egress(route, monkey
 
 def test_selected_image_turn_skips_explicitly_text_only_main(route, monkeypatch):
     _orch, backend, sid = _bind_local(monkeypatch)
-    backend.model_vision_capabilities = {"local/vision": False}
+    _local_model_metadata(backend, vision=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
     try:
         preview = route.client.post("/api/vlm/composer/prepare", json={
@@ -173,9 +192,85 @@ def test_selected_image_turn_skips_explicitly_text_only_main(route, monkeypatch)
         asyncio.run(backend.aclose())
 
 
+def test_selected_image_turn_uses_local_model_vision_metadata(route, monkeypatch):
+    _orch, backend, sid = _bind_local(monkeypatch)
+    metadata = []
+    _local_model_metadata(backend, vision=False, requests=metadata)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    try:
+        preview = route.client.post("/api/vlm/composer/prepare", json={
+            "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
+            "selected_turn": True, "image_digests": [IMAGE_DIGEST],
+        })
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["selection_source"] == "auto:openrouter"
+        assert len(metadata) == 1
+        assert metadata[0].method == "GET"
+        assert str(metadata[0].url) == "http://127.0.0.1:1234/api/v1/models"
+        assert route.requests == []
+    finally:
+        asyncio.run(backend.aclose())
+
+
+def test_changed_local_vision_capability_invalidates_image_review(route, monkeypatch):
+    _orch, backend, sid = _bind_local(monkeypatch)
+    asyncio.run(backend.client.aclose())
+    verdicts = iter((True, False))
+    metadata = []
+
+    def local_models(request):
+        metadata.append(request)
+        return httpx.Response(200, json={"models": [{
+            "key": "local/vision", "type": "llm",
+            "capabilities": {"vision": next(verdicts)},
+        }]})
+
+    backend.client = llm_async_client(
+        "lm-studio", base_url=backend.base_url, trust_env=False,
+        transport=httpx.MockTransport(local_models),
+    )
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    try:
+        preview = route.client.post("/api/vlm/composer/prepare", json={
+            "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
+            "selected_turn": True, "image_digests": [IMAGE_DIGEST],
+        })
+        assert preview.status_code == 200, preview.text
+        status = preview.json()
+        assert status["selection_source"] == "auto:main"
+        body = {**approved(status), "agent": "jarvis", "session_id": sid,
+                "selected_turn": True, "review_token": status["review_token"]}
+        refused = route.client.post("/api/vlm/composer/describe-prepared", json=body)
+        assert refused.status_code == 409
+        assert refused.json()["reason"] == "vlm_destination_changed"
+        assert len(metadata) == 2 and route.requests == []
+    finally:
+        asyncio.run(backend.aclose())
+
+
+def test_unselected_composer_status_does_not_probe_main_metadata(route, monkeypatch):
+    _orch, backend, _sid = _bind_local(monkeypatch)
+    asyncio.run(backend.client.aclose())
+    metadata = []
+    backend.client = llm_async_client(
+        "lm-studio", base_url=backend.base_url, trust_env=False,
+        transport=httpx.MockTransport(
+            lambda request: (metadata.append(request), httpx.Response(500))[1]
+        ),
+    )
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    try:
+        status = route.client.get("/api/vlm/composer/status")
+        assert status.status_code == 200
+        assert status.json()["selection_source"] == "auto:openrouter"
+        assert metadata == []
+    finally:
+        asyncio.run(backend.aclose())
+
+
 def test_strict_local_agent_never_discovers_remote_image_fallback(route, monkeypatch):
     _orch, backend, sid = _bind_local(monkeypatch, agent="frigga")
-    backend.model_vision_capabilities = {"local/vision": False}
+    _local_model_metadata(backend, vision=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
     try:
         preview = route.client.post("/api/vlm/composer/prepare", json={

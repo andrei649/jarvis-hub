@@ -297,6 +297,9 @@ async def _selected_config(*, prompt: str, agent: str, session_id: str | None,
     turn = await prepare_selected_image_turn(orch, question=prompt, agent_id=agent, session_id=sid)
     main = None
     if env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower() == "auto":
+        from agents.core.llm.vision_capability import prepare_local_model_vision
+
+        await prepare_local_model_vision(turn.backend, turn.model)
         main = _main_candidate(turn.backend, turn.model, turn.route)
         if main is None and agent in LOCAL_ONLY_AGENTS:
             raise VLMNotConfigured("vlm_local_only_unavailable")
