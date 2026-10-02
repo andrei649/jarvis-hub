@@ -411,3 +411,11 @@ explicit STT selection and exact name/revision on Inbox cards. Missing saved
 selections remain visible as unavailable. Image and speech dispatch now use the
 common registry. Full vendor/plugin/setup breadth remains open under H517/H613;
 native mobile provider configuration is still a gap.
+
+
+Explicit OpenRouter vision (H277, 2026-10-02): the existing composer model,
+destination and policy display covers the new server-side provider. Its remote
+checkbox still names the destination; live routing changes invalidate that
+binding. Existing training/expensive-selection refusals remain: there is no
+composer control that clears those separate guards. Automatic provider discovery,
+Nous/DeepInfra adapters and signed OpenRouter video remain unfinished.

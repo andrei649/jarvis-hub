@@ -84,3 +84,36 @@ Post-merge main workflows are separate runs and were still running when this pla
 was prepared. Owner authorization now covers publication and merge of repaired
 work; earlier local-only sprint restrictions are superseded. Deployment remains
 outside the request. Existing source branches and worktrees remain preserved.
+
+
+## Adapter implementation contract (first dependency)
+
+Inspection confirms that Nerva has no Nous OAuth/tier adapter or DeepInfra vision
+catalog. Implement the existing OpenRouter protocol first through the actual
+composer; this is a prerequisite increment, not completion of automatic discovery.
+Hermes unknown main-model capability permits attempting vision (only known false
+skips); do not turn the earlier known-capability recommendation into an upstream
+requirement. DeepInfra specifically requires a positive live catalog result.
+
+Explicit JARVIS_ROLE_VISION_PROVIDER=openrouter selects the named provider, a
+required role model, and the profile base or explicit role base. Ambient
+OPENROUTER_API_KEY is valid only on its canonical origin; another origin needs a
+dedicated role key. Legacy VLM/OPENAI credentials never migrate to this provider.
+No new automatic candidate is inferred from ambient credentials. Backend identity
+is openrouter, keeping generic custom/LM Studio behavior unchanged.
+
+The VLM backend gets an optional provider identifier; OpenRouter bodies carry the
+validated live llm.openrouter_* provider object. The frozen identity includes its
+canonical JSON and provider profile. Preparation, physical hook and final HTTP
+hook compare the exact object and authority, including when empty retry is off.
+A privacy/routing mutation invalidates the binding, never silently widens routing
+or restarts a retry. Inherited video refuses this newly unsupported adapter until
+its signed integration exists. Unattended/local-only image callers remain local.
+
+Writer A owns new vision_openrouter.py, model_roles.py and resolver/role tests.
+Coordinator owns VLM config/transport, vision_policy.py, composer wiring and real
+consumer tests, documentation/evidence. Test first: resolver/key-origin failures,
+status disclosure, actual authorized POST with routing object, no ack/no sends,
+settings/key/model mutation, malicious final hooks, retry body preservation and
+local/video refusals. No live model calls, SDK install, paid usage or publication
+is required. Rollback is this explicit-provider integration alone.

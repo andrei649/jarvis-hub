@@ -258,11 +258,12 @@ async def composer_describe(body: ComposerVisionBody):
         )
     backend = None
     try:
-        findings = sg.evaluate([sg.Choice("vision.model", identity.provider, config.model)])
+        findings = sg.evaluate([identity.selection_choice(config.model)])
         if findings:
             raise sg.SelectionRefused(findings, sorted({finding.needs for finding in findings}))
         try:
-            backend = VLMBackend(base_url=config.base_url, api_key=config.api_key, composer_auth=True)
+            backend = VLMBackend(base_url=config.base_url, api_key=config.api_key, composer_auth=True,
+                                 **({"provider_id": "openrouter"} if config.backend == "openrouter" else {}))
             with composer_request_scope(config, backend, resolve_config=resolve_vlm_config,
                                         remote_ack=body.remote_ack, principal=Principal(channel="web", admin=False),
                                         frozen=identity) as recheck:

@@ -155,7 +155,7 @@ class VLMConfig:
     ``label at (x, y)`` contract ever promised.
     """
 
-    backend: str  # "lmstudio" | "custom"
+    backend: str  # "lmstudio" | "custom" | "openrouter"
     base_url: str
     model: str
     api_key: str
@@ -194,6 +194,9 @@ def resolve_vlm_config(env=None) -> VLMConfig:
     ``JARVIS_ROLE_VISION_PROVIDER`` (``lm-studio`` | ``openai-compatible``) / ``_MODEL`` /
     ``_BASE_URL`` win when set, and ``JARVIS_VLM_*`` are the fallbacks, unchanged.
     """
+    if model_roles._reader(env)("JARVIS_ROLE_VISION_PROVIDER").strip().lower() == "openrouter":
+        from .vision_openrouter import resolve_config
+        return resolve_config(env)
     try:
         backend, url, model, api_key, preset_name = model_roles.vision_env_view(env)
     except model_roles.RoleConfigError as exc:
@@ -305,7 +308,11 @@ class VLMBackend(LLMBackend):
     supports_tools = False
 
     def __init__(self, base_url: str = DEFAULT_VLM_BASE, api_key: str = "",
-                 client=None, max_image_dim: int = 1024, *, composer_auth: bool = False) -> None:
+                 client=None, max_image_dim: int = 1024, *, composer_auth: bool = False,
+                 provider_id: str = "") -> None:
+        if provider_id not in ("", "openrouter"):
+            raise ValueError("unsupported native vision provider")
+        self._provider_id = provider_id
         self.base_url = base_url
         self.api_key = api_key
         self.max_image_dim = max_image_dim
@@ -319,7 +326,7 @@ class VLMBackend(LLMBackend):
             # Suppress URL Basic overriding explicit Bearer; _headers resolves both.
             options["auth"] = httpx.Auth()
             options["trust_env"] = False
-        self.client = client or llm_async_client("vlm", base_url=base_url, timeout=180.0, **options)
+        self.client = client or llm_async_client(provider_id or "vlm", base_url=base_url, timeout=180.0, **options)
 
     @classmethod
     def from_env(cls, *, client=None, max_image_dim: int = 1024) -> "VLMBackend":
@@ -330,6 +337,7 @@ class VLMBackend(LLMBackend):
             api_key=config.api_key,
             client=client,
             max_image_dim=max_image_dim,
+            **({"provider_id": "openrouter"} if config.backend == "openrouter" else {}),
         )
         backend.is_local = config.is_local
         return backend
@@ -356,6 +364,9 @@ class VLMBackend(LLMBackend):
         messages = build_vision_messages(prompt, images, system, self.max_image_dim)
         payload = {"model": model, "messages": messages,
                    "max_tokens": max_tokens, "temperature": temperature, "stream": False}
+        if self._provider_id == "openrouter":
+            from .vision_openrouter import current_provider_block
+            payload["provider"] = current_provider_block()
         scope = current_vision_retry(self, model)
         image_bearing = any(isinstance(part, dict) and part.get("type") == "image_url"
                             for message in messages if isinstance(message.get("content"), list)

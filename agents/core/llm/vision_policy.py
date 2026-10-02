@@ -60,6 +60,12 @@ class VisionIdentity:
     authorization: str = field(repr=False)
     binding: tuple = field(repr=False)
     empty_retries: int = 0
+    provider_block: str = field(default="", repr=False)
+
+    def selection_choice(self, model):
+        route = ('data_collection=allow' if self.provider_block
+                 and json.loads(self.provider_block).get('data_collection') == 'allow' else '')
+        return sg.Choice('vision.model', self.provider, model, route=route)
 
     def public(self):
         public = {'data_policy': self.policy, 'data_policy_note': self.note, 'warning': self.warning}
@@ -70,10 +76,17 @@ class VisionIdentity:
 
 def describe(config):
     empty_retries = resolve_vision_empty_retries()
-    if config.backend not in ('lmstudio', 'custom') or not isinstance(config.model, str) or not config.model:
+    if config.backend not in ('lmstudio', 'custom', 'openrouter') or not isinstance(config.model, str) or not config.model:
         raise VisionPolicyUnavailable('invalid vision configuration')
-    profile = get_profile('lm-studio' if config.backend == 'lmstudio' else 'openai-compatible')
+    profile = get_profile({'lmstudio': 'lm-studio', 'custom': 'openai-compatible',
+                           'openrouter': 'openrouter'}[config.backend])
+    provider_block = ''
     policy, note = profile.data_policy_for(config.model)
+    if config.backend == 'openrouter':
+        from .vision_openrouter import current_provider_block, policy_for
+        block = current_provider_block()
+        provider_block = json.dumps(block, sort_keys=True, separators=(',', ':'))
+        policy, note = policy_for(config.model, block)
     if config.backend == 'custom':
         policy, note = 'unknown', 'Custom vision endpoint data handling is unknown.'
     elif policy == 'local' and not _is_loopback_base(config.base_url):
@@ -93,8 +106,10 @@ def describe(config):
                str(base), request_url, auth)
     if empty_retries:
         binding += ('vision-empty-once:v1',)
+    if provider_block:
+        binding += ('openrouter-vision:v1', provider_block)
     return VisionIdentity(profile.id, policy, note[:500], warning, str(base), request_url, auth,
-                          binding, empty_retries)
+                          binding, empty_retries, provider_block)
 
 
 def _wire_matches(backend, frozen):
@@ -108,7 +123,9 @@ def _wire_matches(backend, frozen):
     except DataHandlingRefused as exc:
         raise VisionDestinationChanged('vision adapter transport changed') from exc
     if (str(native_base_url(backend.base_url)) != frozen.base_url or str(client.base_url) != frozen.base_url
-            or authorization(backend.base_url, backend.api_key) != frozen.authorization):
+            or authorization(backend.base_url, backend.api_key) != frozen.authorization
+            or (frozen.provider == 'openrouter' and getattr(backend, '_provider_id', '') != 'openrouter')
+            or (frozen.provider != 'openrouter' and getattr(backend, '_provider_id', ''))):
         raise VisionDestinationChanged('vision adapter destination changed')
 
 
@@ -123,7 +140,7 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
             current = describe(resolve_config())
             if current.binding != frozen.binding:
                 raise VisionDestinationChanged('vision configuration changed')
-            findings = sg.evaluate([sg.Choice('vision.model', frozen.provider, config.model)])
+            findings = sg.evaluate([frozen.selection_choice(config.model)])
             if findings:
                 raise sg.SelectionRefused(findings, sorted({finding.needs for finding in findings}))
             _wire_matches(backend, frozen)
@@ -140,8 +157,18 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
         except DataHandlingRefused as exc:
             raise VisionDestinationChanged('vision physical transport changed') from exc
         try:
-            payload = json.loads(request.content)
+            def unique_pairs(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError('duplicate vision request field')
+                    result[key] = value
+                return result
+            payload = json.loads(request.content, object_pairs_hook=unique_pairs if frozen.provider_block else dict)
             same_model = isinstance(payload, dict) and payload.get('model') == config.model
+            if frozen.provider_block:
+                same_model = same_model and json.dumps(payload.get('provider'), sort_keys=True,
+                                                       separators=(',', ':')) == frozen.provider_block
         except (ValueError, httpx.RequestNotRead):
             same_model = False
         if ((request.extensions.get('nerva_composer_vision_request') is request_marker) != marked
@@ -179,14 +206,15 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
         record_turn_notice(f'data_handling:{notice_purpose}', frozen.warning)
     scope = vision_retry_scope(backend, config.model, check) if frozen.empty_retries else nullcontext(None)
     with scope as recovery:
-        if recovery is not None:
+        final_hook_required = recovery is not None or bool(frozen.provider_block)
+        if final_hook_required:
             backend.client.event_hooks['request'].append(last_request_hook)
         try:
             with physical_request_scope(check, request_check=request_check):
                 yield check
                 check()
         finally:
-            if recovery is not None:
+            if final_hook_required:
                 backend.client.event_hooks['request'].remove(last_request_hook)
 
 

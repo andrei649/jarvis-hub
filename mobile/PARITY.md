@@ -308,3 +308,10 @@ Responsive-web Trust also exposes the separate camera-description model-data rol
 Acknowledgment is independent of household consent and does not enable capture or
 remote inference. Native camera role controls, supported owner camera provisioning
 and live-device acceptance remain open.
+
+
+Explicit OpenRouter image analysis (H277, 2026-10-02) is available through the
+responsive-web composer and native VLM backend, with live upstream routing
+controls bound to each preview/request. Native mobile image intake and these
+provider controls remain a gap; existing mobile chat does not gain image routing.
+Automatic provider discovery and signed OpenRouter video are not delivered.

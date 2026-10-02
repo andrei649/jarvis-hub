@@ -578,7 +578,7 @@ is a frozen table of five roles; the new names win when set, the old ones are fa
 |---|---|---|---|---|
 | `main` | none (`JARVIS_ROLE_MAIN_*` is **ignored**, the doctor says so) | settings `llm.*` | not env-selectable: the main model is chosen on the H378-guarded settings surfaces | the router |
 | `deep` | `JARVIS_ROLE_DEEP_MODEL` | `JARVIS_DEEP_MODEL`, then `deepseek-r1-distill-qwen-32b` | none (the router's local backend; `_PROVIDER`/`_BASE_URL` ignored) | the deep slot |
-| `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_MODEL` / `_BASE_URL` | `JARVIS_VLM_BACKEND` / `JARVIS_VLM_MODEL` / `JARVIS_VLM_URL` | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`) | `resolve_vlm_config` and all its consumers |
+| `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_MODEL` / `_BASE_URL` | legacy `JARVIS_VLM_*` for LM Studio/custom; none for OpenRouter | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`), explicit `openrouter` | `resolve_vlm_config`; OpenRouter composer/native backend; other consumers keep their local-only guards |
 | `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | resolved vision route when video provider/base are unset | `lm-studio`, `openai-compatible`, `gemini` | opt-in, owner-approved `video_analyze` ToolRPC |
 | `approval_judge` | `JARVIS_ROLE_APPROVAL_JUDGE_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio` (default), `ollama`, `openai-compatible` | `autonomy/approval_judge.py` |
 
@@ -607,6 +607,26 @@ setup every vision consumer refuses (`vlm_model_unset`, `vlm_url_unset`,
 `VLMConfig.is_local` (a loopback custom VLM is local).
 Local addresses in doctor/judge status expose only the loopback HTTP origin;
 userinfo, path, query and fragment are never displayed. The roles API omits URLs entirely.
+
+**Explicit OpenRouter vision** uses `JARVIS_ROLE_VISION_PROVIDER=openrouter` and a
+required `JARVIS_ROLE_VISION_MODEL`. It defaults to `https://openrouter.ai/api/v1`.
+The dedicated `JARVIS_ROLE_VISION_KEY` takes precedence, including at that default;
+otherwise `OPENROUTER_API_KEY` is used only on the canonical HTTPS origin (default
+port 443). Another `JARVIS_ROLE_VISION_BASE_URL` requires a dedicated role key.
+Remote HTTP, URL userinfo/query/fragment, malformed models/keys and missing keys
+refuse. Legacy VLM variables and `OPENROUTER_BASE_URL` do not configure this route.
+
+The composer discloses the selected model, destination and effective data policy.
+It sends all six validated live `llm.openrouter_*` routing controls; an unreadable
+or malformed setting refuses instead of dropping a restriction. Those controls
+are included in the consent binding and checked at the final HTTP hook, even with
+empty recovery disabled. Changed settings/keys/models require a fresh preview.
+The existing training and expensive-model selection guards still refuse when
+their separate acknowledgement is unavailable; remote acknowledgement alone does
+not clear them. In particular, `:free` models and `data_collection=allow` do not
+silently bypass training guards. The inherited video route reports
+`video_vision_provider_unsupported`; signed OpenRouter video and automatic provider
+discovery remain separate unfinished increments.
 
 **Video understanding** requires `JARVIS_VIDEO_ANALYSIS=1` and a valid resolved video
 route. When both video provider and base URL are unset, a configured vision route

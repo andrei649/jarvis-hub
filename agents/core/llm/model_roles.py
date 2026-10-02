@@ -128,7 +128,7 @@ ROLES: Mapping[str, RoleSpec] = MappingProxyType({
         "vision", "reads screenshots, documents and images", "JARVIS_ROLE_VISION",
         MappingProxyType({"provider": "JARVIS_VLM_BACKEND", "model": "JARVIS_VLM_MODEL",
                           "base_url": "JARVIS_VLM_URL"}),
-        frozenset({"lm-studio", "openai-compatible"}),
+        frozenset({"lm-studio", "openai-compatible", "openrouter"}),
         ("agents/core/llm/vlm.py resolve_vlm_config",)),
     "video": RoleSpec(
         "video", "reads approved video sources through video_analyze", "JARVIS_ROLE_VIDEO", MappingProxyType({}),
@@ -142,7 +142,8 @@ ROLES: Mapping[str, RoleSpec] = MappingProxyType({
 })
 
 # The VLM adapter's backend selector <-> the provider profile id it speaks to.
-_VISION_BACKEND_OF = MappingProxyType({"lm-studio": "lmstudio", "openai-compatible": "custom"})
+_VISION_BACKEND_OF = MappingProxyType({"lm-studio": "lmstudio", "openai-compatible": "custom",
+                                       "openrouter": "openrouter"})
 _VISION_PROVIDER_OF = MappingProxyType({v: k for k, v in _VISION_BACKEND_OF.items()})
 
 
@@ -243,6 +244,11 @@ def vision_env_view(env: Mapping[str, str] | None = None) -> tuple[str, str, str
     read = _reader(env)
     spec = ROLES["vision"]
     role_provider = read(spec.env_name("provider")).strip()
+    if role_provider.lower() == "openrouter":
+        from .vision_openrouter import resolve_config
+
+        config = resolve_config(env)
+        return config.backend, config.base_url, config.model, config.api_key, ""
     backend = (_VISION_BACKEND_OF[_validate(spec, role_provider)] if role_provider
                else read("JARVIS_VLM_BACKEND"))
     role_url = read(spec.env_name("base_url")).strip()
@@ -291,6 +297,29 @@ def _resolve_vision(read, spec: RoleSpec, env: Mapping[str, str] | None) -> Reso
     source: dict[str, str] = {}
     ignored: list[str] = []
     role_provider = read(spec.env_name("provider")).strip()
+    if role_provider.lower() == "openrouter":
+        from .vision_openrouter import current_provider_block, policy_for
+        from .vision_openrouter import resolve_config as resolve_openrouter
+
+        source = {"provider": spec.env_name("provider"),
+                  "model": spec.env_name("model") if read(spec.env_name("model")).strip() else "default",
+                  "base_url": (spec.env_name("base_url") if read(spec.env_name("base_url")) else "default")}
+        ignored = [name for name in ("JARVIS_VLM_BACKEND", "JARVIS_VLM_URL",
+                                    "JARVIS_VLM_MODEL", "JARVIS_VLM_KEY", "JARVIS_VLM_PRESET",
+                                    "OPENROUTER_BASE_URL") if read(name).strip()]
+        try:
+            config = resolve_openrouter(env)
+        except VLMNotConfigured as exc:
+            return ResolvedRole("vision", False, "", "", "", MappingProxyType(source),
+                                None, "", exc.reason, tuple(ignored))
+        try:
+            policy = policy_for(config.model, current_provider_block())[0]
+        except ValueError as exc:
+            return ResolvedRole("vision", False, "", "", "", MappingProxyType(source),
+                                None, "", str(exc), tuple(ignored))
+        return ResolvedRole("vision", True, "openrouter", config.model, config.base_url,
+                            MappingProxyType(source), bool(config.is_local), policy,
+                            "", tuple(ignored))
     legacy_backend = read("JARVIS_VLM_BACKEND").strip().lower()
     _url, source["base_url"], shadow = _pick(read, spec, "base_url")
     ignored += shadow
@@ -383,6 +412,12 @@ def resolve_video_route(env: Mapping[str, str] | None = None) -> ResolvedVideoRo
                                                     "model": "default", "base_url": "default"}),
                                   None, "", exc.reason))
     if vision.configured:
+        if vision.provider_id == "openrouter":
+            source = dict(vision.source)
+            source["model"] = spec.env_name("model") if model else vision.source["model"]
+            return ResolvedVideoRoute(ResolvedRole("video", False, "", "", "",
+                                      MappingProxyType(source), None, "",
+                                      "video_vision_provider_unsupported"))
         from .vision_policy import VisionPolicyUnavailable
         from .vision_policy import describe as describe_vision
         from .vlm import VLMNotConfigured, resolve_vlm_config

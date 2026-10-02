@@ -1944,6 +1944,11 @@
   remains a terminal failure without another model call.
   Broader auxiliary routing, SDK recovery and live acceptance remain open. This does not close
   H277 or HEQ-1.
+  Explicit OpenRouter vision now uses a real composer/native transport with scoped
+  credentials and all live upstream routing/privacy controls bound through the
+  final HTTP hook. Unknown/malformed settings, stale confirmations and unauthorized
+  training/cost choices refuse. Provider auto-discovery, Nous/DeepInfra and signed
+  OpenRouter video remain open; this is an adapter dependency, not full H277 parity.
 
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
