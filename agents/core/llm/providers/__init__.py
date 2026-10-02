@@ -275,7 +275,7 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         id="openai-responses", display_name="OpenAI Responses (API key, GPT-4.1)",
         backend_kind="openai-responses", auth_type="bearer", auth_env="OPENAI_API_KEY",
         default_base_url="https://api.openai.com/v1",
-        capabilities=frozenset({"chat", "streaming", "cloud", "prompt-cache-key"}),
+        capabilities=frozenset({"chat", "streaming", "cloud", "prompt-cache-key", "vision"}),
         reasoning_declarations={"gpt-4.1": (), "gpt-4.1-2025-04-14": ()},
         data_policy="no-training", data_policy_note="OpenAI's API terms: API inputs are not used for training by default",
     ),

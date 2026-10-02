@@ -14,6 +14,9 @@ from .base import LMStudioBackend, OllamaBackend
 from .gemini import GEMINI_API_BASE, GeminiBackend
 from .job_selection import _ScopedBackend
 from .openrouter import OpenRouterBackend
+from .responses import ENDPOINT as RESPONSES_ENDPOINT
+from .responses import MODELS as RESPONSES_MODELS
+from .responses import ResponsesBackend
 from .vision_openrouter import _validated_base
 from .vlm import VLMConfig, VLMNotConfigured
 
@@ -45,6 +48,25 @@ def selected_main_config(backend: object, model: str, route: str) -> VLMConfig |
     """
     if isinstance(backend, _ScopedBackend):
         raise VLMNotConfigured("vlm_scoped_backend_unsupported")
+    # xAI subclasses ResponsesBackend but has a different model, response
+    # envelope and data policy. It can still use the existing dedicated fallback.
+    if type(backend) is ResponsesBackend:
+        if route != "cloud-compatible":
+            raise VLMNotConfigured("vlm_responses_route_unsupported")
+        selected_model = _model(model)
+        if selected_model not in RESPONSES_MODELS:
+            raise VLMNotConfigured("vlm_model_unsupported")
+        key = backend.api_key
+        if (not isinstance(key, str) or not key or len(key) > 4096
+                or any(ord(char) < 33 or ord(char) > 126 for char in key)
+                or backend.endpoint != RESPONSES_ENDPOINT
+                or backend.retention not in {"in_memory", "24h"}):
+            raise VLMNotConfigured("vlm_responses_authority_invalid")
+        return VLMConfig(
+            backend="openai-responses", base_url=RESPONSES_ENDPOINT.removesuffix("/responses"),
+            model=selected_model, api_key=key, is_local=False, wire_mode="responses",
+            prompt_cache_retention=backend.retention, route_source="auto:main",
+        )
     if isinstance(backend, ClaudeBackend):
         if route != "claude":
             raise VLMNotConfigured("vlm_route_invalid")
