@@ -252,3 +252,52 @@ Next action: formalize the bounded response-normalization contract from the
 then implement/test it under the same authority boundary. Preserve current retry
 behavior and evidence; continue the accepted backlog. H277 and the overall goal
 are not complete.
+
+## Current local native normalization — 2026-10-02
+
+Goal remains full local Hermes parity. Base
+`173a5a840f8bff27b2ef41a474837ec73e44f18c`; source
+`74cc7130dee0408cddf026bfb7a004726f0c9c93`; full verified head
+`f58948f189b86c21d6f0c60f0102c3c6ab38bb6b`. Branch:
+`codex/h277-vision-normalization-20261002`. Generated 2026-10-02.
+
+Native image and signed compatible/Gemini video now prefer normalized visible
+text and otherwise use typed reasoning, following the pinned extraction order.
+Gemini joins raw fragments before filtering; useful thought-only text returns in
+one call. Explicit error envelopes, malformed mixed parts and blocked outputs
+remain terminal. This supersedes earlier deliberate preservation of nonempty
+Gemini thought-part permissiveness. No transport, authority, route, credential,
+retry budget or schema change. Changed files are the shared native-response helper,
+VLM/video parsers/dispatch, their actual consumer tests and relevant documentation.
+See the [implementation report](h277-vision-normalization-2026-10-02.md).
+
+Final backend on the clean recorded head: **20,739 passed, 34 skipped, one expected
+failure**,64 warnings; all4,329 tracked regular files and HEAD unchanged. The
+tracked20,774 total matches JUnit and increases by53 net cases over the preceding
+image batch. Parent integration696 passed; record/doc guards92 passed. The first
+integration failure was one obsolete thought-only refusal expectation, corrected
+to verify useful output and one send; that failed receipt is retained. Frontend,
+schema and generated assets are unchanged from the prior1847-test verified image
+snapshot; no redundant frontend run or browser E2E claim.
+
+Exact source mutation campaign: **8 valid,8 killed,0 survived,0 invalid**, all
+assertion failures rather than collection/runtime errors. Baseline/final504/504
+passed; every archived source hash restored. See the
+[mutation report](evidence/h277-vision-normalization-mutations-2026-10-02.md) and
+[integration receipt](evidence/h277-vision-normalization-integration-2026-10-02.json).
+Two Sol High writers handled distinct compatible and Gemini paths; coordinator
+review corrected contract details and an image test that initially only set a flag
+without entering its governed request scope. Final tests exercise the actual scope.
+
+H277 remains partial; only previously-current H277/H513/H586 were refreshed after
+complete base-pin and source review. H139 remains inherited-stale. Counts remain172
+equivalent,254 partial,64 missing,207 requiring review. Live-provider/device proof,
+SDK/non-native breadth, discovery/credential recovery and larger uploads remain.
+No push, merge or deploy; canonical main remains cd2aa666.
+
+Next action: design real-consumer auxiliary provider discovery from the
+[pinned source investigation](h277-discovery-investigation-2026-10-02.md).
+Upstream explicitly refuses discovery when a concrete selected main provider is
+unavailable; do not replace this with a scan for any logged-in account. Resolve
+and disclose candidates before approval, preserve local-only task policy and key
+host scoping, and retain every missing capability in the overall objective.
