@@ -56,11 +56,13 @@ the existing provider adapters and general chat routing stay unchanged.
 
 No live provider call, push, merge or deployment is part of this unit.
 
-## Local verification in progress
+## Local verification
 
 The 178 focused H277/H513 tests pass. Three isolated runtime mutation
 baselines pass, and all three mutants are killed (negative verdict, stale
 review, and direct transport). The Ollama request-body substitution test was
 observed red before its guard was added, then passed. Ruff lint and Graft
-freshness pass. Full backend and frontend suites are running separately; no
-live LM Studio or Ollama instance has been used.
+freshness pass. The complete backend suite exited 0 with 21,242 passed,
+34 skipped and one expected xfail out of 21,277 collected tests. The complete
+frontend suite exited 0 with 1,874 passed. The staged index scan found zero
+secrets. No live LM Studio or Ollama instance has been used.
