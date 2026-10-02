@@ -205,3 +205,50 @@ shared VLM behavior. Continue the full accepted Hermes backlog; this milestone
 does not complete H277. All new commits remain local; canonical main remains at
 cd2aa666. Prior published GitHub Windows CI was still in progress at the last check
 and is not implied green by this local run.
+
+## Current local image empty recovery — 2026-10-02
+
+Goal remains complete local Hermes parity. Base `9313fe0c9b2d918579b0dda64f11fad59bedc9c2`;
+runtime `a6a2388f037d130ec0a5bc06a5d9a3f49cf5a9ef`; additional behavioral tests
+`931b6626017146ffa31ece8f2bc9b5b7865d59a7`; full verified head
+`47ffd68f55c01fa3b45ba596ed94c0a9cb5b81ce`. Branch:
+`codex/h277-image-empty-retry-20261002`. Generated 2026-10-02.
+
+Opt-in image empty recovery now covers the five governed native consumers with
+same prepared images/model, at most two sends, a shared deadline, fresh authority
+and exact-body/final-hook checks. Changing the enabled budget invalidates composer
+consent bindings and unattended grants. CLI and HUD disclose the second-call budget;
+legacy default-zero shapes remain. Changed paths are the vision policy/backend,
+new retry/shared predicate helpers, the video's predicate import, CLI/composer/local
+panels, their tests, regenerated web assets and config/evidence documentation.
+See the [implementation report](h277-image-empty-retry-2026-10-02.md) and
+[source review](h277-image-empty-source-review-2026-10-02.md).
+
+Full backend: **20,686 passed, 34 skipped, one expected failure**, 64 warnings;
+HEAD and all 4,318 tracked regular files unchanged. Full frontend: **1,847 passed**;
+typecheck, E2E TypeScript compilation and production build passed. Browser E2E was
+not executed. Parent backend union582 and CLI117 passed; two additional scope-edge
+tests passed; records/doc guards92 passed. This batch adds56 backend test cases and
+nine frontend cases. Tracked test counts20721/1847 match those result artifacts.
+
+The original mutation campaign on the runtime commit retains its honest result:
+10 valid, five killed and five survived. Three overlapping cap controls and an
+independent H513 scope explain redundant survivors; one uncovered final-hook-order
+case prompted a new test. A separate test also covers governed text-only calls.
+Both corresponding supplemental mutations were killed on the added-test commit.
+Original baselines421/421 and supplemental42/42 passed; every archived source hash
+was restored. See [original campaign](evidence/h277-image-empty-mutations-2026-10-02.md),
+[supplement](evidence/h277-image-empty-mutations-supplement-2026-10-02.md), and the
+[integration receipt](evidence/h277-image-empty-integration-2026-10-02.json).
+
+Only31 previously-current evidence rows were reviewed/refreshed; no capability
+status was promoted. Counts remain172 equivalent,254 partial,64 missing,207 requiring
+review. No live-provider/device result or coverage percentage is claimed. All new
+commits remain local; canonical main remains cd2aa666. No push, merge or deployment
+in this increment, and no new GitHub CI claim.
+
+Next action: formalize the bounded response-normalization contract from the
+[new source investigation](h277-output-normalization-investigation-2026-10-02.md),
+then implement/test it under the same authority boundary. Preserve current retry
+behavior and evidence; continue the accepted backlog. H277 and the overall goal
+are not complete.
