@@ -46,5 +46,8 @@ The repeated-call test failed before the cache was added. A second red test
 found that replacing a client's selected transport could reuse a stale verdict;
 the cache now binds that transport as well. The 246-case H277/H513/LM Studio/
 compaction regression union passes, scoped Ruff passes, and three isolated
-runtime mutants are killed after their baselines pass. Full backend verification
-is running separately. The existing frontend source was not changed.
+runtime mutants are killed after their baselines pass. Graft freshness and the
+staged secret scan pass. The complete backend suite exited 0 with 21,253 passed,
+34 skipped and one expected xfail of 21,288 collected tests. The complete
+frontend suite exited 0 with 1,874 passed. These are offline checks; no live
+LM Studio model has been queried.
