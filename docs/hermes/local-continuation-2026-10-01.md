@@ -66,8 +66,19 @@ tracked regular source hashes remained fixed; full frontend has 1,838 passing te
 The [current report](h277-video-provider-chain-2026-10-02.md) and its receipt separate
 this proof from the earlier mutation campaign. New continuation commits remain local.
 
-Next action: use the [provider investigation](h277-next-provider-review-2026-10-02.md)
-to design a native adapter with actual video-payload/MIME proof, then continue shared
-auxiliary routing and the accepted Hermes queue. Keep H277 partial. The current
+Native Gemini video milestone: code `0382ef0b`, frozen full-backend commit
+`c4231b64982bbab150e564794b42ee3f7797247f`: **20,402 passed, 34 skipped,
+1 expected failure, zero unexpected failures**, with 61 warnings. All 4,227 tracked
+regular files remained unchanged through the run; the checkout stayed clean. The
+707-case focused set includes 66 pure codec and 30 signed Gemini cases. Frontend
+source/schema are unchanged from the separately tested `2d9a3c39` snapshot with
+1,838 passing tests, typecheck and build. See the
+[immutable Gemini receipt](evidence/h277-gemini-video-integration-2026-10-02.json)
+and [implementation report](h277-gemini-video-2026-10-02.md).
+
+Next action: turn the [retry investigation](h277-retry-investigation-2026-10-02.md)
+into a bounded approval-bound transient-retry design, then continue shared auxiliary
+routing, broader adapters and the accepted Hermes queue. Larger native video upload
+lifecycle and live acceptance remain open. Keep H277 partial. The current
 ledger has 172 equivalent, 254 partial, 64 missing and 207 requiring review out of
 697 accepted rows. Preserve these local checkpoints and existing source evidence.

@@ -3,8 +3,10 @@
 Generated 2026-10-02 Europe/Bucharest. Goal: move the approved video consumer toward
 full pinned Hermes auxiliary parity by adding a real Gemini request adapter.
 Base/head: `b3512adf1592c9967267d34f9891606bcd489295`.
-Status: implemented with707focused regressions passing and bounded review clear.
-Next action: freeze the integration commit and run the full backend milestone.
+Status: implemented with 707 focused regressions passing and bounded review clear.
+Full backend on `c4231b64`: 20,402 passed, 34 skipped and one expected failure.
+See the [immutable receipt](evidence/h277-gemini-video-integration-2026-10-02.json).
+Next action: approval-bound transient retry design, then the remaining H277 scope.
 No push, merge, deployment, live provider call, paid spend or credential import.
 
 ## Evidence and decision

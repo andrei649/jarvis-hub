@@ -59,5 +59,5 @@ Parent owns `.env.example`, `docs/FLAGS.md`, Hermes design/report/assessment, BA
 
 - [x] Review producer/consumer interfaces and security-sensitive diffs; obtain one bounded independent review, fix concrete findings red-first.
 - [x] Document key/base/MIME/size rules and unresolved larger-upload/live/provider gaps. Re-read affected ledger evidence only; no blanket hash restamps or parity promotion.
-- [ ] Commit coherent code, update generated counts/reports, then freeze an exact commit and run full backend once. Fix actual failures and verify source stability. Frontend is unchanged: retain previous1838-test/typecheck/build proof and verify its source hashes.
-- [ ] Scan changed source/docs/tests, save honest exact-source receipt, commit local handover and continue the full goal.
+- [x] Commit coherent code, update generated counts/reports, then freeze an exact commit and run full backend once. Fix actual failures and verify source stability. Frontend is unchanged: retain previous1838-test/typecheck/build proof and verify its source hashes.
+- [x] Scan changed source/docs/tests, save honest exact-source receipt, commit local handover and continue the full goal.
