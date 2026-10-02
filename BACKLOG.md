@@ -1947,8 +1947,8 @@
   Explicit OpenRouter vision now uses a real composer/native transport with scoped
   credentials and all live upstream routing/privacy controls bound through the
   final HTTP hook. Unknown/malformed settings, stale confirmations and unauthorized
-  training/cost choices refuse. Provider auto-discovery, Nous and signed
-  OpenRouter video remain open; this is an adapter dependency, not full H277 parity.
+  training/cost choices refuse. Signed OpenRouter video remains open; this is an
+  adapter dependency, not full H277 parity.
   Image turns now expose independent per-turn training/cost confirmations in HUD
   and CLI, bind complete guard details to the reviewed destination, and record
   required training consent before dispatch. Changes revoke the confirmation;
@@ -1957,8 +1957,7 @@
   before preview, or uses an explicit model without metadata I/O. Refresh revokes
   stale selection, key/base changes isolate cache entries, and POST never discovers
   a replacement. Responses are bounded even without retry; duplicate model keys
-  and late configuration changes refuse. This remains one H277 dependency, not
-  completion of automatic cross-provider routing. See the
+  and late configuration changes refuse. This remains one H277 dependency. See the
   [DeepInfra plan](docs/hermes/h277-deepinfra-vision-plan-2026-10-02.md).
   Nous now has a separate encrypted Nerva account store, owner-only device-code
   API/CLI login, status/logout and serialized refresh-aware inference credentials.
@@ -1966,8 +1965,16 @@
   welcome-host selection and bounded Chat Completions or native Messages inference.
   Selection is encrypted and revoked by account/configuration changes; image POST
   never refreshes credentials or discovers a replacement. Catalog refresh leaves
-  usable OAuth credentials intact. Automatic routing, account UI, provider acceptance
-  and full H277 completion remain open. See [account setup](docs/nous-auth.md).
+  usable OAuth credentials intact. Account UI, provider acceptance and full H277
+  completion remain open. See [account setup](docs/nous-auth.md).
+  Opt-in image-composer auto routing now tries a supplied selected-main vision
+  route, then OpenRouter, Nous and DeepInfra; the standalone composer has no
+  selected main route, so only the latter three are active there. Status prepares
+  metadata, displays provider/model/destination and binds the source; image POST
+  performs no discovery or OAuth refresh. Candidate, credential and policy drift
+  revoke consent before image egress. Auto is unavailable to inherited video and
+  local-only consumers; main-runtime plumbing, signed video, live acceptance and
+  other H277 obligations remain open.
 
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.

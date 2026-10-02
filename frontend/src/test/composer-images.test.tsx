@@ -86,6 +86,25 @@ it('requires acknowledgement of the current remote destination and resets it on 
   fireEvent.click(screen.getByRole('button',{name:'Send'}));
   expect(submit.mock.calls[0][1]).toMatchObject({expected_destination:destination.destination,expected_binding:destination.binding,remote_ack:true});
 });
+it('shows the automatically selected image provider before remote consent',async()=>{
+  const chosen={...status,backend:'openrouter',model:'vendor/vision',local:false,
+    destination:'https://openrouter.ai/api/v1',selection_source:'auto:openrouter'};
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify(chosen))));
+  render(<InputBar onSubmit={()=>{}} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  expect(await screen.findByText(/Automatically selected OpenRouter/)).toBeTruthy();
+  expect(screen.getByText(/vendor\/vision/)).toBeTruthy();
+  expect(screen.getByText(/Send these images to https:\/\/openrouter.ai\/api\/v1/)).toBeTruthy();
+});
+it('refuses malformed automatic selection metadata before image submission',async()=>{
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify({
+    ...status,selection_source:'auto:untrusted'}))));
+  const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  await screen.findByText(/Vision model unavailable/);
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
+  expect(submit).not.toHaveBeenCalled();
+});
 it('accepts a bounded retry notice with a local image submission',async()=>{
   const notice='A local model may retry once after an empty response.';
   const submit=vi.fn();

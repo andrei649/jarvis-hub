@@ -419,15 +419,14 @@ checkbox still names the destination; live routing changes invalidate that
 binding. The composer now displays separate unchecked training/cost confirmations
 when requested by the server, requires all of them before send, and clears them
 on image changes, refresh or draft clear. Unknown/malformed disclosures refuse;
-remote acknowledgment is independent. Automatic provider discovery
-and signed OpenRouter video remain unfinished.
+remote acknowledgment is independent. Signed OpenRouter video remains unfinished.
 
 Explicit DeepInfra vision (H277, 2026-10-02) now uses the existing composer. With
 no explicit model, opening image status prepares a catalog selection; Refresh vision
 destination forces a new catalog lookup and clears confirmations. Failed refresh
 revokes the old selection. Metadata discovery sends no images, and remote inference
 still needs the reviewed destination and any separate training/cost confirmations.
-Automatic cross-provider discovery and native mobile acceptance remain open.
+Native mobile acceptance remains open.
 
 Nous account lifecycle (H277, 2026-10-02) is currently CLI plus owner API only:
 login/status/poll/logout. The HUD has no Nous account-management controls yet.
@@ -435,5 +434,12 @@ This is explicit UI debt; account authentication alone does not select a provide
 Explicit Nous vision now uses the existing image composer, model/destination
 display, refresh and confirmation controls. Status prepares an account-bound
 recommendation; image POST only uses that prepared selection. Chat/Messages wire
-changes invalidate confirmation. No account-management UI or automatic provider
-discovery is claimed by this server integration.
+changes invalidate confirmation. No account-management UI is claimed by this
+server integration.
+
+Opt-in automatic image selection (H277, 2026-10-02) shows the chosen provider
+alongside its model and destination before remote confirmation. The server tries
+OpenRouter, Nous and DeepInfra in order when available; the composer has no
+selected main conversation route to reuse. Refresh may prepare metadata, while
+image POST makes no replacement discovery. A provider or policy switch clears
+the reviewed binding. Native provider controls and live acceptance remain open.

@@ -148,6 +148,7 @@ def public_config(config, *, identity=None):
         "model": config.model,
         "backend": config.backend,
         "local": config.is_local,
+        **({"selection_source": config.route_source} if config.route_source else {}),
         **identity.public(),
     }
 
@@ -216,6 +217,9 @@ async def composer_status(refresh_catalog: bool = False):
             config = await prepare_config(force_refresh=refresh_catalog)
         elif env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower() == "nous":
             from agents.core.llm.vision_nous import prepare_config
+            config = await prepare_config(force_refresh=refresh_catalog)
+        elif env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower() == "auto":
+            from agents.core.llm.vision_auto import prepare_config
             config = await prepare_config(force_refresh=refresh_catalog)
         else:
             config = resolve_vlm_config()

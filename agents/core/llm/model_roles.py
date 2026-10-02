@@ -261,6 +261,11 @@ def vision_env_view(env: Mapping[str, str] | None = None) -> tuple[str, str, str
 
         config = resolve_config(env)
         return config.backend, config.base_url, config.model, config.api_key, ""
+    if role_provider.lower() == "auto":
+        from .vision_auto import resolve_config
+
+        config = resolve_config(env)
+        return config.backend, config.base_url, config.model, config.api_key, ""
     backend = (_VISION_BACKEND_OF[_validate(spec, role_provider)] if role_provider
                else read("JARVIS_VLM_BACKEND"))
     role_url = read(spec.env_name("base_url")).strip()
@@ -375,6 +380,29 @@ def _resolve_vision(read, spec: RoleSpec, env: Mapping[str, str] | None) -> Reso
         return ResolvedRole("vision", True, "nous", config.model, config.base_url,
                             MappingProxyType(source), bool(config.is_local),
                             get_profile("nous").data_policy_for(config.model)[0], "", tuple(ignored))
+    if role_provider.lower() == "auto":
+        from .vision_auto import resolve_config as resolve_auto
+        from .vision_openrouter import current_provider_block, policy_for
+
+        source = {"provider": spec.env_name("provider"), "model": "auto",
+                  "base_url": spec.env_name("base_url") if read(spec.env_name("base_url")) else "auto"}
+        ignored = [name for name in ("JARVIS_VLM_BACKEND", "JARVIS_VLM_URL",
+                                    "JARVIS_VLM_MODEL", "JARVIS_VLM_KEY", "JARVIS_VLM_PRESET")
+                   if read(name).strip()]
+        try:
+            config = resolve_auto(env)
+            source["model"] = config.route_source
+            provider = _VISION_PROVIDER_OF[config.backend]
+            policy = (policy_for(config.model, current_provider_block())[0]
+                      if provider == "openrouter" else
+                      "unknown" if provider == "openai-compatible" else
+                      get_profile(provider).data_policy_for(config.model)[0])
+        except (VLMNotConfigured, ValueError) as exc:
+            return ResolvedRole("vision", False, "", "", "", MappingProxyType(source),
+                                None, "", getattr(exc, "reason", str(exc)), tuple(ignored))
+        return ResolvedRole("vision", True, provider, config.model, config.base_url,
+                            MappingProxyType(source), bool(config.is_local), policy,
+                            "", tuple(ignored))
     legacy_backend = read("JARVIS_VLM_BACKEND").strip().lower()
     _url, source["base_url"], shadow = _pick(read, spec, "base_url")
     ignored += shadow
@@ -459,6 +487,11 @@ def resolve_video_route(env: Mapping[str, str] | None = None) -> ResolvedVideoRo
     vision_selected = any(read(name).strip() for name in (
         "JARVIS_ROLE_VISION_PROVIDER", "JARVIS_ROLE_VISION_MODEL", "JARVIS_ROLE_VISION_BASE_URL",
         "JARVIS_VLM_BACKEND", "JARVIS_VLM_URL", "JARVIS_VLM_MODEL", "JARVIS_VLM_PRESET"))
+    if read("JARVIS_ROLE_VISION_PROVIDER").strip().lower() == "auto":
+        return ResolvedVideoRoute(ResolvedRole("video", False, "", "", "",
+                                  MappingProxyType({"provider": "JARVIS_ROLE_VISION_PROVIDER",
+                                                    "model": "auto", "base_url": "auto"}),
+                                  None, "", "video_vision_provider_unsupported"))
     try:
         vision = _resolve_vision(read, ROLES["vision"], env)
     except RoleConfigError as exc:

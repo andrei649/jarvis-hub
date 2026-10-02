@@ -317,7 +317,7 @@ provider controls remain a gap; existing mobile chat does not gain image routing
 Responsive-web image drafts additionally support distinct per-turn training/cost
 confirmations with audit and destination binding; native mobile has no equivalent
 image intake or confirmation controls yet.
-Automatic provider discovery and signed OpenRouter video are not delivered.
+Signed OpenRouter video is not delivered.
 
 Explicit DeepInfra image analysis uses the same responsive-web composer and
 confirmation controls. Its Refresh vision destination button can refresh the
@@ -330,3 +330,10 @@ prerequisite. Account login does not enable a model route. Explicit Nous vision
 now uses the responsive-web image composer with account-bound recommendations,
 Chat/Messages inference and the existing destination/training/cost confirmations.
 UI account management, native image intake and native-device acceptance remain open.
+
+Opt-in automatic image selection now works in the responsive-web composer:
+the chosen OpenRouter, Nous or DeepInfra provider appears with its model and
+destination before consent, and a changed choice invalidates that consent.
+The composer has no actual selected main conversation route, so this first
+candidate is absent. Native mobile image intake and provider controls remain
+open; this web flow does not imply native mobile parity.

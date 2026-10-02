@@ -7,7 +7,10 @@ type SelectionNeed='acknowledge_training'|'confirm_expensive';
 type SelectionRequirement={needs:SelectionNeed;message:string};
 export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;remote_ack:boolean;acknowledge_training?:true;confirm_expensive?:true};
 type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;data?:string;error?:string};
-type Destination={configured:boolean;destination?:string;binding?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string;selection_requirements?:SelectionRequirement[]};
+type Destination={configured:boolean;destination?:string;binding?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[]};
+
+const AUTO_SOURCES=new Set(['auto:main','auto:override','auto:openrouter','auto:nous','auto:deepinfra']);
+const PROVIDER_NAMES:Record<string,string>={openrouter:'OpenRouter',nous:'Nous',deepinfra:'DeepInfra',lmstudio:'LM Studio',custom:'Custom'};
 
 function validRetryMetadata(data:Destination){
   const hasBudget=Object.prototype.hasOwnProperty.call(data,'empty_retries');
@@ -84,6 +87,9 @@ export function useComposerImages(){
       const data=JSON.parse(text) as Destination;
       if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!/^\w{64}$/.test(data.binding||'')))throw new Error('Invalid vision status');
       if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision status');
+      if(data.selection_source!==undefined&&(!AUTO_SOURCES.has(data.selection_source)||
+        data.selection_source==='auto:override'&&data.backend!=='custom'||
+        !['auto:main','auto:override'].includes(data.selection_source)&&data.selection_source!==`auto:${data.backend}`))throw new Error('Invalid vision status');
       if(!validRetryMetadata(data)||!validSelectionRequirements(data))throw new Error('Invalid vision status');
       if(active)setDestination(data);
     }).catch(()=>{if(active)setDestination({configured:false});});
@@ -115,7 +121,7 @@ export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImage
       <button className="tool-btn" onClick={()=>draft.remove(image.id)} aria-label={`Remove ${image.name}`}>Remove</button>
       {!image.data&&!image.error&&<span> Reading…</span>}{image.error&&<span>{image.error}</span>}
     </div>)}</div>
-    <div role="status">{draft.note || (draft.images.length ? !d?'Checking vision configuration…':!d.configured?'Vision model unavailable. Remove images to send text.':`${d.model} · ${d.destination} · ${d.local?'loopback':'remote'} · reachability not probed` : '')}</div>
+    <div role="status">{draft.note || (draft.images.length ? !d?'Checking vision configuration…':!d.configured?'Vision model unavailable. Remove images to send text.':`${d.selection_source?`Automatically selected ${PROVIDER_NAMES[d.backend||'']||d.backend} · `:''}${d.model} · ${d.destination} · ${d.local?'loopback':'remote'} · reachability not probed` : '')}</div>
     {d?.configured&&d.warning&&<div style={{color:'var(--amber)'}}>{d.warning}</div>}
     {d?.configured&&d.retry_notice&&<div role="status" style={{color:'var(--amber)'}}>{d.retry_notice}</div>}
     {!!draft.images.length&&<button className="tool-btn" onClick={draft.refresh}>Refresh vision destination</button>}

@@ -578,7 +578,7 @@ is a frozen table of five roles; the new names win when set, the old ones are fa
 |---|---|---|---|---|
 | `main` | none (`JARVIS_ROLE_MAIN_*` is **ignored**, the doctor says so) | settings `llm.*` | not env-selectable: the main model is chosen on the H378-guarded settings surfaces | the router |
 | `deep` | `JARVIS_ROLE_DEEP_MODEL` | `JARVIS_DEEP_MODEL`, then `deepseek-r1-distill-qwen-32b` | none (the router's local backend; `_PROVIDER`/`_BASE_URL` ignored) | the deep slot |
-| `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_PROFILE` / `_MODEL` / `_BASE_URL` | legacy `JARVIS_VLM_*` for LM Studio/custom; none for OpenRouter/DeepInfra/Nous | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`), explicit `openrouter`, `deepinfra` or `nous` | `resolve_vlm_config`; remote composer/native backend; local-only consumers keep their local guards |
+| `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_PROFILE` / `_MODEL` / `_BASE_URL` | legacy `JARVIS_VLM_*` for LM Studio/custom; none for OpenRouter/DeepInfra/Nous | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`), explicit `openrouter`, `deepinfra`, `nous` or opt-in `auto` | `resolve_vlm_config`; remote composer/native backend; local-only consumers keep their local guards |
 | `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | resolved vision route when video provider/base are unset | `lm-studio`, `openai-compatible`, `gemini` | opt-in, owner-approved `video_analyze` ToolRPC |
 | `approval_judge` | `JARVIS_ROLE_APPROVAL_JUDGE_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio` (default), `ollama`, `openai-compatible` | `autonomy/approval_judge.py` |
 
@@ -633,8 +633,8 @@ cost confirmation keeps the existing best-effort audit. These confirmations gran
 no reusable provider or unattended-role permission. In particular, `:free` models
 and `data_collection=allow` do not silently bypass training guards.
 The inherited video route reports
-`video_vision_provider_unsupported`; signed OpenRouter video and automatic provider
-discovery remain separate unfinished increments.
+`video_vision_provider_unsupported`; signed OpenRouter video remains a separate
+unfinished increment.
 
 **Nous account authentication** is a provider-discovery prerequisite, available via
 `nerva auth nous login|status|logout --profile NAME`. Set a registered public OAuth
@@ -675,8 +675,7 @@ confirmations still apply to the actual model, endpoint and wire; local-only ima
 consumers stay local. Inherited Nous video currently refuses until a video adapter
 exists. `JARVIS_NOUS_ANTHROPIC_WIRE=chat` is the default. `native` uses Messages
 only for `anthropic/*`; `auto` and invalid values currently use chat/completions.
-The wire is included in the reviewed destination identity. Automatic
-main → OpenRouter → Nous → DeepInfra selection remains unfinished.
+The wire is included in the reviewed destination identity.
 
 **Explicit DeepInfra vision** uses `JARVIS_ROLE_VISION_PROVIDER=deepinfra`.
 `JARVIS_ROLE_VISION_MODEL` pins a model and bypasses metadata discovery. Without
@@ -699,8 +698,27 @@ deadline and a2 MiB response limit. A later image POST never discovers another
 model: it requires the reviewed selection and independent remote/selection
 confirmations. Keys, models and physical-request changes invalidate old approval.
 Data policy is unknown. Local-only consumers stay local; inherited signed video
-refuses with `video_vision_provider_unsupported`. Automatic cross-provider discovery,
-Nous authentication and main-chat DeepInfra routing remain unfinished.
+refuses with `video_vision_provider_unsupported`. Main-chat DeepInfra routing
+remains unfinished.
+
+**Opt-in automatic image selection** uses `JARVIS_ROLE_VISION_PROVIDER=auto`.
+The standalone composer has no selected conversation-main route, so it tries
+OpenRouter, then Nous, then DeepInfra. A future caller may pass an actual selected
+main vision route; unrelated global chat settings do not supply one. OpenRouter
+uses its dedicated free vision model when the role model is blank. Nous requires
+usable owned credentials; DeepInfra requires a pinned model or positively served
+vision catalog selection. A missing candidate is skipped; malformed authority or
+privacy settings refuse. An explicit role base URL is authoritative and requires
+an explicit role model and key scoped to that origin.
+
+Composer status prepares metadata, shows the selected provider, model and
+destination, and returns a consent binding that includes the auto source. Image
+POST resolves locally without discovery or OAuth refresh. Switching providers,
+credentials, model, endpoint, wire or effective policy invalidates the earlier
+confirmation before images leave the hub. Training and cost acknowledgements
+remain independent. Auto selection is unavailable to inherited video and does
+not make local-only consumers send images to a remote provider. This is a bounded
+image-composer slice, not complete H277 parity.
 
 **Video understanding** requires `JARVIS_VIDEO_ANALYSIS=1` and a valid resolved video
 route. When both video provider and base URL are unset, a configured vision route

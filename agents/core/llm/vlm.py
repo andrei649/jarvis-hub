@@ -155,7 +155,7 @@ class VLMConfig:
     ``label at (x, y)`` contract ever promised.
     """
 
-    backend: str  # "lmstudio" | "custom" | "openrouter" | "deepinfra"
+    backend: str  # "lmstudio" | "custom" | "openrouter" | "deepinfra" | "nous"
     base_url: str
     model: str
     api_key: str
@@ -163,6 +163,7 @@ class VLMConfig:
     preset: str = ""
     convention: str = CONVENTION_ABSOLUTE
     wire_mode: str = "chat_completions"
+    route_source: str = ""
 
     def __post_init__(self) -> None:
         if self.wire_mode not in {"chat_completions", "anthropic_messages"} or (
@@ -206,6 +207,9 @@ def resolve_vlm_config(env=None) -> VLMConfig:
         return resolve_config(env)
     if model_roles._reader(env)("JARVIS_ROLE_VISION_PROVIDER").strip().lower() == "nous":
         from .vision_nous import resolve_config
+        return resolve_config(env)
+    if model_roles._reader(env)("JARVIS_ROLE_VISION_PROVIDER").strip().lower() == "auto":
+        from .vision_auto import resolve_config
         return resolve_config(env)
     try:
         backend, url, model, api_key, preset_name = model_roles.vision_env_view(env)

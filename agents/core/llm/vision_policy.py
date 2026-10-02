@@ -145,6 +145,12 @@ def describe(config):
         binding += ('openrouter-vision:v1', provider_block)
     if config.backend == 'nous':
         binding += ('nous-vision:v1', wire_mode)
+    route_source = getattr(config, 'route_source', '')
+    if route_source:
+        if route_source not in {'auto:main', 'auto:override', 'auto:openrouter',
+                                'auto:nous', 'auto:deepinfra'}:
+            raise VisionPolicyUnavailable('invalid vision route source')
+        binding += ('vision-auto:v1', route_source)
     identity = VisionIdentity(profile.id, policy, note[:500], warning, str(base), request_url, auth,
                               binding, empty_retries, provider_block, wire_mode=wire_mode)
     try:
