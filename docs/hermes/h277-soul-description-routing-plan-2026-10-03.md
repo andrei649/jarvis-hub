@@ -47,6 +47,9 @@ No push, merge, deployment or live provider call is part of this unit.
 Red-first regressions exposed the ignored model override, absent H513 scope,
 Ollama URL mismatch, late model rewrite and an appended redirect hook. The
 252-case H156/H277/H513/egress/LM Studio union now passes. Four isolated
-runtime mutation baselines pass and all four mutants are killed. Scoped Ruff
-and `git diff --check` pass. Full suites remain separate from this focused
-proof; no local model or cloud provider was contacted.
+runtime mutation baselines pass and all four mutants are killed. The complete
+backend suite exited zero with 21,264 passed, 34 skipped and one expected
+failure (21,299 collected); the frontend suite exited zero with 1,874 passed
+across 207 files. Scoped Ruff, `git diff --check` and the rebuilt Graft graph
+pass. These are local offline checks; no local model or cloud provider was
+contacted.
