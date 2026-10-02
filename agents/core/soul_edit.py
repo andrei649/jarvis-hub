@@ -243,7 +243,8 @@ async def draft_description(orch: Any, agent_id: str) -> str:
     """
     import asyncio
 
-    from .llm.model_config import DEFAULT_LOCAL_MODEL
+    from .llm.auxiliary_text import prepare_local_auxiliary
+    from .llm.base import is_backend_failure_reply
 
     ident = agent_folder(agent_id)
     agent = (getattr(orch, "agents", None) or {}).get(ident) if ident else None
@@ -252,23 +253,20 @@ async def draft_description(orch: Any, agent_id: str) -> str:
     persona = str((agent.soul or {}).get("content") or "")[:8000]
     router = getattr(orch, "llm_router", None)
     try:
-        backend = router.local_backend
+        generate = prepare_local_auxiliary(router, "soul_description")
     except Exception as exc:
         raise SoulEditError("no_local_model", 503) from exc
-    if backend is None:
-        raise SoulEditError("no_local_model", 503)
-    model = getattr(router, "active_model", None) or DEFAULT_LOCAL_MODEL
     prompt = f"Persona:\n{persona}"
-    if "qwen3" in model.lower():
-        prompt = f"{prompt}\n/no_think"
     try:
         raw = await asyncio.wait_for(
-            backend.generate(model=model, prompt=prompt, system=DRAFT_SYSTEM,
-                             max_tokens=DRAFT_MAX_TOKENS, temperature=0.3),
+            generate(prompt=prompt, system=DRAFT_SYSTEM,
+                     max_tokens=DRAFT_MAX_TOKENS, temperature=0.3),
             timeout=60)
     except Exception as exc:
         logger.warning("description draft for %s failed: %s", ident, type(exc).__name__)
         raise SoulEditError("no_local_model", 503) from exc
+    if is_backend_failure_reply(raw):
+        raise SoulEditError("no_local_model", 503)
     first = next((p for p in str(raw or "").strip().split("\n\n") if p.strip()), "")
     text = " ".join(first.split())[:DESCRIPTION_CHARS]
     if not text:

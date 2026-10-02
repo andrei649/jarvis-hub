@@ -38,7 +38,7 @@ ROLE_TARGETS = {
 }
 COVERAGE = (
     "routed agent dispatch, synthesis, tool-loop requests, Gemini cache writes, "
-    "session titles, recall query rewriting, background/on-demand review, context compression, "
+    "session titles, recall query rewriting, background/on-demand review, context compression, SOUL description drafts, "
     "acquisition drafting/generation, the optional presence explanation seam, the approval judge, "
     "interactive composer vision, strict-local describe/screen-reflex, unattended Telegram image descriptions, strict-local camera descriptions, approved video analysis, and local-only embeddings; "
     "unscoped multimodal library clients excluded"

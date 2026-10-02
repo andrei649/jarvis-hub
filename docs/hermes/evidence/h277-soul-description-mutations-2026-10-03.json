@@ -1,0 +1,72 @@
+{
+  "scope": "H277 governed SOUL description producer",
+  "files_sha256": {
+    "agents/core/llm/auxiliary_text.py": "5ab357e164e2a1745896d1e64275cbdb4528d421c7925032dff8c7b5b649cb0e",
+    "agents/core/llm/data_handling.py": "c6daed6de21a88ccfaa49b1743fa56f058b5115fb72bc379a6e842f07496682a",
+    "agents/core/llm/egress.py": "c50d1fce661bfae853d8370919655e29d5db63212a6b7f2cb1d8ec607dac39f6",
+    "agents/core/soul_edit.py": "84620ddce984cb1a344b95497d165c7a3706322b5f060b0eab454e6813394304",
+    "tests/test_h277_soul_description_auxiliary.py": "dd51bdfc9f0255ff51c62eebd4e1ed159f1013ea03a2bf7e58a5132e81cfb831",
+    "tests/test_soul_edit_route.py": "06b00731351dc1e10dac44a6052e9a43cd675e320de899defa18a8f3edc44c34"
+  },
+  "baseline_passed": 4,
+  "mutants_killed": 4,
+  "mutants_total": 4,
+  "results": [
+    {
+      "case": "ignore_task_model",
+      "mutant": false,
+      "exit_code": 0,
+      "baseline_passed": true,
+      "killed": false
+    },
+    {
+      "case": "skip_h513_scope",
+      "mutant": false,
+      "exit_code": 0,
+      "baseline_passed": true,
+      "killed": false
+    },
+    {
+      "case": "allow_proxy",
+      "mutant": false,
+      "exit_code": 0,
+      "baseline_passed": true,
+      "killed": false
+    },
+    {
+      "case": "ignore_model_body",
+      "mutant": false,
+      "exit_code": 0,
+      "baseline_passed": true,
+      "killed": false
+    },
+    {
+      "case": "ignore_task_model",
+      "mutant": true,
+      "exit_code": 1,
+      "baseline_passed": false,
+      "killed": true
+    },
+    {
+      "case": "skip_h513_scope",
+      "mutant": true,
+      "exit_code": 1,
+      "baseline_passed": false,
+      "killed": true
+    },
+    {
+      "case": "allow_proxy",
+      "mutant": true,
+      "exit_code": 1,
+      "baseline_passed": false,
+      "killed": true
+    },
+    {
+      "case": "ignore_model_body",
+      "mutant": true,
+      "exit_code": 1,
+      "baseline_passed": false,
+      "killed": true
+    }
+  ]
+}

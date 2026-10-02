@@ -14,12 +14,14 @@ Agent and SoulVersionStore, an audit list, a fake local model.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +54,34 @@ class _Backend:
         if isinstance(self.reply, Exception):
             raise self.reply
         return self.reply
+
+
+def _draft_router(reply=" Jarvis runs the house: lights, heat and the owner's day.\n\nMore text. "):
+    from agents.core.llm.base import LMStudioBackend
+    from agents.core.llm.egress import llm_async_client
+    from agents.core.llm.router import LLMRouter
+
+    calls = []
+
+    def answer(request):
+        calls.append(json.loads(request.content))
+        if isinstance(reply, Exception):
+            return httpx.Response(503)
+        return httpx.Response(200, json={"choices": [{
+            "message": {"content": reply}, "finish_reason": "stop",
+        }]})
+
+    backend = LMStudioBackend("http://127.0.0.1:1234", trust_env=False)
+    asyncio.run(backend.client.aclose())
+    backend.client = llm_async_client(
+        "lm-studio", base_url=backend.base_url, trust_env=False,
+        transport=httpx.MockTransport(answer),
+    )
+    router = LLMRouter()
+    router._backend = backend
+    router._backend_name = "lm-studio"
+    router._detected_model = "qwen3-8b"
+    return router, backend, calls
 
 
 @pytest.fixture
@@ -369,15 +399,20 @@ def test_a_description_is_one_bounded_line(orch):
 
 
 def test_the_description_draft_is_a_proposal(http, orch, home):
-    got = http.post("/api/admin/agents/jarvis/description/draft", headers=HDR)
-    assert got.status_code == 200, got.text
-    assert got.json() == {"agent_id": "jarvis",
-                          "draft": "Jarvis runs the house: lights, heat and the owner's day."}
-    (call,) = orch.backend.calls
-    assert "house brain" in call["prompt"] and call["model"] == "qwen3-8b"
-    assert call["prompt"].rstrip().endswith("/no_think")
-    assert "one paragraph" in call["system"].lower()
-    assert not home.overlay.exists() and orch.soul_versions.history("jarvis") == []
+    router, backend, calls = _draft_router()
+    orch.llm_router = router
+    try:
+        got = http.post("/api/admin/agents/jarvis/description/draft", headers=HDR)
+        assert got.status_code == 200, got.text
+        assert got.json() == {"agent_id": "jarvis",
+                              "draft": "Jarvis runs the house: lights, heat and the owner's day."}
+        (call,) = calls
+        assert "house brain" in call["messages"][-1]["content"] and call["model"] == "qwen3-8b"
+        assert call["messages"][-1]["content"].rstrip().endswith("/no_think")
+        assert "one paragraph" in call["messages"][0]["content"].lower()
+        assert not home.overlay.exists() and orch.soul_versions.history("jarvis") == []
+    finally:
+        asyncio.run(backend.aclose())
 
 
 def test_the_draft_needs_a_local_model(http, orch):
@@ -389,9 +424,17 @@ def test_the_draft_needs_a_local_model(http, orch):
     orch.llm_router = _NoLocal()
     got = http.post("/api/admin/agents/jarvis/description/draft", headers=HDR)
     assert got.status_code == 503 and got.json()["error"] == "no_local_model"
-    orch.llm_router = SimpleNamespace(local_backend=_Backend(reply=RuntimeError("down")), active_model="m")
-    assert http.post("/api/admin/agents/jarvis/description/draft", headers=HDR).status_code == 503
-    orch.llm_router = SimpleNamespace(local_backend=_Backend(reply="   "), active_model="m")
-    got = http.post("/api/admin/agents/jarvis/description/draft", headers=HDR)
-    assert got.status_code == 503 and got.json()["error"] == "empty_draft"
+    router, backend, _calls = _draft_router(reply=RuntimeError("down"))
+    orch.llm_router = router
+    try:
+        assert http.post("/api/admin/agents/jarvis/description/draft", headers=HDR).status_code == 503
+    finally:
+        asyncio.run(backend.aclose())
+    router, backend, _calls = _draft_router(reply="   ")
+    orch.llm_router = router
+    try:
+        got = http.post("/api/admin/agents/jarvis/description/draft", headers=HDR)
+        assert got.status_code == 503 and got.json()["error"] == "empty_draft"
+    finally:
+        asyncio.run(backend.aclose())
     assert http.post("/api/admin/agents/nobody/description/draft", headers=HDR).status_code == 404
