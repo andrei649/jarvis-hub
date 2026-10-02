@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-02T02:34:11.755757+00:00",
+  "base_commit": "a5b74939d4632c61e007ad64e4df937c44c47bc5",
+  "full_backend_snapshot": {
+    "head": "e7e1310d64f60c760797e965228b442200ee556e",
+    "head_after": "e7e1310d64f60c760797e965228b442200ee556e",
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests/",
+      "-n",
+      "4",
+      "--dist",
+      "loadfile",
+      "--timeout=90",
+      "--junitxml=/tmp/nerva-acquisition-full-20261002.xml"
+    ],
+    "returncode": 0,
+    "seconds": 223.17818483291194,
+    "changed_tracked_files": [],
+    "git_status_after": "",
+    "tracked_regular_files": 4296,
+    "fingerprint": "f45f17bcf485edeeafa022f8b2b9c105f5a1f36a31ccdcc3ba229ca3ed7d7cb1"
+  },
+  "selected_source_sha256": {
+    "agents/core/llm/auxiliary_text.py": "d1ea990149896897275aa0295a246721f374a7058d5e40c0e97dbff32777d1f2",
+    "agents/core/acquisition/llm_synth.py": "50fad2f0178b2b76dd7290e6cd1457f8f63907f4e848ee62079145907395b0b2",
+    "tests/test_h277_acquisition_auxiliary.py": "29f2f7d84c556f67a8ee22e867bb25a88e4fdaf0183604022abdbde2f27edfae"
+  },
+  "verification": {
+    "full_backend": {
+      "total": 20572,
+      "passed": 20537,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1,
+      "artifact": "/tmp/nerva-acquisition-full-20261002.xml",
+      "sha256": "8e74209750a3a94d577f50cee70ad828f19491ab95932c97f899a7c37c572b0f"
+    },
+    "broad_focused": {
+      "total": 1028,
+      "passed": 1026,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 2,
+      "xfailed": 0,
+      "artifact": "/tmp/nerva-acquisition-regression-20261002.xml",
+      "sha256": "8b655b0b53219be1a793c92a944595c2be5812516cef953f8f5393de03c9140a"
+    },
+    "final_changed_modules": {
+      "total": 86,
+      "passed": 86,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0,
+      "artifact": "/tmp/nerva-acquisition-final-focused-20261002.xml",
+      "sha256": "d53246aa4b5709dc28abba3b9397f4b802cc8c925a656344aba898307337b05b"
+    },
+    "pre_freeze_records": {
+      "total": 92,
+      "passed": 92,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0,
+      "artifact": "/tmp/nerva-acquisition-records-20261002.xml",
+      "sha256": "71723ebf032babdbec7b0f927848de8876b189a2de21634c724f0a6438f88a9d"
+    }
+  },
+  "evidence_review": [
+    {
+      "id": "H277",
+      "status_preserved": "partial",
+      "citation_replacements": {},
+      "all_prior_pins_verified_at_base": true,
+      "cited_backend_modules_present_in_full_run": true
+    },
+    {
+      "id": "H413",
+      "status_preserved": "equivalent",
+      "citation_replacements": {},
+      "all_prior_pins_verified_at_base": true,
+      "cited_backend_modules_present_in_full_run": true
+    },
+    {
+      "id": "H433",
+      "status_preserved": "equivalent",
+      "citation_replacements": {
+        "agents/core/llm/auxiliary_text.py:48": "agents/core/llm/auxiliary_text.py:50",
+        "agents/core/llm/auxiliary_text.py:45": "agents/core/llm/auxiliary_text.py:47",
+        "agents/core/llm/auxiliary_text.py:49": "agents/core/llm/auxiliary_text.py:56"
+      },
+      "all_prior_pins_verified_at_base": true,
+      "cited_backend_modules_present_in_full_run": true
+    },
+    {
+      "id": "H465",
+      "status_preserved": "equivalent",
+      "citation_replacements": {},
+      "all_prior_pins_verified_at_base": true,
+      "cited_backend_modules_present_in_full_run": true
+    },
+    {
+      "id": "H513",
+      "status_preserved": "equivalent",
+      "citation_replacements": {},
+      "all_prior_pins_verified_at_base": true,
+      "cited_backend_modules_present_in_full_run": true
+    },
+    {
+      "id": "H674",
+      "status_preserved": "equivalent",
+      "citation_replacements": {
+        "agents/core/llm/auxiliary_text.py:55": "agents/core/llm/auxiliary_text.py:62"
+      },
+      "all_prior_pins_verified_at_base": true,
+      "cited_backend_modules_present_in_full_run": true
+    }
+  ],
+  "unchanged_frontend": {
+    "same_source_as": "a5b74939d4632c61e007ad64e4df937c44c47bc5",
+    "prior_pr": "https://github.com/andrei649/jarvis-hub/pull/1226",
+    "passed": 1838,
+    "scope": "Previous PR CI typechecks/tests/build/artifact check; no fresh frontend rerun for Python-only acquisition change."
+  },
+  "secret_scan": {
+    "paths": 20,
+    "findings": 0,
+    "unexpected": []
+  },
+  "review": "Bounded independent source/spec review found no blocker; reviewer did not rerun tests. Parent fixed optional-active-model compatibility via red-first regressions.",
+  "limitations": [
+    "H277 remains partial; no live provider/installed-model/native-client acceptance or new mutation campaign.",
+    "Acquisition preserves the existing behavior that job pins do not select or exclude its strict-local model.",
+    "207 original stale evidence rows are untouched; no status promotions.",
+    "No new coverage percentage measured; backend has no configured numeric coverage gate."
+  ]
+}

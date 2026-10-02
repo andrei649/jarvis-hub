@@ -25,7 +25,7 @@ claims of full Hermes parity.
 - [x] Scan the exact publication set, push the existing continuation branch, open
   a reviewable PR, inspect every reported CI check, fix concrete failures and merge
   only the verified candidate. Do not infer CI success from local tests.
-- [ ] Continue the next bounded Hermes backlog slice: acquisition auxiliary model
+- [x] Continue the next bounded Hermes backlog slice: acquisition auxiliary model
   selection with operation-bound backend/model and fresh request authorization.
 
 ## Verification focus

@@ -53,7 +53,7 @@ Run scoped Ruff and diff check. Full suite is the parent's serial milestone.
 - [x] Red-first producer tests, shared prepared helper and two real consumers.
 - [x] Focused guards, retry freeze and full existing consumer regressions.
 - [x] Parent review, configuration docs and unchanged mobile/HUD boundary.
-- [ ] Full backend on frozen source; refresh only reviewed affected evidence.
+- [x] Full backend on frozen source; refresh only reviewed affected evidence.
 - [ ] Exact publication scan, PR and checked integration.
 
 Ruling: retain acquisition's current job-pin behavior explicitly; changing it is

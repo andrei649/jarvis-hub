@@ -115,15 +115,25 @@ independent local models through one guarded invocation helper. Each preserves i
 prior default, budget, output and failure behavior. There is no new live-provider,
 installed-model or native-client acceptance claim, and no new mutation campaign.
 
-Next action: continue shared auxiliary routing with acquisition capability/draft
-consumers, preserving their frozen model/backend across JSON attempts and explicitly
-settling job-pin compatibility. Presence explanation is still an optional unwired
-seam with saved binding; do not claim user-facing integration from a selector alone.
-The [expansion investigation](h277-auxiliary-expansion-map-2026-10-02.md) records
-these concrete differences. Broader adapters/discovery/recovery and the remaining
-accepted Hermes queue remain open. H277 stays partial; reviewed counts return to
-172 equivalent, 254 partial, 64 missing and 207 requiring review out of 697 accepted
-rows after the 21 affected evidence updates, with no status promotions.
+Acquisition auxiliary milestone: two more real producers now share prepared local
+routing. Each chooses an independent model and freezes its model/backend across
+JSON attempts, with fresh H513 authorization at each attempt and physical request.
+The existing optional-model fallback and acquisition job-pin behavior are preserved.
+The frozen source `e7e1310d64f60c760797e965228b442200ee556e` passed **20,537 backend
+tests, 34 skipped and one expected failure**, with 64 warnings. All 4,296 tracked
+regular files stayed unchanged. Focused verification passed 1,026 cases with two
+skipped; 86 changed-module cases passed after an import-only adjustment. See the
+[implementation report](h277-acquisition-auxiliary-2026-10-02.md) and
+[integration receipt](evidence/h277-acquisition-auxiliary-integration-2026-10-02.json).
+
+Six affected previously-current evidence rows were refreshed after source and
+citation review, with no status promotions or updates to the original 207 stale
+rows. Counts remain 172 equivalent, 254 partial, 64 missing and 207 requiring
+review out of 697 accepted rows. H277 remains partial. Next action: reassess its
+remaining discovery, SDK/parameter/credential recovery and retry requirements
+against the pinned upstream before choosing the next bounded delivery. Presence
+explanation remains an optional unwired seam; do not count a selector alone as a
+user-facing feature. No live provider, paid route or native-client proof was run.
 
 Local auxiliary rulings: use standing autonomous local development/delegation;
 adopt the four related producers together, at the cost of a broader regression
