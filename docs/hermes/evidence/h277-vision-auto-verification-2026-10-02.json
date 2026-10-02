@@ -1,0 +1,55 @@
+{
+  "generated_at": "2026-10-02T08:49:20.482812+00:00",
+  "source_tested_head": "9228c5af1022e43f187ed14949abd610637dc67e",
+  "records_head": "1c2900a9604829247b6723c8c884280f0c98e361",
+  "branch": "codex/h277-provider-discovery-20261002",
+  "source_tree_fingerprint": "2a2aa7100ccea6cf99144d818fe2477963cf12e0124e1e0591fde7d330b936d6",
+  "tracked_regular_files_unchanged": 4377,
+  "backend": {
+    "collected": 21100,
+    "passed": 21065,
+    "skipped": 34,
+    "xfail": 1,
+    "failed": 0,
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests/",
+      "-n",
+      "4",
+      "--dist",
+      "loadfile",
+      "--timeout=90",
+      "--junitxml=/tmp/nerva-vision-auto-verified-full-20261002.xml"
+    ],
+    "junit_sha256": "e56207d3894bbeeb01a2b5650ac2b393256c1a5fdd5449511c915b1ed6c91166",
+    "log_sha256": "3e5be3d47bb8bdfaa0af11123ea7e980770c576c8f7982a5c82e23c8a9131274",
+    "seconds": 233.63
+  },
+  "frontend": {
+    "passed": 1861,
+    "failed": 0,
+    "runner": "frontend npm test -- --run",
+    "typecheck": "passed",
+    "production_build": "passed",
+    "browser_composer_cases": 6
+  },
+  "gates": {
+    "focused_auto_backend_passed": 16,
+    "focused_vision_video": "passed",
+    "openapi_route_docs": "passed",
+    "hermes_status": "passed",
+    "status_sync_reuse_js": "passed",
+    "graft_check": "passed",
+    "strict_index_scan_findings": 0
+  },
+  "caveats": [
+    "All model requests used synthetic credentials and mocked transport; no live provider acceptance.",
+    "The standalone composer has no selected main conversation route; auto candidates there are OpenRouter, Nous, DeepInfra.",
+    "Mobile 142 test count was reused from the tracked baseline because local mobile npm test exited 127; no mobile files changed.",
+    "A default status_sync attempt completed frontend counting but exited 127 at the mobile runner; status documents were generated with the verified frontend count and reused mobile count.",
+    "Manual test checker reports two pre-existing issue groups in chapters 06 and 08.",
+    "No push, merge, deployment, credential copying or paid provider call."
+  ]
+}
