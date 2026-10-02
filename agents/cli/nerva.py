@@ -120,6 +120,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     verbs = parser.add_subparsers(dest="verb", required=True, metavar="verb")
 
+    from .nous_auth import configure_parser as configure_nous_auth
+    configure_nous_auth(verbs)
+
     doctor = verbs.add_parser("doctor", help="install check-up, one named reason per check (offline)")
     doctor.add_argument("--json", action="store_true")
     doctor.add_argument("--smoke", action="store_true", help="also run the install smoke (~30 s)")
@@ -2965,7 +2968,13 @@ def cmd_security(ns: argparse.Namespace, ctx: Context) -> int:
     return {"clean": EXIT_OK, "findings": EXIT_FAILED}.get(report.status, EXIT_UNAVAILABLE)
 
 
+def cmd_auth(ns: argparse.Namespace, ctx: Context) -> int:
+    from .nous_auth import run
+    return run(ns, ctx)
+
+
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
+    "auth": cmd_auth,
     "doctor": cmd_doctor,
     "prompt-size": cmd_prompt_size,
     "extensions": cmd_extensions,

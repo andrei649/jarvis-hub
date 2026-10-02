@@ -1960,6 +1960,11 @@
   and late configuration changes refuse. This remains one H277 dependency, not
   completion of automatic cross-provider routing. See the
   [DeepInfra plan](docs/hermes/h277-deepinfra-vision-plan-2026-10-02.md).
+  Nous now has a separate encrypted Nerva account store, owner-only device-code
+  API/CLI login, status/logout and serialized refresh-aware inference credentials.
+  This does not yet register a Nous model adapter or complete H277; tier-aware
+  vision selection, native Messages, automatic routing and provider acceptance
+  remain open. See [account setup](docs/nous-auth.md).
 
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.

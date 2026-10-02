@@ -428,3 +428,8 @@ destination forces a new catalog lookup and clears confirmations. Failed refresh
 revokes the old selection. Metadata discovery sends no images, and remote inference
 still needs the reviewed destination and any separate training/cost confirmations.
 Automatic cross-provider discovery and native mobile acceptance remain open.
+
+Nous account lifecycle (H277, 2026-10-02) is currently CLI plus owner API only:
+login/status/poll/logout. The HUD has no Nous account-management controls yet.
+This is explicit UI debt; account authentication alone does not add inference or
+automatic provider discovery to the image composer.

@@ -636,6 +636,16 @@ The inherited video route reports
 `video_vision_provider_unsupported`; signed OpenRouter video and automatic provider
 discovery remain separate unfinished increments.
 
+**Nous account authentication** is a provider-discovery prerequisite, available via
+`nerva auth nous login|status|logout --profile NAME`. Set a registered public OAuth
+client ID in `JARVIS_NOUS_CLIENT_ID` on the hub; this build does not assume that a
+Nerva registration exists or reuse the Hermes application's identity. Optional
+`JARVIS_NOUS_PORTAL_URL` and `JARVIS_NOUS_INFERENCE_BASE_URL` are explicit operator
+overrides. Account data stays encrypted under the Nerva data root. All four
+`/api/oauth/nous/*` routes require admin authorization; status makes no provider
+request, and logout removes only the selected local profile. Login alone does not
+configure vision or main-chat routing. See [Nous account setup](nous-auth.md).
+
 **Explicit DeepInfra vision** uses `JARVIS_ROLE_VISION_PROVIDER=deepinfra`.
 `JARVIS_ROLE_VISION_MODEL` pins a model and bypasses metadata discovery. Without
 that pin, composer status selects the first served chat/vision model from the

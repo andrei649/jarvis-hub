@@ -323,3 +323,8 @@ Explicit DeepInfra image analysis uses the same responsive-web composer and
 confirmation controls. Its Refresh vision destination button can refresh the
 server-side model catalog. This adds no native image intake or native mobile
 provider configuration; native-device and live-provider acceptance remain open.
+
+Nous account lifecycle now has owner-only server routes and a terminal device-code
+flow. No responsive-web or native-mobile login controls are added in this
+prerequisite. Account login does not enable a model route; UI account management,
+provider inference and native-device acceptance remain open.
