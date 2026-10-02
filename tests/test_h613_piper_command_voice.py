@@ -713,7 +713,8 @@ async def test_stt_command_sentinels(armed, monkeypatch, mode, expected):
     exe = _fake(env.tmp / "opt" / "stt", env.tmp, no_stdin=True)
     await _approve(env, "stt", _stt_argv(exe))
     monkeypatch.setattr(stt_module, "HAS_WHISPER", False)
-    monkeypatch.setattr(lp, "STT_TIMEOUT_S", 0.5)
+    # Only the deliberate sleep tests timeout; other modes must finish Python startup.
+    monkeypatch.setattr(lp, "STT_TIMEOUT_S", 0.5 if mode == "sleep" else 5)
     _mode(env.tmp, mode)
     assert await stt_module.STTEngine().transcribe_async(OGG, language="en") == expected
 
