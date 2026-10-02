@@ -14,7 +14,7 @@ from . import vision_deepinfra, vision_nous, vision_openrouter
 from .vision_openrouter import _validated_base
 
 _OPENROUTER_FALLBACK_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
-_SUPPORTED_MAIN = frozenset({"lmstudio", "ollama", "custom", "openrouter", "nous", "deepinfra"})
+_SUPPORTED_MAIN = frozenset({"lmstudio", "ollama", "custom", "openrouter", "nous", "deepinfra", "anthropic"})
 _UNAVAILABLE = frozenset({"vlm_key_unset", "vlm_model_unset"})
 _AUTHORITY_KEYS = (
     "JARVIS_ROLE_VISION_PROVIDER", "JARVIS_ROLE_VISION_MODEL",

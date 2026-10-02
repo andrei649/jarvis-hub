@@ -155,7 +155,7 @@ class VLMConfig:
     ``label at (x, y)`` contract ever promised.
     """
 
-    backend: str  # "lmstudio" | "ollama" | "custom" | "openrouter" | "deepinfra" | "nous"
+    backend: str  # "lmstudio" | "ollama" | "custom" | "openrouter" | "deepinfra" | "nous" | "anthropic"
     base_url: str
     model: str
     api_key: str
@@ -167,8 +167,9 @@ class VLMConfig:
 
     def __post_init__(self) -> None:
         if self.wire_mode not in {"chat_completions", "anthropic_messages", "ollama_chat"} or (
-                self.wire_mode == "anthropic_messages" and self.backend != "nous") or (
+                self.wire_mode == "anthropic_messages" and self.backend not in {"nous", "anthropic"}) or (
                 self.wire_mode == "ollama_chat" and self.backend != "ollama") or (
+                self.backend == "anthropic" and self.wire_mode != "anthropic_messages") or (
                 self.backend == "ollama" and self.wire_mode != "ollama_chat"):
             raise ValueError("unsupported vision wire mode")
         if self.convention not in COORDINATE_CONVENTIONS:
@@ -326,11 +327,12 @@ class VLMBackend(LLMBackend):
     def __init__(self, base_url: str = DEFAULT_VLM_BASE, api_key: str = "",
                  client=None, max_image_dim: int = 1024, *, composer_auth: bool = False,
                  provider_id: str = "", wire_mode: str = "chat_completions") -> None:
-        if provider_id not in ("", "openrouter", "deepinfra", "nous", "ollama"):
+        if provider_id not in ("", "openrouter", "deepinfra", "nous", "ollama", "anthropic"):
             raise ValueError("unsupported native vision provider")
         if wire_mode not in {"chat_completions", "anthropic_messages", "ollama_chat"} or (
-                wire_mode == "anthropic_messages" and provider_id != "nous") or (
+                wire_mode == "anthropic_messages" and provider_id not in {"nous", "anthropic"}) or (
                 wire_mode == "ollama_chat" and provider_id != "ollama") or (
+                provider_id == "anthropic" and wire_mode != "anthropic_messages") or (
                 provider_id == "ollama" and wire_mode != "ollama_chat"):
             raise ValueError("unsupported vision wire mode")
         self._wire_mode = wire_mode
@@ -359,7 +361,7 @@ class VLMBackend(LLMBackend):
             api_key=config.api_key,
             client=client,
             max_image_dim=max_image_dim,
-            **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra", "nous", "ollama") else {}),
+            **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra", "nous", "ollama", "anthropic") else {}),
             wire_mode=config.wire_mode,
         )
         backend.is_local = config.is_local
@@ -375,7 +377,9 @@ class VLMBackend(LLMBackend):
         h = {"Content-Type": "application/json"}
         if self._wire_mode == "anthropic_messages":
             h["anthropic-version"] = "2023-06-01"
-        if self.api_key:
+        if self._provider_id == "anthropic":
+            h["x-api-key"] = self.api_key
+        elif self.api_key:
             h["Authorization"] = f"Bearer {self.api_key}"
         elif self._composer_auth:
             from .vision_policy import authorization
@@ -409,7 +413,7 @@ class VLMBackend(LLMBackend):
                             for message in messages if isinstance(message.get("content"), list)
                             for part in message["content"])
         recovery = scope if image_bearing else None
-        if recovery is not None or self._provider_id in {"deepinfra", "nous", "ollama"}:
+        if recovery is not None or self._provider_id in {"deepinfra", "nous", "ollama", "anthropic"}:
             if recovery is not None:
                 recovery.begin(payload)
             async with asyncio.timeout(VISION_GENERATION_TIMEOUT):

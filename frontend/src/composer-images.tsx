@@ -10,7 +10,7 @@ type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;d
 type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[];session_id?:string;selected_turn?:boolean};
 
 const AUTO_SOURCES=new Set(['auto:main','auto:override','auto:openrouter','auto:nous','auto:deepinfra']);
-const PROVIDER_NAMES:Record<string,string>={openrouter:'OpenRouter',nous:'Nous',deepinfra:'DeepInfra',lmstudio:'LM Studio',ollama:'Ollama',custom:'Custom'};
+const PROVIDER_NAMES:Record<string,string>={openrouter:'OpenRouter',nous:'Nous',deepinfra:'DeepInfra',anthropic:'Anthropic Claude',lmstudio:'LM Studio',ollama:'Ollama',custom:'Custom'};
 
 function validRetryMetadata(data:Destination){
   const hasBudget=Object.prototype.hasOwnProperty.call(data,'empty_retries');

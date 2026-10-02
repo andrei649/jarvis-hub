@@ -222,7 +222,7 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         backend_kind="anthropic",
         auth_type="api-key",
         auth_env="ANTHROPIC_API_KEY",
-        capabilities=frozenset({"chat", "reasoning", "cloud"}),
+        capabilities=frozenset({"chat", "reasoning", "vision", "cloud"}),
         fallback_models=(DEFAULT_CLAUDE_MODEL,),
         # Read from the same table the request path uses, so the profile cannot
         # advertise a rung the wire would reject.

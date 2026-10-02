@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
+from .anthropic import ANTHROPIC_API_BASE, ClaudeBackend
 from .base import LMStudioBackend, OllamaBackend
 from .job_selection import _ScopedBackend
 from .openrouter import OpenRouterBackend
@@ -43,6 +44,20 @@ def selected_main_config(backend: object, model: str, route: str) -> VLMConfig |
     """
     if isinstance(backend, _ScopedBackend):
         raise VLMNotConfigured("vlm_scoped_backend_unsupported")
+    if isinstance(backend, ClaudeBackend):
+        if route != "claude":
+            raise VLMNotConfigured("vlm_route_invalid")
+        selected_model = _model(model)
+        key = backend._active_key()
+        if not isinstance(key, str) or not key:
+            raise VLMNotConfigured("vlm_key_unset")
+        if len(key) > 4096 or any(ord(char) < 33 or ord(char) > 126 for char in key):
+            raise VLMNotConfigured("vlm_key_invalid")
+        return VLMConfig(
+            backend="anthropic", base_url=ANTHROPIC_API_BASE, model=selected_model,
+            api_key=key, is_local=False, wire_mode="anthropic_messages",
+            route_source="auto:main",
+        )
     if isinstance(backend, OllamaBackend):
         if not isinstance(route, str) or not route.startswith("local"):
             raise VLMNotConfigured("vlm_route_invalid")
