@@ -82,6 +82,12 @@ Host guards, cancellation and total deadline tests must prove bounded physical s
 Run the full video/role/consent/media selection after implementation and one full
 backend at a coherent frozen milestone. Unchanged frontend keeps its source-matched
 1,838-test proof. Pin records only after reviewing changed evidence.
+Because this increment adds an approved physical-send budget, verify targeted
+mutations of its retry limit, primary-only restriction, approval binding and
+failure categories in a disposable exact-commit archive. Baseline, unique anchors,
+syntax validity, test outcomes and restored hashes must be recorded separately;
+the earlier campaigns do not prove these new branches. This is bounded mutation
+evidence for the retry increment, not full mutation coverage of all H277 paths.
 
 Rollback this increment to restore the existing one-send runtime; changing the retry
 setting or removing support makes retry-enabled pending task classes stale. Keep
