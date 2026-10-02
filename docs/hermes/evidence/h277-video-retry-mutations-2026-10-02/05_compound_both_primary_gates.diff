@@ -1,0 +1,20 @@
+--- a/agents/core/video_analysis.py
++++ b/agents/core/video_analysis.py
+@@ -455,7 +455,7 @@
+                 retry_count = resolve_video_retry_count()
+                 failures = []
+                 for route_index, identity in enumerate(identities):
+-                    max_attempts = 1 + retry_count if route_index == 0 else 1
++                    max_attempts = 1 + retry_count
+                     for attempt in range(1, max_attempts + 1):
+                         check()
+                         try:
+@@ -466,7 +466,7 @@
+                                 failure["attempt"] = attempt
+                             failures.append(failure)
+                             transient = isinstance(exc, _TransientModelFailure)
+-                            if transient and route_index == 0 and attempt < max_attempts:
++                            if transient and attempt < max_attempts:
+                                 continue
+                             if exc.category == "transient_http":
+                                 check()

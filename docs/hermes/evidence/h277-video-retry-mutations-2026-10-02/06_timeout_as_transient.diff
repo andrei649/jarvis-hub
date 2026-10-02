@@ -1,0 +1,11 @@
+--- a/agents/core/video_analysis.py
++++ b/agents/core/video_analysis.py
+@@ -395,7 +395,7 @@
+                     check()  # Includes cleanup, revocation, and complete chain freshness.
+         except TimeoutError:
+             if attempt_timeout.expired() and request_timeout and physical_send:
+-                raise _EligibleModelFailure("timeout") from None
++                raise _TransientModelFailure("timeout") from None
+             raise
+         if not isinstance(answer, str) or not answer.strip():
+             raise VideoPolicyRefused("video model returned no text")

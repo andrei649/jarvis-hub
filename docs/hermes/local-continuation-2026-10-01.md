@@ -76,9 +76,37 @@ source/schema are unchanged from the separately tested `2d9a3c39` snapshot with
 [immutable Gemini receipt](evidence/h277-gemini-video-integration-2026-10-02.json)
 and [implementation report](h277-gemini-video-2026-10-02.md).
 
-Next action: turn the [retry investigation](h277-retry-investigation-2026-10-02.md)
-into a bounded approval-bound transient-retry design, then continue shared auxiliary
-routing, broader adapters and the accepted Hermes queue. Larger native video upload
-lifecycle and live acceptance remain open. Keep H277 partial. The current
-ledger has 172 equivalent, 254 partial, 64 missing and 207 requiring review out of
-697 accepted rows. Preserve these local checkpoints and existing source evidence.
+Approved primary video retry milestone: code `09f4dd87`, frozen full-backend
+commit `5da06db66c837993a644f330f67da385ed7bf835`: **20,450 passed,
+34 skipped, 1 expected failure, zero unexpected failures**,
+with 61 warnings. All 4,234 tracked regular files remained
+unchanged and the checkout stayed clean through the run. The focused set has
+755 passing tests, including 48 new retry cases. Frontend source/schema remain
+unchanged from the separately tested `2d9a3c39` snapshot (1,838 passing tests,
+typecheck and build). See the [implementation report](h277-video-retry-2026-10-02.md)
+and [integration receipt](evidence/h277-video-retry-integration-2026-10-02.json).
+
+The [retry mutation campaign](evidence/h277-video-retry-mutations-2026-10-02/report.md)
+uses an exact archive of the same frozen source: **11 valid cases,
+9 detected, 2 surviving, 0 invalid**. Both single-gate survivors retain the other
+primary-only guard; the explicitly compound removal of both is detected. Baseline
+and restored baseline each pass 755 tests, and all 4,234 file hashes are restored.
+The provenance-only case is result-shape evidence, not egress proof. This bounded
+campaign does not expand historical H277 mutation claims.
+
+Read-only GitHub recheck on 2026-10-02 still found zero open PRs and remote `main`
+at `9d5b3add85bd8c172bfe38ed1506a2852e2d6e5a`. All continuation commits remain local;
+no new GitHub CI, live/provider, deployment or paid-service acceptance is claimed.
+
+Next action: design and implement the shared task-aware local auxiliary routing
+identified in the [source map](h277-auxiliary-routing-map-2026-10-02.md), beginning
+with actual session-title and recall-rewrite consumers and independent local model
+selection. Continue broader adapters and the accepted Hermes queue. Empty-output,
+typed first-token/SDK recovery, larger native video upload lifecycle and live
+acceptance remain open. Keep H277 partial. The ledger remains 172 equivalent,
+254 partial, 64 missing and 207 requiring review out of 697 accepted rows.
+
+Rulings for this increment: follow standing autonomous local authorization;
+keep retries default-zero and bind enabled policy to task approval; match the
+inspected asynchronous primary-only retry contract while keeping ordinary timeouts
+and fallback candidates outside that retry budget.

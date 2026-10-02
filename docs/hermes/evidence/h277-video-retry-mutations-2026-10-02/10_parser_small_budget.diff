@@ -1,0 +1,13 @@
+--- a/agents/core/llm/video_retry.py
++++ b/agents/core/llm/video_retry.py
+@@ -18,8 +18,8 @@
+     value = raw.strip(" ")
+     if value in {"", "0"}:
+         return 0
+-    if value == "1":
+-        return 1
++    if value in {"1", "2"}:
++        return int(value)
+     raise VideoRetryConfigError("invalid video retry setting")
+ 
+ 

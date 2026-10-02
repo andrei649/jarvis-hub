@@ -1,0 +1,87 @@
+[
+  {
+    "anchor": "        if retry_count:\n            material = {**material, \"_internal_video_retry_policy\": \"primary-once:v1\"}\n",
+    "file": "agents/core/video_analysis.py",
+    "id": "01_enabled_policy_hmac",
+    "intent": "Remove the enabled policy marker from signed class material.",
+    "replacement": "        if False:\n            material = {**material, \"_internal_video_retry_policy\": \"primary-once:v1\"}\n"
+  },
+  {
+    "anchor": "                    max_attempts = 1 + retry_count if route_index == 0 else 1\n",
+    "file": "agents/core/video_analysis.py",
+    "id": "02_primary_attempt_budget",
+    "intent": "Raise the primary physical attempt cap by one.",
+    "replacement": "                    max_attempts = 2 + retry_count if route_index == 0 else 1\n"
+  },
+  {
+    "anchor": "                    max_attempts = 1 + retry_count if route_index == 0 else 1\n",
+    "file": "agents/core/video_analysis.py",
+    "id": "03_primary_cap_gate_only",
+    "intent": "Remove only the primary condition from the attempt cap; retry condition still guards fallback.",
+    "replacement": "                    max_attempts = 1 + retry_count\n"
+  },
+  {
+    "anchor": "                            if transient and route_index == 0 and attempt < max_attempts:\n",
+    "file": "agents/core/video_analysis.py",
+    "id": "04_primary_retry_condition_gate_only",
+    "intent": "Remove only the primary condition from retry decision; fallback cap remains one.",
+    "replacement": "                            if transient and attempt < max_attempts:\n"
+  },
+  {
+    "edits": [
+      [
+        "                    max_attempts = 1 + retry_count if route_index == 0 else 1\n",
+        "                    max_attempts = 1 + retry_count\n"
+      ],
+      [
+        "                            if transient and route_index == 0 and attempt < max_attempts:\n",
+        "                            if transient and attempt < max_attempts:\n"
+      ]
+    ],
+    "file": "agents/core/video_analysis.py",
+    "id": "05_compound_both_primary_gates",
+    "intent": "COMPOUND: remove BOTH primary-only guards so fallback transient failure can retry."
+  },
+  {
+    "anchor": "                raise _EligibleModelFailure(\"timeout\") from None\n",
+    "file": "agents/core/video_analysis.py",
+    "id": "06_timeout_as_transient",
+    "intent": "Classify owned request timeout as retryable transient.",
+    "replacement": "                raise _TransientModelFailure(\"timeout\") from None\n"
+  },
+  {
+    "anchor": "                            if exc.category == \"transient_http\":\n",
+    "file": "agents/core/video_analysis.py",
+    "id": "07_http_exhaustion_to_fallback",
+    "intent": "Allow exhausted transient HTTP to continue to the provider fallback.",
+    "replacement": "                            if False and exc.category == \"transient_http\":\n"
+  },
+  {
+    "anchor": "            if physical_send:\n                raise VideoPolicyRefused(\"video lane already sent\")\n",
+    "file": "agents/core/video_analysis.py",
+    "id": "08_auth_flow_second_send",
+    "intent": "Remove the one-physical-send latch from an HTTP auth flow.",
+    "replacement": "            if False:\n                raise VideoPolicyRefused(\"video lane already sent\")\n"
+  },
+  {
+    "anchor": "    value = raw.strip(\" \")\n",
+    "file": "agents/core/llm/video_retry.py",
+    "id": "09_parser_whitespace_controls",
+    "intent": "Accept tab/newline control whitespace around a retry value.",
+    "replacement": "    value = raw.strip()\n"
+  },
+  {
+    "anchor": "    if value == \"1\":\n        return 1\n",
+    "file": "agents/core/llm/video_retry.py",
+    "id": "10_parser_small_budget",
+    "intent": "Accept an out-of-range retry budget of two.",
+    "replacement": "    if value in {\"1\", \"2\"}:\n        return int(value)\n"
+  },
+  {
+    "anchor": "                                result[\"chosen_attempt\"] = attempt\n",
+    "file": "agents/core/video_analysis.py",
+    "id": "11_chosen_attempt_provenance",
+    "intent": "Remove successful route chosen_attempt provenance; this tests result shape, not egress.",
+    "replacement": "                                pass  # chosen attempt provenance removed\n"
+  }
+]
