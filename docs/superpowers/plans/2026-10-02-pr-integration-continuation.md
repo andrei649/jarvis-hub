@@ -22,7 +22,7 @@ claims of full Hermes parity.
   the failed aa4865b5 result (20503 passed, one failed,34 skipped,one xfailed).
 - [x] Finish the 21 affected auxiliary evidence reviews without promoting the
   original207 stale rows. Update implementation/continuation records and checks.
-- [ ] Scan the exact publication set, push the existing continuation branch, open
+- [x] Scan the exact publication set, push the existing continuation branch, open
   a reviewable PR, inspect every reported CI check, fix concrete failures and merge
   only the verified candidate. Do not infer CI success from local tests.
 - [ ] Continue the next bounded Hermes backlog slice: acquisition auxiliary model
@@ -34,3 +34,8 @@ Packed and loose Git stores must produce the same missing-blob behavior. Existin
 runtime model/guard source must stay unchanged during fixture repair. Do not mark
 partial capabilities equivalent. Preserve frontend proof only where source matches.
 Remote main and candidate SHA must be rechecked before merge.
+
+PR1226 merged as a5b74939 after both CI rounds passed. GitHub required linear
+history, so squash replaced the planned merge commit; the archive branch preserves
+original source commits. Canonical local main is synchronized. The next step is
+[acquisition routing](2026-10-02-h277-acquisition-auxiliary.md).
