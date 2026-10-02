@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-02T03:17:57.134725+00:00",
+  "base_commit": "cd2aa666ed0a690e9bf9138747b95c15ffe9ee37",
+  "full_backend_snapshot": {
+    "head": "3153217f3856beb3509ee30f995a243b3279cf1f",
+    "head_after": "3153217f3856beb3509ee30f995a243b3279cf1f",
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests/",
+      "-n",
+      "4",
+      "--dist",
+      "loadfile",
+      "--timeout=90",
+      "--junitxml=/tmp/nerva-parameter-full-rerun-20261002.xml"
+    ],
+    "returncode": 0,
+    "seconds": 239.094438750064,
+    "changed_tracked_files": [],
+    "git_status_after": "",
+    "tracked_regular_files": 4302,
+    "fingerprint": "6385e8f1af1820b012de09d4f7a2c54f4e3f9d5d9513aa7cd80d294533118a9d"
+  },
+  "selected_source_sha256": {
+    "agents/core/llm/auxiliary_recovery.py": "1024c5ce57cafeb3670a60e867d5d9ec841e6132b20090f5eca2bf9d0fa865be",
+    "agents/core/llm/auxiliary_text.py": "aadfc1886ac7c3304e7e0d72d797364d4234ad40ec285dd9d942ae30d930819a",
+    "agents/core/llm/base.py": "2d0f118beac054796e1cf6a9f8cc3e265fdecd4a06a115043f9e6097891c2795",
+    "tests/test_h277_auxiliary_parameter_recovery.py": "bc256f1bc40aa93037dde68e70d52b77177da3814ef2617358e822c4b6b24aed",
+    "tests/test_h613_piper_command_voice.py": "d4e8db90652350e4c866bbaa34ee927034d4bcba5f011ede24d2786ae7320634"
+  },
+  "verification": {
+    "full_backend": {
+      "artifact": "/tmp/nerva-parameter-full-rerun-20261002.xml",
+      "sha256": "3a69521f458389eb85c459f84f701bc20b02a325747f06db3e09aae160fe38f8",
+      "total": 20604,
+      "passed": 20569,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1
+    },
+    "focused": {
+      "artifact": "/tmp/nerva-h277-parameter-green-union-20261002.xml",
+      "sha256": "66993f406bdf2bead4a3e16815fd88047abba51ffc1c8e84b9c5eeeffb457d20",
+      "total": 612,
+      "passed": 612,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "records": {
+      "artifact": "/tmp/nerva-parameter-records-final-20261002.xml",
+      "sha256": "1a7afd37de6741d7b07cfd9a02053686782a98658c75834097e0e4135738d9a2",
+      "total": 92,
+      "passed": 92,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "voice_fixture": {
+      "artifact": "/tmp/nerva-stt-sentinel-full-20261002.xml",
+      "sha256": "19289d4503da3240f328d2598f06296c5462e8b9887e667ea1aa0f6d3b66d610",
+      "total": 119,
+      "passed": 119,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    }
+  },
+  "failed_first_full_run": {
+    "snapshot": {
+      "head": "3998a8f7dbe787875882b92cb67771dbf59be37c",
+      "head_after": "3998a8f7dbe787875882b92cb67771dbf59be37c",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/",
+        "-n",
+        "4",
+        "--dist",
+        "loadfile",
+        "--timeout=90",
+        "--junitxml=/tmp/nerva-parameter-full-20261002.xml"
+      ],
+      "returncode": 1,
+      "seconds": 223.94987054215744,
+      "changed_tracked_files": [],
+      "git_status_after": "",
+      "tracked_regular_files": 4302,
+      "fingerprint": "83303df245f3237066ebb04551423462c77a69c23f37070f6fa007efe42bc69e"
+    },
+    "junit": {
+      "artifact": "/tmp/nerva-parameter-full-20261002.xml",
+      "sha256": "71e730ce84d6d2b05411a6ef79e18b19d414ee4ab3b4f5309f03ca6f14846a21",
+      "total": 20604,
+      "passed": 20568,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1
+    },
+    "failing_case": "tests/test_h613_piper_command_voice.py::test_stt_command_sentinels[fail-[STT error: command exited 3]]",
+    "resolution": "Only intentional sleep retains0.5-second fixture deadline; other sentinel cases get5seconds. No production timeout changes. Four targeted and119 module tests pass."
+  },
+  "red_first": {
+    "artifact": "/tmp/nerva-h277-parameter-red-20261002.xml",
+    "sha256": "67cadc04d0d498f38baa6aaebc3fd1b29a4942c148dbcadd2aeb59879e16566e",
+    "total": 5,
+    "passed": 0,
+    "failed": 5,
+    "errors": 0,
+    "skipped": 0,
+    "xfailed": 0
+  },
+  "reviewed_rows": [
+    {
+      "id": "H277",
+      "status_preserved": "partial",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Local parameter recovery review (2026-10-02): five nonstreaming LM Studio auxiliary consumers may omit only temperature after a bounded structured HTTP400 rejection. Initial requested temperatures remain; the repaired request intentionally uses the provider default. Exact backend/model and H513 scope remain bound, and every physical send rechecks policy. One temperature repair composes with one model-unloaded retry in either order, at most three sends. 32 new cases and 612 focused regressions pass; no global rejection cache, credential change, streamed recovery or live-provider claim."
+    },
+    {
+      "id": "H368",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {
+        "agents/core/llm/base.py:759": "agents/core/llm/base.py:768"
+      },
+      "note": "Parameter-repair source review (2026-10-02): _post_chat still uses the existing declared LM Studio client and physical request hooks for every send. Model-unloaded recovery and one scoped temperature repair cannot change the host or wire protocol. Host-protocol and real auxiliary send regressions pass; no capability promotion."
+    },
+    {
+      "id": "H413",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Temperature recovery qualification (2026-10-02): zero temperature is the initial title request. Only an explicit structured local HTTP400 rejection permits one retry with that field omitted (provider default). The 24-token cap, selected Qwen3 /no_think prompt, local route, job-pin rule, title lifecycle and output filter remain unchanged. Actual producer and H513 regressions pass."
+    },
+    {
+      "id": "H433",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {
+        "agents/core/llm/auxiliary_text.py:50": "agents/core/llm/auxiliary_text.py:52",
+        "agents/core/llm/auxiliary_text.py:47": "agents/core/llm/auxiliary_text.py:49",
+        "agents/core/llm/auxiliary_text.py:56": "agents/core/llm/auxiliary_text.py:58"
+      },
+      "note": "Temperature recovery qualification (2026-10-02): zero temperature is the initial rewrite request; one explicit structured local HTTP400 rejection may select provider-default temperature by omission. The 96-token cap, Qwen3 suffix, local accessor, filters and job-pin exclusion remain unchanged. Actual producer and H513 regressions pass."
+    },
+    {
+      "id": "H465",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Temperature recovery qualification (2026-10-02): review initially requests0.2; a typed local rejection may omit only temperature once. Learning-token bounds, JSON prompts, review state and validators remain unchanged. Real review producer and focused lifecycle regressions pass."
+    },
+    {
+      "id": "H513",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Parameter-repair authority review (2026-10-02): recovery scope is nested within auxiliary_request_scope, pins backend identity/model and deactivates inherited contexts on exit. Native HTTPX rechecks before each retry. The revocation regression denies the second physical send and the outer guard rethrows the denial even though generate catches it. Ordinary/tool/stream calls retain their existing authority; no remote route or credential recovery was added."
+    },
+    {
+      "id": "H670",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Architecture citation review (2026-10-02): only the LLM video paragraph was corrected from declaration-only to current approved ToolRPC dispatch. Shared identity text, loader, prompt composition and cited identity behavior are unchanged; no status promotion."
+    },
+    {
+      "id": "H671",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Source citation review (2026-10-02): the base.py diff is confined to an import and _post_chat parameter recovery. Session birth/clock behavior and its cited sources are unchanged; this adds no session semantics and preserves the existing status."
+    },
+    {
+      "id": "H674",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {
+        "agents/core/llm/auxiliary_text.py:62": "agents/core/llm/auxiliary_text.py:64",
+        "agents/core/llm/base.py:656": "agents/core/llm/base.py:665"
+      },
+      "note": "Source/lifecycle review (2026-10-02): compression returns through stream_summary before the new nonstreaming recovery scope. The streaming backend and activity callback are unchanged; compaction hold and stream exclusion regressions pass. Citation lines moved only; no status promotion."
+    },
+    {
+      "id": "H679",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Source citation review (2026-10-02): the base.py import/_post_chat change does not touch reasoning-vocabulary normalization or its callers. No reasoning capability or status change is claimed."
+    }
+  ],
+  "additional_fixture_row": "H613 source unchanged, test-only deadline distinction; partial status preserved.",
+  "unchanged_frontend": {
+    "same_source_as": "cd2aa666ed0a690e9bf9138747b95c15ffe9ee37",
+    "prior_pr": "https://github.com/andrei649/jarvis-hub/pull/1227",
+    "scope": "No frontend source/schema change or fresh frontend execution; prior GitHub acceptance is separate."
+  },
+  "secret_scan": {
+    "paths": 21,
+    "findings": 0,
+    "unexpected": []
+  },
+  "limitations": [
+    "H277 remains partial; no live provider/model acceptance, new mutation coverage or measured coverage percentage.",
+    "32 new cases cover five real nonstreaming LMStudio consumers; stream and other provider recovery remain open.",
+    "Initial temperatures preserved; repaired request deliberately uses provider default. Token caps unchanged.",
+    "Preexisting bounded final backend diagnostics are unchanged; only new detector adds no body logging.",
+    "Original207 stale rows untouched, including H681 with preexisting orchestrator/coordinator drift.",
+    "All commits in this batch remain local; no new GitHub acceptance, push, merge or deployment."
+  ]
+}

@@ -1,0 +1,1196 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-02T04:12:04.294609+00:00",
+  "base_commit": "9313fe0c9b2d918579b0dda64f11fad59bedc9c2",
+  "runtime_commit": "a6a2388f037d130ec0a5bc06a5d9a3f49cf5a9ef",
+  "supplemental_test_commit": "931b6626017146ffa31ece8f2bc9b5b7865d59a7",
+  "full_backend_snapshot": {
+    "head": "47ffd68f55c01fa3b45ba596ed94c0a9cb5b81ce",
+    "head_after": "47ffd68f55c01fa3b45ba596ed94c0a9cb5b81ce",
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests/",
+      "-n",
+      "4",
+      "--dist",
+      "loadfile",
+      "--timeout=90",
+      "--junitxml=/tmp/nerva-image-empty-full-20261002.xml"
+    ],
+    "returncode": 0,
+    "seconds": 225.08672158396803,
+    "changed_tracked_files": [],
+    "git_status_after": "",
+    "tracked_regular_files": 4318,
+    "fingerprint": "453531fe24818fefee881b35a0a5cf4cbf6a4604e73473d786b969767c9611c0"
+  },
+  "selected_source_sha256": {
+    "agents/core/llm/vision_policy.py": "f7b216249d5b0a021065b1280072631ec7ec4a1d23dd808ab3648c3049be417a",
+    "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407",
+    "agents/core/llm/native_response.py": "d6248f4322e5d878768f0669b8e3cd6c2723030081b7b9f1cd0b833778608c07",
+    "agents/core/llm/vlm.py": "f3bcbe79fa99bd6cd4802aa65f9ead88659d2af89e9572c70b6f54e1e39d5417",
+    "agents/core/video_analysis.py": "5ddd1f7acb380ee96235c6b6a264cea1851ac516f464af8f81f86c8cd91cb535",
+    "agents/cli/nerva.py": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9",
+    "tests/test_h277_image_empty_retry.py": "45f1d055b207541eea53ff2ffdfab75d2f40795ba33bb6975de7a6422fc31b79",
+    "tests/test_h277_image_retry_cli.py": "8ed7bad2ffcd1fff11cf0263c8d07bf029847985dfdaad20f7b0b462eb7e57ef",
+    "tests/test_h277_image_retry_scope_edges.py": "61e87ac3d70b9a374f8fa2c5996a4f7096f62e7ee71308462aa01671cc682a88"
+  },
+  "verification": {
+    "full_backend": {
+      "artifact": "/tmp/nerva-image-empty-full-20261002.xml",
+      "sha256": "a46fb2b615f38123487c805447580148d9ff6f797244fbee81038b28667d46cc",
+      "total": 20721,
+      "passed": 20686,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1
+    },
+    "focused": {
+      "artifact": "/tmp/nerva-image-empty-parent-focused-20261002.xml",
+      "sha256": "c38444c62470d87d6f82c0c25ba4c24ffd7e35b3934f933073212d2fa77495b6",
+      "total": 582,
+      "passed": 582,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "cli": {
+      "artifact": "/tmp/nerva-image-empty-cli-green-20261002.xml",
+      "sha256": "c8f7a9cf44f736247a98e20c99feacb7f833492a841b4cc28db2c302b14423a9",
+      "total": 117,
+      "passed": 117,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "scope_edges": {
+      "artifact": "/tmp/nerva-image-empty-scope-edges-final-20261002.xml",
+      "sha256": "8a20fd5c9ed655a81d50c79f9b0984270a5932a499216b7acf896b537539e07a",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "records": {
+      "artifact": "/tmp/nerva-image-empty-records-final-20261002.xml",
+      "sha256": "69bff069c2ee7266ba4095866983e649b7991ec149ad76ded216e39d42a822aa",
+      "total": 92,
+      "passed": 92,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "mutation_baseline": {
+      "artifact": "/tmp/nerva-image-empty-mutations-20261002/baseline.xml",
+      "sha256": "c33e94a1d84ba53ba4cec2d1070e74fdaa3f1dff30814903b84c2e15777d4aff",
+      "total": 421,
+      "passed": 421,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "mutation_final": {
+      "artifact": "/tmp/nerva-image-empty-mutations-20261002/final_baseline.xml",
+      "sha256": "1940bd145be54b7832281c03cf60801cbfee672dd958f22b95a729d6e8f0fe85",
+      "total": 421,
+      "passed": 421,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "supplement_baseline": {
+      "artifact": "/tmp/nerva-image-empty-mutations-20261002/supplement/baseline.xml",
+      "sha256": "821c7955a8761129421093471f5157c21e426b2cb291a765c83fb15050851474",
+      "total": 42,
+      "passed": 42,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "supplement_final": {
+      "artifact": "/tmp/nerva-image-empty-mutations-20261002/supplement/final_baseline.xml",
+      "sha256": "000ef6180d4a0b2a96ae3b2de97ff3e83e62b19001a73905da679da13e7e8322",
+      "total": 42,
+      "passed": 42,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    }
+  },
+  "frontend": {
+    "artifact": "/tmp/nerva-image-empty-frontend-20261002.json",
+    "sha256": "bee4ca4395441a8c78b90222f589aa029f176a20c8dc1f8eedf4301bf4b80112",
+    "passed": 1847,
+    "failed": 0,
+    "build": {
+      "base": "9313fe0c9b2d918579b0dda64f11fad59bedc9c2",
+      "files": {
+        "frontend/src/composer-images.tsx": "076ca559006bd2cd773aa9afecfee8706cb685704df8d3daa47ee8ef441001d3",
+        "frontend/src/gap.tsx": "918ff92ac998852dc577a8e1369bc2f89136f6fa4d451a67d195051727a35a2e",
+        "frontend/src/test/composer-images.test.tsx": "006d1971f4e0b2a1dacf654bf7b1e75718588bd23a20e240d3bb470fc5198db4",
+        "frontend/src/test/vlm-describe-panel.test.tsx": "6c5a6df0e4249cfdd7baded1d560f5ebd4b0f5f53e0b241d96d1c97aeb82ca66",
+        "frontend/src/test/screen-reflex-panel.test.tsx": "edbbeb440ddf463918e78c1f705d7decc6265ee7b91845572dd145ccf6918c01"
+      },
+      "commands": [
+        "npm run typecheck",
+        "npm run typecheck:e2e",
+        "npm run build"
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "frontend_full_json": "/tmp/nerva-image-empty-frontend-20261002.json",
+      "frontend_full_json_sha256": "bee4ca4395441a8c78b90222f589aa029f176a20c8dc1f8eedf4301bf4b80112",
+      "bundle": {
+        "agents/web/v2/index.html": "dfcf27360d0b5b0f588f51c086ff565d3e44b2b37e273ba794108fca09418810",
+        "agents/web/v2/sw-v2.js": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c",
+        "agents/web/v2/manifest.webmanifest": "c2d642afdc2d01e79fe147118fc92dfbefa66b7c503406efb5e5479f7c101c69",
+        "agents/web/v2/assets/modes4-DQNWws8P.js": "0f7e6985186bc4c39b82e1bbd87d9d9007b89b932835731d8a5fd6ced14a6ef3",
+        "agents/web/v2/assets/gap-CPCWsOhk.js": "7eacd1d4de423843f701c12448ccef1d49d869aeba758041a7360232f5b7a9a5",
+        "agents/web/v2/assets/modes_world-COjCx82l.js": "3cf04aa435d385c9f874190f2c32ca431bc0bc125c6d76b83bfb62933b1ccc95",
+        "agents/web/v2/assets/soul-edit-BVVaOyCV.js": "8221c9fab9d7ec43cba6e0c17868a3ee899eba2abfb2d29b69f85bdf0331ee83",
+        "agents/web/v2/assets/index-CCyoGko9.js": "6a53bbb317c6eb159770cc1c6c636bfb7c25b0d9f2aba312c940fdecc13dea8e",
+        "agents/web/v2/assets/modes3-H5YI5Jsz.js": "f03b52a4e04dc01a410c5f27347aaeeef8ddd2ad91e7e640e933dd057a28188c",
+        "agents/web/v2/assets/modes2-BZ5S9c2l.js": "86f5e2b4f996a63a4c97f835c12170c08f13f2dfb133918798fa00302711f1e3",
+        "agents/web/v2/assets/jobs-UvrJfY-6.js": "4668f31d287655bbda0e26b1b0e154e854a2277c1cd6a6b93f414149be7e921c",
+        "agents/web/v2/assets/jetbrains-mono-latin-var-B9CIFXIH.woff2": "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e",
+        "agents/web/v2/assets/index-ldxH5Xm9.css": "a4851f9c57ea8630fad9196f3eb2c84181e4286232c396ede73290e4b272bbd1",
+        "agents/web/v2/assets/space-grotesk-latin-var-BhU9QXUp.woff2": "0640890476fc1198ab4de571fb658de443c4d85b66466ec09534a8737ab1ce9d",
+        "agents/web/v2/assets/panel-kit-gf7swuoi.js": "ca4602b0da8dd2cd9c694b306cbffd87257b759a4d8b20772fbdebc25a3e819f",
+        "agents/web/v2/assets/client-C3wAcB0V.js": "40c77894e27ed04d3fb085a9e3840df283c0c404e29ccabfd52f980c67e1cbca",
+        "agents/web/v2/assets/modes-YLj1JK1b.js": "f5ce55705d736b57acb5bf614bcda1c9e8f85b011430fefe158805e4277191d7"
+      }
+    },
+    "browser_e2e_executed": false
+  },
+  "red_first": {
+    "producer": {
+      "artifact": "/tmp/nerva-image-empty-red-20261002.xml",
+      "sha256": "7466f1070d433dda8c43f21a7e36c8c16e300df521c60d8170b897247a22e11e",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "late_hook": {
+      "artifact": "/tmp/nerva-image-empty-red-late-hook-20261002.xml",
+      "sha256": "2d407a9686d9b14e70822eb10b8604033e163a727d56d5f57f4c85350e48c98a",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "cli": {
+      "artifact": "/tmp/nerva-image-empty-cli-red-20261002.xml",
+      "sha256": "ca7c7d3a148e5b5485108df9265e6c927618fdd096e0d173fa5cb433b6f17308",
+      "total": 14,
+      "passed": 1,
+      "failed": 13,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    }
+  },
+  "mutations": [
+    {
+      "summary": {
+        "baseline_tests": 421,
+        "cases": 10,
+        "commit": "a6a2388f037d130ec0a5bc06a5d9a3f49cf5a9ef",
+        "final_green": true,
+        "final_source_restored": true,
+        "final_tests": 421,
+        "invalid": 0,
+        "killed": 5,
+        "survived": 5
+      },
+      "cases": [
+        {
+          "diff": "/tmp/nerva-image-empty-mutations-20261002/01_enabled_identity_marker.diff",
+          "edits": [
+            {
+              "anchor": "    if empty_retries:\n        binding += ('vision-empty-once:v1',)\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/vision_policy.py",
+              "replacement": "    if False:\n        binding += ('vision-empty-once:v1',)\n"
+            }
+          ],
+          "files": [
+            "agents/core/llm/vision_policy.py"
+          ],
+          "id": "01_enabled_identity_marker",
+          "intent": "Remove enabled retry policy from the frozen identity binding and role grants.",
+          "mutant_sha256_by_file": {
+            "agents/core/llm/vision_policy.py": "b0e626a8eb655a9535bf38e0dae26b29b5623bee16ca0f47d1a2a7d55ce4aae9"
+          },
+          "original_sha256_by_file": {
+            "agents/core/llm/vision_policy.py": "f7b216249d5b0a021065b1280072631ec7ec4a1d23dd808ab3648c3049be417a"
+          },
+          "restored": true,
+          "restored_sha256_by_file": {
+            "agents/core/llm/vision_policy.py": "f7b216249d5b0a021065b1280072631ec7ec4a1d23dd808ab3648c3049be417a"
+          },
+          "status": "KILLED",
+          "test": {
+            "command": [
+              "/tmp/nerva-pr-python-20261001/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_h277_image_empty_retry.py::test_media_grant_becomes_stale_when_budget_enabled",
+              "tests/test_h277_image_empty_retry.py::test_camera_grant_becomes_stale_when_budget_enabled",
+              "tests/test_h277_image_empty_retry.py::test_remote_ack_binding_stales_when_budget_changes",
+              "-p",
+              "no:cacheprovider",
+              "--tb=short",
+              "--junitxml=/tmp/nerva-image-empty-mutations-20261002/01_enabled_identity_marker.xml"
+            ],
+            "cwd": "/private/tmp/nerva-h277-image-empty-mutations-yfni5wgy",
+            "duration_seconds": 1.896,
+            "errors": 0,
+            "failed_tests": [
+              "tests.test_h277_image_empty_retry::test_media_grant_becomes_stale_when_budget_enabled",
+              "tests.test_h277_image_empty_retry::test_camera_grant_becomes_stale_when_budget_enabled",
+              "tests.test_h277_image_empty_retry::test_remote_ack_binding_stales_when_budget_changes"
+            ],
+            "failures": 3,
+            "junit": "/tmp/nerva-image-empty-mutations-20261002/01_enabled_identity_marker.xml",
+            "log": "/tmp/nerva-image-empty-mutations-20261002/01_enabled_identity_marker.log",
+            "returncode": 1,
+            "skipped": 0,
+            "tests": 3,
+            "timed_out": false
+          }
+        },
+        {
+          "diff": "/tmp/nerva-image-empty-mutations-20261002/02_exact_prepared_body.diff",
+          "edits": [
+            {
+              "anchor": "                or not hmac.compare_digest(actual, self.expected_digest)):\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/vision_retry.py",
+              "replacement": "                or False):\n"
+            }
+          ],
+          "files": [
+            "agents/core/llm/vision_retry.py"
+          ],
+          "id": "02_exact_prepared_body",
+          "intent": "Remove exact prepared-body digest validation from the physical request.",
+          "mutant_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "a5eac82d5df84370b49fa19389fa4a6aec75d0db8e63e704724793d3a1f48fb7"
+          },
+          "original_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407"
+          },
+          "restored": true,
+          "restored_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407"
+          },
+          "status": "KILLED",
+          "test": {
+            "command": [
+              "/tmp/nerva-pr-python-20261001/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_h277_image_empty_retry.py::test_late_request_hook_cannot_mutate_prepared_image_body",
+              "-p",
+              "no:cacheprovider",
+              "--tb=short",
+              "--junitxml=/tmp/nerva-image-empty-mutations-20261002/02_exact_prepared_body.xml"
+            ],
+            "cwd": "/private/tmp/nerva-h277-image-empty-mutations-yfni5wgy",
+            "duration_seconds": 1.862,
+            "errors": 0,
+            "failed_tests": [
+              "tests.test_h277_image_empty_retry::test_late_request_hook_cannot_mutate_prepared_image_body"
+            ],
+            "failures": 1,
+            "junit": "/tmp/nerva-image-empty-mutations-20261002/02_exact_prepared_body.xml",
+            "log": "/tmp/nerva-image-empty-mutations-20261002/02_exact_prepared_body.log",
+            "returncode": 1,
+            "skipped": 0,
+            "tests": 1,
+            "timed_out": false
+          }
+        },
+        {
+          "diff": "/tmp/nerva-image-empty-mutations-20261002/03_final_http_hook.diff",
+          "edits": [
+            {
+              "anchor": "        if backend.client.event_hooks['request'][-1] is not last_request_hook:\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/vision_policy.py",
+              "replacement": "        if False:\n"
+            }
+          ],
+          "files": [
+            "agents/core/llm/vision_policy.py"
+          ],
+          "id": "03_final_http_hook",
+          "intent": "Allow a request hook to be appended after the final integrity hook.",
+          "mutant_sha256_by_file": {
+            "agents/core/llm/vision_policy.py": "c9aefad52be5a60e0a8e57f0b8edd37ec547f4db20d231f500c51b337a1c07a2"
+          },
+          "original_sha256_by_file": {
+            "agents/core/llm/vision_policy.py": "f7b216249d5b0a021065b1280072631ec7ec4a1d23dd808ab3648c3049be417a"
+          },
+          "restored": true,
+          "restored_sha256_by_file": {
+            "agents/core/llm/vision_policy.py": "f7b216249d5b0a021065b1280072631ec7ec4a1d23dd808ab3648c3049be417a"
+          },
+          "status": "SURVIVED",
+          "test": {
+            "command": [
+              "/tmp/nerva-pr-python-20261001/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_h277_image_empty_retry.py::test_late_request_hook_cannot_mutate_prepared_image_body",
+              "-p",
+              "no:cacheprovider",
+              "--tb=short",
+              "--junitxml=/tmp/nerva-image-empty-mutations-20261002/03_final_http_hook.xml"
+            ],
+            "cwd": "/private/tmp/nerva-h277-image-empty-mutations-yfni5wgy",
+            "duration_seconds": 1.773,
+            "errors": 0,
+            "failed_tests": [],
+            "failures": 0,
+            "junit": "/tmp/nerva-image-empty-mutations-20261002/03_final_http_hook.xml",
+            "log": "/tmp/nerva-image-empty-mutations-20261002/03_final_http_hook.log",
+            "returncode": 0,
+            "skipped": 0,
+            "tests": 1,
+            "timed_out": false
+          }
+        },
+        {
+          "diff": "/tmp/nerva-image-empty-mutations-20261002/04_scope_operation_cap.diff",
+          "edits": [
+            {
+              "anchor": "        if not self.started or self.attempts >= 2:\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/vision_retry.py",
+              "replacement": "        if not self.started or self.attempts >= 3:\n"
+            }
+          ],
+          "files": [
+            "agents/core/llm/vision_retry.py"
+          ],
+          "id": "04_scope_operation_cap",
+          "intent": "Raise the scope attempt cap alone; the VLM loop remains two.",
+          "mutant_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "a938b318c42c77b4385aef842bee3e1b7ed02a0bfd3ff2ee13a05a0b2b7c679a"
+          },
+          "original_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407"
+          },
+          "restored": true,
+          "restored_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407"
+          },
+          "status": "SURVIVED",
+          "test": {
+            "command": [
+              "/tmp/nerva-pr-python-20261001/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_h277_image_empty_retry.py::test_two_valid_empty_responses_keep_existing_sanitized_failure",
+              "-p",
+              "no:cacheprovider",
+              "--tb=short",
+              "--junitxml=/tmp/nerva-image-empty-mutations-20261002/04_scope_operation_cap.xml"
+            ],
+            "cwd": "/private/tmp/nerva-h277-image-empty-mutations-yfni5wgy",
+            "duration_seconds": 1.693,
+            "errors": 0,
+            "failed_tests": [],
+            "failures": 0,
+            "junit": "/tmp/nerva-image-empty-mutations-20261002/04_scope_operation_cap.xml",
+            "log": "/tmp/nerva-image-empty-mutations-20261002/04_scope_operation_cap.log",
+            "returncode": 0,
+            "skipped": 0,
+            "tests": 1,
+            "timed_out": false
+          }
+        },
+        {
+          "diff": "/tmp/nerva-image-empty-mutations-20261002/05_vlm_send_loop_cap.diff",
+          "edits": [
+            {
+              "anchor": "                for attempt in range(2):\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/vlm.py",
+              "replacement": "                for attempt in range(3):\n"
+            }
+          ],
+          "files": [
+            "agents/core/llm/vlm.py"
+          ],
+          "id": "05_vlm_send_loop_cap",
+          "intent": "Raise the VLM loop cap alone; the scope still allows two attempts.",
+          "mutant_sha256_by_file": {
+            "agents/core/llm/vlm.py": "470ad3ed9dc88cb0b465473fdff33f809e523cdfbeb85c47cf3d4f48a5067696"
+          },
+          "original_sha256_by_file": {
+            "agents/core/llm/vlm.py": "f3bcbe79fa99bd6cd4802aa65f9ead88659d2af89e9572c70b6f54e1e39d5417"
+          },
+          "restored": true,
+          "restored_sha256_by_file": {
+            "agents/core/llm/vlm.py": "f3bcbe79fa99bd6cd4802aa65f9ead88659d2af89e9572c70b6f54e1e39d5417"
+          },
+          "status": "SURVIVED",
+          "test": {
+            "command": [
+              "/tmp/nerva-pr-python-20261001/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_h277_image_empty_retry.py::test_two_valid_empty_responses_keep_existing_sanitized_failure",
+              "-p",
+              "no:cacheprovider",
+              "--tb=short",
+              "--junitxml=/tmp/nerva-image-empty-mutations-20261002/05_vlm_send_loop_cap.xml"
+            ],
+            "cwd": "/private/tmp/nerva-h277-image-empty-mutations-yfni5wgy",
+            "duration_seconds": 1.677,
+            "errors": 0,
+            "failed_tests": [],
+            "failures": 0,
+            "junit": "/tmp/nerva-image-empty-mutations-20261002/05_vlm_send_loop_cap.xml",
+            "log": "/tmp/nerva-image-empty-mutations-20261002/05_vlm_send_loop_cap.log",
+            "returncode": 0,
+            "skipped": 0,
+            "tests": 1,
+            "timed_out": false
+          }
+        },
+        {
+          "diff": "/tmp/nerva-image-empty-mutations-20261002/06_compound_both_attempt_caps.diff",
+          "edits": [
+            {
+              "anchor": "        if not self.started or self.attempts >= 2:\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/vision_retry.py",
+              "replacement": "        if not self.started or self.attempts >= 3:\n"
+            },
+            {
+              "anchor": "                for attempt in range(2):\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/vlm.py",
+              "replacement": "                for attempt in range(3):\n"
+            }
+          ],
+          "files": [
+            "agents/core/llm/vision_retry.py",
+            "agents/core/llm/vlm.py"
+          ],
+          "id": "06_compound_both_attempt_caps",
+          "intent": "COMPOUND: relax BOTH operation bounds so a third physical image send is possible.",
+          "mutant_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "a938b318c42c77b4385aef842bee3e1b7ed02a0bfd3ff2ee13a05a0b2b7c679a",
+            "agents/core/llm/vlm.py": "470ad3ed9dc88cb0b465473fdff33f809e523cdfbeb85c47cf3d4f48a5067696"
+          },
+          "original_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407",
+            "agents/core/llm/vlm.py": "f3bcbe79fa99bd6cd4802aa65f9ead88659d2af89e9572c70b6f54e1e39d5417"
+          },
+          "restored": true,
+          "restored_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407",
+            "agents/core/llm/vlm.py": "f3bcbe79fa99bd6cd4802aa65f9ead88659d2af89e9572c70b6f54e1e39d5417"
+          },
+          "status": "SURVIVED",
+          "test": {
+            "command": [
+              "/tmp/nerva-pr-python-20261001/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_h277_image_empty_retry.py::test_two_valid_empty_responses_keep_existing_sanitized_failure",
+              "-p",
+              "no:cacheprovider",
+              "--tb=short",
+              "--junitxml=/tmp/nerva-image-empty-mutations-20261002/06_compound_both_attempt_caps.xml"
+            ],
+            "cwd": "/private/tmp/nerva-h277-image-empty-mutations-yfni5wgy",
+            "duration_seconds": 1.675,
+            "errors": 0,
+            "failed_tests": [],
+            "failures": 0,
+            "junit": "/tmp/nerva-image-empty-mutations-20261002/06_compound_both_attempt_caps.xml",
+            "log": "/tmp/nerva-image-empty-mutations-20261002/06_compound_both_attempt_caps.log",
+            "returncode": 0,
+            "skipped": 0,
+            "tests": 1,
+            "timed_out": false
+          }
+        },
+        {
+          "diff": "/tmp/nerva-image-empty-mutations-20261002/07_inherited_scope_lifetime.diff",
+          "edits": [
+            {
+              "anchor": "        state.active = False\n        _current.reset(token)\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/vision_retry.py",
+              "replacement": "        pass  # active state intentionally left live in inherited child context\n        _current.reset(token)\n"
+            }
+          ],
+          "files": [
+            "agents/core/llm/vision_retry.py"
+          ],
+          "id": "07_inherited_scope_lifetime",
+          "intent": "Leave the retry scope active after parent exit; outer physical guard may remain redundant.",
+          "mutant_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "3fa0b2ff166cb377d22c6706bd9cf912affd83365b74e7f8ad2994f378751992"
+          },
+          "original_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407"
+          },
+          "restored": true,
+          "restored_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407"
+          },
+          "status": "SURVIVED",
+          "test": {
+            "command": [
+              "/tmp/nerva-pr-python-20261001/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_h277_image_empty_retry.py::test_inherited_child_cannot_send_after_vision_scope_closes",
+              "-p",
+              "no:cacheprovider",
+              "--tb=short",
+              "--junitxml=/tmp/nerva-image-empty-mutations-20261002/07_inherited_scope_lifetime.xml"
+            ],
+            "cwd": "/private/tmp/nerva-h277-image-empty-mutations-yfni5wgy",
+            "duration_seconds": 1.844,
+            "errors": 0,
+            "failed_tests": [],
+            "failures": 0,
+            "junit": "/tmp/nerva-image-empty-mutations-20261002/07_inherited_scope_lifetime.xml",
+            "log": "/tmp/nerva-image-empty-mutations-20261002/07_inherited_scope_lifetime.log",
+            "returncode": 0,
+            "skipped": 0,
+            "tests": 1,
+            "timed_out": false
+          }
+        },
+        {
+          "diff": "/tmp/nerva-image-empty-mutations-20261002/08_raw_thinking_exclusion.diff",
+          "edits": [
+            {
+              "anchor": "    if content is not None and (not isinstance(content, str) or content.strip()):\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/native_response.py",
+              "replacement": "    if content is not None and not isinstance(content, str):\n"
+            }
+          ],
+          "files": [
+            "agents/core/llm/native_response.py"
+          ],
+          "id": "08_raw_thinking_exclusion",
+          "intent": "Treat nonblank raw text that normalizes to blank as an eligible empty response.",
+          "mutant_sha256_by_file": {
+            "agents/core/llm/native_response.py": "47bde44a5ee8fdb3e329d1841647da86fefe81ef6a7dff66e3e9b88208127532"
+          },
+          "original_sha256_by_file": {
+            "agents/core/llm/native_response.py": "d6248f4322e5d878768f0669b8e3cd6c2723030081b7b9f1cd0b833778608c07"
+          },
+          "restored": true,
+          "restored_sha256_by_file": {
+            "agents/core/llm/native_response.py": "d6248f4322e5d878768f0669b8e3cd6c2723030081b7b9f1cd0b833778608c07"
+          },
+          "status": "KILLED",
+          "test": {
+            "command": [
+              "/tmp/nerva-pr-python-20261001/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_h277_image_empty_retry.py::test_invalid_or_stripped_blank_never_retries",
+              "-p",
+              "no:cacheprovider",
+              "--tb=short",
+              "--junitxml=/tmp/nerva-image-empty-mutations-20261002/08_raw_thinking_exclusion.xml"
+            ],
+            "cwd": "/private/tmp/nerva-h277-image-empty-mutations-yfni5wgy",
+            "duration_seconds": 1.906,
+            "errors": 0,
+            "failed_tests": [
+              "tests.test_h277_image_empty_retry::test_invalid_or_stripped_blank_never_retries[first8]"
+            ],
+            "failures": 1,
+            "junit": "/tmp/nerva-image-empty-mutations-20261002/08_raw_thinking_exclusion.xml",
+            "log": "/tmp/nerva-image-empty-mutations-20261002/08_raw_thinking_exclusion.log",
+            "returncode": 1,
+            "skipped": 0,
+            "tests": 9,
+            "timed_out": false
+          }
+        },
+        {
+          "diff": "/tmp/nerva-image-empty-mutations-20261002/09_strict_owner_opt_in.diff",
+          "edits": [
+            {
+              "anchor": "    if value == \"1\":\n        return 1\n    raise VisionRetryConfigError(\"invalid vision empty retry setting\")\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/vision_retry.py",
+              "replacement": "    if value in {\"1\", \"2\"}:\n        return int(value)\n    raise VisionRetryConfigError(\"invalid vision empty retry setting\")\n"
+            }
+          ],
+          "files": [
+            "agents/core/llm/vision_retry.py"
+          ],
+          "id": "09_strict_owner_opt_in",
+          "intent": "Accept owner retry budget two, outside the fixed 0/1 opt-in contract.",
+          "mutant_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "b9a4d250dae8d44c0cecc169503fe7734ef460772fbba4e06fa2325fd7d6e0cc"
+          },
+          "original_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407"
+          },
+          "restored": true,
+          "restored_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407"
+          },
+          "status": "KILLED",
+          "test": {
+            "command": [
+              "/tmp/nerva-pr-python-20261001/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_h277_image_empty_retry.py::test_invalid_empty_retry_setting_is_sanitized",
+              "-p",
+              "no:cacheprovider",
+              "--tb=short",
+              "--junitxml=/tmp/nerva-image-empty-mutations-20261002/09_strict_owner_opt_in.xml"
+            ],
+            "cwd": "/private/tmp/nerva-h277-image-empty-mutations-yfni5wgy",
+            "duration_seconds": 1.774,
+            "errors": 0,
+            "failed_tests": [
+              "tests.test_h277_image_empty_retry::test_invalid_empty_retry_setting_is_sanitized[2]"
+            ],
+            "failures": 1,
+            "junit": "/tmp/nerva-image-empty-mutations-20261002/09_strict_owner_opt_in.xml",
+            "log": "/tmp/nerva-image-empty-mutations-20261002/09_strict_owner_opt_in.log",
+            "returncode": 1,
+            "skipped": 0,
+            "tests": 9,
+            "timed_out": false
+          }
+        },
+        {
+          "diff": "/tmp/nerva-image-empty-mutations-20261002/10_one_physical_send_latch.diff",
+          "edits": [
+            {
+              "anchor": "        if (self.expected_digest is None or self.attempts < 1 or self.sent != marked\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/vision_retry.py",
+              "replacement": "        if (self.expected_digest is None or self.attempts < 1 or False\n"
+            }
+          ],
+          "files": [
+            "agents/core/llm/vision_retry.py"
+          ],
+          "id": "10_one_physical_send_latch",
+          "intent": "Allow another physical request inside the same attempt when the body is unchanged.",
+          "mutant_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "23c97c8b80b9b18ea94e1ab47833c5604c29e07997fe2e5c5619a094979d4b71"
+          },
+          "original_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407"
+          },
+          "restored": true,
+          "restored_sha256_by_file": {
+            "agents/core/llm/vision_retry.py": "247ba3433a4cafc7910e1d5e893a04632083b24fa983b9f0d514ced03c805407"
+          },
+          "status": "KILLED",
+          "test": {
+            "command": [
+              "/tmp/nerva-pr-python-20261001/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_h277_image_empty_retry.py::test_second_physical_send_inside_one_attempt_is_refused",
+              "-p",
+              "no:cacheprovider",
+              "--tb=short",
+              "--junitxml=/tmp/nerva-image-empty-mutations-20261002/10_one_physical_send_latch.xml"
+            ],
+            "cwd": "/private/tmp/nerva-h277-image-empty-mutations-yfni5wgy",
+            "duration_seconds": 2.03,
+            "errors": 0,
+            "failed_tests": [
+              "tests.test_h277_image_empty_retry::test_second_physical_send_inside_one_attempt_is_refused"
+            ],
+            "failures": 1,
+            "junit": "/tmp/nerva-image-empty-mutations-20261002/10_one_physical_send_latch.xml",
+            "log": "/tmp/nerva-image-empty-mutations-20261002/10_one_physical_send_latch.log",
+            "returncode": 1,
+            "skipped": 0,
+            "tests": 1,
+            "timed_out": false
+          }
+        }
+      ],
+      "artifact_sha256": {
+        "09_strict_owner_opt_in.diff": "1d5c2e873315bee8af0325ba2660e43681af0f34d4d6ee0fb6bc648f8a52fcf2",
+        "02_exact_prepared_body.log": "62455ff8b74d359ac88c7091d115cc7d49619ee1ed432608c720a8e54a4ad738",
+        "summary.json": "617b530818800084d02e2664221e9d34035f47170486ec21397c2a7b0ed11c0a",
+        "01_enabled_identity_marker.log": "498b64af3db019234237acefd51b1335480327ad2812b998a14eec2161ac5e57",
+        "05_vlm_send_loop_cap.xml": "7bbab6fd61666ee8888d07bcdb8530fd006886f9ea360626a4108f8dae4ce611",
+        "09_strict_owner_opt_in.log": "faef381d4723065f3b8660d5fddb7100bb626db52d377470bd0b9d1f83a53c79",
+        "10_one_physical_send_latch.diff": "ca159ae199ed55c5e9a5360b385769076bb3101e810708879958c43a74fe96e3",
+        "final_baseline.log": "770c0900d2429dd1acafc1298bb744e142619d578fc6d3f1eb375aa3f57e0452",
+        "06_compound_both_attempt_caps.xml": "576f88329839767836e726c9f6dc39e3c15319cdf8f782a51a4bb231099c9808",
+        "07_inherited_scope_lifetime.diff": "7dd7788dbf73586c631b83f1ce5645e90c54ec2722bf2fcfea4dd09c9f6686e6",
+        "source_manifest.json": "f8cfac97624bbb20aca37c85efb3608b58a7af445c6f26ad05a8c9a901dd1097",
+        "report.md": "28d66a8c0cdb1f549e3173dd97ca2390dfcf507ab0759fb41ac628fd87d3e47f",
+        "baseline.xml": "c33e94a1d84ba53ba4cec2d1070e74fdaa3f1dff30814903b84c2e15777d4aff",
+        "results.json": "8f90f0ecfa145f50d6b75278c95507d2365d4e4a1d7d4661452f6c57ed890d36",
+        "01_enabled_identity_marker.diff": "233d9ba62e0effabb944a916b4277aed30647827e1eb5f61c7135c409a769773",
+        "run_mutations.py": "43ba59334ea0b16806640fded7bf9efa4b7eca5bcd1c6386ef2301c83d9554ef",
+        "10_one_physical_send_latch.log": "26fa67375b4f4a05dbd0b4f6b77467bdab03245b4817d4bf48da011484a5a542",
+        "07_inherited_scope_lifetime.log": "4f1ea387b0ed3f117677d3c830d18ddfbf6b7b48810f767c560bcc851dfe62cb",
+        "08_raw_thinking_exclusion.xml": "328ea59bd8a4c8ee10020f99f7e902d4eee97422adae6bd537f95f78d9ccf91f",
+        "04_scope_operation_cap.xml": "290cc680a553674d5feeb03eb0293b204e04a0988650ad2f2128cb046d7aadbb",
+        "03_final_http_hook.log": "1e854f55196c61bf8b4b33b54dab62f8695015bf3800c9951e2e1a7445d58dc7",
+        "02_exact_prepared_body.diff": "27aa1f90415051ba62ef85e3e614b8829b472139c7da65c0c086fb4e3dd9aa87",
+        "baseline.log": "910aae37dd8f13896caa7d7c8496eb8913e57eb15a422efdc46b86df6f7ecccc",
+        "08_raw_thinking_exclusion.diff": "4d2c48187a80653740d0e22fa48f4962b9af195bb65d825c53336b6b79ad02a5",
+        "baseline.json": "2a955d578705d8cac922551b363a16ca87fbfb195e95bfcb142d7b7acca2c235",
+        "05_vlm_send_loop_cap.diff": "70576f09b983e7edb84ee7b4f644a4c83937802213f175d12f266e0d93fa1f94",
+        "cases.json": "3b1b39fd51e9e31532501ff4df0c871b1c9fcf9c1dbabf3c8140ef91f86c772b",
+        "10_one_physical_send_latch.xml": "afc7d369fc3133226a9ec59a33750c5332bda203335bcc26d33b686b87713895",
+        "07_inherited_scope_lifetime.xml": "7c19b5336152422fda08ddfb2a25c8c201007c217b2c5d637047aaad250043cd",
+        "04_scope_operation_cap.log": "8ee07df99134536bbccbbea602f087628d73546a60dd208fd32ecd7f94c2e43b",
+        "08_raw_thinking_exclusion.log": "e2edb6cec28425180224df0d5fe4e2740a7215962eb0682acaa96e32f460c561",
+        "plan.md": "701c9869edcf764d53bc6c327af12596789d52ea61a7858d61fed77e68461c7e",
+        "03_final_http_hook.xml": "543afd07cff25b36aaa678b3d718c0edb6130d3599467849a942b3c1da58db81",
+        "04_scope_operation_cap.diff": "a2aae7f1c4a22b9bfc2eb9d75b93fc159d75bea6871a4b8e9275f26528b01851",
+        "02_exact_prepared_body.xml": "f1a06a61afa6944b4d790d0552a20e55a0a60d945c44b42ec6f714d19f36653c",
+        "01_enabled_identity_marker.xml": "61c86cdcabc99ad8fc14557b4c67d47e9d2291b3c31daf3b0d973d78d13787ec",
+        "05_vlm_send_loop_cap.log": "e99bbbecaee85c55349c45a2a640e2feb62c8cebff5a0161a7b1e368f9caa63c",
+        "03_final_http_hook.diff": "4584126e15138b3bca2bff03b39f514134dec980fbb6f49014686f8782ed44d7",
+        "09_strict_owner_opt_in.xml": "063442468027dfdc966bd698b707663fd8e02838148fbe9c81eb2a2c948aee2e",
+        "final_baseline.xml": "1940bd145be54b7832281c03cf60801cbfee672dd958f22b95a729d6e8f0fe85",
+        "06_compound_both_attempt_caps.log": "b984ab39b2cca0eb738c669408bcde6ec903cc2003cf9ce8af458cea4f0c520e",
+        "06_compound_both_attempt_caps.diff": "16f8efc3f5a212ec239058400aa40a1dffa705272f0f33d8bde793deee704b53"
+      }
+    },
+    {
+      "summary": {
+        "baseline_tests": 42,
+        "cases": 2,
+        "commit": "931b6626017146ffa31ece8f2bc9b5b7865d59a7",
+        "final_green": true,
+        "final_source_restored": true,
+        "final_tests": 42,
+        "invalid": 0,
+        "killed": 2,
+        "survived": 0
+      },
+      "cases": [
+        {
+          "diff": "/tmp/nerva-image-empty-mutations-20261002/supplement/S01_final_http_hook_position.diff",
+          "edits": [
+            {
+              "anchor": "        if backend.client.event_hooks['request'][-1] is not last_request_hook:\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/vision_policy.py",
+              "replacement": "        if False:\n"
+            }
+          ],
+          "files": [
+            "agents/core/llm/vision_policy.py"
+          ],
+          "id": "S01_final_http_hook_position",
+          "intent": "Remove the final-hook-position guard against an appended mutator.",
+          "mutant_sha256_by_file": {
+            "agents/core/llm/vision_policy.py": "c9aefad52be5a60e0a8e57f0b8edd37ec547f4db20d231f500c51b337a1c07a2"
+          },
+          "original_sha256_by_file": {
+            "agents/core/llm/vision_policy.py": "f7b216249d5b0a021065b1280072631ec7ec4a1d23dd808ab3648c3049be417a"
+          },
+          "restored": true,
+          "restored_sha256_by_file": {
+            "agents/core/llm/vision_policy.py": "f7b216249d5b0a021065b1280072631ec7ec4a1d23dd808ab3648c3049be417a"
+          },
+          "status": "KILLED",
+          "test": {
+            "command": [
+              "/tmp/nerva-pr-python-20261001/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_h277_image_retry_scope_edges.py::test_hook_appended_after_scope_guard_cannot_reach_transport",
+              "-p",
+              "no:cacheprovider",
+              "--tb=short",
+              "--junitxml=/tmp/nerva-image-empty-mutations-20261002/supplement/S01_final_http_hook_position.xml"
+            ],
+            "cwd": "/private/tmp/nerva-h277-image-empty-supplement-lf7gameq",
+            "duration_seconds": 2.705,
+            "errors": 0,
+            "failed_tests": [
+              "tests.test_h277_image_retry_scope_edges::test_hook_appended_after_scope_guard_cannot_reach_transport"
+            ],
+            "failures": 1,
+            "junit": "/tmp/nerva-image-empty-mutations-20261002/supplement/S01_final_http_hook_position.xml",
+            "log": "/tmp/nerva-image-empty-mutations-20261002/supplement/S01_final_http_hook_position.log",
+            "returncode": 1,
+            "skipped": 0,
+            "tests": 1,
+            "timed_out": false
+          }
+        },
+        {
+          "diff": "/tmp/nerva-image-empty-mutations-20261002/supplement/S02_governed_text_only_gate.diff",
+          "edits": [
+            {
+              "anchor": "        if scope is not None and image_bearing:\n",
+              "anchor_count": 1,
+              "file": "agents/core/llm/vlm.py",
+              "replacement": "        if scope is not None:\n"
+            }
+          ],
+          "files": [
+            "agents/core/llm/vlm.py"
+          ],
+          "id": "S02_governed_text_only_gate",
+          "intent": "Allow an empty text-only call to enter the governed image retry path.",
+          "mutant_sha256_by_file": {
+            "agents/core/llm/vlm.py": "7c40115608a5eecb00b605dcb08e9adda6ca043aa938c463e38a769a0cf6f75d"
+          },
+          "original_sha256_by_file": {
+            "agents/core/llm/vlm.py": "f3bcbe79fa99bd6cd4802aa65f9ead88659d2af89e9572c70b6f54e1e39d5417"
+          },
+          "restored": true,
+          "restored_sha256_by_file": {
+            "agents/core/llm/vlm.py": "f3bcbe79fa99bd6cd4802aa65f9ead88659d2af89e9572c70b6f54e1e39d5417"
+          },
+          "status": "KILLED",
+          "test": {
+            "command": [
+              "/tmp/nerva-pr-python-20261001/bin/python",
+              "-m",
+              "pytest",
+              "tests/test_h277_image_retry_scope_edges.py::test_text_only_call_in_governed_scope_never_retries",
+              "-p",
+              "no:cacheprovider",
+              "--tb=short",
+              "--junitxml=/tmp/nerva-image-empty-mutations-20261002/supplement/S02_governed_text_only_gate.xml"
+            ],
+            "cwd": "/private/tmp/nerva-h277-image-empty-supplement-lf7gameq",
+            "duration_seconds": 2.537,
+            "errors": 0,
+            "failed_tests": [
+              "tests.test_h277_image_retry_scope_edges::test_text_only_call_in_governed_scope_never_retries"
+            ],
+            "failures": 1,
+            "junit": "/tmp/nerva-image-empty-mutations-20261002/supplement/S02_governed_text_only_gate.xml",
+            "log": "/tmp/nerva-image-empty-mutations-20261002/supplement/S02_governed_text_only_gate.log",
+            "returncode": 1,
+            "skipped": 0,
+            "tests": 1,
+            "timed_out": false
+          }
+        }
+      ],
+      "artifact_sha256": {
+        "summary.json": "6a29c732b243dfdbc23207dbeeca406f5f6b72d7689dc7ad139ad7fb7f2c627f",
+        "final_baseline.log": "47fd3e5c59dec180dc61a8e3f429d0db77fcfef59a9ed96669c5de760a757a7d",
+        "source_manifest.json": "ee89a67855af79b323a51053c845f2846399383834949b131a467201dc33b842",
+        "S01_final_http_hook_position.log": "e17a845f3824f717ffc61bb426a4df1fd2c35c48ad61a18163009c5965f3d7f3",
+        "report.md": "a70a994fb2a9a310717ed731ef6f114606b168cac39cfb38b02c44179b2955bb",
+        "baseline.xml": "821c7955a8761129421093471f5157c21e426b2cb291a765c83fb15050851474",
+        "S02_governed_text_only_gate.diff": "e9c14bfe4c8d574e0832299356a10971cc6f6c1138b93a692548fa4f06e3631b",
+        "S02_governed_text_only_gate.xml": "c3c49653adecaab02b819ed58739bb47d294a357d1574612b90ca340577c0e43",
+        "results.json": "52c9b7f0a6710f9242aa6ed0da68fde49ff6b8334c48c91c2f69651991695648",
+        "run_mutations.py": "59809db207f564f3cbbd4b603e66efbfb3f1537b5b4fdeef2ece848232440012",
+        "baseline.log": "0d7a8aad578c6d8939dbd7331ea633331011c53d3483acef45ee46675425c466",
+        "S02_governed_text_only_gate.log": "f371514ca438a2f72e4aa0a62749a0ced6f8d2f695c0f00f49ee1f7f95805fd9",
+        "baseline.json": "2aa21adca72906a91b6858e540d6ee5e6f0e519dd2e74512e8088b159da8451c",
+        "cases.json": "7451347c869edfb0b0e9020daff0c804c9588123df5bc9717545b087f78c0adb",
+        "S01_final_http_hook_position.diff": "4584126e15138b3bca2bff03b39f514134dec980fbb6f49014686f8782ed44d7",
+        "final_baseline.xml": "000ef6180d4a0b2a96ae3b2de97ff3e83e62b19001a73905da679da13e7e8322",
+        "S01_final_http_hook_position.xml": "c559e13af8449b12c027e68262fceb99eb5c596bfaa0d7e746c4ac47cf47864e"
+      }
+    }
+  ],
+  "review": {
+    "artifact": "/tmp/nerva-image-empty-source-review-20261002.md",
+    "sha256": "0358c8ba360af4954c5c5013af41ef751917f0545d1494f03017211be735ff02",
+    "conclusion": "No runtime blocker at frozen source hashes. Two behavioral test gaps independently found in mutation design and closed in the supplemental test commit; runtime source unchanged."
+  },
+  "evidence_review": [
+    {
+      "id": "H004",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H145",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H156",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {
+        "frontend/src/gap.tsx:2903": "frontend/src/gap.tsx:2905"
+      },
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H157",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {
+        "frontend/src/gap.tsx:2749": "frontend/src/gap.tsx:2751",
+        "frontend/src/gap.tsx:2726": "frontend/src/gap.tsx:2728"
+      },
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H165",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {
+        "frontend/src/gap.tsx:5068": "frontend/src/gap.tsx:5070",
+        "frontend/src/gap.tsx:2752": "frontend/src/gap.tsx:2754",
+        "frontend/src/gap.tsx:2844": "frontend/src/gap.tsx:2846"
+      },
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H168",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {
+        "frontend/src/gap.tsx:3484": "frontend/src/gap.tsx:3486",
+        "frontend/src/gap.tsx:4381": "frontend/src/gap.tsx:4383"
+      },
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H227",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H242",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H259",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {
+        "frontend/src/gap.tsx:2851": "frontend/src/gap.tsx:2853"
+      },
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H273",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H277",
+      "status_preserved": "partial",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Governed image recovery (2026-10-02): JARVIS_ROLE_VISION_EMPTY_RETRIES=1 permits exactly one repeat of the same prepared image/model payload only after a structurally valid empty successful response. Default0 preserves legacy behavior. All five governed native consumers share bounded output, one180-second deadline, fresh authorization, exact-body validation and a final request hook. CLI/HUD disclose the potential second call. 582 integrated backend and1847 frontend tests pass; no live-provider or other-adapter normalization claim."
+    },
+    {
+      "id": "H329",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H340",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H350",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H378",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery guard-adjacent review (2026-10-02): changes to the CLI image-turn and local panel disclosure do not change the registry, selection guard or sg.evaluate contract. Source anchors and full base evidence pins verified; status preserved."
+    },
+    {
+      "id": "H413",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H441",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H464",
+      "status_preserved": "partial",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H465",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H487",
+      "status_preserved": "partial",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H513",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image recovery authority review (2026-10-02): enabled budget changes vision identity/consent bindings and unattended grants; exact backend/model active scope, per-attempt latch, body digest and final request hook recheck authority immediately before physical transport. Captured contexts expire, and later hooks cannot mutate image payloads. All five governed native consumers and revocation regressions are included in582 integrated passes; ordinary direct/text-only calls gain no recovery. Existing status denotes code-contract equivalence, not live-provider acceptance."
+    },
+    {
+      "id": "H515",
+      "status_preserved": "partial",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H518",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H586",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {
+        "frontend/src/composer-images.tsx:42-43": "frontend/src/composer-images.tsx:51-52",
+        "agents/core/llm/vlm.py:348": "agents/core/llm/vlm.py:354",
+        "agents/cli/nerva.py:2450": "agents/cli/nerva.py:2457"
+      },
+      "note": "Composer image recovery review (2026-10-02): enabled recovery is exposed by paired validated empty_retries/retry_notice metadata. HUD renders the notice before remote consent and resets acknowledgment on binding changes; CLI validates and prints the notice before acknowledgment/send. Default shapes and stdout/JSON stay unchanged. Actual CLI and web composer tests, full1847 frontend tests, typecheck, E2E TypeScript compilation and build pass; browser E2E execution was not run."
+    },
+    {
+      "id": "H595",
+      "status_preserved": "partial",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H613",
+      "status_preserved": "partial",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H660",
+      "status_preserved": "partial",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H666",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H667",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H671",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    },
+    {
+      "id": "H687",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citation_replacements": {},
+      "note": "Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review."
+    }
+  ],
+  "unchanged_status_counts": {
+    "equivalent": 172,
+    "partial": 254,
+    "missing": 64,
+    "needs_review": 207
+  },
+  "secret_scan": {
+    "paths": 58,
+    "findings": 0,
+    "unexpected": []
+  },
+  "limitations": [
+    "H277 remains partial; no live provider, native-device or browser E2E acceptance and no measured coverage percentage.",
+    "Original campaign remains5killed/5survived; two later gap probes both killed. Three cap guards and independent H513 scope explain remaining redundant survivors.",
+    "Only31 previously-current rows refreshed; original207 stale rows remain unchanged.",
+    "Additional adapters, provider discovery/cache, SDK credentials, broader normalization, progress recovery and larger uploads remain open.",
+    "Overlapping scopes on the same injected client are not established; production consumers use independent owned clients.",
+    "No push, merge or deployment in this local batch."
+  ]
+}

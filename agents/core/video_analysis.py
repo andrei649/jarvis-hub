@@ -20,9 +20,11 @@ from .file_tools import FileScope, FileScopeError
 from .http_client import PluginHTTPClient, PluginTimeouts
 from .llm.data_handling import authorize_role_target
 from .llm.egress import llm_async_client
+from .llm.native_response import compatible_empty_success, compatible_vision_answer
 from .llm.video_failures import provider_failure_category, transport_failure_category
 from .llm.video_native import (
     VIDEO_MIME,
+    VideoNativeEmpty,
     VideoNativeRefused,
     gemini_video_answer,
     gemini_video_body,
@@ -35,7 +37,11 @@ from .llm.video_policy import (
     describe_video_route_set,
     native_video_request_scope,
 )
-from .llm.video_retry import native_retryable_status, resolve_video_retry_count
+from .llm.video_retry import (
+    native_retryable_status,
+    resolve_video_empty_retry_count,
+    resolve_video_retry_count,
+)
 from .tool_rpc import ToolRPCValidationError
 
 # A 37.5 MiB binary becomes at most 50 MiB in the native base64 payload.
@@ -70,6 +76,10 @@ class _EligibleModelFailure(Exception):
 
 class _TransientModelFailure(_EligibleModelFailure):
     """An owned primary retry candidate; fallback remains a separate decision."""
+
+
+class _EmptyModelResponse(Exception):
+    """A successful native response had no usable visible answer."""
 
 
 def _short_notice_value(value: str, limit: int) -> str:
@@ -233,8 +243,9 @@ class VideoAnalysisTool:
                 "allow_remote": args.get("allow_remote", False),
                 "confirm_expensive": args.get("confirm_expensive", False)}
 
-    def _binding(self, args, *, source_data=None, actor=""):
-        retry_count = resolve_video_retry_count()
+    def _binding(self, args, *, source_data=None, actor="", retry_policy=None):
+        retry_count, empty_count = (retry_policy if retry_policy is not None else
+                                    (resolve_video_retry_count(), resolve_video_empty_retry_count()))
         scope = FileScope.from_env()
         kind, source, mime = _source(args["video_url"], scope)
         identities = describe_video_route_set()
@@ -256,17 +267,23 @@ class VideoAnalysisTool:
         material = {**args, "video_url": source_key}
         if retry_count:
             material = {**material, "_internal_video_retry_policy": "primary-once:v1"}
+        if empty_count:
+            material = {**material, "_internal_video_empty_policy": "consumer-once:v1"}
         cls = chain_class_binding(identities, material, tuple(map(str, scope.roots)))
-        return cls, identities
+        return cls, identities, (retry_count, empty_count)
 
     def classifier(self, args):
-        cls, identities = self._binding(args)
-        retry_count = resolve_video_retry_count()
-        if retry_count:
+        cls, identities, (retry_count, empty_count) = self._binding(args)
+        if retry_count or empty_count:
             legend = ("lm=LM Studio,oc=OpenAI-compatible,g=Gemini" if any(
                 identity.provider == "gemini" for identity in identities)
                 else "lm=LM Studio,oc=OpenAI-compatible")
-            prefix = f"Video primary retry once ({legend}): "
+            if retry_count and empty_count:
+                prefix = "Video full-chain empty restart once; primary transient retry once: "
+            elif empty_count:
+                prefix = "Video full-chain empty restart once: "
+            else:
+                prefix = f"Video primary retry once ({legend}): "
             per_lane = (200 - len(prefix) - 2 * (len(identities) - 1)) // len(identities)
             lanes = []
             for index, identity in enumerate(identities, 1):
@@ -380,8 +397,16 @@ class VideoAnalysisTool:
                                         if native_retryable_status(response.status_code):
                                             raise _TransientModelFailure("transient_http")
                                         raise VideoPolicyRefused("video model status refused")
-                                    answer = (gemini_video_answer(json.loads(result)) if identity.provider == "gemini"
-                                              else json.loads(result)["choices"][0]["message"]["content"])
+                                    parsed = json.loads(result)
+                                    if identity.provider == "gemini":
+                                        try:
+                                            answer = gemini_video_answer(parsed)
+                                        except VideoNativeEmpty:
+                                            raise _EmptyModelResponse from None
+                                    else:
+                                        answer = compatible_vision_answer(parsed)
+                                        if not answer and compatible_empty_success(parsed):
+                                            raise _EmptyModelResponse
                             except asyncio.CancelledError:
                                 request_timeout = attempt_timeout.expired()
                                 raise
@@ -422,12 +447,12 @@ class VideoAnalysisTool:
                     raise VideoPolicyRefused("video approval was revoked")
                 if self.kernel_check(args, task):
                     raise VideoPolicyRefused("video kernel denied the action")
-                cls, current = self._binding(args, actor=task.agent)
+                cls, current, retry_policy = self._binding(args, actor=task.agent)
                 if cls != task.payload.get("class"):
                     raise VideoPolicyRefused("video source or role changed after approval")
                 if loop.time() >= deadline:
                     raise VideoPolicyRefused("video execution deadline expired")
-                return current
+                return current, retry_policy
             except VideoPolicyRefused:
                 raise
             except Exception as exc:
@@ -435,12 +460,12 @@ class VideoAnalysisTool:
 
         try:
             async with asyncio.timeout_at(deadline):
-                identities = check()
+                identities, (retry_count, empty_count) = check()
                 scope = FileScope.from_env()
                 kind, source, mime = _source(args["video_url"], scope)
                 if kind == "file":
                     data = _read_scoped(source, scope)
-                    actual_class, _ = self._binding(args, source_data=data, actor=task.agent)
+                    actual_class, _, _ = self._binding(args, source_data=data, actor=task.agent)
                     if actual_class != task.payload.get("class"):
                         raise VideoPolicyRefused("video bytes changed after approval")
                 else:
@@ -452,40 +477,62 @@ class VideoAnalysisTool:
                           "Then answer the following question:\n\n" + args["question"])
                 if any(identity.provider == "gemini" for identity in identities):
                     gemini_video_body(prompt, data_url)
-                retry_count = resolve_video_retry_count()
                 failures = []
-                for route_index, identity in enumerate(identities):
-                    max_attempts = 1 + retry_count if route_index == 0 else 1
-                    for attempt in range(1, max_attempts + 1):
-                        check()
-                        try:
-                            answer = await self._attempt(identity, prompt, data_url, check)
-                        except _EligibleModelFailure as exc:
-                            failure = {"target_id": identity.target_id, "category": exc.category}
-                            if retry_count:
-                                failure["attempt"] = attempt
-                            failures.append(failure)
-                            transient = isinstance(exc, _TransientModelFailure)
-                            if transient and route_index == 0 and attempt < max_attempts:
-                                continue
-                            if exc.category == "transient_http":
-                                check()
-                                result = {"ok": False, "reason": "video_analysis_refused"}
-                                if retry_count:
-                                    result["attempts"] = failures
-                                return result
+                for consumer_call in range(1, 2 + empty_count):
+                    restart = False
+                    for route_index, identity in enumerate(identities):
+                        max_attempts = 1 + retry_count if route_index == 0 else 1
+                        for attempt in range(1, max_attempts + 1):
+                            check()
+                            try:
+                                answer = await self._attempt(identity, prompt, data_url, check)
+                            except _EmptyModelResponse:
+                                if not empty_count:
+                                    raise
+                                failures.append({"target_id": identity.target_id,
+                                                 "category": "empty_output",
+                                                 "consumer_call": consumer_call, "attempt": attempt})
+                                if consumer_call > empty_count:
+                                    check()
+                                    return {"ok": False, "reason": "video_analysis_refused",
+                                            "attempts": failures}
+                                restart = True
+                                break
+                            except _EligibleModelFailure as exc:
+                                failure = {"target_id": identity.target_id, "category": exc.category}
+                                if empty_count:
+                                    failure.update({"consumer_call": consumer_call, "attempt": attempt})
+                                elif retry_count:
+                                    failure["attempt"] = attempt
+                                failures.append(failure)
+                                transient = isinstance(exc, _TransientModelFailure)
+                                if transient and route_index == 0 and attempt < max_attempts:
+                                    continue
+                                if exc.category == "transient_http":
+                                    check()
+                                    result = {"ok": False, "reason": "video_analysis_refused"}
+                                    if retry_count or empty_count:
+                                        result["attempts"] = failures
+                                    return result
+                                break
+                            check()
+                            result = {"ok": True, "analysis": answer[:MAX_ANSWER_CHARS]}
+                            if retry_count or empty_count or len(identities) > 1:
+                                result.update({"attempts": failures, "chosen_route": identity.target_id,
+                                               "chosen_provider": identity.provider, "chosen_model": identity.model})
+                                if retry_count or empty_count:
+                                    result["chosen_attempt"] = attempt
+                                if empty_count:
+                                    result["chosen_call"] = consumer_call
+                            return result
+                        if restart:
                             break
-                        check()
-                        result = {"ok": True, "analysis": answer[:MAX_ANSWER_CHARS]}
-                        if retry_count or len(identities) > 1:
-                            result.update({"attempts": failures, "chosen_route": identity.target_id,
-                                           "chosen_provider": identity.provider, "chosen_model": identity.model})
-                            if retry_count:
-                                result["chosen_attempt"] = attempt
-                        return result
+                    if not restart:
+                        break
+                    check()
                 check()
                 result = {"ok": False, "reason": "video_analysis_refused"}
-                if retry_count or len(identities) > 1:
+                if retry_count or empty_count or len(identities) > 1:
                     result["attempts"] = failures
                 return result
         except Exception:

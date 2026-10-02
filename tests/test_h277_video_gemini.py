@@ -198,9 +198,8 @@ async def test_gemini_fallback_needs_its_own_consent(rig, monkeypatch):
 @pytest.mark.parametrize("malformed", [
     {"candidates": []},
     {"promptFeedback": {"blockReason": "SAFETY"}, "candidates": []},
-    {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "secret", "thought": True}]}}]},
 ])
-async def test_native_empty_blocked_or_thought_only_never_discloses_or_falls_back(rig, monkeypatch, malformed):
+async def test_native_malformed_or_blocked_never_discloses_or_falls_back(rig, monkeypatch, malformed):
     _local_gemini(monkeypatch)
     _grant(rig, monkeypatch)
     monkeypatch.setenv("JARVIS_ROLE_VIDEO_FALLBACKS", json.dumps([{

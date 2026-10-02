@@ -540,6 +540,35 @@ configuration until rebuilt. Role revocation reads its durable store at dispatch
 Neither mechanism recalls data already sent. Pure injected library adapters are
 not claimed to be universally mediated. See posture's current coverage statement.
 
+### `JARVIS_ROLE_VISION_EMPTY_RETRIES`
+
+**Default: 0.** Accepts only unset/ASCII-space blank/0 or 1; invalid, overlong,
+control-character and non-ASCII values refuse. At 1, an image-bearing call inside
+the governed native vision scope may send the same prepared image/question to the
+same model once more after a structurally valid empty successful response. This
+covers the composer (including acknowledged remote use), local describe, screen
+reflex, unattended media reader and camera descriptions. Unguarded/direct backend
+calls, ordinary text-only calls and injected library adapters gain no recovery.
+
+Enabled policy enters the frozen destination binding and unattended role scope.
+Changing it invalidates old composer destination confirmations and unknown/training
+role grants. Status exposes the extra call budget before the composer sends images;
+local panels and role notes retain the disclosure alongside privacy warnings.
+The existing remote acknowledgment still applies to the exact displayed binding.
+Default zero preserves legacy bindings and public/result shapes.
+
+The enabled path permits at most two native sends under one 180-second generation
+deadline, with the same model, prepared content, token cap and temperature. Existing
+shorter caller deadlines and cleanup checks remain authoritative. Each request gets
+fresh policy/consent checks, exact prepared-body validation and a one-send limit;
+the response closes before another request. Clients retain their existing owners.
+Responses are streamed with a 512,000-byte cap. Only one explicit stopped choice
+with blank/null content and no error/tool/refusal/meaningful reasoning output can
+trigger recovery. Malformed, blocked, truncated, oversized or failed responses,
+cancellation and content that merely becomes empty after thinking removal cannot.
+No provider switch, credential change, source download or transport retry is added.
+The setting is not proof of live model compatibility or broader Hermes parity.
+
 ### `JARVIS_ROLE_<NAME>_PROVIDER` · `_MODEL` · `_BASE_URL` (H277 model roles)
 
 **Default: unset** — every role behaves exactly as before. `agents/core/llm/model_roles.py`
@@ -660,17 +689,18 @@ model incompatibility, or owned transport timeout/connection failures. Body-base
 classification reads bounded structured error fields; a generic 400/403/5xx,
 malformed successful JSON or an empty answer does not select another provider.
 Neither source failures nor kernel, consent, request-integrity or cancellation
-failures permit fallback. SDK-specific credential/parameter recovery and
-empty-output retry remain outside this native HTTPX increment.
+failures permit fallback. SDK-specific credential/parameter recovery remains separate. Structurally valid
+empty results have the independently approved consumer-retry option below.
 
 `JARVIS_ROLE_VIDEO_TRANSIENT_RETRIES=1` permits **one additional primary attempt**
 after an owned typed connection/remote-protocol failure or a bounded HTTP 408/5xx
-response. It never retries a fallback candidate or an ordinary timeout; timeout
+response within each consumer call. It never transiently retries a fallback candidate or an ordinary timeout; timeout
 retains the existing approved fallback behavior. After retry exhaustion, connection
 failures may use that existing fallback, while generic HTTP 408/5xx refuses without
 switching provider. Auth/payment/rate/model failures use the existing fallback
 directly. Source, factory, hook, policy, consent, kernel, cancellation, cleanup,
-oversized-response and malformed/blocked/empty-success failures never retry.
+oversized-response and malformed/blocked/empty-success failures never use this
+transient retry. Valid empty results use only the separate option below.
 
 The setting accepts only `0` or `1` (unset/blank means `0`); surrounding ASCII
 spaces are normalized, controls/non-ASCII/overlong values refuse. Enabled policy is
@@ -681,6 +711,31 @@ reports failed attempts with a one-based `attempt` per route and, on success,
 chosen-route/provider/model plus `chosen_attempt`, including single-route calls.
 The retry reconstructs the body and client after cleanup and fresh authority checks,
 without fetching the source URL again. No backoff or SDK retry is hidden underneath.
+
+`JARVIS_ROLE_VIDEO_EMPTY_RETRIES=1` permits **one additional whole-chain call**
+after a structurally valid successful response has no visible analysis. It uses
+the same strict0/1 parser and is bound into the individual signed task approval;
+changing the setting invalidates pending execution. The approval notice describes
+both budgets when enabled. Default0 preserves existing class, notice and result
+formats. Each new call starts at the primary, including after an empty fallback;
+this does not advance to another fallback on an empty result.
+
+The existing transient budget applies independently within each call, for at most
+`2 * (route_count + primary_transient_budget)` native sends under the same180-second
+total deadline. Source bytes and question are prepared once; clients and bodies
+are fresh for each physical send. Full task/kernel/consent/route checks run before
+send and after cleanup. A second empty response refuses. Exhausted provider chains
+without valid empty output do not restart.
+
+Compatible empty classification requires one explicit `stop` choice, a present
+string/null content field, and no refusal/tool/function or meaningful reasoning
+output. Gemini requires one unblocked `STOP` candidate with valid text parts and
+no visible text. Malformed, missing/unknown finish, truncated or blocked responses
+never qualify. Existing nonempty reply behavior is preserved. Enabled provenance
+uses fixed `empty_output` failure category, `consumer_call` and per-route `attempt`;
+success includes `chosen_call`, `chosen_attempt` and selected route/provider/model.
+No provider body or credential enters that provenance. Image and other-adapter
+recovery and wider upstream output normalization remain separate work.
 
 One 180-second execution deadline includes source access, model attempts and
 cleanup. Each model attempt has a 65-second ceiling and a 60-second native HTTPX

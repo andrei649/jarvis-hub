@@ -150,3 +150,173 @@ one expected failure and64 warnings; the prior failed Git fixture run is preserv
 in the integration receipt. See [publication review](publication-review-2026-10-02.md)
 for the aggregate review and source normalization note. GitHub CI and merge status
 are reported separately on the integration PR.
+
+## Current local parameter recovery — 2026-10-02
+
+Base main cd2aa666 after PR1227 integration; source5f12b1b8 on
+`codex/h277-auxiliary-recovery-20261002`. The latest goal continuation keeps this
+batch local. Five nonstreaming LM Studio consumers now recover explicit
+temperature rejection on the same route, with one parameter repair and one
+existing unload retry, at most three sends. Initial temperature is preserved;
+repair deliberately omits it. Token caps, request scopes and output rules remain.
+Focused union612 passed including32 new cases; bounded independent review found
+no blocker. Full clean-snapshot validation passed on `3153217f3856beb3509ee30f995a243b3279cf1f`: 20569 passed,34 skipped and one expected failure; all4302 tracked regular files remained unchanged. The first failed full run and STT fixture correction are preserved in the [integration receipt](evidence/h277-auxiliary-parameter-integration-2026-10-02.json). Next: continue remaining H277 recovery/discovery requirements against the pinned reference. See the
+[implementation report](h277-auxiliary-parameter-2026-10-02.md).
+
+Exactly10 previously-current rows were inspected and refreshed; H681 remains
+stale because its orchestrator/coordinator pins were already mismatched at the
+base. The original207 stale rows and all capability statuses remain unchanged.
+No live provider, deployment or remote publication is part of this new batch.
+
+
+## Current local video empty recovery — 2026-10-02
+
+Base `afcc652dcc0f5e0caa6ea8b826fb748848abac41`; runtime
+`45d76bbef62cb347b19d8a89ee68988db74476bc`, branch
+`codex/h277-video-empty-retry-20261002`. Opt-in valid-empty recovery restarts the
+whole approved video chain once, including from a fallback empty, with a signed
+budget and fresh authority on each send. Prepared source/question and total
+180-second deadline stay fixed. Existing nonempty behavior and default-zero
+contracts remain. See the [implementation report](h277-video-empty-retry-2026-10-02.md)
+and [frozen source review](h277-video-empty-source-review-2026-10-02.md).
+
+Full backend on clean `a2ddbbb251175aa6d5bd17debe9440c9c518b253`:
+**20,630 passed, 34 skipped, one expected failure**, with 64 warnings. All 4,306
+tracked regular files and HEAD stayed unchanged. Parent-focused regression:
+647 passed, including 61 new cases; record/doc guards: 92 passed. Exact runtime
+mutation campaign: 12 valid, 10 killed, two redundant-guard survivors, zero invalid;
+both 500-test baselines passed and all archive file hashes were restored. The
+compound removal of both bounds was caught. Pure codec and provenance mutations
+are identified separately in the [mutation report](evidence/h277-video-empty-mutations-2026-10-02.md).
+The [integration receipt](evidence/h277-video-empty-integration-2026-10-02.json)
+preserves commands, source hashes, per-case edits/results and artifact hashes;
+the replayable mutation runner is saved beside the report.
+
+Only previously-current H277/H513 were reevaluated and refreshed, with no status
+changes. Counts remain 172 equivalent, 254 partial, 64 missing and 207 requiring
+review. No frontend source/schema change, live provider/device proof or coverage
+percentage is claimed. The inherited Gemini behavior that ignores malformed
+thought parts beside a visible answer remains separate output-normalization work.
+
+Next action: design the bounded image valid-empty increment from the
+[source investigation](h277-image-empty-investigation-2026-10-02.md), resolving
+interactive/remote/unattended budget and authority differences before modifying
+shared VLM behavior. Continue the full accepted Hermes backlog; this milestone
+does not complete H277. All new commits remain local; canonical main remains at
+cd2aa666. Prior published GitHub Windows CI was still in progress at the last check
+and is not implied green by this local run.
+
+## Current local image empty recovery — 2026-10-02
+
+Goal remains complete local Hermes parity. Base `9313fe0c9b2d918579b0dda64f11fad59bedc9c2`;
+runtime `a6a2388f037d130ec0a5bc06a5d9a3f49cf5a9ef`; additional behavioral tests
+`931b6626017146ffa31ece8f2bc9b5b7865d59a7`; full verified head
+`47ffd68f55c01fa3b45ba596ed94c0a9cb5b81ce`. Branch:
+`codex/h277-image-empty-retry-20261002`. Generated 2026-10-02.
+
+Opt-in image empty recovery now covers the five governed native consumers with
+same prepared images/model, at most two sends, a shared deadline, fresh authority
+and exact-body/final-hook checks. Changing the enabled budget invalidates composer
+consent bindings and unattended grants. CLI and HUD disclose the second-call budget;
+legacy default-zero shapes remain. Changed paths are the vision policy/backend,
+new retry/shared predicate helpers, the video's predicate import, CLI/composer/local
+panels, their tests, regenerated web assets and config/evidence documentation.
+See the [implementation report](h277-image-empty-retry-2026-10-02.md) and
+[source review](h277-image-empty-source-review-2026-10-02.md).
+
+Full backend: **20,686 passed, 34 skipped, one expected failure**, 64 warnings;
+HEAD and all 4,318 tracked regular files unchanged. Full frontend: **1,847 passed**;
+typecheck, E2E TypeScript compilation and production build passed. Browser E2E was
+not executed. Parent backend union582 and CLI117 passed; two additional scope-edge
+tests passed; records/doc guards92 passed. This batch adds56 backend test cases and
+nine frontend cases. Tracked test counts20721/1847 match those result artifacts.
+
+The original mutation campaign on the runtime commit retains its honest result:
+10 valid, five killed and five survived. Three overlapping cap controls and an
+independent H513 scope explain redundant survivors; one uncovered final-hook-order
+case prompted a new test. A separate test also covers governed text-only calls.
+Both corresponding supplemental mutations were killed on the added-test commit.
+Original baselines421/421 and supplemental42/42 passed; every archived source hash
+was restored. See [original campaign](evidence/h277-image-empty-mutations-2026-10-02.md),
+[supplement](evidence/h277-image-empty-mutations-supplement-2026-10-02.md), and the
+[integration receipt](evidence/h277-image-empty-integration-2026-10-02.json).
+
+Only31 previously-current evidence rows were reviewed/refreshed; no capability
+status was promoted. Counts remain172 equivalent,254 partial,64 missing,207 requiring
+review. No live-provider/device result or coverage percentage is claimed. All new
+commits remain local; canonical main remains cd2aa666. No push, merge or deployment
+in this increment, and no new GitHub CI claim.
+
+Next action: formalize the bounded response-normalization contract from the
+[new source investigation](h277-output-normalization-investigation-2026-10-02.md),
+then implement/test it under the same authority boundary. Preserve current retry
+behavior and evidence; continue the accepted backlog. H277 and the overall goal
+are not complete.
+
+## Current local native normalization — 2026-10-02
+
+Goal remains full local Hermes parity. Base
+`173a5a840f8bff27b2ef41a474837ec73e44f18c`; source
+`74cc7130dee0408cddf026bfb7a004726f0c9c93`; full verified head
+`f58948f189b86c21d6f0c60f0102c3c6ab38bb6b`. Branch:
+`codex/h277-vision-normalization-20261002`. Generated 2026-10-02.
+
+Native image and signed compatible/Gemini video now prefer normalized visible
+text and otherwise use typed reasoning, following the pinned extraction order.
+Gemini joins raw fragments before filtering; useful thought-only text returns in
+one call. Explicit error envelopes, malformed mixed parts and blocked outputs
+remain terminal. This supersedes earlier deliberate preservation of nonempty
+Gemini thought-part permissiveness. No transport, authority, route, credential,
+retry budget or schema change. Changed files are the shared native-response helper,
+VLM/video parsers/dispatch, their actual consumer tests and relevant documentation.
+See the [implementation report](h277-vision-normalization-2026-10-02.md).
+
+Final backend on the clean recorded head: **20,739 passed, 34 skipped, one expected
+failure**,64 warnings; all4,329 tracked regular files and HEAD unchanged. The
+tracked20,774 total matches JUnit and increases by53 net cases over the preceding
+image batch. Parent integration696 passed; record/doc guards92 passed. The first
+integration failure was one obsolete thought-only refusal expectation, corrected
+to verify useful output and one send; that failed receipt is retained. Frontend,
+schema and generated assets are unchanged from the prior1847-test verified image
+snapshot; no redundant frontend run or browser E2E claim.
+
+Exact source mutation campaign: **8 valid,8 killed,0 survived,0 invalid**, all
+assertion failures rather than collection/runtime errors. Baseline/final504/504
+passed; every archived source hash restored. See the
+[mutation report](evidence/h277-vision-normalization-mutations-2026-10-02.md) and
+[integration receipt](evidence/h277-vision-normalization-integration-2026-10-02.json).
+Two Sol High writers handled distinct compatible and Gemini paths; coordinator
+review corrected contract details and an image test that initially only set a flag
+without entering its governed request scope. Final tests exercise the actual scope.
+
+H277 remains partial; only previously-current H277/H513/H586 were refreshed after
+complete base-pin and source review. H139 remains inherited-stale. Counts remain172
+equivalent,254 partial,64 missing,207 requiring review. Live-provider/device proof,
+SDK/non-native breadth, discovery/credential recovery and larger uploads remain.
+No push, merge or deploy; canonical main remains cd2aa666.
+
+Next action: design real-consumer auxiliary provider discovery from the
+[pinned source investigation](h277-discovery-investigation-2026-10-02.md).
+Upstream text routing refuses discovery when a concrete selected main provider is
+unavailable; vision separately permits its dedicated aggregator fallback. Do not
+apply the text-only gate to vision or scan arbitrary logged-in accounts. Resolve
+and disclose candidates before approval, preserve local-only task policy and key
+host scoping, and retain every missing capability in the overall objective.
+
+
+## Owner-authorized publication — 2026-10-02
+
+The owner now explicitly requests evaluation, repair/closure and merge of open
+PRs, then continuation of the Nerva backlog. This supersedes earlier local-only
+publication restrictions for this work; deployment remains outside this request.
+Live GitHub inspection found zero open PRs: #1207, #1226 and #1227 are merged.
+The current candidate integrates the fourteen local H277 reliability commits over
+`cd2aa666ed0a690e9bf9138747b95c15ffe9ee37`, preserving their implementation and test
+history. Goal: publish and merge the verified reliability checkpoint, then resume
+provider discovery. Non-goals: claiming full H277/Hermes parity or live-provider
+proof. Paths: existing auxiliary/image/video source, tests, generated HUD assets
+and evidence documents. Verify full backend/frontend suites, type checks,
+production build, status/reference gates and secret scan; wait for GitHub checks
+on the published candidate before merging. Rollback: revert the integration PR.
+Next action: inspect review findings and current CI, then continue discovery with
+distinct text/vision rules and server-owned request context.

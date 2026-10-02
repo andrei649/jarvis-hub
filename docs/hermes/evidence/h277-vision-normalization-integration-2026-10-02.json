@@ -1,0 +1,687 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-02T04:32:50.440820+00:00",
+  "base_commit": "173a5a840f8bff27b2ef41a474837ec73e44f18c",
+  "runtime_commit": "74cc7130dee0408cddf026bfb7a004726f0c9c93",
+  "full_backend_snapshot": {
+    "head": "f58948f189b86c21d6f0c60f0102c3c6ab38bb6b",
+    "head_after": "f58948f189b86c21d6f0c60f0102c3c6ab38bb6b",
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests/",
+      "-n",
+      "4",
+      "--dist",
+      "loadfile",
+      "--timeout=90",
+      "--junitxml=/tmp/nerva-vision-normalization-full-20261002.xml"
+    ],
+    "returncode": 0,
+    "seconds": 225.26431554206647,
+    "changed_tracked_files": [],
+    "git_status_after": "",
+    "tracked_regular_files": 4329,
+    "fingerprint": "907848b007dfe0e65dc3df1356b50ec87ad0dfdc40acd1f895d363ded8281ad2"
+  },
+  "selected_source_sha256": {
+    "agents/core/llm/native_response.py": "109fb7517622bcef381844709c8fea2572c079f6f4c73872b3edf1a730f2940b",
+    "agents/core/llm/video_native.py": "5bd02cd44db9d51d571a4b17e73bbe802e7b3fcc8a21f6dae4c8f47e826b8f6e",
+    "agents/core/llm/vlm.py": "6dffe35c7528813381ceef30f113bef98309cf2e6d4e00a97c1d678282ebd78d",
+    "agents/core/video_analysis.py": "d96fd5ea6dfd5bbafa9c0c34c9b8ae2d61fce99dd4ed9ec550008e32c2e9747e",
+    "tests/test_h277_vision_normalization.py": "11adb95c6b109685ffc614704e99c8a444ebdc99629102e498fad64809ec40a1",
+    "tests/test_h277_gemini_normalization.py": "838d7827e98f9c6cbed9bda120aff8da2ffb6e4abd6554d532725caf90db4823",
+    "tests/test_h277_video_empty_retry.py": "d3a956348e9b91c15a3dd784c4953df17fe5ddeeb73fbfe43bd44f6f1040d366",
+    "tests/test_h277_video_retry.py": "002e52de543d9aa2e7250a1ed1ec8f4b0da534bd23adf37cf0c5a537dd084f0e"
+  },
+  "verification": {
+    "full_backend": {
+      "artifact": "/tmp/nerva-vision-normalization-full-20261002.xml",
+      "sha256": "1b1e9901d6101f823140f3e66ce614946c814d44a4853ecd26539906b892ad1c",
+      "total": 20774,
+      "passed": 20739,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 34,
+      "xfailed": 1
+    },
+    "integrated": {
+      "artifact": "/tmp/nerva-vision-normalization-parent-focused-final-20261002.xml",
+      "sha256": "5dd5b31f68d187ab092c172b96fc292dc80b36c7cb7c5424caddbe4fdc55f616",
+      "total": 696,
+      "passed": 696,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "records": {
+      "artifact": "/tmp/nerva-vision-normalization-records-20261002.xml",
+      "sha256": "d16524e691c265eeaf3910da31031b75bc8a00260f09cd071c2545d5b0af2846",
+      "total": 92,
+      "passed": 92,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "compatible_writer": {
+      "artifact": "/tmp/nerva-vision-compatible-focused-freeze-20261002.xml",
+      "sha256": "fdeddae713446af1d16c76ac4c8583c6f5c0a01b4ead7d9ef2f2d2e7dd685ae3",
+      "total": 295,
+      "passed": 295,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "mutation_baseline": {
+      "artifact": "/tmp/nerva-vision-normalization-mutations-20261002/baseline.xml",
+      "sha256": "783ea6bdd58081789bb791acb6c6e974dea1aca893e6dd0b9254c44763546887",
+      "total": 504,
+      "passed": 504,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "mutation_final": {
+      "artifact": "/tmp/nerva-vision-normalization-mutations-20261002/final_baseline.xml",
+      "sha256": "8daba651e3edd87670cf75d1cd2f5917248e3e0ed3b93adac6739d73ec4bb1b3",
+      "total": 504,
+      "passed": 504,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    }
+  },
+  "red_first": {
+    "parent": {
+      "artifact": "/tmp/nerva-vision-normalization-parent-red-20261002.xml",
+      "sha256": "78d42482d39cbb94178fd964d78756a976d37ed99c40eb6d7bab9e6b52a2126a",
+      "total": 2,
+      "passed": 0,
+      "failed": 2,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "compatible": {
+      "artifact": "/tmp/nerva-vision-compatible-red-20261002.xml",
+      "sha256": "f1580868f898ac6c4a38ed672bc4d1cee7ea4185b5bf8eec6427219612f7f138",
+      "total": 31,
+      "passed": 4,
+      "failed": 27,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "compatible_contract_corrections": {
+      "artifact": "/tmp/nerva-vision-compatible-corrections-red-20261002.xml",
+      "sha256": "562c853c3fb7e46deebaeaad26296e7bc518951d43fa42f4cd51b88cab75f31c",
+      "total": 36,
+      "passed": 29,
+      "failed": 7,
+      "errors": 0,
+      "skipped": 0,
+      "xfailed": 0
+    }
+  },
+  "first_integration": {
+    "artifact": "/tmp/nerva-vision-normalization-parent-focused-20261002.xml",
+    "sha256": "a631f7580d23df5478ad2e83186a94a77160d1f7ffb1372615553cf4d1b2d759",
+    "total": 696,
+    "passed": 695,
+    "failed": 1,
+    "errors": 0,
+    "skipped": 0,
+    "xfailed": 0
+  },
+  "first_integration_correction": "One preexisting transient-retry case classified useful Gemini thought text as failure. Updated expected answer and retained exact one-primary-send assertion; no runtime change was needed.",
+  "mutations": {
+    "summary": {
+      "baseline_tests": 504,
+      "cases": 8,
+      "commit": "74cc7130dee0408cddf026bfb7a004726f0c9c93",
+      "final_green": true,
+      "final_source_restored": true,
+      "final_tests": 504,
+      "invalid": 0,
+      "killed": 8,
+      "survived": 0
+    },
+    "cases": [
+      {
+        "diff": "/tmp/nerva-vision-normalization-mutations-20261002/01_visible_precedence.diff",
+        "edits": [
+          {
+            "anchor": "    if visible:\n        return visible\n",
+            "anchor_count": 1,
+            "file": "agents/core/llm/native_response.py",
+            "replacement": "    if False:\n        return visible\n"
+          }
+        ],
+        "files": [
+          "agents/core/llm/native_response.py"
+        ],
+        "id": "01_visible_precedence",
+        "intent": "Let structured reasoning displace valid visible text.",
+        "mutant_sha256_by_file": {
+          "agents/core/llm/native_response.py": "07e955467798c030fb3c399bedfe4c26321b9fe2ae5bcb6a6fbe28bab1569511"
+        },
+        "original_sha256_by_file": {
+          "agents/core/llm/native_response.py": "109fb7517622bcef381844709c8fea2572c079f6f4c73872b3edf1a730f2940b"
+        },
+        "restored": true,
+        "restored_sha256_by_file": {
+          "agents/core/llm/native_response.py": "109fb7517622bcef381844709c8fea2572c079f6f4c73872b3edf1a730f2940b"
+        },
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_vision_normalization.py::test_image_visible_text_wins_and_thinking_is_hidden",
+            "tests/test_h277_vision_normalization.py::test_video_visible_text_wins_and_thinking_is_hidden",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-vision-normalization-mutations-20261002/01_visible_precedence.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-vision-normalization-6m3xshp3",
+          "duration_seconds": 2.304,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_vision_normalization::test_image_visible_text_wins_and_thinking_is_hidden[False]",
+            "tests.test_h277_vision_normalization::test_image_visible_text_wins_and_thinking_is_hidden[True]",
+            "tests.test_h277_vision_normalization::test_video_visible_text_wins_and_thinking_is_hidden"
+          ],
+          "failures": 3,
+          "junit": "/tmp/nerva-vision-normalization-mutations-20261002/01_visible_precedence.xml",
+          "log": "/tmp/nerva-vision-normalization-mutations-20261002/01_visible_precedence.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 3,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-vision-normalization-mutations-20261002/02_error_envelope_rejection.diff",
+        "edits": [
+          {
+            "anchor": "    if not isinstance(payload, dict) or \"error\" in payload:\n        raise ValueError(\"invalid compatible vision response\")\n",
+            "anchor_count": 1,
+            "file": "agents/core/llm/native_response.py",
+            "replacement": "    if not isinstance(payload, dict):\n        raise ValueError(\"invalid compatible vision response\")\n"
+          }
+        ],
+        "files": [
+          "agents/core/llm/native_response.py"
+        ],
+        "id": "02_error_envelope_rejection",
+        "intent": "Allow a top-level error envelope to accompany publishable compatible text.",
+        "mutant_sha256_by_file": {
+          "agents/core/llm/native_response.py": "d8c037745ad50764037e35cc286fc673a1e9987160fac0e1e8e2eeebd71c27a4"
+        },
+        "original_sha256_by_file": {
+          "agents/core/llm/native_response.py": "109fb7517622bcef381844709c8fea2572c079f6f4c73872b3edf1a730f2940b"
+        },
+        "restored": true,
+        "restored_sha256_by_file": {
+          "agents/core/llm/native_response.py": "109fb7517622bcef381844709c8fea2572c079f6f4c73872b3edf1a730f2940b"
+        },
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_vision_normalization.py::test_image_rejects_mixed_invalid_reply_without_serialization",
+            "tests/test_h277_vision_normalization.py::test_video_rejects_mixed_invalid_reply_without_extra_send",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-vision-normalization-mutations-20261002/02_error_envelope_rejection.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-vision-normalization-6m3xshp3",
+          "duration_seconds": 2.473,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_vision_normalization::test_image_rejects_mixed_invalid_reply_without_serialization[payload0]",
+            "tests.test_h277_vision_normalization::test_video_rejects_mixed_invalid_reply_without_extra_send[payload0]"
+          ],
+          "failures": 2,
+          "junit": "/tmp/nerva-vision-normalization-mutations-20261002/02_error_envelope_rejection.xml",
+          "log": "/tmp/nerva-vision-normalization-mutations-20261002/02_error_envelope_rejection.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 18,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-vision-normalization-mutations-20261002/03_reasoning_detail_priority.diff",
+        "edits": [
+          {
+            "anchor": "                for key in (\"summary\", \"content\", \"text\"):\n",
+            "anchor_count": 1,
+            "file": "agents/core/llm/native_response.py",
+            "replacement": "                for key in (\"text\", \"content\", \"summary\"):\n"
+          }
+        ],
+        "files": [
+          "agents/core/llm/native_response.py"
+        ],
+        "id": "03_reasoning_detail_priority",
+        "intent": "Prefer lower-priority detail text over summary/content.",
+        "mutant_sha256_by_file": {
+          "agents/core/llm/native_response.py": "4cfe43b081b5245cc5a4b1a3923fe71944d565abe8c48ed18196dccd6b99370d"
+        },
+        "original_sha256_by_file": {
+          "agents/core/llm/native_response.py": "109fb7517622bcef381844709c8fea2572c079f6f4c73872b3edf1a730f2940b"
+        },
+        "restored": true,
+        "restored_sha256_by_file": {
+          "agents/core/llm/native_response.py": "109fb7517622bcef381844709c8fea2572c079f6f4c73872b3edf1a730f2940b"
+        },
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_vision_normalization.py::test_image_uses_structured_reasoning_without_extra_send",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-vision-normalization-mutations-20261002/03_reasoning_detail_priority.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-vision-normalization-6m3xshp3",
+          "duration_seconds": 1.966,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_vision_normalization::test_image_uses_structured_reasoning_without_extra_send[message5-Top summary\\n\\nContent fallback]"
+          ],
+          "failures": 1,
+          "junit": "/tmp/nerva-vision-normalization-mutations-20261002/03_reasoning_detail_priority.xml",
+          "log": "/tmp/nerva-vision-normalization-mutations-20261002/03_reasoning_detail_priority.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 6,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-vision-normalization-mutations-20261002/04_reasoning_deduplication.diff",
+        "edits": [
+          {
+            "anchor": "        if cleaned and cleaned not in seen:\n",
+            "anchor_count": 1,
+            "file": "agents/core/llm/native_response.py",
+            "replacement": "        if cleaned:\n"
+          }
+        ],
+        "files": [
+          "agents/core/llm/native_response.py"
+        ],
+        "id": "04_reasoning_deduplication",
+        "intent": "Publish repeated normalized reasoning pieces more than once.",
+        "mutant_sha256_by_file": {
+          "agents/core/llm/native_response.py": "667032c7b953e822f8d77b8552d5910598987389e8b34db6613f87a425c688d1"
+        },
+        "original_sha256_by_file": {
+          "agents/core/llm/native_response.py": "109fb7517622bcef381844709c8fea2572c079f6f4c73872b3edf1a730f2940b"
+        },
+        "restored": true,
+        "restored_sha256_by_file": {
+          "agents/core/llm/native_response.py": "109fb7517622bcef381844709c8fea2572c079f6f4c73872b3edf1a730f2940b"
+        },
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_vision_normalization.py::test_image_uses_structured_reasoning_without_extra_send",
+            "tests/test_h277_vision_normalization.py::test_video_uses_reasoning_without_extra_send",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-vision-normalization-mutations-20261002/04_reasoning_deduplication.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-vision-normalization-6m3xshp3",
+          "duration_seconds": 2.04,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_vision_normalization::test_image_uses_structured_reasoning_without_extra_send[message4-A\\n\\nB\\n\\nC]",
+            "tests.test_h277_vision_normalization::test_video_uses_reasoning_without_extra_send[message3-One\\n\\nTwo]"
+          ],
+          "failures": 2,
+          "junit": "/tmp/nerva-vision-normalization-mutations-20261002/04_reasoning_deduplication.xml",
+          "log": "/tmp/nerva-vision-normalization-mutations-20261002/04_reasoning_deduplication.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 10,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-vision-normalization-mutations-20261002/05_governed_image_dispatch.diff",
+        "edits": [
+          {
+            "anchor": "                    if attempt == 0 and compatible_empty_success(data):\n                        continue\n                    return compatible_vision_answer(data)\n",
+            "anchor_count": 1,
+            "file": "agents/core/llm/vlm.py",
+            "replacement": "                    if attempt == 0 and compatible_empty_success(data):\n                        continue\n                    return data[\"choices\"][0][\"message\"].get(\"content\", \"\") or \"\"\n"
+          }
+        ],
+        "files": [
+          "agents/core/llm/vlm.py"
+        ],
+        "id": "05_governed_image_dispatch",
+        "intent": "Bypass the shared normalizer in enabled governed image dispatch.",
+        "mutant_sha256_by_file": {
+          "agents/core/llm/vlm.py": "3af3a7ab20bab3f8cb9314238f5b8e5ffa22072b74911b0ba199372905b1b364"
+        },
+        "original_sha256_by_file": {
+          "agents/core/llm/vlm.py": "6dffe35c7528813381ceef30f113bef98309cf2e6d4e00a97c1d678282ebd78d"
+        },
+        "restored": true,
+        "restored_sha256_by_file": {
+          "agents/core/llm/vlm.py": "6dffe35c7528813381ceef30f113bef98309cf2e6d4e00a97c1d678282ebd78d"
+        },
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_vision_normalization.py::test_image_uses_structured_reasoning_without_extra_send",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-vision-normalization-mutations-20261002/05_governed_image_dispatch.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-vision-normalization-6m3xshp3",
+          "duration_seconds": 1.821,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_vision_normalization::test_image_uses_structured_reasoning_without_extra_send[message0-First insight.]",
+            "tests.test_h277_vision_normalization::test_image_uses_structured_reasoning_without_extra_send[message1-Second insight.]",
+            "tests.test_h277_vision_normalization::test_image_uses_structured_reasoning_without_extra_send[message2-Detail insight.]",
+            "tests.test_h277_vision_normalization::test_image_uses_structured_reasoning_without_extra_send[message3-Structured answer.]",
+            "tests.test_h277_vision_normalization::test_image_uses_structured_reasoning_without_extra_send[message4-A\\n\\nB\\n\\nC]",
+            "tests.test_h277_vision_normalization::test_image_uses_structured_reasoning_without_extra_send[message5-Top summary\\n\\nContent fallback]"
+          ],
+          "failures": 6,
+          "junit": "/tmp/nerva-vision-normalization-mutations-20261002/05_governed_image_dispatch.xml",
+          "log": "/tmp/nerva-vision-normalization-mutations-20261002/05_governed_image_dispatch.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 6,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-vision-normalization-mutations-20261002/06_compatible_video_dispatch.diff",
+        "edits": [
+          {
+            "anchor": "                                        answer = compatible_vision_answer(parsed)\n",
+            "anchor_count": 1,
+            "file": "agents/core/video_analysis.py",
+            "replacement": "                                        answer = parsed[\"choices\"][0][\"message\"].get(\"content\", \"\") or \"\"\n"
+          }
+        ],
+        "files": [
+          "agents/core/video_analysis.py"
+        ],
+        "id": "06_compatible_video_dispatch",
+        "intent": "Bypass the shared normalizer in signed compatible video dispatch.",
+        "mutant_sha256_by_file": {
+          "agents/core/video_analysis.py": "3a58b6f6aed84945344b53189bff034b9f9459c976ae7efce4c68d665e63fbf4"
+        },
+        "original_sha256_by_file": {
+          "agents/core/video_analysis.py": "d96fd5ea6dfd5bbafa9c0c34c9b8ae2d61fce99dd4ed9ec550008e32c2e9747e"
+        },
+        "restored": true,
+        "restored_sha256_by_file": {
+          "agents/core/video_analysis.py": "d96fd5ea6dfd5bbafa9c0c34c9b8ae2d61fce99dd4ed9ec550008e32c2e9747e"
+        },
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_vision_normalization.py::test_video_uses_reasoning_without_extra_send",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-vision-normalization-mutations-20261002/06_compatible_video_dispatch.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-vision-normalization-6m3xshp3",
+          "duration_seconds": 2.013,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_vision_normalization::test_video_uses_reasoning_without_extra_send[message0-Reasoned answer.]",
+            "tests.test_h277_vision_normalization::test_video_uses_reasoning_without_extra_send[message1-Content answer.]",
+            "tests.test_h277_vision_normalization::test_video_uses_reasoning_without_extra_send[message2-Detail answer.]",
+            "tests.test_h277_vision_normalization::test_video_uses_reasoning_without_extra_send[message3-One\\n\\nTwo]"
+          ],
+          "failures": 4,
+          "junit": "/tmp/nerva-vision-normalization-mutations-20261002/06_compatible_video_dispatch.xml",
+          "log": "/tmp/nerva-vision-normalization-mutations-20261002/06_compatible_video_dispatch.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 4,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-vision-normalization-mutations-20261002/07_gemini_raw_part_concatenation.diff",
+        "edits": [
+          {
+            "anchor": "    thought = normalized_vision_text(\"\".join(thoughts))\n",
+            "anchor_count": 1,
+            "file": "agents/core/llm/video_native.py",
+            "replacement": "    thought = normalized_vision_text(\" \".join(thoughts))\n"
+          }
+        ],
+        "files": [
+          "agents/core/llm/video_native.py"
+        ],
+        "id": "07_gemini_raw_part_concatenation",
+        "intent": "Insert separators between raw Gemini thought fragments before normalization.",
+        "mutant_sha256_by_file": {
+          "agents/core/llm/video_native.py": "d11678aeb4a3d7c9b90d85c316a34a2a95709f321182f624be2e5652203d5e9c"
+        },
+        "original_sha256_by_file": {
+          "agents/core/llm/video_native.py": "5bd02cd44db9d51d571a4b17e73bbe802e7b3fcc8a21f6dae4c8f47e826b8f6e"
+        },
+        "restored": true,
+        "restored_sha256_by_file": {
+          "agents/core/llm/video_native.py": "5bd02cd44db9d51d571a4b17e73bbe802e7b3fcc8a21f6dae4c8f47e826b8f6e"
+        },
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_gemini_normalization.py::test_native_thought_text_supplies_answer_only_when_visible_is_blank",
+            "tests/test_h277_gemini_normalization.py::test_native_thought_fragments_form_one_thinking_tag_before_filtering",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-vision-normalization-mutations-20261002/07_gemini_raw_part_concatenation.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-vision-normalization-6m3xshp3",
+          "duration_seconds": 1.748,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_gemini_normalization::test_native_thought_text_supplies_answer_only_when_visible_is_blank",
+            "tests.test_h277_gemini_normalization::test_native_thought_fragments_form_one_thinking_tag_before_filtering"
+          ],
+          "failures": 2,
+          "junit": "/tmp/nerva-vision-normalization-mutations-20261002/07_gemini_raw_part_concatenation.xml",
+          "log": "/tmp/nerva-vision-normalization-mutations-20261002/07_gemini_raw_part_concatenation.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 2,
+          "timed_out": false
+        }
+      },
+      {
+        "diff": "/tmp/nerva-vision-normalization-mutations-20261002/08_inline_thought_only_terminal.diff",
+        "edits": [
+          {
+            "anchor": "    if raw_visible.strip():\n        raise VideoNativeRefused(\"video_native_response_invalid\")\n",
+            "anchor_count": 1,
+            "file": "agents/core/llm/video_native.py",
+            "replacement": "    if False:\n        raise VideoNativeRefused(\"video_native_response_invalid\")\n"
+          }
+        ],
+        "files": [
+          "agents/core/llm/video_native.py"
+        ],
+        "id": "08_inline_thought_only_terminal",
+        "intent": "Misclassify raw nonblank inline-thought-only visible content as retryable typed empty.",
+        "mutant_sha256_by_file": {
+          "agents/core/llm/video_native.py": "a56696831edeb4d8a52119d074dda568952f856761088cc356e64baf86152ecc"
+        },
+        "original_sha256_by_file": {
+          "agents/core/llm/video_native.py": "5bd02cd44db9d51d571a4b17e73bbe802e7b3fcc8a21f6dae4c8f47e826b8f6e"
+        },
+        "restored": true,
+        "restored_sha256_by_file": {
+          "agents/core/llm/video_native.py": "5bd02cd44db9d51d571a4b17e73bbe802e7b3fcc8a21f6dae4c8f47e826b8f6e"
+        },
+        "status": "KILLED",
+        "test": {
+          "command": [
+            "/tmp/nerva-pr-python-20261001/bin/python",
+            "-m",
+            "pytest",
+            "tests/test_h277_gemini_normalization.py::test_native_nonblank_inline_thinking_without_answer_is_terminal",
+            "tests/test_h277_gemini_normalization.py::test_signed_native_invalid_output_never_uses_approved_fallback",
+            "-p",
+            "no:cacheprovider",
+            "--tb=short",
+            "--junitxml=/tmp/nerva-vision-normalization-mutations-20261002/08_inline_thought_only_terminal.xml"
+          ],
+          "cwd": "/private/tmp/nerva-h277-vision-normalization-6m3xshp3",
+          "duration_seconds": 1.931,
+          "errors": 0,
+          "failed_tests": [
+            "tests.test_h277_gemini_normalization::test_native_nonblank_inline_thinking_without_answer_is_terminal",
+            "tests.test_h277_gemini_normalization::test_signed_native_invalid_output_never_uses_approved_fallback[parts1]"
+          ],
+          "failures": 2,
+          "junit": "/tmp/nerva-vision-normalization-mutations-20261002/08_inline_thought_only_terminal.xml",
+          "log": "/tmp/nerva-vision-normalization-mutations-20261002/08_inline_thought_only_terminal.log",
+          "returncode": 1,
+          "skipped": 0,
+          "tests": 3,
+          "timed_out": false
+        }
+      }
+    ],
+    "artifact_sha256": {
+      "summary.json": "127a665f98b6f43711bcbeef46372069ee5da46c79957922f7600fdc57fc250d",
+      "02_error_envelope_rejection.diff": "5caa7e01e3d5fd785c8200412c4b9a50a473bf3991c292daff03956e379d809a",
+      "07_gemini_raw_part_concatenation.log": "554bab60a4d78bf2ac961d7d3318789c34ee1dff9f84423978b61bd101ccf485",
+      "06_compatible_video_dispatch.log": "0e4441fb6a0860b2ae030b2ac59057d066a007d6e066645a1d601290b06472b5",
+      "04_reasoning_deduplication.diff": "773caa0f170274a27e1ed2cde34403e7f7b0d07940ce9e6d3d2a69e5462f4c9f",
+      "08_inline_thought_only_terminal.diff": "e5db1de46cce80ea7019f6830cac2d29fcecc6dde272c68ec6725d4491b9d8ce",
+      "final_baseline.log": "d3b5bec295d161453d5eebe8872acdb387969b9c551d22e48a5594dca8dc74cf",
+      "source_manifest.json": "417f59a005b16b36dc61a525461a99a32b71673087bbe2a314f432cdbe4a03a0",
+      "03_reasoning_detail_priority.log": "80a6918259db24074a07350dc37ed4d8fb1c28dfc8bd5de1af3a803c9d59e7bd",
+      "08_inline_thought_only_terminal.log": "6392f1b749f3c2c5e4179c31adbf051480913455e535893eb1dd5d94ed58b0b2",
+      "report.md": "dceeac12893d9c189e8a6a480f5d2ca2505d0d1b0d4f45bc5f2148ff368b317f",
+      "baseline.xml": "783ea6bdd58081789bb791acb6c6e974dea1aca893e6dd0b9254c44763546887",
+      "06_compatible_video_dispatch.diff": "8fd7f27747e202e8d17a4a9c5361652ad3866e96525baf2e8e12d251ee521263",
+      "01_visible_precedence.xml": "f2cea8df4e0301e69bb420bd3926c0412b1299c2c0c9244b457f9fd33a9ba190",
+      "05_governed_image_dispatch.log": "be6d762d3f07c0422747d3d5b5f27c15ba045afc5b5384330f1311e04a8ccd6b",
+      "results.json": "028dc3ee80f28574d16fccca3164a765927e927bef87969cb87ab0450eea3218",
+      "run_mutations.py": "c109cc372789b0ca89786a36fe60c89c8be92ced62e8e5e42ea4f14211dd9e83",
+      "01_visible_precedence.diff": "7a972b31627a003d377161a983cb6a56f7838e63a49667bd012b7f78b5ff33dd",
+      "07_gemini_raw_part_concatenation.diff": "7d32a81f7b2033aabac8f03019493ee22bc8a64a6d43f521d511b6caa2039d0f",
+      "02_error_envelope_rejection.log": "6ea036a2f7f1671ee81e24ca35b7d953720fd161dc2688431fcdb286e95e2986",
+      "04_reasoning_deduplication.xml": "2cf5888c7bcfa838ae54714c03508e4bc77e7e7d4a80fdccd325191cb966fd10",
+      "baseline.log": "2d777b0d4aad9d757db8f35de3a29ab35d56a3923f9f63beb65789653aaed752",
+      "baseline.json": "2a6598510a01264537f950b5da8cb5ef306964e837eddbf08a7b56cd36ad7967",
+      "01_visible_precedence.log": "19abf9988cb48bb34884815679a449d3a97be0e6db903a06ebf46dadc3a89dd9",
+      "05_governed_image_dispatch.xml": "74244aee2e6cf10d7adff151f59104047d563848bd28eec04d64f60047a45d0d",
+      "cases.json": "ca637f5e5c0645f37484908fa3b46c3f8817c91a17fa9e12bb6d204313e2b5dd",
+      "05_governed_image_dispatch.diff": "4d9bfaedf65deb82f1d21694d47f2b284bee1fba7d958e8dd2dcb88f2ed08817",
+      "plan.md": "872f662ba12ac7fa985d14711e391aedfc8c44262728363fedb20982c13a8339",
+      "04_reasoning_deduplication.log": "21788ef45a17f16ce3e5a421ffb6dedd87554999fbdc78aef9902cf69544083b",
+      "02_error_envelope_rejection.xml": "b68cb43c087e0042504f9f97371c0520c0b42588e1c30624fd913f32d558f238",
+      "07_gemini_raw_part_concatenation.xml": "0faaa957baafe000dbc7f522da2bc5fb46bf550fb8f3d79ed08bf90e59f0211a",
+      "06_compatible_video_dispatch.xml": "0431d5903a1dc171bf58e5cdac8274ba32037ce582157e6b11eb740da877fc28",
+      "final_baseline.xml": "8daba651e3edd87670cf75d1cd2f5917248e3e0ed3b93adac6739d73ec4bb1b3",
+      "03_reasoning_detail_priority.diff": "774b7e80dc756aba003fe3dfb8de5655ad8ef65684aaa68513e69b7f487043c3",
+      "08_inline_thought_only_terminal.xml": "14d38907cf762c565eb83c1f5f70d73e1c3dc5ff4243cbd764ed5a9860fbd6e7",
+      "03_reasoning_detail_priority.xml": "3682778dcf736d0574ff5d727175fc24044063452af9f1762559a75272a5e010"
+    }
+  },
+  "review": {
+    "coordinator_review": true,
+    "conclusion": "No remaining runtime blocker found in source/consumer review. Corrected detail precedence, length reasoning, empty refusal handling, tag aliases, fragment concatenation and governed image harness; no source authority or send-budget changes. One old transient test expectation was reconciled with the approved new thought-only success contract.",
+    "writer_reports": {
+      "/tmp/nerva-vision-normalization-compatible-20261002.md": "340609d7b3f309e20e2fb19c90c56de4171290083b6164538b07fcd65d936e51",
+      "/tmp/nerva-vision-normalization-gemini-20261002.md": "10bd4d8404c8b3e8d2eb5af27370fc934ba4a463296bd62468780034551da0f8"
+    }
+  },
+  "evidence_review": [
+    {
+      "id": "H277",
+      "status_preserved": "partial",
+      "all_base_pins_verified": true,
+      "citations_unchanged": true,
+      "note": "Native normalization review (2026-10-02): both VLM paths and signed compatible video now prefer normalized visible text, then ordered typed reasoning/reasoning_content and detail summaries. Pinned Latin/CJK closed thinking aliases are hidden; opaque values are not stringified. Native Gemini joins raw thought fragments before normalization and uses useful thought output without another call. All typed parts/errors are checked before acceptance; malformed thought-marked function calls now refuse. Existing authority, budgets and raw-empty predicate remain. Parent696 integrated cases pass; this supersedes earlier nonempty Gemini permissiveness, without claiming SDK/non-native parity or live-provider acceptance."
+    },
+    {
+      "id": "H513",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citations_unchanged": true,
+      "note": "Native normalization authority review (2026-10-02): source changes are confined to received-response validation/extraction. Request identities, consent, physical guards, signed task/kernel execution, deadlines and cleanup are unchanged. Mixed error/tool replies remain terminal, and useful reasoning cannot spend a retry or select another route. Parent696-case integration includes actual governed image stream and signed compatible/Gemini dispatch plus H513 producer regressions. Equivalent status remains the code contract; no live acceptance is implied."
+    },
+    {
+      "id": "H586",
+      "status_preserved": "equivalent",
+      "all_base_pins_verified": true,
+      "citations_unchanged": true,
+      "note": "Native composer normalization review (2026-10-02): VLM validates and normalizes compatible replies on both budget-disabled and active governed paths. Useful typed reasoning supplies an answer without an extra call; malformed envelopes remain failures. CLI/HUD entrypoints, acknowledgment and public shapes are unchanged. Parent696 integration includes composer/policy tests; frontend/schema/assets match the prior1847-test verified snapshot. Existing equivalent status preserved."
+    }
+  ],
+  "frontend": {
+    "fresh_execution": false,
+    "unchanged_source_since": "173a5a840f8bff27b2ef41a474837ec73e44f18c",
+    "prior_result": "/tmp/nerva-image-empty-frontend-20261002.json",
+    "prior_result_sha256": "bee4ca4395441a8c78b90222f589aa029f176a20c8dc1f8eedf4301bf4b80112",
+    "prior_passed": 1847,
+    "browser_e2e_executed": false
+  },
+  "unchanged_status_counts": {
+    "equivalent": 172,
+    "partial": 254,
+    "missing": 64,
+    "needs_review": 207
+  },
+  "secret_scan": {
+    "paths": 72,
+    "findings": 0,
+    "unexpected": []
+  },
+  "limitations": [
+    "H277 remains partial; no live provider/model, native-device or browser E2E acceptance and no measured coverage percentage.",
+    "Only previously-current H277/H513/H586 refreshed; inherited H139 and other stale evidence remain unchanged.",
+    "Typed native JSON, Gemini STOP/safety and existing Nerva filtering stay stricter than some heterogeneous SDK inputs accepted upstream; SDK/non-native breadth remains open.",
+    "No push, merge or deployment in this local batch."
+  ]
+}

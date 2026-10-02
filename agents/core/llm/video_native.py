@@ -14,6 +14,7 @@ import re
 from urllib.parse import urlsplit, urlunsplit
 
 from .host_protocol import protocol_refusal
+from .native_response import normalized_vision_text
 
 GEMINI_VIDEO_BASE = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_VIDEO_MAX_REQUEST_BYTES = 20_000_000
@@ -35,6 +36,10 @@ _DEFAULT_PORTS = {"http": 80, "https": 443}
 
 class VideoNativeRefused(ValueError):
     """A sanitized refusal of an invalid native video request or response."""
+
+
+class VideoNativeEmpty(VideoNativeRefused):
+    """A valid unblocked STOP response containing no visible video answer."""
 
 
 def _loopback(host: str) -> bool:
@@ -133,11 +138,12 @@ def gemini_video_body(prompt: str, data_url: str) -> dict:
 
 
 def gemini_video_answer(payload: object) -> str:
-    """Return visible text only from one unblocked STOP candidate."""
-    if not isinstance(payload, dict):
+    """Return visible text, or well-formed thought text when visible is blank."""
+    if not isinstance(payload, dict) or "error" in payload:
         raise VideoNativeRefused("video_native_response_invalid")
     feedback = payload.get("promptFeedback")
-    if feedback is not None and (not isinstance(feedback, dict) or feedback.get("blockReason")):
+    if feedback is not None and (not isinstance(feedback, dict)
+                                 or "error" in feedback or feedback.get("blockReason")):
         raise VideoNativeRefused("video_native_response_invalid")
     if isinstance(feedback, dict) and _ratings_refused(feedback.get("safetyRatings", [])):
         raise VideoNativeRefused("video_native_response_invalid")
@@ -145,28 +151,41 @@ def gemini_video_answer(payload: object) -> str:
     if not isinstance(candidates, list) or len(candidates) != 1:
         raise VideoNativeRefused("video_native_response_invalid")
     candidate = candidates[0]
-    if not isinstance(candidate, dict) or candidate.get("finishReason") != "STOP":
+    if (not isinstance(candidate, dict) or "error" in candidate
+            or candidate.get("finishReason") != "STOP"):
         raise VideoNativeRefused("video_native_response_invalid")
     ratings = candidate.get("safetyRatings", [])
     if _ratings_refused(ratings):
         raise VideoNativeRefused("video_native_response_invalid")
     content = candidate.get("content")
+    if not isinstance(content, dict) or "error" in content:
+        raise VideoNativeRefused("video_native_response_invalid")
     parts = content.get("parts") if isinstance(content, dict) else None
     if not isinstance(parts, list) or not parts:
         raise VideoNativeRefused("video_native_response_invalid")
     visible: list[str] = []
+    thoughts: list[str] = []
     for part in parts:
-        if not isinstance(part, dict) or type(part.get("thought", False)) is not bool:
+        if (not isinstance(part, dict) or type(part.get("thought", False)) is not bool
+                or not isinstance(part.get("text"), str)
+                or set(part) - {"thought", "text", "thoughtSignature"}
+                or ("thoughtSignature" in part
+                    and not isinstance(part["thoughtSignature"], str))):
             raise VideoNativeRefused("video_native_response_invalid")
         if part.get("thought") is True:
+            thoughts.append(part["text"])
             continue
-        if not isinstance(part.get("text"), str):
-            raise VideoNativeRefused("video_native_response_invalid")
         visible.append(part["text"])
-    answer = "".join(visible)
-    if not answer.strip():
+    raw_visible = "".join(visible)
+    answer = normalized_vision_text(raw_visible)
+    if answer:
+        return answer
+    thought = normalized_vision_text("".join(thoughts))
+    if thought:
+        return thought
+    if raw_visible.strip():
         raise VideoNativeRefused("video_native_response_invalid")
-    return answer
+    raise VideoNativeEmpty("video_native_response_empty")
 
 
 def _ratings_refused(ratings: object) -> bool:

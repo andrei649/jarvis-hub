@@ -2445,6 +2445,13 @@ def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
         if not isinstance(destination, str) or not isinstance(binding, str) or not isinstance(local, bool):
             return failed("the hub's vision status is incomplete (destination, binding or local "
                           "missing); nothing was sent")
+        if "empty_retries" in status or "retry_notice" in status:
+            budget, notice = status.get("empty_retries"), status.get("retry_notice")
+            if (type(budget) is not int or budget != 1 or not isinstance(notice, str)
+                    or not notice.strip() or len(notice) > 500
+                    or any(ord(char) < 32 or ord(char) == 127 for char in notice)):
+                return failed("the hub's vision retry policy is invalid; nothing was sent")
+            ctx.err.write(f"{_plain(notice, 500)}\n")
         if local and acknowledged is not None:
             ctx.err.write("--remote-vision is not needed: the vision model is on the hub's machine\n")
         if not local and (acknowledged is None

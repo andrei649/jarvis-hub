@@ -260,16 +260,27 @@ Video analysis (H277, 2026-10-02) adds a separate consent row to the responsive 
 Security Posture panel and uses existing Decision Inbox task approvals. Configured
 video fallbacks have separate consent/revoke controls in that web panel. Native
 mobile has no video source picker, role editor, or dedicated video-consent control;
-use the responsive web panel for consent. The primary transient-retry setting also
-has no native editor. Its additional send budget is shown through the existing
-server-generated task approval notice. Native-device and live video-provider acceptance
+use the responsive web panel for consent. The primary transient-retry and valid-empty
+full-chain retry settings have no native editor. Their additional send budgets are
+shown through the existing server-generated task approval notice. Native-device and live video-provider acceptance
 remain unverified.
 
 Local auxiliary model selection (H277, 2026-10-02) runs on the server for session
 titles, recall rewriting, conversation review, compression and governed acquisition
 capability/plan generation. Existing results reach the same clients; the six
 `JARVIS_AUX_*_MODEL` environment settings have no native editor. Acquisition uses
-its existing governed server workflow; no new native acquisition UI is claimed. This adds no native-device or live-model acceptance claim.
+its existing governed server workflow; no new native acquisition UI is claimed. A structured LM Studio temperature rejection can now recover on these nonstreaming server calls; no native configuration control or device proof was added. This adds no native-device or live-model acceptance claim.
+
+The optional governed image empty-retry budget is shown by the responsive-web
+composer before sending and by the local describe/screen panels. A changed budget
+invalidates old destination confirmations and unattended role grants. Native mobile
+has no editor or verified rendering for this server setting; native acceptance is
+still open. Existing camera and Telegram roles retain their local-only boundaries.
+Native vision responses now prefer normalized visible text and can use structured
+reasoning when that text is absent, including thought text from Gemini video. The
+existing responsive-web answer surfaces receive this server-normalized text; no
+new native UI or native-device acceptance is claimed. Normalization adds no model
+call or consent grant.
 
 The responsive-web image composer now displays provider-policy warnings alongside
 the reviewed destination and successful answer. Its request-scoped remote

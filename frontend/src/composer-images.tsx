@@ -5,7 +5,16 @@ const TYPES=['image/png','image/jpeg','image/gif','image/webp'];
 const MAX_BYTES=4*1024*1024, MAX_IMAGES=8;
 export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;remote_ack:boolean};
 type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;data?:string;error?:string};
-type Destination={configured:boolean;destination?:string;binding?:string;model?:string;backend?:string;local?:boolean;warning?:string};
+type Destination={configured:boolean;destination?:string;binding?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string};
+
+function validRetryMetadata(data:Destination){
+  const hasBudget=Object.prototype.hasOwnProperty.call(data,'empty_retries');
+  const hasNotice=Object.prototype.hasOwnProperty.call(data,'retry_notice');
+  if(!hasBudget&&!hasNotice)return true;
+  const notice=data.retry_notice;
+  return data.empty_retries===1&&typeof notice==='string'&&!!notice.trim()&&
+    notice.length<=500&&!/[\x00-\x1f\x7f]/.test(notice);
+}
 
 export function useComposerImages(){
   const records=useRef<Draft[]>([]), serial=useRef(0);
@@ -53,6 +62,7 @@ export function useComposerImages(){
       const data=JSON.parse(text) as Destination;
       if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!/^\w{64}$/.test(data.binding||'')))throw new Error('Invalid vision status');
       if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision status');
+      if(!validRetryMetadata(data))throw new Error('Invalid vision status');
       if(active)setDestination(data);
     }).catch(()=>{if(active)setDestination({configured:false});});
     return()=>{active=false;controller.abort();};
@@ -75,6 +85,7 @@ export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImage
     </div>)}</div>
     <div role="status">{draft.note || (draft.images.length ? !d?'Checking vision configuration…':!d.configured?'Vision model unavailable. Remove images to send text.':`${d.model} · ${d.destination} · ${d.local?'loopback':'remote'} · reachability not probed` : '')}</div>
     {d?.configured&&d.warning&&<div style={{color:'var(--amber)'}}>{d.warning}</div>}
+    {d?.configured&&d.retry_notice&&<div role="status" style={{color:'var(--amber)'}}>{d.retry_notice}</div>}
     {!!draft.images.length&&<button className="tool-btn" onClick={draft.refresh}>Refresh vision destination</button>}
     {d?.configured&&d.local!==true&&<label style={{display:'block'}}>
       <input type="checkbox" checked={draft.ack===d.binding} onChange={event=>draft.acknowledge(event.target.checked)}/>

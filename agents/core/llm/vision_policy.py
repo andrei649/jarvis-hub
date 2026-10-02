@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 
 import httpx
@@ -13,6 +13,7 @@ from .data_handling import DataHandlingRefused, physical_request_scope
 from .direct_transport import require_direct_async_transport
 from .model_roles import _is_loopback_base
 from .providers import DATA_POLICIES, get_profile
+from .vision_retry import RETRY_NOTICE, resolve_vision_empty_retries, vision_retry_scope
 
 logger = logging.getLogger('jarvis.llm.vision_policy')
 
@@ -58,12 +59,17 @@ class VisionIdentity:
     request_url: str = field(repr=False)
     authorization: str = field(repr=False)
     binding: tuple = field(repr=False)
+    empty_retries: int = 0
 
     def public(self):
-        return {'data_policy': self.policy, 'data_policy_note': self.note, 'warning': self.warning}
+        public = {'data_policy': self.policy, 'data_policy_note': self.note, 'warning': self.warning}
+        if self.empty_retries:
+            public.update({'empty_retries': self.empty_retries, 'retry_notice': RETRY_NOTICE})
+        return public
 
 
 def describe(config):
+    empty_retries = resolve_vision_empty_retries()
     if config.backend not in ('lmstudio', 'custom') or not isinstance(config.model, str) or not config.model:
         raise VisionPolicyUnavailable('invalid vision configuration')
     profile = get_profile('lm-studio' if config.backend == 'lmstudio' else 'openai-compatible')
@@ -85,7 +91,10 @@ def describe(config):
     binding = (config.backend, config.base_url, config.model, config.is_local, config.api_key,
                profile.id, policy, note, profile.data_policy, tuple(profile.data_policy_models),
                str(base), request_url, auth)
-    return VisionIdentity(profile.id, policy, note[:500], warning, str(base), request_url, auth, binding)
+    if empty_retries:
+        binding += ('vision-empty-once:v1',)
+    return VisionIdentity(profile.id, policy, note[:500], warning, str(base), request_url, auth,
+                          binding, empty_retries)
 
 
 def _wire_matches(backend, frozen):
@@ -125,7 +134,7 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
         except Exception as exc:
             raise VisionDestinationChanged('vision configuration changed') from exc
 
-    def request_check(request):
+    def validate_request(request, *, marked):
         try:
             require_direct_async_transport(backend.client, request.url)
         except DataHandlingRefused as exc:
@@ -135,22 +144,50 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
             same_model = isinstance(payload, dict) and payload.get('model') == config.model
         except (ValueError, httpx.RequestNotRead):
             same_model = False
-        if (request.extensions.get('nerva_composer_vision_request') is request_marker
+        if ((request.extensions.get('nerva_composer_vision_request') is request_marker) != marked
                 or request.method != 'POST' or str(request.url) != frozen.request_url
                 or not same_model
                 or request.headers.get('Authorization', '') != frozen.authorization
                 or request.headers.get('Cookie')):
             raise VisionDestinationChanged('vision physical request changed')
+        if recovery is not None:
+            try:
+                messages = payload.get('messages', [])
+                image_bearing = any(
+                    isinstance(message, dict) and isinstance(message.get('content'), list)
+                    and any(isinstance(part, dict) and part.get('type') == 'image_url'
+                            for part in message['content']) for message in messages)
+                if recovery.started or image_bearing:
+                    recovery.validate(request, marked=marked)
+            except Exception as exc:
+                raise VisionDestinationChanged('vision physical request changed') from exc
+
+    def request_check(request):
+        validate_request(request, marked=False)
         request.extensions['nerva_composer_vision_request'] = request_marker
+
+    async def last_request_hook(request):
+        if backend.client.event_hooks['request'][-1] is not last_request_hook:
+            raise VisionDestinationChanged('vision request hooks changed')
+        check()
+        validate_request(request, marked=True)
 
     check()
     if frozen.warning:
         from agents.core.turn_notices import record_turn_notice
         logger.warning('%s (purpose=%s)', frozen.warning, notice_purpose)
         record_turn_notice(f'data_handling:{notice_purpose}', frozen.warning)
-    with physical_request_scope(check, request_check=request_check):
-        yield check
-        check()
+    scope = vision_retry_scope(backend, config.model, check) if frozen.empty_retries else nullcontext(None)
+    with scope as recovery:
+        if recovery is not None:
+            backend.client.event_hooks['request'].append(last_request_hook)
+        try:
+            with physical_request_scope(check, request_check=request_check):
+                yield check
+                check()
+        finally:
+            if recovery is not None:
+                backend.client.event_hooks['request'].remove(last_request_hook)
 
 
 @contextmanager
@@ -177,8 +214,18 @@ class MediaDataTarget:
 
 def media_data_target(config):
     identity = interactive_local_identity(config)
+    note = _role_note(identity)
     return MediaDataTarget('role:telegram_media_reader', identity.provider, config.model,
-                           'dedicated', identity.policy, identity.note, identity.binding)
+                           'dedicated', identity.policy, note, identity.binding)
+
+
+def _role_note(identity):
+    note = identity.note
+    if identity.empty_retries:
+        note = f'{note} {RETRY_NOTICE}'.strip()
+        if len(note) > 500:
+            raise VisionPolicyUnavailable('vision role note too long')
+    return note
 
 
 def describe_media_data_target():
@@ -217,7 +264,7 @@ def camera_data_target(config):
     binding = ('camera-descriptions-v1', config.endpoint, config.model, config.enabled,
                config.max_image_bytes, identity.binding)
     return MediaDataTarget('role:camera_descriptions', identity.provider, config.model,
-                           'dedicated', identity.policy, identity.note, binding)
+                           'dedicated', identity.policy, _role_note(identity), binding)
 
 
 def describe_camera_data_target(role_context):

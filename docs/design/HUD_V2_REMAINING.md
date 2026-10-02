@@ -29,14 +29,16 @@ existing Decision Inbox approval surface. Security Posture has an independent
 Video analysis consent row and independent Video fallback 1–4 controls for configured
 candidates. A dedicated video picker/preview, an in-HUD role editor,
 inbound video ingestion, and live native-video model acceptance remain open.
-The optional primary transient-retry setting uses existing task notices/results;
-there is no in-HUD editor for that environment setting.
+The optional primary transient retry and valid-empty full-chain retry use existing
+task notices/results; there is no in-HUD editor for either environment setting.
+Enabled empty recovery reports its consumer-call index separately from each
+route's attempt index. A malformed or blocked result does not permit this restart.
 
 H277 local auxiliary models (2026-10-02): server-side title generation, recall
 rewriting, conversation review, compression and governed acquisition capability/plan
 generation can use independent local model IDs. Existing output surfaces are
 unchanged. The six `JARVIS_AUX_*_MODEL` environment settings have no in-HUD editor
-or configuration listing yet. Acquisition retains its existing governed routes.
+or configuration listing yet. Acquisition retains its existing governed routes. The server can retry five nonstreaming auxiliary calls after a typed LM Studio temperature rejection; the requested temperature is initial, and the repaired call uses the provider default. No new HUD control is needed or claimed.
 
 - **Runtime verification.** Nothing was verified against a *running* backend (the build sandbox has
   no `fastapi`). Run `python serve.py` → open `/v2`, click **every mode + every Console (▦) panel**,
@@ -361,6 +363,16 @@ consent; independent direct provider clients are outside this increment.
 The approval judge now has its own consent row and allow/revoke controls. Provider
 and role setting failures disable their respective controls independently. The role
 acknowledgment never enables remote judging and never inherits a provider grant.
+
+Governed image empty recovery (H277, 2026-10-02) discloses its optional one-call
+retry budget in the composer before remote acknowledgment, and beside policy notes
+in local describe/screen panels. Refreshing a changed binding clears the previous
+acknowledgment. The environment setting has no HUD editor; native mobile rendering
+and live model acceptance remain open.
+Native image/video normalization now supplies visible text first, then typed
+reasoning fallback through the existing answer surfaces. This requires no new HUD
+control or schema; provider errors/malformed mixed output remain failures rather
+than displayed model answers. Browser/device acceptance is separate.
 
 Composer image status and successful results now retain a visible data-policy
 warning. The existing per-destination remote checkbox remains request-scoped;

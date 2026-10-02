@@ -2348,7 +2348,8 @@ export function ScreenReflexPanel() {
   const canCapture = typeof navigator !== 'undefined' && !!(navigator as any).mediaDevices?.getDisplayMedia;
   const configured = !!vlm.d && vlm.d.configured === true;
   const isLocal = configured && vlm.d.local === true;
-  const policyMessages = [...new Set([vlm.d?.data_policy_note, vlm.d?.warning, out?.data_policy_note, out?.warning]
+  const policyMessages = [...new Set([vlm.d?.data_policy_note, vlm.d?.warning, vlm.d?.retry_notice,
+    out?.data_policy_note, out?.warning, out?.retry_notice]
     .filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim().slice(0, 500)))];
   const generated = out?.ok === true && out?.generated === true;
 
@@ -2579,7 +2580,8 @@ export function VlmDescribePanel() {
   const configured = !!vlmD && vlmD.configured === true;
   const isLocal = configured && vlmD.local === true;
   const destination = configured ? String(vlmD.base_url || 'an unnamed endpoint') : '';
-  const policyMessages = [...new Set([vlmD?.data_policy_note, vlmD?.warning, out?.data_policy_note, out?.warning]
+  const policyMessages = [...new Set([vlmD?.data_policy_note, vlmD?.warning, vlmD?.retry_notice,
+    out?.data_policy_note, out?.warning, out?.retry_notice]
     .filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim().slice(0, 500)))];
   const described = out?.ok === true && typeof out?.response === 'string' && !!out.response.trim();
 

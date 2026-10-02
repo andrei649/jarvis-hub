@@ -35,12 +35,13 @@ function typePrompt(text = 'what is in this image?') {
 }
 
 const describeCalls = (fn) => fn.mock.calls.filter((c) => String(c[0]).includes('/api/vlm/describe'));
+const retryNotice = 'May retry once with the same images and model after an empty response (at most two model calls).';
 
 describe('VlmDescribePanel — the VLM input leg is really wired', () => {
   it('POSTs prompt + data-URI images to /api/vlm/describe and renders the answer', async () => {
     const fn = mockFetch({
       '/api/vlm/status': { payload: { configured: true, backend: 'lmstudio', base_url: 'http://localhost:1234/v1', default_model: 'qwen3-vl', local: true, reachable: null } },
-      '/api/vlm/describe': { payload: { ok: true, model: 'qwen3-vl', response: 'a cat on a desk' } },
+      '/api/vlm/describe': { payload: { ok: true, model: 'qwen3-vl', response: 'a cat on a desk', retry_notice: retryNotice } },
     });
     render(<VlmDescribePanel />);
     await waitFor(() => expect(screen.getByLabelText('image files to describe')).toBeTruthy());
@@ -48,6 +49,7 @@ describe('VlmDescribePanel — the VLM input leg is really wired', () => {
     typePrompt();
     fireEvent.click(screen.getByRole('button', { name: 'describe' }));
     await waitFor(() => expect(screen.getByText('a cat on a desk')).toBeTruthy());
+    expect(screen.getByText(retryNotice)).toBeTruthy();
     const call = describeCalls(fn)[0];
     expect(call).toBeTruthy();
     expect(call[1].method).toBe('POST');
@@ -102,12 +104,13 @@ describe('VlmDescribePanel — the VLM input leg is really wired', () => {
   it('shows status policy warnings before upload and retains response warnings after success', async () => {
     mockFetch({
       '/api/vlm/status': { payload: { configured: true, backend: 'custom', base_url: 'http://localhost:1234', local: true,
-        data_policy: 'unknown', data_policy_note: 'Custom model policy is unknown.', warning: 'Review inputs before sending.' } },
+        data_policy: 'unknown', data_policy_note: 'Custom model policy is unknown.', warning: 'Review inputs before sending.', retry_notice: retryNotice } },
       '/api/vlm/describe': { payload: { ok: true, response: 'a local answer', warning: 'This request used an unknown-policy model.' } },
     });
     render(<VlmDescribePanel />);
     await waitFor(() => expect(screen.getByText('Review inputs before sending.')).toBeTruthy());
     expect(screen.getByText('Custom model policy is unknown.')).toBeTruthy();
+    expect(screen.getByText(retryNotice)).toBeTruthy();
     await pick(); typePrompt();
     fireEvent.click(screen.getByRole('button', { name: 'describe' }));
     await waitFor(() => expect(screen.getByText('a local answer')).toBeTruthy());

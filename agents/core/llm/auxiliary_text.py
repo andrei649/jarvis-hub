@@ -7,6 +7,8 @@ from types import MappingProxyType
 
 from agents.core.env_config import env_str
 
+from .auxiliary_recovery import auxiliary_temperature_recovery_scope
+from .base import LMStudioBackend
 from .data_handling import auxiliary_request_scope
 from .job_selection import SelectionError, current_selection
 from .model_config import DEFAULT_LOCAL_MODEL
@@ -64,6 +66,12 @@ def prepare_local_auxiliary(router, task: str):
                     model=model, prompt=prompt, system=system,
                     max_tokens=max_tokens, temperature=temperature,
                 )
+            if isinstance(backend, LMStudioBackend):
+                with auxiliary_temperature_recovery_scope(backend, model):
+                    return await backend.generate(
+                        model=model, prompt=prompt, system=system,
+                        max_tokens=max_tokens, temperature=temperature,
+                    )
             return await backend.generate(
                 model=model, prompt=prompt, system=system,
                 max_tokens=max_tokens, temperature=temperature,

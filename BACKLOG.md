@@ -1920,6 +1920,28 @@
   fresh authorization per attempt. The focused regression passed 1,026 cases with
   two skipped, including 32 new acquisition cases; see the
   [acquisition increment](docs/hermes/h277-acquisition-auxiliary-2026-10-02.md).
+  Five nonstreaming LM Studio auxiliary consumers now recover a structured temperature
+  rejection with one same-route retry, preserving token caps and fresh H513 checks.
+  The focused union passed 612 cases, including 32 new regressions; see the
+  [parameter-recovery increment](docs/hermes/h277-auxiliary-parameter-2026-10-02.md).
+  Opt-in valid-empty video recovery now restarts the approved chain once from the
+  primary, with a signed budget, one prepared source and fresh authority per send.
+  The focused union passed 647 cases including 61 new regressions; see the
+  [empty-result increment](docs/hermes/h277-video-empty-retry-2026-10-02.md).
+  Governed image recovery now permits one same-model retry in composer, local
+  describe, screen reflex, Telegram media and camera descriptions, with bound
+  policy, exact request validation and HUD/CLI disclosure. The focused backend
+  passed 582 cases and the full frontend passed 1,847; see the
+  [image-recovery increment](docs/hermes/h277-image-empty-retry-2026-10-02.md).
+  Native image/video replies now prefer visible text, then typed reasoning, matching
+  pinned Hermes extraction through the actual governed consumers; Gemini fragments
+  normalize after concatenation. Error/malformed mixed replies remain terminal and
+  useful reasoning spends no extra model call. The integrated union passed696 cases;
+  see the [normalization increment](docs/hermes/h277-vision-normalization-2026-10-02.md).
+  Publication review additionally excludes encrypted/opaque/unknown reasoning
+  details from image/video answers; seven consumer regressions failed before the
+  correction and the normalization/retry union passes163 cases. Opaque-only output
+  remains a terminal failure without another model call.
   Broader auxiliary routing, SDK recovery and live acceptance remain open. This does not close
   H277 or HEQ-1.
 
