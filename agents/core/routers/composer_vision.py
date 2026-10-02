@@ -13,7 +13,7 @@ from urllib.parse import urlsplit, urlunsplit
 from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from agents.core.llm.vision_review import VisionReviewRefused, VisionReviewStore
 from agents.core.routers._deps import user_guard
@@ -214,6 +214,9 @@ class ComposerPrepareBody(BaseModel):
                        pattern=r"^[a-z][a-z0-9_-]*$")
     session_id: str | None = None
     selected_turn: StrictBool = False
+    image_digests: list[Annotated[str, Field(min_length=64, max_length=64,
+                                             pattern=r"^[0-9a-f]{64}$")]] | None = Field(
+                                                 default=None, min_length=1, max_length=8)
 
     @field_validator("prompt")
     @classmethod
@@ -229,6 +232,14 @@ class ComposerPrepareBody(BaseModel):
         if value is not None and not is_valid_session_id(value):
             raise ValueError("invalid session_id")
         return value
+
+    @model_validator(mode="after")
+    def selected_images_bound(self):
+        if self.selected_turn and not self.image_digests:
+            raise ValueError("selected image digests are required")
+        if not self.selected_turn and self.image_digests is not None:
+            raise ValueError("image digests require a selected turn")
+        return self
 
 
 class PreparedComposerVisionBody(ComposerVisionBody):
@@ -307,6 +318,12 @@ def _review_route(config, turn=None):
     return f"turn:{turn.prompt_digest}:{route}" if turn is not None else route
 
 
+def _review_binding(identity, *, turn=None, image_digests=None):
+    if turn is None:
+        return identity.binding
+    return identity.binding + ("reviewed-image-digests:v1", tuple(image_digests))
+
+
 def _selected_resolver(turn):
     """Synchronous config check used by the final physical-request guard."""
     from agents.core.app_state import get_orch
@@ -361,7 +378,7 @@ async def composer_prepare(body: ComposerPrepareBody, refresh_catalog: bool = Fa
             agent_id=body.agent,
             prompt=body.prompt, model=config.model,
             route=_review_route(config, turn),
-            binding=identity.binding,
+            binding=_review_binding(identity, turn=turn, image_digests=body.image_digests),
         )
         return nocache_json(dict(configured=True, reachable=None,
                                  review_token=token,
@@ -392,7 +409,11 @@ async def composer_describe_prepared(body: PreparedComposerVisionBody):
             session_id=turn.session_id if turn is not None else body.session_id or "web",
             agent_id=body.agent, prompt=body.prompt, model=config.model,
             route=_review_route(config, turn),
-            binding=identity.binding,
+            binding=_review_binding(
+                identity, turn=turn,
+                image_digests=[hashlib.sha256(image.encode("utf-8")).hexdigest()
+                               for image in body.images] if turn is not None else None,
+            ),
         )
     except VisionReviewRefused as exc:
         reason = ("vlm_destination_changed" if exc.reason == "vlm_destination_changed"

@@ -10,7 +10,7 @@ type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;d
 type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[];session_id?:string;selected_turn?:boolean};
 
 const AUTO_SOURCES=new Set(['auto:main','auto:override','auto:openrouter','auto:nous','auto:deepinfra']);
-const PROVIDER_NAMES:Record<string,string>={openrouter:'OpenRouter',nous:'Nous',deepinfra:'DeepInfra',lmstudio:'LM Studio',custom:'Custom'};
+const PROVIDER_NAMES:Record<string,string>={openrouter:'OpenRouter',nous:'Nous',deepinfra:'DeepInfra',lmstudio:'LM Studio',ollama:'Ollama',custom:'Custom'};
 
 function validRetryMetadata(data:Destination){
   const hasBudget=Object.prototype.hasOwnProperty.call(data,'empty_retries');
@@ -40,13 +40,14 @@ export function useComposerImages(prompt='Describe these images.',agent='jarvis'
   const records=useRef<Draft[]>([]), serial=useRef(0);
   const [images,setImages]=useState<Draft[]>([]),[note,setNote]=useState('');
   const [destination,setDestination]=useState<Destination|null>(null),[ack,setAck]=useState('');
+  const [reviewedSelection,setReviewedSelection]=useState<string|null>(null);
   const [consents,setConsents]=useState<Partial<Record<SelectionNeed,string>>>({});
   const [refreshId,setRefreshId]=useState(0);
   const refreshCatalog=useRef(false);
   const publish=()=>setImages([...records.current]);
   const dispose=(entry:Draft)=>{entry.reader.onload=null;entry.reader.onerror=null;entry.reader.onabort=null;if(entry.reader.readyState===1)entry.reader.abort();if(entry.url)URL.revokeObjectURL(entry.url);};
-  const clear=()=>{records.current.forEach(dispose);records.current=[];publish();setNote('');setAck('');setConsents({});};
-  const remove=(id:number)=>{const entry=records.current.find(item=>item.id===id);records.current=records.current.filter(item=>item.id!==id);if(entry){dispose(entry);setConsents({});}publish();};
+  const clear=()=>{records.current.forEach(dispose);records.current=[];publish();setDestination(null);setReviewedSelection(null);setNote('');setAck('');setConsents({});};
+  const remove=(id:number)=>{const entry=records.current.find(item=>item.id===id);records.current=records.current.filter(item=>item.id!==id);if(entry){dispose(entry);setDestination(null);setReviewedSelection(null);setAck('');setConsents({});}publish();};
   const addFiles=(files:Iterable<File>)=>{
     const errors:string[]=[];let changed=false;
     for(const file of files){
@@ -63,7 +64,7 @@ export function useComposerImages(prompt='Describe these images.',agent='jarvis'
       reader.onerror=()=>{if(records.current.includes(entry)){entry.error='Image could not be read';publish();}};
       try {reader.readAsDataURL(file);} catch {entry.error='Image could not be read';}
     }
-    if(changed)setConsents({});
+    if(changed){setDestination(null);setReviewedSelection(null);setAck('');setConsents({});}
     setNote(errors.join(' · '));publish();
   };
   const transfer=(data:DataTransfer)=>{
@@ -75,32 +76,40 @@ export function useComposerImages(prompt='Describe these images.',agent='jarvis'
   const onDrop=(event:React.DragEvent)=>{const files=transfer(event.dataTransfer);if(files.length){event.preventDefault();addFiles(files);}};
   useEffect(()=>()=>{records.current.forEach(dispose);records.current=[];},[]);
   const enabled=images.length>0;
+  const selectionKey=images.map(image=>image.id).join(',');
   useEffect(()=>{
-    setAck('');setConsents({});setDestination(null);
-    if(!enabled)return;
+    setAck('');setConsents({});setDestination(null);setReviewedSelection(null);
+    if(!enabled||!images.every(image=>!!image.data&&!image.error))return;
     const controller=new AbortController();let active=true;
-    const timer=setTimeout(()=>{
+    const timer=setTimeout(async()=>{
       if(!active)return;
-      const statusPath='/api/vlm/composer/prepare'+(refreshCatalog.current?'?refresh_catalog=true':'');
-      refreshCatalog.current=false;
-      apiFetchOnce(statusPath,{method:'POST',body:{prompt,agent,selected_turn:true},signal:controller.signal}).then(async response=>{
-      if(!response.ok)throw new Error('Vision status unavailable');
-      const text=await response.text();if(text.length>8192)throw new Error('Invalid vision status');
-      const data=JSON.parse(text) as Destination;
-      if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!/^\w{64}$/.test(data.binding||'')||!/^[-\w]{20,128}$/.test(data.review_token||'')))throw new Error('Invalid vision status');
-      if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision status');
-      if(data.configured&&(data.selected_turn!==true||typeof data.session_id!=='string'||data.session_id.length>128||!/^[-_A-Za-z0-9]+$/.test(data.session_id)))throw new Error('Invalid vision status');
-      if(data.selection_source!==undefined&&(!AUTO_SOURCES.has(data.selection_source)||
-        data.selection_source==='auto:override'&&data.backend!=='custom'||
-        !['auto:main','auto:override'].includes(data.selection_source)&&data.selection_source!==`auto:${data.backend}`))throw new Error('Invalid vision status');
-      if(!validRetryMetadata(data)||!validSelectionRequirements(data))throw new Error('Invalid vision status');
-      if(active)setDestination(data);
-      }).catch(()=>{if(active)setDestination({configured:false});});
+      try {
+        if(!globalThis.crypto?.subtle)throw new Error('Image review unavailable in this browser');
+        const image_digests=await Promise.all(images.map(async image=>{
+          const hash=await globalThis.crypto.subtle.digest('SHA-256',new TextEncoder().encode(image.data!));
+          return Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,'0')).join('');
+        }));
+        if(!active)return;
+        const statusPath='/api/vlm/composer/prepare'+(refreshCatalog.current?'?refresh_catalog=true':'');
+        refreshCatalog.current=false;
+        const response=await apiFetchOnce(statusPath,{method:'POST',body:{prompt,agent,selected_turn:true,image_digests},signal:controller.signal});
+        if(!response.ok)throw new Error('Vision status unavailable');
+        const text=await response.text();if(text.length>8192)throw new Error('Invalid vision status');
+        const data=JSON.parse(text) as Destination;
+        if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!/^\w{64}$/.test(data.binding||'')||!/^[-\w]{20,128}$/.test(data.review_token||'')))throw new Error('Invalid vision status');
+        if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision status');
+        if(data.configured&&(data.selected_turn!==true||typeof data.session_id!=='string'||data.session_id.length>128||!/^[-_A-Za-z0-9]+$/.test(data.session_id)))throw new Error('Invalid vision status');
+        if(data.selection_source!==undefined&&(!AUTO_SOURCES.has(data.selection_source)||
+          data.selection_source==='auto:override'&&data.backend!=='custom'||
+          !['auto:main','auto:override'].includes(data.selection_source)&&data.selection_source!==`auto:${data.backend}`))throw new Error('Invalid vision status');
+        if(!validRetryMetadata(data)||!validSelectionRequirements(data))throw new Error('Invalid vision status');
+        if(active){setDestination(data);setReviewedSelection(selectionKey);}
+      } catch {if(active)setDestination({configured:false});}
     },200);
     return()=>{active=false;clearTimeout(timer);controller.abort();};
-  },[enabled,refreshId,prompt,agent]);
+  },[images,refreshId,prompt,agent]);
   const requirements=destination?.selection_requirements||[];
-  const ready=enabled&&images.every(image=>!!image.data&&!image.error)&&destination?.configured&&
+  const ready=enabled&&reviewedSelection===selectionKey&&images.every(image=>!!image.data&&!image.error)&&destination?.configured&&
     (destination.local===true||ack===destination.binding)&&requirements.every(item=>consents[item.needs]===destination.binding);
   const submission=():VisionDraft|null=>ready?{
     images:images.map(image=>image.data!),names:images.map(image=>image.name),

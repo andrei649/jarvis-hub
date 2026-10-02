@@ -1,4 +1,5 @@
 import React from 'react';
+import {createHash, webcrypto} from 'node:crypto';
 import {render,screen,fireEvent,waitFor,cleanup} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {InputBar} from '../cockpit';
@@ -7,6 +8,7 @@ const t={channel:'NERVA',placeholder:'Ask Nerva',transmit:'Send'};
 const status={configured:true,destination:'http://127.0.0.1:1234/v1',binding:'a'.repeat(64),review_token:'r'.repeat(43),model:'vision-test',backend:'custom',local:true,selected_turn:true,session_id:'image_session'};
 const retryNotice='May retry once with the same images and model after an empty response (at most two model calls).';
 beforeEach(()=>{
+  vi.stubGlobal('crypto',webcrypto);
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify(status))));
   URL.createObjectURL=vi.fn(()=> 'blob:preview');URL.revokeObjectURL=vi.fn();
 });
@@ -24,8 +26,36 @@ it('chooses an image with a removable preview and submits an explicit vision dra
   expect(submit.mock.calls[0][1].images[0]).toMatch(/^data:image\/png;base64,/);
   expect(Object.keys(submit.mock.calls[0][1]).sort()).toEqual(['agent','expected_binding','expected_destination','images','names','remote_ack','review_token','selected_turn','session_id']);
   expect(submit.mock.calls[0][1]).toMatchObject({selected_turn:true,session_id:'image_session'});
-  expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))).toMatchObject({selected_turn:true});
+  const preview=JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+  expect(preview).toMatchObject({selected_turn:true});
+  expect(preview.image_digests).toEqual([createHash('sha256').update(submit.mock.calls[0][1].images[0]).digest('hex')]);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview');
+});
+it('reviews the changed image set again and revokes the previous consent',async()=>{
+  const submit=vi.fn();
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify({...status,local:false,destination:'https://vision.example/v1'}))));
+  render(<InputBar onSubmit={submit} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  const ack=await screen.findByRole('checkbox');
+  fireEvent.click(ack);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false));
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file('another.png')]}});
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
+  await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(2));
+  const first=JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+  const second=JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body));
+  expect(first.image_digests).toHaveLength(1);
+  expect(second.image_digests).toHaveLength(2);
+  expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+  expect(submit).not.toHaveBeenCalled();
+});
+it('does not request an image review without browser hashing support',async()=>{
+  vi.stubGlobal('crypto',{});
+  render(<InputBar onSubmit={()=>{}} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  await screen.findByText(/Vision model unavailable/);
+  expect(fetch).not.toHaveBeenCalled();
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
 });
 it('preserves ordinary text submission and nonimage paste without a vision request',()=>{
   const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
@@ -235,14 +265,17 @@ it('submits only the required training flag and resets it when the image set cha
   fireEvent.click(training);
   await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false));
   fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file('second.png')]}});
-  expect((training as HTMLInputElement).checked).toBe(false);
   expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
-  fireEvent.click(training);
+  const trainingAfterAdd=await screen.findByRole('checkbox',{name:/Provider training is possible/});
+  expect((trainingAfterAdd as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(trainingAfterAdd);
   await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false));
   fireEvent.click(screen.getByRole('button',{name:'Remove second.png'}));
-  expect((training as HTMLInputElement).checked).toBe(false);
   expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
-  fireEvent.click(training);
+  const trainingAfterRemove=await screen.findByRole('checkbox',{name:/Provider training is possible/});
+  expect((trainingAfterRemove as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(trainingAfterRemove);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false));
   fireEvent.click(screen.getByRole('button',{name:'Send'}));
   expect(submit.mock.calls[0][1]).toMatchObject({acknowledge_training:true,remote_ack:false,names:['shot.png']});
   expect(submit.mock.calls[0][1]).not.toHaveProperty('confirm_expensive');

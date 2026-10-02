@@ -1,4 +1,5 @@
 import React from 'react';
+import {webcrypto} from 'node:crypto';
 import {render,screen,fireEvent,waitFor,act,cleanup} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import App from '../app';
@@ -15,6 +16,7 @@ const draft={images:['data:image/png;base64,iVBORw0KGgo='],names:['shot.png'],ex
 const answer=()=>new Response(JSON.stringify({ok:true,response:'A blue square.',model:'vision-test',backend:'custom',destination:status.destination,local:true}));
 let resolveVision:(r:Response)=>void;let requests:any[]=[];
 beforeEach(()=>{
+  vi.stubGlobal('crypto',webcrypto);
   localStorage.clear();history.replaceState(null,'','/v2/chat?demo=1');requests=[];
   URL.createObjectURL=vi.fn(()=> 'blob:image');URL.revokeObjectURL=vi.fn();
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async(path,init)=>{

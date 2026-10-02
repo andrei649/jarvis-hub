@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import hashlib
 import json
 
 import httpx
@@ -16,6 +17,8 @@ from agents.core.llm.egress import llm_async_client
 from agents.core.orchestrator import Orchestrator
 from tests.test_composer_vision import PNG
 from tests.test_h277_vision_auto_consumer import approved, route  # noqa: F401
+
+IMAGE_DIGEST = hashlib.sha256(PNG.encode("utf-8")).hexdigest()
 
 
 def test_selected_ollama_image_uses_native_chat_wire(route, monkeypatch):
@@ -39,6 +42,7 @@ def test_selected_ollama_image_uses_native_chat_wire(route, monkeypatch):
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()
@@ -81,6 +85,7 @@ def test_selected_ollama_destination_drift_refuses_before_image_request(route, m
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()
@@ -107,6 +112,7 @@ def test_remote_ollama_requires_explicit_acknowledgement(route, monkeypatch):
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()
@@ -155,6 +161,7 @@ def test_late_ollama_image_body_mutation_never_reaches_transport(route, monkeypa
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()

@@ -1,9 +1,13 @@
 """Prepared browser image sends must use the active conversation route."""
 
 import asyncio
+import base64
+import hashlib
+import io
 import json
 
 import pytest
+from PIL import Image
 
 from agents import web
 from agents.core.agent import Agent
@@ -13,7 +17,10 @@ from agents.core.llm.openrouter import OpenRouterBackend
 from agents.core.llm.providers import DEFAULT_REGISTRY
 from agents.core.llm.vision_review import VisionReviewRefused, VisionReviewStore
 from agents.core.orchestrator import Orchestrator
+from tests.test_composer_vision import PNG
 from tests.test_h277_vision_auto_consumer import approved, route  # noqa: F401
+
+IMAGE_DIGEST = hashlib.sha256(PNG.encode("utf-8")).hexdigest()
 
 
 def _bind_local(monkeypatch, agent="jarvis"):
@@ -27,12 +34,55 @@ def _bind_local(monkeypatch, agent="jarvis"):
     return orch, backend, sid
 
 
+def test_selected_review_requires_image_digests_before_issuing_token(route, monkeypatch):
+    _orch, backend, sid = _bind_local(monkeypatch)
+    try:
+        preview = route.client.post("/api/vlm/composer/prepare", json={
+            "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
+            "selected_turn": True,
+        })
+        assert preview.status_code == 422
+        assert route.requests == []
+    finally:
+        asyncio.run(backend.aclose())
+
+
+def test_selected_review_refuses_a_different_image_after_preflight(route, monkeypatch):
+    _orch, backend, sid = _bind_local(monkeypatch)
+    image_digest = hashlib.sha256(PNG.encode("utf-8")).hexdigest()
+    try:
+        preview = route.client.post("/api/vlm/composer/prepare", json={
+            "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
+            "selected_turn": True, "image_digests": [image_digest],
+        })
+        assert preview.status_code == 200, preview.text
+        status = preview.json()
+        changed = io.BytesIO()
+        Image.new("RGB", (1, 1), (255, 0, 0)).save(changed, format="PNG")
+        another = "data:image/png;base64," + base64.b64encode(changed.getvalue()).decode()
+        assert another != PNG
+        body = {**approved(status), "agent": "jarvis", "session_id": sid,
+                "selected_turn": True, "review_token": status["review_token"],
+                "images": [another]}
+        refused = route.client.post("/api/vlm/composer/describe-prepared", json=body)
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["reason"] == "vlm_destination_changed"
+        assert route.requests == []
+        replay = route.client.post("/api/vlm/composer/describe-prepared", json={
+            **body, "images": [PNG]})
+        assert replay.status_code == 409
+        assert route.requests == []
+    finally:
+        asyncio.run(backend.aclose())
+
+
 def test_selected_image_turn_sends_to_main_local_model(route, monkeypatch):
     orch, backend, sid = _bind_local(monkeypatch)
     try:
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()
@@ -61,6 +111,7 @@ def test_selected_image_turn_refuses_changed_history_before_egress(route, monkey
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()
@@ -83,6 +134,7 @@ def test_selected_image_turn_skips_explicitly_text_only_main(route, monkeypatch)
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()
@@ -101,6 +153,7 @@ def test_strict_local_agent_never_discovers_remote_image_fallback(route, monkeyp
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "frigga", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 503
         assert route.requests == []
@@ -115,6 +168,7 @@ def test_selected_review_cannot_change_agent_before_image_egress(route, monkeypa
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()
@@ -156,6 +210,7 @@ def test_selected_remote_model_uses_only_its_backend_key_and_origin(route, monke
     preview = route.client.post("/api/vlm/composer/prepare", json={
         "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
         "selected_turn": True,
+        "image_digests": [IMAGE_DIGEST],
     })
     assert preview.status_code == 200, preview.text
     status = preview.json()
@@ -187,6 +242,7 @@ def test_selected_route_change_after_review_refuses_before_image_egress(route, m
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()
@@ -207,6 +263,7 @@ def test_selected_review_cannot_cross_sessions(route, monkeypatch):
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()
@@ -225,6 +282,7 @@ def test_selected_review_refuses_when_shared_chat_moves_to_another_session(route
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()
@@ -254,6 +312,7 @@ def test_selected_session_switch_after_review_consume_refuses_at_physical_guard(
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()
@@ -285,6 +344,7 @@ def test_selected_route_switch_after_review_consume_refuses_at_physical_guard(ro
         preview = route.client.post("/api/vlm/composer/prepare", json={
             "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
             "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 200, preview.text
         status = preview.json()

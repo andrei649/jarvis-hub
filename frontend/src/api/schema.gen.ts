@@ -10850,6 +10850,8 @@ export interface components {
              * @default false
              */
             selected_turn: boolean;
+            /** Image Digests */
+            image_digests?: string[] | null;
         };
         /** ComposerVisionBody */
         ComposerVisionBody: {
