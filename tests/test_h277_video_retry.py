@@ -556,12 +556,13 @@ async def test_enabled_hook_transport_lookalike_never_becomes_retry(rig, monkeyp
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("payload", [
-    {"candidates": []},
-    {"promptFeedback": {"blockReason": "SAFETY"}, "candidates": []},
-    {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "private", "thought": True}]}}]},
+@pytest.mark.parametrize(("payload", "answer"), [
+    ({"candidates": []}, None),
+    ({"promptFeedback": {"blockReason": "SAFETY"}, "candidates": []}, None),
+    ({"candidates": [{"finishReason": "STOP", "content": {"parts": [
+        {"text": "Synthetic explanation.", "thought": True}]}}]}, "Synthetic explanation."),
 ])
-async def test_enabled_empty_or_blocked_success_never_retries(rig, monkeypatch, payload):
+async def test_enabled_budget_never_retries_useful_reasoning_or_terminal_refusal(rig, monkeypatch, payload, answer):
     monkeypatch.setenv("JARVIS_ROLE_VIDEO_TRANSIENT_RETRIES", "1")
     _local_gemini(monkeypatch)
     _grant(rig, monkeypatch)
@@ -575,6 +576,10 @@ async def test_enabled_empty_or_blocked_success_never_retries(rig, monkeypatch, 
     rig.video.model_client_factory = lambda backend, **kw: llm_async_client(
         backend, transport=httpx.MockTransport(respond), **kw)
     result = await approved_run(rig)
-    assert result["status"] != "ok"
+    if answer is None:
+        assert result["status"] != "ok"
+    else:
+        assert result["status"] == "ok"
+        assert result["result"]["analysis"] == answer
     assert [request.url.port for request in sent] == [8420]
     assert "private" not in json.dumps(result)

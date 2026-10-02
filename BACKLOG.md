@@ -1933,6 +1933,11 @@
   policy, exact request validation and HUD/CLI disclosure. The focused backend
   passed 582 cases and the full frontend passed 1,847; see the
   [image-recovery increment](docs/hermes/h277-image-empty-retry-2026-10-02.md).
+  Native image/video replies now prefer visible text, then typed reasoning, matching
+  pinned Hermes extraction through the actual governed consumers; Gemini fragments
+  normalize after concatenation. Error/malformed mixed replies remain terminal and
+  useful reasoning spends no extra model call. The integrated union passed696 cases;
+  see the [normalization increment](docs/hermes/h277-vision-normalization-2026-10-02.md).
   Broader auxiliary routing, SDK recovery and live acceptance remain open. This does not close
   H277 or HEQ-1.
 

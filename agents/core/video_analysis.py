@@ -20,7 +20,7 @@ from .file_tools import FileScope, FileScopeError
 from .http_client import PluginHTTPClient, PluginTimeouts
 from .llm.data_handling import authorize_role_target
 from .llm.egress import llm_async_client
-from .llm.native_response import compatible_empty_success
+from .llm.native_response import compatible_empty_success, compatible_vision_answer
 from .llm.video_failures import provider_failure_category, transport_failure_category
 from .llm.video_native import (
     VIDEO_MIME,
@@ -404,9 +404,8 @@ class VideoAnalysisTool:
                                         except VideoNativeEmpty:
                                             raise _EmptyModelResponse from None
                                     else:
-                                        answer = parsed["choices"][0]["message"]["content"]
-                                        if ((isinstance(answer, str) and not answer.strip()
-                                             or answer is None) and compatible_empty_success(parsed)):
+                                        answer = compatible_vision_answer(parsed)
+                                        if not answer and compatible_empty_success(parsed):
                                             raise _EmptyModelResponse
                             except asyncio.CancelledError:
                                 request_timeout = attempt_timeout.expired()

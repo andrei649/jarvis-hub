@@ -276,6 +276,11 @@ composer before sending and by the local describe/screen panels. A changed budge
 invalidates old destination confirmations and unattended role grants. Native mobile
 has no editor or verified rendering for this server setting; native acceptance is
 still open. Existing camera and Telegram roles retain their local-only boundaries.
+Native vision responses now prefer normalized visible text and can use structured
+reasoning when that text is absent, including thought text from Gemini video. The
+existing responsive-web answer surfaces receive this server-normalized text; no
+new native UI or native-device acceptance is claimed. Normalization adds no model
+call or consent grant.
 
 The responsive-web image composer now displays provider-policy warnings alongside
 the reviewed destination and successful answer. Its request-scoped remote

@@ -40,10 +40,10 @@ from ..screen_grounding import (
     CONVENTIONS,
 )
 from . import model_roles
-from .base import LLMBackend, strip_thinking
+from .base import LLMBackend
 from .egress import llm_async_client
 from .model_roles import LMSTUDIO_VLM_BASE, _is_loopback_base  # noqa: F401 — re-exported by name
-from .native_response import compatible_empty_success
+from .native_response import compatible_empty_success, compatible_vision_answer
 from .vision_retry import current_vision_retry
 
 logger = logging.getLogger("jarvis.llm.vlm")
@@ -380,13 +380,11 @@ class VLMBackend(LLMBackend):
                     data = json.loads(result)
                     if attempt == 0 and compatible_empty_success(data):
                         continue
-                    content = (data["choices"][0]["message"].get("content", "") or "")
-                    return strip_thinking(content)
+                    return compatible_vision_answer(data)
         resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
         resp.raise_for_status()
         data = resp.json()
-        content = (data["choices"][0]["message"].get("content", "") or "")
-        return strip_thinking(content)
+        return compatible_vision_answer(data)
 
     async def generate_vision(self, model: str, prompt: str, images=None, system: str = "",
                               max_tokens: int = 1024, temperature: float = 0.2) -> str:

@@ -369,6 +369,10 @@ retry budget in the composer before remote acknowledgment, and beside policy not
 in local describe/screen panels. Refreshing a changed binding clears the previous
 acknowledgment. The environment setting has no HUD editor; native mobile rendering
 and live model acceptance remain open.
+Native image/video normalization now supplies visible text first, then typed
+reasoning fallback through the existing answer surfaces. This requires no new HUD
+control or schema; provider errors/malformed mixed output remain failures rather
+than displayed model answers. Browser/device acceptance is separate.
 
 Composer image status and successful results now retain a visible data-policy
 warning. The existing per-destination remote checkbox remains request-scoped;

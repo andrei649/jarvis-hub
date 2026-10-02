@@ -147,11 +147,12 @@ def test_answer_joins_only_visible_text_in_part_order():
     assert gemini_video_answer(payload) == "first second"
 
 
-def test_answer_omits_non_text_thought_part_before_visible_text():
+def test_answer_refuses_non_text_thought_part_even_before_visible_text():
     payload = {"candidates": [{"finishReason": "STOP", "content": {"parts": [
         {"thought": True, "functionCall": {"name": "internal"}}, {"text": "visible"},
     ]}}]}
-    assert gemini_video_answer(payload) == "visible"
+    with pytest.raises(VideoNativeRefused):
+        gemini_video_answer(payload)
 
 
 @pytest.mark.parametrize(
@@ -164,7 +165,6 @@ def test_answer_omits_non_text_thought_part_before_visible_text():
         {"candidates": [{"finishReason": "MAX_TOKENS", "content": {"parts": [{"text": "partial"}]}}]},
         {"candidates": [{"finishReason": "STOP", "safetyRatings": [{"blocked": True}], "content": {"parts": [{"text": "leak"}]}}]},
         {"promptFeedback": {"safetyRatings": [{"blocked": True}]}, "candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "leak"}]}}]},
-        {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "thought", "thought": True}]}}]},
         {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "  "}]}}]},
         {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"inline_data": {"data": "AA=="}}]}}]},
         {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "ok"}, None]}}]},

@@ -225,11 +225,22 @@ async def test_two_valid_empty_responses_keep_existing_sanitized_failure(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_governed_image_uses_reasoning_without_empty_retry(monkeypatch):
+    monkeypatch.setenv("JARVIS_ROLE_VISION_EMPTY_RETRIES", "1")
+    state = rig(monkeypatch)
+    first = httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {
+        "content": "", "reasoning_content": "A synthetic scene."}}]})
+    sent = install_sequence(monkeypatch, state.built, [first, reply("Should not be sent")])
+    response = await invoke("describe")
+    body = json.loads(response.body)
+    assert response.status_code == 200 and body["response"] == "A synthetic scene."
+    assert body["empty_retries"] == 1 and len(sent) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("first", [
     reply("", finish="length"),
     httpx.Response(200, json={"choices": []}),
-    httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {
-        "content": "", "reasoning_content": "private thought"}}]}),
     httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {
         "content": "", "tool_calls": [{"id": "tool"}]}}]}),
     httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {

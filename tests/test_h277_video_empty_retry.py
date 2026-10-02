@@ -50,7 +50,7 @@ def test_empty_budget_invalid_values_are_sanitized(raw):
 
 
 @pytest.mark.parametrize("parts", [
-    [{"text": " "}], [{"text": "reasoning", "thought": True}],
+    [{"text": " "}],
     [{"text": "", "thought": True}, {"text": "\n"}],
 ])
 def test_gemini_valid_empty_is_typed_only_after_native_checks(parts):
@@ -223,7 +223,6 @@ async def test_enabled_first_call_success_reports_provenance(rig, monkeypatch):
     {"finish_reason": "tool_calls", "message": {"content": ""}},
     {"finish_reason": "stop", "message": {"content": "", "tool_calls": [{"id": "tool"}]}},
     {"finish_reason": "stop", "message": {"content": "", "refusal": "private denial"}},
-    {"finish_reason": "stop", "message": {"content": "", "reasoning_content": "private reasoning"}},
     {"finish_reason": "stop", "message": {"content": "", "reasoning_content": []}},
     {"finish_reason": "stop", "message": {"content": "", "reasoning": {}}},
     {"finish_reason": "stop", "message": {"content": "", "refusal": False}},
@@ -234,7 +233,7 @@ async def test_enabled_first_call_success_reports_provenance(rig, monkeypatch):
     {"finish_reason": "stop", "message": {"content": []}},
     {"finish_reason": "stop", "message": {}},
 ])
-async def test_compatible_invalid_or_nonempty_reasoning_never_restarts(rig, monkeypatch, choice):
+async def test_compatible_invalid_or_unusable_reasoning_never_restarts(rig, monkeypatch, choice):
     monkeypatch.setenv("JARVIS_ROLE_VIDEO_EMPTY_RETRIES", "1")
     sent = []
 
@@ -534,3 +533,30 @@ async def test_cancellation_closes_client_without_empty_restart(rig, monkeypatch
     with pytest.raises(asyncio.CancelledError):
         await execution
     assert len(sent) == len(closed) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["compatible", "gemini"])
+async def test_useful_reasoning_is_answer_without_empty_retry(rig, monkeypatch, provider):
+    monkeypatch.setenv("JARVIS_ROLE_VIDEO_EMPTY_RETRIES", "1")
+    if provider == "gemini":
+        _local_gemini(monkeypatch)
+        _grant(rig, monkeypatch)
+        payload = {"candidates": [{"finishReason": "STOP", "content": {"parts": [
+            {"text": "A synthetic scene.", "thought": True}]}}]}
+    else:
+        payload = {"choices": [{"finish_reason": "stop", "message": {
+            "content": "", "reasoning_content": "A synthetic scene."}}]}
+    sent = []
+
+    def respond(request):
+        sent.append(request)
+        return httpx.Response(200, json=payload)
+
+    rig.video.model_client_factory = lambda backend, **kw: llm_async_client(
+        backend, transport=httpx.MockTransport(respond), **kw)
+    result = await approved_run(rig)
+    assert result["status"] == "ok", result
+    assert result["result"]["analysis"] == "A synthetic scene."
+    assert len(sent) == 1
+    assert result["result"]["chosen_call"] == 1
