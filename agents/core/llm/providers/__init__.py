@@ -211,7 +211,7 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         backend_kind="gemini",
         auth_type="api-key",
         auth_env="GEMINI_API_KEY",
-        capabilities=frozenset({"chat", "long-context", "cloud"}),
+        capabilities=frozenset({"chat", "long-context", "vision", "cloud"}),
         fallback_models=("gemini-2.5-flash", "gemini-2.5-pro"),
         data_policy_note=("depends on the key: Google may use prompts sent with an unbilled (free-tier) "
                           "Gemini API key to improve its products; a billed key's are not"),

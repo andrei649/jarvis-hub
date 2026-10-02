@@ -106,11 +106,11 @@ def canonical_selection_findings(findings):
 
 def describe(config):
     empty_retries = resolve_vision_empty_retries()
-    if config.backend not in ('lmstudio', 'ollama', 'custom', 'openrouter', 'deepinfra', 'nous', 'anthropic') or not isinstance(config.model, str) or not config.model:
+    if config.backend not in ('lmstudio', 'ollama', 'custom', 'openrouter', 'deepinfra', 'nous', 'anthropic', 'gemini') or not isinstance(config.model, str) or not config.model:
         raise VisionPolicyUnavailable('invalid vision configuration')
     profile = get_profile({'lmstudio': 'lm-studio', 'ollama': 'ollama', 'custom': 'openai-compatible',
                            'openrouter': 'openrouter', 'deepinfra': 'deepinfra', 'nous': 'nous',
-                           'anthropic': 'anthropic'}[config.backend])
+                           'anthropic': 'anthropic', 'gemini': 'gemini'}[config.backend])
     provider_block = ''
     policy, note = profile.data_policy_for(config.model)
     if config.backend == 'openrouter':
@@ -133,15 +133,30 @@ def describe(config):
                 or len(config.api_key) > 4096
                 or any(ord(char) < 33 or ord(char) > 126 for char in config.api_key)):
             raise VisionPolicyUnavailable('invalid Anthropic vision authority')
+    if config.backend == 'gemini':
+        from .gemini import GEMINI_API_BASE
+        if (config.base_url != GEMINI_API_BASE or config.is_local or not config.api_key
+                or len(config.api_key) > 4096
+                or any(ord(char) < 33 or ord(char) > 126 for char in config.api_key)):
+            raise VisionPolicyUnavailable('invalid Gemini vision authority')
     wire_mode = getattr(config, 'wire_mode', 'chat_completions')
-    if wire_mode not in {'chat_completions', 'anthropic_messages', 'ollama_chat'} or (
+    if wire_mode not in {'chat_completions', 'anthropic_messages', 'ollama_chat', 'gemini_generate_content'} or (
             wire_mode == 'anthropic_messages' and config.backend not in {'nous', 'anthropic'}) or (
-            wire_mode == 'ollama_chat' and config.backend != 'ollama'):
+            wire_mode == 'ollama_chat' and config.backend != 'ollama') or (
+            wire_mode == 'gemini_generate_content' and config.backend != 'gemini') or (
+            config.backend == 'gemini' and wire_mode != 'gemini_generate_content'):
         raise VisionPolicyUnavailable('invalid vision wire mode')
-    path = (b'messages' if wire_mode == 'anthropic_messages' else
-            b'api/chat' if wire_mode == 'ollama_chat' else b'chat/completions')
-    request_url = str(base.copy_with(raw_path=base.raw_path + path))
-    auth = '' if config.backend == 'anthropic' else authorization(config.base_url, config.api_key)
+    if config.backend == 'gemini':
+        from .video_native import VideoNativeRefused, gemini_request_url
+        try:
+            request_url = gemini_request_url(config.base_url, config.model)
+        except VideoNativeRefused:
+            raise VisionPolicyUnavailable('invalid Gemini vision model') from None
+    else:
+        path = (b'messages' if wire_mode == 'anthropic_messages' else
+                b'api/chat' if wire_mode == 'ollama_chat' else b'chat/completions')
+        request_url = str(base.copy_with(raw_path=base.raw_path + path))
+    auth = '' if config.backend in {'anthropic', 'gemini'} else authorization(config.base_url, config.api_key)
     warning = ('Vision data handling is unknown; images and prompts may be retained or used for training.'
                if policy == 'unknown' else
                'This vision route may use images and prompts for training.' if policy == 'trains-on-inputs' else '')
@@ -156,6 +171,8 @@ def describe(config):
         binding += ('nous-vision:v1', wire_mode)
     if config.backend == 'anthropic':
         binding += ('anthropic-vision:v1', wire_mode)
+    if config.backend == 'gemini':
+        binding += ('gemini-vision:v1', wire_mode)
     if config.backend == 'ollama':
         binding += ('ollama-vision:v1', wire_mode)
     route_source = getattr(config, 'route_source', '')
@@ -189,12 +206,12 @@ def _wire_matches(backend, frozen):
     except DataHandlingRefused as exc:
         raise VisionDestinationChanged('vision adapter transport changed') from exc
     if (str(native_base_url(backend.base_url)) != frozen.base_url or str(client.base_url) != frozen.base_url
-            or ('' if frozen.provider == 'anthropic' else
+            or ('' if frozen.provider in {'anthropic', 'gemini'} else
                 authorization(backend.base_url, backend.api_key)) != frozen.authorization
             or getattr(backend, '_wire_mode', 'chat_completions') != frozen.wire_mode
-            or (frozen.provider in ('openrouter', 'deepinfra', 'nous', 'ollama', 'anthropic')
+            or (frozen.provider in ('openrouter', 'deepinfra', 'nous', 'ollama', 'anthropic', 'gemini')
                 and getattr(backend, '_provider_id', '') != frozen.provider)
-            or (frozen.provider not in ('openrouter', 'deepinfra', 'nous', 'ollama', 'anthropic') and getattr(backend, '_provider_id', ''))):
+            or (frozen.provider not in ('openrouter', 'deepinfra', 'nous', 'ollama', 'anthropic', 'gemini') and getattr(backend, '_provider_id', ''))):
         raise VisionDestinationChanged('vision adapter destination changed')
 
 
@@ -234,8 +251,10 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
                         raise ValueError('duplicate vision request field')
                     result[key] = value
                 return result
-            payload = json.loads(request.content, object_pairs_hook=unique_pairs if frozen.provider_block or frozen.provider in {"deepinfra", "nous", "ollama", "anthropic"} else dict)
-            same_model = isinstance(payload, dict) and payload.get('model') == config.model
+            payload = json.loads(request.content, object_pairs_hook=unique_pairs if frozen.provider_block or frozen.provider in {"deepinfra", "nous", "ollama", "anthropic", "gemini"} else dict)
+            same_model = isinstance(payload, dict) and (
+                ('contents' in payload and 'model' not in payload) if frozen.provider == 'gemini'
+                else payload.get('model') == config.model)
             if frozen.provider_block:
                 same_model = same_model and json.dumps(payload.get('provider'), sort_keys=True,
                                                        separators=(',', ':')) == frozen.provider_block
@@ -255,6 +274,10 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
         if frozen.provider == 'anthropic' and (
                 request.headers.get('x-api-key') != config.api_key
                 or request.headers.get('anthropic-version') != '2023-06-01'
+                or request.headers.get('proxy-authorization')):
+            raise VisionDestinationChanged('vision physical authentication changed')
+        if frozen.provider == 'gemini' and (
+                request.headers.get('x-goog-api-key') != config.api_key
                 or request.headers.get('proxy-authorization')):
             raise VisionDestinationChanged('vision physical authentication changed')
         if recovery is not None:
@@ -285,10 +308,10 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
         logger.warning('%s (purpose=%s)', frozen.warning, notice_purpose)
         record_turn_notice(f'data_handling:{notice_purpose}', frozen.warning)
     scope = (vision_retry_scope(backend, config.model, check, max_attempts=1 + frozen.empty_retries)
-             if frozen.empty_retries or frozen.provider in {'nous', 'ollama', 'anthropic'} else nullcontext(None))
+             if frozen.empty_retries or frozen.provider in {'nous', 'ollama', 'anthropic', 'gemini'} else nullcontext(None))
     with scope as recovery:
         final_hook_required = (recovery is not None or bool(frozen.provider_block)
-                               or bool(cleared_findings) or frozen.provider in {'deepinfra', 'nous', 'ollama', 'anthropic'})
+                               or bool(cleared_findings) or frozen.provider in {'deepinfra', 'nous', 'ollama', 'anthropic', 'gemini'})
         if final_hook_required:
             backend.client.event_hooks['request'].append(last_request_hook)
         try:

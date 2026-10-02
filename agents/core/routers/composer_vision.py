@@ -493,8 +493,8 @@ async def _composer_describe_with_config(body, config, *, resolve_config, image_
         sg.record(findings, 'composer_vision')
         try:
             backend = VLMBackend(base_url=config.base_url, api_key=config.api_key, composer_auth=True,
-                                 **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra", "nous", "ollama", "anthropic") else {}),
-                                 **({"wire_mode": config.wire_mode} if config.backend in ("nous", "ollama", "anthropic") else {}))
+                                 **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra", "nous", "ollama", "anthropic", "gemini") else {}),
+                                 **({"wire_mode": config.wire_mode} if config.backend in ("nous", "ollama", "anthropic", "gemini") else {}))
             with composer_request_scope(config, backend, resolve_config=resolve_config,
                                         remote_ack=body.remote_ack, principal=Principal(channel="web", admin=False),
                                         frozen=identity, cleared_findings=identity.selection_findings) as recheck:

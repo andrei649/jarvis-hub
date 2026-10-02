@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from .anthropic import ANTHROPIC_API_BASE, ClaudeBackend
 from .base import LMStudioBackend, OllamaBackend
+from .gemini import GEMINI_API_BASE, GeminiBackend
 from .job_selection import _ScopedBackend
 from .openrouter import OpenRouterBackend
 from .vision_openrouter import _validated_base
@@ -38,7 +39,7 @@ def _base(value: object) -> tuple[str, bool]:
 def selected_main_config(backend: object, model: str, route: str) -> VLMConfig | None:
     """Use only the selected backend's own endpoint, profile and credential.
 
-    Native backends without this chat-completions image wire return ``None``.
+    Native backends without a reviewed image wire return ``None``.
     A scoped job wrapper is refused because its lifetime cannot safely be
     carried into a later image request by this synchronous adapter.
     """
@@ -56,6 +57,23 @@ def selected_main_config(backend: object, model: str, route: str) -> VLMConfig |
         return VLMConfig(
             backend="anthropic", base_url=ANTHROPIC_API_BASE, model=selected_model,
             api_key=key, is_local=False, wire_mode="anthropic_messages",
+            route_source="auto:main",
+        )
+    if isinstance(backend, GeminiBackend):
+        if route not in {"cloud", "cloud-fallback", "cloud-flash", "cloud-pro"}:
+            raise VLMNotConfigured("vlm_route_invalid")
+        selected_model = _model(model)
+        from .video_native import VideoNativeRefused, gemini_request_url
+        try:
+            gemini_request_url(GEMINI_API_BASE, selected_model)
+            key = backend.acquire_lease().api_key
+        except (VideoNativeRefused, RuntimeError):
+            raise VLMNotConfigured("vlm_gemini_authority_invalid") from None
+        if len(key) > 4096 or any(ord(char) < 33 or ord(char) > 126 for char in key):
+            raise VLMNotConfigured("vlm_key_invalid")
+        return VLMConfig(
+            backend="gemini", base_url=GEMINI_API_BASE, model=selected_model,
+            api_key=key, is_local=False, wire_mode="gemini_generate_content",
             route_source="auto:main",
         )
     if isinstance(backend, OllamaBackend):
