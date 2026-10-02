@@ -38,6 +38,11 @@ outside environment selection; vision/video use explicit role/environment rules.
 Job-pin exclusions, task-specific models and streaming compression remain separate
 existing contracts. Presence explanation still lacks production wiring.
 
+Update after `39a82964` on 2026-10-02: the optional House presence explanation
+now has an explicit owner route and panel control. The provider-discovery gap
+described here remains open; the presence route deliberately requires a local
+backend and does not use discovery.
+
 ## Next action
 
 Inspect the runtime provider factory/catalog (`hybrid_router.py::provider_catalog`),
