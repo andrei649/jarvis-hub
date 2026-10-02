@@ -1909,7 +1909,10 @@
   now sends actual inline bytes with isolated scoped credentials, container MIME and
   pre-send/wire size limits;707focused cases passed and bounded review found no blocker.
   See the [Gemini increment](docs/hermes/h277-gemini-video-2026-10-02.md) for verification
-  boundaries and open larger-upload/retry work. This does not close
+  boundaries and open larger-upload/recovery work. Explicit primary transient retry
+  now binds its extra send budget into the task approval and preserves default-zero
+  compatibility;755focused cases passed. See the [retry increment](docs/hermes/h277-video-retry-2026-10-02.md).
+  Broader auxiliary routing, SDK recovery and live acceptance remain open. This does not close
   H277 or HEQ-1.
 
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current

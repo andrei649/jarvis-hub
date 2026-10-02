@@ -29,6 +29,8 @@ existing Decision Inbox approval surface. Security Posture has an independent
 Video analysis consent row and independent Video fallback 1–4 controls for configured
 candidates. A dedicated video picker/preview, an in-HUD role editor,
 inbound video ingestion, and live native-video model acceptance remain open.
+The optional primary transient-retry setting uses existing task notices/results;
+there is no in-HUD editor for that environment setting.
 
 - **Runtime verification.** Nothing was verified against a *running* backend (the build sandbox has
   no `fastapi`). Run `python serve.py` → open `/v2`, click **every mode + every Console (▦) panel**,

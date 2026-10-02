@@ -589,7 +589,7 @@ explicit video-model route remains available. It reads one file within `JARVIS_F
 URL, then sends a `video_url` message to LM Studio/OpenAI-compatible, or native
 `contents`/`inline_data` to an explicit Gemini route. The configured model must understand
 that native payload; listing an adapter does not prove the installed model supports
-video. There is no frame extraction, Ollama video adapter, same-provider retry,
+video. There is no frame extraction, Ollama video adapter,
 inbound attachment ingestion, or video generation in this consumer.
 
 The tool is offered through the `video` job toolset when enabled, and every execution
@@ -654,20 +654,39 @@ Approval notices show origin-only destinations; long chains use compact model/or
 labels with a digest to fit the existing 200-character ToolRPC label limit. The
 complete ordered identities remain bound to the signed approval.
 
-The approved chain sends once per candidate and only advances after recognized
+By default the approved chain sends once per candidate and only advances after recognized
 provider failures: authentication, payment/quota, rate limits, narrowly classified
 model incompatibility, or owned transport timeout/connection failures. Body-based
 classification reads bounded structured error fields; a generic 400/403/5xx,
 malformed successful JSON or an empty answer does not select another provider.
 Neither source failures nor kernel, consent, request-integrity or cancellation
-failures permit fallback. SDK-specific recovery and same-provider retries remain
-outside this native HTTPX increment.
+failures permit fallback. SDK-specific credential/parameter recovery and
+empty-output retry remain outside this native HTTPX increment.
+
+`JARVIS_ROLE_VIDEO_TRANSIENT_RETRIES=1` permits **one additional primary attempt**
+after an owned typed connection/remote-protocol failure or a bounded HTTP 408/5xx
+response. It never retries a fallback candidate or an ordinary timeout; timeout
+retains the existing approved fallback behavior. After retry exhaustion, connection
+failures may use that existing fallback, while generic HTTP 408/5xx refuses without
+switching provider. Auth/payment/rate/model failures use the existing fallback
+directly. Source, factory, hook, policy, consent, kernel, cancellation, cleanup,
+oversized-response and malformed/blocked/empty-success failures never retry.
+
+The setting accepts only `0` or `1` (unset/blank means `0`); surrounding ASCII
+spaces are normalized, controls/non-ASCII/overlong values refuse. Enabled policy is
+bound into each task approval and displayed in its notice. Changing it invalidates
+pending execution. Destination/model/key consent scopes stay unchanged, and zero
+retains the existing approval class, notice and result format. An enabled call
+reports failed attempts with a one-based `attempt` per route and, on success,
+chosen-route/provider/model plus `chosen_attempt`, including single-route calls.
+The retry reconstructs the body and client after cleanup and fresh authority checks,
+without fetching the source URL again. No backoff or SDK retry is hidden underneath.
 
 One 180-second execution deadline includes source access, model attempts and
 cleanup. Each model attempt has a 65-second ceiling and a 60-second native HTTPX
 timeout; the source download retains its 35-second sub-limit. Model responses,
 including error bodies, are capped at 512,000 bytes. Each client closes before the
-next lane. Authority and the whole approved chain are rechecked at transitions,
+next attempt or lane. Authority and the whole approved chain are rechecked at transitions,
 physical sends and disclosure. The prepared video and question are reused without
 fetching a URL source again; local-file checks can reread bytes to verify their
 approved hash. Results expose fixed attempt categories and the successful model,

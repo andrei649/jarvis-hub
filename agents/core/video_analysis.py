@@ -35,6 +35,7 @@ from .llm.video_policy import (
     describe_video_route_set,
     native_video_request_scope,
 )
+from .llm.video_retry import native_retryable_status, resolve_video_retry_count
 from .tool_rpc import ToolRPCValidationError
 
 # A 37.5 MiB binary becomes at most 50 MiB in the native base64 payload.
@@ -65,6 +66,10 @@ class _EligibleModelFailure(Exception):
     def __init__(self, category: str):
         self.category = category
         super().__init__(category)
+
+
+class _TransientModelFailure(_EligibleModelFailure):
+    """An owned primary retry candidate; fallback remains a separate decision."""
 
 
 def _short_notice_value(value: str, limit: int) -> str:
@@ -229,6 +234,7 @@ class VideoAnalysisTool:
                 "confirm_expensive": args.get("confirm_expensive", False)}
 
     def _binding(self, args, *, source_data=None, actor=""):
+        retry_count = resolve_video_retry_count()
         scope = FileScope.from_env()
         kind, source, mime = _source(args["video_url"], scope)
         identities = describe_video_route_set()
@@ -248,11 +254,30 @@ class VideoAnalysisTool:
             data = _read_scoped(source, scope) if source_data is None else source_data
             source_key = [str(source), hashlib.sha256(data).hexdigest()]
         material = {**args, "video_url": source_key}
+        if retry_count:
+            material = {**material, "_internal_video_retry_policy": "primary-once:v1"}
         cls = chain_class_binding(identities, material, tuple(map(str, scope.roots)))
         return cls, identities
 
     def classifier(self, args):
         cls, identities = self._binding(args)
+        retry_count = resolve_video_retry_count()
+        if retry_count:
+            legend = ("lm=LM Studio,oc=OpenAI-compatible,g=Gemini" if any(
+                identity.provider == "gemini" for identity in identities)
+                else "lm=LM Studio,oc=OpenAI-compatible")
+            prefix = f"Video primary retry once ({legend}): "
+            per_lane = (200 - len(prefix) - 2 * (len(identities) - 1)) // len(identities)
+            lanes = []
+            for index, identity in enumerate(identities, 1):
+                origin = urlsplit(identity.request_url)
+                code = {"lm-studio": "lm", "openai-compatible": "oc", "gemini": "g"}[identity.provider]
+                label = f"{index}{'L' if identity.local else 'R'}:{code}/"
+                available = per_lane - len(label) - 1
+                model_budget = max(7, available // 2)
+                lanes.append(f"{label}{_short_notice_value(identity.model, model_budget)}@"
+                             f"{_short_notice_value(f'{origin.scheme}://{origin.netloc}', available - model_budget)}")
+            return {"class": cls, "notice": prefix + "; ".join(lanes)}
         if len(identities) == 1:
             identity = identities[0]
             destination = "local" if identity.local else "remote"
@@ -352,6 +377,8 @@ class VideoAnalysisTool:
                                         category = provider_failure_category(response.status_code, bytes(result))
                                         if category is not None:
                                             raise _EligibleModelFailure(category)
+                                        if native_retryable_status(response.status_code):
+                                            raise _TransientModelFailure("transient_http")
                                         raise VideoPolicyRefused("video model status refused")
                                     answer = (gemini_video_answer(json.loads(result)) if identity.provider == "gemini"
                                               else json.loads(result)["choices"][0]["message"]["content"])
@@ -361,7 +388,8 @@ class VideoAnalysisTool:
                             except httpx.HTTPError as exc:
                                 category = transport_failure_category(exc) if physical_send else None
                                 if category is not None:
-                                    raise _EligibleModelFailure(category) from None
+                                    failure_type = _TransientModelFailure if category == "connection" else _EligibleModelFailure
+                                    raise failure_type(category) from None
                                 raise
                 finally:
                     check()  # Includes cleanup, revocation, and complete chain freshness.
@@ -424,25 +452,40 @@ class VideoAnalysisTool:
                           "Then answer the following question:\n\n" + args["question"])
                 if any(identity.provider == "gemini" for identity in identities):
                     gemini_video_body(prompt, data_url)
+                retry_count = resolve_video_retry_count()
                 failures = []
-                for identity in identities:
-                    check()
-                    try:
-                        answer = await self._attempt(identity, prompt, data_url, check)
-                    except _EligibleModelFailure as exc:
-                        failures.append({"target_id": identity.target_id, "category": exc.category})
-                        if len(failures) == len(identities):
+                for route_index, identity in enumerate(identities):
+                    max_attempts = 1 + retry_count if route_index == 0 else 1
+                    for attempt in range(1, max_attempts + 1):
+                        check()
+                        try:
+                            answer = await self._attempt(identity, prompt, data_url, check)
+                        except _EligibleModelFailure as exc:
+                            failure = {"target_id": identity.target_id, "category": exc.category}
+                            if retry_count:
+                                failure["attempt"] = attempt
+                            failures.append(failure)
+                            transient = isinstance(exc, _TransientModelFailure)
+                            if transient and route_index == 0 and attempt < max_attempts:
+                                continue
+                            if exc.category == "transient_http":
+                                check()
+                                result = {"ok": False, "reason": "video_analysis_refused"}
+                                if retry_count:
+                                    result["attempts"] = failures
+                                return result
                             break
-                        continue
-                    check()
-                    result = {"ok": True, "analysis": answer[:MAX_ANSWER_CHARS]}
-                    if len(identities) > 1:
-                        result.update({"attempts": failures, "chosen_route": identity.target_id,
-                                       "chosen_provider": identity.provider, "chosen_model": identity.model})
-                    return result
+                        check()
+                        result = {"ok": True, "analysis": answer[:MAX_ANSWER_CHARS]}
+                        if retry_count or len(identities) > 1:
+                            result.update({"attempts": failures, "chosen_route": identity.target_id,
+                                           "chosen_provider": identity.provider, "chosen_model": identity.model})
+                            if retry_count:
+                                result["chosen_attempt"] = attempt
+                        return result
                 check()
                 result = {"ok": False, "reason": "video_analysis_refused"}
-                if len(identities) > 1:
+                if retry_count or len(identities) > 1:
                     result["attempts"] = failures
                 return result
         except Exception:
