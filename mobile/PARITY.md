@@ -271,6 +271,12 @@ capability/plan generation. Existing results reach the same clients; the six
 `JARVIS_AUX_*_MODEL` environment settings have no native editor. Acquisition uses
 its existing governed server workflow; no new native acquisition UI is claimed. A structured LM Studio temperature rejection can now recover on these nonstreaming server calls; no native configuration control or device proof was added. This adds no native-device or live-model acceptance claim.
 
+The optional governed image empty-retry budget is shown by the responsive-web
+composer before sending and by the local describe/screen panels. A changed budget
+invalidates old destination confirmations and unattended role grants. Native mobile
+has no editor or verified rendering for this server setting; native acceptance is
+still open. Existing camera and Telegram roles retain their local-only boundaries.
+
 The responsive-web image composer now displays provider-policy warnings alongside
 the reviewed destination and successful answer. Its request-scoped remote
 acknowledgment is unchanged. Native image-policy warning parity remains open;

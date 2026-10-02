@@ -1928,6 +1928,11 @@
   primary, with a signed budget, one prepared source and fresh authority per send.
   The focused union passed 647 cases including 61 new regressions; see the
   [empty-result increment](docs/hermes/h277-video-empty-retry-2026-10-02.md).
+  Governed image recovery now permits one same-model retry in composer, local
+  describe, screen reflex, Telegram media and camera descriptions, with bound
+  policy, exact request validation and HUD/CLI disclosure. The focused backend
+  passed 582 cases and the full frontend passed 1,847; see the
+  [image-recovery increment](docs/hermes/h277-image-empty-retry-2026-10-02.md).
   Broader auxiliary routing, SDK recovery and live acceptance remain open. This does not close
   H277 or HEQ-1.
 

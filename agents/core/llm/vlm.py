@@ -27,6 +27,8 @@ pin, because the served model name is the host's fact, not ours.
 from __future__ import annotations
 
 import base64
+import asyncio
+import json
 import logging
 from dataclasses import dataclass
 from typing import Optional
@@ -41,6 +43,8 @@ from . import model_roles
 from .base import LLMBackend, strip_thinking
 from .egress import llm_async_client
 from .model_roles import LMSTUDIO_VLM_BASE, _is_loopback_base  # noqa: F401 — re-exported by name
+from .native_response import compatible_empty_success
+from .vision_retry import current_vision_retry
 
 logger = logging.getLogger("jarvis.llm.vlm")
 
@@ -50,6 +54,8 @@ DEFAULT_VLM_BASE = "http://localhost:8000/v1"
 # Ollama serves the same contract on 11434/v1 (same constant the companion-eval lane documents).
 _FMT_MIME = {"PNG": "image/png", "JPEG": "image/jpeg", "JPG": "image/jpeg",
              "GIF": "image/gif", "WEBP": "image/webp"}
+MAX_VISION_RESPONSE_BYTES = 512_000
+VISION_GENERATION_TIMEOUT = 180
 
 
 def _mime(fmt: str) -> str:
@@ -350,6 +356,32 @@ class VLMBackend(LLMBackend):
         messages = build_vision_messages(prompt, images, system, self.max_image_dim)
         payload = {"model": model, "messages": messages,
                    "max_tokens": max_tokens, "temperature": temperature, "stream": False}
+        scope = current_vision_retry(self, model)
+        image_bearing = any(isinstance(part, dict) and part.get("type") == "image_url"
+                            for message in messages if isinstance(message.get("content"), list)
+                            for part in message["content"])
+        if scope is not None and image_bearing:
+            scope.begin(payload)
+            async with asyncio.timeout(VISION_GENERATION_TIMEOUT):
+                for attempt in range(2):
+                    attempt_body = scope.next_attempt()
+                    async with self.client.stream(
+                            "POST", "/chat/completions", json=attempt_body,
+                            headers=self._headers()) as response:
+                        result = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            scope.check()
+                            result.extend(chunk)
+                            if len(result) > MAX_VISION_RESPONSE_BYTES:
+                                raise ValueError("vision response too large")
+                        scope.check()
+                        response.raise_for_status()
+                    scope.check()
+                    data = json.loads(result)
+                    if attempt == 0 and compatible_empty_success(data):
+                        continue
+                    content = (data["choices"][0]["message"].get("content", "") or "")
+                    return strip_thinking(content)
         resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
         resp.raise_for_status()
         data = resp.json()

@@ -540,6 +540,35 @@ configuration until rebuilt. Role revocation reads its durable store at dispatch
 Neither mechanism recalls data already sent. Pure injected library adapters are
 not claimed to be universally mediated. See posture's current coverage statement.
 
+### `JARVIS_ROLE_VISION_EMPTY_RETRIES`
+
+**Default: 0.** Accepts only unset/ASCII-space blank/0 or 1; invalid, overlong,
+control-character and non-ASCII values refuse. At 1, an image-bearing call inside
+the governed native vision scope may send the same prepared image/question to the
+same model once more after a structurally valid empty successful response. This
+covers the composer (including acknowledged remote use), local describe, screen
+reflex, unattended media reader and camera descriptions. Unguarded/direct backend
+calls, ordinary text-only calls and injected library adapters gain no recovery.
+
+Enabled policy enters the frozen destination binding and unattended role scope.
+Changing it invalidates old composer destination confirmations and unknown/training
+role grants. Status exposes the extra call budget before the composer sends images;
+local panels and role notes retain the disclosure alongside privacy warnings.
+The existing remote acknowledgment still applies to the exact displayed binding.
+Default zero preserves legacy bindings and public/result shapes.
+
+The enabled path permits at most two native sends under one 180-second generation
+deadline, with the same model, prepared content, token cap and temperature. Existing
+shorter caller deadlines and cleanup checks remain authoritative. Each request gets
+fresh policy/consent checks, exact prepared-body validation and a one-send limit;
+the response closes before another request. Clients retain their existing owners.
+Responses are streamed with a 512,000-byte cap. Only one explicit stopped choice
+with blank/null content and no error/tool/refusal/meaningful reasoning output can
+trigger recovery. Malformed, blocked, truncated, oversized or failed responses,
+cancellation and content that merely becomes empty after thinking removal cannot.
+No provider switch, credential change, source download or transport retry is added.
+The setting is not proof of live model compatibility or broader Hermes parity.
+
 ### `JARVIS_ROLE_<NAME>_PROVIDER` · `_MODEL` · `_BASE_URL` (H277 model roles)
 
 **Default: unset** — every role behaves exactly as before. `agents/core/llm/model_roles.py`

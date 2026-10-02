@@ -364,6 +364,12 @@ The approval judge now has its own consent row and allow/revoke controls. Provid
 and role setting failures disable their respective controls independently. The role
 acknowledgment never enables remote judging and never inherits a provider grant.
 
+Governed image empty recovery (H277, 2026-10-02) discloses its optional one-call
+retry budget in the composer before remote acknowledgment, and beside policy notes
+in local describe/screen panels. Refreshing a changed binding clears the previous
+acknowledgment. The environment setting has no HUD editor; native mobile rendering
+and live model acceptance remain open.
+
 Composer image status and successful results now retain a visible data-policy
 warning. The existing per-destination remote checkbox remains request-scoped;
 provider/judge consent cannot replace it. No unattended vision grant was added.

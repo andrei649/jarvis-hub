@@ -20,6 +20,7 @@ from .file_tools import FileScope, FileScopeError
 from .http_client import PluginHTTPClient, PluginTimeouts
 from .llm.data_handling import authorize_role_target
 from .llm.egress import llm_async_client
+from .llm.native_response import compatible_empty_success
 from .llm.video_failures import provider_failure_category, transport_failure_category
 from .llm.video_native import (
     VIDEO_MIME,
@@ -79,38 +80,6 @@ class _TransientModelFailure(_EligibleModelFailure):
 
 class _EmptyModelResponse(Exception):
     """A successful native response had no usable visible answer."""
-
-
-def _compatible_empty_success(payload: object) -> bool:
-    """Distinguish an explicitly stopped blank completion from malformed output."""
-    if not isinstance(payload, dict) or "error" in payload:
-        return False
-    choices = payload.get("choices")
-    if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
-        return False
-    choice = choices[0]
-    message = choice.get("message")
-    if choice.get("finish_reason") != "stop" or not isinstance(message, dict) or "content" not in message:
-        return False
-    if "error" in choice or "error" in message:
-        return False
-    content = message["content"]
-    if content is not None and (not isinstance(content, str) or content.strip()):
-        return False
-    refusal = message.get("refusal")
-    if refusal is not None and (not isinstance(refusal, str) or bool(refusal)):
-        return False
-    tools = message.get("tool_calls")
-    if tools is not None and (not isinstance(tools, list) or bool(tools)):
-        return False
-    if message.get("function_call") is not None or message.get("audio") is not None:
-        return False
-    for key in ("reasoning", "reasoning_content"):
-        value = message.get(key)
-        if value is not None and (not isinstance(value, str) or bool(value.strip())):
-            return False
-    details = message.get("reasoning_details")
-    return details is None or (isinstance(details, list) and not details)
 
 
 def _short_notice_value(value: str, limit: int) -> str:
@@ -437,7 +406,7 @@ class VideoAnalysisTool:
                                     else:
                                         answer = parsed["choices"][0]["message"]["content"]
                                         if ((isinstance(answer, str) and not answer.strip()
-                                             or answer is None) and _compatible_empty_success(parsed)):
+                                             or answer is None) and compatible_empty_success(parsed)):
                                             raise _EmptyModelResponse
                             except asyncio.CancelledError:
                                 request_timeout = attempt_timeout.expired()

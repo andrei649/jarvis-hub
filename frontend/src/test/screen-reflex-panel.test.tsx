@@ -11,6 +11,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { ScreenReflexPanel } from '../gap';
 
 const vlmStatus = { configured: true, backend: 'custom', base_url: 'http://localhost:1234/v1', default_model: 'qwen2.5-vl', local: true, reachable: null };
+const retryNotice = 'May retry once with the same images and model after an empty response (at most two model calls).';
 
 let reflex = { ok: true, generated: true, mode: 'answer', model: 'qwen2.5-vl', answer: 'A settings window is open.', question: 'what is open?' };
 let reflexStatus = 200;
@@ -52,6 +53,7 @@ describe('ScreenReflexPanel (DRA-06)', () => {
   });
 
   it('POSTs the screenshot bytes and renders the answer', async () => {
+    reflex = { ...reflex, retry_notice: retryNotice };
     render(<ScreenReflexPanel />);
     await waitFor(() => expect(screen.getByLabelText('screenshot image file')).toBeTruthy());
     fireEvent.change(screen.getByLabelText('reflex question'), { target: { value: 'what is open?' } });
@@ -59,6 +61,7 @@ describe('ScreenReflexPanel (DRA-06)', () => {
     fireEvent.click(screen.getByRole('button', { name: /observe screen/i }));
 
     await waitFor(() => expect(screen.getByText(/A settings window is open\./)).toBeTruthy());
+    expect(screen.getByText(retryNotice)).toBeTruthy();
     const call = vi.mocked(global.fetch).mock.calls.find(([u]) => String(u) === '/api/screen/reflex');
     expect(call[1].method).toBe('POST');
     const body = JSON.parse(call[1].body);
@@ -117,10 +120,11 @@ describe('ScreenReflexPanel (DRA-06)', () => {
   it('shows policy warnings before observe and keeps success response warnings', async () => {
     global.fetch = vi.fn((url) => String(url).includes('/api/screen/reflex')
       ? response({ ...reflex, warning: 'This observation used an unknown-policy model.' })
-      : response({ ...vlmStatus, data_policy: 'unknown', data_policy_note: 'Custom VLM policy is unknown.', warning: 'Review screenshot contents.' }));
+      : response({ ...vlmStatus, data_policy: 'unknown', data_policy_note: 'Custom VLM policy is unknown.', warning: 'Review screenshot contents.', retry_notice: retryNotice }));
     render(<ScreenReflexPanel />);
     await waitFor(() => expect(screen.getByText('Review screenshot contents.')).toBeTruthy());
     expect(screen.getByText('Custom VLM policy is unknown.')).toBeTruthy();
+    expect(screen.getByText(retryNotice)).toBeTruthy();
     await pickAFile();
     fireEvent.click(screen.getByRole('button', { name: /observe screen/i }));
     await waitFor(() => expect(screen.getByText('A settings window is open.')).toBeTruthy());
