@@ -126,7 +126,8 @@ class MemoryManager:
             self._bind_history_instance(session_id)
             if tools or media is not None:
                 await self.conversation.add_turn(session_id, role, content, agent_id,
-                                                 tools=tools, media=media)
+                                                 **({"tools": tools} if tools else {}),
+                                                 **({"media": media} if media is not None else {}))
             else:
                 await self.conversation.add_turn(session_id, role, content, agent_id)
 
