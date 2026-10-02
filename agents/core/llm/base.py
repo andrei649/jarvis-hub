@@ -12,7 +12,12 @@ from typing import Any, Callable
 
 import httpx
 
-from .auxiliary_recovery import may_repair_temperature, rejects_temperature
+from .auxiliary_recovery import (
+    may_repair_temperature,
+    omit_rejected_temperature,
+    rejects_temperature,
+    remember_temperature_rejection,
+)
 from .egress import llm_async_client
 from .host_protocol import HostProtocolRefused
 from .repetition_guard import is_repetition_dominated
@@ -528,12 +533,19 @@ class LMStudioBackend(LLMBackend):
     async def _post_chat(self, payload: dict) -> httpx.Response:
         """POST a completion with at most one unload and scoped temperature repair."""
         current = payload
+        model = payload.get("model")
+        if ("temperature" in payload and "tools" not in payload
+                and payload.get("stream") is False
+                and omit_rejected_temperature(self, model)):
+            current = {key: value for key, value in payload.items() if key != "temperature"}
         unloaded_retried = False
         temperature_retried = False
         for _ in range(3):
             resp = await self.client.post("/v1/chat/completions", json=current)
             try:
                 resp.raise_for_status()
+                if temperature_retried:
+                    remember_temperature_rejection(self, model)
                 return resp
             except httpx.HTTPStatusError as exc:
                 if not unloaded_retried and is_model_unloaded_error(exc):

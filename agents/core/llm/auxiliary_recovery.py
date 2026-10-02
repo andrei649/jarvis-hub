@@ -19,6 +19,18 @@ class _RecoveryScope:
     active: bool = True
 
 
+@dataclass
+class _TemperatureCache:
+    client: object
+    base_url: str
+    client_base_url: str
+    transport: object
+    models: set[str]
+
+
+_MAX_TEMPERATURE_ROUTES = 128
+
+
 _scope: ContextVar[_RecoveryScope | None] = ContextVar("auxiliary_parameter_recovery", default=None)
 
 
@@ -45,6 +57,60 @@ def may_repair_temperature(backend: object, model: object) -> bool:
     state = _scope.get()
     return bool(state is not None and state.active and state.backend is backend
                 and state.model == model and state.task is _current_task())
+
+
+def _temperature_cache(backend: object, *, create: bool) -> _TemperatureCache | None:
+    """Keep learned capability only on this backend's current physical route."""
+    try:
+        state = vars(backend)
+    except TypeError:
+        return None
+    if type(state) is not dict:
+        return None
+    client = state.get("client")
+    base_url = state.get("base_url")
+    if client is None or type(base_url) is not str:
+        return None
+    try:
+        client_base_url = str(client.base_url)
+        request_url = client.build_request("POST", "/v1/chat/completions").url
+        transport = client._transport_for_url(request_url)
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        return None
+    if transport is None:
+        return None
+    cache = state.get("_auxiliary_temperature_cache")
+    if (type(cache) is _TemperatureCache and cache.client is client
+            and cache.base_url == base_url
+            and cache.client_base_url == client_base_url
+            and cache.transport is transport):
+        return cache
+    state.pop("_auxiliary_temperature_cache", None)
+    if not create:
+        return None
+    cache = _TemperatureCache(client, base_url, client_base_url, transport, set())
+    state["_auxiliary_temperature_cache"] = cache
+    return cache
+
+
+def omit_rejected_temperature(backend: object, model: object) -> bool:
+    """Return a previously proven omission only inside the exact auxiliary call."""
+    if not may_repair_temperature(backend, model):
+        return False
+    cache = _temperature_cache(backend, create=False)
+    return bool(cache is not None and model in cache.models)
+
+
+def remember_temperature_rejection(backend: object, model: object) -> None:
+    """Learn only after a typed rejection's repaired request has succeeded."""
+    if not may_repair_temperature(backend, model) or type(model) is not str:
+        return
+    cache = _temperature_cache(backend, create=True)
+    if cache is None:
+        return
+    if len(cache.models) >= _MAX_TEMPERATURE_ROUTES:
+        cache.models.clear()
+    cache.models.add(model)
 
 
 def rejects_temperature(exc: BaseException) -> bool:

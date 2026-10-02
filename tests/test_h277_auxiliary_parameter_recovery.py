@@ -352,21 +352,118 @@ async def test_scope_identity_controls_actual_backend_retry():
         await backend.client.aclose()
 
 
-async def test_successful_repair_does_not_cache_provider_capability():
+async def test_failed_repair_does_not_cache_provider_capability():
     sent = []
 
     def handler(request):
         sent.append(json.loads(request.content))
-        if len(sent) in (1, 3):
+        if len(sent) == 1:
             return httpx.Response(400, json=REJECTION)
+        if len(sent) == 2:
+            return httpx.Response(503)
         return answer("recovered")
 
     orch, router, backend = route(handler)
     try:
+        assert is_degraded_reply(await invoke("review", orch, router))
         assert await invoke("review", orch, router) == "recovered"
-        assert await invoke("review", orch, router) == "recovered"
-        assert len(sent) == 4
-        assert ["temperature" in body for body in sent] == [True, False, True, False]
+        assert len(sent) == 3
+        assert ["temperature" in body for body in sent] == [True, False, True]
+    finally:
+        await backend.client.aclose()
+
+
+@pytest.mark.parametrize("task,answer_text,max_tokens", CASES)
+async def test_successful_repair_is_remembered_for_later_local_auxiliary_call(
+    task, answer_text, max_tokens,
+):
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        if len(sent) == 1:
+            return httpx.Response(400, json=REJECTION)
+        return answer(answer_text)
+
+    orch, router, backend = route(handler)
+    try:
+        expected = (CAPABILITY if task == "acquisition_capability" else
+                    DRAFT if task == "acquisition_draft" else answer_text)
+        assert await invoke(task, orch, router) == expected
+        assert await invoke(task, orch, router) == expected
+        assert len(sent) == 3
+        assert ["temperature" in body for body in sent] == [True, False, False]
+        assert all(body["model"] == sent[0]["model"] for body in sent)
+        assert all(body["max_tokens"] == max_tokens for body in sent)
+        assert sent[0]["messages"] == sent[1]["messages"] == sent[2]["messages"]
+    finally:
+        await backend.client.aclose()
+
+
+async def test_cached_auxiliary_omission_does_not_change_ordinary_chat():
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(400, json=REJECTION) if len(sent) == 1 else answer("ready")
+
+    orch, router, backend = route(handler)
+    try:
+        assert await invoke("review", orch, router) == "ready"
+        assert await backend.generate("selected-local", "ordinary chat") == "ready"
+        assert ["temperature" in body for body in sent] == [True, False, True]
+    finally:
+        await backend.client.aclose()
+
+
+@pytest.mark.parametrize("change", ["model", "client", "endpoint", "transport"])
+async def test_cached_auxiliary_omission_is_bound_to_exact_route(monkeypatch, change):
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(400, json=REJECTION) if len(sent) == 1 else answer("ready")
+
+    orch, router, backend = route(handler)
+    try:
+        assert await invoke("review", orch, router) == "ready"
+        if change == "model":
+            monkeypatch.setenv("JARVIS_AUX_REVIEW_MODEL", "other-local-model")
+        elif change == "transport":
+            backend.client._transport = httpx.MockTransport(handler)
+        else:
+            await backend.client.aclose()
+            if change == "endpoint":
+                backend.base_url = "http://127.0.0.1:1235"
+            backend.client = llm_async_client(
+                "lm-studio", base_url=backend.base_url,
+                transport=httpx.MockTransport(handler),
+            )
+        assert await invoke("review", orch, router) == "ready"
+        assert len(sent) == 3
+        assert ["temperature" in body for body in sent] == [True, False, True]
+    finally:
+        await backend.client.aclose()
+
+
+async def test_cached_auxiliary_call_rechecks_h513_before_send(monkeypatch):
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(400, json=REJECTION) if len(sent) == 1 else answer("ready")
+
+    orch, router, backend = route(handler)
+    try:
+        assert await invoke("review", orch, router) == "ready"
+
+        def revoke(*_args, **_kwargs):
+            raise data_handling.DataHandlingRefused("synthetic revocation")
+
+        monkeypatch.setattr(data_handling, "authorize", revoke)
+        with pytest.raises(data_handling.DataHandlingRefused, match="synthetic revocation"):
+            await invoke("review", orch, router)
+        assert len(sent) == 2
     finally:
         await backend.client.aclose()
 
