@@ -8,14 +8,20 @@ investigation. Pinned Hermes `59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e`.
 
 ## Verified requirements from source
 
-Hermes `agent/auxiliary_client.py::_resolve_auto_route` prefers the selected main
+For text, Hermes `agent/auxiliary_client.py::_resolve_auto_route` prefers the selected main
 provider/model, then the task's configured fallback chain, then the main fallback
 chain. Its `_discovery_chain_allowed` explicitly refuses to guess another logged-in
 provider when a concrete main provider was selected but is unavailable. Built-in
 discovery is only the final convenience when the main provider is absent/auto and
 no explicit policy resolves a client. `_try_discovery_chain` skips known unhealthy
 provider/base identities and uses its fixed provider chain. A simple scan for any
-available API key would contradict this upstream behavior.
+available API key would contradict this upstream text behavior.
+
+Vision has a distinct contract: `_vision_auto_route` first tries the selected main
+provider with a vision-capable default, then its dedicated aggregator order
+(OpenRouter, Nous, DeepInfra). It does not apply the text discovery gate. Preserve
+this distinction when adapting discovery to Nerva; do not infer image support
+from a text route or from the presence of credentials.
 
 `_to_async_client` preserves adapter kind and configured headers/credentials when
 converting clients, disables SDK-internal retries, and handles Codex, Anthropic,
@@ -44,7 +50,8 @@ existing per-destination/role consent and key-to-host scoping. Discovery after a
 approval cannot silently change its endpoint, provider, credential or send budget.
 
 Use synthetic provider availability and real consumer boundaries to test explicit
-overrides, main-selected/unavailable refusal, declared fallback ordering, no-policy
+overrides, text main-selected/unavailable refusal, vision aggregator fallback,
+declared fallback ordering, no-policy
 discovery, stale selection, no paid/unconsented side-effect and final HTTP authority.
 Do not deliver only an unused resolver helper. Separate broad SDK adapter/credential
 recovery from route discovery if their ownership or acceptance tests differ, while

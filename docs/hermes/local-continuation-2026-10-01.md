@@ -297,7 +297,26 @@ No push, merge or deploy; canonical main remains cd2aa666.
 
 Next action: design real-consumer auxiliary provider discovery from the
 [pinned source investigation](h277-discovery-investigation-2026-10-02.md).
-Upstream explicitly refuses discovery when a concrete selected main provider is
-unavailable; do not replace this with a scan for any logged-in account. Resolve
+Upstream text routing refuses discovery when a concrete selected main provider is
+unavailable; vision separately permits its dedicated aggregator fallback. Do not
+apply the text-only gate to vision or scan arbitrary logged-in accounts. Resolve
 and disclose candidates before approval, preserve local-only task policy and key
 host scoping, and retain every missing capability in the overall objective.
+
+
+## Owner-authorized publication — 2026-10-02
+
+The owner now explicitly requests evaluation, repair/closure and merge of open
+PRs, then continuation of the Nerva backlog. This supersedes earlier local-only
+publication restrictions for this work; deployment remains outside this request.
+Live GitHub inspection found zero open PRs: #1207, #1226 and #1227 are merged.
+The current candidate integrates the fourteen local H277 reliability commits over
+`cd2aa666ed0a690e9bf9138747b95c15ffe9ee37`, preserving their implementation and test
+history. Goal: publish and merge the verified reliability checkpoint, then resume
+provider discovery. Non-goals: claiming full H277/Hermes parity or live-provider
+proof. Paths: existing auxiliary/image/video source, tests, generated HUD assets
+and evidence documents. Verify full backend/frontend suites, type checks,
+production build, status/reference gates and secret scan; wait for GitHub checks
+on the published candidate before merging. Rollback: revert the integration PR.
+Next action: inspect review findings and current CI, then continue discovery with
+distinct text/vision rules and server-owned request context.
