@@ -76,6 +76,34 @@ def test_selected_review_refuses_a_different_image_after_preflight(route, monkey
         asyncio.run(backend.aclose())
 
 
+def test_selected_review_refuses_reordered_images(route, monkeypatch):
+    _orch, backend, sid = _bind_local(monkeypatch)
+    changed = io.BytesIO()
+    Image.new("RGB", (1, 1), (255, 0, 0)).save(changed, format="PNG")
+    another = "data:image/png;base64," + base64.b64encode(changed.getvalue()).decode()
+    assert another != PNG
+    try:
+        preview = route.client.post("/api/vlm/composer/prepare", json={
+            "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
+            "selected_turn": True,
+            "image_digests": [IMAGE_DIGEST, hashlib.sha256(another.encode("utf-8")).hexdigest()],
+        })
+        assert preview.status_code == 200, preview.text
+        status = preview.json()
+        body = {**approved(status), "agent": "jarvis", "session_id": sid,
+                "selected_turn": True, "review_token": status["review_token"],
+                "images": [another, PNG]}
+        refused = route.client.post("/api/vlm/composer/describe-prepared", json=body)
+        assert refused.status_code == 409, refused.text
+        assert route.requests == []
+        replay = route.client.post("/api/vlm/composer/describe-prepared", json={
+            **body, "images": [PNG, another]})
+        assert replay.status_code == 409
+        assert route.requests == []
+    finally:
+        asyncio.run(backend.aclose())
+
+
 def test_selected_image_turn_sends_to_main_local_model(route, monkeypatch):
     orch, backend, sid = _bind_local(monkeypatch)
     try:
