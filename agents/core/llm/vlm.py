@@ -165,20 +165,25 @@ class VLMConfig:
     wire_mode: str = "chat_completions"
     route_source: str = ""
     prompt_cache_retention: str = "in_memory"
+    reasoning_effort: str = ""
 
     def __post_init__(self) -> None:
-        if self.wire_mode not in {"chat_completions", "anthropic_messages", "ollama_chat", "gemini_generate_content", "responses"} or (
+        if self.wire_mode not in {"chat_completions", "anthropic_messages", "ollama_chat", "gemini_generate_content", "responses", "xai_responses"} or (
                 self.wire_mode == "anthropic_messages" and self.backend not in {"nous", "anthropic"}) or (
                 self.wire_mode == "ollama_chat" and self.backend != "ollama") or (
                 self.wire_mode == "gemini_generate_content" and self.backend != "gemini") or (
                 self.wire_mode == "responses" and self.backend != "openai-responses") or (
+                self.wire_mode == "xai_responses" and self.backend != "xai") or (
                 self.backend == "anthropic" and self.wire_mode != "anthropic_messages") or (
                 self.backend == "gemini" and self.wire_mode != "gemini_generate_content") or (
                 self.backend == "openai-responses" and self.wire_mode != "responses") or (
+                self.backend == "xai" and self.wire_mode != "xai_responses") or (
                 self.backend == "ollama" and self.wire_mode != "ollama_chat"):
             raise ValueError("unsupported vision wire mode")
         if self.prompt_cache_retention not in {"in_memory", "24h"}:
             raise ValueError("unsupported Responses retention")
+        if self.reasoning_effort not in {"", "low", "medium", "high", "xhigh"}:
+            raise ValueError("unsupported image reasoning effort")
         if self.convention not in COORDINATE_CONVENTIONS:
             raise ValueError(f"unknown coordinate convention: {self.convention!r}")
 
@@ -334,24 +339,29 @@ class VLMBackend(LLMBackend):
     def __init__(self, base_url: str = DEFAULT_VLM_BASE, api_key: str = "",
                  client=None, max_image_dim: int = 1024, *, composer_auth: bool = False,
                  provider_id: str = "", wire_mode: str = "chat_completions",
-                 prompt_cache_retention: str = "in_memory") -> None:
-        if provider_id not in ("", "openrouter", "deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses"):
+                 prompt_cache_retention: str = "in_memory", reasoning_effort: str = "") -> None:
+        if provider_id not in ("", "openrouter", "deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses", "xai"):
             raise ValueError("unsupported native vision provider")
-        if wire_mode not in {"chat_completions", "anthropic_messages", "ollama_chat", "gemini_generate_content", "responses"} or (
+        if wire_mode not in {"chat_completions", "anthropic_messages", "ollama_chat", "gemini_generate_content", "responses", "xai_responses"} or (
                 wire_mode == "anthropic_messages" and provider_id not in {"nous", "anthropic"}) or (
                 wire_mode == "ollama_chat" and provider_id != "ollama") or (
                 wire_mode == "gemini_generate_content" and provider_id != "gemini") or (
                 wire_mode == "responses" and provider_id != "openai-responses") or (
+                wire_mode == "xai_responses" and provider_id != "xai") or (
                 provider_id == "anthropic" and wire_mode != "anthropic_messages") or (
                 provider_id == "gemini" and wire_mode != "gemini_generate_content") or (
                 provider_id == "openai-responses" and wire_mode != "responses") or (
+                provider_id == "xai" and wire_mode != "xai_responses") or (
                 provider_id == "ollama" and wire_mode != "ollama_chat"):
             raise ValueError("unsupported vision wire mode")
         if prompt_cache_retention not in {"in_memory", "24h"}:
             raise ValueError("unsupported Responses retention")
+        if reasoning_effort not in {"", "low", "medium", "high", "xhigh"}:
+            raise ValueError("unsupported image reasoning effort")
         self._wire_mode = wire_mode
         self._provider_id = provider_id
         self._prompt_cache_retention = prompt_cache_retention
+        self._reasoning_effort = reasoning_effort
         self.base_url = base_url
         self.api_key = api_key
         self.max_image_dim = max_image_dim
@@ -376,9 +386,10 @@ class VLMBackend(LLMBackend):
             api_key=config.api_key,
             client=client,
             max_image_dim=max_image_dim,
-            **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses") else {}),
+            **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses", "xai") else {}),
             wire_mode=config.wire_mode,
             prompt_cache_retention=config.prompt_cache_retention,
+            reasoning_effort=config.reasoning_effort,
         )
         backend.is_local = config.is_local
         return backend
@@ -415,11 +426,12 @@ class VLMBackend(LLMBackend):
         native_ollama = self._wire_mode == "ollama_chat"
         native_gemini = self._wire_mode == "gemini_generate_content"
         native_responses = self._wire_mode == "responses"
+        native_xai = self._wire_mode == "xai_responses"
         if native_gemini:
             from .video_native import gemini_request_url
             gemini_request_url(self.base_url, model)
         endpoint = (f"/models/{model}:generateContent" if native_gemini else
-                    "/responses" if native_responses else
+                    "/responses" if native_responses or native_xai else
                     "/messages" if native_messages else "/api/chat" if native_ollama else "/chat/completions")
         answer, empty = compatible_vision_answer, compatible_empty_success
         if native_messages:
@@ -440,6 +452,10 @@ class VLMBackend(LLMBackend):
             from .vision_responses_wire import responses_answer, responses_empty, responses_payload
             payload = responses_payload(payload, retention=self._prompt_cache_retention)
             answer, empty = responses_answer, responses_empty
+        if native_xai:
+            from .vision_xai_wire import xai_answer, xai_empty, xai_payload
+            payload = xai_payload(payload, reasoning_effort=self._reasoning_effort)
+            answer, empty = xai_answer, xai_empty
         if self._provider_id == "openrouter":
             from .vision_openrouter import current_provider_block
             payload["provider"] = current_provider_block()
@@ -448,7 +464,7 @@ class VLMBackend(LLMBackend):
                             for message in messages if isinstance(message.get("content"), list)
                             for part in message["content"])
         recovery = scope if image_bearing else None
-        if recovery is not None or self._provider_id in {"deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses"}:
+        if recovery is not None or self._provider_id in {"deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses", "xai"}:
             if recovery is not None:
                 recovery.begin(payload)
             async with asyncio.timeout(VISION_GENERATION_TIMEOUT):

@@ -12,8 +12,9 @@ MAX_INLINE_REQUEST_BYTES = 20_000_000
 IMAGE_MIMES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 
 
-def responses_payload(compatible: dict, *, retention: str) -> dict:
-    if retention not in {"in_memory", "24h"}:
+def responses_payload(compatible: dict, *, retention: str | None,
+                      allowed_mimes: frozenset[str] = IMAGE_MIMES) -> dict:
+    if retention is not None and retention not in {"in_memory", "24h"}:
         raise ValueError("invalid Responses image retention")
     instructions: list[str] = []
     user: list[dict] = []
@@ -40,7 +41,7 @@ def responses_payload(compatible: dict, *, retention: str) -> dict:
                 header, separator, encoded = uri.partition(",")
                 mime = header.removeprefix("data:").removesuffix(";base64")
                 if (not separator or not header.startswith("data:") or not header.endswith(";base64")
-                        or mime not in IMAGE_MIMES or not encoded):
+                        or mime not in allowed_mimes or not encoded):
                     raise ValueError("invalid Responses image data")
                 if len(encoded) > MAX_INLINE_REQUEST_BYTES:
                     raise ValueError("Responses inline image request too large")
@@ -60,8 +61,9 @@ def responses_payload(compatible: dict, *, retention: str) -> dict:
         "store": False,
         "max_output_tokens": compatible["max_tokens"],
         "temperature": compatible["temperature"],
-        "prompt_cache_retention": retention,
     }
+    if retention is not None:
+        payload["prompt_cache_retention"] = retention
     if len(json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()) > MAX_INLINE_REQUEST_BYTES:
         raise ValueError("Responses inline image request too large")
     return payload

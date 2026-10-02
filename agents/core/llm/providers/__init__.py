@@ -267,7 +267,7 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
         id="xai", display_name="xAI Grok (Responses)", backend_kind="xai-responses",
         auth_type="bearer", auth_env="XAI_API_KEY", default_base_url="https://api.x.ai/v1",
         fallback_models=("grok-4.6", "grok-4.5"),
-        capabilities=frozenset({"chat", "streaming", "cloud", "reasoning-effort"}),
+        capabilities=frozenset({"chat", "streaming", "cloud", "reasoning-effort", "vision"}),
         reasoning_declarations={"grok-4.6": ("low", "medium", "high", "xhigh"),
                                 "grok-4.5": ("low", "medium", "high")},
     ),

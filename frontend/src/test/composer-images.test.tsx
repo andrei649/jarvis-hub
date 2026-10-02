@@ -167,6 +167,17 @@ it('shows selected Responses prompt-cache retention before remote consent',async
   expect(disclosure.compareDocumentPosition(screen.getByRole('checkbox',{name:/leave this host/}))&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
 });
+it('blocks xAI image formats outside PNG and JPEG before sending',async()=>{
+  const chosen={...status,backend:'xai',model:'grok-4.6',local:false,
+    destination:'https://api.x.ai/v1',selection_source:'auto:main'};
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify(chosen))));
+  const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file('animation.gif','image/gif')]}});
+  expect(await screen.findByText(/xAI accepts PNG or JPEG images/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('checkbox',{name:/leave this host/}));
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
+  expect(submit).not.toHaveBeenCalled();
+});
 it('refuses malformed automatic selection metadata before image submission',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify({
     ...status,selection_source:'auto:untrusted'}))));

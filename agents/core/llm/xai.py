@@ -29,6 +29,7 @@ from .responses_dialect import (
 
 XAI_PROFILE = DEFAULT_REGISTRY.get('xai')
 GROK_LEVELS = XAI_PROFILE.reasoning_declarations
+XAI_ENDPOINT = 'https://api.x.ai/v1/responses'
 
 
 class XAIBackend(ResponsesBackend):
@@ -38,7 +39,7 @@ class XAIBackend(ResponsesBackend):
     def _accept_completion(self):
         ensure_reasoning_active()
         active_replay()
-    endpoint = 'https://api.x.ai/v1/responses'
+    endpoint = XAI_ENDPOINT
 
     def __init__(self, api_key, *, reasoning_effort='', effort_declarations=None, transport=None):
         self.api_key = api_key

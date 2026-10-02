@@ -19,6 +19,7 @@ from .responses import MODELS as RESPONSES_MODELS
 from .responses import ResponsesBackend
 from .vision_openrouter import _validated_base
 from .vlm import VLMConfig, VLMNotConfigured
+from .xai import XAI_ENDPOINT, XAIBackend
 
 
 def _model(value: object) -> str:
@@ -48,6 +49,31 @@ def selected_main_config(backend: object, model: str, route: str) -> VLMConfig |
     """
     if isinstance(backend, _ScopedBackend):
         raise VLMNotConfigured("vlm_scoped_backend_unsupported")
+    if type(backend) is XAIBackend:
+        from .providers import DEFAULT_REGISTRY
+
+        if route != "cloud-compatible":
+            raise VLMNotConfigured("vlm_xai_route_unsupported")
+        selected_model = _model(model)
+        profile = DEFAULT_REGISTRY.get("xai")
+        if selected_model not in profile.fallback_models:
+            raise VLMNotConfigured("vlm_model_unsupported")
+        key = backend.api_key
+        if (not isinstance(key, str) or not key or len(key) > 4096
+                or any(ord(char) < 33 or ord(char) > 126 for char in key)
+                or backend.endpoint != XAI_ENDPOINT
+                or getattr(backend.profile, "id", None) != "xai"):
+            raise VLMNotConfigured("vlm_xai_authority_invalid")
+        level, reason = backend.profile.clamp_reasoning_effort(
+            selected_model, backend.reasoning_effort,
+        )
+        if reason == "below-minimum":
+            raise VLMNotConfigured("vlm_reasoning_unavailable")
+        return VLMConfig(
+            backend="xai", base_url=XAI_ENDPOINT.removesuffix("/responses"),
+            model=selected_model, api_key=key, is_local=False, wire_mode="xai_responses",
+            reasoning_effort=level or "", route_source="auto:main",
+        )
     # xAI subclasses ResponsesBackend but has a different model, response
     # envelope and data policy. It can still use the existing dedicated fallback.
     if type(backend) is ResponsesBackend:

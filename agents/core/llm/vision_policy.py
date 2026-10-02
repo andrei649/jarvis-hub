@@ -64,6 +64,7 @@ class VisionIdentity:
     selection_findings: tuple[str, ...] = field(default=(), repr=False)
     wire_mode: str = "chat_completions"
     prompt_cache_retention: str = "in_memory"
+    reasoning_effort: str = ""
 
     def selection_choice(self, model):
         route = ('data_collection=allow' if self.provider_block
@@ -107,12 +108,12 @@ def canonical_selection_findings(findings):
 
 def describe(config):
     empty_retries = resolve_vision_empty_retries()
-    if config.backend not in ('lmstudio', 'ollama', 'custom', 'openrouter', 'deepinfra', 'nous', 'anthropic', 'gemini', 'openai-responses') or not isinstance(config.model, str) or not config.model:
+    if config.backend not in ('lmstudio', 'ollama', 'custom', 'openrouter', 'deepinfra', 'nous', 'anthropic', 'gemini', 'openai-responses', 'xai') or not isinstance(config.model, str) or not config.model:
         raise VisionPolicyUnavailable('invalid vision configuration')
     profile = get_profile({'lmstudio': 'lm-studio', 'ollama': 'ollama', 'custom': 'openai-compatible',
                            'openrouter': 'openrouter', 'deepinfra': 'deepinfra', 'nous': 'nous',
                            'anthropic': 'anthropic', 'gemini': 'gemini',
-                           'openai-responses': 'openai-responses'}[config.backend])
+                           'openai-responses': 'openai-responses', 'xai': 'xai'}[config.backend])
     provider_block = ''
     policy, note = profile.data_policy_for(config.model)
     if config.backend == 'openrouter':
@@ -151,14 +152,25 @@ def describe(config):
                 or any(ord(char) < 33 or ord(char) > 126 for char in config.api_key)
                 or config.prompt_cache_retention not in {'in_memory', '24h'}):
             raise VisionPolicyUnavailable('invalid Responses vision authority')
+    if config.backend == 'xai':
+        from .xai import XAI_ENDPOINT, XAI_PROFILE
+        levels = XAI_PROFILE.supported_reasoning_efforts(config.model)
+        if (config.base_url != XAI_ENDPOINT.removesuffix('/responses') or config.is_local
+                or config.model not in XAI_PROFILE.fallback_models or not config.api_key
+                or len(config.api_key) > 4096
+                or any(ord(char) < 33 or ord(char) > 126 for char in config.api_key)
+                or config.reasoning_effort not in ('', *(levels or ()))):
+            raise VisionPolicyUnavailable('invalid xAI vision authority')
     wire_mode = getattr(config, 'wire_mode', 'chat_completions')
-    if wire_mode not in {'chat_completions', 'anthropic_messages', 'ollama_chat', 'gemini_generate_content', 'responses'} or (
+    if wire_mode not in {'chat_completions', 'anthropic_messages', 'ollama_chat', 'gemini_generate_content', 'responses', 'xai_responses'} or (
             wire_mode == 'anthropic_messages' and config.backend not in {'nous', 'anthropic'}) or (
             wire_mode == 'ollama_chat' and config.backend != 'ollama') or (
             wire_mode == 'gemini_generate_content' and config.backend != 'gemini') or (
             wire_mode == 'responses' and config.backend != 'openai-responses') or (
+            wire_mode == 'xai_responses' and config.backend != 'xai') or (
             config.backend == 'gemini' and wire_mode != 'gemini_generate_content') or (
-            config.backend == 'openai-responses' and wire_mode != 'responses'):
+            config.backend == 'openai-responses' and wire_mode != 'responses') or (
+            config.backend == 'xai' and wire_mode != 'xai_responses'):
         raise VisionPolicyUnavailable('invalid vision wire mode')
     if config.backend == 'gemini':
         from .video_native import VideoNativeRefused, gemini_request_url
@@ -167,7 +179,7 @@ def describe(config):
         except VideoNativeRefused:
             raise VisionPolicyUnavailable('invalid Gemini vision model') from None
     else:
-        path = (b'responses' if wire_mode == 'responses' else
+        path = (b'responses' if wire_mode in {'responses', 'xai_responses'} else
                 b'messages' if wire_mode == 'anthropic_messages' else
                 b'api/chat' if wire_mode == 'ollama_chat' else b'chat/completions')
         request_url = str(base.copy_with(raw_path=base.raw_path + path))
@@ -180,6 +192,8 @@ def describe(config):
                str(base), request_url, auth)
     if config.backend == 'openai-responses':
         binding += ('responses-vision:v1', wire_mode, config.prompt_cache_retention)
+    if config.backend == 'xai':
+        binding += ('xai-vision:v1', wire_mode, config.reasoning_effort)
     if empty_retries:
         binding += ('vision-empty-once:v1',)
     if provider_block:
@@ -200,7 +214,8 @@ def describe(config):
         binding += ('vision-auto:v1', route_source)
     identity = VisionIdentity(profile.id, policy, note[:500], warning, str(base), request_url, auth,
                               binding, empty_retries, provider_block, wire_mode=wire_mode,
-                              prompt_cache_retention=config.prompt_cache_retention)
+                              prompt_cache_retention=config.prompt_cache_retention,
+                              reasoning_effort=config.reasoning_effort)
     try:
         findings = canonical_selection_findings(sg.evaluate([identity.selection_choice(config.model)]))
     except VisionPolicyUnavailable:
@@ -229,9 +244,11 @@ def _wire_matches(backend, frozen):
             or getattr(backend, '_wire_mode', 'chat_completions') != frozen.wire_mode
             or (frozen.provider == 'openai-responses'
                 and getattr(backend, '_prompt_cache_retention', '') != frozen.prompt_cache_retention)
-            or (frozen.provider in ('openrouter', 'deepinfra', 'nous', 'ollama', 'anthropic', 'gemini', 'openai-responses')
+            or (frozen.provider == 'xai'
+                and getattr(backend, '_reasoning_effort', None) != frozen.reasoning_effort)
+            or (frozen.provider in ('openrouter', 'deepinfra', 'nous', 'ollama', 'anthropic', 'gemini', 'openai-responses', 'xai')
                 and getattr(backend, '_provider_id', '') != frozen.provider)
-            or (frozen.provider not in ('openrouter', 'deepinfra', 'nous', 'ollama', 'anthropic', 'gemini', 'openai-responses') and getattr(backend, '_provider_id', ''))):
+            or (frozen.provider not in ('openrouter', 'deepinfra', 'nous', 'ollama', 'anthropic', 'gemini', 'openai-responses', 'xai') and getattr(backend, '_provider_id', ''))):
         raise VisionDestinationChanged('vision adapter destination changed')
 
 
@@ -271,7 +288,7 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
                         raise ValueError('duplicate vision request field')
                     result[key] = value
                 return result
-            payload = json.loads(request.content, object_pairs_hook=unique_pairs if frozen.provider_block or frozen.provider in {"deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses"} else dict)
+            payload = json.loads(request.content, object_pairs_hook=unique_pairs if frozen.provider_block or frozen.provider in {"deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses", "xai"} else dict)
             same_model = isinstance(payload, dict) and (
                 ('contents' in payload and 'model' not in payload) if frozen.provider == 'gemini'
                 else payload.get('model') == config.model)
@@ -283,6 +300,14 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
                               and payload.get('prompt_cache_retention') == frozen.prompt_cache_retention
                               and isinstance(payload.get('input'), list)
                               and 'tools' not in payload and 'messages' not in payload)
+            if frozen.provider == 'xai':
+                expected_reasoning = ({'effort': frozen.reasoning_effort}
+                                      if frozen.reasoning_effort else None)
+                same_model = (same_model and payload.get('store') is False
+                              and payload.get('reasoning') == expected_reasoning
+                              and isinstance(payload.get('input'), list)
+                              and 'tools' not in payload and 'messages' not in payload
+                              and 'prompt_cache_retention' not in payload)
         except (ValueError, httpx.RequestNotRead):
             same_model = False
         if ((request.extensions.get('nerva_composer_vision_request') is request_marker) != marked
@@ -306,6 +331,10 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
                 or request.headers.get('proxy-authorization')):
             raise VisionDestinationChanged('vision physical authentication changed')
         if frozen.provider == 'openai-responses' and (
+                request.headers.get('x-api-key') or request.headers.get('x-goog-api-key')
+                or request.headers.get('proxy-authorization')):
+            raise VisionDestinationChanged('vision physical authentication changed')
+        if frozen.provider == 'xai' and (
                 request.headers.get('x-api-key') or request.headers.get('x-goog-api-key')
                 or request.headers.get('proxy-authorization')):
             raise VisionDestinationChanged('vision physical authentication changed')
@@ -337,10 +366,10 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
         logger.warning('%s (purpose=%s)', frozen.warning, notice_purpose)
         record_turn_notice(f'data_handling:{notice_purpose}', frozen.warning)
     scope = (vision_retry_scope(backend, config.model, check, max_attempts=1 + frozen.empty_retries)
-             if frozen.empty_retries or frozen.provider in {'nous', 'ollama', 'anthropic', 'gemini', 'openai-responses'} else nullcontext(None))
+             if frozen.empty_retries or frozen.provider in {'nous', 'ollama', 'anthropic', 'gemini', 'openai-responses', 'xai'} else nullcontext(None))
     with scope as recovery:
         final_hook_required = (recovery is not None or bool(frozen.provider_block)
-                               or bool(cleared_findings) or frozen.provider in {'deepinfra', 'nous', 'ollama', 'anthropic', 'gemini', 'openai-responses'})
+                               or bool(cleared_findings) or frozen.provider in {'deepinfra', 'nous', 'ollama', 'anthropic', 'gemini', 'openai-responses', 'xai'})
         if final_hook_required:
             backend.client.event_hooks['request'].append(last_request_hook)
         try:

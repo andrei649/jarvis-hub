@@ -10,7 +10,7 @@ type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;d
 type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;data_policy_note?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[];session_id?:string;selected_turn?:boolean};
 
 const AUTO_SOURCES=new Set(['auto:main','auto:override','auto:openrouter','auto:nous','auto:deepinfra']);
-const PROVIDER_NAMES:Record<string,string>={openrouter:'OpenRouter',nous:'Nous',deepinfra:'DeepInfra',anthropic:'Anthropic Claude',gemini:'Google Gemini','openai-responses':'OpenAI Responses',lmstudio:'LM Studio',ollama:'Ollama',custom:'Custom'};
+const PROVIDER_NAMES:Record<string,string>={openrouter:'OpenRouter',nous:'Nous',deepinfra:'DeepInfra',anthropic:'Anthropic Claude',gemini:'Google Gemini','openai-responses':'OpenAI Responses',xai:'xAI Grok',lmstudio:'LM Studio',ollama:'Ollama',custom:'Custom'};
 
 function validRetryMetadata(data:Destination){
   const hasBudget=Object.prototype.hasOwnProperty.call(data,'empty_retries');
@@ -110,8 +110,10 @@ export function useComposerImages(prompt='Describe these images.',agent='jarvis'
     return()=>{active=false;clearTimeout(timer);controller.abort();};
   },[images,refreshId,prompt,agent]);
   const requirements=destination?.selection_requirements||[];
+  const xaiUnsupported=destination?.backend==='xai'&&images.some(image=>
+    !!image.data&&!/^data:image\/(png|jpeg);base64,/.test(image.data));
   const ready=enabled&&reviewedSelection===selectionKey&&images.every(image=>!!image.data&&!image.error)&&destination?.configured&&
-    (destination.local===true||ack===destination.binding)&&requirements.every(item=>consents[item.needs]===destination.binding);
+    !xaiUnsupported&&(destination.local===true||ack===destination.binding)&&requirements.every(item=>consents[item.needs]===destination.binding);
   const submission=():VisionDraft|null=>ready?{
     images:images.map(image=>image.data!),names:images.map(image=>image.name),
     expected_destination:destination!.destination!,expected_binding:destination!.binding!,review_token:destination!.review_token!,agent,
@@ -120,7 +122,7 @@ export function useComposerImages(prompt='Describe these images.',agent='jarvis'
     ...(requirements.some(item=>item.needs==='acknowledge_training')?{acknowledge_training:true as const}:{}),
     ...(requirements.some(item=>item.needs==='confirm_expensive')?{confirm_expensive:true as const}:{}),
   }:null;
-  return {images,note,destination,ack,consents,ready,addFiles,onPaste,onDrop,clear,remove,submission,
+  return {images,note,destination,ack,consents,ready,xaiUnsupported,addFiles,onPaste,onDrop,clear,remove,submission,
     acknowledge:(checked:boolean)=>setAck(checked?destination?.binding||'':''),
     confirm:(need:SelectionNeed,checked:boolean)=>setConsents(current=>({...current,[need]:checked?destination?.binding||'':''})),
     refresh:()=>{refreshCatalog.current=true;setConsents({});setRefreshId(id=>id+1);}};
@@ -137,6 +139,7 @@ export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImage
       {!image.data&&!image.error&&<span> Reading…</span>}{image.error&&<span>{image.error}</span>}
     </div>)}</div>
     <div role="status">{draft.note || (draft.images.length ? !d?'Checking vision configuration…':!d.configured?'Vision model unavailable. Remove images to send text.':`${d.selection_source?`Automatically selected ${PROVIDER_NAMES[d.backend||'']||d.backend} · `:''}${d.model} · ${d.destination} · ${d.local?'loopback':'remote'} · reachability not probed` : '')}</div>
+    {draft.xaiUnsupported&&<div role="status" style={{color:'var(--amber)'}}>xAI accepts PNG or JPEG images. Remove GIF/WebP images before sending.</div>}
     {d?.configured&&d.warning&&<div style={{color:'var(--amber)'}}>{d.warning}</div>}
     {d?.configured&&d.backend==='openai-responses'&&d.data_policy_note&&<div>{d.data_policy_note}</div>}
     {d?.configured&&d.retry_notice&&<div role="status" style={{color:'var(--amber)'}}>{d.retry_notice}</div>}
