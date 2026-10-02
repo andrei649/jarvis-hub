@@ -111,11 +111,11 @@ assistant pair and retains only newly attached bytes.
 **Files:** Modify `frontend/src/composer-images.tsx`,
 `frontend/src/vision-turn.ts`, relevant tests and generated API types.
 
-- [ ] Write failing component tests: available active image cards, explicit
+- [x] Write failing component tests: available active image cards, explicit
   selection, total-image/destination/retry disclosure, restart/eviction
   unavailable state and no silent text-turn replay.
-- [ ] Implement the opt-in UI and request shape; regenerate schema and HUD.
-- [ ] Run selected Vitest, typechecks and build; commit Task 4.
+- [x] Implement the opt-in UI and request shape; regenerate schema and HUD.
+- [x] Run selected Vitest, typechecks and build; commit Task 4.
 
 ### Task 5: Exact milestone and truthful ledger
 
@@ -170,3 +170,21 @@ consent, total image count, physical-time eviction, and Client Stop. The broad
 H277/H513/composer/session test selection, scoped Ruff, Graft freshness and
 `git diff --check` passed. The source remains local and provider calls were
 simulated; explicit HUD selection is Task 4.
+
+## Task 4 evidence
+
+The first component tests failed because the HUD had no earlier-image control.
+The composer now fetches process-local labels only after the owner clicks
+"Reuse earlier images". Each checkbox adds an ordered handle to a fresh
+review; a history-only follow-up requires a typed question. The HUD checks
+the server's current session and selected-image count, combines previous and
+new images under the eight-image limit, displays destination/retry/policy
+information and clears acknowledgements whenever the selection changes.
+Restart/eviction displays an unavailable state and leaves ordinary text chat
+usable. A history draft cannot use the non-committing describe route.
+
+The selected composer/turn Vitest set, both TypeScript checks and the
+production build passed. OpenAPI types were generated from a temporary local
+test server with runtime state outside the checkout; that server was stopped.
+The committed HUD bundle was regenerated from source. No live provider or
+browser-hardware proof is claimed.

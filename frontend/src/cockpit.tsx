@@ -223,11 +223,11 @@ function Seg({ cur, opts, on }) {
 function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t, agent='jarvis' }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any; agent?: string }) {
   const [val,setVal]=useState('');
   const [cfgOpen,setCfgOpen]=useState(false);
-  const draft=useComposerImages(val.trim()||'Describe these images.',agent);
+  const draft=useComposerImages(val.trim(),agent);
   const fileInput=useRef<HTMLInputElement>(null);
   const refs=useContextRefs(val);   // H579: @file: completion
   const submit=()=>{
-    if(draft.images.length){const vision=draft.submission();if(!vision)return;
+    if(draft.enabled){const vision=draft.submission();if(!vision)return;
       if(onSubmit(val.trim()||'Describe these images.',vision)===false)return;
       draft.clear();setVal('');return;}
     if(!val.trim())return;if(onSubmit(val.trim())===false)return;setVal('');
@@ -288,7 +288,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
             style={micMuted?{opacity:.4}:undefined}><Icon d={ICONS.mic} size={15}/></button>
           {cfg && onCfg && <button className="mic" onClick={()=>setCfgOpen(o=>!o)} title="voice settings" style={{opacity:cfgOpen?1:.6,fontSize:13,lineHeight:1}}>⚙</button>}
         </div>
-        <button className="transmit" disabled={draft.images.length>0&&!draft.ready} onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
+        <button className="transmit" disabled={draft.enabled&&!draft.ready} onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
       </div>
     </div>
   );

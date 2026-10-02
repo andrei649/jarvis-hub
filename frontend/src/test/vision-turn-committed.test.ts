@@ -23,6 +23,30 @@ it('sends a selected main image to the committed conversation route',async()=>{
   expect(JSON.parse(requests[0].options.body)).not.toHaveProperty('selected_main');
 });
 
+it('sends an explicit history-only follow-up through the committed route',async()=>{
+  const requests:any[]=[];
+  vi.stubGlobal('fetch',vi.fn(async(url,options)=>{
+    requests.push({url,options});
+    return new Response(JSON.stringify({ok:true,committed:true,response:'Brass.',
+      model:'grok-4.6',backend:'xai',destination:'https://api.x.ai/v1',local:false}));
+  }));
+  const selected:VisionDraft={...draft,images:[],names:['Previous: door'],active_image_handles:['h'.repeat(32)]};
+  const result=await describeImages('What is its handle made of?',selected,new AbortController().signal);
+  expect(result.text).toBe('Brass.');
+  expect(JSON.parse(requests[0].options.body)).toMatchObject({images:[],
+    active_image_handles:['h'.repeat(32)]});
+  expect(JSON.parse(requests[0].options.body)).not.toHaveProperty('names');
+});
+
+it('refuses a history draft without a selected main route before transport',async()=>{
+  const sent=vi.fn();vi.stubGlobal('fetch',sent);
+  const unselected:VisionDraft={...draft,selected_main:undefined,images:[],
+    active_image_handles:['h'.repeat(32)]};
+  await expect(describeImages('Follow up',unselected,new AbortController().signal))
+    .rejects.toThrow('selected main');
+  expect(sent).not.toHaveBeenCalled();
+});
+
 it('refuses to render a selected main answer without a server commit',async()=>{
   vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({ok:true,response:'Uncommitted.',
     model:'grok-4.6',backend:'xai',destination:'https://api.x.ai/v1',local:false}))));

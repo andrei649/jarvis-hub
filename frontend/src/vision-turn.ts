@@ -3,6 +3,7 @@ import type {VisionDraft} from './composer-images';
 export type VisionMessage={role:'vision';text:string;model:string;backend:string;destination:string;local:boolean;ts:string;warning?:string};
 export async function describeImages(prompt:string,draft:VisionDraft,signal:AbortSignal):Promise<Omit<VisionMessage,'role'|'ts'>>{
   const {names,selected_main,...request}=draft;
+  if(draft.active_image_handles?.length&&!selected_main)throw new Error('Active image history requires a selected main route');
   const path=selected_main?'/api/vlm/composer/chat-prepared':'/api/vlm/composer/describe-prepared';
   const response=await apiFetchOnce(path,{method:'POST',body:{prompt,...request},signal});
   const text=await response.text();

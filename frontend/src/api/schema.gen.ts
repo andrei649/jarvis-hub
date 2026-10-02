@@ -556,6 +556,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/vlm/composer/active-images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Composer Active Images
+         * @description List private, process-local image handles for the displayed conversation.
+         */
+        get: operations["composer_active_images_api_vlm_composer_active_images_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vlm/composer/prepare": {
         parameters: {
             query?: never;
@@ -10892,6 +10912,8 @@ export interface components {
             selected_turn: boolean;
             /** Image Digests */
             image_digests?: string[] | null;
+            /** Active Image Handles */
+            active_image_handles?: string[];
         };
         /** ComposerVisionBody */
         ComposerVisionBody: {
@@ -11658,7 +11680,7 @@ export interface components {
             /** Prompt */
             prompt: string;
             /** Images */
-            images: string[];
+            images?: string[];
             /** Expected Destination */
             expected_destination: string;
             /** Expected Binding */
@@ -11692,6 +11714,8 @@ export interface components {
              * @default false
              */
             selected_turn: boolean;
+            /** Active Image Handles */
+            active_image_handles?: string[];
         };
         /** PresenceBody */
         PresenceBody: {
@@ -13101,6 +13125,38 @@ export interface operations {
         parameters: {
             query?: {
                 refresh_catalog?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    composer_active_images_api_vlm_composer_active_images_get: {
+        parameters: {
+            query?: {
+                session_id?: string | null;
+                agent?: string;
             };
             header?: never;
             path?: never;
