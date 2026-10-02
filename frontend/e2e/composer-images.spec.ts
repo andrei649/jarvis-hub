@@ -2,6 +2,39 @@ import {expect,test} from '@playwright/test';
 const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC';
 const status={configured:true,model:'vision-test',backend:'custom',destination:'https://vision.example/v1',binding:'a'.repeat(64),local:false};
 const result={ok:true,response:'A test screenshot.',model:status.model,backend:status.backend,destination:status.destination,local:false};
+test('training and cost confirmations are independent, transmitted and reset for the next draft',async({page})=>{
+  const images:any[]=[];
+  let binding='a'.repeat(64);
+  await page.route('**/api/vlm/composer/status',route=>route.fulfill({json:{...status,binding,selection_requirements:[
+    {needs:'acknowledge_training',message:'Images may be used for training.'},
+    {needs:'confirm_expensive',message:'Output costs $80 per million tokens.'},
+  ]}}));
+  await page.route('**/api/vlm/composer/describe',route=>{images.push(route.request().postDataJSON());return route.fulfill({json:result});});
+  await page.goto('/v2/chat?demo=1');
+  const attach=()=>page.getByLabel('Attach images',{exact:true}).setInputFiles({name:'consent.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
+  const send=page.getByRole('button',{name:'TRANSMIT',exact:true});
+  const training=page.getByRole('checkbox',{name:/Training use:/});
+  const cost=page.getByRole('checkbox',{name:/Cost confirmation:/});
+  await attach();
+  await expect(training).not.toBeChecked();await expect(cost).not.toBeChecked();
+  await page.locator('.inputbar input').fill('Describe screenshot');
+  await page.getByRole('checkbox',{name:/Send these images to/}).check();
+  await expect(send).toBeDisabled();
+  await training.check();await expect(send).toBeDisabled();
+  await cost.check();await send.click();
+  await expect(page.getByText('A test screenshot.',{exact:true})).toBeVisible();
+  expect(images).toHaveLength(1);
+  expect(images[0]).toMatchObject({expected_binding:binding,remote_ack:true,acknowledge_training:true,confirm_expensive:true});
+  expect(images[0]).not.toHaveProperty('selection_requirements');
+  await attach();
+  await expect(training).not.toBeChecked();await expect(cost).not.toBeChecked();
+  await training.check();await cost.check();
+  binding='b'.repeat(64);
+  await page.getByRole('button',{name:'Refresh vision destination'}).click();
+  await expect(training).not.toBeChecked();await expect(cost).not.toBeChecked();
+  await expect(send).toBeDisabled();
+  expect(images).toHaveLength(1);
+});
 test('choose paste drop, explicit remote consent, vision provenance and unchanged text chat',async({page})=>{
   const images:any[]=[],texts:any[]=[];
   await page.route('**/api/vlm/composer/status',route=>route.fulfill({json:status}));

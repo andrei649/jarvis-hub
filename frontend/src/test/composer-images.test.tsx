@@ -2,6 +2,7 @@ import React from 'react';
 import {render,screen,fireEvent,waitFor,cleanup} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {InputBar} from '../cockpit';
+import {describeImages} from '../vision-turn';
 const t={channel:'NERVA',placeholder:'Ask Nerva',transmit:'Send'};
 const status={configured:true,destination:'http://127.0.0.1:1234/v1',binding:'a'.repeat(64),model:'vision-test',backend:'custom',local:true};
 const retryNotice='May retry once with the same images and model after an empty response (at most two model calls).';
@@ -21,6 +22,7 @@ it('chooses an image with a removable preview and submits an explicit vision dra
   expect(submit.mock.calls[0][0]).toBe('What is shown?');
   expect(submit.mock.calls[0][1]).toMatchObject({names:['shot.png'],expected_destination:status.destination,expected_binding:status.binding});
   expect(submit.mock.calls[0][1].images[0]).toMatch(/^data:image\/png;base64,/);
+  expect(Object.keys(submit.mock.calls[0][1]).sort()).toEqual(['expected_binding','expected_destination','images','names','remote_ack']);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview');
 });
 it('preserves ordinary text submission and nonimage paste without a vision request',()=>{
@@ -126,4 +128,108 @@ it('shows a remote policy warning without replacing the current destination chec
   fireEvent.click(screen.getByRole('checkbox'));
   await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false));
   expect(screen.getByText(warning)).toBeTruthy();
+});
+
+it('requires independent remote, training, and cost confirmations for one image turn',async()=>{
+  const guarded={...status,local:false,destination:'https://vision.example/v1',selection_requirements:[
+    {needs:'acknowledge_training',message:'Images may be used to train the provider model.'},
+    {needs:'confirm_expensive',message:'This image model exceeds the configured cost threshold.'},
+  ]};
+  const requests:{url:string;init:RequestInit}[]=[];
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async(url:string,init:RequestInit)=>{
+    requests.push({url,init});
+    return new Response(JSON.stringify(init.method==='POST'
+      ?{ok:true,response:'A test image.',model:guarded.model,backend:guarded.backend,destination:guarded.destination,local:false}
+      :guarded));
+  }));
+  const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  const remote=await screen.findByRole('checkbox',{name:/leave this host/});
+  const training=screen.getByRole('checkbox',{name:/Images may be used to train the provider model/});
+  const cost=screen.getByRole('checkbox',{name:/exceeds the configured cost threshold/});
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
+  fireEvent.click(remote);
+  fireEvent.click(training);
+  expect((cost as HTMLInputElement).checked).toBe(false);
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
+  fireEvent.click(cost);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false));
+  fireEvent.click(screen.getByRole('button',{name:'Send'}));
+  expect(submit.mock.calls[0][1]).toMatchObject({remote_ack:true,acknowledge_training:true,confirm_expensive:true});
+  expect(Object.keys(submit.mock.calls[0][1]).sort()).toEqual(['acknowledge_training','confirm_expensive','expected_binding','expected_destination','images','names','remote_ack']);
+  const answer=await describeImages('Describe it.',submit.mock.calls[0][1],new AbortController().signal);
+  expect(answer.text).toBe('A test image.');
+  const request=requests.find(item=>item.init.method==='POST');
+  expect(request?.url).toContain('/api/vlm/composer/describe');
+  const body=JSON.parse(String(request?.init.body));
+  expect(body).toMatchObject({prompt:'Describe it.',remote_ack:true,acknowledge_training:true,confirm_expensive:true,expected_binding:guarded.binding});
+  expect(Object.keys(body).sort()).toEqual(['acknowledge_training','confirm_expensive','expected_binding','expected_destination','images','prompt','remote_ack']);
+});
+
+it('submits only the required training flag and resets it when the image set changes',async()=>{
+  const guarded={...status,selection_requirements:[{needs:'acknowledge_training',message:'Provider training is possible.'}]};
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify(guarded))));
+  const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  const training=await screen.findByRole('checkbox',{name:/Provider training is possible/});
+  fireEvent.click(training);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false));
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file('second.png')]}});
+  expect((training as HTMLInputElement).checked).toBe(false);
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
+  fireEvent.click(training);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false));
+  fireEvent.click(screen.getByRole('button',{name:'Remove second.png'}));
+  expect((training as HTMLInputElement).checked).toBe(false);
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
+  fireEvent.click(training);
+  fireEvent.click(screen.getByRole('button',{name:'Send'}));
+  expect(submit.mock.calls[0][1]).toMatchObject({acknowledge_training:true,remote_ack:false,names:['shot.png']});
+  expect(submit.mock.calls[0][1]).not.toHaveProperty('confirm_expensive');
+});
+
+it('clears training consent after send and on destination refresh with a changed binding',async()=>{
+  let binding='a'.repeat(64);
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify({...status,binding,selection_requirements:[{needs:'acknowledge_training',message:'Training needs confirmation.'}]}))));
+  const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  let training=await screen.findByRole('checkbox',{name:/Training needs confirmation/});
+  fireEvent.click(training);
+  fireEvent.click(screen.getByRole('button',{name:'Refresh vision destination'}));
+  await waitFor(()=>expect((screen.getByRole('checkbox',{name:/Training needs confirmation/}) as HTMLInputElement).checked).toBe(false));
+  training=screen.getByRole('checkbox',{name:/Training needs confirmation/});
+  fireEvent.click(training);
+  binding='b'.repeat(64);
+  fireEvent.click(screen.getByRole('button',{name:'Refresh vision destination'}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true));
+  training=await screen.findByRole('checkbox',{name:/Training needs confirmation/});
+  expect((training as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(training);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false));
+  fireEvent.click(screen.getByRole('button',{name:'Send'}));
+  expect(submit.mock.calls[0][1].expected_binding).toBe('b'.repeat(64));
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file('next.png')]}});
+  training=await screen.findByRole('checkbox',{name:/Training needs confirmation/});
+  expect((training as HTMLInputElement).checked).toBe(false);
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
+});
+
+it.each([
+  ['unknown need',[{needs:'allow_anything',message:'Unknown.'}]],
+  ['duplicate need',[{needs:'acknowledge_training',message:'First.'},{needs:'acknowledge_training',message:'Second.'}]],
+  ['missing message',[{needs:'confirm_expensive'}]],
+  ['blank message',[{needs:'confirm_expensive',message:'  '}]],
+  ['control character',[{needs:'confirm_expensive',message:'Cost\nnotice.'}]],
+  ['oversized message',[{needs:'confirm_expensive',message:'x'.repeat(501)}]],
+  ['nonarray requirements',{needs:'confirm_expensive',message:'Cost.'}],
+  ['null requirements',null],
+])('refuses image submission with %s selection requirements',async(_label,selection_requirements)=>{
+  const submit=vi.fn();
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify({...status,selection_requirements}))));
+  render(<InputBar onSubmit={submit} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  await screen.findByText(/Vision model unavailable/);
+  expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(true);
+  fireEvent.click(screen.getByRole('button',{name:'Send'}));
+  expect(submit).not.toHaveBeenCalled();
 });

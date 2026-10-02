@@ -1949,6 +1949,10 @@
   final HTTP hook. Unknown/malformed settings, stale confirmations and unauthorized
   training/cost choices refuse. Provider auto-discovery, Nous/DeepInfra and signed
   OpenRouter video remain open; this is an adapter dependency, not full H277 parity.
+  Image turns now expose independent per-turn training/cost confirmations in HUD
+  and CLI, bind complete guard details to the reviewed destination, and record
+  required training consent before dispatch. Changes revoke the confirmation;
+  this grants no unattended role or provider permission.
 
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.

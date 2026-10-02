@@ -416,6 +416,8 @@ native mobile provider configuration is still a gap.
 Explicit OpenRouter vision (H277, 2026-10-02): the existing composer model,
 destination and policy display covers the new server-side provider. Its remote
 checkbox still names the destination; live routing changes invalidate that
-binding. Existing training/expensive-selection refusals remain: there is no
-composer control that clears those separate guards. Automatic provider discovery,
+binding. The composer now displays separate unchecked training/cost confirmations
+when requested by the server, requires all of them before send, and clears them
+on image changes, refresh or draft clear. Unknown/malformed disclosures refuse;
+remote acknowledgment is independent. Automatic provider discovery,
 Nous/DeepInfra adapters and signed OpenRouter video remain unfinished.

@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import httpx
 
@@ -61,6 +61,7 @@ class VisionIdentity:
     binding: tuple = field(repr=False)
     empty_retries: int = 0
     provider_block: str = field(default="", repr=False)
+    selection_findings: tuple[str, ...] = field(default=(), repr=False)
 
     def selection_choice(self, model):
         route = ('data_collection=allow' if self.provider_block
@@ -71,7 +72,35 @@ class VisionIdentity:
         public = {'data_policy': self.policy, 'data_policy_note': self.note, 'warning': self.warning}
         if self.empty_retries:
             public.update({'empty_retries': self.empty_retries, 'retry_notice': RETRY_NOTICE})
+        if self.selection_findings:
+            public['selection_requirements'] = [
+                {'needs': finding['needs'], 'message': finding['message']}
+                for finding in (json.loads(item) for item in self.selection_findings)
+            ]
         return public
+
+
+def canonical_selection_findings(findings):
+    """Freeze complete guard details while exposing only bounded prompts in status."""
+    findings = tuple(findings)
+    if len(findings) > 8:
+        raise VisionPolicyUnavailable('vision selection policy unavailable')
+    seen = set()
+    result = []
+    for finding in findings:
+        need, message = finding.needs, finding.message
+        if (type(need) is not str or need not in (sg.ACKNOWLEDGE_TRAINING, sg.CONFIRM_EXPENSIVE)
+                or need in seen or type(message) is not str or not message.strip()
+                or len(message) > 500
+                or any(ord(char) < 32 or ord(char) == 127 for char in message)):
+            raise VisionPolicyUnavailable('vision selection policy unavailable')
+        seen.add(need)
+        try:
+            result.append(json.dumps(finding.as_dict(), sort_keys=True, separators=(',', ':'),
+                                     ensure_ascii=False, allow_nan=False))
+        except (TypeError, ValueError, UnicodeError) as exc:
+            raise VisionPolicyUnavailable('vision selection policy unavailable') from exc
+    return tuple(result)
 
 
 def describe(config):
@@ -108,8 +137,18 @@ def describe(config):
         binding += ('vision-empty-once:v1',)
     if provider_block:
         binding += ('openrouter-vision:v1', provider_block)
-    return VisionIdentity(profile.id, policy, note[:500], warning, str(base), request_url, auth,
-                          binding, empty_retries, provider_block)
+    identity = VisionIdentity(profile.id, policy, note[:500], warning, str(base), request_url, auth,
+                              binding, empty_retries, provider_block)
+    try:
+        findings = canonical_selection_findings(sg.evaluate([identity.selection_choice(config.model)]))
+    except VisionPolicyUnavailable:
+        raise
+    except Exception as exc:
+        raise VisionPolicyUnavailable('vision selection policy unavailable') from exc
+    if findings:
+        return replace(identity, binding=binding + ('vision-selection-findings:v1', *findings),
+                       selection_findings=findings)
+    return identity
 
 
 def _wire_matches(backend, frozen):
@@ -130,7 +169,8 @@ def _wire_matches(backend, frozen):
 
 
 @contextmanager
-def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=None, notice_purpose, request_validity=None):
+def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=None, notice_purpose,
+                          request_validity=None, cleared_findings=()):
     request_marker = object()
 
     def check():
@@ -140,8 +180,8 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
             current = describe(resolve_config())
             if current.binding != frozen.binding:
                 raise VisionDestinationChanged('vision configuration changed')
-            findings = sg.evaluate([frozen.selection_choice(config.model)])
-            if findings:
+            if current.selection_findings != cleared_findings:
+                findings = sg.evaluate([current.selection_choice(config.model)])
                 raise sg.SelectionRefused(findings, sorted({finding.needs for finding in findings}))
             _wire_matches(backend, frozen)
             if authorize is not None:
@@ -206,7 +246,7 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
         record_turn_notice(f'data_handling:{notice_purpose}', frozen.warning)
     scope = vision_retry_scope(backend, config.model, check) if frozen.empty_retries else nullcontext(None)
     with scope as recovery:
-        final_hook_required = recovery is not None or bool(frozen.provider_block)
+        final_hook_required = recovery is not None or bool(frozen.provider_block) or bool(cleared_findings)
         if final_hook_required:
             backend.client.event_hooks['request'].append(last_request_hook)
         try:
@@ -219,13 +259,15 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
 
 
 @contextmanager
-def composer_request_scope(config, backend, *, resolve_config, remote_ack, principal, frozen=None):
+def composer_request_scope(config, backend, *, resolve_config, remote_ack, principal, frozen=None,
+                           cleared_findings=()):
     if getattr(principal, 'channel', None) != 'web':
         raise VisionPolicyUnavailable('composer vision requires an interactive web request')
     if not config.is_local and remote_ack is not True:
         raise VisionRemoteAckRequired('remote vision acknowledgment required')
     with _native_request_scope(config, backend, resolve_config=resolve_config,
-                               frozen=frozen or describe(config), notice_purpose='composer_vision') as check:
+                               frozen=frozen or describe(config), notice_purpose='composer_vision',
+                               cleared_findings=cleared_findings) as check:
         yield check
 
 

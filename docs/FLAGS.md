@@ -621,10 +621,18 @@ It sends all six validated live `llm.openrouter_*` routing controls; an unreadab
 or malformed setting refuses instead of dropping a restriction. Those controls
 are included in the consent binding and checked at the final HTTP hook, even with
 empty recovery disabled. Changed settings/keys/models require a fresh preview.
-The existing training and expensive-model selection guards still refuse when
-their separate acknowledgement is unavailable; remote acknowledgement alone does
-not clear them. In particular, `:free` models and `data_collection=allow` do not
-silently bypass training guards. The inherited video route reports
+Status discloses any `selection_requirements` for the chosen route. The HUD offers
+separate training and expensive-model confirmations, initially unchecked, for
+this image draft. CLI image turns require `--acknowledge-training` and/or
+`--confirm-expensive` when requested, in addition to `--remote-vision URL` for a
+remote destination. The POST flags are strict booleans and default to false;
+remote acknowledgement alone cannot clear them. The exact guard findings, prices
+and threshold participate in the destination binding and physical-send checks.
+Required training consent must reach the audit before any model client is made;
+cost confirmation keeps the existing best-effort audit. These confirmations grant
+no reusable provider or unattended-role permission. In particular, `:free` models
+and `data_collection=allow` do not silently bypass training guards.
+The inherited video route reports
 `video_vision_provider_unsupported`; signed OpenRouter video and automatic provider
 discovery remain separate unfinished increments.
 

@@ -10741,6 +10741,16 @@ export interface components {
              * @default false
              */
             remote_ack: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
         };
         /** ConfirmationBody */
         ConfirmationBody: {

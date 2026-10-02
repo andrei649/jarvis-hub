@@ -3,9 +3,11 @@ import {apiFetchOnce} from './api/client';
 
 const TYPES=['image/png','image/jpeg','image/gif','image/webp'];
 const MAX_BYTES=4*1024*1024, MAX_IMAGES=8;
-export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;remote_ack:boolean};
+type SelectionNeed='acknowledge_training'|'confirm_expensive';
+type SelectionRequirement={needs:SelectionNeed;message:string};
+export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;remote_ack:boolean;acknowledge_training?:true;confirm_expensive?:true};
 type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;data?:string;error?:string};
-type Destination={configured:boolean;destination?:string;binding?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string};
+type Destination={configured:boolean;destination?:string;binding?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string;selection_requirements?:SelectionRequirement[]};
 
 function validRetryMetadata(data:Destination){
   const hasBudget=Object.prototype.hasOwnProperty.call(data,'empty_retries');
@@ -16,17 +18,33 @@ function validRetryMetadata(data:Destination){
     notice.length<=500&&!/[\x00-\x1f\x7f]/.test(notice);
 }
 
+function validSelectionRequirements(data:Destination){
+  if(!Object.prototype.hasOwnProperty.call(data,'selection_requirements'))return true;
+  const requirements:unknown=data.selection_requirements;
+  if(!Array.isArray(requirements)||requirements.length>8)return false;
+  const seen=new Set<SelectionNeed>();
+  for(const item of requirements){
+    if(!item||typeof item!=='object'||Array.isArray(item))return false;
+    const {needs,message}=item as Record<string,unknown>;
+    if(needs!=='acknowledge_training'&&needs!=='confirm_expensive')return false;
+    if(seen.has(needs)||typeof message!=='string'||!message.trim()||message.length>500||/[\x00-\x1f\x7f]/.test(message))return false;
+    seen.add(needs);
+  }
+  return true;
+}
+
 export function useComposerImages(){
   const records=useRef<Draft[]>([]), serial=useRef(0);
   const [images,setImages]=useState<Draft[]>([]),[note,setNote]=useState('');
   const [destination,setDestination]=useState<Destination|null>(null),[ack,setAck]=useState('');
+  const [consents,setConsents]=useState<Partial<Record<SelectionNeed,string>>>({});
   const [refreshId,setRefreshId]=useState(0);
   const publish=()=>setImages([...records.current]);
   const dispose=(entry:Draft)=>{entry.reader.onload=null;entry.reader.onerror=null;entry.reader.onabort=null;if(entry.reader.readyState===1)entry.reader.abort();if(entry.url)URL.revokeObjectURL(entry.url);};
-  const clear=()=>{records.current.forEach(dispose);records.current=[];publish();setNote('');setAck('');};
-  const remove=(id:number)=>{const entry=records.current.find(item=>item.id===id);records.current=records.current.filter(item=>item.id!==id);if(entry)dispose(entry);publish();};
+  const clear=()=>{records.current.forEach(dispose);records.current=[];publish();setNote('');setAck('');setConsents({});};
+  const remove=(id:number)=>{const entry=records.current.find(item=>item.id===id);records.current=records.current.filter(item=>item.id!==id);if(entry){dispose(entry);setConsents({});}publish();};
   const addFiles=(files:Iterable<File>)=>{
-    const errors:string[]=[];
+    const errors:string[]=[];let changed=false;
     for(const file of files){
       const identity=[file.name,file.size,file.lastModified,file.type].join(':');
       if(records.current.some(item=>item.identity===identity))continue;
@@ -36,11 +54,12 @@ export function useComposerImages(){
       const reader=new FileReader();
       const entry:Draft={id:++serial.current,name:file.name||'image',identity,url:URL.createObjectURL(file),reader};
       // Reserve synchronously; later paste/drop events count unfinished reads.
-      records.current.push(entry);
+      records.current.push(entry);changed=true;
       reader.onload=()=>{if(!records.current.includes(entry))return;entry.data=typeof reader.result==='string'?reader.result:undefined;if(!entry.data)entry.error='Image could not be read';publish();};
       reader.onerror=()=>{if(records.current.includes(entry)){entry.error='Image could not be read';publish();}};
       try {reader.readAsDataURL(file);} catch {entry.error='Image could not be read';}
     }
+    if(changed)setConsents({});
     setNote(errors.join(' · '));publish();
   };
   const transfer=(data:DataTransfer)=>{
@@ -53,7 +72,7 @@ export function useComposerImages(){
   useEffect(()=>()=>{records.current.forEach(dispose);records.current=[];},[]);
   const enabled=images.length>0;
   useEffect(()=>{
-    setAck('');setDestination(null);
+    setAck('');setConsents({});setDestination(null);
     if(!enabled)return;
     const controller=new AbortController();let active=true;
     apiFetchOnce('/api/vlm/composer/status',{signal:controller.signal}).then(async response=>{
@@ -62,15 +81,25 @@ export function useComposerImages(){
       const data=JSON.parse(text) as Destination;
       if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!/^\w{64}$/.test(data.binding||'')))throw new Error('Invalid vision status');
       if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision status');
-      if(!validRetryMetadata(data))throw new Error('Invalid vision status');
+      if(!validRetryMetadata(data)||!validSelectionRequirements(data))throw new Error('Invalid vision status');
       if(active)setDestination(data);
     }).catch(()=>{if(active)setDestination({configured:false});});
     return()=>{active=false;controller.abort();};
   },[enabled,refreshId]);
-  const ready=enabled&&images.every(image=>!!image.data&&!image.error)&&destination?.configured&&(destination.local===true||ack===destination.binding);
-  const submission=():VisionDraft|null=>ready?{images:images.map(image=>image.data!),names:images.map(image=>image.name),expected_destination:destination!.destination!,expected_binding:destination!.binding!,remote_ack:destination!.local!==true&&ack===destination!.binding}:null;
-  return {images,note,destination,ack,ready,addFiles,onPaste,onDrop,clear,remove,submission,
-    acknowledge:(checked:boolean)=>setAck(checked?destination?.binding||'':''),refresh:()=>setRefreshId(id=>id+1)};
+  const requirements=destination?.selection_requirements||[];
+  const ready=enabled&&images.every(image=>!!image.data&&!image.error)&&destination?.configured&&
+    (destination.local===true||ack===destination.binding)&&requirements.every(item=>consents[item.needs]===destination.binding);
+  const submission=():VisionDraft|null=>ready?{
+    images:images.map(image=>image.data!),names:images.map(image=>image.name),
+    expected_destination:destination!.destination!,expected_binding:destination!.binding!,
+    remote_ack:destination!.local!==true&&ack===destination!.binding,
+    ...(requirements.some(item=>item.needs==='acknowledge_training')?{acknowledge_training:true as const}:{}),
+    ...(requirements.some(item=>item.needs==='confirm_expensive')?{confirm_expensive:true as const}:{}),
+  }:null;
+  return {images,note,destination,ack,consents,ready,addFiles,onPaste,onDrop,clear,remove,submission,
+    acknowledge:(checked:boolean)=>setAck(checked?destination?.binding||'':''),
+    confirm:(need:SelectionNeed,checked:boolean)=>setConsents(current=>({...current,[need]:checked?destination?.binding||'':''})),
+    refresh:()=>{setConsents({});setRefreshId(id=>id+1);}};
 }
 
 export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImages>}){
@@ -91,6 +120,10 @@ export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImage
       <input type="checkbox" checked={draft.ack===d.binding} onChange={event=>draft.acknowledge(event.target.checked)}/>
       {`Send these images to ${d.destination}. I acknowledge they leave this host.`}
     </label>}
+    {d?.configured&&d.selection_requirements?.map(requirement=><label key={requirement.needs} style={{display:'block'}}>
+      <input type="checkbox" checked={draft.consents[requirement.needs]===d.binding} onChange={event=>draft.confirm(requirement.needs,event.target.checked)}/>
+      {requirement.needs==='acknowledge_training'?'Training use: ':'Cost confirmation: '}{requirement.message}
+    </label>)}
     {!!draft.images.length&&<div>Up to eight static images · 4 MiB each · images are transient and are not added to agent memory.</div>}
   </div>;
 }

@@ -13,7 +13,7 @@ from urllib.parse import urlsplit, urlunsplit
 from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
@@ -159,6 +159,8 @@ class ComposerVisionBody(BaseModel):
     expected_destination: str = Field(min_length=1, max_length=2048)
     expected_binding: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]+$")
     remote_ack: bool = False
+    acknowledge_training: StrictBool = False
+    confirm_expensive: StrictBool = False
 
     @field_validator("prompt")
     @classmethod
@@ -224,6 +226,7 @@ async def composer_describe(body: ComposerVisionBody):
     from agents.core.llm.vision_policy import (
         VisionDestinationChanged,
         VisionPolicyUnavailable,
+        canonical_selection_findings,
         composer_request_scope,
         describe,
     )
@@ -258,15 +261,18 @@ async def composer_describe(body: ComposerVisionBody):
         )
     backend = None
     try:
-        findings = sg.evaluate([identity.selection_choice(config.model)])
-        if findings:
-            raise sg.SelectionRefused(findings, sorted({finding.needs for finding in findings}))
+        findings = sg.enforce([identity.selection_choice(config.model)],
+                              acknowledge_training=body.acknowledge_training,
+                              confirm_expensive=body.confirm_expensive)
+        if canonical_selection_findings(findings) != identity.selection_findings:
+            raise VisionDestinationChanged('vision selection policy changed')
+        sg.record(findings, 'composer_vision')
         try:
             backend = VLMBackend(base_url=config.base_url, api_key=config.api_key, composer_auth=True,
                                  **({"provider_id": "openrouter"} if config.backend == "openrouter" else {}))
             with composer_request_scope(config, backend, resolve_config=resolve_vlm_config,
                                         remote_ack=body.remote_ack, principal=Principal(channel="web", admin=False),
-                                        frozen=identity) as recheck:
+                                        frozen=identity, cleared_findings=identity.selection_findings) as recheck:
                 answer = await backend.generate_vision_checked(
                     config.model,
                     body.prompt,
@@ -286,6 +292,9 @@ async def composer_describe(body: ComposerVisionBody):
                              "reason": "vlm_destination_changed"}, status_code=409)
     except sg.SelectionRefused as exc:
         return nocache_json(exc.payload(), status_code=409)
+    except sg.ConsentNotRecorded:
+        return nocache_json({"error": "Vision selection acknowledgement could not be recorded",
+                             "reason": "vlm_selection_audit_failed"}, status_code=503)
     except Exception:
         return nocache_json(
             {"error": "Vision analysis failed", "reason": "vlm_generation_failed"}, status_code=502

@@ -314,4 +314,7 @@ Explicit OpenRouter image analysis (H277, 2026-10-02) is available through the
 responsive-web composer and native VLM backend, with live upstream routing
 controls bound to each preview/request. Native mobile image intake and these
 provider controls remain a gap; existing mobile chat does not gain image routing.
+Responsive-web image drafts additionally support distinct per-turn training/cost
+confirmations with audit and destination binding; native mobile has no equivalent
+image intake or confirmation controls yet.
 Automatic provider discovery and signed OpenRouter video are not delivered.

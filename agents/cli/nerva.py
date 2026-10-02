@@ -359,6 +359,7 @@ def build_parser() -> argparse.ArgumentParser:
     chat.add_argument("--remote-vision", metavar="URL",
                       help="acknowledge that the images go to this vision destination off the "
                            "hub's machine; it must name the destination the hub reports")
+    _selection_flags(chat)
 
     send = verbs.add_parser(
         "send",
@@ -2041,6 +2042,10 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         why = "--remote-vision applies only to an image turn (--image or --clipboard-image)"
         ctx.err.write(f"{why}\n")
         return finish(EXIT_USAGE, status="usage", reason=why)
+    if getattr(ns, "acknowledge_training", False) or getattr(ns, "confirm_expensive", False):
+        why = "selection confirmation flags on chat apply only to an image turn (--image or --clipboard-image)"
+        ctx.err.write(f"{why}\n")
+        return finish(EXIT_USAGE, status="usage", reason=why)
 
     body: dict[str, Any] = {"message": message}
     if ns.agent:
@@ -2452,6 +2457,25 @@ def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
                     or any(ord(char) < 32 or ord(char) == 127 for char in notice)):
                 return failed("the hub's vision retry policy is invalid; nothing was sent")
             ctx.err.write(f"{_plain(notice, 500)}\n")
+        requirements = status.get("selection_requirements", [])
+        if not isinstance(requirements, list) or len(requirements) > 8:
+            return failed("the hub's vision selection requirements are invalid; nothing was sent")
+        needs = set()
+        for requirement in requirements:
+            if not isinstance(requirement, dict):
+                return failed("the hub's vision selection requirements are invalid; nothing was sent")
+            need, notice = requirement.get("needs"), requirement.get("message")
+            if (not isinstance(need, str) or need not in ("acknowledge_training", "confirm_expensive")
+                    or need in needs or not isinstance(notice, str) or not notice.strip()
+                    or len(notice) > 500 or any(ord(char) < 32 or ord(char) == 127 for char in notice)):
+                return failed("the hub's vision selection requirements are invalid; nothing was sent")
+            needs.add(need)
+        for requirement in requirements:
+            ctx.err.write(f"{_plain(requirement['message'], 500)}\n")
+        missing = sorted(need for need in needs if getattr(ns, need, False) is not True)
+        if missing:
+            flags = " and ".join("--" + need.replace("_", "-") for need in missing)
+            return usage(f"this image turn requires {flags}; nothing was sent")
         if local and acknowledged is not None:
             ctx.err.write("--remote-vision is not needed: the vision model is on the hub's machine\n")
         if not local and (acknowledged is None
@@ -2474,10 +2498,10 @@ def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
             raise
         return failed(exc.reason)
     try:
-        reply = client.post("/api/vlm/composer/describe", {
+        reply = client.post("/api/vlm/composer/describe", _selection_body(ns, {
             "prompt": message, "images": images, "expected_destination": destination,
             "expected_binding": binding, "remote_ack": not local,
-        }, timeout=VISION_TIMEOUT)
+        }), timeout=VISION_TIMEOUT)
     except KeyboardInterrupt:
         finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
         raise
