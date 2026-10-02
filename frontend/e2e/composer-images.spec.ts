@@ -1,15 +1,15 @@
 import {expect,test} from '@playwright/test';
 const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC';
-const status={configured:true,model:'vision-test',backend:'custom',destination:'https://vision.example/v1',binding:'a'.repeat(64),local:false};
+const status={configured:true,model:'vision-test',backend:'custom',destination:'https://vision.example/v1',binding:'a'.repeat(64),review_token:'t'.repeat(32),local:false};
 const result={ok:true,response:'A test screenshot.',model:status.model,backend:status.backend,destination:status.destination,local:false};
 test('training and cost confirmations are independent, transmitted and reset for the next draft',async({page})=>{
   const images:any[]=[];
   let binding='a'.repeat(64);
-  await page.route('**/api/vlm/composer/status',route=>route.fulfill({json:{...status,binding,selection_requirements:[
+  await page.route('**/api/vlm/composer/prepare',route=>route.fulfill({json:{...status,binding,selection_requirements:[
     {needs:'acknowledge_training',message:'Images may be used for training.'},
     {needs:'confirm_expensive',message:'Output costs $80 per million tokens.'},
   ]}}));
-  await page.route('**/api/vlm/composer/describe',route=>{images.push(route.request().postDataJSON());return route.fulfill({json:result});});
+  await page.route('**/api/vlm/composer/describe-prepared',route=>{images.push(route.request().postDataJSON());return route.fulfill({json:result});});
   await page.goto('/v2/chat?demo=1');
   const attach=()=>page.getByLabel('Attach images',{exact:true}).setInputFiles({name:'consent.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
   const send=page.getByRole('button',{name:'TRANSMIT',exact:true});
@@ -24,7 +24,7 @@ test('training and cost confirmations are independent, transmitted and reset for
   await cost.check();await send.click();
   await expect(page.getByText('A test screenshot.',{exact:true})).toBeVisible();
   expect(images).toHaveLength(1);
-  expect(images[0]).toMatchObject({expected_binding:binding,remote_ack:true,acknowledge_training:true,confirm_expensive:true});
+  expect(images[0]).toMatchObject({expected_binding:binding,review_token:status.review_token,agent:'jarvis',remote_ack:true,acknowledge_training:true,confirm_expensive:true});
   expect(images[0]).not.toHaveProperty('selection_requirements');
   await attach();
   await expect(training).not.toBeChecked();await expect(cost).not.toBeChecked();
@@ -37,8 +37,8 @@ test('training and cost confirmations are independent, transmitted and reset for
 });
 test('choose paste drop, explicit remote consent, vision provenance and unchanged text chat',async({page})=>{
   const images:any[]=[],texts:any[]=[];
-  await page.route('**/api/vlm/composer/status',route=>route.fulfill({json:status}));
-  await page.route('**/api/vlm/composer/describe',route=>{images.push(route.request().postDataJSON());return route.fulfill({json:result});});
+  await page.route('**/api/vlm/composer/prepare',route=>route.fulfill({json:status}));
+  await page.route('**/api/vlm/composer/describe-prepared',route=>{images.push(route.request().postDataJSON());return route.fulfill({json:result});});
   await page.route('**/chat/stream',route=>{texts.push(route.request().postDataJSON());return route.fulfill({contentType:'text/event-stream',body:'data: {"type":"start","agent":"jarvis"}\n\ndata: {"type":"end","agent":"jarvis","text":"Text remains text."}\n\n'});});
   await page.goto('/one/v2/chat?demo=1');
   await page.getByLabel('Attach images',{exact:true}).setInputFiles({name:'chosen.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});
@@ -58,7 +58,7 @@ test('choose paste drop, explicit remote consent, vision provenance and unchange
   await expect(page.getByText('A test screenshot.',{exact:true})).toBeVisible();
   await expect(page.getByText('VISION ANALYSIS',{exact:true})).toBeVisible();
   await expect(page.getByText(/vision-test · custom · https:\/\/vision.example/)).toBeVisible();
-  expect(images).toHaveLength(1);expect(images[0].images).toHaveLength(2);expect(images[0]).toMatchObject({prompt:'Describe screenshot',expected_destination:status.destination,remote_ack:true});
+  expect(images).toHaveLength(1);expect(images[0].images).toHaveLength(2);expect(images[0]).toMatchObject({prompt:'Describe screenshot',expected_destination:status.destination,review_token:status.review_token,agent:'jarvis',remote_ack:true});
   expect(texts).toHaveLength(0);
   await page.locator('.inputbar input').fill('ordinary message');await page.getByRole('button',{name:'TRANSMIT',exact:true}).click();
   await expect(page.getByText('Text remains text.',{exact:true})).toBeVisible();
@@ -66,8 +66,8 @@ test('choose paste drop, explicit remote consent, vision provenance and unchange
 });
 test('stale destination fails visibly and a cancelled late vision result is ignored',async({page})=>{
   let calls=0,release:()=>void=()=>{};
-  await page.route('**/api/vlm/composer/status',route=>route.fulfill({json:{...status,local:true}}));
-  await page.route('**/api/vlm/composer/describe',async route=>{
+  await page.route('**/api/vlm/composer/prepare',route=>route.fulfill({json:{...status,local:true}}));
+  await page.route('**/api/vlm/composer/describe-prepared',async route=>{
     if(calls++===0)return route.fulfill({status:409,json:{error:'Vision destination changed; review it again'}});
     await new Promise<void>(resolve=>release=resolve);await route.fulfill({json:result}).catch(()=>{});
   });

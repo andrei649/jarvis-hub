@@ -443,3 +443,9 @@ OpenRouter, Nous and DeepInfra in order when available; the composer has no
 selected main conversation route to reuse. Refresh may prepare metadata, while
 image POST makes no replacement discovery. A provider or policy switch clears
 the reviewed binding. Native provider controls and live acceptance remain open.
+The composer now prepares a destination review for its current prompt and agent
+and uses a one-use token for image submission. Prompt or agent edits invalidate
+the visible review; a changed route, key or policy requires another review
+before image bytes leave the server. This preparation still selects the
+configured vision route rather than inheriting the active conversation backend.
+Native image-review parity and live-provider acceptance remain open.

@@ -3,7 +3,7 @@ import type {VisionDraft} from './composer-images';
 export type VisionMessage={role:'vision';text:string;model:string;backend:string;destination:string;local:boolean;ts:string;warning?:string};
 export async function describeImages(prompt:string,draft:VisionDraft,signal:AbortSignal):Promise<Omit<VisionMessage,'role'|'ts'>>{
   const {names,...request}=draft;
-  const response=await apiFetchOnce('/api/vlm/composer/describe',{method:'POST',body:{prompt,...request},signal});
+  const response=await apiFetchOnce('/api/vlm/composer/describe-prepared',{method:'POST',body:{prompt,...request},signal});
   const text=await response.text();
   if(text.length>128*1024)throw new Error('Vision response exceeded its display limit');
   let data:any;try{data=JSON.parse(text);}catch{throw new Error('Invalid vision response');}

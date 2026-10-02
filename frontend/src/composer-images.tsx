@@ -5,9 +5,9 @@ const TYPES=['image/png','image/jpeg','image/gif','image/webp'];
 const MAX_BYTES=4*1024*1024, MAX_IMAGES=8;
 type SelectionNeed='acknowledge_training'|'confirm_expensive';
 type SelectionRequirement={needs:SelectionNeed;message:string};
-export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;remote_ack:boolean;acknowledge_training?:true;confirm_expensive?:true};
+export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;review_token:string;agent:string;remote_ack:boolean;acknowledge_training?:true;confirm_expensive?:true};
 type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;data?:string;error?:string};
-type Destination={configured:boolean;destination?:string;binding?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[]};
+type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[]};
 
 const AUTO_SOURCES=new Set(['auto:main','auto:override','auto:openrouter','auto:nous','auto:deepinfra']);
 const PROVIDER_NAMES:Record<string,string>={openrouter:'OpenRouter',nous:'Nous',deepinfra:'DeepInfra',lmstudio:'LM Studio',custom:'Custom'};
@@ -36,7 +36,7 @@ function validSelectionRequirements(data:Destination){
   return true;
 }
 
-export function useComposerImages(){
+export function useComposerImages(prompt='Describe these images.',agent='jarvis'){
   const records=useRef<Draft[]>([]), serial=useRef(0);
   const [images,setImages]=useState<Draft[]>([]),[note,setNote]=useState('');
   const [destination,setDestination]=useState<Destination|null>(null),[ack,setAck]=useState('');
@@ -79,28 +79,31 @@ export function useComposerImages(){
     setAck('');setConsents({});setDestination(null);
     if(!enabled)return;
     const controller=new AbortController();let active=true;
-    const statusPath='/api/vlm/composer/status'+(refreshCatalog.current?'?refresh_catalog=true':'');
-    refreshCatalog.current=false;
-    apiFetchOnce(statusPath,{signal:controller.signal}).then(async response=>{
+    const timer=setTimeout(()=>{
+      if(!active)return;
+      const statusPath='/api/vlm/composer/prepare'+(refreshCatalog.current?'?refresh_catalog=true':'');
+      refreshCatalog.current=false;
+      apiFetchOnce(statusPath,{method:'POST',body:{prompt,agent},signal:controller.signal}).then(async response=>{
       if(!response.ok)throw new Error('Vision status unavailable');
       const text=await response.text();if(text.length>8192)throw new Error('Invalid vision status');
       const data=JSON.parse(text) as Destination;
-      if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!/^\w{64}$/.test(data.binding||'')))throw new Error('Invalid vision status');
+      if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!/^\w{64}$/.test(data.binding||'')||!/^[-\w]{20,128}$/.test(data.review_token||'')))throw new Error('Invalid vision status');
       if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision status');
       if(data.selection_source!==undefined&&(!AUTO_SOURCES.has(data.selection_source)||
         data.selection_source==='auto:override'&&data.backend!=='custom'||
         !['auto:main','auto:override'].includes(data.selection_source)&&data.selection_source!==`auto:${data.backend}`))throw new Error('Invalid vision status');
       if(!validRetryMetadata(data)||!validSelectionRequirements(data))throw new Error('Invalid vision status');
       if(active)setDestination(data);
-    }).catch(()=>{if(active)setDestination({configured:false});});
-    return()=>{active=false;controller.abort();};
-  },[enabled,refreshId]);
+      }).catch(()=>{if(active)setDestination({configured:false});});
+    },200);
+    return()=>{active=false;clearTimeout(timer);controller.abort();};
+  },[enabled,refreshId,prompt,agent]);
   const requirements=destination?.selection_requirements||[];
   const ready=enabled&&images.every(image=>!!image.data&&!image.error)&&destination?.configured&&
     (destination.local===true||ack===destination.binding)&&requirements.every(item=>consents[item.needs]===destination.binding);
   const submission=():VisionDraft|null=>ready?{
     images:images.map(image=>image.data!),names:images.map(image=>image.name),
-    expected_destination:destination!.destination!,expected_binding:destination!.binding!,
+    expected_destination:destination!.destination!,expected_binding:destination!.binding!,review_token:destination!.review_token!,agent,
     remote_ack:destination!.local!==true&&ack===destination!.binding,
     ...(requirements.some(item=>item.needs==='acknowledge_training')?{acknowledge_training:true as const}:{}),
     ...(requirements.some(item=>item.needs==='confirm_expensive')?{confirm_expensive:true as const}:{}),

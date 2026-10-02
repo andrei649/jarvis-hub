@@ -507,6 +507,8 @@
   "POST /api/transcripts/ingest",
   "POST /api/vault",
   "POST /api/vlm/composer/describe",
+  "POST /api/vlm/composer/describe-prepared",
+  "POST /api/vlm/composer/prepare",
   "POST /api/vlm/describe",
   "POST /api/voice/mic/arm",
   "POST /api/voice/mic/pause",

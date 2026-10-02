@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from agents.core.routers._deps import user_guard
 from agents.core.web_helpers import nocache_json
+from agents.core.llm.vision_review import VisionReviewRefused, VisionReviewStore
 
 
 class _BoundedValidationRoute(APIRoute):
@@ -42,6 +43,7 @@ class _BoundedValidationRoute(APIRoute):
 
 router = APIRouter(tags=["multimodal"], dependencies=[Depends(user_guard)],
                    route_class=_BoundedValidationRoute)
+_REVIEWS = VisionReviewStore()
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 MAX_URI = 4 * ((MAX_IMAGE_BYTES + 2) // 3) + 32
 # Accept ordinary 4K screenshots/panoramas, bound decode before allocation, then
@@ -205,24 +207,68 @@ class ComposerVisionBody(BaseModel):
         return images
 
 
+class ComposerPrepareBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    prompt: str = Field(min_length=1, max_length=4000)
+    agent: str = Field(default="jarvis", min_length=1, max_length=64,
+                       pattern=r"^[a-z][a-z0-9_-]*$")
+    session_id: str | None = None
+
+    @field_validator("prompt")
+    @classmethod
+    def nonempty(cls, value):
+        if not value.strip():
+            raise ValueError("image question is empty")
+        return value
+
+    @field_validator("session_id")
+    @classmethod
+    def valid_session(cls, value):
+        from agents.core.validation import is_valid_session_id
+        if value is not None and not is_valid_session_id(value):
+            raise ValueError("invalid session_id")
+        return value
+
+
+class PreparedComposerVisionBody(ComposerVisionBody):
+    review_token: str = Field(min_length=20, max_length=128)
+    agent: str = Field(default="jarvis", min_length=1, max_length=64,
+                       pattern=r"^[a-z][a-z0-9_-]*$")
+    session_id: str | None = None
+
+    @field_validator("session_id")
+    @classmethod
+    def valid_session(cls, value):
+        from agents.core.validation import is_valid_session_id
+        if value is not None and not is_valid_session_id(value):
+            raise ValueError("invalid session_id")
+        return value
+
+
+async def _prepare_config(*, refresh_catalog: bool = False):
+    from agents.core.env_config import env_str
+    from agents.core.llm.vlm import resolve_vlm_config
+
+    provider = env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower()
+    if provider == "deepinfra":
+        from agents.core.llm.vision_deepinfra import prepare_config
+        return await prepare_config(force_refresh=refresh_catalog)
+    if provider == "nous":
+        from agents.core.llm.vision_nous import prepare_config
+        return await prepare_config(force_refresh=refresh_catalog)
+    if provider == "auto":
+        from agents.core.llm.vision_auto import prepare_config
+        return await prepare_config(force_refresh=refresh_catalog)
+    return resolve_vlm_config()
+
+
 @router.get("/api/vlm/composer/status")
 async def composer_status(refresh_catalog: bool = False):
-    from agents.core.env_config import env_str
     from agents.core.llm.vision_policy import VisionPolicyUnavailable
-    from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
+    from agents.core.llm.vlm import VLMNotConfigured
 
     try:
-        if env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower() == "deepinfra":
-            from agents.core.llm.vision_deepinfra import prepare_config
-            config = await prepare_config(force_refresh=refresh_catalog)
-        elif env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower() == "nous":
-            from agents.core.llm.vision_nous import prepare_config
-            config = await prepare_config(force_refresh=refresh_catalog)
-        elif env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower() == "auto":
-            from agents.core.llm.vision_auto import prepare_config
-            config = await prepare_config(force_refresh=refresh_catalog)
-        else:
-            config = resolve_vlm_config()
+        config = await _prepare_config(refresh_catalog=refresh_catalog)
         return nocache_json(
             dict(configured=True, reachable=None, **public_config(config))
         )
@@ -230,6 +276,58 @@ async def composer_status(refresh_catalog: bool = False):
         return nocache_json(
             {"configured": False, "reason": "vlm_not_configured", "reachable": None}
         )
+
+
+@router.post("/api/vlm/composer/prepare")
+async def composer_prepare(body: ComposerPrepareBody, refresh_catalog: bool = False):
+    """Review one prompt's configured destination before image bytes are sent."""
+    from agents.core.llm.vision_policy import VisionPolicyUnavailable, describe
+    from agents.core.llm.vlm import VLMNotConfigured
+
+    try:
+        config = await _prepare_config(refresh_catalog=refresh_catalog)
+        identity = describe(config)
+        public = public_config(config, identity=identity)
+        token = _REVIEWS.issue(
+            session_id=body.session_id or "web", agent_id=body.agent,
+            prompt=body.prompt, model=config.model,
+            route=config.route_source or f"explicit:{config.backend}",
+            binding=identity.binding,
+        )
+        return nocache_json(dict(configured=True, reachable=None,
+                                 review_token=token, **public))
+    except VisionReviewRefused as exc:
+        return nocache_json({"error": "Vision review unavailable", "reason": exc.reason},
+                            status_code=503)
+    except (VLMNotConfigured, ValueError, VisionPolicyUnavailable, sqlite3.Error, OSError):
+        return nocache_json({"error": "Vision model unavailable",
+                             "reason": "vlm_not_configured"}, status_code=503)
+
+
+@router.post("/api/vlm/composer/describe-prepared")
+async def composer_describe_prepared(body: PreparedComposerVisionBody):
+    """Consume a reviewed route before invoking the existing physical guard."""
+    from agents.core.llm.vision_policy import VisionPolicyUnavailable, describe
+    from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
+
+    try:
+        config = resolve_vlm_config()
+        identity = describe(config)
+        _REVIEWS.consume(
+            body.review_token, session_id=body.session_id or "web",
+            agent_id=body.agent, prompt=body.prompt, model=config.model,
+            route=config.route_source or f"explicit:{config.backend}",
+            binding=identity.binding,
+        )
+    except VisionReviewRefused as exc:
+        reason = ("vlm_destination_changed" if exc.reason == "vlm_destination_changed"
+                  else exc.reason)
+        return nocache_json({"error": "Vision review changed; review it again",
+                             "reason": reason}, status_code=409)
+    except (VLMNotConfigured, ValueError, VisionPolicyUnavailable, sqlite3.Error, OSError):
+        return nocache_json({"error": "Vision destination changed; review it again",
+                             "reason": "vlm_destination_changed"}, status_code=409)
+    return await composer_describe(body)
 
 
 @router.post("/api/vlm/composer/describe")

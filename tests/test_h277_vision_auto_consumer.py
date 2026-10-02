@@ -176,3 +176,60 @@ def test_auto_never_becomes_an_inherited_video_route(route, monkeypatch):
     assert not video.role.configured
     assert video.role.reason == "video_vision_provider_unsupported"
     assert not route.requests
+
+
+def test_prepared_image_review_binds_prompt_session_and_destination(route, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    preview = route.client.post("/api/vlm/composer/prepare", json={
+        "prompt": "Describe this", "agent": "jarvis", "session_id": "session-a",
+    })
+    assert preview.status_code == 200, preview.text
+    status = preview.json()
+    assert status["configured"] and status["review_token"]
+    assert not route.requests
+
+    body = {**approved(status), "review_token": status["review_token"],
+            "agent": "jarvis", "session_id": "session-a"}
+    changed = route.client.post("/api/vlm/composer/describe-prepared",
+                                json={**body, "prompt": "What is behind it?"})
+    assert changed.status_code == 409
+    assert changed.json()["reason"] == "vlm_destination_changed"
+    assert not route.requests
+    replay = route.client.post("/api/vlm/composer/describe-prepared", json=body)
+    assert replay.status_code == 409
+    assert not route.requests
+
+
+def test_prepared_image_review_sends_once_then_replay_refuses(route, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    preview = route.client.post("/api/vlm/composer/prepare", json={
+        "prompt": "Describe this", "agent": "jarvis", "session_id": "session-a",
+    })
+    assert preview.status_code == 200, preview.text
+    status = preview.json()
+    body = {**approved(status), "review_token": status["review_token"],
+            "agent": "jarvis", "session_id": "session-a"}
+    if any(item["needs"] == "acknowledge_training" for item in status.get("selection_requirements", [])):
+        body["acknowledge_training"] = True
+    first = route.client.post("/api/vlm/composer/describe-prepared", json=body)
+    assert first.status_code == 200, first.text
+    assert len(route.requests) == 1
+    second = route.client.post("/api/vlm/composer/describe-prepared", json=body)
+    assert second.status_code == 409
+    assert len(route.requests) == 1
+
+
+def test_prepared_image_review_refuses_key_rotation_before_egress(route, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-openrouter-key")
+    preview = route.client.post("/api/vlm/composer/prepare", json={
+        "prompt": "Describe this", "agent": "jarvis", "session_id": "session-a",
+    })
+    assert preview.status_code == 200, preview.text
+    status = preview.json()
+    monkeypatch.setenv("OPENROUTER_API_KEY", "rotated-openrouter-key")
+    body = {**approved(status), "review_token": status["review_token"],
+            "agent": "jarvis", "session_id": "session-a"}
+    response = route.client.post("/api/vlm/composer/describe-prepared", json=body)
+    assert response.status_code == 409, response.text
+    assert response.json()["reason"] == "vlm_destination_changed"
+    assert not route.requests

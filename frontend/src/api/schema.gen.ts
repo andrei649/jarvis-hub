@@ -556,6 +556,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/vlm/composer/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Composer Prepare
+         * @description Review one prompt's configured destination before image bytes are sent.
+         */
+        post: operations["composer_prepare_api_vlm_composer_prepare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vlm/composer/describe-prepared": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Composer Describe Prepared
+         * @description Consume a reviewed route before invoking the existing physical guard.
+         */
+        post: operations["composer_describe_prepared_api_vlm_composer_describe_prepared_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vlm/composer/describe": {
         parameters: {
             query?: never;
@@ -10794,6 +10834,18 @@ export interface components {
             /** Usage */
             usage: string;
         };
+        /** ComposerPrepareBody */
+        ComposerPrepareBody: {
+            /** Prompt */
+            prompt: string;
+            /**
+             * Agent
+             * @default jarvis
+             */
+            agent: string;
+            /** Session Id */
+            session_id?: string | null;
+        };
         /** ComposerVisionBody */
         ComposerVisionBody: {
             /** Prompt */
@@ -11553,6 +11605,41 @@ export interface components {
             operator: "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "in" | "changed" | "age";
             /** Expected */
             expected?: unknown;
+        };
+        /** PreparedComposerVisionBody */
+        PreparedComposerVisionBody: {
+            /** Prompt */
+            prompt: string;
+            /** Images */
+            images: string[];
+            /** Expected Destination */
+            expected_destination: string;
+            /** Expected Binding */
+            expected_binding: string;
+            /**
+             * Remote Ack
+             * @default false
+             */
+            remote_ack: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /** Review Token */
+            review_token: string;
+            /**
+             * Agent
+             * @default jarvis
+             */
+            agent: string;
+            /** Session Id */
+            session_id?: string | null;
         };
         /** PresenceBody */
         PresenceBody: {
@@ -12963,6 +13050,74 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    composer_prepare_api_vlm_composer_prepare_post: {
+        parameters: {
+            query?: {
+                refresh_catalog?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComposerPrepareBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    composer_describe_prepared_api_vlm_composer_describe_prepared_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreparedComposerVisionBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

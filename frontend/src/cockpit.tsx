@@ -220,10 +220,10 @@ function Seg({ cur, opts, on }) {
 }
 
 /* input bar — text + voice (mic toggles the useVoice loop; ⚙ opens voice settings) */
-function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any }) {
+function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t, agent='jarvis' }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any; agent?: string }) {
   const [val,setVal]=useState('');
   const [cfgOpen,setCfgOpen]=useState(false);
-  const draft=useComposerImages();
+  const draft=useComposerImages(val.trim()||'Describe these images.',agent);
   const fileInput=useRef<HTMLInputElement>(null);
   const refs=useContextRefs(val);   // H579: @file: completion
   const submit=()=>{

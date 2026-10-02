@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -14,16 +15,24 @@ import httpx
 class _RecoveryScope:
     backend: object
     model: str
+    task: asyncio.Task | None
     active: bool = True
 
 
 _scope: ContextVar[_RecoveryScope | None] = ContextVar("auxiliary_parameter_recovery", default=None)
 
 
+def _current_task() -> asyncio.Task | None:
+    try:
+        return asyncio.current_task()
+    except RuntimeError:
+        return None
+
+
 @contextmanager
 def auxiliary_temperature_recovery_scope(backend: object, model: str):
     """Permit recovery only while this exact backend/model operation is active."""
-    state = _RecoveryScope(backend, model)
+    state = _RecoveryScope(backend, model, _current_task())
     token = _scope.set(state)
     try:
         yield
@@ -35,7 +44,7 @@ def auxiliary_temperature_recovery_scope(backend: object, model: str):
 def may_repair_temperature(backend: object, model: object) -> bool:
     state = _scope.get()
     return bool(state is not None and state.active and state.backend is backend
-                and state.model == model)
+                and state.model == model and state.task is _current_task())
 
 
 def rejects_temperature(exc: BaseException) -> bool:

@@ -337,3 +337,8 @@ destination before consent, and a changed choice invalidates that consent.
 The composer has no actual selected main conversation route, so this first
 candidate is absent. Native mobile image intake and provider controls remain
 open; this web flow does not imply native mobile parity.
+The web composer now prepares a short-lived, one-use destination review for
+the current image question and agent. Editing either clears its confirmation;
+a changed destination or reused review is refused before image egress. This
+still uses the configured vision route, not the selected chat backend. Native
+mobile has no matching review flow.

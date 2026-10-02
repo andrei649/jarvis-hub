@@ -1,5 +1,6 @@
 """H277 typed local parameter recovery through actual auxiliary producers."""
 
+import asyncio
 import json
 from contextvars import copy_context
 
@@ -67,11 +68,21 @@ async def invoke(task, orch, router):
 
 
 @pytest.mark.parametrize("task,answer_text,max_tokens", CASES)
-async def test_real_producer_repairs_typed_temperature_rejection_once(task, answer_text, max_tokens):
+async def test_real_producer_repairs_typed_temperature_rejection_once(
+    monkeypatch, task, answer_text, max_tokens,
+):
     sent = []
+    authorizations = []
+    original_authorize = data_handling.authorize
+
+    def authorize(*args, **kwargs):
+        authorizations.append((args, kwargs))
+        return original_authorize(*args, **kwargs)
+
+    monkeypatch.setattr(data_handling, "authorize", authorize)
 
     def handler(request):
-        sent.append(json.loads(request.content))
+        sent.append((json.loads(request.content), len(authorizations)))
         if len(sent) == 1:
             return httpx.Response(400, json=REJECTION)
         return answer(answer_text)
@@ -81,12 +92,13 @@ async def test_real_producer_repairs_typed_temperature_rejection_once(task, answ
         result = await invoke(task, orch, router)
         assert result == (CAPABILITY if task == "acquisition_capability" else
                           DRAFT if task == "acquisition_draft" else answer_text)
-        assert len(sent) == 2
-        assert sent[0]["temperature"] == (0 if task in {"session_title", "query_rewrite"} else 0.2)
-        assert "temperature" not in sent[1]
-        assert [body["max_tokens"] for body in sent] == [max_tokens, max_tokens]
-        assert [body["model"] for body in sent] == ["selected-local", "selected-local"]
-        assert sent[0]["messages"] == sent[1]["messages"]
+        assert [count for _, count in sent] == [2, 3]
+        first, second = (body for body, _ in sent)
+        assert first["temperature"] == (0 if task in {"session_title", "query_rewrite"} else 0.2)
+        assert "temperature" not in second
+        assert [body["max_tokens"] for body in (first, second)] == [max_tokens, max_tokens]
+        assert [body["model"] for body in (first, second)] == ["selected-local", "selected-local"]
+        assert first["messages"] == second["messages"]
     finally:
         await backend.client.aclose()
 
@@ -242,6 +254,33 @@ async def test_ordinary_generate_and_tool_turn_have_no_parameter_repair():
         await backend.client.aclose()
 
 
+async def test_child_task_during_real_review_cannot_repair_ordinary_generate():
+    ordinary_sent = []
+    review_sent = []
+    ordinary_result = []
+
+    async def handler(request):
+        body = json.loads(request.content)
+        if body["messages"][-1]["content"] == "ordinary child request":
+            ordinary_sent.append(body)
+            return httpx.Response(400, json=REJECTION)
+        review_sent.append(body)
+        if len(review_sent) == 1:
+            ordinary_result.append(await asyncio.create_task(
+                backend.generate("selected-local", "ordinary child request")))
+            return httpx.Response(400, json=REJECTION)
+        return answer("review recovered")
+
+    orch, router, backend = route(handler)
+    try:
+        assert await invoke("review", orch, router) == "review recovered"
+        assert len(review_sent) == 2
+        assert len(ordinary_sent) == 1
+        assert is_degraded_reply(ordinary_result[0])
+    finally:
+        await backend.client.aclose()
+
+
 async def test_repair_uses_copy_and_leaves_caller_payload_unchanged():
     sent = []
 
@@ -332,7 +371,8 @@ async def test_successful_repair_does_not_cache_provider_capability():
         await backend.client.aclose()
 
 
-async def test_physical_guard_rechecks_before_temperature_retry(monkeypatch):
+@pytest.mark.parametrize("task", [case[0] for case in CASES])
+async def test_physical_guard_rechecks_before_temperature_retry(monkeypatch, task):
     sent = []
     original = data_handling.authorize
     authorized = True
@@ -352,7 +392,7 @@ async def test_physical_guard_rechecks_before_temperature_retry(monkeypatch):
     orch, router, backend = route(handler)
     try:
         with pytest.raises(data_handling.DataHandlingRefused, match="synthetic revocation"):
-            await invoke("review", orch, router)
+            await invoke(task, orch, router)
         assert len(sent) == 1
     finally:
         await backend.client.aclose()

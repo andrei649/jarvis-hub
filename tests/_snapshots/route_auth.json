@@ -511,6 +511,8 @@
   "POST /api/transcripts/ingest": "user",
   "POST /api/vault": "user",
   "POST /api/vlm/composer/describe": "user",
+  "POST /api/vlm/composer/describe-prepared": "user",
+  "POST /api/vlm/composer/prepare": "user",
   "POST /api/vlm/describe": "user",
   "POST /api/voice/mic/arm": "user",
   "POST /api/voice/mic/pause": "user",
