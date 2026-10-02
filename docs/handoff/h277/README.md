@@ -1,5 +1,16 @@
 # Handoff — H277 in progress on PR #1207 (2026-09-27)
 
+## Exact-image review continuation (2026-10-02)
+
+The selected browser review now binds the one-use token to the SHA-256 digests
+of the exact ordered data-URI images. A changed image or order is refused before
+transport and burns the token. The full backend suite completed 21,177 cases:
+21,142 passed, 35 skipped and none failed or errored on the prior source
+checkpoint. The added reordering regression passed separately. The
+[exact-commit mutation report](../../hermes/evidence/h277-exact-image-review-mutations-2026-10-02.md)
+records three valid assertion kills, a 15/15 baseline before and after, and
+4,402 restored tracked regular files. H277 remains partial.
+
 ## Local configured-chain continuation (2026-10-02)
 
 The [provider-chain report](../../hermes/h277-video-provider-chain-2026-10-02.md) tracks
