@@ -9,14 +9,12 @@ import difflib
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
-import sys
 import tarfile
 import tempfile
 import time
 import xml.etree.ElementTree as ET
-
+from pathlib import Path
 
 COMMIT = "5da06db66c837993a644f330f67da385ed7bf835"
 REPO = Path("/Users/andrei649/Projects/nerva-pr-worktrees/integration")

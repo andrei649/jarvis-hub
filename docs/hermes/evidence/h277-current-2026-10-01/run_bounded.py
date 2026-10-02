@@ -5,8 +5,8 @@ import ast
 import hashlib
 import json
 import os
-import sys
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time

@@ -17,7 +17,7 @@ cases = []
 
 
 def add(label, file, a, b, *tests, invariant):
-    cases.append(dict(label=label, file=file, a=a, b=b, tests=list(tests), invariant=invariant))
+    cases.append({"label": label, "file": file, "a": a, "b": b, "tests": list(tests), "invariant": invariant})
 
 
 add("canonical_kind_ignored", V,
