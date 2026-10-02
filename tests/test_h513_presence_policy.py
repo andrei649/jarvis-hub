@@ -86,6 +86,7 @@ async def test_strict_local_explanation_checks_final_physical_request(presence):
     client = llm_async_client("lm-studio", transport=httpx.MockTransport(
         lambda request: (sent.append(request), httpx.Response(200))[1]
     ))
+    presence.backend.client = client
 
     async def generate(model, prompt, **kwargs):
         await client.post("https://synthetic.invalid/v1/chat/completions", json={"prompt": prompt})
@@ -110,6 +111,7 @@ async def test_strict_local_explanation_rejects_late_backend_rebind(presence):
     client = llm_async_client("lm-studio", transport=httpx.MockTransport(
         lambda request: (sent.append(request), httpx.Response(200))[1]
     ))
+    presence.backend.client = client
 
     async def generate(model, prompt, **kwargs):
         presence.backend.base_url = "https://synthetic.invalid/v1"
@@ -128,6 +130,102 @@ async def test_strict_local_explanation_rejects_late_backend_rebind(presence):
         assert sent == []
     finally:
         await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_strict_local_explanation_refuses_selected_proxy_transport(presence):
+    from agents.core.llm.base import LMStudioBackend
+    from agents.core.llm.egress import llm_async_client
+
+    backend = LMStudioBackend("http://127.0.0.1:1234", trust_env=False)
+    await backend.client.aclose()
+    backend.client = llm_async_client(
+        "lm-studio", base_url=backend.base_url, trust_env=False,
+        proxy="http://proxy.invalid:8080",
+    )
+    proxied = []
+    selected = backend.client._transport_for_url(httpx.URL(backend.base_url))
+
+    async def offline_proxy(request):
+        proxied.append(request)
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "Proxy received private presence"}}],
+        })
+
+    selected.handle_async_request = offline_proxy
+    presence.router.local_backend = backend
+    presence.router._backend = backend
+    presence.router._backend_name = "lm-studio"
+    try:
+        with pytest.raises(dh.DataHandlingRefused, match="transport.*direct"):
+            await LocalPresenceExplainer.from_router(presence.router).explain(
+                presence.decision, strict_local=True,
+            )
+        assert proxied == []
+    finally:
+        await backend.aclose()
+
+
+@pytest.mark.asyncio
+async def test_strict_local_explanation_refuses_proxy_before_generator(presence):
+    from agents.core.llm.egress import llm_async_client
+
+    client = llm_async_client(
+        "lm-studio", base_url=presence.backend.base_url, trust_env=False,
+        proxy="http://proxy.invalid:8080",
+    )
+    presence.backend.client = client
+    try:
+        with pytest.raises(dh.DataHandlingRefused, match="transport.*direct"):
+            await LocalPresenceExplainer.from_router(presence.router).explain(
+                presence.decision, strict_local=True,
+            )
+        assert presence.requests == []
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_strict_local_explanation_rechecks_late_proxy_mount(presence):
+    from httpx._utils import URLPattern
+
+    from agents.core.llm.base import LMStudioBackend
+    from agents.core.llm.egress import llm_async_client
+
+    direct, proxied = [], []
+    backend = LMStudioBackend("http://127.0.0.1:1234", trust_env=False)
+    await backend.client.aclose()
+    backend.client = llm_async_client(
+        "lm-studio", base_url=backend.base_url, trust_env=False,
+        transport=httpx.MockTransport(
+            lambda request: (direct.append(request), httpx.Response(200))[1]
+        ),
+    )
+    proxy = httpx.AsyncHTTPTransport(proxy="http://proxy.invalid:8080", trust_env=False)
+
+    async def offline_proxy(request):
+        proxied.append(request)
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "Proxy received private presence"}}],
+        })
+
+    proxy.handle_async_request = offline_proxy
+
+    async def reroute(request):
+        backend.client._mounts[URLPattern("http://127.0.0.1:1234")] = proxy
+
+    backend.client.event_hooks["request"].insert(0, reroute)
+    presence.router.local_backend = backend
+    presence.router._backend = backend
+    presence.router._backend_name = "lm-studio"
+    try:
+        with pytest.raises(dh.DataHandlingRefused, match="transport.*direct"):
+            await LocalPresenceExplainer.from_router(presence.router).explain(
+                presence.decision, strict_local=True,
+            )
+        assert direct == proxied == []
+    finally:
+        await backend.aclose()
 
 
 @pytest.mark.asyncio

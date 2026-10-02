@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,6 +14,7 @@ from agents.core import settings_db
 from agents.core.house import HousePresenceIngestor, PresenceInference
 from agents.core.house.contracts import HouseSnapshot
 from agents.core.llm import data_handling as dh
+from agents.core.llm.egress import llm_async_client
 from agents.core.llm.providers import get_profile
 from agents.core.routers import house as house_routes
 from tests.test_h30_presence import _evidence, _store
@@ -38,8 +41,13 @@ def presence_client(tmp_path, monkeypatch):
         requests.append((model, json.loads(prompt), kwargs))
         return "Evidence supports presence; the room is private."
 
+    client = llm_async_client(
+        "lm-studio", base_url="http://127.0.0.1:1234", trust_env=False,
+        transport=httpx.MockTransport(lambda request: pytest.fail("unexpected model HTTP request")),
+    )
     backend = SimpleNamespace(
-        profile=get_profile("lm-studio"), base_url="http://127.0.0.1:1234", generate=generate,
+        profile=get_profile("lm-studio"), base_url="http://127.0.0.1:1234",
+        client=client, generate=generate,
     )
     llm_router = SimpleNamespace(
         local_backend=backend, active_model="synthetic-presence",
@@ -64,6 +72,7 @@ def presence_client(tmp_path, monkeypatch):
         yield TestClient(web.app), runtime, backend, requests, store.pseudonym_for("Alice Example")
     finally:
         web.app.dependency_overrides.pop(user_guard, None)
+        asyncio.run(client.aclose())
 
 
 def test_explicit_presence_explanation_uses_private_decision_and_never_identity(presence_client):

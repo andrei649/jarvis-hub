@@ -152,6 +152,7 @@ class LocalPresenceExplainer:
     async def explain(self, decision: PresenceDecision, *, strict_local: bool = False) -> str:
         from agents.core.llm.base import is_degraded_reply
         from agents.core.llm.data_handling import DataHandlingRefused, auxiliary_request_scope
+        from agents.core.llm.direct_transport import require_direct_async_transport
         from agents.core.llm.model_roles import public_local_origin, same_origin
 
         if self._router is None:
@@ -166,6 +167,9 @@ class LocalPresenceExplainer:
                        or getattr(self._backend, "base_url", ""))
         if strict_local and not public_local_origin(endpoint):
             raise DataHandlingRefused("presence explanation requires a local endpoint")
+        client = getattr(self._backend, "client", None)
+        if strict_local:
+            require_direct_async_transport(client, endpoint)
 
         def request_check(request) -> None:
             current = str(getattr(self._backend, "endpoint", None)
@@ -173,6 +177,9 @@ class LocalPresenceExplainer:
             if (not public_local_origin(current) or not same_origin(endpoint, current)
                     or not same_origin(endpoint, str(request.url))):
                 raise DataHandlingRefused("presence explanation requires the bound local endpoint")
+            if getattr(self._backend, "client", None) is not client:
+                raise DataHandlingRefused("presence explanation client binding changed")
+            require_direct_async_transport(client, request.url)
 
         payload = decision.to_dict()
         payload.pop("occupant_id", None)

@@ -1,0 +1,38 @@
+{
+  "scope": "H277 House presence direct-transport preflight and physical hook",
+  "source_sha256": "e603c87f8ebdf05e447d39cc01f99c9c6fb404d454e34617120f6cf5a7a07738",
+  "test_sha256": "de715230920b3dfc19a434da8b1cab5326fda3552d0445979e588c495a402486",
+  "baseline": 2,
+  "mutants_killed": 2,
+  "mutants_total": 2,
+  "results": [
+    {
+      "case": "preflight",
+      "mutant": false,
+      "exit_code": 0,
+      "killed": false,
+      "baseline_passed": true
+    },
+    {
+      "case": "physical",
+      "mutant": false,
+      "exit_code": 0,
+      "killed": false,
+      "baseline_passed": true
+    },
+    {
+      "case": "preflight",
+      "mutant": true,
+      "exit_code": 1,
+      "killed": true,
+      "baseline_passed": false
+    },
+    {
+      "case": "physical",
+      "mutant": true,
+      "exit_code": 1,
+      "killed": true,
+      "baseline_passed": false
+    }
+  ]
+}
