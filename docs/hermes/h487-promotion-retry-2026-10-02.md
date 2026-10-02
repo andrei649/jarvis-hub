@@ -59,12 +59,16 @@ Rollback: revert the queue table/methods, worker drain and tests together.
 Existing outbox rows then remain inert private metadata; no payload or grant
 is lost. No push, merge, deployment or paid provider call is authorized here.
 
-## Local verification in progress
+## Local verification
 
 The restart regression failed before implementation because housekeeping did
 not resend the promoted follower. The implemented outbox now passes 138 focused
 H487/grouping/expiry cases, including restart recovery, atomic insert failure,
 revision-based acknowledgement, a failed group alongside a deliverable group,
 an empty group and a halted worker. Scoped Ruff and the rebuilt Graft wiring
-graph pass. The full backend suite and Hermes evidence reconciliation are
-pending; no change to H487's partial verdict is claimed yet.
+graph pass. The first full backend run stopped at the generated Hermes report
+check because the queue/worker evidence had drifted. Six affected rows were
+re-read and restamped, including a correction to an old H288 claimant claim.
+The second full backend run passed: 21,205 passed, 34 skipped, 1 expected
+failure from 21,240 collected. `hermes_status.py check` and
+`status_sync.py --check --reuse-test-counts` pass. H487 remains partial.

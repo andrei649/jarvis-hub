@@ -11,14 +11,14 @@ Din acestea, **72** au fost reevaluate pe cod în această livrare; **108** păs
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 180 | 25.8% |
-| Parțial | 282 | 40.5% |
-| Lipsă | 62 | 8.9% |
+| Parțial | 284 | 40.7% |
+| Lipsă | 63 | 9.0% |
 | Exclus intenționat | 0 | 0.0% |
-| De reverificat | 173 | 24.8% |
+| De reverificat | 170 | 24.4% |
 
 **Ținta acceptată în produs:** 697 rânduri; progres 180/697 = **25.8%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
 
-**Acoperirea reevaluării curente:** 161/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 164/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -33,13 +33,13 @@ Din acestea, **72** au fost reevaluate pe cod în această livrare; **108** păs
 | desktop | 54 | 9 | 29 | 6 | 0 | 10 |
 | tui | 25 | 3 | 9 | 2 | 0 | 11 |
 | config | 18 | 6 | 7 | 3 | 0 | 2 |
-| env | 28 | 5 | 11 | 1 | 0 | 11 |
+| env | 28 | 5 | 12 | 1 | 0 | 10 |
 | tools — the agent-callable surface | 32 | 11 | 12 | 1 | 0 | 8 |
 | skills | 33 | 13 | 10 | 2 | 0 | 8 |
 | providers | 27 | 8 | 10 | 1 | 0 | 8 |
 | agent-core | 36 | 10 | 10 | 8 | 0 | 8 |
 | memory | 27 | 11 | 11 | 0 | 0 | 5 |
-| automation | 32 | 3 | 17 | 2 | 0 | 10 |
+| automation | 32 | 3 | 18 | 3 | 0 | 8 |
 | security | 34 | 12 | 12 | 1 | 0 | 9 |
 | media | 27 | 7 | 16 | 2 | 0 | 2 |
 | acp-mcp-dev | 33 | 3 | 13 | 11 | 0 | 6 |
@@ -49,7 +49,7 @@ Din acestea, **72** au fost reevaluate pe cod în această livrare; **108** păs
 
 ## Actualizare
 
-Evaluare: `2026-10-02T17:01:52Z`. Cod inspectat: `18b77290c69cba4367454e570c8f43d3fe3992ba`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-10-02T18:06:32Z`. Cod inspectat: `42d4678ada853d24109ad3264756d1812551c8e8`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
 
