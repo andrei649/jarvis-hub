@@ -155,7 +155,7 @@ class VLMConfig:
     ``label at (x, y)`` contract ever promised.
     """
 
-    backend: str  # "lmstudio" | "custom" | "openrouter"
+    backend: str  # "lmstudio" | "custom" | "openrouter" | "deepinfra"
     base_url: str
     model: str
     api_key: str
@@ -196,6 +196,9 @@ def resolve_vlm_config(env=None) -> VLMConfig:
     """
     if model_roles._reader(env)("JARVIS_ROLE_VISION_PROVIDER").strip().lower() == "openrouter":
         from .vision_openrouter import resolve_config
+        return resolve_config(env)
+    if model_roles._reader(env)("JARVIS_ROLE_VISION_PROVIDER").strip().lower() == "deepinfra":
+        from .vision_deepinfra import resolve_config
         return resolve_config(env)
     try:
         backend, url, model, api_key, preset_name = model_roles.vision_env_view(env)
@@ -310,7 +313,7 @@ class VLMBackend(LLMBackend):
     def __init__(self, base_url: str = DEFAULT_VLM_BASE, api_key: str = "",
                  client=None, max_image_dim: int = 1024, *, composer_auth: bool = False,
                  provider_id: str = "") -> None:
-        if provider_id not in ("", "openrouter"):
+        if provider_id not in ("", "openrouter", "deepinfra"):
             raise ValueError("unsupported native vision provider")
         self._provider_id = provider_id
         self.base_url = base_url
@@ -337,7 +340,7 @@ class VLMBackend(LLMBackend):
             api_key=config.api_key,
             client=client,
             max_image_dim=max_image_dim,
-            **({"provider_id": "openrouter"} if config.backend == "openrouter" else {}),
+            **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra") else {}),
         )
         backend.is_local = config.is_local
         return backend
@@ -371,25 +374,30 @@ class VLMBackend(LLMBackend):
         image_bearing = any(isinstance(part, dict) and part.get("type") == "image_url"
                             for message in messages if isinstance(message.get("content"), list)
                             for part in message["content"])
-        if scope is not None and image_bearing:
-            scope.begin(payload)
+        recovery = scope if image_bearing else None
+        if recovery is not None or self._provider_id == "deepinfra":
+            if recovery is not None:
+                recovery.begin(payload)
             async with asyncio.timeout(VISION_GENERATION_TIMEOUT):
-                for attempt in range(2):
-                    attempt_body = scope.next_attempt()
+                for attempt in range(2 if recovery is not None else 1):
+                    attempt_body = recovery.next_attempt() if recovery is not None else payload
                     async with self.client.stream(
                             "POST", "/chat/completions", json=attempt_body,
                             headers=self._headers()) as response:
                         result = bytearray()
                         async for chunk in response.aiter_bytes():
-                            scope.check()
-                            result.extend(chunk)
-                            if len(result) > MAX_VISION_RESPONSE_BYTES:
+                            if recovery is not None:
+                                recovery.check()
+                            if len(result) + len(chunk) > MAX_VISION_RESPONSE_BYTES:
                                 raise ValueError("vision response too large")
-                        scope.check()
+                            result.extend(chunk)
+                        if recovery is not None:
+                            recovery.check()
                         response.raise_for_status()
-                    scope.check()
+                    if recovery is not None:
+                        recovery.check()
                     data = json.loads(result)
-                    if attempt == 0 and compatible_empty_success(data):
+                    if recovery is not None and attempt == 0 and compatible_empty_success(data):
                         continue
                     return compatible_vision_answer(data)
         resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())

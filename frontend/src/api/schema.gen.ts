@@ -12869,7 +12869,9 @@ export interface operations {
     };
     composer_status_api_vlm_composer_status_get: {
         parameters: {
-            query?: never;
+            query?: {
+                refresh_catalog?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -12883,6 +12885,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

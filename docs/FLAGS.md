@@ -578,7 +578,7 @@ is a frozen table of five roles; the new names win when set, the old ones are fa
 |---|---|---|---|---|
 | `main` | none (`JARVIS_ROLE_MAIN_*` is **ignored**, the doctor says so) | settings `llm.*` | not env-selectable: the main model is chosen on the H378-guarded settings surfaces | the router |
 | `deep` | `JARVIS_ROLE_DEEP_MODEL` | `JARVIS_DEEP_MODEL`, then `deepseek-r1-distill-qwen-32b` | none (the router's local backend; `_PROVIDER`/`_BASE_URL` ignored) | the deep slot |
-| `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_MODEL` / `_BASE_URL` | legacy `JARVIS_VLM_*` for LM Studio/custom; none for OpenRouter | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`), explicit `openrouter` | `resolve_vlm_config`; OpenRouter composer/native backend; other consumers keep their local-only guards |
+| `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_MODEL` / `_BASE_URL` | legacy `JARVIS_VLM_*` for LM Studio/custom; none for OpenRouter/DeepInfra | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`), explicit `openrouter` or `deepinfra` | `resolve_vlm_config`; OpenRouter/DeepInfra composer/native backend; other consumers keep their local-only guards |
 | `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | resolved vision route when video provider/base are unset | `lm-studio`, `openai-compatible`, `gemini` | opt-in, owner-approved `video_analyze` ToolRPC |
 | `approval_judge` | `JARVIS_ROLE_APPROVAL_JUDGE_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio` (default), `ollama`, `openai-compatible` | `autonomy/approval_judge.py` |
 
@@ -635,6 +635,30 @@ and `data_collection=allow` do not silently bypass training guards.
 The inherited video route reports
 `video_vision_provider_unsupported`; signed OpenRouter video and automatic provider
 discovery remain separate unfinished increments.
+
+**Explicit DeepInfra vision** uses `JARVIS_ROLE_VISION_PROVIDER=deepinfra`.
+`JARVIS_ROLE_VISION_MODEL` pins a model and bypasses metadata discovery. Without
+that pin, composer status selects the first served chat/vision model from the
+credential-scoped catalog, preserving catalog order and Hermes's legacy ID filter
+for entries without surface tags. No catalog selection means unavailable.
+The base is the role base, then `DEEPINFRA_BASE_URL`, then
+`https://api.deepinfra.com/v1/openai`. The dedicated role key wins; ambient
+`DEEPINFRA_API_KEY` is accepted only on the canonical HTTPS origin/default port443.
+A custom origin requires a dedicated role key; legacy VLM variables are ignored.
+
+For this provider, `GET /api/vlm/composer/status` may send an authenticated metadata
+request to `/models?filter=true&sort_by=hermes`. It sends no prompt or image;
+`reachable=null` still means inference connectivity is untested. Positive model
+selections persist in a bounded process-local cache; failures retry after60 seconds.
+`refresh_catalog=true`, used by the HUD's Refresh vision destination button,
+refreshes metadata and revokes the old selection on failure. Explicit models bypass
+catalog refresh. Catalog requests use a direct transport, no redirects, a five-second
+deadline and a2 MiB response limit. A later image POST never discovers another
+model: it requires the reviewed selection and independent remote/selection
+confirmations. Keys, models and physical-request changes invalidate old approval.
+Data policy is unknown. Local-only consumers stay local; inherited signed video
+refuses with `video_vision_provider_unsupported`. Automatic cross-provider discovery,
+Nous authentication and main-chat DeepInfra routing remain unfinished.
 
 **Video understanding** requires `JARVIS_VIDEO_ANALYSIS=1` and a valid resolved video
 route. When both video provider and base URL are unset, a configured vision route

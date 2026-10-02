@@ -105,10 +105,10 @@ def canonical_selection_findings(findings):
 
 def describe(config):
     empty_retries = resolve_vision_empty_retries()
-    if config.backend not in ('lmstudio', 'custom', 'openrouter') or not isinstance(config.model, str) or not config.model:
+    if config.backend not in ('lmstudio', 'custom', 'openrouter', 'deepinfra') or not isinstance(config.model, str) or not config.model:
         raise VisionPolicyUnavailable('invalid vision configuration')
     profile = get_profile({'lmstudio': 'lm-studio', 'custom': 'openai-compatible',
-                           'openrouter': 'openrouter'}[config.backend])
+                           'openrouter': 'openrouter', 'deepinfra': 'deepinfra'}[config.backend])
     provider_block = ''
     policy, note = profile.data_policy_for(config.model)
     if config.backend == 'openrouter':
@@ -163,8 +163,9 @@ def _wire_matches(backend, frozen):
         raise VisionDestinationChanged('vision adapter transport changed') from exc
     if (str(native_base_url(backend.base_url)) != frozen.base_url or str(client.base_url) != frozen.base_url
             or authorization(backend.base_url, backend.api_key) != frozen.authorization
-            or (frozen.provider == 'openrouter' and getattr(backend, '_provider_id', '') != 'openrouter')
-            or (frozen.provider != 'openrouter' and getattr(backend, '_provider_id', ''))):
+            or (frozen.provider in ('openrouter', 'deepinfra')
+                and getattr(backend, '_provider_id', '') != frozen.provider)
+            or (frozen.provider not in ('openrouter', 'deepinfra') and getattr(backend, '_provider_id', ''))):
         raise VisionDestinationChanged('vision adapter destination changed')
 
 
@@ -204,7 +205,7 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
                         raise ValueError('duplicate vision request field')
                     result[key] = value
                 return result
-            payload = json.loads(request.content, object_pairs_hook=unique_pairs if frozen.provider_block else dict)
+            payload = json.loads(request.content, object_pairs_hook=unique_pairs if frozen.provider_block or frozen.provider == "deepinfra" else dict)
             same_model = isinstance(payload, dict) and payload.get('model') == config.model
             if frozen.provider_block:
                 same_model = same_model and json.dumps(payload.get('provider'), sort_keys=True,
@@ -246,7 +247,8 @@ def _native_request_scope(config, backend, *, resolve_config, frozen, authorize=
         record_turn_notice(f'data_handling:{notice_purpose}', frozen.warning)
     scope = vision_retry_scope(backend, config.model, check) if frozen.empty_retries else nullcontext(None)
     with scope as recovery:
-        final_hook_required = recovery is not None or bool(frozen.provider_block) or bool(cleared_findings)
+        final_hook_required = (recovery is not None or bool(frozen.provider_block)
+                               or bool(cleared_findings) or frozen.provider == 'deepinfra')
         if final_hook_required:
             backend.client.event_hooks['request'].append(last_request_hook)
         try:

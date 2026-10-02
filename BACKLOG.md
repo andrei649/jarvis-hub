@@ -1947,12 +1947,19 @@
   Explicit OpenRouter vision now uses a real composer/native transport with scoped
   credentials and all live upstream routing/privacy controls bound through the
   final HTTP hook. Unknown/malformed settings, stale confirmations and unauthorized
-  training/cost choices refuse. Provider auto-discovery, Nous/DeepInfra and signed
+  training/cost choices refuse. Provider auto-discovery, Nous and signed
   OpenRouter video remain open; this is an adapter dependency, not full H277 parity.
   Image turns now expose independent per-turn training/cost confirmations in HUD
   and CLI, bind complete guard details to the reviewed destination, and record
   required training consent before dispatch. Changes revoke the confirmation;
   this grants no unattended role or provider permission.
+  Explicit DeepInfra vision now prepares the first served chat/vision catalog model
+  before preview, or uses an explicit model without metadata I/O. Refresh revokes
+  stale selection, key/base changes isolate cache entries, and POST never discovers
+  a replacement. Responses are bounded even without retry; duplicate model keys
+  and late configuration changes refuse. This remains one H277 dependency, not
+  completion of automatic cross-provider routing. See the
+  [DeepInfra plan](docs/hermes/h277-deepinfra-vision-plan-2026-10-02.md).
 
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.

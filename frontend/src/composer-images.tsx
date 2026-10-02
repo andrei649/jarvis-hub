@@ -39,6 +39,7 @@ export function useComposerImages(){
   const [destination,setDestination]=useState<Destination|null>(null),[ack,setAck]=useState('');
   const [consents,setConsents]=useState<Partial<Record<SelectionNeed,string>>>({});
   const [refreshId,setRefreshId]=useState(0);
+  const refreshCatalog=useRef(false);
   const publish=()=>setImages([...records.current]);
   const dispose=(entry:Draft)=>{entry.reader.onload=null;entry.reader.onerror=null;entry.reader.onabort=null;if(entry.reader.readyState===1)entry.reader.abort();if(entry.url)URL.revokeObjectURL(entry.url);};
   const clear=()=>{records.current.forEach(dispose);records.current=[];publish();setNote('');setAck('');setConsents({});};
@@ -75,7 +76,9 @@ export function useComposerImages(){
     setAck('');setConsents({});setDestination(null);
     if(!enabled)return;
     const controller=new AbortController();let active=true;
-    apiFetchOnce('/api/vlm/composer/status',{signal:controller.signal}).then(async response=>{
+    const statusPath='/api/vlm/composer/status'+(refreshCatalog.current?'?refresh_catalog=true':'');
+    refreshCatalog.current=false;
+    apiFetchOnce(statusPath,{signal:controller.signal}).then(async response=>{
       if(!response.ok)throw new Error('Vision status unavailable');
       const text=await response.text();if(text.length>8192)throw new Error('Invalid vision status');
       const data=JSON.parse(text) as Destination;
@@ -99,7 +102,7 @@ export function useComposerImages(){
   return {images,note,destination,ack,consents,ready,addFiles,onPaste,onDrop,clear,remove,submission,
     acknowledge:(checked:boolean)=>setAck(checked?destination?.binding||'':''),
     confirm:(need:SelectionNeed,checked:boolean)=>setConsents(current=>({...current,[need]:checked?destination?.binding||'':''})),
-    refresh:()=>{setConsents({});setRefreshId(id=>id+1);}};
+    refresh:()=>{refreshCatalog.current=true;setConsents({});setRefreshId(id=>id+1);}};
 }
 
 export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImages>}){

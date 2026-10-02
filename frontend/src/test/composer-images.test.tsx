@@ -233,3 +233,17 @@ it.each([
   fireEvent.click(screen.getByRole('button',{name:'Send'}));
   expect(submit).not.toHaveBeenCalled();
 });
+
+it('forces catalog refresh only when the user refreshes the vision destination',async()=>{
+  render(<InputBar onSubmit={()=>{}} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(1));
+  expect(String(vi.mocked(fetch).mock.calls[0][0])).not.toContain('refresh_catalog');
+  fireEvent.click(screen.getByRole('button',{name:'Refresh vision destination'}));
+  await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(2));
+  expect(String(vi.mocked(fetch).mock.calls[1][0])).toContain('refresh_catalog=true');
+  fireEvent.click(screen.getByRole('button',{name:'Remove shot.png'}));
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file('next.png')]}});
+  await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(3));
+  expect(String(vi.mocked(fetch).mock.calls[2][0])).not.toContain('refresh_catalog');
+});

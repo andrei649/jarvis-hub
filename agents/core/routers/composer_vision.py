@@ -205,13 +205,19 @@ class ComposerVisionBody(BaseModel):
 
 
 @router.get("/api/vlm/composer/status")
-async def composer_status():
+async def composer_status(refresh_catalog: bool = False):
+    from agents.core.env_config import env_str
     from agents.core.llm.vision_policy import VisionPolicyUnavailable
     from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
 
     try:
+        if env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower() == "deepinfra":
+            from agents.core.llm.vision_deepinfra import prepare_config
+            config = await prepare_config(force_refresh=refresh_catalog)
+        else:
+            config = resolve_vlm_config()
         return nocache_json(
-            dict(configured=True, reachable=None, **public_config(resolve_vlm_config()))
+            dict(configured=True, reachable=None, **public_config(config))
         )
     except (VLMNotConfigured, ValueError, VisionPolicyUnavailable, sqlite3.Error, OSError):
         return nocache_json(
@@ -269,7 +275,7 @@ async def composer_describe(body: ComposerVisionBody):
         sg.record(findings, 'composer_vision')
         try:
             backend = VLMBackend(base_url=config.base_url, api_key=config.api_key, composer_auth=True,
-                                 **({"provider_id": "openrouter"} if config.backend == "openrouter" else {}))
+                                 **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra") else {}))
             with composer_request_scope(config, backend, resolve_config=resolve_vlm_config,
                                         remote_ack=body.remote_ack, principal=Principal(channel="web", admin=False),
                                         frozen=identity, cleared_findings=identity.selection_findings) as recheck:

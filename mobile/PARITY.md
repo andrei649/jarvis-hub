@@ -318,3 +318,8 @@ Responsive-web image drafts additionally support distinct per-turn training/cost
 confirmations with audit and destination binding; native mobile has no equivalent
 image intake or confirmation controls yet.
 Automatic provider discovery and signed OpenRouter video are not delivered.
+
+Explicit DeepInfra image analysis uses the same responsive-web composer and
+confirmation controls. Its Refresh vision destination button can refresh the
+server-side model catalog. This adds no native image intake or native mobile
+provider configuration; native-device and live-provider acceptance remain open.

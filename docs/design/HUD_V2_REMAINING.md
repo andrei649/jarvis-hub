@@ -420,4 +420,11 @@ binding. The composer now displays separate unchecked training/cost confirmation
 when requested by the server, requires all of them before send, and clears them
 on image changes, refresh or draft clear. Unknown/malformed disclosures refuse;
 remote acknowledgment is independent. Automatic provider discovery,
-Nous/DeepInfra adapters and signed OpenRouter video remain unfinished.
+Nous and signed OpenRouter video remain unfinished.
+
+Explicit DeepInfra vision (H277, 2026-10-02) now uses the existing composer. With
+no explicit model, opening image status prepares a catalog selection; Refresh vision
+destination forces a new catalog lookup and clears confirmations. Failed refresh
+revokes the old selection. Metadata discovery sends no images, and remote inference
+still needs the reviewed destination and any separate training/cost confirmations.
+Automatic cross-provider discovery and native mobile acceptance remain open.

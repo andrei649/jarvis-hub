@@ -6,9 +6,10 @@ approval and the vision model can read a screenshot independently of the main mo
 
 Each role resolves ``{provider_id, model, base_url}`` from
 ``JARVIS_ROLE_<NAME>_PROVIDER`` / ``_MODEL`` / ``_BASE_URL``. The names that predate
-the table stay as fallbacks (``JARVIS_VLM_BACKEND`` / ``_MODEL`` / ``_URL`` for vision,
-``JARVIS_DEEP_MODEL`` for deep), so an install that sets only those behaves exactly as
-before; when both are set the new name wins and the listing names the shadowed one.
+the table stay as fallbacks (``JARVIS_VLM_BACKEND`` / ``_MODEL`` / ``_URL`` for local
+vision, ``JARVIS_DEEP_MODEL`` for deep), so an install that sets only those behaves
+exactly as before; when both are set the new name wins and the listing names the
+shadowed one. Explicit OpenRouter and DeepInfra vision roles ignore legacy VLM values.
 
 A provider value is a ProviderProfile id (``agents/core/llm/providers``): an unknown id
 is refused as ``role_provider_unknown`` and a real id the role's code path cannot speak
@@ -128,7 +129,7 @@ ROLES: Mapping[str, RoleSpec] = MappingProxyType({
         "vision", "reads screenshots, documents and images", "JARVIS_ROLE_VISION",
         MappingProxyType({"provider": "JARVIS_VLM_BACKEND", "model": "JARVIS_VLM_MODEL",
                           "base_url": "JARVIS_VLM_URL"}),
-        frozenset({"lm-studio", "openai-compatible", "openrouter"}),
+        frozenset({"lm-studio", "openai-compatible", "openrouter", "deepinfra"}),
         ("agents/core/llm/vlm.py resolve_vlm_config",)),
     "video": RoleSpec(
         "video", "reads approved video sources through video_analyze", "JARVIS_ROLE_VIDEO", MappingProxyType({}),
@@ -143,7 +144,7 @@ ROLES: Mapping[str, RoleSpec] = MappingProxyType({
 
 # The VLM adapter's backend selector <-> the provider profile id it speaks to.
 _VISION_BACKEND_OF = MappingProxyType({"lm-studio": "lmstudio", "openai-compatible": "custom",
-                                       "openrouter": "openrouter"})
+                                       "openrouter": "openrouter", "deepinfra": "deepinfra"})
 _VISION_PROVIDER_OF = MappingProxyType({v: k for k, v in _VISION_BACKEND_OF.items()})
 
 
@@ -237,8 +238,9 @@ def vision_env_view(env: Mapping[str, str] | None = None) -> tuple[str, str, str
     """``(backend, url, model, api_key, preset)`` for ``resolve_vlm_config``.
 
     ``JARVIS_ROLE_VISION_PROVIDER`` maps ``lm-studio`` → ``lmstudio`` and
-    ``openai-compatible`` → ``custom``; unset, ``JARVIS_VLM_BACKEND`` is returned raw and
-    unchanged, so ``off``, empty, URL-only and unknown-selector behaviour stay identical.
+    ``openai-compatible`` → ``custom``; DeepInfra and OpenRouter use their own pure
+    resolvers. Unset, ``JARVIS_VLM_BACKEND`` is returned raw and unchanged, so
+    ``off``, empty, URL-only and unknown-selector behaviour stay identical.
     Raises :class:`RoleConfigError` for an unknown or unsupported role provider.
     """
     read = _reader(env)
@@ -246,6 +248,11 @@ def vision_env_view(env: Mapping[str, str] | None = None) -> tuple[str, str, str
     role_provider = read(spec.env_name("provider")).strip()
     if role_provider.lower() == "openrouter":
         from .vision_openrouter import resolve_config
+
+        config = resolve_config(env)
+        return config.backend, config.base_url, config.model, config.api_key, ""
+    if role_provider.lower() == "deepinfra":
+        from .vision_deepinfra import resolve_config
 
         config = resolve_config(env)
         return config.backend, config.base_url, config.model, config.api_key, ""
@@ -318,6 +325,30 @@ def _resolve_vision(read, spec: RoleSpec, env: Mapping[str, str] | None) -> Reso
             return ResolvedRole("vision", False, "", "", "", MappingProxyType(source),
                                 None, "", str(exc), tuple(ignored))
         return ResolvedRole("vision", True, "openrouter", config.model, config.base_url,
+                            MappingProxyType(source), bool(config.is_local), policy,
+                            "", tuple(ignored))
+    if role_provider.lower() == "deepinfra":
+        from .vision_deepinfra import model_source
+        from .vision_deepinfra import resolve_config as resolve_deepinfra
+
+        role_base = read(spec.env_name("base_url"))
+        provider_base = read("DEEPINFRA_BASE_URL")
+        source = {"provider": spec.env_name("provider"),
+                  "model": model_source(env),
+                  "base_url": (spec.env_name("base_url") if role_base else
+                               "DEEPINFRA_BASE_URL" if provider_base else "default")}
+        ignored = [name for name in ("JARVIS_VLM_BACKEND", "JARVIS_VLM_URL",
+                                    "JARVIS_VLM_MODEL", "JARVIS_VLM_KEY", "JARVIS_VLM_PRESET")
+                   if read(name).strip()]
+        if role_base and provider_base:
+            ignored.append("DEEPINFRA_BASE_URL")
+        try:
+            config = resolve_deepinfra(env)
+        except VLMNotConfigured as exc:
+            return ResolvedRole("vision", False, "", "", "", MappingProxyType(source),
+                                None, "", exc.reason, tuple(ignored))
+        policy = get_profile("deepinfra").data_policy_for(config.model)[0]
+        return ResolvedRole("vision", True, "deepinfra", config.model, config.base_url,
                             MappingProxyType(source), bool(config.is_local), policy,
                             "", tuple(ignored))
     legacy_backend = read("JARVIS_VLM_BACKEND").strip().lower()
@@ -412,7 +443,7 @@ def resolve_video_route(env: Mapping[str, str] | None = None) -> ResolvedVideoRo
                                                     "model": "default", "base_url": "default"}),
                                   None, "", exc.reason))
     if vision.configured:
-        if vision.provider_id == "openrouter":
+        if vision.provider_id in {"openrouter", "deepinfra"}:
             source = dict(vision.source)
             source["model"] = spec.env_name("model") if model else vision.source["model"]
             return ResolvedVideoRoute(ResolvedRole("video", False, "", "", "",
