@@ -74,3 +74,18 @@ behavior for every upstream malformed/heterogeneous input. Larger native-video
 uploads and live model/device proof also remain. Revert this coherent normalization
 increment to restore previous response behavior; no persisted migration is needed.
 No push, merge or deployment is part of the local batch.
+
+
+## Publication review correction
+
+Source `92b1911cc017b81d20ac477c32c44a8095c9f6fd` fixes a concrete review
+finding: typed encrypted/opaque reasoning details could previously become a
+visible answer when their content field was a string. The extractor now accepts
+only legacy untyped details and the known reasoning.text/reasoning.summary types;
+unknown and malformed types are skipped. Seven real governed image/video cases
+failed before the correction. All163 normalization and image/video empty-recovery
+cases pass after it. Opaque-only output neither leaks nor earns a retry. This is
+a deliberate stricter data-type boundary than the pinned upstream generic helper.
+A second read-only Sol High review confirmed the correction. No new provider,
+route, consent, budget, public schema or UI behavior is introduced. All prior
+mutation/full-suite receipts retain their original source snapshots.

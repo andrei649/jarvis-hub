@@ -1938,6 +1938,10 @@
   normalize after concatenation. Error/malformed mixed replies remain terminal and
   useful reasoning spends no extra model call. The integrated union passed696 cases;
   see the [normalization increment](docs/hermes/h277-vision-normalization-2026-10-02.md).
+  Publication review additionally excludes encrypted/opaque/unknown reasoning
+  details from image/video answers; seven consumer regressions failed before the
+  correction and the normalization/retry union passes163 cases. Opaque-only output
+  remains a terminal failure without another model call.
   Broader auxiliary routing, SDK recovery and live acceptance remain open. This does not close
   H277 or HEQ-1.
 
