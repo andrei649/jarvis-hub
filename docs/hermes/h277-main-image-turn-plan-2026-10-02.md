@@ -107,11 +107,11 @@ question/answer are saved in the conversation.
 Hermes/status reports, relevant `mobile/PARITY.md` or
 `docs/design/HUD_V2_REMAINING.md`, and this plan's verification section.
 
-- [ ] Rebuild/check Graft after source changes. Run the full backend and
-  frontend suites on the exact source commit, with JUnit/test-count checks.
-- [ ] Inspect touched Hermes evidence and restamp only justified rows;
+- [x] Rebuild/check Graft after source changes. Run the full backend and
+  frontend suites on the exact source commit, with test-count checks.
+- [x] Inspect touched Hermes evidence and restamp only justified rows;
   H277/H139 stay partial. Run Hermes/status consistency tests.
-- [ ] Run scoped Ruff, diff and strict staged secret checks. Commit records
+- [x] Run scoped Ruff, diff and strict staged secret checks. Commit records
   separately. Leave a clean local branch and no remote mutation.
 
 ## Current verification
@@ -128,5 +128,13 @@ test failed while the request kept running, then passed after the owned task
 was cancelled on disconnect. All selected H277/H513/composer/session regressions
 passed; route/OpenAPI/auth snapshots and the generated API sweep are current.
 The full frontend suite passed 1,872/1,872; TypeScript, E2E typecheck and HUD
-build passed. The complete backend suite and Hermes evidence recertification
-are pending in Task 4.
+build passed.
+
+Task 4 final checkpoint: the full backend suite on the source and recertified
+records exited 0 with 21,199 passed, 34 skipped and one expected xfail
+(21,234 collected). The legacy HUD coverage CI command passed at 69.75% line
+coverage against its 60% threshold. Graft wiring check, scoped Ruff,
+route/OpenAPI/auth and generated-status gates, `hermes_status.py check`, and
+the strict staged secret scan passed. The code-equivalence ledger currently
+counts 180/697 (25.8%); H277 and H139 remain partial. No live provider,
+native mobile, push, merge or deployment acceptance is claimed.
