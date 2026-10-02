@@ -3,12 +3,15 @@
 import asyncio
 import json
 
+import pytest
+
 from agents import web
 from agents.core.agent import Agent
 from agents.core.config import JarvisConfig
 from agents.core.llm.base import LMStudioBackend
 from agents.core.llm.openrouter import OpenRouterBackend
 from agents.core.llm.providers import DEFAULT_REGISTRY
+from agents.core.llm.vision_review import VisionReviewRefused, VisionReviewStore
 from agents.core.orchestrator import Orchestrator
 from tests.test_h277_vision_auto_consumer import approved, route  # noqa: F401
 
@@ -124,6 +127,18 @@ def test_selected_review_cannot_change_agent_before_image_egress(route, monkeypa
         asyncio.run(backend.aclose())
 
 
+def test_selected_review_fingerprint_binds_agent_with_identical_route():
+    store = VisionReviewStore()
+    claim = {"session_id": "shared-session", "prompt": "Describe this",
+             "model": "local/vision", "route": "turn:same-prompt:auto:main",
+             "binding": ("lmstudio", "http://127.0.0.1:1234/v1", "local/vision")}
+    token = store.issue(agent_id="jarvis", **claim)
+    with pytest.raises(VisionReviewRefused, match="vlm_destination_changed"):
+        store.consume(token, agent_id="athena", **claim)
+    with pytest.raises(VisionReviewRefused, match="vlm_review_unavailable"):
+        store.consume(token, agent_id="jarvis", **claim)
+
+
 def test_selected_remote_model_uses_only_its_backend_key_and_origin(route, monkeypatch):
     orch = Orchestrator(JarvisConfig())
     orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
@@ -219,6 +234,66 @@ def test_selected_review_refuses_when_shared_chat_moves_to_another_session(route
                 "selected_turn": True, "review_token": status["review_token"]}
         refused = route.client.post("/api/vlm/composer/describe-prepared", json=body)
         assert refused.status_code == 409
+        assert route.requests == []
+    finally:
+        asyncio.run(backend.aclose())
+
+
+def test_selected_session_switch_after_review_consume_refuses_at_physical_guard(route, monkeypatch):
+    from agents.core.llm.vlm import VLMBackend
+
+    orch, backend, sid = _bind_local(monkeypatch)
+    other = asyncio.run(orch.memory.new_session("new_shared_chat"))
+    original = VLMBackend.generate_vision_checked
+
+    async def switch_before_request(self, *args, **kwargs):
+        orch._session_id_default = other
+        return await original(self, *args, **kwargs)
+
+    try:
+        preview = route.client.post("/api/vlm/composer/prepare", json={
+            "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
+            "selected_turn": True,
+        })
+        assert preview.status_code == 200, preview.text
+        status = preview.json()
+        monkeypatch.setattr(VLMBackend, "generate_vision_checked", switch_before_request)
+        body = {**approved(status), "agent": "jarvis", "session_id": sid,
+                "selected_turn": True, "review_token": status["review_token"]}
+        refused = route.client.post("/api/vlm/composer/describe-prepared", json=body)
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["reason"] == "vlm_destination_changed"
+        assert route.requests == []
+    finally:
+        orch._session_id_default = sid
+        asyncio.run(backend.aclose())
+
+
+def test_selected_route_switch_after_review_consume_refuses_at_physical_guard(route, monkeypatch):
+    from agents.core.llm.vlm import VLMBackend
+
+    orch, backend, sid = _bind_local(monkeypatch)
+    original = VLMBackend.generate_vision_checked
+
+    async def switch_before_request(self, *args, **kwargs):
+        orch.llm_router.select_backend = lambda _agent, _prompt: (
+            backend, "local/vision", "local-after-review"
+        )
+        return await original(self, *args, **kwargs)
+
+    try:
+        preview = route.client.post("/api/vlm/composer/prepare", json={
+            "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
+            "selected_turn": True,
+        })
+        assert preview.status_code == 200, preview.text
+        status = preview.json()
+        monkeypatch.setattr(VLMBackend, "generate_vision_checked", switch_before_request)
+        body = {**approved(status), "agent": "jarvis", "session_id": sid,
+                "selected_turn": True, "review_token": status["review_token"]}
+        refused = route.client.post("/api/vlm/composer/describe-prepared", json=body)
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["reason"] == "vlm_destination_changed"
         assert route.requests == []
     finally:
         asyncio.run(backend.aclose())
