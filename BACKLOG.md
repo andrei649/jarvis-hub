@@ -1924,6 +1924,10 @@
   rejection with one same-route retry, preserving token caps and fresh H513 checks.
   The focused union passed 612 cases, including 32 new regressions; see the
   [parameter-recovery increment](docs/hermes/h277-auxiliary-parameter-2026-10-02.md).
+  Opt-in valid-empty video recovery now restarts the approved chain once from the
+  primary, with a signed budget, one prepared source and fresh authority per send.
+  The focused union passed 647 cases including 61 new regressions; see the
+  [empty-result increment](docs/hermes/h277-video-empty-retry-2026-10-02.md).
   Broader auxiliary routing, SDK recovery and live acceptance remain open. This does not close
   H277 or HEQ-1.
 

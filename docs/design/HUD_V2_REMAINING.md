@@ -29,8 +29,10 @@ existing Decision Inbox approval surface. Security Posture has an independent
 Video analysis consent row and independent Video fallback 1–4 controls for configured
 candidates. A dedicated video picker/preview, an in-HUD role editor,
 inbound video ingestion, and live native-video model acceptance remain open.
-The optional primary transient-retry setting uses existing task notices/results;
-there is no in-HUD editor for that environment setting.
+The optional primary transient retry and valid-empty full-chain retry use existing
+task notices/results; there is no in-HUD editor for either environment setting.
+Enabled empty recovery reports its consumer-call index separately from each
+route's attempt index. A malformed or blocked result does not permit this restart.
 
 H277 local auxiliary models (2026-10-02): server-side title generation, recall
 rewriting, conversation review, compression and governed acquisition capability/plan

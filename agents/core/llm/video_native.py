@@ -37,6 +37,10 @@ class VideoNativeRefused(ValueError):
     """A sanitized refusal of an invalid native video request or response."""
 
 
+class VideoNativeEmpty(VideoNativeRefused):
+    """A valid unblocked STOP response containing no visible video answer."""
+
+
 def _loopback(host: str) -> bool:
     if host == "localhost":
         return True
@@ -155,16 +159,30 @@ def gemini_video_answer(payload: object) -> str:
     if not isinstance(parts, list) or not parts:
         raise VideoNativeRefused("video_native_response_invalid")
     visible: list[str] = []
+    empty_parts_valid = True
+    text_part_seen = False
     for part in parts:
         if not isinstance(part, dict) or type(part.get("thought", False)) is not bool:
             raise VideoNativeRefused("video_native_response_invalid")
         if part.get("thought") is True:
+            if (not isinstance(part.get("text"), str)
+                    or set(part) - {"thought", "text"}):
+                empty_parts_valid = False
+            else:
+                text_part_seen = True
             continue
         if not isinstance(part.get("text"), str):
             raise VideoNativeRefused("video_native_response_invalid")
+        text_part_seen = True
+        if set(part) - {"thought", "text"}:
+            empty_parts_valid = False
         visible.append(part["text"])
     answer = "".join(visible)
     if not answer.strip():
+        if (empty_parts_valid and text_part_seen and "error" not in payload
+                and "error" not in candidate and "error" not in content
+                and not (isinstance(feedback, dict) and "error" in feedback)):
+            raise VideoNativeEmpty("video_native_response_empty")
         raise VideoNativeRefused("video_native_response_invalid")
     return answer
 

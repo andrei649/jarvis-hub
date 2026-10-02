@@ -260,9 +260,9 @@ Video analysis (H277, 2026-10-02) adds a separate consent row to the responsive 
 Security Posture panel and uses existing Decision Inbox task approvals. Configured
 video fallbacks have separate consent/revoke controls in that web panel. Native
 mobile has no video source picker, role editor, or dedicated video-consent control;
-use the responsive web panel for consent. The primary transient-retry setting also
-has no native editor. Its additional send budget is shown through the existing
-server-generated task approval notice. Native-device and live video-provider acceptance
+use the responsive web panel for consent. The primary transient-retry and valid-empty
+full-chain retry settings have no native editor. Their additional send budgets are
+shown through the existing server-generated task approval notice. Native-device and live video-provider acceptance
 remain unverified.
 
 Local auxiliary model selection (H277, 2026-10-02) runs on the server for session
