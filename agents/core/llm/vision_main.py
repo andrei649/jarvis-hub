@@ -18,8 +18,9 @@ from .responses import ENDPOINT as RESPONSES_ENDPOINT
 from .responses import MODELS as RESPONSES_MODELS
 from .responses import ResponsesBackend
 from .vision_openrouter import _validated_base
+from .vision_xai_wire import XAI_ENDPOINT
 from .vlm import VLMConfig, VLMNotConfigured
-from .xai import XAI_ENDPOINT, XAIBackend
+from .xai import XAIBackend
 
 
 def _model(value: object) -> str:

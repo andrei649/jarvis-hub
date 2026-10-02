@@ -7,6 +7,7 @@ import json
 from .vision_responses_wire import MAX_INLINE_REQUEST_BYTES, responses_answer, responses_payload
 
 XAI_IMAGE_MIMES = frozenset({"image/png", "image/jpeg"})
+XAI_ENDPOINT = "https://api.x.ai/v1/responses"
 
 
 def xai_payload(compatible: dict, *, reasoning_effort: str) -> dict:

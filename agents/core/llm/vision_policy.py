@@ -153,7 +153,8 @@ def describe(config):
                 or config.prompt_cache_retention not in {'in_memory', '24h'}):
             raise VisionPolicyUnavailable('invalid Responses vision authority')
     if config.backend == 'xai':
-        from .xai import XAI_ENDPOINT, XAI_PROFILE
+        from .vision_xai_wire import XAI_ENDPOINT
+        from .xai import XAI_PROFILE
         levels = XAI_PROFILE.supported_reasoning_efforts(config.model)
         if (config.base_url != XAI_ENDPOINT.removesuffix('/responses') or config.is_local
                 or config.model not in XAI_PROFILE.fallback_models or not config.api_key
