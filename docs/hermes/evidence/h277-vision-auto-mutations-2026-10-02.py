@@ -21,7 +21,6 @@ COMPOSER = "agents/core/routers/composer_vision.py"
 RESOLUTION = "tests/test_h277_vision_auto_resolution.py"
 CONSUMER = "tests/test_h277_vision_auto_consumer.py"
 
-harness.OUT = Path("/tmp/nerva-vision-auto-mutations-20261002")
 harness.SOURCE_SCOPE = [AUTO, COMPOSER]
 harness.TESTS = [RESOLUTION, CONSUMER]
 harness.CASES = [
@@ -90,6 +89,7 @@ if __name__ == "__main__":
     parser.add_argument("--commit", required=True)
     arguments = parser.parse_args()
     harness.COMMIT = arguments.commit
+    harness.OUT = Path(f"/tmp/nerva-vision-auto-mutations-20261002-{arguments.commit[:12]}")
     if arguments.phase == "baseline":
         harness.baseline()
     else:
