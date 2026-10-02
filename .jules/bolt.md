@@ -19,3 +19,7 @@
 ## 2026-04-04 - High-frequency Array Iteration Closures in Canvas Animation Loops
 **Learning:** In canvas components like `NeuralBurst` (`frontend/src/burst.tsx`), nested `.forEach()` calls across cluster dendrites and synapse nodes execute ~500+ times per frame (~30,000 callback closures/sec at 60 FPS). This causes function closure allocation overhead and CPU cycle overhead in main-thread frame rendering.
 **Action:** Use indexed `for` loops (`for (let i = 0; i < len; i++)`) in Canvas 2D `draw()` animation loops to avoid closure creation overhead entirely.
+
+## 2026-04-05 - Frame-throttling MutationObserver Layout Measurements in HUD Overlays
+**Learning:** `MutationObserver` watching `document.body` for subtree changes (such as in `PointerView` in `frontend/src/pointer.tsx`) fires synchronously on microtask DOM updates. Calling `elementFromPoint()` or `getBoundingClientRect()` directly inside the mutation callback forces synchronous layout recalculations (layout thrashing) on every DOM mutation burst.
+**Action:** Frame-throttle DOM layout measurement callbacks triggered by `MutationObserver` using `requestAnimationFrame` to collapse mutation bursts into at most one layout measurement per animation frame.

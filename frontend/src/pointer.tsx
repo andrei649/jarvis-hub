@@ -97,10 +97,23 @@ export function PointerView({ pointer, onClose }: { pointer: Pointer; onClose: (
     measure();
     window.addEventListener('resize', measure);
     window.addEventListener('scroll', measure, true);
+    // Bolt Optimization: Frame-throttle DOM mutation measurements via requestAnimationFrame.
+    // MutationObserver firing on document.body for every DOM change triggers anchorRect()
+    // and elementFromPoint() synchronously, causing forced layout recalculations (layout thrashing).
+    let rafId = 0;
+    const scheduleMeasure = () => {
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          rafId = 0;
+          measure();
+        });
+      }
+    };
     // A mode switch or an overlay mounts and unmounts anchors without a resize or a scroll.
-    const watch = typeof MutationObserver === 'function' ? new MutationObserver(measure) : null;
+    const watch = typeof MutationObserver === 'function' ? new MutationObserver(scheduleMeasure) : null;
     watch?.observe(document.body, { childList: true, subtree: true });
     return () => {
+      if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener('resize', measure); window.removeEventListener('scroll', measure, true); watch?.disconnect();
     };
   }, [measure]);
