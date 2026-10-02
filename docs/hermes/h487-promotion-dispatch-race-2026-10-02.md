@@ -43,6 +43,7 @@ broker callback and again before marking a delivery as pushed. An edited card
 is bound to its exact task update revision; an idempotent broker receipt still
 recovers a pending follower after an accepted send. The new delayed-edit,
 expiry-promotion and idempotent cases pass. The six focused test modules collect
-163 cases and pass,
-as do scoped Ruff and `git diff --check`. Full backend and evidence reconciliation
-remain to be run for this source snapshot.
+163 cases and pass, as do scoped Ruff, Graft and `git diff --check`. The full
+backend run on this source snapshot passed: 21,209 passed, 34 skipped, one
+expected failure from 21,244 collected. `hermes_status.py check` and
+`status_sync.py --check --reuse-test-counts` pass; H487 remains partial.
