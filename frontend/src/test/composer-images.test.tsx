@@ -31,6 +31,15 @@ it('chooses an image with a removable preview and submits an explicit vision dra
   expect(preview.image_digests).toEqual([createHash('sha256').update(submit.mock.calls[0][1].images[0]).digest('hex')]);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview');
 });
+it('marks a selected main image for a committed conversation turn',async()=>{
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify({...status,selection_source:'auto:main'}))));
+  const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
+  fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file()]}});
+  await waitFor(()=>expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false));
+  expect(screen.getByText(/question and answer are saved in this conversation/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'Send'}));
+  expect(submit.mock.calls[0][1].selected_main).toBe(true);
+});
 it('reviews the changed image set again and revokes the previous consent',async()=>{
   const submit=vi.fn();
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify({...status,local:false,destination:'https://vision.example/v1'}))));

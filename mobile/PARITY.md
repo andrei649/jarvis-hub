@@ -342,3 +342,12 @@ the current image question and agent. Editing either clears its confirmation;
 a changed destination or reused review is refused before image egress. This
 still uses the configured vision route, not the selected chat backend. Native
 mobile has no matching review flow.
+
+Selected main image conversation turns (H277, 2026-10-02) now use the
+responsive-web composer to commit the reviewed question, an image-count marker,
+and the selected model's answer to the shared session. Reload restores the
+answer and bounded provider provenance from server memory; image bytes remain
+transient. Explicit standalone and auxiliary image descriptions still use the
+separate transient route. Native mobile has no image composer, reviewed
+destination flow, or equivalent history rendering. This gap remains under
+H18.10 pending a native client request; the web behavior is not native parity.

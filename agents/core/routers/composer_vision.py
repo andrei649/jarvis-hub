@@ -1,5 +1,6 @@
 """Explicit, transient browser vision turns; legacy VLM inputs stay separate."""
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -7,6 +8,7 @@ import io
 import json
 import secrets
 import sqlite3
+import time
 from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
@@ -396,25 +398,11 @@ async def composer_prepare(body: ComposerPrepareBody, refresh_catalog: bool = Fa
 @router.post("/api/vlm/composer/describe-prepared")
 async def composer_describe_prepared(body: PreparedComposerVisionBody):
     """Consume a reviewed route before invoking the existing physical guard."""
-    from agents.core.llm.vision_policy import VisionPolicyUnavailable, describe
-    from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
+    from agents.core.llm.vision_policy import VisionPolicyUnavailable
+    from agents.core.llm.vlm import VLMNotConfigured
 
     try:
-        turn, config = (await _selected_config(
-            prompt=body.prompt, agent=body.agent, session_id=body.session_id,
-        ) if body.selected_turn else (None, resolve_vlm_config()))
-        identity = describe(config)
-        _REVIEWS.consume(
-            body.review_token,
-            session_id=turn.session_id if turn is not None else body.session_id or "web",
-            agent_id=body.agent, prompt=body.prompt, model=config.model,
-            route=_review_route(config, turn),
-            binding=_review_binding(
-                identity, turn=turn,
-                image_digests=[hashlib.sha256(image.encode("utf-8")).hexdigest()
-                               for image in body.images] if turn is not None else None,
-            ),
-        )
+        turn, config = await _consume_prepared_review(body)
     except VisionReviewRefused as exc:
         reason = ("vlm_destination_changed" if exc.reason == "vlm_destination_changed"
                   else exc.reason)
@@ -431,6 +419,80 @@ async def composer_describe_prepared(body: PreparedComposerVisionBody):
     return await composer_describe(body)
 
 
+async def _consume_prepared_review(body: PreparedComposerVisionBody, *, require_main: bool = False):
+    from agents.core.llm.vision_policy import describe
+    from agents.core.llm.vlm import VLMNotConfigured, resolve_vlm_config
+    from agents.core.memory.conversation import validated_media
+
+    turn, config = (await _selected_config(
+        prompt=body.prompt, agent=body.agent, session_id=body.session_id,
+    ) if body.selected_turn else (None, resolve_vlm_config()))
+    if require_main and (turn is None or config.route_source != "auto:main"):
+        raise VLMNotConfigured("vlm_main_image_route_unavailable")
+    if require_main:
+        validated_media({"kind": "image", "count": len(body.images),
+                         "model": config.model, "backend": config.backend,
+                         "local": config.is_local})
+    identity = describe(config)
+    _REVIEWS.consume(
+        body.review_token,
+        session_id=turn.session_id if turn is not None else body.session_id or "web",
+        agent_id=body.agent, prompt=body.prompt, model=config.model,
+        route=_review_route(config, turn),
+        binding=_review_binding(
+            identity, turn=turn,
+            image_digests=[hashlib.sha256(image.encode("utf-8")).hexdigest()
+                           for image in body.images] if turn is not None else None,
+        ),
+    )
+    return turn, config
+
+
+@router.post("/api/vlm/composer/chat-prepared")
+async def composer_chat_prepared(body: PreparedComposerVisionBody, request: Request):
+    """Commit one reviewed selected image reply to the actual conversation."""
+    from agents.core.app_state import get_orch
+    from agents.core.llm.vision_policy import VisionPolicyUnavailable
+    from agents.core.llm.vlm import VLMNotConfigured
+
+    if not body.selected_turn:
+        return nocache_json({"error": "A selected image turn is required",
+                             "reason": "vlm_selected_turn_required"}, status_code=422)
+    orch = get_orch()
+    if orch is None:
+        return nocache_json({"error": "Conversation unavailable",
+                             "reason": "vlm_orchestrator_unavailable"}, status_code=503)
+    sid = body.session_id or orch.session_id
+    async with orch.turn_lease(sid) as acquired:
+        if not acquired:
+            return nocache_json({"error": "Conversation is busy",
+                                 "reason": "vlm_turn_busy"}, status_code=409)
+        try:
+            turn, config = await _consume_prepared_review(body, require_main=True)
+        except VisionReviewRefused as exc:
+            return nocache_json({"error": "Vision review changed; review it again",
+                                 "reason": exc.reason}, status_code=409)
+        except (VLMNotConfigured, ValueError, VisionPolicyUnavailable, sqlite3.Error, OSError):
+            return nocache_json({"error": "Vision destination changed; review it again",
+                                 "reason": "vlm_destination_changed"}, status_code=409)
+
+        async def commit(answer: str, latency: float):
+            if await request.is_disconnected():
+                raise VisionReviewRefused("vlm_client_disconnected")
+            await orch.complete_selected_image_turn(
+                session_id=turn.session_id, agent_id=turn.agent_id,
+                question=body.prompt, answer=answer, image_count=len(body.images),
+                model=config.model, backend=config.backend, local=config.is_local,
+                route_name=turn.route, latency=latency,
+            )
+
+        return await _composer_describe_with_config(
+            body, config, resolve_config=lambda: _selected_resolver(turn),
+            image_prompt=turn.prompt, on_success=commit,
+            disconnected=request.is_disconnected,
+        )
+
+
 @router.post("/api/vlm/composer/describe")
 async def composer_describe(body: ComposerVisionBody):
     from agents.core.llm.vision_policy import VisionPolicyUnavailable
@@ -445,7 +507,27 @@ async def composer_describe(body: ComposerVisionBody):
     return await _composer_describe_with_config(body, config, resolve_config=resolve_vlm_config)
 
 
-async def _composer_describe_with_config(body, config, *, resolve_config, image_prompt=None):
+async def _await_image_or_disconnect(operation_factory, disconnected):
+    """Stop the owned image send when its client leaves before inference ends."""
+    if await disconnected():
+        raise VisionReviewRefused("vlm_client_disconnected")
+    task = asyncio.create_task(operation_factory())
+    try:
+        while not task.done():
+            if await disconnected():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                raise VisionReviewRefused("vlm_client_disconnected")
+            await asyncio.wait({task}, timeout=0.05)
+        return await task
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+async def _composer_describe_with_config(body, config, *, resolve_config, image_prompt=None,
+                                         on_success=None, disconnected=None):
     from agents.core.commands import Principal
     from agents.core.llm import selection_guards as sg
     from agents.core.llm.vision_policy import (
@@ -485,6 +567,7 @@ async def _composer_describe_with_config(body, config, *, resolve_config, image_
         )
     backend = None
     try:
+        started = time.perf_counter()
         findings = sg.enforce([identity.selection_choice(config.model)],
                               acknowledge_training=body.acknowledge_training,
                               confirm_expensive=body.confirm_expensive)
@@ -502,23 +585,36 @@ async def _composer_describe_with_config(body, config, *, resolve_config, image_
             with composer_request_scope(config, backend, resolve_config=resolve_config,
                                         remote_ack=body.remote_ack, principal=Principal(channel="web", admin=False),
                                         frozen=identity, cleared_findings=identity.selection_findings) as recheck:
-                answer = await backend.generate_vision_checked(
-                    config.model,
-                    image_prompt if image_prompt is not None else body.prompt,
-                    images=[base64.b64decode(image.partition(",")[2]) for image in body.images],
-                )
+                image_bytes = [base64.b64decode(image.partition(",")[2]) for image in body.images]
+
+                def send():
+                    return backend.generate_vision_checked(
+                        config.model,
+                        image_prompt if image_prompt is not None else body.prompt,
+                        images=image_bytes,
+                    )
+
+                answer = (await _await_image_or_disconnect(send, disconnected)
+                          if disconnected is not None else await send())
         finally:
             if backend is not None:
                 await backend.aclose()
         recheck()
         if not isinstance(answer, str) or not answer.strip():
             raise ValueError("empty vision answer")
+        if on_success is not None:
+            await on_success(answer, time.perf_counter() - started)
         return nocache_json(
-            dict(ok=True, response=answer, **{k: v for k, v in public.items() if k != "binding"})
+            dict(ok=True, response=answer,
+                 **({"committed": True} if on_success is not None else {}),
+                 **{k: v for k, v in public.items() if k != "binding"})
         )
     except VisionDestinationChanged:
         return nocache_json({"error": "Vision destination changed; review it again",
                              "reason": "vlm_destination_changed"}, status_code=409)
+    except VisionReviewRefused as exc:
+        return nocache_json({"error": "Vision turn was not committed",
+                             "reason": exc.reason}, status_code=409)
     except sg.SelectionRefused as exc:
         return nocache_json(exc.payload(), status_code=409)
     except sg.ConsentNotRecorded:

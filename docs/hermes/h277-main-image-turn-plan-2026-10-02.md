@@ -72,13 +72,13 @@ The function receives the selected route/model and measured latency, and must
 not invoke a second model. The selected review is consumed only after acquiring
 the lease and revalidating the prepared transcript.
 
-- [ ] Write a real HTTPX transport test: prepare, send one PNG, verify one
+- [x] Write a real HTTPX transport test: prepare, send one PNG, verify one
   physical send and the two rows in `GET /memory`; ask a text follow-up and
   assert the prior image answer is in its prompt.
-- [ ] Run the new test red; implement the route/orchestrator seam; rerun green.
-- [ ] Add focused refusal/cancellation tests from Review Focus 1–4 and make
+- [x] Run the new test red; implement the route/orchestrator seam; rerun green.
+- [x] Add focused refusal/cancellation tests from Review Focus 1–4 and make
   each red then green. Verify no history mutation on review/provider failure.
-- [ ] Run H277/H139/H513/composer and memory/session regressions; commit Task 2.
+- [x] Run H277/H139/H513/composer and memory/session regressions; commit Task 2.
 
 ### Task 3: Browser uses the committed operation and rehydrates it
 
@@ -95,10 +95,10 @@ vision bubble from stored `media` metadata and makes no locality claim when
 it is absent. The composer copy says image bytes are transient and the
 question/answer are saved in the conversation.
 
-- [ ] Write a failing component test for selected dispatch, `committed:true`
+- [x] Write a failing component test for selected dispatch, `committed:true`
   validation and rehydration from `GET /memory` with `media` metadata.
-- [ ] Run the focused Vitest tests red; implement and rerun green.
-- [ ] Generate OpenAPI types/HUD, run TypeScript checks, frontend tests and
+- [x] Run the focused Vitest tests red; implement and rerun green.
+- [x] Generate OpenAPI types/HUD, run TypeScript checks, frontend tests and
   build; commit Task 3.
 
 ### Task 4: Frozen milestone and truthful records
@@ -121,3 +121,12 @@ focused 10-case test and the 80-case memory/session selection passed. Scoped
 Ruff and Graft wiring check passed. The previous base milestone passed
 21,216 backend tests (35 skipped, zero failures/errors) and 1,868 frontend
 tests; those base results do not verify Task 2 or Task 3.
+
+Tasks 2-3: the new HTTPX route test failed before the route existed, then the
+selected-main route and seven image-turn cases passed. A slow-provider Stop
+test failed while the request kept running, then passed after the owned task
+was cancelled on disconnect. All selected H277/H513/composer/session regressions
+passed; route/OpenAPI/auth snapshots and the generated API sweep are current.
+The full frontend suite passed 1,872/1,872; TypeScript, E2E typecheck and HUD
+build passed. The complete backend suite and Hermes evidence recertification
+are pending in Task 4.

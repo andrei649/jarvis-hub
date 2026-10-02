@@ -506,6 +506,7 @@
   "POST /api/traces/clear",
   "POST /api/transcripts/ingest",
   "POST /api/vault",
+  "POST /api/vlm/composer/chat-prepared",
   "POST /api/vlm/composer/describe",
   "POST /api/vlm/composer/describe-prepared",
   "POST /api/vlm/composer/prepare",

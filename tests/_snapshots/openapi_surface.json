@@ -506,6 +506,7 @@
   "POST /api/traces/clear": "clear_traces_api_traces_clear_post",
   "POST /api/transcripts/ingest": "transcript_ingest_api_transcripts_ingest_post",
   "POST /api/vault": "vault_put_api_vault_post",
+  "POST /api/vlm/composer/chat-prepared": "composer_chat_prepared_api_vlm_composer_chat_prepared_post",
   "POST /api/vlm/composer/describe": "composer_describe_api_vlm_composer_describe_post",
   "POST /api/vlm/composer/describe-prepared": "composer_describe_prepared_api_vlm_composer_describe_prepared_post",
   "POST /api/vlm/composer/prepare": "composer_prepare_api_vlm_composer_prepare_post",

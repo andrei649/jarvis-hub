@@ -1,7 +1,7 @@
 import { SAFE_MODE_OFF, SafeModeBanner } from './safe-mode-banner';
 import { PowerChip, usePower } from './power-chip';
 import { PressureBanner, usePressure } from './pressure-banner';
-import {describeImages} from './vision-turn';
+import {describeImages,restoreVisionTurn} from './vision-turn';
 import type {VisionDraft} from './composer-images';
 import { useAppearance } from './appearance';
 import { appUrl, logicalPath } from './base-path';
@@ -206,7 +206,7 @@ function App({ floating = false, shortcuts, onWorld }: {
           const ts = fmtTimeShort(new Date(tn.timestamp || Date.now()));
           return tn.role === 'user'
             ? { role: 'user', text: tn.content, ts }
-            : { role: 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts };
+            : restoreVisionTurn(tn,ts) || { role: 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts };
         });
         setMessages((cur) => (cur.length ? cur : mapped));
       })

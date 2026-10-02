@@ -5,7 +5,7 @@ const TYPES=['image/png','image/jpeg','image/gif','image/webp'];
 const MAX_BYTES=4*1024*1024, MAX_IMAGES=8;
 type SelectionNeed='acknowledge_training'|'confirm_expensive';
 type SelectionRequirement={needs:SelectionNeed;message:string};
-export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;review_token:string;agent:string;session_id:string;selected_turn:true;remote_ack:boolean;acknowledge_training?:true;confirm_expensive?:true};
+export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;review_token:string;agent:string;session_id:string;selected_turn:true;selected_main?:true;remote_ack:boolean;acknowledge_training?:true;confirm_expensive?:true};
 type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;data?:string;error?:string};
 type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;data_policy_note?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[];session_id?:string;selected_turn?:boolean};
 
@@ -118,6 +118,7 @@ export function useComposerImages(prompt='Describe these images.',agent='jarvis'
     images:images.map(image=>image.data!),names:images.map(image=>image.name),
     expected_destination:destination!.destination!,expected_binding:destination!.binding!,review_token:destination!.review_token!,agent,
     selected_turn:true,session_id:destination!.session_id!,
+    ...(destination!.selection_source==='auto:main'?{selected_main:true as const}:{}),
     remote_ack:destination!.local!==true&&ack===destination!.binding,
     ...(requirements.some(item=>item.needs==='acknowledge_training')?{acknowledge_training:true as const}:{}),
     ...(requirements.some(item=>item.needs==='confirm_expensive')?{confirm_expensive:true as const}:{}),
@@ -152,6 +153,6 @@ export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImage
       <input type="checkbox" checked={draft.consents[requirement.needs]===d.binding} onChange={event=>draft.confirm(requirement.needs,event.target.checked)}/>
       {requirement.needs==='acknowledge_training'?'Training use: ':'Cost confirmation: '}{requirement.message}
     </label>)}
-    {!!draft.images.length&&<div>Up to eight static images · 4 MiB each · images are transient and are not added to agent memory.</div>}
+    {!!draft.images.length&&<div>Up to eight static images · 4 MiB each · {d?.selection_source==='auto:main'?'image bytes are transient; the question and answer are saved in this conversation.':'images are transient and are not added to agent memory.'}</div>}
   </div>;
 }

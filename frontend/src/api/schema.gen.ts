@@ -596,6 +596,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/vlm/composer/chat-prepared": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Composer Chat Prepared
+         * @description Commit one reviewed selected image reply to the actual conversation.
+         */
+        post: operations["composer_chat_prepared_api_vlm_composer_chat_prepared_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vlm/composer/describe": {
         parameters: {
             query?: never;
@@ -13119,6 +13139,39 @@ export interface operations {
         };
     };
     composer_describe_prepared_api_vlm_composer_describe_prepared_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreparedComposerVisionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    composer_chat_prepared_api_vlm_composer_chat_prepared_post: {
         parameters: {
             query?: never;
             header?: never;

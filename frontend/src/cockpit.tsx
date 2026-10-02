@@ -76,7 +76,7 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
           <div className="msg agent" key={i}>
             <div className="mtag"><span className="who">VISION ANALYSIS</span><span className="ts">{m.ts}</span></div>
             <div className="bubble"><Bubble text={m.text} /></div>
-            <div style={{fontSize:11,color:'var(--ink-3)'}}>{m.model} · {m.backend} · {m.destination} · {m.local?'loopback':'remote'}</div>
+            <div style={{fontSize:11,color:'var(--ink-3)'}}>{m.model} · {m.backend}{m.destination?` · ${m.destination}`:''} · {m.local?'loopback':'remote'}</div>
             {m.warning&&<div style={{fontSize:11,color:'var(--amber)'}}>{m.warning}</div>}
           </div>
         ) : (

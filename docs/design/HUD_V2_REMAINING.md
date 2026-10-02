@@ -449,3 +449,10 @@ the visible review; a changed route, key or policy requires another review
 before image bytes leave the server. This preparation still selects the
 configured vision route rather than inheriting the active conversation backend.
 Native image-review parity and live-provider acceptance remain open.
+
+Selected main image turns (H277, 2026-10-02) now commit through
+`/api/vlm/composer/chat-prepared` after the one-use review, session lease and
+physical destination guard. The HUD restores the answer from `GET /memory`
+using bounded image provenance. Standalone and auxiliary image descriptions
+remain transient; native mobile image intake and live-provider acceptance are
+still open.
