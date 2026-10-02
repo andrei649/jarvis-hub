@@ -1429,13 +1429,17 @@ class AutonomyWorker:
         now = now or datetime.fromtimestamp(self._clock(), UTC)
         changed = self.queue.expire_pending_approvals(now=now, limit=limit)
         cleared = self._clear_expiry_judges(changed)
-        result = {"expired": len(changed.tasks), "expiry_effects_acked": 0}
+        result = {"expired": len(changed.tasks), "expiry_effects_acked": 0,
+                  "promotion_effects_acked": 0}
         if not reconcile or self._halted():
             return result
         batch = self.queue.pending_approval_expiry_effects(limit=limit)
         result["expiry_effects_acked"] = await self._drain_approval_expiry(
             batch, limit=limit, notify_promotions=notify_promotions, already_cleared=cleared,
         )
+        if notify_promotions:
+            effects = self.queue.pending_approval_promotion_effects(limit=limit)
+            result["promotion_effects_acked"] = await self._drain_approval_promotions(effects)
         return result
 
     async def _consume_committed_expiry(self, batch) -> None:
@@ -1744,13 +1748,28 @@ class AutonomyWorker:
         return False
 
     # ── human decisions ───────────────────────────────────────────
+    async def _drain_approval_promotions(self, effects) -> int:
+        acknowledged = 0
+        for effect in effects:
+            if self._halted():
+                break
+            try:
+                candidate = self.queue.pending_group_leader(effect.group_id)
+                if (candidate is not None and candidate.attention_mode == 'interrupt'
+                        and not candidate.pushed and not await self._maybe_push(candidate)):
+                    continue
+                acknowledged += self.queue.ack_approval_promotion_effects((effect,))
+            except Exception:
+                logger.warning('Promoted decision notification held for group %s',
+                               effect.group_id, exc_info=True)
+        return acknowledged
+
     async def _push_promoted_group(self, group_id: str | None) -> None:
         if group_id is None:
             return
         try:
-            candidate = self.queue.pending_group_leader(group_id)
-            if candidate and candidate.attention_mode == 'interrupt' and not candidate.pushed:
-                await self._maybe_push(candidate)
+            effects = self.queue.pending_approval_promotion_effects(group_id=group_id)
+            await self._drain_approval_promotions(effects)
         except Exception:
             logger.warning('Promoted decision notification failed for group %s',
                            group_id, exc_info=True)

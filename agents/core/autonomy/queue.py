@@ -230,6 +230,13 @@ class ApprovalExpiryEffect:
 
 
 @dataclass(frozen=True)
+class ApprovalPromotionEffect:
+    group_id: str
+    task_id: int
+    revision: str
+
+
+@dataclass(frozen=True)
 class ApprovalExpiryBatch:
     tasks: tuple[Task, ...]
     group_ids: tuple[str, ...]
@@ -392,6 +399,11 @@ class TaskQueue:
         if 'binding_sha256' not in group_columns:
             self._conn.execute('ALTER TABLE task_approval_groups ADD COLUMN binding_sha256 TEXT')
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_task_approval_groups ON task_approval_groups(group_id)")
+        self._conn.execute("""CREATE TABLE IF NOT EXISTS task_approval_promotion_effects (
+            group_id TEXT PRIMARY KEY, task_id INTEGER NOT NULL, revision TEXT NOT NULL
+        )""")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_task_approval_promotion_task "
+                           "ON task_approval_promotion_effects(task_id)")
         self._conn.execute("INSERT OR IGNORE INTO task_approval_group_state(key,value) VALUES ('namespace',?)",
                            (uuid.uuid4().hex,))
         self._group_namespace = self._conn.execute(
@@ -1177,6 +1189,50 @@ class TaskQueue:
                 self._conn.rollback()
                 raise
 
+    def pending_approval_promotion_effects(self, *, limit: int = 100,
+                                           group_id: str | None = None) -> tuple[ApprovalPromotionEffect, ...]:
+        limit = self._expiry_limit(limit)
+        with self._lock:
+            self._conn.execute('BEGIN IMMEDIATE')
+            try:
+                if group_id is None:
+                    rows = self._expiry_scan_locked(
+                        'promotion', 'SELECT * FROM task_approval_promotion_effects WHERE 1=1', (), limit)
+                else:
+                    rows = self._conn.execute('SELECT * FROM task_approval_promotion_effects '
+                                              'WHERE group_id=?', (group_id,)).fetchall()
+                self._conn.commit()
+                return tuple(ApprovalPromotionEffect(row['group_id'], row['task_id'], row['revision'])
+                             for row in rows)
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def ack_approval_promotion_effects(self, effects: tuple[ApprovalPromotionEffect, ...]) -> int:
+        with self._lock:
+            self._conn.execute('BEGIN IMMEDIATE')
+            try:
+                count = 0
+                for effect in effects:
+                    count += self._conn.execute(
+                        'DELETE FROM task_approval_promotion_effects WHERE group_id=? AND revision=?',
+                        (effect.group_id, effect.revision),
+                    ).rowcount
+                self._conn.commit()
+                return count
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def _record_promotion_effect_locked(self, group_id: str | None, task_id: int) -> None:
+        if group_id is None:
+            return
+        self._conn.execute(
+            'INSERT INTO task_approval_promotion_effects(group_id,task_id,revision) VALUES(?,?,?) '
+            'ON CONFLICT(group_id) DO UPDATE SET task_id=excluded.task_id,revision=excluded.revision',
+            (group_id, task_id, uuid.uuid4().hex),
+        )
+
     # ── writes ────────────────────────────────────────────────────
     def enqueue(
         self,
@@ -1830,6 +1886,7 @@ class TaskQueue:
                     f"UPDATE tasks SET {', '.join(sets)} WHERE id=?", params,  # nosec B608
                 )
                 group_id = self._withdraw_task_group_locked(task_id)
+                self._record_promotion_effect_locked(group_id, task_id)
                 updated = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
                 if new_status == TaskStatus.BLOCKED and decided_by == 'policy' and decision == 'needs-approval':
                     self._finalize_chat_approval_locked(_row_to_task(updated))
@@ -2176,6 +2233,7 @@ class TaskQueue:
                     "ON CONFLICT(task_id) DO UPDATE SET revision=revision+1", (task_id,),
                 )
                 group_id = self._withdraw_task_group_locked(task_id)
+                self._record_promotion_effect_locked(group_id, task_id)
                 updated = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
                 self._conn.commit()
                 return _row_to_task(updated), group_id
