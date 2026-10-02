@@ -67,7 +67,10 @@ def compatible_vision_answer(payload: object) -> str:
     details = message.get("reasoning_details")
     if isinstance(details, list):
         for detail in details:
-            if isinstance(detail, dict):
+            # Typed opaque blocks are transport state, never answer text.
+            # Untyped legacy details retain the existing text-field contract.
+            if (isinstance(detail, dict)
+                    and detail.get("type") in (None, "reasoning.text", "reasoning.summary")):
                 for key in ("summary", "content", "text"):
                     if add(detail.get(key)):
                         break

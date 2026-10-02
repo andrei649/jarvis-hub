@@ -185,3 +185,32 @@ async def test_video_rejects_mixed_invalid_reply_without_extra_send(rig, monkeyp
     assert result["status"] != "ok"
     assert "Visible" not in str(result) and "private" not in str(result)
     assert len(sent) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("detail_type", ["reasoning.encrypted", "reasoning.opaque", "unknown", {}, []])
+async def test_image_skips_opaque_reasoning_details(detail_type, monkeypatch):
+    message = {"content": "", "reasoning_details": [
+        {"type": detail_type, "summary": "opaque-token", "content": "opaque-token", "text": "opaque-token"},
+        {"type": "reasoning.summary", "summary": "Useful answer."},
+    ]}
+    answer, sent = await _image(_reply(message), retry_setting=True, monkeypatch=monkeypatch)
+    assert answer == "Useful answer."
+    assert len(sent) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_answer", [False, True])
+async def test_video_never_returns_or_retries_encrypted_details(rig, monkeypatch, with_answer):
+    details = [{"type": "reasoning.encrypted", "content": "opaque-token"}]
+    if with_answer:
+        details.append({"type": "reasoning.text", "text": "Useful answer."})
+    result, sent = await _video(rig, _reply({"content": "", "reasoning_details": details}),
+                                monkeypatch, retry=True)
+    assert "opaque-token" not in str(result)
+    if with_answer:
+        assert result["status"] == "ok", result
+        assert result["result"]["analysis"] == "Useful answer."
+    else:
+        assert result["status"] != "ok", result
+    assert len(sent) == 1
