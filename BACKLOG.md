@@ -14,6 +14,15 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-10-03 H487 full-backend review: 22,093 guarded cases executed at c70e0407;
+  22,057 pass, 34 skip, one existing xfail, and one exact binding-writer inventory
+  failure. The focused RED reproduced 14 coordinator callsites displaced by
+  seven provenance lines; their literal coordinates were corrected without
+  weakening ownership or AST guards, and all 50 binding tests pass. A complete
+  guarded rerun remains pending. Claim-specific source/diff/module review of
+  H262/H298/H309/H314/H315/H507/H594/H681 restores their existing equivalent
+  verdicts: 181/697 (26.0%), not new feature delivery. H487 remains unfinished.
+  See `docs/hermes/evidence/h487-consent-anchor-full-review-2026-10-03.md`.
 - 2026-10-03 H487 revocation continuation: an optional signed consent-state head
   now uses a separate durable monotonic anchor outside SQLite. Restoring old
   signed rows or the whole consent database cannot revive revoked grants while

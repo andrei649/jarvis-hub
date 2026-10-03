@@ -5,6 +5,13 @@ Base/head before this increment: `bd38d00c816a9c2072892bba4040ce0d4ac9464c`.
 Design: [revocation plan](../h487-consent-revocation-plan-2026-10-03.md).
 Exact implementation/test hashes and local artifacts: [receipt](h487-consent-anchor-progress-2026-10-03.json).
 
+Later follow-up at `c70e0407`: the complete guarded backend executed and exposed
+one stale external-binding line inventory. Its reproduced correction and eight
+claim-specific freshness reviews are recorded in the
+[full-backend follow-up](h487-consent-anchor-full-review-2026-10-03.md).
+The checkpoint results below remain historical; the follow-up is not a claim
+that the failed complete run passed.
+
 ## Delivered behavior
 
 ConsentLedger accepts an optional MonotonicHeadAnchor. Its signed local head

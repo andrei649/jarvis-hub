@@ -89,6 +89,20 @@ after external advance and before SQLite commit sacrifices reusable-consent
 availability; it never restores older permission. This must be explicit in the
 handover until a reviewed operator recovery path exists.
 
+## Full-backend follow-up at c70e0407
+
+The guarded run executed all 22,093 cases and found one failure: the exact
+external-binding writer inventory still lists the coordinator's pre-provenance
+line numbers. The focused test reproduces it. AST inspection reports no parse
+errors, additions, removals, changed ownership or columns: exactly 14 existing
+coordinator callsites moved forward by seven lines. Hypothesis: the seven
+terminal-provenance lines added in bd38d00c were not reflected in the literal
+inventory. Update only those 14 line coordinates in
+`agents/core/orchestrator_bindings.py`; preserve every writer/name/path/column,
+the exact AST equality test and alias/undeclared-writer guards. Run the whole
+binding test module, then repeat the serial guarded backend on the new frozen
+checkpoint. Do not describe the first run as passing or new CI evidence.
+
 Rollback: revert localized consent modules/tests and this continuation. Preserve
 existing task/chat/approval records and the separate B7 anchor. New head/state
 remain inert without production consumers. No equivalence credit until required

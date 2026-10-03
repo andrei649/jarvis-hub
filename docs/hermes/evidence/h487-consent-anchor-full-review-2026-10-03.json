@@ -1,0 +1,383 @@
+{
+  "goal": "Complete all 697 accepted Hermes capabilities locally; H487 remains unfinished",
+  "tested_head": "c70e040707d007e0a50d31243e69894dbf332bb6",
+  "generated_at": "2026-10-03",
+  "full_backend_first_run": {
+    "exit_code": 1,
+    "suites": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "1",
+        "skipped": "35",
+        "tests": "22093",
+        "time": "1150.123",
+        "timestamp": "2026-10-03T23:01:16.477349+03:00",
+        "hostname": "Macmini"
+      }
+    ],
+    "passed": 22057,
+    "normal_skips": 34,
+    "existing_xfails": 1,
+    "failure": "tests.test_orchestrator_bindings::test_external_binding_writer_inventory_exactly_matches_production_calls"
+  },
+  "source_frozen_paths": 2522,
+  "source_changed_during_run": 0,
+  "binding_fix": {
+    "scope": "14 existing coordinator writer line coordinates +7 only; names/paths/columns and exact equality guard unchanged",
+    "focused_red_exit": 1,
+    "whole_binding_module_green": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "50",
+        "time": "8.328",
+        "timestamp": "2026-10-03T23:22:28.669523+03:00",
+        "hostname": "Macmini"
+      }
+    ],
+    "full_rerun_pending": true,
+    "changed_writer_names": [
+      "acquisition",
+      "agent_tool_runtime",
+      "call_broker",
+      "channel_replies",
+      "cloud_images",
+      "node_mesh",
+      "permission_ledger",
+      "session_kernels",
+      "social",
+      "subagents",
+      "task_executor",
+      "tool_rpc",
+      "work_runs",
+      "writeback"
+    ],
+    "source_sha256": "3ae6db78cef3f5b2eacc7832761c22fc707b6281c537e652aa384b3a7a519488"
+  },
+  "collateral_review": {
+    "ids": [
+      "H262",
+      "H298",
+      "H309",
+      "H314",
+      "H315",
+      "H507",
+      "H594",
+      "H681"
+    ],
+    "reviewer": "gpt-6-luna medium, read-only",
+    "coordinator_verified_complete_diffs": true,
+    "pins": [
+      {
+        "id": "H262",
+        "declared_status": "equivalent",
+        "changed_pins": [
+          {
+            "path": "agents/core/autonomy_coordinator.py",
+            "prior_sha256": "390ebc6d046857e4d6abf642057722ad6b2c1193a0ec1225068b8b20ad7ed3ea",
+            "current_sha256": "a096d2c24cbe42590f9d0ef0dd68b6229573f4becc9f19e9861fca2b20175ace"
+          }
+        ],
+        "all_other_pins_current": true
+      },
+      {
+        "id": "H298",
+        "declared_status": "equivalent",
+        "changed_pins": [
+          {
+            "path": "agents/core/tool_rpc.py",
+            "prior_sha256": "b352d38a000a39166276263fda1822e649513ceda098693f9400841803d726ed",
+            "current_sha256": "cb142e67eb8ae20dd26c28d0007d3af0a9a696e34862817957ffccd6d8eab0c4"
+          },
+          {
+            "path": "agents/core/autonomy_coordinator.py",
+            "prior_sha256": "390ebc6d046857e4d6abf642057722ad6b2c1193a0ec1225068b8b20ad7ed3ea",
+            "current_sha256": "a096d2c24cbe42590f9d0ef0dd68b6229573f4becc9f19e9861fca2b20175ace"
+          }
+        ],
+        "all_other_pins_current": true
+      },
+      {
+        "id": "H309",
+        "declared_status": "equivalent",
+        "changed_pins": [
+          {
+            "path": "agents/core/autonomy_coordinator.py",
+            "prior_sha256": "390ebc6d046857e4d6abf642057722ad6b2c1193a0ec1225068b8b20ad7ed3ea",
+            "current_sha256": "a096d2c24cbe42590f9d0ef0dd68b6229573f4becc9f19e9861fca2b20175ace"
+          }
+        ],
+        "all_other_pins_current": true
+      },
+      {
+        "id": "H314",
+        "declared_status": "equivalent",
+        "changed_pins": [
+          {
+            "path": "agents/core/autonomy_coordinator.py",
+            "prior_sha256": "a834ab8414109b558abe35d2fd02882e39f5eb3ac9cfdb354a35703bd6198279",
+            "current_sha256": "a096d2c24cbe42590f9d0ef0dd68b6229573f4becc9f19e9861fca2b20175ace"
+          }
+        ],
+        "all_other_pins_current": true
+      },
+      {
+        "id": "H315",
+        "declared_status": "equivalent",
+        "changed_pins": [
+          {
+            "path": "agents/core/autonomy_coordinator.py",
+            "prior_sha256": "390ebc6d046857e4d6abf642057722ad6b2c1193a0ec1225068b8b20ad7ed3ea",
+            "current_sha256": "a096d2c24cbe42590f9d0ef0dd68b6229573f4becc9f19e9861fca2b20175ace"
+          },
+          {
+            "path": "agents/core/tool_rpc.py",
+            "prior_sha256": "b352d38a000a39166276263fda1822e649513ceda098693f9400841803d726ed",
+            "current_sha256": "cb142e67eb8ae20dd26c28d0007d3af0a9a696e34862817957ffccd6d8eab0c4"
+          }
+        ],
+        "all_other_pins_current": true
+      },
+      {
+        "id": "H507",
+        "declared_status": "equivalent",
+        "changed_pins": [
+          {
+            "path": "agents/core/tool_rpc.py",
+            "prior_sha256": "b352d38a000a39166276263fda1822e649513ceda098693f9400841803d726ed",
+            "current_sha256": "cb142e67eb8ae20dd26c28d0007d3af0a9a696e34862817957ffccd6d8eab0c4"
+          }
+        ],
+        "all_other_pins_current": true
+      },
+      {
+        "id": "H594",
+        "declared_status": "equivalent",
+        "changed_pins": [
+          {
+            "path": "agents/core/autonomy_coordinator.py",
+            "prior_sha256": "390ebc6d046857e4d6abf642057722ad6b2c1193a0ec1225068b8b20ad7ed3ea",
+            "current_sha256": "a096d2c24cbe42590f9d0ef0dd68b6229573f4becc9f19e9861fca2b20175ace"
+          },
+          {
+            "path": "agents/core/tool_rpc.py",
+            "prior_sha256": "b352d38a000a39166276263fda1822e649513ceda098693f9400841803d726ed",
+            "current_sha256": "cb142e67eb8ae20dd26c28d0007d3af0a9a696e34862817957ffccd6d8eab0c4"
+          }
+        ],
+        "all_other_pins_current": true
+      },
+      {
+        "id": "H681",
+        "declared_status": "equivalent",
+        "changed_pins": [
+          {
+            "path": "agents/core/autonomy_coordinator.py",
+            "prior_sha256": "390ebc6d046857e4d6abf642057722ad6b2c1193a0ec1225068b8b20ad7ed3ea",
+            "current_sha256": "a096d2c24cbe42590f9d0ef0dd68b6229573f4becc9f19e9861fca2b20175ace"
+          }
+        ],
+        "all_other_pins_current": true
+      }
+    ],
+    "backend_module_results": {
+      "H262": {
+        "modules": [
+          "tests.test_h262_lifecycle_sweep",
+          "tests.test_h262_retention_approval"
+        ],
+        "outcomes": {
+          "selected": 133,
+          "passed": 133,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      "H298": {
+        "modules": [
+          "tests.test_tool_result_store",
+          "tests.test_tool_loop_result_spill",
+          "tests.test_environment_output_limits",
+          "tests.test_code_tools",
+          "tests.test_effective_tool_window",
+          "tests.test_agent_runtime_v2",
+          "tests.test_spill_paging",
+          "tests.test_h485_owner_once_actuation",
+          "tests.test_h485_owner_once_transport"
+        ],
+        "outcomes": {
+          "selected": 378,
+          "passed": 378,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      "H309": {
+        "modules": [
+          "tests.test_h309_pointer"
+        ],
+        "outcomes": {
+          "selected": 60,
+          "passed": 60,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      "H314": {
+        "modules": [
+          "tests.test_h314_memory_tool"
+        ],
+        "outcomes": {
+          "selected": 72,
+          "passed": 72,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      "H315": {
+        "modules": [
+          "tests.test_todo_tool",
+          "tests.test_h315b_todo_review",
+          "tests.test_h315c_todo_review",
+          "tests.test_h315d_todo_review",
+          "tests.test_h315e_todo_review",
+          "tests.test_h315f_todo_review",
+          "tests.test_h315g_todo_review",
+          "tests.test_h315h_todo_review",
+          "tests.test_h315i_todo_review",
+          "tests.test_h315j_todo_review"
+        ],
+        "outcomes": {
+          "selected": 275,
+          "passed": 274,
+          "failed": 0,
+          "skipped": 1
+        }
+      },
+      "H507": {
+        "modules": [
+          "tests.test_h507_code_guidance"
+        ],
+        "outcomes": {
+          "selected": 136,
+          "passed": 136,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      "H594": {
+        "modules": [
+          "tests.test_h594_project_context",
+          "tests.test_h485_owner_once_actuation"
+        ],
+        "outcomes": {
+          "selected": 86,
+          "passed": 85,
+          "failed": 0,
+          "skipped": 1
+        }
+      },
+      "H681": {
+        "modules": [
+          "tests.test_subagent_request_overrides",
+          "tests.test_subagent_batch_failure"
+        ],
+        "outcomes": {
+          "selected": 195,
+          "passed": 195,
+          "failed": 0,
+          "skipped": 0
+        }
+      }
+    },
+    "counts_overlap": true,
+    "equivalence_new_feature_credit": 0
+  },
+  "hermes_metrics_after_review": {
+    "total": 697,
+    "equivalent": 181,
+    "partial": 259,
+    "missing": 62,
+    "needs_review": 195,
+    "excluded": 0,
+    "all_percent": 26.0
+  },
+  "artifacts": {
+    "/tmp/nerva-h487-consent-anchor-full-backend-guarded-20261003.log": "f96ee3650b84f36925e951180bc48d689f3dfc18c80778d928aa895b786b168b",
+    "/tmp/nerva-h487-consent-anchor-full-backend-guarded-20261003.xml": "5254581eec86b6356de866b0120610e8ea131f89e9b857b5ec7704ac3e04ccd8",
+    "/tmp/nerva-h487-consent-anchor-full-frozen-source-20261003.json": "ba5b81be33094a03ebdb5510e232147eebcf723a90886295a579e4c9c3835b0e",
+    "/tmp/nerva-h487-collateral-review-20261003.md": "f370a85607f6a66e1b74f80b80db75e5ab4235bd4d82d409baea2372e0e59c80",
+    "/tmp/nerva-h487-collateral-review-pins-20261003.json": "34d0bf6a099224ca195dd7440edf354634afffea7d2e9c05e7257b335dc305d9",
+    "/tmp/nerva-h487-collateral-full-module-results-20261003.json": "0b2ab73e7fa518de62c49f861ee0bee33200bfbca5b94f874c351dd7652bf95d",
+    "/tmp/nerva-h487-consent-anchor-binding-inventory-red-20261003.log": "dc7ff2c7b1312cb576bfe2aa836a620b584a2dcb6731b40ac8b4099a2e184b64",
+    "/tmp/nerva-h487-consent-anchor-binding-inventory-red-20261003.xml": "818e486fd7469fca6b7b0ae525625dafae59308d716c9b658f1937fd7914b597",
+    "/tmp/nerva-h487-consent-anchor-binding-inventory-green-20261003.log": "5952b218382e51f578768c0a348723d5418c12143cc6d5f49d527f1d1b978a79",
+    "/tmp/nerva-h487-consent-anchor-binding-inventory-green-20261003.xml": "40817a572dc533ebfb2c5209fdbf0b49ea9f8710c8b19372e7808c5d61cd6ecd",
+    "/tmp/nerva-h487-consent-anchor-followup-record-gates-20261003.log": "9ab065e6336043554e93e2b34a91f2b93ba5599ef8e6b7077c14aa3ce54b41c3",
+    "/tmp/nerva-h487-consent-anchor-followup-record-gates-20261003.xml": "3fdc54c8daae02e02cd7d9036776ceea32719e4215d74c79427755c4635b0597",
+    "/tmp/nerva-h487-consent-anchor-followup-record-gates-final-20261003.log": "41c3d85fd64530d72fcd4cd68d486f3f32c1cfa8ef293ddff31c0034e2d031ab",
+    "/tmp/nerva-h487-consent-anchor-followup-record-gates-final-20261003.xml": "f0073300a151da34239dd3f7619e3a30891f191f10e1b477ea2e65401f16bb20",
+    "/tmp/nerva-h487-consent-anchor-followup-record-gates-corrected-20261003.log": "a9d6c55ed9d807b32d5bf39b92352c1be384488db2b8135a515cc9266b970a29",
+    "/tmp/nerva-h487-consent-anchor-followup-record-gates-corrected-20261003.xml": "52a9424927a383ab8e5eee5a069119888eebcb50f36236b66c0ee504513fd6ac",
+    "/tmp/nerva-h487-consent-anchor-followup-bandit-20261003.json": "4e38d953ca2a0abf2482ada8165d28dde2b0a440edf8f863060a90c78a0751da",
+    "/tmp/nerva-h487-consent-anchor-followup-graft-check-20261003.json": "a73748f2bc0c553fe4914b020429258c392375d825d1e032be10e5253e420543",
+    "/tmp/nerva-h487-consent-anchor-followup-gitleaks-20261003.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+  },
+  "published": false,
+  "activated": false,
+  "image_binding_collateral": {
+    "id": "H515",
+    "status": "partial retained",
+    "changed_pins": [
+      {
+        "path": "agents/core/orchestrator_bindings.py",
+        "prior_sha256": "bab74088e0bdd12031727a726227aead7854a08c5570af97dcca39b7b7627f46",
+        "current_sha256": "3ae6db78cef3f5b2eacc7832761c22fc707b6281c537e652aa384b3a7a519488"
+      }
+    ],
+    "all_other_pins_current": true,
+    "backend_modules": [
+      "tests.test_image_options_extended",
+      "tests.test_media_library",
+      "tests.test_cloud_image",
+      "tests.test_cloud_image_tool",
+      "tests.test_model_manager_ack",
+      "tests.test_model_manager",
+      "tests.test_local_image_backend",
+      "tests.test_image_mediation_composition",
+      "tests.test_local_image_runtime"
+    ],
+    "outcomes": {
+      "selected": 302,
+      "passed": 302,
+      "failed": 0,
+      "skipped": 0
+    },
+    "equivalence_credit": 0
+  },
+  "record_gates": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "108",
+      "time": "4.976",
+      "timestamp": "2026-10-03T23:28:30.118374+03:00",
+      "hostname": "Macmini"
+    }
+  ],
+  "scans": {
+    "bandit_new_findings": 0,
+    "bandit_errors": 0,
+    "gitleaks_findings": 0
+  },
+  "graft": {
+    "graph_ok": true,
+    "nodes": 48717,
+    "deep_context_missing": true
+  }
+}
