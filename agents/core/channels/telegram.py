@@ -921,11 +921,14 @@ class TelegramChannel(ChannelAdapter):
         task_id, action = parsed
         chat_id = ((cb.get("message") or {}).get("chat") or {}).get("id")
         try:
-            await self.on_callback(task_id, action, chat_id=chat_id, user_id=uid)
-            await self._answer_callback(cb.get("id", ""), f"OK: {action}")
+            result = await self.on_callback(task_id, action, chat_id=chat_id, user_id=uid)
+            await self._answer_callback(
+                cb.get("id", ""),
+                f"OK: {action}" if type(result) is str and result.strip() else "Not applied.",
+            )
         except Exception as e:
             logger.warning(f"Telegram callback dispatch error: {e}")
-            await self._answer_callback(cb.get("id", ""))
+            await self._answer_callback(cb.get("id", ""), "Not applied.")
 
     # ---- inbound media ----------------------------------------------------
 

@@ -19,7 +19,7 @@ import asyncio
 import contextvars
 import logging
 import math
-import os
+# Telegram destinations use the shared channels.outbound resolver.
 import time
 from datetime import datetime
 
@@ -199,9 +199,9 @@ class AutonomyCoordinator:
         budget; Telegram is excluded from the away fan-out to avoid a duplicate
         plain-text card on the channel that already got the rich one.
         """
-        owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(
-            self._orch.get_setting("autonomy.owner_chat_id", "") or ""
-        )
+        from .channels.outbound import _owner_chat_id
+
+        owner = _owner_chat_id(self._orch, configured_owner=self._owner_settings().get("autonomy.owner_chat_id"))
         tg = self._orch.channels.get("telegram")
         if tg and owner and hasattr(tg, "send_card"):
 
@@ -418,19 +418,31 @@ class AutonomyCoordinator:
     def _callback_is_owner(self, chat_id, user_id) -> bool:
         """Is this button tap the owner's?
 
-        Fails CLOSED when nothing identifies the owner. An approval surface with no owner
-        binding configured should not approve — declining costs the owner one settings
-        entry, whereas allowing costs them the guarantee that only they can approve.
+        A configured destination must match. Sender identity comes from the explicit
+        owner allowlist or the exact private owner chat; a group destination alone
+        identifies no owner.
         """
-        owner_chat = str(self._orch.get_setting("autonomy.owner_chat_id", "") or "").strip()
-        allowed_users = {
-            str(u) for u in (getattr(self._telegram_channel(), "allowed_users", None) or [])
-        }
-        if not owner_chat and not allowed_users:
+        from .telegram_owner import is_telegram_owner_sender, telegram_owner_user_ids
+        from .channels.outbound import _owner_chat_id
+
+        owner_settings = self._owner_settings()
+        owner_chat = _owner_chat_id(self._orch, configured_owner=owner_settings.get("autonomy.owner_chat_id"))
+        if not owner_chat or str(chat_id or "") != owner_chat:
             return False
-        if owner_chat and str(chat_id or "") != owner_chat:
-            return False
-        return not (allowed_users and str(user_id or "") not in allowed_users)
+        return is_telegram_owner_sender(
+            user_id, chat_id=chat_id, owner_chat_id=owner_chat,
+            allowed_user_ids=telegram_owner_user_ids(
+                owner_settings.get("autonomy.owner_user_ids"),
+                allowed_user_ids=getattr(self._telegram_channel(), "allowed_users", None),
+            ),
+        )
+
+    def _owner_settings(self) -> dict:
+        provider = getattr(self._orch, "_telegram_owner_settings", None)
+        if callable(provider):
+            return provider()
+        return {key: self._orch.get_setting(key, None)
+                for key in ("autonomy.owner_chat_id", "autonomy.owner_user_ids")}
 
     def _telegram_channel(self):
         for channel in (getattr(self._orch, "channels", {}) or {}).values():

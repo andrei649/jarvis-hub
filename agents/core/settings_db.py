@@ -406,6 +406,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="mode",            value="auto", label="Autonomy mode (AUTO/ASK/OFF)", kind="select", opts=["auto","ask","off"]),
     dict(category="autonomy", key="earned_autonomy_enabled", value=False, label="Earn autonomy from proven outcomes", kind="toggle"),
     dict(category="autonomy", key="owner_chat_id",   value="",     label="Owner Telegram chat ID", kind="text"),
+    dict(category="autonomy", key="owner_user_ids", value=None, label="Telegram owners (JSON user ID list; null uses the allowed sender list)", kind="json"),
     dict(category="autonomy", key="cap_per_action",  value=50,     label="Money cap per action", kind="number"),
     dict(category="autonomy", key="daily_ceiling",   value=200,    label="Money daily ceiling",  kind="number"),
     dict(category="autonomy", key="interrupt_budget",value=4,      label="Urgent pushes per day", kind="number"),
@@ -693,6 +694,26 @@ def read_setting(category: str, key: str) -> tuple[bool, Any]:
         return False, None
     try:
         return True, _decrypt_if_secret(json.loads(row["value"]))
+    except Exception as exc:
+        raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
+
+
+def read_telegram_owner_binding() -> dict[str, Any]:
+    """One read-only authority snapshot; a busy/missing store raises immediately.
+
+    This hot-path guard must neither seed a database nor wait for its writer.
+    Owner IDs and destination are not secret or product-posture overlay settings.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH.resolve().as_uri() + "?mode=ro", uri=True, timeout=0)
+        try:
+            rows = conn.execute(
+                "SELECT key, value FROM settings WHERE category=? AND key IN (?, ?)",
+                ("autonomy", "owner_chat_id", "owner_user_ids"),
+            ).fetchall()
+        finally:
+            conn.close()
+        return {f"autonomy.{key}": json.loads(value) for key, value in rows}
     except Exception as exc:
         raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
 

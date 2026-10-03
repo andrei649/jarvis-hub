@@ -161,6 +161,9 @@ def _bare_orchestrator():
     orch = Orchestrator.__new__(Orchestrator)
     orch._channel_sessions = {}
     orch._runtime_settings = {"autonomy.owner_chat_id": "-500"}
+    # This command harness supplies owner storage; persistence/read failures use
+    # the real store in test_h485_telegram_owner_settings.py.
+    orch._telegram_owner_settings = lambda: orch._runtime_settings
     orch.session_id = "shared"
     orch.channel_manager = ChannelManager()
     orch._delivery_router = SimpleNamespace(
@@ -210,8 +213,8 @@ async def test_the_telegram_owner_is_the_admin_principal_and_a_guest_is_not(esto
     assert seen["principal"].admin is False
     assert estop_state["engaged"] is not None  # the guest changed nothing
 
-    # The owner chat id is the other way to be the owner.
-    reply = await orch.channel_handler("/resume", channel="telegram", chat_id=-500, sender="7")
+    # An explicit owner may still administer the configured group destination.
+    reply = await orch.channel_handler("/resume", channel="telegram", chat_id=-500, sender="42")
     assert "lifted" in reply
 
 
@@ -220,6 +223,58 @@ async def test_the_principal_is_reset_after_the_turn(estop_state):
     orch, _seen = _bare_orchestrator()
     await orch.channel_handler("/status", channel="telegram", chat_id=1, sender="42")
     assert current_principal() == Principal()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("allowed", [[], [42]])
+async def test_group_destination_does_not_make_a_stranger_an_admin(estop_state, allowed):
+    orch, seen = _bare_orchestrator()
+    orch.channels["telegram"].allowed_users = allowed
+    reply = await orch.channel_handler("/pause", channel="telegram", chat_id=-500, sender="7")
+    assert "owner command" in reply
+    assert seen["principal"].admin is False
+    assert estop_state["engaged"] is None
+    assert await orch.channel_handler("hello", channel="telegram", chat_id=-500, sender="7") == "model reply"
+
+
+@pytest.mark.asyncio
+async def test_private_owner_without_allowlist_can_use_admin_commands(estop_state):
+    orch, seen = _bare_orchestrator()
+    orch.channels["telegram"].allowed_users = []
+    orch._runtime_settings["autonomy.owner_chat_id"] = "42"
+    reply = await orch.channel_handler("/pause", channel="telegram", chat_id=42, sender="42")
+    assert "Emergency stop engaged" in reply
+    assert seen["principal"].admin is True
+
+
+@pytest.mark.asyncio
+async def test_private_owner_environment_takes_precedence_for_admin_commands(estop_state, monkeypatch):
+    monkeypatch.setenv("AUTONOMY_OWNER_CHAT_ID", "43")
+    orch, seen = _bare_orchestrator()
+    orch.channels["telegram"].allowed_users = []
+    orch._runtime_settings["autonomy.owner_chat_id"] = "42"
+    denied = await orch.channel_handler("/pause", channel="telegram", chat_id=42, sender="42")
+    assert "owner command" in denied
+    assert estop_state["engaged"] is None
+    reply = await orch.channel_handler("/pause", channel="telegram", chat_id=43, sender="43")
+    assert reply
+    assert estop_state["engaged"] is not None
+    assert seen["principal"].admin is True
+
+
+@pytest.mark.asyncio
+async def test_open_group_configured_owner_is_admin_while_guests_keep_chat_access(estop_state):
+    orch, seen = _bare_orchestrator()
+    orch.channels["telegram"].allowed_users = []
+    orch._runtime_settings["autonomy.owner_user_ids"] = "[42]"
+    denied = await orch.channel_handler("/pause", channel="telegram", chat_id=-500, sender="7")
+    assert "owner command" in denied
+    assert estop_state["engaged"] is None
+    assert await orch.channel_handler("hello", channel="telegram", chat_id=-500, sender="7") == "model reply"
+    assert seen["principal"].admin is False
+    await orch.channel_handler("/pause", channel="telegram", chat_id=-500, sender="42")
+    assert seen["principal"].admin is True
+    assert estop_state["engaged"] is not None
 
 
 @pytest.mark.asyncio

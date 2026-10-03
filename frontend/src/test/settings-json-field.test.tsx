@@ -41,6 +41,45 @@ describe('SettingsPanel — a JSON setting', () => {
     expect(puts[0].body).toEqual({ values: { template_vars: '{team: ops' } });
   });
 
+  it('shows a null owner list as null and saves an explicit owner list as JSON', async () => {
+    global.fetch = vi.fn(async (url, init = {}) => {
+      const u = String(url);
+      if (init.method === 'PUT') puts.push({ url: u, body: JSON.parse(init.body) });
+      const body = u.includes('/api/admin/settings') && init.method !== 'PUT'
+        ? { autonomy: [{ key: 'owner_user_ids', label: 'Telegram owners (JSON user ID list; null uses the allowed sender list)',
+                         value: null, kind: 'json' }] }
+        : u.includes('/api/help/docs') ? { docs: [] } : { ok: true, updated: 1 };
+      return { ok: true, status: 200, json: async () => body };
+    });
+    render(<SettingsPanel />);
+    const box = await screen.findByLabelText('json value of owner_user_ids');
+    expect(box.value).toBe('null');
+    expect(screen.getByText(/null uses the allowed sender list/)).toBeTruthy();
+    fireEvent.change(box, { target: { value: '[42]' } });
+    fireEvent.click(screen.getByText(/save 1 change/));
+    await waitFor(() => expect(puts.length).toBe(1));
+    expect(puts[0].body).toEqual({ values: { owner_user_ids: [42] } });
+  });
+
+  it('saves JSON null when the owner restores legacy allowlist fallback', async () => {
+    global.fetch = vi.fn(async (url, init = {}) => {
+      const u = String(url);
+      if (init.method === 'PUT') puts.push({ url: u, body: JSON.parse(init.body) });
+      const body = u.includes('/api/admin/settings') && init.method !== 'PUT'
+        ? { autonomy: [{ key: 'owner_user_ids', label: 'Telegram owners (JSON user ID list; null uses the allowed sender list)',
+                         value: [42], kind: 'json' }] }
+        : u.includes('/api/help/docs') ? { docs: [] } : { ok: true, updated: 1 };
+      return { ok: true, status: 200, json: async () => body };
+    });
+    render(<SettingsPanel />);
+    const box = await screen.findByLabelText('json value of owner_user_ids');
+    expect(box.value).toBe('[42]');
+    fireEvent.change(box, { target: { value: 'null' } });
+    fireEvent.click(screen.getByText(/save 1 change/));
+    await waitFor(() => expect(puts.length).toBe(1));
+    expect(puts[0].body).toEqual({ values: { owner_user_ids: null } });
+  });
+
   it('shows a setting only its own route writes, with where to change it, and no edit box (review-H329 F1)', async () => {
     global.fetch = vi.fn(async (url, init = {}) => {
       const u = String(url);

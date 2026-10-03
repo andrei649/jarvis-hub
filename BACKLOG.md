@@ -193,6 +193,21 @@
   credit, publication or activation. See
   `docs/hermes/evidence/h485-toolrpc-actuation-verification-2026-10-03.md`.
 
+- 2026-10-03 H485 Telegram owner identity prerequisite: a group destination no
+  longer grants authority to every sender. Persisted `autonomy.owner_user_ids`
+  separates owner identity from ingress admission; an absent/null setting keeps
+  the legacy sender list. Exact private sender/chat/owner fallback, malformed-ID
+  refusal, environment-first destination binding and stale-card revocation are
+  verified with 400 final focused checks. Owner authority reads a bounded,
+  read-only persisted snapshot: revocation takes effect immediately, and an
+  unavailable/locked store refuses authority. The HUD preserves JSON null;
+  callback acknowledgment reflects whether the decision was applied. The earlier
+  2,109 H277/H485/safe-mode checks predate these final fixes. The final guarded
+  full backend passes 21,790 tests, with 34 skips and one existing xfail; its
+  21,825-case count guard and 2,806 frozen hashes match. H277/H485 stay **partial**, with no new parity
+  credit, publication or activation. See
+  `docs/hermes/evidence/h485-owner-identity-verification-2026-10-03.md`.
+
 - 2026-09-27 H613 ✅ choose how it sounds and how it hears: Piper as a local voice, and the owner's own TTS/STT programs, each run only as a human approved it (equivalent; #1207; headline 190/697).
 
   Nerva spoke through cloud voices or Kokoro and heard only through Whisper. Now:

@@ -1365,6 +1365,18 @@ class Orchestrator:
     def get_setting(self, key: str, default=None):
         return self._runtime_settings.get(key, default)
 
+    def _telegram_owner_settings(self) -> dict:
+        """Read one persisted authority snapshot; never retain revoked cached owners."""
+        try:
+            from .settings_db import read_telegram_owner_binding
+
+            # This authority snapshot never waits behind a settings writer.
+            return read_telegram_owner_binding()
+        except Exception:
+            logger.warning("Telegram owner settings unavailable; authority refused", exc_info=True)
+            # Invalid explicit IDs also refuse private fallback under an env destination.
+            return {"autonomy.owner_chat_id": "", "autonomy.owner_user_ids": {}}
+
     async def _settings_watcher_loop(self):
         while True:
             await asyncio.sleep(30)
@@ -1611,16 +1623,22 @@ class Orchestrator:
             logger.warning("Workspace reply request failed closed", exc_info=True)
 
     def _channel_principal(self, channel: str, sender, chat_id) -> Principal:
-        """The owner test for a channel turn: Telegram's owner allowlist or owner chat; else nobody."""
+        """Bind Telegram admin authority to a sender, with an exact private-owner fallback."""
         sender_text = None if sender is None else str(sender)
         admin = False
         if channel == "telegram":
+            from .telegram_owner import is_telegram_owner_sender, telegram_owner_user_ids
+            from .channels.outbound import _owner_chat_id
+
             adapter = (getattr(self, "channels", None) or {}).get("telegram")
-            allowed = {str(uid) for uid in (getattr(adapter, "allowed_users", None) or [])}
-            owner_chat = str(self.get_setting("autonomy.owner_chat_id", "") or "").strip()
-            admin = bool(
-                (sender_text is not None and sender_text in allowed)
-                or (owner_chat and chat_id is not None and str(chat_id) == owner_chat)
+            owner_settings = self._telegram_owner_settings()
+            owner_chat = _owner_chat_id(self, configured_owner=owner_settings.get("autonomy.owner_chat_id"))
+            admin = is_telegram_owner_sender(
+                sender, chat_id=chat_id, owner_chat_id=owner_chat,
+                allowed_user_ids=telegram_owner_user_ids(
+                    owner_settings.get("autonomy.owner_user_ids"),
+                    allowed_user_ids=getattr(adapter, "allowed_users", None),
+                ),
             )
         return Principal(
             channel=channel, sender=sender_text, admin=admin,

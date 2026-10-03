@@ -44,6 +44,19 @@ async def test_owner_reply_fills_only_rejected_decision_metadata(rig):
     assert queue.get(task_id).human_decision['reason'] == 'Use staging'
 
 
+async def test_environment_destination_binds_callback_and_reason_reply(rig, monkeypatch):
+    monkeypatch.setenv('AUTONOMY_OWNER_CHAT_ID', '44')
+    queue, worker, _, coordinator = rig
+    task = await worker.submit('jarvis', 'delete_file', 'Delete test file', attention_mode='none')
+    assert await coordinator._on_callback(task.id, 'reject', chat_id=44, user_id=99)
+    assert not await coordinator._on_reason_reply('Wrong destination', chat_id=42, user_id=99,
+                                                reply_to_message_id=77)
+    assert queue.get(task.id).human_decision['reason'] is None
+    assert await coordinator._on_reason_reply('Use staging', chat_id=44, user_id=99,
+                                            reply_to_message_id=77)
+    assert queue.get(task.id).human_decision['reason'] == 'Use staging'
+
+
 async def test_superseded_prompt_is_consumed_without_becoming_a_chat_turn(rig):
     queue, _, channel, coordinator = rig
     first = await reject(rig)

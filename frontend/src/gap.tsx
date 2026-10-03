@@ -2744,7 +2744,7 @@ function settingsField(it, val, on, suggest?: string[]) {
     // A JSON setting is edited as JSON and saved parsed (H340 review: skills.template_vars
     // saved from a text box was a string the hub ignored). Text that does not parse is sent
     // as typed, so the hub's refusal names what is wrong.
-    case 'json': return <textarea aria-label={'json value of ' + it.key} defaultValue={typeof val === 'string' ? val : JSON.stringify(val ?? {})} onChange={(e) => { try { on(JSON.parse(e.target.value)); } catch { on(e.target.value); } }} rows={2} style={{ ...ip, width: 220 }} />;
+    case 'json': return <textarea aria-label={'json value of ' + it.key} defaultValue={typeof val === 'string' ? val : JSON.stringify(val === undefined ? {} : val)} onChange={(e) => { try { on(JSON.parse(e.target.value)); } catch { on(e.target.value); } }} rows={2} style={{ ...ip, width: 220 }} />;
     default: return <input value={val == null ? '' : val} onChange={(e) => on(e.target.value)} style={{ ...ip, width: 150 }} />;
   }
 }

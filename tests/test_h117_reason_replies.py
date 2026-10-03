@@ -152,7 +152,12 @@ class _Inbox:
             self.ack_release.set()
         orch = SimpleNamespace(
             autonomy=self.worker, autonomy_queue=self.queue, channels={"telegram": channel},
-            get_setting=lambda key, default="": str(owner_chat) if key == "autonomy.owner_chat_id" else default,
+            # Admission remains open so batching includes guests. Owner identity is
+            # independently configured, including when its destination is a group.
+            get_setting=lambda key, default="": {
+                "autonomy.owner_chat_id": str(owner_chat),
+                "autonomy.owner_user_ids": [OWNER],
+            }.get(key, default),
         )
         self.coordinator = AutonomyCoordinator(orch)
 
@@ -686,11 +691,11 @@ async def test_a_reason_is_judged_by_when_it_arrived_not_when_the_chats_lane_rea
 
 async def test_another_members_rejection_handled_after_the_deadline_never_drops_a_reason_sent_in_time(
         monkeypatch, tmp_path):
-    """A group owner chat (no allowed-user list: every member counts as the owner). The owner's
+    """An open group has one explicitly configured owner. The owner's
     prompt opens at t=1000 (window to 1120) and they ask a slow question. At t=1050 another member
     rejects a second task; at t=1060 the owner replies to their prompt. Both wait in the chat's
-    lane behind the slow turn, which ends at t=1150: the member's rejection opens its own window
-    then, and must not prune the owner's window as expired, since their reply arrived in time."""
+    lane behind the slow turn, which ends at t=1150: the member's rejection is refused
+    without modifying the owner's window, since their reply arrived in time."""
     group = -100
     channel, received = _channel(monkeypatch, policy=GroupPolicy())
     running, release = _answering(channel, received, slow="is the backup done?")
@@ -723,8 +728,8 @@ async def test_another_members_rejection_handled_after_the_deadline_never_drops_
             (0.2, []),
         ])
         assert inbox.reason(first) == "Use staging"
-        assert inbox.reason(second) is None
-        assert list(inbox.coordinator._reason_windows) == [(str(group), "100")]
+        assert inbox.queue.get(second).human_decision is None
+        assert not inbox.coordinator._reason_windows
     assert [t for t, _ in received] == ["is the backup done?"]
     assert "Reason saved." in inbox.posted
 
