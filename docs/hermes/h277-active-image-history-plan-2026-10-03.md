@@ -121,12 +121,12 @@ assistant pair and retains only newly attached bytes.
 
 **Files:** Only affected Hermes rows, generated status files, and this plan.
 
-- [ ] Run full backend/frontend suites on the committed source; record exact
+- [x] Run full backend/frontend suites on the committed source; record exact
   pass/skip/xfail counts and a targeted mutation campaign for review binding,
   cache isolation and physical resend.
-- [ ] Rebuild/check Graft; inspect cited source changes and restamp only
+- [x] Rebuild/check Graft; inspect cited source changes and restamp only
   justified rows. Keep H277 partial unless all remaining obligations pass.
-- [ ] Run status/Hermes checks, scoped lint, staged secret scan and diff check;
+- [x] Run status/Hermes checks, scoped lint, staged secret scan and diff check;
   commit records separately, leave a clean local checkout.
 
 ## Task 1 evidence
@@ -188,3 +188,24 @@ production build passed. OpenAPI types were generated from a temporary local
 test server with runtime state outside the checkout; that server was stopped.
 The committed HUD bundle was regenerated from source. No live provider or
 browser-hardware proof is claimed.
+
+## Task 5 evidence
+
+The final complete backend run exited zero: 21,299 passed, 34 skipped and one
+expected xfail out of 21,334 collected. The complete frontend run exited zero:
+1,881 passed across 207 files. The first backend run exposed four stale
+Hermes/route snapshots; after those were repaired, the second exposed four
+stale API-sweep assertions. Those generated artifacts were corrected before
+the final green run. The exact count is now in generated project status.
+
+Three temporary one-line mutants were killed by their own regressions: dropping
+the session-instance check, dropping the ordered active-image review signature,
+and skipping the physical resend check. The original source was restored after
+each mutant, and the 43-case focused image/route-snapshot union passed.
+
+Graft build/check, scoped Ruff, Hermes report/check, project-status sync/check,
+API-sweep check and staged diff/secret scan pass. H277 is assessed as partial;
+29 collateral equivalent rows were re-read and re-stamped against their cited
+source. The ledger now records 182/697 equivalent (26.1%), 264 partial,
+63 missing and 188 needing review. This proves offline code behavior and
+accounting, not live provider acceptance or full Hermes parity.

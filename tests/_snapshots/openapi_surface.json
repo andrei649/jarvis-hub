@@ -238,6 +238,7 @@
   "GET /api/trust/status": "trust_status_api_trust_status_get",
   "GET /api/vault": "vault_list_api_vault_get",
   "GET /api/vault/{vault_id}": "vault_get_api_vault__vault_id__get",
+  "GET /api/vlm/composer/active-images": "composer_active_images_api_vlm_composer_active_images_get",
   "GET /api/vlm/composer/status": "composer_status_api_vlm_composer_status_get",
   "GET /api/vlm/status": "vlm_status_api_vlm_status_get",
   "GET /api/voice/capabilities": "voice_capabilities_api_voice_capabilities_get",

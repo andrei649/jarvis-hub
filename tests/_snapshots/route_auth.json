@@ -238,6 +238,7 @@
   "GET /api/trust/status": "open",
   "GET /api/vault": "user",
   "GET /api/vault/{vault_id}": "user",
+  "GET /api/vlm/composer/active-images": "user",
   "GET /api/vlm/composer/status": "user",
   "GET /api/vlm/status": "user",
   "GET /api/voice/capabilities": "open",
