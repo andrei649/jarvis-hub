@@ -449,7 +449,8 @@ class NousAuthService:
                             error = NousAuthError("temporarily_unavailable")
         if error is not None:
             raise error
-        assert outcome is not None
+        if outcome is None:
+            raise NousAuthError("temporarily_unavailable")
         return outcome
 
     def _replace_tokens(
@@ -503,7 +504,7 @@ class NousAuthService:
     def logout(self, profile: str = "default") -> dict[str, Any]:
         with self.store.transaction(profile) as state:
             state.clear()
-        return {"profile": profile, "authenticated": False, "usable": False, "has_refresh_token": False}
+        return {"profile": profile, "authenticated": False, "usable": False, "has_refresh_token": False}  # nosec B105 — public boolean presence flag, not a credential
 
     def prepare_credentials(
         self,
@@ -581,7 +582,8 @@ class NousAuthService:
         # Raising outside the transaction is essential: terminal quarantine must commit.
         if error is not None:
             raise error
-        assert credentials is not None
+        if credentials is None:
+            raise NousAuthError("temporarily_unavailable")
         return credentials
 
     def _credentials(self, profile: str, token: str, state: dict[str, Any]) -> NousCredentials:
