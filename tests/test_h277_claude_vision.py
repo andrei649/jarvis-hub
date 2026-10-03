@@ -11,8 +11,8 @@ import pytest
 from agents import web
 from agents.core.agent import Agent
 from agents.core.config import JarvisConfig
+from agents.core.llm import vision_catalog, vlm
 from agents.core.llm import vision_policy as vp
-from agents.core.llm import vlm
 from agents.core.llm.anthropic import ClaudeBackend
 from agents.core.llm.auth_rotation import AuthProfilePool
 from agents.core.llm.egress import llm_async_client
@@ -150,6 +150,101 @@ def test_selected_claude_text_only_model_is_not_offered(route, monkeypatch):
             "selected_turn": True, "image_digests": [IMAGE_DIGEST],
         })
         assert preview.status_code == 503
+        assert route.requests == []
+    finally:
+        asyncio.run(backend.aclose())
+
+
+def test_catalog_text_only_claude_is_not_offered_an_image(route, monkeypatch):
+    _orch, backend, sid = _selected(monkeypatch)
+
+    async def prepared(*_args):
+        return None
+
+    monkeypatch.setattr(vision_catalog, "prepare_catalog_vision", prepared)
+    monkeypatch.setattr(vision_catalog, "cached_vision_eligibility", lambda _config: False)
+    try:
+        preview = route.client.post("/api/vlm/composer/prepare", json={
+            "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
+            "selected_turn": True, "image_digests": [IMAGE_DIGEST],
+        })
+        assert preview.status_code == 503, preview.text
+        assert route.requests == []
+    finally:
+        asyncio.run(backend.aclose())
+
+
+def test_selected_claude_uses_fetched_catalog_verdict_before_review(route, monkeypatch):
+    _orch, backend, sid = _selected(monkeypatch)
+    calls = []
+
+    async def fetch():
+        calls.append("catalog")
+        return {"anthropic": {MODEL: False}}
+
+    vision_catalog.reset_cache()
+    monkeypatch.setattr(vision_catalog, "_fetch_catalog", fetch)
+    try:
+        preview = route.client.post("/api/vlm/composer/prepare", json={
+            "prompt": "Describe this", "agent": "jarvis", "session_id": sid,
+            "selected_turn": True, "image_digests": [IMAGE_DIGEST],
+        })
+        assert preview.status_code == 503, preview.text
+        assert calls == ["catalog"]
+        assert route.requests == []
+    finally:
+        vision_catalog.reset_cache()
+        asyncio.run(backend.aclose())
+
+
+def test_catalog_change_after_review_refuses_image_before_egress(route, monkeypatch):
+    _orch, backend, sid = _selected(monkeypatch)
+    verdict = {"value": True}
+
+    async def prepared(*_args):
+        return None
+
+    monkeypatch.setattr(vision_catalog, "prepare_catalog_vision", prepared)
+    monkeypatch.setattr(vision_catalog, "cached_vision_eligibility",
+                        lambda _config: verdict["value"])
+    try:
+        status = _preview(route, sid)
+        assert status["selection_source"] == "auto:main"
+        verdict["value"] = False
+        refused = route.client.post("/api/vlm/composer/describe-prepared",
+                                    json=_body(status, sid))
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["reason"] == "vlm_destination_changed"
+        assert route.requests == []
+    finally:
+        asyncio.run(backend.aclose())
+
+
+def test_catalog_change_after_review_consume_refuses_physical_send(route, monkeypatch):
+    from agents.core.llm.vlm import VLMBackend
+
+    _orch, backend, sid = _selected(monkeypatch)
+    verdict = {"value": True}
+
+    async def prepared(*_args):
+        return None
+
+    original = VLMBackend.generate_vision_checked
+
+    async def change_before_request(self, *args, **kwargs):
+        verdict["value"] = False
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(vision_catalog, "prepare_catalog_vision", prepared)
+    monkeypatch.setattr(vision_catalog, "cached_vision_eligibility",
+                        lambda _config: verdict["value"])
+    try:
+        status = _preview(route, sid)
+        monkeypatch.setattr(VLMBackend, "generate_vision_checked", change_before_request)
+        refused = route.client.post("/api/vlm/composer/describe-prepared",
+                                    json=_body(status, sid))
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["reason"] == "vlm_destination_changed"
         assert route.requests == []
     finally:
         asyncio.run(backend.aclose())

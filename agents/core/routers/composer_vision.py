@@ -316,8 +316,10 @@ async def _selected_config(*, prompt: str, agent: str, session_id: str | None,
     main = None
     if env_str("JARVIS_ROLE_VISION_PROVIDER", "").strip().lower() == "auto":
         from agents.core.llm.vision_capability import prepare_local_model_vision
+        from agents.core.llm.vision_catalog import prepare_catalog_vision
 
         await prepare_local_model_vision(turn.backend, turn.model)
+        await prepare_catalog_vision(turn.backend, turn.model, turn.route)
         main = _main_candidate(turn.backend, turn.model, turn.route)
         if main is None and agent in LOCAL_ONLY_AGENTS:
             raise VLMNotConfigured("vlm_local_only_unavailable")
@@ -329,6 +331,7 @@ async def _selected_config(*, prompt: str, agent: str, session_id: str | None,
 
 def _main_candidate(backend, model, route):
     from agents.core.llm.vision_capability import main_vision_eligibility, owner_vision_eligibility
+    from agents.core.llm.vision_catalog import cached_vision_eligibility
     from agents.core.llm.vision_main import selected_main_config
     from agents.core.llm.vlm import VLMNotConfigured
 
@@ -342,7 +345,10 @@ def _main_candidate(backend, model, route):
     if config is None:
         return None
     owner_verdict = owner_vision_eligibility(config)
-    if owner_verdict is False or (owner_verdict is None and runtime_verdict is False):
+    verdict = (owner_verdict if owner_verdict is not None else
+               runtime_verdict if runtime_verdict is not None else
+               cached_vision_eligibility(config))
+    if verdict is False:
         return None
     return config
 
