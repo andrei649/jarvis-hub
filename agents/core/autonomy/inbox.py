@@ -30,6 +30,66 @@ DECISION_ACTIONS = {
 
 _TIER_LABELS = {0: "read-only", 1: "reversibil", 2: "extern", 3: "ireversibil/bani"}
 _OWNER_ONCE_DATA = re.compile(r"\Aaut1:([0-9a-f]{32}):([ar])\Z")
+_CONSENT_DATA = re.compile(r"\Aautc:([0-9a-f]{32}):([sad])\Z")
+
+
+def parse_consent_callback_data(data: object) -> tuple[str, str] | None:
+    """Parse only the reserved reusable-consent callback alphabet."""
+    match = _CONSENT_DATA.fullmatch(data) if type(data) is str else None
+    if match is None:
+        return None
+    return match.group(1), {"s": "session", "a": "always", "d": "deny"}[match.group(2)]
+
+
+def build_consent_card(task, offer, nonce: str) -> dict:
+    """Show one exact current offer; callback data contains no task authority."""
+    from ..security.scanner import SecretScanner
+    from .consent_types import ConsentOffer
+    from .terminal_consent_categories import terminal_consent_descriptions
+
+    if parse_consent_callback_data(f"autc:{nonce}:s") != (nonce, "session"):
+        raise ValueError("invalid consent nonce")
+    t = _as_dict(task)
+    payload = t.get("payload") if type(t.get("payload")) is dict else {}
+    args = payload.get("args") if type(payload.get("args")) is dict else {}
+    if (type(offer) is not ConsentOffer or type(t.get("id")) is not int
+            or t["id"] != offer.task_id or t.get("kind") != "toolrpc.terminal_run"
+            or payload.get("tool") != "terminal_run"
+            or not offer.member_ids or t["id"] not in offer.member_ids
+            or not offer.categories):
+        raise ValueError("consent card requires a current terminal offer")
+    target, command = args.get("target"), args.get("command")
+    if (type(target) is not str or not target or len(target) > 96
+            or type(command) is not str or not command or len(command) > 4000):
+        raise ValueError("consent terminal request is malformed or oversized")
+    try:
+        scanner = SecretScanner()
+        redacted_target = scanner.redact(target)
+        redacted_command = scanner.redact(command)
+        if (type(redacted_target) is not str or type(redacted_command) is not str
+                or len(redacted_target) > 96 or len(redacted_command) > 24_000):
+            raise ValueError("consent redaction exceeded delivery budget")
+        descriptions = terminal_consent_descriptions()
+        categories = tuple(descriptions.get(item.key, item.key) for item in offer.categories)
+        text = "\n".join((
+            f"⚠️ Reusable terminal consent for request #{t['id']}",
+            "Choose a scope for the reviewed warning categories.",
+            "Session: this session and matching reviewed target. Always: matching future sessions where the category permits it.",
+            "Session-only categories remain session-only. Deny runs nothing.",
+            "Warnings: " + "; ".join(categories),
+            "Target: " + redacted_target,
+            "Command: " + redacted_command,
+            f"Pending identical requests in this offer: {len(offer.member_ids)}",
+        ))
+        if len(text.encode("utf-16-le")) // 2 > 24_576:
+            raise ValueError("consent card exceeds delivery budget")
+    except (UnicodeError, KeyError, AttributeError) as exc:
+        raise ValueError("consent card cannot be rendered") from exc
+    return {"text": text, "reply_markup": {"inline_keyboard": [[
+        {"text": "✅ This session", "callback_data": f"autc:{nonce}:s"},
+        {"text": "✅ Always", "callback_data": f"autc:{nonce}:a"},
+        {"text": "❌ Deny", "callback_data": f"autc:{nonce}:d"},
+    ]]}}
 
 
 def parse_owner_once_callback_data(data: object) -> tuple[str, str] | None:

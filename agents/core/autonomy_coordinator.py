@@ -202,12 +202,17 @@ class AutonomyCoordinator:
         from .channels.outbound import _owner_chat_id
 
         self._wire_owner_once_prompts()
+        self._wire_consent_prompts()
         owner = _owner_chat_id(self._orch, configured_owner=self._owner_settings().get("autonomy.owner_chat_id"))
         tg = self._orch.channels.get("telegram")
         if tg and owner and hasattr(tg, "send_card"):
 
             async def base(task):
                 queue = getattr(self._orch, 'autonomy_queue', None)
+                prompts = getattr(self._orch.autonomy, '_consent_prompts', None)
+                offer = getattr(queue, 'pending_consent_offer', None)
+                if prompts is not None and callable(offer) and offer(task.id) is not None:
+                    return await prompts.notify(task, tg, int(owner))
                 pending_group = getattr(queue, 'pending_group', None)
                 group = pending_group(task.id) if callable(pending_group) else None
                 card = build_decision_card(task, group=group) if group is not None else build_decision_card(task)
@@ -253,6 +258,31 @@ class AutonomyCoordinator:
         # Retain stable hooks/registrations across ordinary runtime rewiring.
         previous.install(channel)
         worker._owner_once_prompts = previous
+
+    def _wire_consent_prompts(self):
+        """Retain reusable reply registrations only for the current transport."""
+        from .autonomy.consent_prompts import ConsentPrompts
+        from .channels.telegram import TelegramChannel
+
+        worker = getattr(self._orch, 'autonomy', None)
+        channel = (getattr(self._orch, 'channels', {}) or {}).get('telegram')
+        previous = getattr(self, '_consent_prompts', None)
+        old_channel = getattr(self, '_consent_channel', None)
+        if previous is not None and (previous.worker is not worker
+                or previous.queue is not getattr(worker, 'queue', None)
+                or old_channel is not channel):
+            previous.stop(getattr(old_channel, '_owner_once_generation', None))
+            if getattr(previous.worker, '_consent_prompts', None) is previous:
+                previous.worker._consent_prompts = None
+            self._consent_prompts = previous = None
+        if worker is None or not isinstance(channel, TelegramChannel):
+            return
+        if previous is None:
+            previous = ConsentPrompts(self)
+            self._consent_prompts = previous
+            self._consent_channel = channel
+        previous.install(channel)
+        worker._consent_prompts = previous
 
     def _escalation_router(self):
         """Build a live ``EscalationRouter`` over the current channels + allowlist.
@@ -987,6 +1017,7 @@ class AutonomyCoordinator:
             if not callable(getattr(worker, 'govern_enqueue', None)):
                 raise ToolRPCValidationError('terminal_intake_unavailable')
             self._wire_owner_once_prompts()
+            self._wire_consent_prompts()
             title = "Tool 'terminal_run' via RPC"
             payload = {'tool': 'terminal_run', 'target': 'terminal_run', 'args': dict(args)}
             # Production worker intake owns the bridge and creates one exact
@@ -1016,6 +1047,12 @@ class AutonomyCoordinator:
                     task_id, check=lambda: (server._tools.get('terminal_run') is spec
                                               and getattr(self._orch, 'autonomy', None) is worker),
                 )
+            consent_prompts = getattr(worker, '_consent_prompts', None)
+            if consent_prompts is not None:
+                consent_prompts.register_invocation(
+                    task_id, check=lambda: (server._tools.get('terminal_run') is spec
+                                              and getattr(self._orch, 'autonomy', None) is worker),
+                )
             from . import project_context
 
             project_context.note_task(task_id)
@@ -1036,6 +1073,9 @@ class AutonomyCoordinator:
                 prompts = getattr(worker, '_owner_once_prompts', None)
                 if prompts is not None:
                     prompts.release_invocation(task_id)
+                consent_prompts = getattr(worker, '_consent_prompts', None)
+                if consent_prompts is not None:
+                    consent_prompts.release_invocation(task_id)
                 worker._settle_terminal_denial(task_id)
 
         server.register_tool(

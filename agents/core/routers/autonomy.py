@@ -188,10 +188,11 @@ def _task_judge_status(orch) -> dict:
 def _consent_projection(queue, task) -> dict:
     """Expose reviewed choices without private producer or owner evidence."""
     from agents.core.autonomy.terminal_consent_categories import terminal_consent_descriptions
+    from agents.core.autonomy.consent_types import ConsentOffer
 
     lookup = getattr(queue, 'pending_consent_offer', None)
     offer = lookup(task.id) if callable(lookup) else None
-    if offer is None:
+    if type(offer) is not ConsentOffer:
         return {}
     descriptions = terminal_consent_descriptions()
     if any(category.key not in descriptions for category in offer.categories):
@@ -539,7 +540,8 @@ async def autonomy_approvals():
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     pending = orch.autonomy_queue.pending_decisions()
-    annotated = [_approval_projection(t, _task_judge(orch)) for t in pending]
+    annotated = [{**_approval_projection(t, _task_judge(orch)),
+                  **_consent_projection(orch.autonomy_queue, t)} for t in pending]
     reversible = [t for t in annotated if t["reversible"]]
     irreversible = [t for t in annotated if not t["reversible"]]
     return nocache_json({

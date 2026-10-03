@@ -180,6 +180,12 @@ def build_parser() -> argparse.ArgumentParser:
         decide.add_argument("--payload", help="JSON object attached to the decision")
         decide.add_argument("--reason", help="optional human decision reason (at most 280 characters)")
         decide.add_argument("--json", action="store_true")
+    consent = approvals_verbs.add_parser("consent", help="decide an exact reusable terminal offer (owner)")
+    consent.add_argument("task_id", type=int, metavar="TASK_ID")
+    consent.add_argument("--choice", required=True, choices=("session", "always", "deny"))
+    consent.add_argument("--revision", required=True, help="the exact 64-character offer revision from approvals list")
+    consent.add_argument("--reason", help="optional human decision reason (at most 280 characters)")
+    consent.add_argument("--json", action="store_true")
 
     kernel = verbs.add_parser("kernel", help="the Action Kernel")
     kernel_verbs = kernel.add_subparsers(dest="action", required=True, metavar="action")
@@ -1113,10 +1119,29 @@ def render_inspector(payload: Mapping[str, Any], *, only: str | None = None) -> 
     return lines
 
 
+def _valid_consent_offer(offer: Any) -> bool:
+    """Only the bounded HUD offer shape earns reusable CLI guidance."""
+    if not isinstance(offer, dict):
+        return False
+    revision = offer.get("revision")
+    count = offer.get("count")
+    categories = offer.get("categories")
+    return (
+        isinstance(revision, str) and re.fullmatch(r"[a-f0-9]{64}", revision) is not None
+        and type(count) is int and 1 <= count <= 64
+        and offer.get("choices") == ["session", "always", "deny"]
+        and isinstance(categories, list) and 1 <= len(categories) <= 64
+        and all(isinstance(category, dict)
+                and isinstance(category.get("description"), str)
+                and 1 <= len(category["description"]) <= 500
+                and type(category.get("permanent")) is bool
+                for category in categories)
+    )
+
+
 def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
-    client = ctx.client()
     if ns.action == "list":
-        reply = client.get("/autonomy/approvals")
+        reply = ctx.client().get("/autonomy/approvals")
         if ns.json:
             ctx.dump(reply)
             return EXIT_OK
@@ -1130,7 +1155,48 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
                 f"#{task.get('id', '?')}  tier {task.get('risk_tier', '?')}  {flag:12s}  "
                 f"{task.get('kind', '?')}  — {task.get('title', '')}"
             )
+            offer = task.get("consent_offer")
+            task_id = task.get("id")
+            if _valid_consent_offer(offer) and type(task_id) is int and task_id > 0:
+                count = offer["count"]
+                ctx.say(f"  reusable offer: {count} matching request{'s' if count != 1 else ''}; "
+                        "choices session|always|deny")
+                for category in offer["categories"]:
+                    scope = "" if category["permanent"] else " (session only)"
+                    ctx.say(f"    {category['description']}{scope}")
+                ctx.say(f"  nerva approvals consent {task_id} --choice session "
+                        f"--revision {offer['revision']}")
         ctx.say(f"{len(pending)} pending — `nerva approvals accept|reject|defer <id>`")
+        return EXIT_OK
+    if ns.action == "consent":
+        if ns.task_id <= 0:
+            ctx.err.write("task id must be positive\n")
+            return EXIT_USAGE
+        if re.fullmatch(r"[a-f0-9]{64}", ns.revision) is None:
+            ctx.err.write("revision must be 64 lowercase hex characters\n")
+            return EXIT_USAGE
+        from agents.core.autonomy.decision_reasons import normalize_reason
+
+        try:
+            reason = normalize_reason(ns.reason)
+        except ValueError as exc:
+            ctx.err.write(f"{exc}\n")
+            return EXIT_USAGE
+        body: dict[str, Any] = {"choice": ns.choice, "revision": ns.revision}
+        if reason is not None:
+            body["reason"] = reason
+        reply = ctx.client().post(f"/autonomy/tasks/{ns.task_id}/consent", body)
+        tasks = reply.get("tasks") if isinstance(reply, dict) else None
+        if (not isinstance(reply, dict) or reply.get("ok") is not True
+                or not isinstance(tasks, list) or not tasks
+                or not all(isinstance(task, dict) and task for task in tasks)):
+            ctx.err.write("consent was not confirmed by the hub\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(reply)
+        else:
+            ctx.say(f"#{ns.task_id} consent {ns.choice} → {len(tasks)} matching "
+                    f"request{'s' if len(tasks) != 1 else ''} decided")
         return EXIT_OK
     try:
         payload = _payload(ns.payload)
@@ -1149,7 +1215,7 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
         body["reason"] = reason
     if payload:
         body["payload"] = payload
-    reply = client.post(f"/autonomy/tasks/{ns.task_id}/decision", body)
+    reply = ctx.client().post(f"/autonomy/tasks/{ns.task_id}/decision", body)
     if ns.json:
         ctx.dump(reply)
         return EXIT_OK

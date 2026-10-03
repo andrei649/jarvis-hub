@@ -20,6 +20,87 @@ logger = logging.getLogger(__name__)
 
 async def review_terminal_task(worker, *, actor: str, args: dict, task_id: int,
                                registration_is_live) -> dict | None:
+    """Join Smart review first, then a real originating owner's consent reply."""
+    reviewed = await _review_smart_terminal_task(
+        worker, actor=actor, args=args, task_id=task_id,
+        registration_is_live=registration_is_live,
+    )
+    if reviewed is not None:
+        return reviewed
+    from ..owner_once_context import current_owner_reply_source
+
+    source, turn = current_owner_reply_source(), current_approval_turn()
+    if source is None or turn is None:
+        return None
+    queue = worker.queue
+    original = queue.get(task_id)
+    if (original is None or original.agent != actor or original.kind != 'toolrpc.terminal_run'
+            or original.payload.get('args') != args):
+        return None
+    fields = ('created_at', 'agent', 'kind', 'title', 'payload', 'risk_tier',
+              'autonomy_level', 'origin', 'kernel_intake_id')
+    identity = tuple(copy.deepcopy(getattr(original, field)) for field in fields)
+
+    def current():
+        # This predicate also runs from the reply task inside a queue transaction.
+        return (registration_is_live() is True and source.live() and turn.live()
+                and worker.queue is queue)
+
+    def live(task):
+        return (current() and task is not None
+                and tuple(getattr(task, field) for field in fields) == identity)
+
+    def answer(reason):
+        return {'ok': False, 'reason': reason, 'tool': 'terminal_run', 'task_id': task_id}
+
+    if not live(original):
+        return answer('terminal_review_changed')
+    task = original
+    if task.status == 'blocked':
+        prompts = getattr(worker, '_consent_prompts', None)
+        if (prompts is None or not prompts.reply_available(task_id)
+                or queue.pending_consent_offer(task_id) is None):
+            return None
+        result = await prompts.request(task_id, check=lambda: current()
+                                       and getattr(worker, '_consent_prompts', None) is prompts)
+        if result is None:
+            return None
+        task = queue.get(task_id)
+        if not live(task):
+            return answer('terminal_review_changed')
+        if task.status == 'rejected':
+            return answer('owner_denied')
+    if not queue.consent_task_marker(task_id):
+        return None
+    if task.status == 'approved':
+        try:
+            await worker.tick(limit=1, task_id=task_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning('consent terminal execution unavailable', exc_info=True)
+            return answer('terminal_execution_unavailable')
+        task = queue.get(task_id)
+    deadline = time.monotonic() + args.get('timeout', 30)
+    while live(task) and task.status == 'running' and time.monotonic() < deadline:
+        await asyncio.sleep(0.01)
+        task = queue.get(task_id)
+    if not live(task):
+        return answer('terminal_review_changed')
+    if task.status == 'done':
+        execution = task.result
+        if (type(execution) is dict and execution.get('status') == 'ok'
+                and type(execution.get('result')) is dict and execution['result'].get('ok') is True
+                and queue.verify_consent_terminal_result(task_id)):
+            return {'ok': True, 'tool': 'terminal_run', 'task_id': task_id,
+                    'result': execution['result']}
+        return answer('terminal_execution_unverified')
+    return answer({'approved': 'terminal_execution_held', 'running': 'terminal_execution_pending',
+                   'failed': 'terminal_execution_failed'}.get(task.status, 'terminal_review_changed'))
+
+
+async def _review_smart_terminal_task(worker, *, actor: str, args: dict, task_id: int,
+                                     registration_is_live) -> dict | None:
     """Join an existing exact review and read durable state, never infer authority."""
     adapter = getattr(worker, 'approval_judge', None)
     if type(adapter) is not TaskApprovalJudge:

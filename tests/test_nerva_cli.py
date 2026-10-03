@@ -95,7 +95,7 @@ def test_the_command_tree_is_discoverable_and_complete():
     # H022: the audit is the only security act so far; it reads and reports, never mutates.
     assert tree["security"] == ["audit"]
     assert tree["config"] == ["check", "get", "list", "set"]
-    assert tree["approvals"] == ["accept", "defer", "edit", "list", "reject"]
+    assert tree["approvals"] == ["accept", "consent", "defer", "edit", "list", "reject"]
     assert tree["kernel"] == ["explain"]
     assert tree["estop"] == ["engage", "resume", "status"]
     # H350: the linter reads files and reports; it never writes a skill.

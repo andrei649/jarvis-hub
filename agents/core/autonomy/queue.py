@@ -3081,16 +3081,21 @@ class TaskQueue:
     def _consent_proof_insert_locked(self, row: sqlite3.Row, source: dict,
                                      descriptor: ConsentDescriptor, witness: dict,
                                      *, marker: str, decision_id: str,
-                                     human_id: str | None) -> bool:
+                                     human_id: str | None,
+                                     decider_principal: str | None = None) -> bool:
         task = _row_to_task(row)
-        payload = canonical_json({
-            'purpose': 'h487-consent-task-proof', 'version': 1,
+        proof = {
+            'purpose': 'h487-consent-task-proof',
+            'version': 2 if decider_principal is not None else 1,
             'namespace': self._group_namespace, 'task_id': task.id,
             'birth': task.created_at, 'source_sha256': canonical_digest(source),
             'intent_sha256': self._chat_intent_locked(task),
             'descriptor': self._consent_descriptor_data(descriptor), 'witness': witness,
             'marker': marker, 'decision_id': decision_id, 'human_id': human_id,
-        })
+        }
+        if decider_principal is not None:
+            proof['decider_principal'] = decider_principal
+        payload = canonical_json(proof)
         signature = self._mediation_signer.sign(payload)
         if signature is None:
             return False
@@ -3106,11 +3111,19 @@ class TaskQueue:
             if (type(actor) is not OwnerConsentActor or actor.label not in {'admin', 'owner'}
                     or actor.decided_by not in {'admin', 'telegram'}
                     or (actor.label, actor.decided_by) not in {
-                        ('admin', 'admin'), ('owner', 'telegram')}
-                    or actor.live() is not True):
+                        ('admin', 'admin'), ('owner', 'telegram')}):
                 return False
-            return (actor.decided_by != 'telegram'
-                    or actor.principal_key == descriptor.context.principal)
+            if actor.decided_by == 'admin':
+                return (actor.authority is None and actor.principal_key is None
+                        and actor.live() is True)
+            from .consent_authority import telegram_actor_current, valid_telegram_principal
+            if actor.authority is not None:
+                return telegram_actor_current(actor)
+            # Existing same-origin server integrations remain valid, but a
+            # forged web principal cannot impersonate a Telegram callback.
+            return (valid_telegram_principal(actor.principal_key)
+                    and actor.principal_key == descriptor.context.principal
+                    and actor.live() is True)
         except Exception:
             return False
 
@@ -3132,6 +3145,8 @@ class TaskQueue:
                 if not self._consent_actor_current(actor, descriptor):
                     self._conn.rollback()
                     return None
+                decider_principal = (actor.principal_key if actor.authority is not None
+                                     else None)
                 normalized = normalize_reason(reason)
                 now = _now()
                 decision_id = uuid.uuid4().hex
@@ -3139,6 +3154,7 @@ class TaskQueue:
                     if not self._consent_ledger.grant(
                         descriptor.context, descriptor.categories, choice=choice,
                         decision_id=decision_id, decided_by=actor.label,
+                        decider_principal=decider_principal,
                     ):
                         self._conn.rollback()
                         return None
@@ -3157,10 +3173,13 @@ class TaskQueue:
                     human = {'id': uuid.uuid4().hex, 'action': choice,
                              'reason': normalized, 'by': actor.decided_by,
                              'at': now, 'first_at': now}
+                    if decider_principal is not None:
+                        human['principal_key'] = decider_principal
                     marker = f'consent-{choice}'
                     if choice != 'deny' and not self._consent_proof_insert_locked(
                         row, source, desc, witness, marker=marker,
                         decision_id=decision_id, human_id=human['id'],
+                        decider_principal=decider_principal,
                     ):
                         self._conn.rollback()
                         return None
@@ -3244,18 +3263,22 @@ class TaskQueue:
         if not self._mediation_signer.verify(payload, bound['signature']):
             return None
         proof = json.loads(payload)
+        fields = {'purpose', 'version', 'namespace', 'task_id', 'birth',
+                  'source_sha256', 'intent_sha256', 'descriptor',
+                  'witness', 'marker', 'decision_id', 'human_id'}
         if (type(proof) is not dict or canonical_json(proof) != payload
-                or set(proof) != {'purpose', 'version', 'namespace', 'task_id', 'birth',
-                                  'source_sha256', 'intent_sha256', 'descriptor',
-                                  'witness', 'marker', 'decision_id', 'human_id'}
-                or proof['purpose'] != 'h487-consent-task-proof' or proof['version'] != 1
+                or type(proof.get('version')) is not int
+                or proof['version'] not in {1, 2}
+                or set(proof) != (fields | ({'decider_principal'} if proof['version'] == 2 else set()))
+                or proof['purpose'] != 'h487-consent-task-proof'
                 or proof['namespace'] != self._group_namespace
                 or proof['task_id'] != row['id'] or proof['birth'] != row['created_at']
                 or proof['marker'] != row['decision']
                 or proof['intent_sha256'] != self._chat_intent_locked(_row_to_task(row))):
             return None
         if proof['marker'].startswith('auto-consent-'):
-            if row['decided_by'] != 'consent' or row['human_decision'] is not None or proof['human_id'] is not None:
+            if (proof['version'] != 1 or row['decided_by'] != 'consent'
+                    or row['human_decision'] is not None or proof['human_id'] is not None):
                 return None
         elif proof['marker'] in {'consent-session', 'consent-always'}:
             human = json.loads(row['human_decision']) if row['human_decision'] else None
@@ -3263,6 +3286,14 @@ class TaskQueue:
                     or human.get('id') != proof['human_id']
                     or human.get('action') != proof['marker'].removeprefix('consent-')
                     or human.get('by') != row['decided_by']):
+                return None
+            if proof['version'] == 2:
+                from .consent_authority import valid_telegram_principal
+                if (row['decided_by'] != 'telegram'
+                        or not valid_telegram_principal(proof['decider_principal'])
+                        or human.get('principal_key') != proof['decider_principal']):
+                    return None
+            elif 'principal_key' in human:
                 return None
         else:
             return None
@@ -3277,6 +3308,12 @@ class TaskQueue:
         if not self._consent_ledger.witness_current(
             descriptor.context, descriptor.categories, proof['witness'],
         ):
+            return None
+        if (proof['version'] == 2 and not self._consent_ledger.attributed_decision_current(
+                descriptor.context, descriptor.categories,
+                decision_id=proof['decision_id'],
+                decider_principal=proof['decider_principal'],
+                choice=proof['marker'].removeprefix('consent-'))):
             return None
         return bound, proof
 
@@ -3448,6 +3485,63 @@ class TaskQueue:
             except Exception:
                 self._conn.rollback()
                 return False
+
+    def verify_consent_terminal_result(self, task_id: int) -> bool:
+        """Read the completed durable proof after the worker releases its claim.
+
+        This attests to the queue's one-use dispatch and DONE transition; the
+        caller separately checks the positive physical result it expected.
+        """
+        if type(task_id) is not int or task_id <= 0:
+            return False
+        with self._lock:
+            if self._conn.in_transaction:
+                return False
+            started = False
+            try:
+                self._conn.execute('BEGIN')
+                started = True
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                if (row is None or row['status'] != 'done' or row['attempts'] != 1
+                        or row['kind'] != 'toolrpc.terminal_run'):
+                    return False
+                found = self._consent_proof_locked(row)
+                if found is None:
+                    return False
+                bound, _proof = found
+                claim_payload = bound['claim_payload']
+                if (bound['state'] != 'dispatching'
+                        or not isinstance(claim_payload, bytes)
+                        or not self._mediation_signer.verify(
+                            claim_payload, bound['claim_signature'])):
+                    return False
+                claim = json.loads(claim_payload)
+                if (type(claim) is not dict or canonical_json(claim) != claim_payload
+                        or set(claim) != {'purpose', 'version', 'task_id',
+                                          'execution_id', 'nonce', 'proof_sha256'}
+                        or claim['purpose'] != 'h487-consent-claim'
+                        or type(claim['version']) is not int or claim['version'] != 1
+                        or claim['task_id'] != task_id
+                        or type(claim['execution_id']) is not str
+                        or not 1 <= len(claim['execution_id']) <= 128
+                        or type(claim['nonce']) is not str
+                        or uuid.UUID(hex=claim['nonce']).hex != claim['nonce']
+                        or uuid.UUID(hex=claim['nonce']).version != 4
+                        or claim['proof_sha256'] != hashlib.sha256(bound['payload']).hexdigest()):
+                    return False
+                if self._consent_b7_locked(
+                    row, execution_id=(claim['execution_id']
+                                       if self.mediation_mode == 'enforce' else None),
+                ) is None:
+                    return False
+                result = json.loads(row['result']) if row['result'] else None
+                return (type(result) is dict and result.get('status') not in
+                        {'refused', 'failed', 'noop'})
+            except Exception:
+                return False
+            finally:
+                if started:
+                    self._conn.rollback()
 
     def approval_snapshot_digest(self, task: Task) -> str | None:
         """Bind an opinion to action bytes and a separate advisory edit revision."""

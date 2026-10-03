@@ -29,6 +29,7 @@ class OwnerConsentActor:
     decided_by: Literal["admin", "telegram"]
     live: Callable[[], bool] = field(repr=False, compare=False)
     principal_key: str | None = None
+    authority: object | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)

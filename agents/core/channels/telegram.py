@@ -261,10 +261,14 @@ class TelegramChannel(ChannelAdapter):
         self._poll_task = None
         self._owner_once_generation: str | None = None
         self._owner_once_fast: dict[str, asyncio.Task] = {}
+        self._consent_fast: dict[str, asyncio.Task] = {}
         # Registration-owned hooks; the channel does not decide owner identity.
         self.owner_once_pending: Optional[Callable] = None
         self.on_owner_once_callback: Optional[Callable] = None
         self.on_owner_once_stop: Optional[Callable] = None
+        self.consent_pending: Optional[Callable] = None
+        self.on_consent_callback: Optional[Callable] = None
+        self.on_consent_stop: Optional[Callable] = None
         # H677: while the poll loop runs, each chat's turns go to that chat's lane, so
         # one slow answer never holds another chat's messages.
         self._lanes = None
@@ -356,13 +360,22 @@ class TelegramChannel(ChannelAdapter):
                 stop_hook(generation)
             except Exception:
                 logger.warning("Owner-once stop hook failed", exc_info=True)
+        consent_stop = getattr(self, "on_consent_stop", None)
+        if generation is not None and consent_stop is not None:
+            try:
+                consent_stop(generation)
+            except Exception:
+                logger.warning("Reusable-consent stop hook failed", exc_info=True)
         fast = tuple(getattr(self, "_owner_once_fast", {}).values())
+        fast += tuple(getattr(self, "_consent_fast", {}).values())
         for task in fast:
             task.cancel()
         if fast:
             await asyncio.wait(fast, timeout=LANE_DRAIN_BUDGET)
         if hasattr(self, "_owner_once_fast"):
             self._owner_once_fast.clear()
+        if hasattr(self, "_consent_fast"):
+            self._consent_fast.clear()
         if self._poll_task:
             self._poll_task.cancel()
             # H117: the cancel lands at one of the loop's awaits, so the hand-over at its
@@ -578,6 +591,10 @@ class TelegramChannel(ChannelAdapter):
                 return None
         return message_id
 
+    async def send_consent_card(self, chat_id: int, card: dict) -> int | None:
+        """Return the verified final Bot API message ID for a reusable card."""
+        return await self.send_owner_once_card(chat_id, card)
+
     async def request_decision_reason(self, task_id: int, *, chat_id: int) -> int:
         """Offer an optional reply bound to one rejected decision, not a chat turn."""
         posting = self._reason_prompts_posting
@@ -669,6 +686,38 @@ class TelegramChannel(ChannelAdapter):
         # Decision-inbox button taps arrive as callback_query updates.
         cb = up.get("callback_query")
         if cb:
+            from ..autonomy.inbox import parse_consent_callback_data
+
+            data = cb.get("data")
+            parsed_consent = parse_consent_callback_data(data)
+            if parsed_consent is not None or (type(data) is str and data.startswith("autc:")):
+                if parsed_consent is None:
+                    await self._answer_callback(cb.get("id", ""), "Not applied.")
+                    return
+                nonce, choice = parsed_consent
+                generation = self._owner_once_generation
+                callback_hook = self.on_consent_callback
+                pending_hook = self.consent_pending
+                reserved = False
+                if (self._owner_once_live(generation) and callback_hook is not None
+                        and pending_hook is not None and nonce not in self._consent_fast
+                        and len(self._consent_fast) < 32):
+                    try:
+                        reserved = pending_hook(cb) is True
+                    except Exception:
+                        reserved = False
+                if reserved:
+                    task = asyncio.create_task(self._handle_consent_callback(
+                        cb, nonce, choice, generation, callback_hook, pending_hook,
+                    ))
+                    self._consent_fast[nonce] = task
+                    task.add_done_callback(
+                        lambda done, key=nonce: self._consent_fast.get(key) is done
+                        and self._consent_fast.pop(key, None)
+                    )
+                else:
+                    await self._answer_callback(cb.get("id", ""), "Not applied.")
+                return
             await self._flush_all_turns()      # what was said before the tap goes first
             chat = ((cb.get("message") or {}).get("chat") or {}).get("id")
             from ..autonomy.inbox import parse_owner_once_callback_data
@@ -1010,6 +1059,35 @@ class TelegramChannel(ChannelAdapter):
             )
         except Exception:
             logger.warning("Owner-once callback dispatch failed")
+            await self._answer_callback(cb.get("id", ""), "Not applied.")
+
+    async def _handle_consent_callback(
+        self, cb: dict, nonce: str, choice: str, generation: str,
+        callback_hook: Callable, pending_hook: Callable,
+    ) -> None:
+        """Dispatch a registered reusable choice outside its occupied chat lane."""
+        uid = (cb.get("from") or {}).get("id")
+        message = cb.get("message") or {}
+        chat_id = (message.get("chat") or {}).get("id")
+        try:
+            if (not self._owner_once_live(generation)
+                    or self.on_consent_callback is not callback_hook
+                    or self.consent_pending is not pending_hook
+                    or pending_hook(cb) is not True):
+                await self._answer_callback(cb.get("id", ""), "Not applied.")
+                return
+            result = await callback_hook(
+                nonce, choice, chat_id=chat_id, user_id=uid,
+                message_id=message.get("message_id"),
+            )
+            await self._answer_callback(
+                cb.get("id", ""),
+                (f"OK: {choice}" if type(result) is str and result.strip()
+                 and self._owner_once_live(generation)
+                 and self.on_consent_callback is callback_hook else "Not applied."),
+            )
+        except Exception:
+            logger.warning("Reusable-consent callback dispatch failed")
             await self._answer_callback(cb.get("id", ""), "Not applied.")
 
 

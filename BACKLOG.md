@@ -14,6 +14,23 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-10-04 H487 Telegram / CLI continuation: actual owner callbacks now choose
+  session / always / deny on verified native cards, including web-origin requests.
+  Signed decider attribution is distinct from the captured request grant scope.
+  Reserved callbacks use a bounded independent lane, refusing stale / malformed /
+  revoked / expired cards; refreshed identical followers settle their own receipts.
+  Real model tool-runtime child tasks join the owner reply without granting sibling
+  tasks authority. Native `nerva approvals consent` requires the explicit current
+  revision and uses the existing authenticated route. Focused Telegram union190,
+  CLI135 and API44 cases pass; these counts overlap. Full backend collection is
+  now22,327. Integrated regressions pass5,957 cases with13 skips (5,970 total);
+  the31 previously-current collateral claims were source-reviewed without upgrades.
+  The corrected frozen full backend run passes22,292 cases with34 skips and
+  one existing expected failure (22,327 total), zero new failures or errors.
+  H487 remains partial for remaining accepted producers, mobile/deadline controls
+  and live acceptance; no new equivalent credit. Local source only, no publication.
+  See `docs/hermes/h487-telegram-consent-plan-2026-10-04.md`.
+
 - 2026-10-04 H487 connected terminal continuation: authenticated HUD session /
   always / deny choices now bind exact signed source, current credentials,
   category witnesses and pending followers (including real QA4 off-mode intake).
@@ -27,7 +44,8 @@
   the full run had six collateral failures (API sweep, auth snapshot and queue
   test doubles), corrected with 52 focused passes; a full rerun remains required.
   H487 stays partial:
-  Telegram reusable callbacks and remaining accepted producers are not delivered.
+  At that terminal checkpoint, Telegram reusable callbacks and remaining accepted
+  producers were not delivered; the newer continuation is recorded above.
   Shared changed pins require claim-specific review before restoring counts;
   no new equivalent credit. See `docs/hermes/h487-owner-consent-runtime-plan-2026-10-03.md`.
 

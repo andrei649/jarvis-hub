@@ -18,6 +18,7 @@ from dataclasses import asdict, dataclass
 from .mediation import DetachedHMACSigner, MediationHead, MonotonicHeadAnchor
 
 _VERSION = 1
+_ATTRIBUTED_VERSION = 2
 _NAMESPACE = "h487.reusable_consent"
 _GRANT_PURPOSE = "owner-category-grant"
 _DECISION_PURPOSE = "owner-consent-decision"
@@ -83,6 +84,27 @@ def _identity(context: ConsentContext, scope: str) -> dict[str, str]:
 
 def _identity_key(identity: dict[str, str]) -> str:
     return hashlib.sha256(_canonical(identity)).hexdigest()
+
+
+def _record_version(record: object, purpose: str) -> int | None:
+    """Recognize only the two reviewed signed payload shapes."""
+    if (type(record) is not dict or record.get("purpose") != purpose
+            or record.get("namespace") != _NAMESPACE):
+        return None
+    version = record.get("version")
+    if type(version) is not int or version not in {_VERSION, _ATTRIBUTED_VERSION}:
+        return None
+    fields = ({"purpose", "namespace", "version", "context", "categories", "choice",
+               "decision_id", "decided_by", "state"} if purpose == _DECISION_PURPOSE else
+              {"purpose", "namespace", "version", "identity", "category", "scope",
+               "choice", "decision_id", "decided_by"})
+    if version == _ATTRIBUTED_VERSION:
+        fields.add("decider_principal")
+        from .consent_authority import valid_telegram_principal
+        if (record.get("decided_by") != "owner"
+                or not valid_telegram_principal(record.get("decider_principal"))):
+            return None
+    return version if set(record) == fields else None
 
 
 class ConsentLedger:
@@ -245,6 +267,7 @@ class ConsentLedger:
         choice: str,
         decision_id: str,
         decided_by: str,
+        decider_principal: str | None = None,
     ) -> bool:
         """Record one owner decision atomically; this never authorizes execution."""
         selected = self._requested(categories)
@@ -257,15 +280,24 @@ class ConsentLedger:
             or _DECISION_ID.fullmatch(decision_id) is None
             or not isinstance(decided_by, str)
             or decided_by not in _HUMAN_ORIGINS
+            or (decider_principal is not None and (
+                decided_by != "owner" or not _valid_text(decider_principal)))
             or not isinstance(self._signer, DetachedHMACSigner)
         ):
             return False
+        if decider_principal is not None:
+            from .consent_authority import valid_telegram_principal
+            if not valid_telegram_principal(decider_principal):
+                return False
+        record_version = _ATTRIBUTED_VERSION if decider_principal is not None else _VERSION
         decision = {
-            "purpose": _DECISION_PURPOSE, "namespace": _NAMESPACE, "version": _VERSION,
+            "purpose": _DECISION_PURPOSE, "namespace": _NAMESPACE, "version": record_version,
             "context": asdict(context), "categories": [asdict(item) for item in selected],
             "choice": choice, "decision_id": decision_id, "decided_by": decided_by,
             "state": "active",
         }
+        if decider_principal is not None:
+            decision["decider_principal"] = decider_principal
         decision_payload = _canonical(decision)
         decision_tag = self._signer.sign(decision_payload)
         if decision_tag is None:
@@ -275,9 +307,11 @@ class ConsentLedger:
             scope = choice if category.permanent else "session"
             identity = _identity(context, scope)
             payload = _canonical({
-                "purpose": _GRANT_PURPOSE, "namespace": _NAMESPACE, "version": _VERSION,
+                "purpose": _GRANT_PURPOSE, "namespace": _NAMESPACE, "version": record_version,
                 "identity": identity, "category": asdict(category), "scope": scope,
                 "choice": choice, "decision_id": decision_id, "decided_by": decided_by,
+                **({"decider_principal": decider_principal}
+                   if decider_principal is not None else {}),
             })
             tag = self._signer.sign(payload)
             if tag is None:
@@ -349,7 +383,7 @@ class ConsentLedger:
                         or _canonical(record) != payload
                         or record.get("purpose") != _GRANT_PURPOSE
                         or record.get("namespace") != _NAMESPACE
-                        or record.get("version") != _VERSION
+                        or _record_version(record, _GRANT_PURPOSE) is None
                         or record.get("identity") != identity
                         or record.get("category") != asdict(category)
                         or record.get("scope") != scope
@@ -374,7 +408,10 @@ class ConsentLedger:
                         or _canonical(decision) != decision_payload
                         or decision.get("purpose") != _DECISION_PURPOSE
                         or decision.get("namespace") != _NAMESPACE
-                        or decision.get("version") != _VERSION
+                        or _record_version(decision, _DECISION_PURPOSE) is None
+                        or decision["version"] != record["version"]
+                        or (decision.get("decider_principal")
+                            != record.get("decider_principal"))
                         or decision.get("decision_id") != decision_id
                         or decision.get("state") != "active"
                         or decision.get("choice") != record["choice"]
@@ -451,6 +488,35 @@ class ConsentLedger:
         except (sqlite3.Error, ValueError, TypeError):
             return False
 
+    def attributed_decision_current(self, context: ConsentContext,
+                                    categories: Iterable[ConsentCategory], *,
+                                    decision_id: str, decider_principal: str,
+                                    choice: str) -> bool:
+        """Bind a v2 task proof to the exact signed human decision."""
+        selected = self._requested(categories)
+        if (selected is None or not _valid_context(context)
+                or not isinstance(self._signer, DetachedHMACSigner)):
+            return False
+        try:
+            row = self._conn.execute(
+                "SELECT payload, signature FROM h487_consent_decisions WHERE decision_id=?",
+                (decision_id,),
+            ).fetchone()
+            if row is None or not isinstance(row[0], bytes) or not self._signer.verify(row[0], row[1]):
+                return False
+            decision = json.loads(row[0])
+            return (type(decision) is dict and _canonical(decision) == row[0]
+                    and _record_version(decision, _DECISION_PURPOSE) == _ATTRIBUTED_VERSION
+                    and decision["namespace"] == _NAMESPACE
+                    and decision["decision_id"] == decision_id
+                    and decision["decider_principal"] == decider_principal
+                    and decision["choice"] == choice
+                    and decision["context"] == asdict(context)
+                    and decision["categories"] == [asdict(item) for item in selected]
+                    and decision["state"] == "active")
+        except (sqlite3.Error, ValueError, TypeError, KeyError, UnicodeError):
+            return False
+
     def revoke(self, context: ConsentContext) -> bool:
         """Remove grants for this stable identity across all session instances."""
         if not _valid_context(context) or not isinstance(self._signer, DetachedHMACSigner):
@@ -474,7 +540,7 @@ class ConsentLedger:
                         or _canonical(decision) != payload
                         or decision.get("purpose") != _DECISION_PURPOSE
                         or decision.get("namespace") != _NAMESPACE
-                        or decision.get("version") != _VERSION
+                        or _record_version(decision, _DECISION_PURPOSE) is None
                         or decision.get("decision_id") != decision_id
                         or decision.get("state") not in {"active", "revoked"}
                     ):
