@@ -328,12 +328,23 @@ async def _selected_config(*, prompt: str, agent: str, session_id: str | None,
 
 
 def _main_candidate(backend, model, route):
-    from agents.core.llm.vision_capability import main_vision_eligibility
+    from agents.core.llm.vision_capability import main_vision_eligibility, owner_vision_eligibility
     from agents.core.llm.vision_main import selected_main_config
+    from agents.core.llm.vlm import VLMNotConfigured
 
-    if main_vision_eligibility(backend, model) is False:
+    runtime_verdict = main_vision_eligibility(backend, model)
+    try:
+        config = selected_main_config(backend, model, route)
+    except VLMNotConfigured:
+        if runtime_verdict is False:
+            return None
+        raise
+    if config is None:
         return None
-    return selected_main_config(backend, model, route)
+    owner_verdict = owner_vision_eligibility(config)
+    if owner_verdict is False or (owner_verdict is None and runtime_verdict is False):
+        return None
+    return config
 
 
 def _review_route(config, turn=None):

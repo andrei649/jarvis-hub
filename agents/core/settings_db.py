@@ -179,6 +179,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm", key="compatible_prompt_cache_key", value=False, label="Compatible endpoint explicitly supports prompt_cache_key", kind="toggle"),
     dict(category="llm", key="compatible_reasoning_enabled", value=False, label="Compatible endpoint explicitly supports reasoning effort", kind="toggle"),
     dict(category="llm", key="compatible_effort_declarations", value="", label='Compatible effort vocabularies: JSON {"exact-model": ["low", "high"]}', kind="text"),
+    dict(category="llm", key="vision_model_capabilities", value=[], label="Selected image model capability declarations: JSON rows with backend, base_url, model and supports_vision", kind="json"),
     dict(category="llm",     key="reasoning_effort_overrides", value="",          label="Reasoning-effort overrides — JSON {\"model-prefix\": [\"low\",\"high\"]}; an empty list silences the parameter for that model", kind="text"),
     dict(category="llm",     key="control_enabled",  value=True,                  label="LM Studio control (start/load/unload)", kind="toggle"),
     dict(category="llm",     key="chat_control",     value=True,                  label="LM Studio control via chat",            kind="toggle"),
@@ -891,6 +892,9 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
             err = channel_map_problem(value)
         if err is None and (cat, key) == ("mcp", "servers"):
             err = _mcp_servers_problem(value)
+        if err is None and (cat, key) == ("llm", "vision_model_capabilities"):
+            from .llm.vision_capability import vision_capability_declarations_problem
+            err = vision_capability_declarations_problem(value)
         if err is None and (cat, key) in _LIFECYCLE_INT_BOUNDS:
             low, high = _LIFECYCLE_INT_BOUNDS[(cat, key)]
             if type(value) is not int or not low <= value <= high:

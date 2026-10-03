@@ -8,6 +8,11 @@ from types import MappingProxyType
 import httpx
 
 _MAX_METADATA_BYTES = 1024 * 1024
+_DECLARED_BACKENDS = frozenset({
+    "lmstudio", "ollama", "custom", "openrouter", "nous", "deepinfra",
+    "anthropic", "gemini", "openai-responses", "xai",
+})
+_DECLARATION_KEYS = frozenset({"backend", "base_url", "model", "supports_vision"})
 
 
 def _valid_model(model: object) -> bool:
@@ -38,6 +43,57 @@ def main_vision_eligibility(backend: object, model: str) -> bool | None:
         return None
     verdict = snapshot.get(model)
     return verdict if type(verdict) is bool else None
+
+
+def vision_capability_declarations_problem(rows: object) -> str | None:
+    """Validate exact owner declarations before storing or using them."""
+    from .vision_openrouter import _validated_base
+
+    if type(rows) is not list or len(rows) > 128:
+        return "vision_model_capabilities: expected at most 128 rows"
+    seen: set[tuple[str, str, str]] = set()
+    for index, row in enumerate(rows):
+        if type(row) is not dict or row.keys() != _DECLARATION_KEYS:
+            return f"vision_model_capabilities[{index}]: expected backend, base_url, model and supports_vision"
+        backend, base_url, model = row["backend"], row["base_url"], row["model"]
+        if type(backend) is not str or backend not in _DECLARED_BACKENDS:
+            return f"vision_model_capabilities[{index}]: unsupported backend"
+        if type(base_url) is not str:
+            return f"vision_model_capabilities[{index}]: invalid base URL"
+        try:
+            _validated_base(base_url)
+        except ValueError:
+            return f"vision_model_capabilities[{index}]: invalid base URL"
+        if not _valid_model(model):
+            return f"vision_model_capabilities[{index}]: invalid model"
+        if type(row["supports_vision"]) is not bool:
+            return f"vision_model_capabilities[{index}]: expected a boolean"
+        identity = (backend, base_url, model)
+        if identity in seen:
+            return f"vision_model_capabilities[{index}]: duplicate declaration"
+        seen.add(identity)
+    return None
+
+
+def owner_vision_eligibility(config: object) -> bool | None:
+    """Read the owner verdict for this exact selected image adapter and endpoint."""
+    from agents.core import settings_db
+
+    from .vlm import VLMNotConfigured
+
+    try:
+        found, rows = settings_db.read_setting("llm", "vision_model_capabilities")
+    except settings_db.SettingsUnreadable:
+        raise VLMNotConfigured("vlm_capability_unreadable") from None
+    if not found:
+        return None
+    if vision_capability_declarations_problem(rows) is not None:
+        raise VLMNotConfigured("vlm_capability_unreadable")
+    identity = (config.backend, config.base_url, config.model)
+    for row in rows:
+        if (row["backend"], row["base_url"], row["model"]) == identity:
+            return row["supports_vision"]
+    return None
 
 
 def _publish(backend: object, model: str, verdict: bool | None) -> None:
