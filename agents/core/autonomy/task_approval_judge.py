@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from .advisory_judgements import JUDGE_MAX_PENDING, AdvisoryJudgements
 from .queue import TaskQueue, TaskStatus, approval_is_pending
 
 logger = logging.getLogger("jarvis.autonomy.task_approval_judge")
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class TaskApprovalJudge(AdvisoryJudgements):
@@ -77,13 +79,16 @@ class TaskApprovalJudge(AdvisoryJudgements):
     def _store_judgement(self, snapshot: dict, annotation: dict):
         from .smart_approvals import SmartApprovalResult
 
+        if not self._judgement_task_current(snapshot['id']):
+            return None
         if type(annotation) is SmartApprovalResult:
             judge = self._judge
             if judge is None:
                 return None
             stored, group_id = self.queue.store_smart_terminal_judgement(
                 snapshot['task_id'], snapshot['snapshot_sha256'], annotation,
-                check=lambda: self._judge is judge and judge.smart_current(annotation, snapshot),
+                check=lambda: (self._judgement_task_current(snapshot['id'])
+                               and self._judge is judge and judge.smart_current(annotation, snapshot)),
             )
             if stored is not None and stored.get('decision') == 'approve':
                 self._smart_promotions[snapshot['id']] = group_id
@@ -160,10 +165,24 @@ class TaskApprovalJudge(AdvisoryJudgements):
         return out
 
     def clear_pending(self, task_id: int) -> None:
+        if type(task_id) is not int or task_id <= 0:
+            return
+        with self._judge_lock:
+            attempts = tuple(attempt for key, attempt in self._judge_attempts.items()
+                             if key.startswith(f"{task_id}:"))
+        for attempt in attempts:
+            self._cancel_attempt(attempt)
         with self._judge_lock:
             self._judge_pending.difference_update(
                 key for key in tuple(self._judge_pending) if key.startswith(f"{task_id}:")
             )
+
+    async def wait_for_review(self, task_id: int, snapshot_sha256: str, *, timeout: float) -> bool:
+        """Join an already scheduled exact snapshot; completion is never authority."""
+        if (type(task_id) is not int or task_id <= 0 or type(snapshot_sha256) is not str
+                or _SHA256_HEX.fullmatch(snapshot_sha256) is None):
+            return False
+        return await self._wait_judgement(f"{task_id}:{snapshot_sha256}", timeout=timeout)
 
     def _record_judgement(self, snapshot: dict, annotation: dict) -> None:
         from .approval_judge import ADVISORY_WHY, rationale_sha256

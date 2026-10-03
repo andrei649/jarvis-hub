@@ -163,6 +163,18 @@
   controls and live acceptance remain open; H485 stays **partial**. See
   `docs/hermes/h485-smart-observers-plan-2026-10-03.md` for verification and privacy limits.
 
+- 2026-10-03 H485 synchronous review foundation: an exact scheduled task/revision
+  can now be joined across caller/hub loops with a bounded deadline covering slot
+  wait and native inference. Cancellation invalidates that attempt before any
+  further send/store; resistant tasks retain capacity until actually finished.
+  Opted-in terminal notifications wait for review, then recheck the deadline,
+  leader and notifier and send fresh persisted card bytes. APPROVE suppresses an
+  obsolete card; unavailable/ESCALATE/timeout preserves manual handling. DENY
+  still leaves the owner card available; same-invocation ToolRPC feedback and
+  execution waiting remain required. H485/H277 stay **partial**, with no new
+  equivalence credit or activation. See
+  `docs/hermes/h485-synchronous-review-plan-2026-10-03.md` for scope and evidence.
+
 - 2026-09-27 H613 ✅ choose how it sounds and how it hears: Piper as a local voice, and the owner's own TTS/STT programs, each run only as a human approved it (equivalent; #1207; headline 190/697).
 
   Nerva spoke through cloud voices or Kokoro and heard only through Whisper. Now:

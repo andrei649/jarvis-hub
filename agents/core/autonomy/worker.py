@@ -1323,25 +1323,57 @@ class AutonomyWorker:
             await self._maybe_push(task)
         return task
 
+    async def _await_smart_notification_review(self, task: Task) -> None:
+        """Hold only an opted-in terminal card for its already scheduled review.
+
+        Completion is not authority: the caller still reads current queue state
+        before dispatch. The trusted role timeout also bounds waiting for a slot.
+        """
+        from .smart_approvals import smart_policy, terminal_args
+        from .task_approval_judge import TaskApprovalJudge
+
+        adapter = self.approval_judge
+        if type(adapter) is not TaskApprovalJudge:
+            return
+        try:
+            current = self.queue.get(task.id)
+            snapshot = adapter._snapshot(current) if current is not None else None
+            judge = adapter._judge
+            status = judge.status() if judge is not None else None
+            if (snapshot is None or status is None or not status.configured
+                    or not smart_policy(getattr(judge, '_env', None)).enabled
+                    or terminal_args(snapshot) is None or not judge.wants(snapshot, status)):
+                return
+            await adapter.wait_for_review(task.id, snapshot['snapshot_sha256'], timeout=status.timeout)
+        except Exception:
+            logger.warning('guardian notification wait unavailable; manual handling retained')
+
     async def _maybe_push(self, task: Task, *, delivery_id: str | None = None,
                           expected_group_id: str | None = None,
                           edited_revision: str | None = None) -> bool:
         if not self.notifier:
             return False
         from .inbox import is_decision_notification_leader
+        from .queue import approval_is_pending
 
-        def still_pending_leader() -> bool:
+        def pending_leader() -> Task | None:
             if expected_group_id is not None:
                 current = self.queue.pending_group_leader(expected_group_id)
-                return bool(current is not None and current.id == task.id
-                            and current.status == TaskStatus.BLOCKED.value and not current.pushed)
-            current = self.queue.get(task.id)
-            return bool(current is not None and current.status == TaskStatus.BLOCKED.value
-                        and (not current.pushed or edited_revision is not None)
-                        and (edited_revision is None or edited_revision == current.updated_at)
-                        and is_decision_notification_leader(self.queue, current))
+                valid = (current is not None and current.id == task.id
+                         and current.status == TaskStatus.BLOCKED.value and not current.pushed)
+            else:
+                current = self.queue.get(task.id)
+                valid = (current is not None and current.status == TaskStatus.BLOCKED.value
+                         and (not current.pushed or edited_revision is not None)
+                         and (edited_revision is None or edited_revision == current.updated_at)
+                         and is_decision_notification_leader(self.queue, current))
+            return current if valid and approval_is_pending(current) else None
 
-        if not still_pending_leader():
+        if pending_leader() is None:
+            return False
+        await self._await_smart_notification_review(task)
+        notifier = self.notifier
+        if not callable(notifier) or pending_leader() is None:
             return False
         if self.delivery_broker is None:
             logger.warning(
@@ -1353,10 +1385,13 @@ class AutonomyWorker:
 
         async def dispatch_current() -> object:
             nonlocal stale_at_dispatch
-            if not still_pending_leader():
+            # Waiting can span an owner edit. Send the row checked above, never
+            # the intake-time payload captured before guardian review.
+            current = pending_leader()
+            if current is None or self.notifier is not notifier:
                 stale_at_dispatch = True
                 return False
-            return await self.notifier(task)
+            return await notifier(current)
 
         result = await self.delivery_broker.dispatch(
             delivery_id or f"task-{task.id}",
@@ -1365,7 +1400,7 @@ class AutonomyWorker:
         )
         # A delivered/idempotent broker receipt can recover a crash after send;
         # a callback skipped for a settled card must never mark it pushed.
-        ok = result.get("status") == "delivered" and not stale_at_dispatch and still_pending_leader()
+        ok = result.get("status") == "delivered" and not stale_at_dispatch and pending_leader() is not None
         if ok:
             self.queue.mark_pushed(task.id)
             self._audit("autonomy.push_decision", task, "pushed to inbox")

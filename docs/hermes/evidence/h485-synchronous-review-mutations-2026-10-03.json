@@ -1,0 +1,208 @@
+{
+  "generated_utc": "2026-10-03T10:44:14.778846+00:00",
+  "python": "/tmp/nerva-pr-python-20261001/bin/python",
+  "source_and_test_sha256": {
+    "agents/core/autonomy/advisory_judgements.py": "ec90ed9ac95c64385d6a627f6793fc4f1864d73a43571447f655a82290514eb9",
+    "agents/core/autonomy/task_approval_judge.py": "59bcfa2d945cf7ff213c03c69ea91900cf6c39bfbc3d4a9950e3b5e5df8d8961",
+    "agents/core/autonomy/worker.py": "a7a2f23096ffaeefa7f4d3b477e839968734c6066b3b82ef7e31fb737982558f",
+    "tests/test_h485_judgement_waiting.py": "306cef2d2705c2b34c5bd3c0a5b2e9f67c6f372c577ffa06abb7bb9e7d5bac11",
+    "tests/test_h485_smart_review_waiting_integration.py": "1222f97427643f7d4a025102f5b3612f495f6bdd74abb67f39f458b3f8637fb3",
+    "tests/test_h485_smart_review_notifications.py": "1ea375bf86c2c14abc2146df7a12ae5f2480b748ca05d78d2b05855cf3ee31f3",
+    "docs/hermes/evidence/h277-smart-terminal-mutations-2026-10-03.py": "5282893bf0a043a78c7c3f5a5a708fc81a3829f6e25224d95505936b06567c2c",
+    "agents/_system/agents.yaml": "1c07c3e0332c27a59b18718d4f56d0093e03b150c1884c0e9c60632c2bad9319",
+    "tests/test_h485_smart_observer_dispatch.py": "d99c6f30b3c44171de0cb435ed9850986c6ea83c50cc70b7e4fbd509d9bd2848"
+  },
+  "temporary_root": "/tmp/h485-waiting-mutations-b4sci52p",
+  "mutants": [
+    {
+      "name": "notification_wait_omitted",
+      "path": "agents/core/autonomy/worker.py",
+      "selectors": [
+        "tests/test_h485_smart_review_notifications.py::test_governed_enqueue_holds_push_until_native_verdict"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 2.012,
+      "log": "/tmp/h485-waiting-mutations-b4sci52p/logs/notification_wait_omitted.log",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_review_notifications::test_governed_enqueue_holds_push_until_native_verdict[APPROVE]",
+        "tests.test_h485_smart_review_notifications::test_governed_enqueue_holds_push_until_native_verdict[ESCALATE]"
+      ]
+    },
+    {
+      "name": "stale_intake_card_sent_after_wait",
+      "path": "agents/core/autonomy/worker.py",
+      "selectors": [
+        "tests/test_h485_smart_review_notifications.py::test_edited_task_release_uses_fresh_card_instead_of_pre_wait_bytes"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 2.082,
+      "log": "/tmp/h485-waiting-mutations-b4sci52p/logs/stale_intake_card_sent_after_wait.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_review_notifications::test_edited_task_release_uses_fresh_card_instead_of_pre_wait_bytes"
+      ]
+    },
+    {
+      "name": "expired_card_release_allowed",
+      "path": "agents/core/autonomy/worker.py",
+      "selectors": [
+        "tests/test_h485_smart_review_notifications.py::test_deadline_crossed_while_waiting_never_sends_unactionable_card"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 2.048,
+      "log": "/tmp/h485-waiting-mutations-b4sci52p/logs/expired_card_release_allowed.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_review_notifications::test_deadline_crossed_while_waiting_never_sends_unactionable_card"
+      ]
+    },
+    {
+      "name": "removed_notifier_consumes_retry",
+      "path": "agents/core/autonomy/worker.py",
+      "selectors": [
+        "tests/test_h485_smart_review_notifications.py::test_notifier_removed_during_review_does_not_consume_delivery_retry"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 2.0,
+      "log": "/tmp/h485-waiting-mutations-b4sci52p/logs/removed_notifier_consumes_retry.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_review_notifications::test_notifier_removed_during_review_does_not_consume_delivery_retry"
+      ]
+    },
+    {
+      "name": "waiter_timeout_does_not_invalidate",
+      "path": "agents/core/autonomy/advisory_judgements.py",
+      "selectors": [
+        "tests/test_h485_smart_review_waiting_integration.py::test_slot_wait_timeout_cannot_dispatch_later_after_capacity_returns"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.782,
+      "log": "/tmp/h485-waiting-mutations-b4sci52p/logs/waiter_timeout_does_not_invalidate.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_review_waiting_integration::test_slot_wait_timeout_cannot_dispatch_later_after_capacity_returns"
+      ]
+    },
+    {
+      "name": "caller_cancellation_does_not_invalidate",
+      "path": "agents/core/autonomy/advisory_judgements.py",
+      "selectors": [
+        "tests/test_h485_judgement_waiting.py::test_caller_cancellation_invalidates_exact_attempt"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.789,
+      "log": "/tmp/h485-waiting-mutations-b4sci52p/logs/caller_cancellation_does_not_invalidate.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_judgement_waiting::test_caller_cancellation_invalidates_exact_attempt"
+      ]
+    },
+    {
+      "name": "cancelled_work_releases_capacity_early",
+      "path": "agents/core/autonomy/advisory_judgements.py",
+      "selectors": [
+        "tests/test_h485_judgement_waiting.py::test_cancel_resistant_tasks_retain_capacity_until_their_actual_completion"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.773,
+      "log": "/tmp/h485-waiting-mutations-b4sci52p/logs/cancelled_work_releases_capacity_early.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_judgement_waiting::test_cancel_resistant_tasks_retain_capacity_until_their_actual_completion"
+      ]
+    },
+    {
+      "name": "old_callback_clears_replacement",
+      "path": "agents/core/autonomy/advisory_judgements.py",
+      "selectors": [
+        "tests/test_h485_judgement_waiting.py::test_old_cancelled_callback_cannot_clear_or_settle_replacement"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 3.809,
+      "log": "/tmp/h485-waiting-mutations-b4sci52p/logs/old_callback_clears_replacement.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_judgement_waiting::test_old_cancelled_callback_cannot_clear_or_settle_replacement"
+      ]
+    },
+    {
+      "name": "deadline_timer_omitted",
+      "path": "agents/core/autonomy/advisory_judgements.py",
+      "selectors": [
+        "tests/test_h485_judgement_waiting.py::test_deadline_includes_slot_wait_even_without_a_waiter"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.749,
+      "log": "/tmp/h485-waiting-mutations-b4sci52p/logs/deadline_timer_omitted.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_judgement_waiting::test_deadline_includes_slot_wait_even_without_a_waiter"
+      ]
+    }
+  ],
+  "baseline": {
+    "returncode": 0,
+    "timed_out": false,
+    "seconds": 4.046,
+    "log": "/tmp/h485-waiting-mutations-b4sci52p/logs/baseline.log",
+    "tests": 35,
+    "failures": 0,
+    "errors": 0,
+    "failed_tests": []
+  },
+  "restored_baseline": {
+    "returncode": 0,
+    "timed_out": false,
+    "seconds": 3.777,
+    "log": "/tmp/h485-waiting-mutations-b4sci52p/logs/restored_baseline.log",
+    "tests": 35,
+    "failures": 0,
+    "errors": 0,
+    "failed_tests": []
+  },
+  "live_source_unchanged": true,
+  "counts": {
+    "killed": 9,
+    "survived": 0,
+    "invalid": 0
+  },
+  "status": "complete"
+}
