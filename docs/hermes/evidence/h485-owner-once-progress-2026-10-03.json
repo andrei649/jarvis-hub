@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "generated_at": "2026-10-03T16:21:18.969435+00:00",
+  "head": "aec4348cf96f92d2b384dbba4b8e3a5b7e438a11",
+  "source_state": "uncommitted",
+  "focused": {
+    "passed": 647,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "xml_sha256": "a8a6e9c860ce2bfe4a304522798fd4520ed3ae4f97c1f0fdeef6e235266f137f"
+  },
+  "mutations": {
+    "source_sha256": "0b179175b43c52aac54458564a70ad8c31016d66fa387d2e3a6b3688abb6b4b1",
+    "restored_exactly": true,
+    "mutants": [
+      {
+        "guard": "fresh-owner",
+        "killed_by": "test_revocation_after_delivery_invalidates_reply_and_stop_settles_wait",
+        "exit_code": 1
+      },
+      {
+        "guard": "request-loop",
+        "killed_by": "test_reply_refuses_a_stopped_request_loop_while_source_loop_stays_live",
+        "exit_code": 1
+      },
+      {
+        "guard": "confirmed-wake",
+        "killed_by": "test_failed_waiter_delivery_revokes_accepted_grant_without_success_ack",
+        "exit_code": 1
+      }
+    ]
+  },
+  "bandit_new_findings": 0,
+  "bandit_errors": 0,
+  "gitleaks_files": 19,
+  "gitleaks_findings": 0,
+  "production_prompt_wired": false,
+  "owner_worker_dispatch_integrated": false,
+  "full_suite_run": false,
+  "live_telegram_tested": false,
+  "published": false,
+  "capabilities": {
+    "H277": "partial",
+    "H485": "partial"
+  },
+  "source_sha256": {
+    "agents/core/autonomy/inbox.py": "e07ae3cf38b2b88ca389539644e98a87b1146cb0a355e0f6e94a5003d3c712e0",
+    "agents/core/autonomy/owner_once.py": "e1786b38ef733789b33ff4f73ba120dad4f723f46b7e464ae4073e9ecc4be150",
+    "agents/core/autonomy/owner_once_prompts.py": "0b179175b43c52aac54458564a70ad8c31016d66fa387d2e3a6b3688abb6b4b1",
+    "agents/core/autonomy/queue.py": "d22c33bdb486852ad8d2f06ecdbb90a34f2a6df495c7c70f0fbfd5cc5da6dd5e",
+    "agents/core/autonomy/task_approval_judge.py": "03d99b4e84449ecc2317c8be4aabef22e3628d55b13b88e3dfb7c7a0ae09b045",
+    "agents/core/autonomy/terminal_review.py": "6e411115bf7dcc55dbd2c72141cf99113f33c53ceba70974ef8709dc9c86c7be",
+    "agents/core/autonomy/worker.py": "bd170e378ee3ce9204e3b8a3a00cd79bc88e3dd2690d5529ad40e9a3b747ae3f",
+    "agents/core/channels/telegram.py": "dc912227af58a922ad97021c650b7c75fdb516a9b6450fab3d3a48f6dd3ec0bb",
+    "agents/core/owner_once_context.py": "fa4db367f1691ee9b3b4de4a345c7f7a68f519bcdad9cd78ead9392b823f8679",
+    "tests/test_h277_smart_terminal_integration.py": "c2df154d4d540d1f7736eef95b8c41ca056b8ea8418c4d290a34bb7190d8d4e5",
+    "tests/test_h277_smart_terminal_queue.py": "4da1e93a04bdfbe165881dcc6b43806db118d5cf32804f7234a5830a58282afc",
+    "tests/test_h485_denial_feedback_integration.py": "22ab936d5ca35a8e482c1db0daf22910a037e80fc23300e6911961df4210e01a",
+    "tests/test_h485_owner_once_completion.py": "fc7720e0deaf02b364a0d94906b7cb383b949d9a13d7295b09efc8e54a5c3814",
+    "tests/test_h485_owner_once_context.py": "0433a652c66c7ac09aaccabd6b9cdfe6192aec03682db61e61cc6252b09f4d6e",
+    "tests/test_h485_owner_once_continuation.py": "d36dde6ee74190afb292c371cbd5c88eb676ddf3996533320a17af6f92d6307a",
+    "tests/test_h485_owner_once_prompts.py": "e64aa02fc999d4ffe8c52bb1e13842ddaf5b0a56af921d50b8df69c1b38c0024",
+    "tests/test_h485_owner_once_queue.py": "03a431a580b05e4b4924599995905ca473713520ee8c903185037dfb9753cb76",
+    "tests/test_h485_owner_once_telegram.py": "7cad5bb27c8e96df4e4f25eb5b41d0c9fca40d2ab18474867625614d4e352e0c",
+    "tests/test_h485_toolrpc_actuation_integration.py": "e10c088e984aa6e51320105e999547b2cf5d277d2b7680bd270a685704727a4d"
+  },
+  "restored_prompt_tests": {
+    "passed": 12,
+    "failures": 0,
+    "errors": 0
+  },
+  "doc_reference_tests": {
+    "passed": 6,
+    "failures": 0,
+    "errors": 0
+  },
+  "graft": {
+    "graph_fresh": true,
+    "deep_context_available": false
+  }
+}

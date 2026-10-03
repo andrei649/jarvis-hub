@@ -29,7 +29,7 @@ import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
@@ -61,6 +61,7 @@ from agents.core.env_config import env_str
 from agents.core.paths import data_path
 
 from .decision_reasons import normalize_reason
+from .owner_once import OwnerOnceClaim, OwnerOnceOffer, OwnerOnceOwner
 from .smart_approvals import SmartApprovalResult
 
 logger = logging.getLogger("jarvis.autonomy.queue")
@@ -71,11 +72,14 @@ _DATABASE_INIT_LOCK = threading.Lock()
 _HUMAN_REASON_UNSET = object()
 _SMART_TERMINAL_PURPOSE = "nerva.smart-terminal-approval"
 _SMART_EXECUTION_PURPOSE = "nerva.smart-terminal-execution"
+_OWNER_ONCE_PURPOSE = "nerva.owner-once-terminal-approval"
+_OWNER_ONCE_EXECUTION_PURPOSE = "nerva.owner-once-terminal-execution"
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}\Z")
 _GUARDIAN_EPOCH_HEX = re.compile(r"[0-9a-f]{32}\Z")
 _TERMINAL_TARGET = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 _GUARDIAN_DENIAL_LIMIT = 1_000_000
 _GUARDIAN_CONSUMER_LIMIT = 256
+_OWNER_ONCE_LIMIT = 256
 
 
 def _guardian_denial_threshold() -> int:
@@ -350,6 +354,8 @@ class TaskQueue:
             raise ValueError("mediation mode must be off, enforce, or hold")
         self.mediation_mode = mode
         self._mediation_signer = mediation_signer or DetachedHMACSigner(None)
+        self._owner_once_key = object()
+        self._owner_once_claims: dict[int, OwnerOnceClaim] = {}
         self._mediation_head_anchor = mediation_head_anchor or MonotonicHeadAnchor(None, None)
         self._mediation_classifier = mediation_classifier or _canonical_mediation_classification
         self._mediation_scope = str(mediation_scope or "").strip()
@@ -484,6 +490,17 @@ class TaskQueue:
                 signature TEXT
             )
         """)
+        self._conn.execute("""CREATE TABLE IF NOT EXISTS task_owner_once (
+            task_id INTEGER PRIMARY KEY, task_birth TEXT NOT NULL,
+            denial_snapshot_sha256 TEXT NOT NULL, denial_annotation_sha256 TEXT NOT NULL,
+            origin_id TEXT NOT NULL, session_id TEXT NOT NULL,
+            session_instance TEXT NOT NULL, principal_key TEXT NOT NULL,
+            intent_sha256 TEXT NOT NULL, offer_nonce_sha256 TEXT NOT NULL,
+            deadline_at TEXT NOT NULL, state TEXT NOT NULL,
+            chat_id INTEGER, user_id INTEGER, message_id INTEGER, generation TEXT,
+            owner_decision_id TEXT, approval_receipt TEXT, signature TEXT,
+            mediation_execution_id TEXT, claimed_at TEXT, dispatch_at TEXT
+        )""")
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS task_approval_group_state (
                 key TEXT PRIMARY KEY, value TEXT NOT NULL
@@ -1689,6 +1706,9 @@ class TaskQueue:
                 if row is None or row["status"] != TaskStatus.APPROVED.value:
                     self._conn.rollback()
                     return None
+                if row['decided_by'] == 'owner_once' or row['decision'] == 'owner-once':
+                    self._conn.rollback()
+                    return None
                 if self._classification(row["kind"]) is not True:
                     self._quarantine_locked(row, verified_state=verified_state)
                     self._conn.commit()
@@ -1964,6 +1984,12 @@ class TaskQueue:
                     raise TaskQueueError(
                         f"illegal transition {cur_status.value} → {new_status.value} (task {task_id})"
                     )
+                if (new_status == TaskStatus.APPROVED and decision in {'accept', 'edit'}
+                        and self._current_smart_denial_locked(task)):
+                    raise TaskQueueError('smart denial requires exact owner-once reply')
+                if (cur_status == TaskStatus.APPROVED and new_status == TaskStatus.RUNNING
+                        and task.decided_by == 'owner_once' and task.decision == 'owner-once'):
+                    raise TaskQueueError('owner-once execution requires private claim')
                 now = instant.isoformat(timespec='microseconds')
                 sets = ["status=?", "updated_at=?"]
                 params: list = [new_status.value, now]
@@ -2312,6 +2338,8 @@ class TaskQueue:
                     raise TaskQueueError(f"task {task_id} not found")
                 instant = _approval_now()
                 self._raise_due_approval_locked(row, instant)
+                if (record_human or approve) and self._current_smart_denial_locked(task):
+                    raise TaskQueueError('smart denial requires exact owner-once reply')
                 if (record_human or approve) and TaskStatus.APPROVED not in _TRANSITIONS.get(
                     TaskStatus(task.status), set(),
                 ):
@@ -2494,9 +2522,8 @@ class TaskQueue:
                 (consumer['session_id'], consumer['session_instance'], consumer['principal_key']))
 
     def _chat_guardian_denial_locked(self, task: Task, association: sqlite3.Row) -> dict | None:
-        """Project only an exact current DENY; the live tally gates warnings."""
-        if (task.status != TaskStatus.BLOCKED.value or not approval_is_pending(task)
-                or association['ready'] != 1 or association['task_birth'] != task.created_at):
+        """Project one exact original DENY, including its settled outcome."""
+        if association['ready'] != 1 or association['task_birth'] != task.created_at:
             return None
         snapshot, count, epoch, sequence = (
             association['denial_snapshot_sha256'], association['denial_count'],
@@ -2505,8 +2532,36 @@ class TaskQueue:
         if (type(snapshot) is not str or _SHA256_HEX.fullmatch(snapshot) is None
                 or type(count) is not int or not 1 <= count <= _GUARDIAN_DENIAL_LIMIT
                 or type(epoch) is not str or _GUARDIAN_EPOCH_HEX.fullmatch(epoch) is None
-                or type(sequence) is not int or sequence <= 0
-                or self._approval_snapshot_digest_locked(task) != snapshot):
+                or type(sequence) is not int or sequence <= 0):
+            return None
+        row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task.id,)).fetchone()
+        if task.status == TaskStatus.BLOCKED.value:
+            if (not approval_is_pending(task) or task.decided_by != 'policy'
+                    or task.decision != 'needs-approval' or task.human_decision is not None):
+                return None
+        elif task.status == TaskStatus.REJECTED.value:
+            if self._smart_terminal_denial_locked(task.id, snapshot) is None:
+                bound = self._conn.execute('SELECT * FROM task_owner_once WHERE task_id=?',
+                                           (task.id,)).fetchone()
+                if (self._owner_once_withdrawn_approval_locked(row, bound) is None
+                        or bound['denial_snapshot_sha256'] != snapshot
+                        or bound['origin_id'] != association['origin_id']
+                        or bound['intent_sha256'] != association['intent_sha256']):
+                    return None
+        elif task.status in {'approved', 'running', 'done'} and task.decided_by == 'owner_once':
+            bound = self._conn.execute('SELECT * FROM task_owner_once WHERE task_id=?',
+                                       (task.id,)).fetchone()
+            if (self._owner_once_approval_locked(row, bound, allow_done=True) is None
+                    or bound['denial_snapshot_sha256'] != snapshot
+                    or bound['origin_id'] != association['origin_id']
+                    or bound['intent_sha256'] != association['intent_sha256']):
+                return None
+        else:
+            return None
+        original = replace(task, status=TaskStatus.BLOCKED.value,
+                           decided_by='policy', decision='needs-approval',
+                           mediation_execution_id=None, human_decision=None)
+        if self._approval_snapshot_digest_locked(original) != snapshot:
             return None
         opinion = self._conn.execute('''SELECT snapshot_sha256,annotation,receipt,signature
             FROM task_smart_approvals WHERE task_id=? AND snapshot_sha256=?''',
@@ -2563,11 +2618,17 @@ class TaskQueue:
         if task is not None and task.status != 'expired' and task.human_decision is not None:
             metadata = task.human_decision
             if (not isinstance(metadata.get('id'), str) or len(metadata['id']) != 32
-                    or metadata.get('action') not in {'accept', 'edit', 'reject', 'defer'}
+                    or metadata.get('action') not in {'accept', 'edit', 'reject', 'defer', 'once'}
                     or not isinstance(metadata.get('by'), str) or not metadata['by']
                     or len(metadata['by']) > 256 or not isinstance(metadata.get('at'), str)
                     or len(metadata['at']) > 64):
                 raise ValueError('invalid human decision metadata')
+            if metadata['action'] == 'once':
+                bound = self._conn.execute('SELECT * FROM task_owner_once WHERE task_id=?',
+                                           (task.id,)).fetchone()
+                if (self._owner_once_approval_locked(raw, bound, allow_done=True) is None
+                        and self._owner_once_withdrawn_approval_locked(raw, bound) is None):
+                    raise ValueError('unbound owner-once decision metadata')
             reason = normalize_reason(metadata.get('reason'))
             item['decision'] = {'id': metadata['id'], 'action': metadata['action'],
                                 'by': metadata['by'], **({'human_reason': reason} if reason else {})}
@@ -2708,6 +2769,13 @@ class TaskQueue:
             try:
                 clause = 'session_id=?' + (' AND session_instance=?' if session_instance is not None else '')
                 params = (session_id, session_instance) if session_instance is not None else (session_id,)
+                if session_instance is None:
+                    self._conn.execute('DELETE FROM task_owner_once WHERE session_id=?',
+                                       (session_id,))
+                else:
+                    self._conn.execute('''DELETE FROM task_owner_once
+                        WHERE session_id=? AND session_instance=?''',
+                        (session_id, session_instance))
                 count = self._conn.execute(f'''DELETE FROM chat_approval_tasks WHERE origin_id IN
                     (SELECT origin_id FROM chat_approval_origins WHERE {clause})''', params).rowcount  # nosec B608
                 self._conn.execute(f'DELETE FROM chat_approval_origins WHERE {clause}', params)  # nosec B608
@@ -2718,6 +2786,7 @@ class TaskQueue:
                     self._conn.execute('''DELETE FROM chat_guardian_denial_tallies
                         WHERE session_id=? AND session_instance=?''',
                         (session_id, session_instance))
+                self._prune_owner_once_claims_locked()
                 self._conn.commit()
                 return count
             except Exception:
@@ -2753,6 +2822,11 @@ class TaskQueue:
                 self._conn.execute('UPDATE chat_approval_retention SET last_task_id=? WHERE id=1', (next_cursor,))
                 self._conn.execute('''DELETE FROM chat_approval_origins WHERE NOT EXISTS
                     (SELECT 1 FROM chat_approval_tasks t WHERE t.origin_id=chat_approval_origins.origin_id)''')
+                self._conn.execute('''DELETE FROM task_owner_once WHERE task_id IN (
+                    SELECT p.task_id FROM task_owner_once p
+                    WHERE NOT EXISTS (SELECT 1 FROM chat_approval_tasks c
+                                      WHERE c.task_id=p.task_id AND c.origin_id=p.origin_id)
+                    ORDER BY p.task_id LIMIT ?)''', (batch,))
                 self._conn.execute('''DELETE FROM chat_guardian_denial_tallies
                     WHERE updated_at < ? OR NOT EXISTS (
                         SELECT 1 FROM chat_approval_origins o
@@ -2760,6 +2834,7 @@ class TaskQueue:
                           AND o.session_instance=chat_guardian_denial_tallies.session_instance
                           AND o.principal_key=chat_guardian_denial_tallies.principal_key)''',
                     (cutoff,))
+                self._prune_owner_once_claims_locked()
                 self._conn.commit()
                 return count
             except Exception:
@@ -2945,6 +3020,17 @@ class TaskQueue:
         """Only an intact unsigned hold may yield to a new exact task revision."""
         return (prior["snapshot_sha256"] != next_snapshot
                 and TaskQueue._unsigned_smart_hold_verdict(prior) in {"deny", "escalate"})
+
+    def _current_smart_denial_locked(self, task: Task) -> bool:
+        if (task.status != TaskStatus.BLOCKED.value or not approval_is_pending(task)
+                or task.decided_by != 'policy' or task.decision != 'needs-approval'
+                or task.human_decision is not None or _smart_terminal_args(task) is None):
+            return False
+        prior = self._conn.execute(
+            'SELECT * FROM task_smart_approvals WHERE task_id=?', (task.id,),
+        ).fetchone()
+        return (prior is not None and self._unsigned_smart_hold_verdict(prior) == 'deny'
+                and prior['snapshot_sha256'] == self._approval_snapshot_digest_locked(task))
 
     def store_smart_terminal_judgement(
         self,
@@ -3253,6 +3339,815 @@ class TaskQueue:
             except Exception:
                 return False
 
+    @staticmethod
+    def _owner_once_nonce(value: object) -> bool:
+        try:
+            return (type(value) is str and len(value) == 32
+                    and uuid.UUID(hex=value).hex == value
+                    and uuid.UUID(hex=value).version == 4)
+        except (ValueError, AttributeError):
+            return False
+
+    @staticmethod
+    def _owner_once_check(check: Callable[[], bool]) -> bool:
+        try:
+            return callable(check) and check() is True
+        except Exception:
+            return False
+
+    def _prune_owner_once_claims_locked(self) -> None:
+        now = _approval_now()
+        for task_id, claim in tuple(self._owner_once_claims.items()):
+            bound = self._conn.execute('SELECT state,deadline_at FROM task_owner_once WHERE task_id=?',
+                                       (task_id,)).fetchone()
+            try:
+                expired = bound is None or datetime.fromisoformat(bound['deadline_at']) <= now
+            except (TypeError, ValueError):
+                expired = True
+            if (expired or bound['state'] == 'revoked' or not claim._turn.live()):
+                self._owner_once_claims.pop(task_id, None)
+
+    def _owner_once_denial_locked(self, row: sqlite3.Row | None,
+                                  snapshot_sha256: str) -> tuple[Task, sqlite3.Row] | None:
+        task = _row_to_task(row) if row else None
+        if (task is None or type(snapshot_sha256) is not str
+                or _SHA256_HEX.fullmatch(snapshot_sha256) is None
+                or not self._current_smart_denial_locked(task)
+                or self._approval_snapshot_digest_locked(task) != snapshot_sha256
+                or not self._smart_terminal_mediation_valid_locked(row)):
+            return None
+        denial = self._conn.execute(
+            'SELECT * FROM task_smart_approvals WHERE task_id=?', (task.id,),
+        ).fetchone()
+        if denial is None or denial['snapshot_sha256'] != snapshot_sha256:
+            return None
+        return task, denial
+
+    def offer_owner_once(self, task_id: int, snapshot_sha256: str, *, turn,
+                         live_check: Callable[[], bool], timeout: float = 120) -> OwnerOnceOffer | None:
+        """Offer one exact current DENY to its live interactive origin."""
+        from agents.core.approval_outcomes import current_approval_turn
+
+        if (type(task_id) is not int or task_id <= 0 or type(timeout) not in {int, float}
+                or not math.isfinite(timeout) or not 0 < timeout <= 120
+                or not isinstance(turn, ApprovalTurnContext)
+                or current_approval_turn() is not turn or not turn.live()):
+            return None
+        try:
+            principal = json.loads(turn.principal_key)
+            if (type(principal) is not list or len(principal) != 3
+                    or principal[0] != 'telegram' or any(
+                        type(part) is not str or not part for part in principal[1:]
+                    ) or re.fullmatch(r'[1-9][0-9]*', principal[1]) is None
+                    or int(principal[1]) > 0xffffffffff
+                    or re.fullmatch(r'-?[1-9][0-9]*', principal[2]) is None
+                    or abs(int(principal[2])) > 0x7fffffffffffffff):
+                return None
+        except (TypeError, ValueError):
+            return None
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                self._prune_owner_once_claims_locked()
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                current = self._owner_once_denial_locked(row, snapshot_sha256)
+                if current is None or self.mediation_mode == 'hold' or not self._owner_once_check(live_check):
+                    self._conn.rollback()
+                    return None
+                task, denial = current
+                origin = self._chat_denial_consumer_locked(task)
+                if origin is None or self._chat_intent_locked(task) != origin['intent_sha256']:
+                    self._conn.rollback()
+                    return None
+                if (origin['origin_id'] != turn.turn_id or origin['session_id'] != turn.session_id
+                        or origin['session_instance'] != turn.session_instance
+                        or origin['principal_key'] != turn.principal_key):
+                    self._conn.rollback()
+                    return None
+                if self._conn.execute('SELECT 1 FROM task_owner_once WHERE task_id=?',
+                                      (task_id,)).fetchone() is not None:
+                    self._conn.rollback()
+                    return None
+                now = _approval_now()
+                active = self._conn.execute('''SELECT COUNT(*) FROM task_owner_once
+                    WHERE state IN ('offered','accepted','claimed','dispatching')
+                      AND deadline_at>?''', (now.isoformat(timespec='microseconds'),)).fetchone()[0]
+                if active >= _OWNER_ONCE_LIMIT or len(self._owner_once_claims) >= _OWNER_ONCE_LIMIT:
+                    self._conn.rollback()
+                    return None
+                deadline = now + timedelta(seconds=timeout)
+                if task.approval_deadline_at is not None:
+                    deadline = min(deadline, datetime.fromisoformat(
+                        normalize_approval_deadline(task.approval_deadline_at)))
+                if deadline <= now:
+                    self._conn.rollback()
+                    return None
+                nonce = uuid.uuid4().hex
+                stamp = deadline.isoformat(timespec='microseconds')
+                self._conn.execute('''INSERT INTO task_owner_once (
+                    task_id,task_birth,denial_snapshot_sha256,denial_annotation_sha256,
+                    origin_id,session_id,session_instance,principal_key,intent_sha256,
+                    offer_nonce_sha256,deadline_at,state
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,'offered')''',
+                    (task_id, task.created_at, snapshot_sha256,
+                     hashlib.sha256(denial['annotation'].encode()).hexdigest(),
+                     origin['origin_id'], origin['session_id'], origin['session_instance'],
+                     origin['principal_key'], origin['intent_sha256'],
+                     hashlib.sha256(nonce.encode()).hexdigest(), stamp))
+                self._conn.commit()
+                return OwnerOnceOffer(task_id, nonce, stamp, turn, self._owner_once_key)
+            except Exception:
+                self._conn.rollback()
+                return None
+
+    def _owner_once_offer_locked(self, offer: OwnerOnceOffer) -> sqlite3.Row | None:
+        if (type(offer) is not OwnerOnceOffer or offer._queue_key is not self._owner_once_key
+                or not self._owner_once_nonce(offer.nonce) or not offer._turn.live()):
+            return None
+        row = self._conn.execute('SELECT * FROM task_owner_once WHERE task_id=?',
+                                 (offer.task_id,)).fetchone()
+        if (row is None or row['state'] != 'offered'
+                or row['offer_nonce_sha256'] != hashlib.sha256(offer.nonce.encode()).hexdigest()
+                or row['deadline_at'] != offer.deadline_at
+                or datetime.fromisoformat(row['deadline_at']) <= _approval_now()):
+            return None
+        return row
+
+    def mark_owner_once_delivered(self, offer: OwnerOnceOffer, *, chat_id: int,
+                                  user_id: int, message_id: int, generation: str,
+                                  live_check: Callable[[], bool]) -> bool:
+        """Bind a Telegram-confirmed prompt before any answer is acceptable."""
+        if (type(chat_id) is not int or chat_id == 0 or type(user_id) is not int
+                or not 0 < user_id <= 0xffffffffff or type(message_id) is not int
+                or message_id <= 0 or not self._owner_once_nonce(generation)):
+            return False
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                bound = self._owner_once_offer_locked(offer)
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?',
+                                         (offer.task_id,)).fetchone() if bound else None
+                current = self._owner_once_denial_locked(row, bound['denial_snapshot_sha256']) if bound else None
+                principal = json.loads(bound['principal_key']) if bound else None
+                if (bound is None or current is None or bound['message_id'] is not None
+                        or principal != ['telegram', str(user_id), str(chat_id)]
+                        or not self._owner_once_check(live_check)):
+                    self._conn.rollback()
+                    return False
+                changed = self._conn.execute('''UPDATE task_owner_once
+                    SET chat_id=?,user_id=?,message_id=?,generation=?
+                    WHERE task_id=? AND state='offered' AND message_id IS NULL''',
+                    (chat_id, user_id, message_id, generation, offer.task_id))
+                self._conn.commit()
+                return changed.rowcount == 1
+            except Exception:
+                self._conn.rollback()
+                return False
+
+    def reject_smart_terminal_denial(self, task_id: int, snapshot_sha256: str, *,
+                                     check: Callable[[], bool],
+                                     reason: str = 'guardian-denied') -> bool:
+        """Settle only the original still-current unsigned machine DENY."""
+        if (type(task_id) is not int or task_id <= 0 or type(reason) is not str
+                or not reason or len(reason) > 128):
+            return False
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                current = self._owner_once_denial_locked(row, snapshot_sha256)
+                offer = self._conn.execute('SELECT state FROM task_owner_once WHERE task_id=?',
+                                           (task_id,)).fetchone()
+                if (current is None or (offer is not None and offer['state'] != 'offered')
+                        or not self._owner_once_check(check)):
+                    self._conn.rollback()
+                    return False
+                if offer is not None:
+                    self._conn.execute("UPDATE task_owner_once SET state='revoked' WHERE task_id=?",
+                                       (task_id,))
+                changed = self._conn.execute('''UPDATE tasks SET status='rejected',
+                    decided_by='smart_approval',decision='smart-deny',updated_at=?
+                    WHERE id=? AND status='blocked' AND decided_by='policy'
+                    AND decision='needs-approval' ''', (_now(), task_id))
+                if changed.rowcount != 1:
+                    self._conn.rollback()
+                    return False
+                self._withdraw_task_group_locked(task_id)
+                self._conn.commit()
+                return True
+            except Exception:
+                self._conn.rollback()
+                return False
+
+    def smart_terminal_denial(self, task_id: int, snapshot_sha256: str) -> dict | None:
+        """Observe one canonical exact DENY after a machine refusal settles it.
+
+        This is evidence for the originating answer, never an execution receipt.
+        """
+        if (type(task_id) is not int or task_id <= 0 or type(snapshot_sha256) is not str
+                or _SHA256_HEX.fullmatch(snapshot_sha256) is None):
+            return None
+        with self._lock:
+            return self._smart_terminal_denial_locked(task_id, snapshot_sha256)
+
+    def _smart_terminal_denial_locked(self, task_id: int,
+                                      snapshot_sha256: str) -> dict | None:
+        try:
+            row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+            task = _row_to_task(row) if row else None
+            if task is None:
+                return None
+            if task.status == 'blocked':
+                if self._owner_once_denial_locked(row, snapshot_sha256) is None:
+                    return None
+            elif (task.status == 'rejected' and _smart_terminal_args(task) is not None
+                  and self._smart_terminal_mediation_valid_locked(row)):
+                machine = (task.decided_by == 'smart_approval'
+                           and task.decision == 'smart-deny'
+                           and task.human_decision is None)
+                owner = (task.decided_by == 'owner_once'
+                         and task.decision == 'owner-deny'
+                         and type(task.human_decision) is dict)
+                if not machine and not owner:
+                    return None
+                if owner:
+                    human = task.human_decision
+                    bound = self._conn.execute(
+                        'SELECT * FROM task_owner_once WHERE task_id=?', (task_id,),
+                    ).fetchone()
+                    if (bound is None or bound['state'] != 'revoked'
+                            or bound['task_birth'] != task.created_at
+                            or bound['denial_snapshot_sha256'] != snapshot_sha256
+                            or bound['owner_decision_id'] != human.get('id')
+                            or not self._owner_once_nonce(human.get('id'))
+                            or set(human) != {'id', 'action', 'reason', 'by', 'at', 'first_at'}
+                            or human['action'] != 'reject' or human['by'] != 'owner_once'
+                            or human['reason'] is not None
+                            or type(human['at']) is not str
+                            or human['at'] != human['first_at']
+                            or bound['message_id'] is None
+                            or bound['approval_receipt'] is not None
+                            or bound['signature'] is not None):
+                        return None
+                phase = replace(task, status='blocked', decided_by='policy',
+                                decision='needs-approval', human_decision=None)
+                if self._approval_snapshot_digest_locked(phase) != snapshot_sha256:
+                    return None
+            else:
+                return None
+            denial = self._conn.execute('SELECT * FROM task_smart_approvals WHERE task_id=?',
+                                        (task_id,)).fetchone()
+            if (denial is None or denial['snapshot_sha256'] != snapshot_sha256
+                    or self._unsigned_smart_hold_verdict(denial) != 'deny'):
+                return None
+            if (task.status == 'rejected' and task.decided_by == 'owner_once'
+                    and bound['denial_annotation_sha256']
+                    != hashlib.sha256(denial['annotation'].encode()).hexdigest()):
+                return None
+            return json.loads(denial['annotation'])
+        except Exception:
+            return None
+
+    @staticmethod
+    def _owner_once_owner_valid(owner: OwnerOnceOwner, bound: sqlite3.Row) -> bool:
+        if (type(owner) is not OwnerOnceOwner or owner.channel != 'telegram'
+                or type(owner.principal_key) is not str
+                or owner.principal_key != bound['principal_key']
+                or type(owner.chat_id) is not int or owner.chat_id == 0
+                or type(owner.user_id) is not int or not 0 < owner.user_id <= 0xffffffffff
+                or type(owner.message_id) is not int or owner.message_id <= 0
+                or not TaskQueue._owner_once_nonce(owner.generation)
+                or owner.chat_id != bound['chat_id'] or owner.user_id != bound['user_id']
+                or owner.message_id != bound['message_id']
+                or owner.generation != bound['generation']):
+            return False
+        try:
+            return json.loads(owner.principal_key) == [
+                'telegram', str(owner.user_id), str(owner.chat_id),
+            ]
+        except (TypeError, ValueError):
+            return False
+
+    def _owner_once_receipt_body_locked(self, task: Task, bound: sqlite3.Row | dict,
+                                        decision_id: str) -> dict | None:
+        """Build one exact approval body; caller signs it or compares stored bytes."""
+        try:
+            args = _smart_terminal_args(task)
+            if (args is None or task.created_at != bound['task_birth']
+                    or task.decided_by != 'owner_once' or task.decision != 'owner-once'
+                    or not self._owner_once_nonce(decision_id)):
+                return None
+            phase = replace(task, status=TaskStatus.BLOCKED.value,
+                            decided_by='policy', decision='needs-approval',
+                            mediation_execution_id=None, human_decision=None)
+            if self._approval_snapshot_digest_locked(phase) != bound['denial_snapshot_sha256']:
+                return None
+            denial = self._conn.execute('SELECT * FROM task_smart_approvals WHERE task_id=?',
+                                        (task.id,)).fetchone()
+            origin = self._chat_denial_consumer_locked(task)
+            if (denial is None or self._unsigned_smart_hold_verdict(denial) != 'deny'
+                    or denial['snapshot_sha256'] != bound['denial_snapshot_sha256']
+                    or hashlib.sha256(denial['annotation'].encode()).hexdigest()
+                    != bound['denial_annotation_sha256']
+                    or origin is None or origin['origin_id'] != bound['origin_id']
+                    or origin['session_id'] != bound['session_id']
+                    or origin['session_instance'] != bound['session_instance']
+                    or origin['principal_key'] != bound['principal_key']
+                    or origin['intent_sha256'] != bound['intent_sha256']
+                    or self._chat_intent_locked(task) != bound['intent_sha256']):
+                return None
+            approved = replace(task, status=TaskStatus.APPROVED.value,
+                               mediation_execution_id=None)
+            fingerprint = self.execution_fingerprint(approved)
+            if fingerprint is None:
+                return None
+            if bound['generation'] is None or bound['message_id'] is None:
+                return None
+            return {
+                'schema': 1, 'purpose': _OWNER_ONCE_PURPOSE,
+                'task_id': task.id, 'task_birth': task.created_at,
+                'denial_snapshot_sha256': bound['denial_snapshot_sha256'],
+                'denial_annotation_sha256': bound['denial_annotation_sha256'],
+                'origin_id': bound['origin_id'], 'session_id': bound['session_id'],
+                'session_instance': bound['session_instance'],
+                'principal_key': bound['principal_key'],
+                'intent_sha256': bound['intent_sha256'],
+                'offer_nonce_sha256': bound['offer_nonce_sha256'],
+                'deadline_at': bound['deadline_at'],
+                'owner_decision_id': decision_id, 'owner_channel': 'telegram',
+                'owner_chat_id': bound['chat_id'], 'owner_user_id': bound['user_id'],
+                'owner_message_id': bound['message_id'],
+                'owner_generation': bound['generation'],
+                'command_target_sha256': canonical_digest(args),
+                'kernel_intake_sha256': canonical_digest({
+                    'id': task.kernel_intake_id, 'evidence': task.kernel_intake_evidence,
+                }),
+                'mediation_receipt_sha256': (
+                    canonical_digest(task.mediation_receipt)
+                    if task.mediation_receipt is not None else None
+                ),
+                'mediation_policy_revision': task.mediation_policy_revision,
+                'approved_execution_sha256': fingerprint,
+            }
+        except Exception:
+            return None
+
+    def _owner_once_approval_locked(self, row: sqlite3.Row | None,
+                                    bound: sqlite3.Row | None,
+                                    *, allow_done: bool = False) -> dict | None:
+        try:
+            task = _row_to_task(row) if row else None
+            statuses = {'approved', 'running', 'done'} if allow_done else {'approved', 'running'}
+            if (task is None or bound is None or task.status not in statuses
+                    or bound['state'] not in {'accepted', 'claimed', 'dispatching'}
+                    or task.human_decision is None
+                    or task.human_decision.get('id') != bound['owner_decision_id']
+                    or task.human_decision.get('action') != 'once'
+                    or task.human_decision.get('by') != 'owner_once'
+                    or not self._smart_terminal_mediation_valid_locked(row, allow_done=allow_done)
+                    or type(bound['approval_receipt']) is not str
+                    or type(bound['signature']) is not str):
+                return None
+            receipt = json.loads(bound['approval_receipt'])
+            expected = self._owner_once_receipt_body_locked(task, bound,
+                                                            bound['owner_decision_id'])
+            if (type(receipt) is not dict or expected is None or receipt != expected
+                    or canonical_json(receipt).decode() != bound['approval_receipt']
+                    or not self._mediation_signer.verify(canonical_json(receipt),
+                                                         bound['signature'])):
+                return None
+            if task.status in {'running', 'done'}:
+                if bound['state'] not in {'claimed', 'dispatching'}:
+                    return None
+                if (self.mediation_mode == 'enforce'
+                        and bound['mediation_execution_id'] != task.mediation_execution_id):
+                    return None
+            return receipt
+        except Exception:
+            return None
+
+    def _owner_once_withdrawn_approval_locked(self, row: sqlite3.Row | None,
+                                              bound: sqlite3.Row | None) -> dict | None:
+        """Read a signed acceptance withdrawn before dispatch, never execution authority."""
+        try:
+            task = _row_to_task(row) if row else None
+            if (task is None or bound is None or task.status != 'rejected'
+                    or task.decided_by != 'owner_once' or task.decision != 'owner-once'
+                    or type(task.human_decision) is not dict
+                    or set(task.human_decision)
+                    != {'id', 'action', 'reason', 'by', 'at', 'first_at'}
+                    or task.human_decision.get('action') != 'once'
+                    or task.human_decision.get('by') != 'owner_once'
+                    or not self._owner_once_nonce(task.human_decision.get('id'))
+                    or task.human_decision.get('reason') is not None
+                    or type(task.human_decision.get('at')) is not str
+                    or task.human_decision['at'] != task.human_decision['first_at']
+                    or bound['state'] != 'revoked'
+                    or bound['owner_decision_id'] != task.human_decision['id']
+                    or bound['claimed_at'] is not None or bound['dispatch_at'] is not None
+                    or bound['mediation_execution_id'] is not None
+                    or task.mediation_execution_id is not None
+                    or not self._smart_terminal_mediation_valid_locked(row)
+                    or type(bound['approval_receipt']) is not str
+                    or type(bound['signature']) is not str):
+                return None
+            receipt = json.loads(bound['approval_receipt'])
+            approved = replace(task, status='approved')
+            expected = self._owner_once_receipt_body_locked(
+                approved, bound, bound['owner_decision_id'])
+            if (type(receipt) is not dict or expected is None or receipt != expected
+                    or canonical_json(receipt).decode() != bound['approval_receipt']
+                    or not self._mediation_signer.verify(canonical_json(receipt),
+                                                         bound['signature'])):
+                return None
+            return receipt
+        except Exception:
+            return None
+
+    def decide_owner_once(self, offer: OwnerOnceOffer, nonce: str, choice: str, *,
+                          authenticated_owner: OwnerOnceOwner,
+                          live_check: Callable[[], bool]) -> OwnerOnceClaim | None:
+        """CAS a delivered owner's exact once/deny answer, without scope grants."""
+        if (choice not in {'once', 'deny'} or type(choice) is not str
+                or type(offer) is not OwnerOnceOffer or nonce != offer.nonce):
+            return None
+        if choice == 'deny':
+            self.reject_owner_once(offer, nonce, authenticated_owner=authenticated_owner,
+                                   live_check=live_check)
+            return None
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                bound = self._owner_once_offer_locked(offer)
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?',
+                                         (offer.task_id,)).fetchone() if bound else None
+                current = self._owner_once_denial_locked(row, bound['denial_snapshot_sha256']) if bound else None
+                if (bound is None or current is None or bound['message_id'] is None
+                        or not self._owner_once_owner_valid(authenticated_owner, bound)
+                        or not self._owner_once_check(live_check)):
+                    self._conn.rollback()
+                    return None
+                task, _denial = current
+                decision_id = uuid.uuid4().hex
+                at = _now()
+                human = {'id': decision_id, 'action': 'once', 'by': 'owner_once',
+                         'at': at, 'first_at': at, 'reason': None}
+                approved = replace(task, status='approved', decided_by='owner_once',
+                                   decision='owner-once', human_decision=human)
+                receipt = self._owner_once_receipt_body_locked(approved, bound, decision_id)
+                if receipt is None:
+                    self._conn.rollback()
+                    return None
+                encoded = canonical_json(receipt)
+                signature = self._mediation_signer.sign(encoded)
+                if signature is None:
+                    self._conn.rollback()
+                    return None
+                changed = self._conn.execute('''UPDATE tasks SET status='approved',
+                    decided_by='owner_once',decision='owner-once',human_decision=?,updated_at=?
+                    WHERE id=? AND status='blocked' AND decided_by='policy'
+                    AND decision='needs-approval' ''',
+                    (json.dumps(human, ensure_ascii=False), at, task.id))
+                if changed.rowcount != 1:
+                    self._conn.rollback()
+                    return None
+                self._conn.execute('''UPDATE task_owner_once SET state='accepted',
+                    owner_decision_id=?,approval_receipt=?,signature=?
+                    WHERE task_id=? AND state='offered' ''',
+                    (decision_id, encoded.decode(), signature, task.id))
+                group_id = self._withdraw_task_group_locked(task.id)
+                self._record_promotion_effect_locked(group_id, task.id)
+                self._conn.commit()
+                claim = OwnerOnceClaim(task.id, nonce, decision_id, offer._turn,
+                                       authenticated_owner, self._owner_once_key)
+                self._owner_once_claims[task.id] = claim
+                return claim
+            except Exception:
+                self._conn.rollback()
+                return None
+
+    def reject_owner_once(self, offer: OwnerOnceOffer, nonce: str, *,
+                          authenticated_owner: OwnerOnceOwner,
+                          live_check: Callable[[], bool]) -> bool:
+        """Return true only when an exact delivered owner's rejection commits."""
+        if (type(offer) is not OwnerOnceOffer or type(nonce) is not str
+                or nonce != offer.nonce):
+            return False
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                bound = self._owner_once_offer_locked(offer)
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?',
+                                         (offer.task_id,)).fetchone() if bound else None
+                current = self._owner_once_denial_locked(
+                    row, bound['denial_snapshot_sha256']) if bound else None
+                if (bound is None or current is None or bound['message_id'] is None
+                        or not self._owner_once_owner_valid(authenticated_owner, bound)
+                        or not self._owner_once_check(live_check)):
+                    self._conn.rollback()
+                    return False
+                task, _denial = current
+                at = _now()
+                human = self._human_decision_record('reject', 'owner_once', None, at)
+                changed = self._conn.execute('''UPDATE tasks SET status='rejected',
+                    decided_by='owner_once',decision='owner-deny',human_decision=?,updated_at=?
+                    WHERE id=? AND status='blocked' AND decided_by='policy'
+                    AND decision='needs-approval' ''',
+                    (json.dumps(human, ensure_ascii=False), at, task.id))
+                if changed.rowcount != 1:
+                    self._conn.rollback()
+                    return False
+                changed = self._conn.execute('''UPDATE task_owner_once SET state='revoked',
+                    owner_decision_id=? WHERE task_id=? AND state='offered' ''',
+                    (human['id'], task.id))
+                if changed.rowcount != 1:
+                    self._conn.rollback()
+                    return False
+                self._withdraw_task_group_locked(task.id)
+                self._conn.commit()
+                return True
+            except Exception:
+                self._conn.rollback()
+                return False
+
+    def _owner_once_claim_live_locked(self, claim: OwnerOnceClaim,
+                                      bound: sqlite3.Row) -> bool:
+        return (
+            type(claim) is OwnerOnceClaim
+            and claim._queue_key is self._owner_once_key
+            and self._owner_once_claims.get(claim.task_id) is claim
+            and claim._turn.live()
+            and self._owner_once_nonce(claim.nonce)
+            and hashlib.sha256(claim.nonce.encode()).hexdigest() == bound['offer_nonce_sha256']
+            and claim.decision_id == bound['owner_decision_id']
+            and claim._turn.turn_id == bound['origin_id']
+            and claim._turn.session_id == bound['session_id']
+            and claim._turn.session_instance == bound['session_instance']
+            and claim._turn.principal_key == bound['principal_key']
+            and self._owner_once_owner_valid(claim._owner, bound)
+            and datetime.fromisoformat(bound['deadline_at']) > _approval_now()
+        )
+
+    def revoke_owner_once(self, offer: OwnerOnceOffer, reason: str = 'withdrawn') -> bool:
+        """Invalidate an undispached offer/claim before a late reply or send."""
+        if (type(offer) is not OwnerOnceOffer or offer._queue_key is not self._owner_once_key
+                or type(reason) is not str or not reason or len(reason) > 128):
+            return False
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                bound = self._conn.execute('SELECT * FROM task_owner_once WHERE task_id=?',
+                                           (offer.task_id,)).fetchone()
+                if (bound is None or bound['state'] not in {'offered', 'accepted', 'claimed'}
+                        or bound['offer_nonce_sha256'] != hashlib.sha256(
+                            offer.nonce.encode()).hexdigest()):
+                    self._conn.rollback()
+                    return False
+                changed = self._conn.execute("""UPDATE task_owner_once SET state='revoked'
+                    WHERE task_id=? AND state IN ('offered','accepted','claimed')""",
+                    (offer.task_id,))
+                if changed.rowcount != 1:
+                    self._conn.rollback()
+                    return False
+                task_row = self._conn.execute('SELECT * FROM tasks WHERE id=?',
+                                              (offer.task_id,)).fetchone()
+                if bound['state'] in {'offered', 'accepted'}:
+                    exact = (self._owner_once_denial_locked(
+                        task_row, bound['denial_snapshot_sha256']) is not None
+                        if bound['state'] == 'offered'
+                        else self._owner_once_approval_locked(task_row, bound) is not None)
+                    if exact:
+                        if bound['state'] == 'offered':
+                            self._conn.execute("""UPDATE tasks SET status='rejected',
+                                decided_by='smart_approval',decision='smart-deny',updated_at=?
+                                WHERE id=? AND status='blocked'""", (_now(), offer.task_id))
+                        else:
+                            self._conn.execute("""UPDATE tasks SET status='rejected',updated_at=?
+                                WHERE id=? AND status='approved'""", (_now(), offer.task_id))
+                        self._withdraw_task_group_locked(offer.task_id)
+                self._conn.commit()
+                self._owner_once_claims.pop(offer.task_id, None)
+                return True
+            except Exception:
+                self._conn.rollback()
+                return False
+
+    def claim_owner_once(self, task_id: int, claim: OwnerOnceClaim, *, execution_id: str,
+                         live_check: Callable[[], bool]) -> Task | None:
+        """Claim one signed owner reply; B7 validation and event stay atomic."""
+        if (type(task_id) is not int or task_id <= 0 or type(execution_id) is not str
+                or not execution_id or len(execution_id) > 128
+                or type(claim) is not OwnerOnceClaim or claim.task_id != task_id
+                or self.mediation_mode not in {'off', 'enforce'}):
+            return None
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                bound = self._conn.execute('SELECT * FROM task_owner_once WHERE task_id=?',
+                                           (task_id,)).fetchone()
+                receipt = self._owner_once_approval_locked(row, bound)
+                if (row is None or bound is None or bound['state'] != 'accepted'
+                        or row['status'] != 'approved' or receipt is None
+                        or not self._owner_once_claim_live_locked(claim, bound)
+                        or not self._owner_once_check(live_check)):
+                    self._conn.rollback()
+                    return None
+                verified_state = mediation_receipt = expectation = None
+                if self.mediation_mode == 'enforce':
+                    snapshot = self._validated_mediation_snapshot_locked()
+                    if snapshot is None or self._classification(row['kind']) is not True:
+                        self._conn.rollback()
+                        return None
+                    verified_state = snapshot[0]
+                    mediation_receipt, expectation, current_sha256 = self._row_receipt_and_expectation(row)
+                    authorized = self._conn.execute('''SELECT 1 FROM task_mediation_events
+                        WHERE task_id=? AND enqueue_id=? AND outcome='authorized_enqueue'
+                        LIMIT 1''', (task_id, expectation.enqueue_id)).fetchone()
+                    if not (
+                        row['mediation_execution_id'] is None
+                        and int(row['risk_tier']) == mediation_receipt.effective_tier
+                        and self._scope_allowed(expectation.scope)
+                        and expectation.policy_revision == self._mediation_policy_revision
+                        and authorized is not None
+                        and current_sha256 == row['mediation_task_sha256']
+                        and self._event_chain_valid_locked()
+                        and verify_receipt(self._mediation_signer, mediation_receipt,
+                                           expected=expectation, now_ms=self._clock_ms())
+                    ):
+                        self._conn.rollback()
+                        return None
+                elif self._row_has_mediation_provenance(row):
+                    self._conn.rollback()
+                    return None
+                changed = self._conn.execute('''UPDATE tasks SET status='running',
+                    mediation_execution_id=?,updated_at=?
+                    WHERE id=? AND status='approved' AND mediation_execution_id IS NULL''',
+                    (execution_id if self.mediation_mode == 'enforce' else None,
+                     _now(), task_id))
+                if changed.rowcount != 1:
+                    self._conn.rollback()
+                    return None
+                self._conn.execute('''UPDATE task_owner_once SET state='claimed',
+                    mediation_execution_id=?,claimed_at=?
+                    WHERE task_id=? AND state='accepted' ''',
+                    (execution_id, _now(), task_id))
+                if self.mediation_mode == 'enforce':
+                    self._append_mediation_event_locked(
+                        outcome='governed', task_id=task_id,
+                        enqueue_id=expectation.enqueue_id, receipt=mediation_receipt,
+                        execution_id=execution_id, verified_state=verified_state,
+                    )
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                return None
+        return self.get(task_id)
+
+    def owner_once_dispatch_current(self, task_id: int, claim: OwnerOnceClaim, *,
+                                    live_check: Callable[[], bool]) -> bool:
+        """Consume the only physical-dispatch opportunity for this claim."""
+        if type(task_id) is not int or task_id <= 0 or type(claim) is not OwnerOnceClaim:
+            return False
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                bound = self._conn.execute('SELECT * FROM task_owner_once WHERE task_id=?',
+                                           (task_id,)).fetchone()
+                if (bound is None or bound['state'] != 'claimed' or row is None
+                        or row['status'] != 'running'
+                        or self._owner_once_approval_locked(row, bound) is None
+                        or not self._owner_once_claim_live_locked(claim, bound)
+                        or not self._owner_once_check(live_check)):
+                    self._conn.rollback()
+                    return False
+                changed = self._conn.execute('''UPDATE task_owner_once
+                    SET state='dispatching',dispatch_at=?
+                    WHERE task_id=? AND state='claimed' ''', (_now(), task_id))
+                self._conn.commit()
+                return changed.rowcount == 1
+            except Exception:
+                self._conn.rollback()
+                return False
+
+    def verify_owner_once_terminal_approval(self, task_id: int, *,
+                                            check: Callable[[dict], bool]) -> bool:
+        """Verify a live signed owner claim before kernel or terminal authority."""
+        if type(task_id) is not int or task_id <= 0 or not callable(check):
+            return False
+        with self._lock:
+            try:
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                bound = self._conn.execute('SELECT * FROM task_owner_once WHERE task_id=?',
+                                           (task_id,)).fetchone()
+                receipt = self._owner_once_approval_locked(row, bound)
+                claim = self._owner_once_claims.get(task_id)
+                return (receipt is not None and claim is not None
+                        and self._owner_once_claim_live_locked(claim, bound)
+                        and check(receipt) is True)
+            except Exception:
+                return False
+
+    @staticmethod
+    def _owner_once_result_body(result: dict) -> dict:
+        return {key: value for key, value in result.items()
+                if key != '_owner_once_execution'}
+
+    def issue_owner_once_terminal_result(self, task: Task, result: dict) -> dict:
+        """Sign only one real dispatched successful RUNNING owner operation."""
+        if type(result) is not dict:
+            return result
+        body = self._owner_once_result_body(result)
+        if (type(task) is not Task or task.status != 'running'
+                or task.attempts <= 0 or body.get('status') != 'ok'
+                or type(body.get('result')) is not dict
+                or body['result'].get('ok') is not True):
+            return body
+        with self._lock:
+            try:
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task.id,)).fetchone()
+                bound = self._conn.execute('SELECT * FROM task_owner_once WHERE task_id=?',
+                                           (task.id,)).fetchone()
+                persisted = _row_to_task(row) if row else None
+                receipt = self._owner_once_approval_locked(row, bound)
+                if (persisted is None or persisted.status != 'running'
+                        or bound is None or bound['state'] != 'dispatching'
+                        or bound['dispatch_at'] is None or receipt is None
+                        or persisted.created_at != task.created_at
+                        or self.execution_fingerprint(persisted) != self.execution_fingerprint(task)):
+                    return body
+                result_sha256 = hashlib.sha256(json.dumps(
+                    body, ensure_ascii=False, allow_nan=False, sort_keys=True,
+                    separators=(',', ':'),
+                ).encode()).hexdigest()
+                proof = {
+                    'schema': 1, 'purpose': _OWNER_ONCE_EXECUTION_PURPOSE,
+                    'task_id': task.id, 'task_birth': task.created_at,
+                    'running_execution_sha256': self.execution_fingerprint(task),
+                    'claim_execution_id': bound['mediation_execution_id'],
+                    'kernel_intake_sha256': canonical_digest({
+                        'id': task.kernel_intake_id, 'evidence': task.kernel_intake_evidence,
+                    }),
+                    'approval_receipt_sha256': canonical_digest(receipt),
+                    'result_sha256': result_sha256, 'nonce': uuid.uuid4().hex,
+                }
+                signature = self._mediation_signer.sign(canonical_json(proof))
+                if signature is None:
+                    return body
+                return {**body, '_owner_once_execution': {**proof, 'signature': signature}}
+            except Exception:
+                return body
+
+    def verify_owner_once_terminal_result(self, task_id: int) -> bool:
+        """Verify historical DONE evidence after the live turn has closed."""
+        if type(task_id) is not int or task_id <= 0:
+            return False
+        with self._lock:
+            try:
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                bound = self._conn.execute('SELECT * FROM task_owner_once WHERE task_id=?',
+                                           (task_id,)).fetchone()
+                task = _row_to_task(row) if row else None
+                receipt = self._owner_once_approval_locked(row, bound, allow_done=True)
+                if (task is None or task.status != 'done' or bound is None
+                        or bound['state'] != 'dispatching' or bound['dispatch_at'] is None
+                        or receipt is None or type(task.result) is not dict):
+                    return False
+                proof = task.result.get('_owner_once_execution')
+                if type(proof) is not dict or set(proof) != {
+                    'schema', 'purpose', 'task_id', 'task_birth',
+                    'running_execution_sha256', 'claim_execution_id',
+                    'kernel_intake_sha256', 'approval_receipt_sha256',
+                    'result_sha256', 'nonce', 'signature',
+                }:
+                    return False
+                body = self._owner_once_result_body(task.result)
+                if (body.get('status') != 'ok' or type(body.get('result')) is not dict
+                        or body['result'].get('ok') is not True):
+                    return False
+                result_sha256 = hashlib.sha256(json.dumps(
+                    body, ensure_ascii=False, allow_nan=False, sort_keys=True,
+                    separators=(',', ':'),
+                ).encode()).hexdigest()
+                if (type(proof['schema']) is not int or proof['schema'] != 1
+                        or proof['purpose'] != _OWNER_ONCE_EXECUTION_PURPOSE
+                        or type(proof['task_id']) is not int or proof['task_id'] != task_id
+                        or proof['task_birth'] != task.created_at
+                        or proof['running_execution_sha256'] != self.execution_fingerprint(task)
+                        or proof['claim_execution_id'] != bound['mediation_execution_id']
+                        or proof['kernel_intake_sha256'] != canonical_digest({
+                            'id': task.kernel_intake_id, 'evidence': task.kernel_intake_evidence,
+                        })
+                        or proof['approval_receipt_sha256'] != canonical_digest(receipt)
+                        or proof['result_sha256'] != result_sha256
+                        or not self._owner_once_nonce(proof['nonce'])):
+                    return False
+                core = {key: value for key, value in proof.items() if key != 'signature'}
+                return self._mediation_signer.verify(canonical_json(core), proof['signature'])
+            except Exception:
+                return False
+
     def get(self, task_id: int) -> Optional[Task]:
         with self._lock:
             row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
@@ -3321,7 +4216,9 @@ class TaskQueue:
         """
         if task_id is not None and (type(task_id) is not int or task_id <= 0):
             raise ValueError("task_id must be a positive integer")
-        clause = "status='approved' AND attempts < ?"
+        # An owner-once approval is inert without its private named claim.
+        clause = ("status='approved' AND attempts < ? AND "
+                  "COALESCE(decided_by,'')!='owner_once' AND COALESCE(decision,'')!='owner-once'")
         params: list = [MAX_ATTEMPTS]
         if max_tier is not None:
             clause += " AND risk_tier <= ?"

@@ -18,6 +18,7 @@ from __future__ import annotations
 if __name__ != "agents.core.autonomy.worker":
     raise ImportError("AutonomyWorker authority must be imported as agents.core.autonomy.worker")
 
+import asyncio
 import inspect
 import logging
 import threading
@@ -36,6 +37,8 @@ from .mediation import (
     issue_intake_evidence,
     issue_receipt,
 )
+from .owner_once import OwnerOnceClaim, OwnerOnceOffer
+from .owner_once_execution import _worker_scope, owner_once_current
 from .policy import ACT, ASK, NOTIFY, AutonomyPolicy, RiskTier
 from .queue import (
     MAX_ATTEMPTS,
@@ -467,6 +470,7 @@ class _ExecutionPermit:
     def __init__(self, task: Task) -> None:
         self._fingerprint = TaskQueue.execution_fingerprint(task)
         self._active = True
+        self._consumed = False
         self._lock = threading.Lock()
 
     def consume(self, task: Task, *, validate: Callable[[Task, str], bool]) -> bool:
@@ -481,7 +485,16 @@ class _ExecutionPermit:
                 or task.status != TaskStatus.RUNNING.value
             ):
                 return False
-        return validate(task, self._fingerprint)
+        allowed = validate(task, self._fingerprint)
+        if allowed:
+            with self._lock:
+                self._consumed = True
+        return allowed
+
+    @property
+    def consumed(self) -> bool:
+        with self._lock:
+            return self._consumed
 
     def revoke(self) -> None:
         with self._lock:
@@ -685,10 +698,47 @@ class AutonomyWorker:
             logger.warning("could not persist kernel refusal evidence", exc_info=True)
         return decision
 
+    def kernel_dispatch_current(self, action, capability=None, *, approval_check=None):
+        """Recheck live kernel floors without consuming the intake decision."""
+        from ..kernel import Decision, Verdict
+
+        kernel = getattr(self._mediation_kernel, "revalidate", None)
+        if not callable(kernel):
+            return Decision(Verdict.DENY, reason="kernel revalidation unavailable")
+        try:
+            if approval_check is None:
+                decision = kernel(action, capability=capability)
+            else:
+                decision = kernel(action, capability=capability,
+                                  approval_check=approval_check)
+            return decision if isinstance(decision, Decision) else Decision(
+                Verdict.DENY, reason="kernel revalidation unavailable")
+        except Exception:
+            return Decision(Verdict.DENY, reason="kernel revalidation unavailable")
+
     def execution_allowed(self, task: Task) -> bool:
         """Guard a TaskExecutor call with the worker's private validated-claim context."""
 
         if self.queue.mediation_mode == "off":
+            try:
+                persisted = self.queue.get(getattr(task, "id", 0))
+            except Exception:
+                return False
+            owner_once = (
+                task.decided_by == "owner_once" or task.decision == "owner-once"
+                or (persisted is not None and (
+                    persisted.decided_by == "owner_once" or persisted.decision == "owner-once"
+                ))
+            )
+            if owner_once:
+                fingerprint = TaskQueue.execution_fingerprint(task)
+                return bool(
+                    persisted is not None
+                    and persisted.status == TaskStatus.RUNNING.value
+                    and fingerprint is not None
+                    and fingerprint == TaskQueue.execution_fingerprint(persisted)
+                    and owner_once_current(task.id)
+                )
             return True
         persisted, mediated = self.queue.execution_snapshot(
             getattr(task, "id", 0), presented_kind=getattr(task, "kind", "")
@@ -702,6 +752,9 @@ class AutonomyWorker:
             or not persisted_fingerprint
             or persisted_fingerprint != presented_fingerprint
         ):
+            return False
+        if ((persisted.decided_by == "owner_once" or persisted.decision == "owner-once")
+                and (not mediated or not owner_once_current(task.id))):
             return False
         if not mediated:
             return True
@@ -1348,6 +1401,24 @@ class AutonomyWorker:
         except Exception:
             logger.warning('guardian notification wait unavailable; manual handling retained')
 
+    def _settle_terminal_denial(self, task_id: int) -> bool:
+        """Suppress generic DENY controls and settle unattended exact refusals."""
+        from .task_approval_judge import TaskApprovalJudge
+
+        adapter = self.approval_judge
+        denial = (adapter.current_terminal_denial(task_id)
+                  if type(adapter) is TaskApprovalJudge else None)
+        if denial is None:
+            return False
+        snapshot, _result, current = denial
+        prompts = getattr(self, '_owner_once_prompts', None)
+        if prompts is None or not prompts.reply_available(task_id):
+            self.queue.reject_smart_terminal_denial(
+                task_id, snapshot['snapshot_sha256'],
+                check=lambda: self.approval_judge is adapter and current(),
+            )
+        return True
+
     async def _maybe_push(self, task: Task, *, delivery_id: str | None = None,
                           expected_group_id: str | None = None,
                           edited_revision: str | None = None) -> bool:
@@ -1372,6 +1443,10 @@ class AutonomyWorker:
         if pending_leader() is None:
             return False
         await self._await_smart_notification_review(task)
+        if self._settle_terminal_denial(task.id):
+            # A DENY never consumes a generic four-choice notification/budget.
+            # A live originating invocation owns its separate once/deny prompt.
+            return False
         notifier = self.notifier
         if not callable(notifier) or pending_leader() is None:
             return False
@@ -1387,6 +1462,11 @@ class AutonomyWorker:
             nonlocal stale_at_dispatch
             # Waiting can span an owner edit. Send the row checked above, never
             # the intake-time payload captured before guardian review.
+            if self._settle_terminal_denial(task.id):
+                # A live owner invocation can keep DENY BLOCKED while this
+                # broker waits; that is not a generic approval opportunity.
+                stale_at_dispatch = True
+                return False
             current = pending_leader()
             if current is None or self.notifier is not notifier:
                 stale_at_dispatch = True
@@ -1704,6 +1784,107 @@ class AutonomyWorker:
                     execution_permit.revoke()
                 self._execution_context.reset(execution_token)
         return {"ran": ran, "done": done, "failed": failed, "held": held, "reaped": reaped}
+
+    async def _run_owner_once(self, claim: OwnerOnceClaim, *,
+                              live_check: Callable[[], bool]) -> dict:
+        """Run one exact owner claim outside the scheduler's approved-task lane."""
+        empty = {"ran": 0, "done": 0, "failed": 0, "held": 1}
+        if type(claim) is not OwnerOnceClaim or not callable(live_check):
+            return empty
+        task = self.queue.get(claim.task_id)
+        if (task is None or task.status != TaskStatus.APPROVED.value
+                or task.decided_by != "owner_once" or task.decision != "owner-once"
+                or task.attempts != 0 or self.queue.mediation_mode not in {"off", "enforce"}
+                or self._halted() or self._halted(task.agent)
+                or (task.mediation_scope and self._halted(task.mediation_scope))):
+            return empty
+
+        def worker_live() -> bool:
+            if (self._halted() or self._halted(task.agent)
+                    or (task.mediation_scope and self._halted(task.mediation_scope))):
+                return False
+            try:
+                return live_check() is True
+            except Exception:
+                return False
+
+        if not worker_live() or asyncio.current_task().cancelling():
+            return empty
+        running = self.queue.claim_owner_once(
+            claim.task_id, claim, execution_id=str(uuid.uuid4()), live_check=worker_live,
+        )
+        if running is None:
+            return empty
+        # From this point the claim is spent. Every exit fails or completes this
+        # single attempt; no path returns the row to APPROVED for a retry.
+        task = running
+        execution_permit = None
+        try:
+            attempt = self.queue.increment_attempts(task.id)
+            refreshed = self.queue.get(task.id)
+            if refreshed is None or refreshed.status != TaskStatus.RUNNING.value or attempt != 1:
+                raise TaskQueueError("owner-once attempt state changed")
+            task = refreshed
+            if self.queue.mediation_mode == "enforce":
+                persisted, mediated = self.queue.execution_snapshot(
+                    task.id, presented_kind=task.kind,
+                )
+                fingerprint = TaskQueue.execution_fingerprint(task)
+                if (persisted is None or not mediated or fingerprint is None
+                        or TaskQueue.execution_fingerprint(persisted) != fingerprint
+                        or not self.queue.validate_mediated_execution(task, fingerprint)):
+                    raise TaskQueueError("owner-once mediation unavailable")
+                task = persisted
+                execution_permit = _ExecutionPermit(task)
+            self._observe_qa4_intake(task)
+            execution_token = self._execution_context.set(execution_permit)
+            try:
+                with _worker_scope(
+                    self.queue, claim, worker_live,
+                    dispatch_check=lambda: execution_permit is None or execution_permit.consumed,
+                ) as scope:
+                    if not owner_once_current(task.id):
+                        raise TaskQueueError("owner-once approval unavailable")
+                    result = await self._execute(task)
+                    live_after = scope.live()
+                    scope.close()  # copied child contexts cannot dispatch after return
+            finally:
+                if execution_permit is not None:
+                    execution_permit.revoke()
+                self._execution_context.reset(execution_token)
+            if not live_after and asyncio.current_task().cancelling():
+                raise asyncio.CancelledError
+            if not live_after or type(result) is not dict:
+                raise TaskQueueError("owner-once execution did not complete live")
+            signed = self.queue.issue_owner_once_terminal_result(task, result)
+            if type(signed.get("_owner_once_execution")) is not dict:
+                raise TaskQueueError("owner-once dispatch or completion proof missing")
+            self.queue.transition(task.id, TaskStatus.DONE, result=signed)
+            if self._exercises_capability(task):
+                self._record_capability_outcome(task, success=True, result=result)
+            self._settle_spend(task)
+            self._audit("autonomy.done", task, "owner-once executed")
+            return {"ran": 1, "done": 1, "failed": 0, "held": 0}
+        except asyncio.CancelledError:
+            current = self.queue.get(task.id)
+            if current is not None and current.status == TaskStatus.RUNNING.value:
+                self.queue.transition(task.id, TaskStatus.FAILED,
+                                      result={"error": "owner-once execution cancelled"})
+            raise
+        except Exception as exc:
+            current = self.queue.get(task.id)
+            if current is not None and current.status == TaskStatus.RUNNING.value:
+                self.queue.transition(task.id, TaskStatus.FAILED, result=_failure_record(exc))
+            if self._exercises_capability(task):
+                self._record_capability_outcome(task, success=False, error=exc)
+            self._audit("autonomy.failed", task, "owner-once execution failed")
+            return {"ran": 1, "done": 0, "failed": 1, "held": 0}
+        finally:
+            # The queue's accepted/claimed state can be withdrawn before a
+            # physical dispatch. A dispatching row remains for DONE evidence.
+            self.queue.revoke_owner_once(OwnerOnceOffer(
+                claim.task_id, claim.nonce, "", claim._turn, claim._queue_key,
+            ))
 
     def _exercises_capability(self, task: Task) -> bool:
         """False when the injected executor says no handler of its own is registered for

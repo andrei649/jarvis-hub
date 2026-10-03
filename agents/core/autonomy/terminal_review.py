@@ -12,7 +12,7 @@ from ..approval_outcomes import (
     current_approval_turn,
     record_invocation_outcome,
 )
-from .smart_approvals import SmartApprovalResult, smart_policy, terminal_args
+from .smart_approvals import smart_policy, terminal_args
 from .task_approval_judge import TaskApprovalJudge
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,8 @@ async def review_terminal_task(worker, *, actor: str, args: dict, task_id: int,
     if (original is None or original.agent != actor or original.kind != 'toolrpc.terminal_run'
             or original.payload.get('args') != args):
         return None
-    snapshot = adapter._snapshot(original)
+    settled_denial = adapter.current_terminal_denial(task_id)
+    snapshot = settled_denial[0] if settled_denial is not None else adapter._snapshot(original)
     status = judge.status()
     if (snapshot is None or terminal_args(snapshot) is None or not status.configured
             or not judge.wants(snapshot, status)):
@@ -59,18 +60,9 @@ async def review_terminal_task(worker, *, actor: str, args: dict, task_id: int,
     task = queue.get(task_id)
     if not live(task):
         return answer('terminal_review_changed')
-    if task.status == 'blocked':
-        annotation = queue.approval_judgement(task_id, digest)
-        if not isinstance(annotation, dict) or annotation.get('advisory') is not False:
-            return None
-        try:
-            result = SmartApprovalResult(annotation['decision'], annotation['policy_revision'],
-                                         annotation['judge_revision'], annotation['judge'], annotation['at'])
-            valid = judge.smart_current(result, snapshot)
-        except (KeyError, TypeError, ValueError):
-            valid = False
-        if not valid or result.verdict != 'deny':
-            return None
+    denial = adapter.current_terminal_denial(task_id)
+    if denial is not None and denial[0]['snapshot_sha256'] == digest:
+        _denied_snapshot, _result, current = denial
         reply = answer('guardian_denied', notice=DENIAL_NOTICE)
         if turn is not None:
             observation = queue.chat_invocation_outcome(turn, task_id)
@@ -79,7 +71,58 @@ async def review_terminal_task(worker, *, actor: str, args: dict, task_id: int,
                 reply['guardian'] = observation['guardian']
                 if observation['guardian']['breaker'] is True:
                     reply['notice'] = DENIAL_BREAKER_NOTICE
-        return reply
+        prompts = getattr(worker, '_owner_once_prompts', None)
+        if prompts is None or not prompts.can_reply():
+            queue.reject_smart_terminal_denial(
+                task_id, digest, check=lambda: registration_is_live() is True
+                and worker.approval_judge is adapter and current(),
+            )
+            return reply
+
+        def reply_live():
+            # Runs under queue CAS and in Telegram's callback task. It must
+            # neither read the queue nor depend on that task's ContextVars.
+            return (registration_is_live() is True and worker.approval_judge is adapter
+                    and adapter._judge is judge and turn is not None and turn.live()
+                    and getattr(worker, '_owner_once_prompts', None) is prompts
+                    and current())
+
+        claim = await prompts.request(task_id, digest, check=reply_live)
+        if claim is None:
+            queue.reject_smart_terminal_denial(task_id, digest, check=reply_live)
+            return reply
+        completed = False
+        try:
+            if not live(queue.get(task_id)):
+                return answer('terminal_review_changed')
+            await worker._run_owner_once(
+                claim, live_check=lambda: reply_live() and prompts.claim_current(claim),
+            )
+            task = queue.get(task_id)
+            if not live(task):
+                return answer('terminal_review_changed')
+            if task.status == 'done':
+                execution = task.result
+                if (type(execution) is dict and execution.get('status') == 'ok'
+                        and type(execution.get('result')) is dict
+                        and execution['result'].get('ok') is True
+                        and queue.verify_owner_once_terminal_result(task_id)):
+                    completed = True
+                    return {'ok': True, 'tool': 'terminal_run', 'task_id': task_id,
+                            'result': execution['result'],
+                            **({'guardian': reply['guardian']} if 'guardian' in reply else {})}
+                return answer('terminal_execution_unverified')
+            return answer('terminal_execution_held' if task.status == 'approved'
+                          else 'terminal_execution_failed')
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning('owner-once terminal execution unavailable', exc_info=True)
+            return answer('terminal_execution_unavailable')
+        finally:
+            prompts.release_claim(claim, completed=completed)
+    if task.status == 'blocked':
+        return None
     if task.decision != 'smart-approve' or task.decided_by != 'smart_approval':
         return answer('terminal_review_changed')
     if task.status == 'approved':

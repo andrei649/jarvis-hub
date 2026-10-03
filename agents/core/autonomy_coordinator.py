@@ -201,6 +201,7 @@ class AutonomyCoordinator:
         """
         from .channels.outbound import _owner_chat_id
 
+        self._wire_owner_once_prompts()
         owner = _owner_chat_id(self._orch, configured_owner=self._owner_settings().get("autonomy.owner_chat_id"))
         tg = self._orch.channels.get("telegram")
         if tg and owner and hasattr(tg, "send_card"):
@@ -226,6 +227,32 @@ class AutonomyCoordinator:
             logger.info(
                 "Autonomy decision inbox wired to Telegram (H34.2 away-notify via escalation)"
             )
+
+    def _wire_owner_once_prompts(self):
+        """Enroll the current reply transport before native intake can settle DENY."""
+        from .autonomy.owner_once_prompts import OwnerOncePrompts
+        from .channels.telegram import TelegramChannel
+
+        worker = getattr(self._orch, 'autonomy', None)
+        channel = (getattr(self._orch, 'channels', {}) or {}).get('telegram')
+        previous = getattr(self, '_owner_once_prompts', None)
+        old_channel = getattr(self, '_owner_once_channel', None)
+        if (previous is not None and (previous.worker is not worker
+                or previous.queue is not getattr(worker, 'queue', None)
+                or old_channel is not channel)):
+            previous.stop(getattr(old_channel, '_owner_once_generation', None))
+            if getattr(previous.worker, '_owner_once_prompts', None) is previous:
+                previous.worker._owner_once_prompts = None
+            self._owner_once_prompts = previous = None
+        if worker is None or not isinstance(channel, TelegramChannel):
+            return
+        if previous is None:
+            previous = OwnerOncePrompts(self)
+            self._owner_once_prompts = previous
+            self._owner_once_channel = channel
+        # Retain stable hooks/registrations across ordinary runtime rewiring.
+        previous.install(channel)
+        worker._owner_once_prompts = previous
 
     def _escalation_router(self):
         """Build a live ``EscalationRouter`` over the current channels + allowlist.
@@ -651,6 +678,16 @@ class AutonomyCoordinator:
             return task is not None and (task.decision == 'smart-approve'
                                         or task.decided_by == 'smart_approval')
 
+        def _owner_terminal_marker(task_id):
+            task = self._orch.autonomy_queue.get(task_id)
+            return task is not None and (task.decision == 'owner-once'
+                                        or task.decided_by == 'owner_once')
+
+        def _owner_terminal_approved(task_id):
+            from .autonomy.owner_once_execution import owner_once_current
+
+            return owner_once_current(task_id)
+
         def _approved_execution_context(context, task):
             """Trust only the TaskExecutor turn whose durable row is running."""
             if context is not execution_token:
@@ -681,7 +718,11 @@ class AutonomyCoordinator:
                      or (persisted.kind == 'toolrpc.terminal_run'
                          and persisted.decision == 'smart-approve'
                          and queue.execution_fingerprint(persisted) == queue.execution_fingerprint(task)
-                         and _smart_terminal_approved(task_id)))
+                         and _smart_terminal_approved(task_id))
+                     or (persisted.kind == 'toolrpc.terminal_run'
+                         and _owner_terminal_marker(task_id)
+                         and queue.execution_fingerprint(persisted) == queue.execution_fingerprint(task)
+                         and _owner_terminal_approved(task_id)))
                 and bool(persisted.decided_by)
                 and str(persisted.decided_by).lower() != "policy"
                 and persisted.payload == getattr(task, "payload", None)
@@ -845,7 +886,8 @@ class AutonomyCoordinator:
                 and persisted.kind == "toolrpc.terminal_run"
                 and persisted.autonomy_level == "ask"
                 and (_human_terminal_approval(persisted)
-                     or (persisted.decision == 'smart-approve' and _smart_terminal_approved(task_id)))
+                     or (persisted.decision == 'smart-approve' and _smart_terminal_approved(task_id))
+                     or (_owner_terminal_marker(task_id) and _owner_terminal_approved(task_id)))
                 and bool(persisted.decided_by)
                 and str(persisted.decided_by).lower() != "policy"
             )
@@ -862,7 +904,7 @@ class AutonomyCoordinator:
             task = queue.get(task_id)
             from .tool_rpc import current_tool_actor
 
-            if task is not None and _smart_terminal_marker(task_id):
+            if task is not None and (_smart_terminal_marker(task_id) or _owner_terminal_marker(task_id)):
                 from .autonomy.approval_judge import action_is_tainted
 
                 if (not kernel_enabled()
@@ -896,6 +938,8 @@ class AutonomyCoordinator:
                 approval_check=_durable_terminal_approval,
                 request_check=_terminal_request_check,
                 smart_approval_check=_smart_terminal_marker,
+                owner_approval_check=_owner_terminal_marker,
+                owner_kernel_check=getattr(self._orch.autonomy, 'kernel_dispatch_current', None),
             )
             from .action_origin import bind_action_origin, reset_action_origin
 
@@ -923,6 +967,7 @@ class AutonomyCoordinator:
             worker = getattr(self._orch, 'autonomy', None)
             if not callable(getattr(worker, 'govern_enqueue', None)):
                 raise ToolRPCValidationError('terminal_intake_unavailable')
+            self._wire_owner_once_prompts()
             title = "Tool 'terminal_run' via RPC"
             payload = {'tool': 'terminal_run', 'target': 'terminal_run', 'args': dict(args)}
             # Production worker intake owns the bridge and creates one exact
@@ -941,6 +986,12 @@ class AutonomyCoordinator:
                 task_id = worker.govern_enqueue(actor, 'toolrpc.terminal_run', title,
                                                 payload=payload, risk_tier=3,
                                                 autonomy_level='ask', origin='generated')
+            prompts = getattr(worker, '_owner_once_prompts', None)
+            if prompts is not None:
+                prompts.register_invocation(
+                    task_id, check=lambda: (server._tools.get('terminal_run') is spec
+                                              and getattr(self._orch, 'autonomy', None) is worker),
+                )
             from . import project_context
 
             project_context.note_task(task_id)
@@ -951,11 +1002,17 @@ class AutonomyCoordinator:
 
             worker = getattr(self._orch, 'autonomy', None)
             spec = server._tools.get('terminal_run')
-            return await review_terminal_task(
-                worker, actor=actor, args=args, task_id=task_id,
-                registration_is_live=lambda: (server._tools.get('terminal_run') is spec
-                                               and getattr(self._orch, 'autonomy', None) is worker),
-            )
+            try:
+                return await review_terminal_task(
+                    worker, actor=actor, args=args, task_id=task_id,
+                    registration_is_live=lambda: (server._tools.get('terminal_run') is spec
+                                                   and getattr(self._orch, 'autonomy', None) is worker),
+                )
+            finally:
+                prompts = getattr(worker, '_owner_once_prompts', None)
+                if prompts is not None:
+                    prompts.release_invocation(task_id)
+                worker._settle_terminal_denial(task_id)
 
         server.register_tool(
             "terminal_run",

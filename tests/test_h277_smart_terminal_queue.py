@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from agents.core.autonomy.mediation import DetachedHMACSigner, issue_intake_evidence
-from agents.core.autonomy.queue import TaskQueue, TaskStatus
+from agents.core.autonomy.queue import TaskQueue, TaskQueueError, TaskStatus
 from agents.core.autonomy.smart_approvals import SmartApprovalResult
 
 
@@ -96,7 +96,7 @@ def test_missing_signer_and_revoked_policy_never_promote(tmp_path):
 
 
 @pytest.mark.parametrize("verdict", ["deny", "escalate"])
-def test_nonapproving_verdict_retains_owner_override(verdict, tmp_path):
+def test_only_escalation_retains_generic_owner_override(verdict, tmp_path):
     queue = _queue(tmp_path)
     task_id, digest = _blocked_terminal(queue)
     annotation, group_id = queue.store_smart_terminal_judgement(
@@ -108,11 +108,16 @@ def test_nonapproving_verdict_retains_owner_override(verdict, tmp_path):
     assert queue.get(task_id).status == "blocked"
     assert not queue.verify_smart_terminal_approval(task_id, check=lambda receipt: True)
 
-    queue.transition(
-        task_id, TaskStatus.APPROVED, decided_by="owner", decision="accept", human_reason=None,
-    )
-    task = queue.get(task_id)
-    assert task.human_decision["by"] == "owner"
+    if verdict == 'deny':
+        with pytest.raises(TaskQueueError):
+            queue.transition(task_id, TaskStatus.APPROVED, decided_by='owner',
+                             decision='accept', human_reason=None)
+        assert queue.get(task_id).human_decision is None
+        assert queue.get(task_id).status == 'blocked'
+    else:
+        queue.transition(task_id, TaskStatus.APPROVED, decided_by='owner',
+                         decision='accept', human_reason=None)
+        assert queue.get(task_id).human_decision['by'] == 'owner'
     assert not queue.verify_smart_terminal_approval(task_id, check=lambda receipt: True)
     queue.close()
 

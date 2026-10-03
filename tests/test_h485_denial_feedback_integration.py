@@ -56,7 +56,7 @@ async def test_three_native_guardian_denials_warn_next_owner_turn_once(chat, mon
             if adapter._judge_tasks:
                 await asyncio.gather(*tuple(adapter._judge_tasks))
         assert len(requests) == 3
-        assert all(task.status == 'blocked' for task in chat.q.list())
+        assert all(task.status == 'rejected' for task in chat.q.list())
         if failed_answer:
             chat.backend.turns.append(ToolTurn(content='[Gemini error: failed]'))
             await entry('what happened?', channel='web', session_id='s')

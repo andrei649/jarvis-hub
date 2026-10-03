@@ -161,6 +161,67 @@ async def test_smart_default_off_preserves_immediate_manual_notification(queue, 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("verdict,live_owner,should_send", [
+    ("DENY", True, False),
+    ("DENY", False, False),
+    ("ESCALATE", True, True),
+])
+async def test_native_verdict_during_broker_wait_rechecks_generic_card(
+    queue, tmp_path, verdict, live_owner, should_send,
+):
+    waiting, release = asyncio.Event(), asyncio.Event()
+    delivered = []
+    ledger = AttentionLedger(tmp_path / "late-verdict-attention.db", timezone_name="UTC", per_day=4)
+    broker = AttentionDeliveryBroker(ledger)
+
+    class WaitingBroker:
+        async def dispatch(self, delivery_id, channel_class, dispatcher):
+            waiting.set()
+            await release.wait()
+            return await broker.dispatch(delivery_id, channel_class, dispatcher)
+
+    class LiveInvocation:
+        # A trusted live invocation keeps DENY blocked for its once/reject card.
+        # It grants no authority; this test never dispatches an operation.
+        def reply_available(self, task_id):
+            return live_owner
+
+    async def notify(task):
+        delivered.append(task.id)
+        return True
+
+    async def native_judge(_request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": verdict}}]})
+
+    worker = AutonomyWorker(queue, notifier=notify, delivery_broker=WaitingBroker())
+    worker._owner_once_prompts = LiveInvocation()
+    task_id = queue.enqueue("jarvis", "toolrpc.terminal_run", "Review command",
+                            payload=_payload(), risk_tier=3, autonomy_level="ask")
+    queue.transition(task_id, "blocked", decided_by="policy", decision="needs-approval")
+    push = asyncio.create_task(worker._maybe_push(queue.get(task_id)))
+    try:
+        await waiting.wait()
+        # Configuration may enable a judge while an existing card is brokered.
+        judge, _unused = _wire(queue, native_judge)
+        worker.attach_approval_judge(judge, loop=asyncio.get_running_loop())
+        worker.approval_judge.schedule(task_id)
+        await _settle(worker.approval_judge)
+        if verdict == "DENY" and not live_owner:
+            assert queue.get(task_id).status == "rejected"
+        else:
+            assert worker.approval_judge.project(queue.get(task_id))["judge"]["decision"] == verdict.lower()
+        if verdict == "DENY" and live_owner:
+            assert queue.get(task_id).status == "blocked"
+    finally:
+        release.set()
+        sent = await push
+        await _finish(worker)
+    assert delivered == ([task_id] if should_send else [])
+    assert sent is should_send
+    assert bool(queue.get(task_id).pushed) is should_send
+
+
+@pytest.mark.asyncio
 async def test_owner_decision_during_review_suppresses_obsolete_notification(queue, tmp_path):
     started, release = asyncio.Event(), asyncio.Event()
 

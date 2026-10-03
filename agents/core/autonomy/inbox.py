@@ -13,6 +13,7 @@ ignore) surfaced as Aprob / Editez / Resping / Amân.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -28,6 +29,60 @@ DECISION_ACTIONS = {
 }
 
 _TIER_LABELS = {0: "read-only", 1: "reversibil", 2: "extern", 3: "ireversibil/bani"}
+_OWNER_ONCE_DATA = re.compile(r"\Aaut1:([0-9a-f]{32}):([ar])\Z")
+
+
+def parse_owner_once_callback_data(data: object) -> tuple[str, str] | None:
+    """Parse only the reserved, one-use callback alphabet."""
+    match = _OWNER_ONCE_DATA.fullmatch(data) if type(data) is str else None
+    if match is None:
+        return None
+    return match.group(1), "once" if match.group(2) == "a" else "deny"
+
+
+def build_owner_once_card(task, nonce: str) -> dict:
+    """Display the full valid terminal request, redacted for owner delivery."""
+    if parse_owner_once_callback_data(f"aut1:{nonce}:a") != (nonce, "once"):
+        raise ValueError("invalid owner-once nonce")
+    t = _as_dict(task)
+    payload = t.get("payload") if isinstance(t.get("payload"), dict) else {}
+    args = payload.get("args") if isinstance(payload.get("args"), dict) else {}
+    if payload.get("tool") != "terminal_run" or type(t.get("id")) is not int:
+        raise ValueError("owner-once card requires terminal task")
+    if (type(args.get("target")) is not str or not args["target"]
+            or len(args["target"]) > 96 or type(args.get("command")) is not str
+            or not args["command"] or len(args["command"]) > 4000):
+        raise ValueError("owner-once terminal request is malformed or oversized")
+
+    from ..security.scanner import SecretScanner
+
+    scanner = SecretScanner()
+
+    def preview(value: object, limit: int) -> str:
+        try:
+            redacted = scanner.redact(value)
+        except Exception:
+            raise ValueError("owner-once redaction unavailable") from None
+        if len(redacted) > limit:
+            raise ValueError("owner-once redacted command does not fit")
+        return redacted
+
+    text = "\n".join((
+        f"⚠️ Guardian denied terminal request #{t['id']}.",
+        "Approve this exact request once, or keep it denied.",
+        "Tool: terminal_run",
+        f"Target: {preview(args.get('target'), 96)}",
+        f"Command: {preview(args.get('command'), 24_000)}",
+    ))
+    try:
+        if len(text.encode("utf-16-le")) // 2 > 24_576:
+            raise ValueError("owner-once card exceeds bounded delivery budget")
+    except UnicodeEncodeError:
+        raise ValueError("owner-once card contains invalid Unicode") from None
+    return {"text": text, "reply_markup": {"inline_keyboard": [[
+        {"text": "✅ Allow once", "callback_data": f"aut1:{nonce}:a"},
+        {"text": "❌ Deny", "callback_data": f"aut1:{nonce}:r"},
+    ]]}}
 
 
 @dataclass(frozen=True)

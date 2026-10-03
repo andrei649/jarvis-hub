@@ -130,18 +130,26 @@ async def test_native_guardian_approves_one_exact_toolrpc_operation_without_huma
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('text', ['DENY', 'ESCALATE', 'APPROVE because harmless', ''])
-async def test_nonapproval_remains_pending_with_clear_machine_outcome_and_owner_override(runtime, text):
+async def test_deny_settles_while_escalation_retains_manual_owner_override(runtime, text):
     queue, worker, orch, sandbox, _seen = runtime
     bind_judge(worker, text)
     answer = await propose(orch)
     await drain(worker.approval_judge)
     task = queue.get(answer['task_id'])
-    assert task.status == 'blocked'
-    annotation = worker.approval_judge.project(task)['judge']
+    assert task.status == ('rejected' if text == 'DENY' else 'blocked')
+    annotation = (worker.approval_judge.current_terminal_denial(task.id)[1].annotation()
+                  if text == 'DENY' else worker.approval_judge.project(task)['judge'])
     assert annotation['decision'] == ('deny' if text == 'DENY' else 'escalate')
     assert annotation['advisory'] is False
     await worker.tick()
     assert sandbox.commands == []
+    if text == 'DENY':
+        from agents.core.autonomy.queue import TaskQueueError
+
+        with pytest.raises(TaskQueueError):
+            await worker.apply_decision(task.id, 'accept', 'user')
+        assert queue.get(task.id).human_decision is None
+        return
     await worker.apply_decision(task.id, 'accept', 'user')
     await worker.tick()
     assert sandbox.commands == ['printf hello']

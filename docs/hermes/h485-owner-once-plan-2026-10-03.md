@@ -50,3 +50,23 @@ Current milestone: owner-identity checkpoint sealed locally at ee1dc146c413a09c3
 
 Rollback: separate local continuation commit after the owner-identity prerequisite commit. New offer records are inert without the live runtime permit; revert source while preserving ordinary queue/task history. No unrelated file rewrite or dependency/global-policy change.
 Next action: finalize the shared capability/offer interface from these contracts, then write failing real continuation regressions before implementing queue/transport/worker integration. Keep the full goal active; H277/H485 remain partial.
+
+## Physical-boundary kernel revalidation refinement
+
+Integration established that the context-free judge needs a bounded process-local
+registration of the live originating invocation before it can settle unattended
+DENY. This registration suppresses premature closure only; it grants no execution
+authority. Releasing the invocation also settles any remaining canonical DENY,
+including cancellation before prompt creation.
+
+A paused built-in transport must observe current kernel floors after its initial
+GRANT. Repeating normal authorization would record the loop event twice and disturb
+the pending B7 decision handoff. Add a non-consuming, fail-closed revalidator of
+the exact `terminal.exec` Action, capability and approval aperture: current
+kill-switch, budget, loop breaker, policy mode, taint and receipt, without a new
+loop event or pending handoff. Owner physical scopes require its GRANT immediately
+before dispatch CAS; unsupported or awaitable revalidators refuse execution.
+Ordinary smart/manual authorization remains unchanged. Root integrates; implementer
+A owns kernel/binding/worker and focused kernel tests; B owns the runner's trusted
+revalidation callback and physical pause tests. Final evidence must include these
+sources and the integrated tests, rather than reusing the earlier 647-case freeze.

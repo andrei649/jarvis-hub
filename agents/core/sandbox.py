@@ -379,6 +379,10 @@ class Sandbox:
     async def execute_shell(self, command: str) -> SandboxResult:
         if self._has_docker:
             return await self._execute_docker_shell(command)
+        from .environments.owner_once_dispatch import owner_once_scope_present
+
+        if owner_once_scope_present():
+            return SandboxResult(stderr="Owner-once Docker backend unavailable", exit_code=-1)
         if not self.allow_subprocess:
             return SandboxResult(
                 stderr="Code execution disabled: no Docker/WASM isolation and the host "
@@ -439,6 +443,13 @@ class Sandbox:
             self.docker_image,
         ] + cmd
 
+        from .environments.owner_once_dispatch import physical_gate
+
+        if physical_gate(self, backend="docker", argv=tuple(cmd), cwd="/workspace",
+                         timeout=self.timeout) is False:
+            return SandboxResult(stderr="Owner-once dispatch unavailable", exit_code=-1,
+                                 duration=time.monotonic() - start)
+
         try:
             proc = await asyncio.create_subprocess_exec(
                 *docker_cmd,
@@ -446,6 +457,8 @@ class Sandbox:
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
+                if asyncio.current_task().cancelling():
+                    raise asyncio.CancelledError
                 out_text, err_text = await asyncio.wait_for(
                     self._read_output_capped(proc, sinks), timeout=self.timeout
                 )
@@ -497,6 +510,11 @@ class Sandbox:
         except FileNotFoundError:
             logger.warning("Docker not found")
             self._has_docker = False
+            from .environments.owner_once_dispatch import owner_once_scope_present
+
+            if owner_once_scope_present():
+                return SandboxResult(stderr="Owner-once Docker backend unavailable",
+                                     exit_code=-1, duration=time.monotonic() - start)
             if not self.allow_subprocess:
                 return SandboxResult(
                     stderr="Code execution disabled: Docker not available and the host "

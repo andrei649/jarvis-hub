@@ -44,11 +44,12 @@ from __future__ import annotations
 import os
 import shlex
 from collections.abc import Callable
+from contextlib import nullcontext
 from typing import Any
 
 from agents.core.env_config import env_flag
 
-from .targets import ALLOW, APPROVAL_REQUIRED, TargetRegistry
+from .targets import ALLOW, APPROVAL_REQUIRED, TargetDecision, TargetRegistry
 from .terminal_contract import (
     TERMINAL_EXEC_CONTRACT,
     TERMINAL_EXEC_KIND,
@@ -108,6 +109,8 @@ class GovernedTargetRunner:
         approval_check: Callable[[int], bool] | None = None,
         request_check: Callable[[int | None, dict], bool] | None = None,
         smart_approval_check: Callable[[int], bool] | None = None,
+        owner_approval_check: Callable[[int], bool] | None = None,
+        owner_kernel_check: Callable[..., Any] | None = None,
     ) -> None:
         if not isinstance(registry, TargetRegistry):
             raise ValueError("registry must be a TargetRegistry")
@@ -123,6 +126,10 @@ class GovernedTargetRunner:
             raise TypeError("request_check must be callable")
         if smart_approval_check is not None and not callable(smart_approval_check):
             raise TypeError("smart_approval_check must be callable")
+        if owner_approval_check is not None and not callable(owner_approval_check):
+            raise TypeError("owner_approval_check must be callable")
+        if owner_kernel_check is not None and not callable(owner_kernel_check):
+            raise TypeError("owner_kernel_check must be callable")
         self._registry = registry
         self._sandbox = sandbox
         self._local_transport = local_transport
@@ -131,6 +138,8 @@ class GovernedTargetRunner:
         self._approval_check = approval_check
         self._request_check = request_check
         self._smart_approval_check = smart_approval_check
+        self._owner_approval_check = owner_approval_check
+        self._owner_kernel_check = owner_kernel_check
 
     async def run(
         self,
@@ -182,14 +191,22 @@ class GovernedTargetRunner:
             "backend": decision.backend,
             "outcome": decision.outcome,
         }
-        if decision.outcome == APPROVAL_REQUIRED:
+        owner_marked = self._is_owner_approval(approved_task_id)
+        if decision.outcome not in {APPROVAL_REQUIRED, ALLOW}:
+            return {"ok": False, "reason": decision.reason, **base}
+        if owner_marked and self._request_check is None:
+            return {"ok": False, "reason": "owner_request_check_unbound", **base}
+        if decision.outcome == APPROVAL_REQUIRED or owner_marked:
             durable = self._durable_approval(approved_task_id)
             if durable is not None:
                 return {"ok": False, "reason": durable, **base}
-        elif decision.outcome != ALLOW:
-            return {"ok": False, "reason": decision.reason, **base}
 
         if decision.backend == "docker":
+            if owner_marked:
+                from agents.core.sandbox import Sandbox
+
+                if type(self._sandbox) is not Sandbox:
+                    return {"ok": False, "reason": "owner_transport_unsupported", **base}
             # Never let a docker-target command silently degrade onto the
             # host: the sandbox engine's active backend must actually be
             # docker at execution time.
@@ -200,7 +217,7 @@ class GovernedTargetRunner:
                     "reason": f"docker_backend_unavailable:{active}",
                     **base,
                 }
-            if self._is_smart_approval(approved_task_id):
+            if self._is_smart_approval(approved_task_id) or owner_marked:
                 # Sandbox executes sh -c in /workspace with its configured
                 # timeout. Do not approve options this transport cannot honor.
                 actual_timeout = getattr(self._sandbox, "timeout", None)
@@ -216,7 +233,11 @@ class GovernedTargetRunner:
                 verdict = TERMINAL_EXEC_CONTRACT.evaluate(payload)
                 if not verdict.admissible:
                     return {"ok": False, "reason": f"contract_denied:{verdict.reason}", **base}
-                kernel_refusal = await self._kernel_grant(decision.agent, payload, request=request)
+                owner_kernel_rechecks: list[Callable[[], bool]] = []
+                kernel_refusal = await self._kernel_grant(
+                    decision.agent, payload, request=request,
+                    owner_rechecks=owner_kernel_rechecks if owner_marked else None,
+                )
                 if kernel_refusal is not None:
                     return {"ok": False, **kernel_refusal, **base}
                 if not self._kernel_live():
@@ -228,7 +249,32 @@ class GovernedTargetRunner:
             active = self._sandbox.active_backend()
             if active != "docker":
                 return {"ok": False, "reason": f"docker_backend_unavailable:{active}", **base}
-            result = await self._sandbox.execute_shell(command)
+            if owner_marked:
+                from .owner_once_dispatch import OwnerOnceDispatchScope, bind_owner_once_dispatch
+
+                expected_runtime = (self._sandbox.timeout, self._sandbox.docker_image,
+                                    self._sandbox.max_memory_mb, str(self._sandbox.work_dir),
+                                    self._sandbox.allow_subprocess)
+
+                def current():
+                    return (self._owner_current(approved_task_id, request)
+                            and self._policy_current(decision)
+                            and len(owner_kernel_rechecks) == 1
+                            and owner_kernel_rechecks[0]()
+                            and self._kernel_live() and self._sandbox.active_backend() == "docker"
+                            and (self._sandbox.timeout, self._sandbox.docker_image,
+                                 self._sandbox.max_memory_mb, str(self._sandbox.work_dir),
+                                 self._sandbox.allow_subprocess) == expected_runtime)
+
+                scope = OwnerOnceDispatchScope(
+                    approved_task_id, "docker", base["target"], ("sh", "-c", command),
+                    "/workspace", self._sandbox.timeout, self._sandbox, dict(request), current,
+                )
+                context = bind_owner_once_dispatch(scope)
+            else:
+                context = nullcontext()
+            with context:
+                result = await self._sandbox.execute_shell(command)
             return {
                 "ok": result.exit_code == 0,
                 "exit_code": result.exit_code,
@@ -248,6 +294,8 @@ class GovernedTargetRunner:
                 cwd=cwd,
                 timeout=timeout,
                 request=request,
+                owner_marked=owner_marked,
+                expected_decision=decision,
             )
         if decision.backend == "ssh":
             if not env_flag(SSH_HOST_FLAG):
@@ -260,6 +308,8 @@ class GovernedTargetRunner:
                 cwd=cwd,
                 timeout=timeout,
                 request=request,
+                owner_marked=owner_marked,
+                expected_decision=decision,
             )
         return {"ok": False, "reason": "backend_unknown", **base}
 
@@ -280,6 +330,35 @@ class GovernedTargetRunner:
             # A broken classifier cannot downgrade an operation to the
             # legacy Docker path; require the stricter contract/kernel path.
             return True
+
+    def _is_owner_approval(self, task_id: int | None) -> bool:
+        if self._owner_approval_check is None or type(task_id) is not int or task_id <= 0:
+            return False
+        try:
+            return self._owner_approval_check(task_id) is True
+        except Exception:
+            # Unknown owner marker is never permission to use legacy Docker.
+            return True
+
+    def _owner_current(self, task_id: int, request: dict) -> bool:
+        if (not self._is_owner_approval(task_id) or self._approval_check is None
+                or not self._request_current(task_id, request)):
+            return False
+        try:
+            return self._approval_check(task_id) is True
+        except Exception:
+            return False
+
+    def _policy_current(self, expected: TargetDecision) -> bool:
+        """Audit and recheck the exact target decision at physical dispatch."""
+        try:
+            current = self._registry.authorize(
+                expected.target, expected.agent, expected.capability,
+                correlation_id=expected.correlation_id,
+            )
+        except Exception:
+            return False
+        return current == expected and current.outcome in {ALLOW, APPROVAL_REQUIRED}
 
     @staticmethod
     def _kernel_live() -> bool:
@@ -312,6 +391,8 @@ class GovernedTargetRunner:
         cwd: str | None,
         timeout: int | None,
         request: dict,
+        owner_marked: bool = False,
+        expected_decision: TargetDecision | None = None,
     ) -> dict:
         argv, refusal = parse_argv(command)
         if refusal is not None:
@@ -325,6 +406,11 @@ class GovernedTargetRunner:
             except (ValueError, OSError):
                 return {"ok": False, "reason": "local_transport_unavailable", **base}
             self._local_transport = transport
+        if owner_marked:
+            from .local_transport import LocalHostTransport
+
+            if type(transport) is not LocalHostTransport:
+                return {"ok": False, "reason": "owner_transport_unsupported", **base}
 
         bounded = transport.bound_timeout(timeout)
         if bounded is None:
@@ -347,7 +433,11 @@ class GovernedTargetRunner:
         if not verdict.admissible:
             return {"ok": False, "reason": f"contract_denied:{verdict.reason}", **base}
 
-        kernel_refusal = await self._kernel_grant(agent, payload, request=request)
+        owner_kernel_rechecks: list[Callable[[], bool]] = []
+        kernel_refusal = await self._kernel_grant(
+            agent, payload, request=request,
+            owner_rechecks=owner_kernel_rechecks if owner_marked else None,
+        )
         if kernel_refusal is not None:
             return {"ok": False, **kernel_refusal, **base}
         if not self._kernel_live() or not env_flag(LOCAL_HOST_FLAG):
@@ -356,7 +446,30 @@ class GovernedTargetRunner:
         if not self._request_current(approved_task_id, request):
             return {"ok": False, "reason": "terminal_request_changed", **base}
 
-        result = await transport.run(argv, cwd=str(workdir), timeout=bounded)
+        if owner_marked:
+            from .owner_once_dispatch import OwnerOnceDispatchScope, bind_owner_once_dispatch
+
+            expected_roots = transport.roots
+
+            def current():
+                return (self._owner_current(approved_task_id, request)
+                        and expected_decision is not None
+                        and self._policy_current(expected_decision)
+                        and len(owner_kernel_rechecks) == 1
+                        and owner_kernel_rechecks[0]()
+                        and self._kernel_live() and env_flag(LOCAL_HOST_FLAG)
+                        and transport.roots == expected_roots
+                        and transport.resolve_cwd(cwd) == workdir)
+
+            scope = OwnerOnceDispatchScope(
+                approved_task_id, "local", base["target"], tuple(argv), str(workdir),
+                bounded, transport, dict(request), current,
+            )
+            context = bind_owner_once_dispatch(scope)
+        else:
+            context = nullcontext()
+        with context:
+            result = await transport.run(argv, cwd=str(workdir), timeout=bounded)
         return {**result, **base, "approved_task_id": approved_task_id}
 
     async def _run_ssh(
@@ -369,6 +482,8 @@ class GovernedTargetRunner:
         cwd: str | None,
         timeout: int | None,
         request: dict,
+        owner_marked: bool = False,
+        expected_decision: TargetDecision | None = None,
     ) -> dict:
         """Same gate order as the local host; only the wire at the end differs."""
         argv, refusal = parse_argv(command)
@@ -383,6 +498,11 @@ class GovernedTargetRunner:
             except (ValueError, OSError):
                 return {"ok": False, "reason": "ssh_transport_unavailable", **base}
             self._ssh_transport = transport
+        if owner_marked:
+            from .ssh_transport import SshTransport
+
+            if type(transport) is not SshTransport:
+                return {"ok": False, "reason": "owner_transport_unsupported", **base}
 
         host = transport.host_for(base["target"])
         if host is None:
@@ -408,7 +528,11 @@ class GovernedTargetRunner:
         if not verdict.admissible:
             return {"ok": False, "reason": f"contract_denied:{verdict.reason}", **base}
 
-        kernel_refusal = await self._kernel_grant(agent, payload, request=request)
+        owner_kernel_rechecks: list[Callable[[], bool]] = []
+        kernel_refusal = await self._kernel_grant(
+            agent, payload, request=request,
+            owner_rechecks=owner_kernel_rechecks if owner_marked else None,
+        )
         if kernel_refusal is not None:
             return {"ok": False, **kernel_refusal, **base}
         if not self._kernel_live() or not env_flag(SSH_HOST_FLAG):
@@ -417,10 +541,41 @@ class GovernedTargetRunner:
         if not self._request_current(approved_task_id, request):
             return {"ok": False, "reason": "terminal_request_changed", **base}
 
-        result = await transport.run(argv, target=host.target, cwd=workdir, timeout=bounded)
+        if owner_marked:
+            from .owner_once_dispatch import OwnerOnceDispatchScope, bind_owner_once_dispatch
+
+            expected_known_hosts = transport._known_hosts
+            expected_ssh_path = transport.ssh_path
+            expected_connect_timeout = transport.connect_timeout
+
+            def current():
+                return (self._owner_current(approved_task_id, request)
+                        and expected_decision is not None
+                        and self._policy_current(expected_decision)
+                        and len(owner_kernel_rechecks) == 1
+                        and owner_kernel_rechecks[0]()
+                        and self._kernel_live() and env_flag(SSH_HOST_FLAG)
+                        and transport.host_for(host.target) == host
+                        and transport._known_hosts == expected_known_hosts
+                        and transport.ssh_path == expected_ssh_path
+                        and transport.connect_timeout == expected_connect_timeout
+                        and transport.resolve_cwd(host.target, cwd) == workdir)
+
+            scope = OwnerOnceDispatchScope(
+                approved_task_id, "ssh", base["target"], tuple(argv), workdir,
+                bounded, transport, dict(request), current,
+            )
+            context = bind_owner_once_dispatch(scope)
+        else:
+            context = nullcontext()
+        with context:
+            result = await transport.run(argv, target=host.target, cwd=workdir, timeout=bounded)
         return {**result, **base, "approved_task_id": approved_task_id}
 
-    async def _kernel_grant(self, agent: str, payload: dict, *, request: dict | None = None) -> dict | None:
+    async def _kernel_grant(
+        self, agent: str, payload: dict, *, request: dict | None = None,
+        owner_rechecks: list[Callable[[], bool]] | None = None,
+    ) -> dict | None:
         """Cross the Action Kernel; return a refusal dict unless it GRANTs."""
         from agents.core.action_origin import current_action_origin
         from agents.core.kernel import Action, Capability, Decision, Verdict, kernel_enabled
@@ -438,22 +593,30 @@ class GovernedTargetRunner:
         )
         approval_check = None
         task_id = payload.get('approved_task_id')
+        owner_marked = self._is_owner_approval(task_id)
         if (request is not None and self._request_check is not None
-                and self._is_smart_approval(task_id)):
+                and (self._is_smart_approval(task_id) or owner_marked)):
             from copy import deepcopy
 
             expected = deepcopy(action)
             reviewed_request = dict(request)
 
             def approval_check(candidate):
-                return (candidate == expected and self._is_smart_approval(task_id)
-                        and self._request_current(task_id, reviewed_request))
+                return (candidate == expected and self._request_current(task_id, reviewed_request)
+                        and ((owner_marked and self._owner_current(task_id, reviewed_request))
+                             or (not owner_marked and self._is_smart_approval(task_id))))
+
+        if owner_marked and (self._owner_kernel_check is None or owner_rechecks is None
+                             or approval_check is None):
+            return {"reason": "kernel_revalidator_unavailable"}
+
+        capability = Capability(name=TERMINAL_EXEC_KIND)
 
         try:
             if approval_check is None:
-                decision = self._authorizer(action, capability=Capability(name=TERMINAL_EXEC_KIND))
+                decision = self._authorizer(action, capability=capability)
             else:
-                decision = self._authorizer(action, capability=Capability(name=TERMINAL_EXEC_KIND),
+                decision = self._authorizer(action, capability=capability,
                                             approval_check=approval_check)
             if hasattr(decision, "__await__"):
                 decision = await decision
@@ -465,6 +628,32 @@ class GovernedTargetRunner:
             return {"reason": "kernel_denied", "detail": str(decision.reason or "")[:200]}
         if decision.verdict is not Verdict.GRANT:
             return {"reason": "kernel_queued", "detail": str(decision.reason or "")[:200]}
+        if owner_marked:
+            from copy import deepcopy
+            from inspect import isawaitable, iscoroutine
+
+            bound_action = deepcopy(action)
+            bound_capability = capability
+            bound_approval_check = approval_check
+            checker = self._owner_kernel_check
+
+            def recheck() -> bool:
+                try:
+                    candidate = deepcopy(bound_action)
+                    if bound_approval_check(candidate) is not True:
+                        return False
+                    fresh = checker(candidate, capability=bound_capability,
+                                    approval_check=bound_approval_check)
+                    if isawaitable(fresh):
+                        if iscoroutine(fresh):
+                            fresh.close()
+                        return False
+                    return (type(fresh) is Decision and fresh.verdict is Verdict.GRANT
+                            and candidate == bound_action)
+                except Exception:
+                    return False
+
+            owner_rechecks.append(recheck)
         return None
 
 

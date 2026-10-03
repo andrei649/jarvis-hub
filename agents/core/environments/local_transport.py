@@ -190,6 +190,12 @@ class LocalHostTransport:
         env = prepare_python_child_env(self._env_source())
         fingerprint = argv_fingerprint(argv_list)
         start = time.monotonic()
+        from .owner_once_dispatch import physical_gate
+
+        if physical_gate(self, backend="local", argv=tuple(argv_list),
+                         cwd=str(workdir), timeout=bounded) is False:
+            return {"ok": False, "reason": "owner_once_dispatch_unavailable",
+                    "argv_sha256": fingerprint}
         try:
             proc = await self._spawn(
                 *argv_list,
@@ -205,6 +211,10 @@ class LocalHostTransport:
             return {"ok": False, "reason": "executable_not_permitted", "argv_sha256": fingerprint}
         except OSError:
             return {"ok": False, "reason": "spawn_failed", "argv_sha256": fingerprint}
+
+        if asyncio.current_task().cancelling():
+            await self._kill(proc)
+            raise asyncio.CancelledError
 
         from .output_capture import OutputCapture
         capture = OutputCapture()
@@ -227,6 +237,9 @@ class LocalHostTransport:
                 "timeout": bounded,
                 "argv_sha256": fingerprint,
             }
+        except asyncio.CancelledError:
+            await self._kill(proc)
+            raise
         stdout = render_capped(out_head, out_tail, out_total, max_content_bytes=cap, label="STDOUT")
         stderr = render_capped(err_head, err_tail, err_total, max_content_bytes=cap, label="STDERR")
         exit_code = proc.returncode if isinstance(proc.returncode, int) else -1

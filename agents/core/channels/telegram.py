@@ -12,6 +12,7 @@ import logging
 import math
 import re
 import time
+import uuid
 from typing import Callable, NamedTuple, Optional
 
 import httpx
@@ -45,6 +46,7 @@ from .render import chunk, to_plain, to_telegram_html
 from .spoken_reply import REASON_SEND, Audio, SpokenReply
 from ..log_safe import log_safe
 from ..settings_db import get_value
+from ..owner_once_context import OwnerReplySource, bind_owner_reply_source, close_owner_reply_source
 
 logger = logging.getLogger("jarvis.channels.telegram")
 
@@ -257,6 +259,12 @@ class TelegramChannel(ChannelAdapter):
         self._bot_username: Optional[str] = None
         self._offset = 0
         self._poll_task = None
+        self._owner_once_generation: str | None = None
+        self._owner_once_fast: dict[str, asyncio.Task] = {}
+        # Registration-owned hooks; the channel does not decide owner identity.
+        self.owner_once_pending: Optional[Callable] = None
+        self.on_owner_once_callback: Optional[Callable] = None
+        self.on_owner_once_stop: Optional[Callable] = None
         # H677: while the poll loop runs, each chat's turns go to that chat's lane, so
         # one slow answer never holds another chat's messages.
         self._lanes = None
@@ -323,6 +331,7 @@ class TelegramChannel(ChannelAdapter):
         self._voice_pending: set = set()
 
     async def start(self):
+        self._owner_once_generation = uuid.uuid4().hex
         self._running = True
         me = await self._get_me()
         if me:
@@ -339,6 +348,21 @@ class TelegramChannel(ChannelAdapter):
 
     async def stop(self):
         self._running = False
+        generation = getattr(self, "_owner_once_generation", None)
+        self._owner_once_generation = None
+        stop_hook = getattr(self, "on_owner_once_stop", None)
+        if generation is not None and stop_hook is not None:
+            try:
+                stop_hook(generation)
+            except Exception:
+                logger.warning("Owner-once stop hook failed", exc_info=True)
+        fast = tuple(getattr(self, "_owner_once_fast", {}).values())
+        for task in fast:
+            task.cancel()
+        if fast:
+            await asyncio.wait(fast, timeout=LANE_DRAIN_BUDGET)
+        if hasattr(self, "_owner_once_fast"):
+            self._owner_once_fast.clear()
         if self._poll_task:
             self._poll_task.cancel()
             # H117: the cancel lands at one of the loop's awaits, so the hand-over at its
@@ -490,6 +514,70 @@ class TelegramChannel(ChannelAdapter):
             logger.error(f"Telegram send_card error: {e}")
             return False
 
+    def _owner_once_live(self, generation: str | None) -> bool:
+        poller = self._poll_task
+        return (self._running is True and type(generation) is str and bool(generation)
+                and self._owner_once_generation == generation
+                and isinstance(poller, asyncio.Task) and not poller.done()
+                and not poller.cancelling())
+
+    @staticmethod
+    def _owner_once_parts(text: str) -> tuple[str, ...] | None:
+        """Split plain text at Telegram's 4096 UTF-16-unit message boundary."""
+        if type(text) is not str or not text:
+            return None
+        parts: list[str] = []
+        current: list[str] = []
+        units = total = 0
+        for char in text:
+            code = ord(char)
+            if 0xD800 <= code <= 0xDFFF:
+                return None
+            size = 2 if code > 0xFFFF else 1
+            total += size
+            if total > 24_576:
+                return None
+            if units + size > TELEGRAM_MAX_MESSAGE_LENGTH:
+                parts.append("".join(current))
+                current = []
+                units = 0
+            current.append(char)
+            units += size
+        if current:
+            parts.append("".join(current))
+        return tuple(parts)
+
+    async def send_owner_once_card(self, chat_id: int, card: dict) -> int | None:
+        """Send every plain-text part; bind buttons only to the final receipt."""
+        generation = self._owner_once_generation
+        if (not self._owner_once_live(generation) or type(chat_id) is not int
+                or chat_id == 0 or not isinstance(card, dict)):
+            return None
+        parts = self._owner_once_parts(card.get("text"))
+        markup = card.get("reply_markup")
+        if parts is None or (markup is not None and type(markup) is not dict):
+            return None
+        for number, part in enumerate(parts):
+            if not self._owner_once_live(generation):
+                return None
+            body = {"chat_id": chat_id, "text": part}
+            if number == len(parts) - 1 and markup is not None:
+                body["reply_markup"] = markup
+            try:
+                response = await self.client.post(f"{self.api_base}/sendMessage", json=body)
+                response.raise_for_status()
+                reply = response.json()
+                result = reply.get("result") if type(reply) is dict and reply.get("ok") is True else None
+                message_id = result.get("message_id") if type(result) is dict else None
+                if type(message_id) is not int or message_id <= 0:
+                    return None
+            except Exception:
+                logger.warning("Owner-once card delivery failed")
+                return None
+            if not self._owner_once_live(generation):
+                return None
+        return message_id
+
     async def request_decision_reason(self, task_id: int, *, chat_id: int) -> int:
         """Offer an optional reply bound to one rejected decision, not a chat turn."""
         posting = self._reason_prompts_posting
@@ -583,6 +671,31 @@ class TelegramChannel(ChannelAdapter):
         if cb:
             await self._flush_all_turns()      # what was said before the tap goes first
             chat = ((cb.get("message") or {}).get("chat") or {}).get("id")
+            from ..autonomy.inbox import parse_owner_once_callback_data
+            parsed_once = parse_owner_once_callback_data(cb.get("data"))
+            generation = self._owner_once_generation
+            if (parsed_once is not None and self._owner_once_live(generation)
+                    and self.owner_once_pending is not None
+                    and self.on_owner_once_callback is not None
+                    and parsed_once[0] not in self._owner_once_fast
+                    and len(self._owner_once_fast) < 32):
+                try:
+                    reserved = self.owner_once_pending(cb) is True
+                except Exception:
+                    reserved = False
+                if reserved:
+                    nonce, choice = parsed_once
+                    callback_hook = self.on_owner_once_callback
+                    pending_hook = self.owner_once_pending
+                    task = asyncio.create_task(self._handle_owner_once_callback(
+                        cb, nonce, choice, generation, callback_hook, pending_hook,
+                    ))
+                    self._owner_once_fast[nonce] = task
+                    task.add_done_callback(
+                        lambda done, key=nonce: self._owner_once_fast.get(key) is done
+                        and self._owner_once_fast.pop(key, None)
+                    )
+                    return
             await self._in_chat(chat, lambda: self._handle_callback(cb))
             return
         msg = up.get("message") or up.get("edited_message")
@@ -854,6 +967,10 @@ class TelegramChannel(ChannelAdapter):
         # chat's voice mark, and only while it runs.
         scope = _TurnScope(self, chat_id)
         token = _RUNNING_TURN.set(scope)
+        owner_source = OwnerReplySource(
+            self, self._owner_once_generation or "", chat_id, uid, asyncio.current_task(),
+        )
+        owner_token = bind_owner_reply_source(owner_source)
         if spoken:
             self._voice_turns.add(chat_id)
         try:
@@ -863,7 +980,37 @@ class TelegramChannel(ChannelAdapter):
             # its voice mark behind for the next, typed, question.
             self._voice_turns.discard(chat_id)
             scope.running = False
+            close_owner_reply_source(owner_source, owner_token)
             _RUNNING_TURN.reset(token)
+
+    async def _handle_owner_once_callback(
+        self, cb: dict, nonce: str, choice: str, generation: str,
+        callback_hook: Callable, pending_hook: Callable,
+    ) -> None:
+        """Dispatch a registered nonce outside the occupied chat lane."""
+        uid = (cb.get("from") or {}).get("id")
+        message = cb.get("message") or {}
+        chat_id = (message.get("chat") or {}).get("id")
+        try:
+            if (not self._owner_once_live(generation)
+                    or self.on_owner_once_callback is not callback_hook
+                    or self.owner_once_pending is not pending_hook
+                    or pending_hook(cb) is not True):
+                await self._answer_callback(cb.get("id", ""), "Not applied.")
+                return
+            result = await callback_hook(
+                nonce, choice, chat_id=chat_id, user_id=uid,
+                message_id=message.get("message_id"),
+            )
+            await self._answer_callback(
+                cb.get("id", ""),
+                (f"OK: {choice}" if type(result) is str and result.strip()
+                 and self._owner_once_live(generation)
+                 and self.on_owner_once_callback is callback_hook else "Not applied."),
+            )
+        except Exception:
+            logger.warning("Owner-once callback dispatch failed")
+            await self._answer_callback(cb.get("id", ""), "Not applied.")
 
 
     async def _maybe_pair_deeplink(self, text: str, uid, chat_id) -> bool:

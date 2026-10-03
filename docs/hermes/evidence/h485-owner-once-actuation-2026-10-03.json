@@ -1,0 +1,155 @@
+{
+  "checkpoint": "H485 owner-once same-invocation actuation; H277/H485 remain partial",
+  "created_at": "2026-10-03T17:11:50.262840+00:00",
+  "parent_head": "aec4348cf96f92d2b384dbba4b8e3a5b7e438a11",
+  "branch": "codex/h277-provider-discovery-20261002",
+  "source_wiring_implemented": true,
+  "owner_worker_dispatch_integrated": true,
+  "runtime_activated": false,
+  "published": false,
+  "full_suite_run": false,
+  "frontend_run": false,
+  "live_provider_or_telegram_run": false,
+  "accepted_hermes_scope": 697,
+  "verification_environment": "Offline native HTTPX judge/Telegram responses and mocked actual subprocess spawn; real queue, worker, target policy and Action Kernel",
+  "focused": {
+    "tests": 1346,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 8,
+    "passed": 1338
+  },
+  "focused_xml": "/tmp/nerva-h485-owner-once-sealed-focused-20261003.xml",
+  "restored": {
+    "tests": 43,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 43
+  },
+  "restored_xml": "/tmp/nerva-h485-owner-once-actuation-restored-20261003.xml",
+  "mutations": [
+    {
+      "mutant": "done-proof",
+      "file": "agents/core/autonomy/terminal_review.py",
+      "baseline_sha256": "a753d38b2ae38acf28b60f817ee91f240d0bd65df967e70a76c6fd728709391c",
+      "test": "tests/test_h485_owner_once_actuation.py::test_invocation_does_not_report_success_without_exact_owner_done_proof",
+      "exit_code": 1,
+      "failures": [
+        "test_invocation_does_not_report_success_without_exact_owner_done_proof[synthetic-done]",
+        "test_invocation_does_not_report_success_without_exact_owner_done_proof[changed-output]",
+        "test_invocation_does_not_report_success_without_exact_owner_done_proof[missing-proof]"
+      ],
+      "errors": [],
+      "log": "/tmp/nerva-h485-owner-once-sealed-mutant-done-proof-20261003.log",
+      "xml": "/tmp/nerva-h485-owner-once-sealed-mutant-done-proof-20261003.xml"
+    },
+    {
+      "mutant": "deny-cleanup",
+      "file": "agents/core/autonomy_coordinator.py",
+      "baseline_sha256": "390ebc6d046857e4d6abf642057722ad6b2c1193a0ec1225068b8b20ad7ed3ea",
+      "test": "tests/test_h485_owner_once_actuation.py::test_cancelled_review_settles_native_deny_before_prompt_registration",
+      "exit_code": 1,
+      "failures": [
+        "test_cancelled_review_settles_native_deny_before_prompt_registration"
+      ],
+      "errors": [],
+      "log": "/tmp/nerva-h485-owner-once-sealed-mutant-deny-cleanup-20261003.log",
+      "xml": "/tmp/nerva-h485-owner-once-sealed-mutant-deny-cleanup-20261003.xml"
+    },
+    {
+      "mutant": "fresh-owner",
+      "file": "agents/core/autonomy/owner_once_prompts.py",
+      "baseline_sha256": "32551631b22f099f6571250cee101373662d333e0ba2e0a26d26af26f5f6c69b",
+      "test": "tests/test_h485_owner_once_actuation.py::test_revocation_after_owner_reply_before_physical_spawn_refuses[owner]",
+      "exit_code": 1,
+      "failures": [
+        "test_revocation_after_owner_reply_before_physical_spawn_refuses[owner]"
+      ],
+      "errors": [],
+      "log": "/tmp/nerva-h485-owner-once-sealed-mutant-fresh-owner-20261003.log",
+      "xml": "/tmp/nerva-h485-owner-once-sealed-mutant-fresh-owner-20261003.xml"
+    },
+    {
+      "mutant": "live-budget",
+      "file": "agents/core/kernel/__init__.py",
+      "baseline_sha256": "207aaedb748f900fdc4e41f41b4770b29591144c02c9070464d28ab540e34bff",
+      "test": "tests/test_h485_owner_once_actuation.py::test_real_kernel_live_floor_changes_during_dispatch_pause_prevent_spawn[budget]",
+      "exit_code": 1,
+      "failures": [
+        "test_real_kernel_live_floor_changes_during_dispatch_pause_prevent_spawn[budget]"
+      ],
+      "errors": [],
+      "log": "/tmp/nerva-h485-owner-once-sealed-mutant-live-budget-20261003.log",
+      "xml": "/tmp/nerva-h485-owner-once-sealed-mutant-live-budget-20261003.xml"
+    },
+    {
+      "mutant": "live-loop",
+      "file": "agents/core/kernel/__init__.py",
+      "baseline_sha256": "207aaedb748f900fdc4e41f41b4770b29591144c02c9070464d28ab540e34bff",
+      "test": "tests/test_h485_owner_once_actuation.py::test_real_kernel_live_floor_changes_during_dispatch_pause_prevent_spawn[loop]",
+      "exit_code": 1,
+      "failures": [
+        "test_real_kernel_live_floor_changes_during_dispatch_pause_prevent_spawn[loop]"
+      ],
+      "errors": [],
+      "log": "/tmp/nerva-h485-owner-once-sealed-mutant-live-loop-20261003.log",
+      "xml": "/tmp/nerva-h485-owner-once-sealed-mutant-live-loop-20261003.xml"
+    }
+  ],
+  "source_sha256": {
+    "agents/core/autonomy/inbox.py": "e07ae3cf38b2b88ca389539644e98a87b1146cb0a355e0f6e94a5003d3c712e0",
+    "agents/core/autonomy/owner_once.py": "e1786b38ef733789b33ff4f73ba120dad4f723f46b7e464ae4073e9ecc4be150",
+    "agents/core/autonomy/owner_once_execution.py": "3a9109a922734476a84f0679d3b65e37f6a502dea4469f91b177fba3f90e9786",
+    "agents/core/autonomy/owner_once_prompts.py": "32551631b22f099f6571250cee101373662d333e0ba2e0a26d26af26f5f6c69b",
+    "agents/core/autonomy/queue.py": "876c6c818f4fc5440f0f987f0c989cc3f8648fc93dd71c863deed319c3f01d68",
+    "agents/core/autonomy/task_approval_judge.py": "03d99b4e84449ecc2317c8be4aabef22e3628d55b13b88e3dfb7c7a0ae09b045",
+    "agents/core/autonomy/terminal_review.py": "a753d38b2ae38acf28b60f817ee91f240d0bd65df967e70a76c6fd728709391c",
+    "agents/core/autonomy/worker.py": "d535cc302c3f68135d0d4748b49a660751582620d5b7b0f33986610feab5f948",
+    "agents/core/autonomy_coordinator.py": "390ebc6d046857e4d6abf642057722ad6b2c1193a0ec1225068b8b20ad7ed3ea",
+    "agents/core/channels/telegram.py": "dc912227af58a922ad97021c650b7c75fdb516a9b6450fab3d3a48f6dd3ec0bb",
+    "agents/core/environments/execution.py": "fd001f2fb0e51acf199b4c0ed9cf4a612194195acbf55603d9d41ba0d70e2e8c",
+    "agents/core/environments/local_transport.py": "6c8f9467c3700b350b25b7ca20dd7f948419dc8f86f2042d4b0975df1e3b4130",
+    "agents/core/environments/owner_once_dispatch.py": "49c7d3803926dc87c86c8e670e7bdd03992af1dfc387db119e0d55c7e02d48be",
+    "agents/core/environments/ssh_transport.py": "356c5ec99bc238817db40e4ab123ee12bea39e05a882d045ff931df6bb490e32",
+    "agents/core/kernel/__init__.py": "207aaedb748f900fdc4e41f41b4770b29591144c02c9070464d28ab540e34bff",
+    "agents/core/kernel/binding.py": "bee89907c939662de9a6224f94b26a415fc8e46c4f95c327687e9222a9abd986",
+    "agents/core/orchestrator_bindings.py": "bab74088e0bdd12031727a726227aead7854a08c5570af97dcca39b7b7627f46",
+    "agents/core/owner_once_context.py": "fa4db367f1691ee9b3b4de4a345c7f7a68f519bcdad9cd78ead9392b823f8679",
+    "agents/core/sandbox.py": "4fb36466e6870d5d396eea67f44d998bb0c0956e320c735cc45c26ed7341daf3",
+    "tests/test_h277_smart_terminal_integration.py": "c2df154d4d540d1f7736eef95b8c41ca056b8ea8418c4d290a34bb7190d8d4e5",
+    "tests/test_h277_smart_terminal_queue.py": "4da1e93a04bdfbe165881dcc6b43806db118d5cf32804f7234a5830a58282afc",
+    "tests/test_h485_denial_feedback_integration.py": "22ab936d5ca35a8e482c1db0daf22910a037e80fc23300e6911961df4210e01a",
+    "tests/test_h485_owner_once_actuation.py": "cc0ee54eff4af6792ae5cb72221f37670a1fef5d4168fda36f99d59c4402b636",
+    "tests/test_h485_owner_once_completion.py": "fc7720e0deaf02b364a0d94906b7cb383b949d9a13d7295b09efc8e54a5c3814",
+    "tests/test_h485_owner_once_context.py": "0433a652c66c7ac09aaccabd6b9cdfe6192aec03682db61e61cc6252b09f4d6e",
+    "tests/test_h485_owner_once_continuation.py": "d36dde6ee74190afb292c371cbd5c88eb676ddf3996533320a17af6f92d6307a",
+    "tests/test_h485_owner_once_kernel.py": "908122bd59a272b19bc52d23a0c8dad43eaa8f65fb0871f0b8ed142c5d3913bb",
+    "tests/test_h485_owner_once_prompts.py": "e64aa02fc999d4ffe8c52bb1e13842ddaf5b0a56af921d50b8df69c1b38c0024",
+    "tests/test_h485_owner_once_queue.py": "03a431a580b05e4b4924599995905ca473713520ee8c903185037dfb9753cb76",
+    "tests/test_h485_owner_once_telegram.py": "7cad5bb27c8e96df4e4f25eb5b41d0c9fca40d2ab18474867625614d4e352e0c",
+    "tests/test_h485_owner_once_transport.py": "e5c048c7e8a23318faa2812a0d33d4f271d8035383fc7c058dc23292867e3f6a",
+    "tests/test_h485_owner_once_worker.py": "93fea37583360b400df21cee32e879b3d5f456407bdd61860a88305b0b5905aa",
+    "tests/test_h485_toolrpc_actuation_integration.py": "e10c088e984aa6e51320105e999547b2cf5d277d2b7680bd270a685704727a4d"
+  },
+  "ruff": "passed on affected modules and owner tests",
+  "diff_check": "passed",
+  "bandit_new_findings": 0,
+  "bandit_errors": 0,
+  "gitleaks_findings": 0,
+  "gitleaks_scope_files": 33,
+  "graft_graph": {
+    "ok": true,
+    "nodes": 48490,
+    "added": 0,
+    "changed": 0,
+    "removed": 0
+  },
+  "optional_deep_context_missing": true,
+  "remaining": [
+    "Reread affected Hermes records and regenerate truthful reports without promoting unsupported rows",
+    "Sync backend case counts, run guarded full backend on final freeze and fix any regressions",
+    "Audit remaining H277/H485 contract before equivalence promotion; continue remaining 697 capability inventory",
+    "No live acceptance, publication, merge or deployment claimed"
+  ]
+}

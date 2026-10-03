@@ -79,11 +79,14 @@ async def test_deny_returns_sanitized_feedback_without_pending_footer_or_executi
         assert result['reason'] == 'guardian_denied'
         assert result['ok'] is False and 'denied' in result['notice'].lower()
         assert 'private operator' not in str(result)
-        assert queue.get(result['task_id']).status == 'blocked'
+        assert queue.get(result['task_id']).status == 'rejected'
         assert sandbox.commands == [] and current_turn_approvals() == []
-        await worker.apply_decision(result['task_id'], 'accept', 'user')
+        from agents.core.autonomy.queue import TaskQueueError
+
+        with pytest.raises(TaskQueueError):
+            await worker.apply_decision(result['task_id'], 'accept', 'user')
         await worker.tick()
-        assert sandbox.commands == ['printf hello']
+        assert sandbox.commands == []
     finally:
         reset_turn_approvals(token)
 

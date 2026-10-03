@@ -39,7 +39,7 @@ from .metrics import KERNEL_METRICS
 __all__ = [
     "Verdict", "Action", "Capability", "Budget", "Decision",
     "BudgetLimits", "BudgetDimension", "BudgetLedger", "LoopDetector",
-    "authorize", "kernel_enabled", "TOKEN_MANDATORY_KINDS",
+    "authorize", "revalidate", "kernel_enabled", "TOKEN_MANDATORY_KINDS",
 ]
 
 
@@ -143,7 +143,8 @@ def authorize(action: Action,
               budget_ledger: BudgetLedger | None = None,
               loop_detector: LoopDetector | None = None,
               now: float | None = None,
-              approval_check: Callable[[Action], bool] | None = None) -> Decision:
+              approval_check: Callable[[Action], bool] | None = None,
+              _non_consuming: bool = False) -> Decision:
     """Mediate a privileged *action*. Composes the existing nucleus + policy + audit.
 
     Order (mirrors the design diagram): kill-switch + capability → budget/loop
@@ -172,7 +173,8 @@ def authorize(action: Action,
         )
         if not gate.get("allowed"):
             decision = Decision(Verdict.DENY, reason=gate.get("reason", "denied"))
-            _emit_audit(audit, action, decision)
+            if not _non_consuming:
+                _emit_audit(audit, action, decision)
             return decision
     elif capabilities is not None and action.kind in TOKEN_MANDATORY_KINDS:
         # K2 wave-4b: no token presented for a token-mandatory kind. Surface a
@@ -184,25 +186,31 @@ def authorize(action: Action,
                                 reason=f"kill-switch engaged for scope '{action.scope}'")
         else:
             decision = Decision(Verdict.DENY, reason="capability token required for this action")
-        _emit_audit(audit, action, decision)
+        if not _non_consuming:
+            _emit_audit(audit, action, decision)
         return decision
     elif kill_switch is not None and kill_switch.is_halted(action.scope):
         decision = Decision(Verdict.DENY,
                             reason=f"kill-switch engaged for scope '{action.scope}'")
-        _emit_audit(audit, action, decision)
+        if not _non_consuming:
+            _emit_audit(audit, action, decision)
         return decision
 
     # 2) Budget + loop circuit breaker (K3, folds H23.1). Inert unless supplied — a
     #    runaway loop or an over-budget task is halted at the front door before any work.
-    if loop_detector is not None and not loop_detector.record(action.kind, now):
+    if loop_detector is not None and not (
+        not loop_detector.tripped if _non_consuming else loop_detector.record(action.kind, now)
+    ):
         decision = Decision(Verdict.DENY, reason="loop circuit breaker tripped (runaway)")
-        _emit_audit(audit, action, decision)
+        if not _non_consuming:
+            _emit_audit(audit, action, decision)
         return decision
     if budget_ledger is not None:
         over = budget_ledger.exceeded(now)
         if over:
             decision = Decision(Verdict.DENY, reason=f"budget: {over}")
-            _emit_audit(audit, action, decision)
+            if not _non_consuming:
+                _emit_audit(audit, action, decision)
             return decision
 
     # 3) Policy — the single risk-classification + outcome evaluation for this action.
@@ -260,5 +268,24 @@ def authorize(action: Action,
                             tier=tier, card=card)
 
     # 4) Audit — always.
-    _emit_audit(audit, action, decision)
+    if not _non_consuming:
+        _emit_audit(audit, action, decision)
     return decision
+
+
+def revalidate(action: Action, capability: Capability | None = None,
+               budget: Budget | None = None, **bound) -> Decision:
+    """Read the current kernel floors without recording an action or audit event.
+
+    This is a physical-dispatch check for an already authorized action. It is
+    deliberately fail-closed if any live primitive is unavailable.
+    """
+    try:
+        decision = authorize(action, capability, budget, _non_consuming=True, **bound)
+        if action.kind == "terminal.exec" and decision.verdict is Verdict.GRANT:
+            task_id = action.payload.get("approved_task_id") if isinstance(action.payload, dict) else None
+            if (type(task_id) is not int or task_id <= 0 or decision.task_id != task_id):
+                return Decision(Verdict.DENY, reason="sealed terminal approval unavailable")
+        return decision
+    except Exception:
+        return Decision(Verdict.DENY, reason="kernel revalidation unavailable")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import replace
 
 from .advisory_judgements import JUDGE_MAX_PENDING, AdvisoryJudgements
 from .queue import TaskQueue, TaskStatus, approval_is_pending
@@ -44,6 +45,39 @@ class TaskApprovalJudge(AdvisoryJudgements):
                 or task.kind == SIGNAL_RECOMMENDATION):
             snapshot["tainted"] = True
         return snapshot
+
+    def current_terminal_denial(self, task_id: int):
+        """Read an exact DENY, with a queue-independent live policy check.
+
+        Notification and invocation observers can race to settle an unattended
+        refusal. Its canonical verdict remains observable after machine closure;
+        neither this observation nor its check grants execution authority.
+        """
+        from .smart_approvals import SmartApprovalResult, terminal_args
+
+        try:
+            task = self.queue.get(task_id)
+            judge = self._judge
+            if task is None or judge is None:
+                return None
+            phase = (replace(task, status='blocked', decided_by='policy', decision='needs-approval')
+                     if task.status == 'rejected' and task.decided_by == 'smart_approval'
+                     and task.decision == 'smart-deny' else task)
+            snapshot = self._snapshot(phase)
+            if snapshot is None or terminal_args(snapshot) is None:
+                return None
+            annotation = self.queue.smart_terminal_denial(task_id, snapshot['snapshot_sha256'])
+            if annotation is None:
+                return None
+            result = SmartApprovalResult(annotation['decision'], annotation['policy_revision'],
+                                         annotation['judge_revision'], annotation['judge'], annotation['at'])
+
+            def current():
+                return self._judge is judge and judge.smart_current(result, snapshot) is True
+
+            return (snapshot, result, current) if current() else None
+        except Exception:
+            return None
 
     def schedule(self, task_id: int) -> None:
         """Best effort; failures never change task submission or user decisions."""
@@ -130,10 +164,15 @@ class TaskApprovalJudge(AdvisoryJudgements):
             return False
 
     async def _after_judgement(self, snapshot: dict, annotation: dict) -> None:
+        worker = self._worker
+        if annotation.get('advisory') is False and annotation.get('decision') == 'deny':
+            settle = getattr(worker, '_settle_terminal_denial', None)
+            if callable(settle):
+                settle(snapshot['task_id'])
+            return
         if snapshot['id'] not in self._smart_promotions:
             return
         group_id = self._smart_promotions.pop(snapshot['id'])
-        worker = self._worker
         task = self.queue.get(snapshot['task_id'])
         if worker is None or task is None or task.decision != 'smart-approve':
             return
