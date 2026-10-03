@@ -109,6 +109,15 @@ def current_tool_approval() -> ToolApprovalContext | None:
             and producer.turn is _TURN.get() and producer.turn.live() else None)
 
 
+def _has_active_denial_breaker(item: dict) -> bool:
+    guardian = item.get('guardian')
+    return (type(guardian) is dict
+            and set(guardian) == {'decision', 'consecutive_denials', 'breaker'}
+            and guardian['decision'] == 'deny' and guardian['breaker'] is True
+            and type(guardian['consecutive_denials']) is int
+            and 1 <= guardian['consecutive_denials'] <= 1_000_000)
+
+
 def render_chat_outcomes(observations: list[dict], *, max_bytes: int = MAX_BYTES) -> tuple[str, list[dict]]:
     """Return exactly the rows included, with header and fences in one byte budget."""
     budget = min(MAX_BYTES, max(0, max_bytes))
@@ -122,7 +131,11 @@ def render_chat_outcomes(observations: list[dict], *, max_bytes: int = MAX_BYTES
         data = json.dumps(public, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
         data = data.replace('<', '\\u003c').replace('>', '\\u003e')
         fenced, _flags = fence_tool_result(data, source='chat_approval_outcomes')
-        rendered = header + fenced
+        warning = ('Security reviewer denied repeated operations. STOP attempting variations '
+                   'of the blocked operation. Explain the denial and request explicit owner '
+                   'guidance before trying again.\n' if any(_has_active_denial_breaker(row)
+                   for row in candidate) else '')
+        rendered = header + warning + fenced
         if len(rendered.encode('utf-8')) > budget:
             break
         included = candidate

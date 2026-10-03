@@ -1,0 +1,175 @@
+{
+  "generated_utc": "2026-10-03T08:55:17.862889+00:00",
+  "python": "/tmp/nerva-pr-python-20261001/bin/python",
+  "source_and_test_sha256": {
+    "agents/core/autonomy/queue.py": "b1c9a18d0032286b30ce06900f47b447b4c4f54a4ddf1f88e0cf438aaa4a004a",
+    "agents/core/approval_outcomes.py": "167df36987ccf61e78b2deb37fed3c1e32fae11d3898a0f48608974c55467943",
+    "tests/test_h485_denial_feedback_queue.py": "b2dea352d18a1bb8b5f0047cc034e7f90094372590ca77c97d410c918a3105fb",
+    "tests/test_h485_denial_feedback_integration.py": "e033ef48e2f94d62fa101a140a3c6ddfe8aca4602df1bcc72aa953c919675ccb",
+    "docs/hermes/evidence/h277-smart-terminal-mutations-2026-10-03.py": "5282893bf0a043a78c7c3f5a5a708fc81a3829f6e25224d95505936b06567c2c",
+    "agents/_system/agents.yaml": "1c07c3e0332c27a59b18718d4f56d0093e03b150c1884c0e9c60632c2bad9319"
+  },
+  "temporary_root": "/tmp/h485-feedback-mutations-i1bgvzsn",
+  "mutants": [
+    {
+      "name": "committed_denial_not_counted",
+      "path": "agents/core/autonomy/queue.py",
+      "selectors": [
+        "tests/test_h485_denial_feedback_queue.py::test_third_exact_denial_warns_with_event_count_only",
+        "tests/test_h485_denial_feedback_integration.py"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 2.757,
+      "log": "/tmp/h485-feedback-mutations-i1bgvzsn/logs/committed_denial_not_counted.log",
+      "tests": 16,
+      "failures": 5,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_denial_feedback_queue::test_third_exact_denial_warns_with_event_count_only",
+        "tests.test_h485_denial_feedback_integration::test_three_native_guardian_denials_warn_next_owner_turn_once[False-False]",
+        "tests.test_h485_denial_feedback_integration::test_three_native_guardian_denials_warn_next_owner_turn_once[False-True]",
+        "tests.test_h485_denial_feedback_integration::test_three_native_guardian_denials_warn_next_owner_turn_once[True-False]",
+        "tests.test_h485_denial_feedback_integration::test_three_native_guardian_denials_warn_next_owner_turn_once[True-True]"
+      ]
+    },
+    {
+      "name": "old_epoch_reactivated",
+      "path": "agents/core/autonomy/queue.py",
+      "selectors": [
+        "tests/test_h485_denial_feedback_queue.py::test_signed_approve_resets_without_reviving_old_warning"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.709,
+      "log": "/tmp/h485-feedback-mutations-i1bgvzsn/logs/old_epoch_reactivated.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_denial_feedback_queue::test_signed_approve_resets_without_reviving_old_warning"
+      ]
+    },
+    {
+      "name": "owner_approval_reset_omitted",
+      "path": "agents/core/autonomy/queue.py",
+      "selectors": [
+        "tests/test_h485_denial_feedback_queue.py::test_recorded_human_approval_resets_but_reject_does_not"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.729,
+      "log": "/tmp/h485-feedback-mutations-i1bgvzsn/logs/owner_approval_reset_omitted.log",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_denial_feedback_queue::test_recorded_human_approval_resets_but_reject_does_not[accept-False]",
+        "tests.test_h485_denial_feedback_queue::test_recorded_human_approval_resets_but_reject_does_not[edit-True]"
+      ]
+    },
+    {
+      "name": "edited_snapshot_feedback_reused",
+      "path": "agents/core/autonomy/queue.py",
+      "selectors": [
+        "tests/test_h485_denial_feedback_queue.py::test_changed_task_revision_hides_stale_event_then_counts_new_denial"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.708,
+      "log": "/tmp/h485-feedback-mutations-i1bgvzsn/logs/edited_snapshot_feedback_reused.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_denial_feedback_queue::test_changed_task_revision_hides_stale_event_then_counts_new_denial"
+      ]
+    },
+    {
+      "name": "consumer_capacity_unbounded",
+      "path": "agents/core/autonomy/queue.py",
+      "selectors": [
+        "tests/test_h485_denial_feedback_queue.py::test_tally_capacity_evicts_old_epoch_without_reviving_warning"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.824,
+      "log": "/tmp/h485-feedback-mutations-i1bgvzsn/logs/consumer_capacity_unbounded.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_denial_feedback_queue::test_tally_capacity_evicts_old_epoch_without_reviving_warning"
+      ]
+    },
+    {
+      "name": "active_breaker_hidden_by_backlog",
+      "path": "agents/core/autonomy/queue.py",
+      "selectors": [
+        "tests/test_h485_denial_feedback_queue.py::test_latest_active_breaker_preempts_waiting_backlog_with_exact_ack"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.71,
+      "log": "/tmp/h485-feedback-mutations-i1bgvzsn/logs/active_breaker_hidden_by_backlog.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_denial_feedback_queue::test_latest_active_breaker_preempts_waiting_backlog_with_exact_ack"
+      ]
+    },
+    {
+      "name": "warning_outside_byte_budget",
+      "path": "agents/core/approval_outcomes.py",
+      "selectors": [
+        "tests/test_h485_denial_feedback_integration.py::test_breaker_guidance_shares_fenced_output_budget"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.766,
+      "log": "/tmp/h485-feedback-mutations-i1bgvzsn/logs/warning_outside_byte_budget.log",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_denial_feedback_integration::test_breaker_guidance_shares_fenced_output_budget[guardian0]",
+        "tests.test_h485_denial_feedback_integration::test_breaker_guidance_shares_fenced_output_budget[guardian1]"
+      ]
+    }
+  ],
+  "baseline": {
+    "returncode": 0,
+    "timed_out": false,
+    "seconds": 3.139,
+    "log": "/tmp/h485-feedback-mutations-i1bgvzsn/logs/baseline.log",
+    "tests": 49,
+    "failures": 0,
+    "errors": 0,
+    "failed_tests": []
+  },
+  "restored_baseline": {
+    "returncode": 0,
+    "timed_out": false,
+    "seconds": 2.811,
+    "log": "/tmp/h485-feedback-mutations-i1bgvzsn/logs/restored_baseline.log",
+    "tests": 49,
+    "failures": 0,
+    "errors": 0,
+    "failed_tests": []
+  },
+  "live_source_unchanged": true,
+  "counts": {
+    "killed": 7,
+    "survived": 0,
+    "invalid": 0
+  },
+  "status": "complete"
+}

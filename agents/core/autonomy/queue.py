@@ -57,6 +57,7 @@ from agents.core.autonomy.mediation import (
     verify_intake_evidence,
     verify_receipt,
 )
+from agents.core.env_config import env_str
 from agents.core.paths import data_path
 
 from .decision_reasons import normalize_reason
@@ -70,7 +71,22 @@ _DATABASE_INIT_LOCK = threading.Lock()
 _HUMAN_REASON_UNSET = object()
 _SMART_TERMINAL_PURPOSE = "nerva.smart-terminal-approval"
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}\Z")
+_GUARDIAN_EPOCH_HEX = re.compile(r"[0-9a-f]{32}\Z")
 _TERMINAL_TARGET = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
+_GUARDIAN_DENIAL_LIMIT = 1_000_000
+_GUARDIAN_CONSUMER_LIMIT = 256
+
+
+def _guardian_denial_threshold() -> int:
+    """Read the trusted live warning threshold; zero disables warnings."""
+    raw = env_str("JARVIS_SMART_DENIAL_BREAKER_THRESHOLD", "3").strip()
+    if re.fullmatch(r"[+-]?[0-9]+", raw) is None:
+        return 3
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 3
+    return min(_GUARDIAN_DENIAL_LIMIT, value) if value > 0 else 0
 
 
 def _smart_terminal_args(task: Task) -> dict | None:
@@ -421,6 +437,31 @@ class TaskQueue:
             acknowledged_revision TEXT, acknowledged_at TEXT
         )""")
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_approval_origin ON chat_approval_tasks(origin_id)")
+        # H485 is observational metadata only. An event is bound to the exact
+        # committed denial snapshot; the separate per-consumer tally has a new
+        # epoch after every owner approval, so old events cannot revive warnings.
+        chat_columns = {row['name'] for row in self._conn.execute('PRAGMA table_info(chat_approval_tasks)')}
+        for name, sql_type in (
+            ('denial_snapshot_sha256', 'TEXT'),
+            ('denial_count', 'INTEGER'),
+            ('denial_epoch', 'TEXT'),
+            ('denial_sequence', 'INTEGER'),
+        ):
+            if name not in chat_columns:
+                self._conn.execute(f'ALTER TABLE chat_approval_tasks ADD COLUMN {name} {sql_type}')
+        self._conn.execute('''CREATE TABLE IF NOT EXISTS chat_guardian_denial_tallies (
+            session_id TEXT NOT NULL, session_instance TEXT NOT NULL,
+            principal_key TEXT NOT NULL, consecutive_denials INTEGER NOT NULL,
+            epoch TEXT NOT NULL, updated_at TEXT NOT NULL, last_sequence INTEGER NOT NULL,
+            PRIMARY KEY(session_id,session_instance,principal_key)
+        )''')
+        tally_columns = {row['name'] for row in self._conn.execute(
+            'PRAGMA table_info(chat_guardian_denial_tallies)')}
+        if 'last_sequence' not in tally_columns:
+            self._conn.execute('''ALTER TABLE chat_guardian_denial_tallies
+                ADD COLUMN last_sequence INTEGER NOT NULL DEFAULT 0''')
+        self._conn.execute('''CREATE INDEX IF NOT EXISTS idx_chat_guardian_denial_recent
+            ON chat_guardian_denial_tallies(last_sequence)''')
         self._conn.execute('''CREATE TABLE IF NOT EXISTS chat_approval_retention (
             id INTEGER PRIMARY KEY CHECK(id=1), last_task_id INTEGER NOT NULL
         )''')
@@ -1949,6 +1990,8 @@ class TaskQueue:
                 updated = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
                 if new_status == TaskStatus.BLOCKED and decided_by == 'policy' and decision == 'needs-approval':
                     self._finalize_chat_approval_locked(_row_to_task(updated))
+                if record_human and new_status == TaskStatus.APPROVED and decision in {'accept', 'edit'}:
+                    self._reset_chat_guardian_denials_locked(task)
                 self._conn.commit()
                 return _row_to_task(updated), group_id
             except TaskApprovalExpired:
@@ -2294,6 +2337,8 @@ class TaskQueue:
                 group_id = self._withdraw_task_group_locked(task_id)
                 self._record_promotion_effect_locked(group_id, task_id)
                 updated = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                if record_human and approve:
+                    self._reset_chat_guardian_denials_locked(task)
                 self._conn.commit()
                 return _row_to_task(updated), group_id
             except TaskApprovalExpired:
@@ -2389,6 +2434,99 @@ class TaskQueue:
     def _chat_context(context) -> bool:
         return isinstance(context, ApprovalTurnContext) and context.live()
 
+    def _chat_denial_consumer_locked(self, task: Task) -> sqlite3.Row | None:
+        """Return only the server-created, ready association for this task birth."""
+        row = self._conn.execute('''SELECT t.*, o.session_id, o.session_instance, o.principal_key
+            FROM chat_approval_tasks t JOIN chat_approval_origins o ON o.origin_id=t.origin_id
+            WHERE t.task_id=? AND t.ready=1 AND t.task_birth=?''',
+            (task.id, task.created_at)).fetchone()
+        return row if (row is not None and row['tool'] == 'terminal_run'
+                       and isinstance(row['intent_sha256'], str)
+                       and _SHA256_HEX.fullmatch(row['intent_sha256']) is not None) else None
+
+    def _record_chat_guardian_denial_locked(self, task: Task, snapshot_sha256: str) -> None:
+        """Append one exact event and increment its consumer in the caller's CAS."""
+        consumer = self._chat_denial_consumer_locked(task)
+        if consumer is None:
+            return
+        key = (consumer['session_id'], consumer['session_instance'], consumer['principal_key'])
+        prior = self._conn.execute('''SELECT consecutive_denials,epoch
+            FROM chat_guardian_denial_tallies
+            WHERE session_id=? AND session_instance=? AND principal_key=?''', key).fetchone()
+        if (prior is not None and type(prior['consecutive_denials']) is int
+                and 1 <= prior['consecutive_denials'] <= _GUARDIAN_DENIAL_LIMIT
+                and isinstance(prior['epoch'], str)
+                and _GUARDIAN_EPOCH_HEX.fullmatch(prior['epoch']) is not None):
+            count = min(_GUARDIAN_DENIAL_LIMIT, prior['consecutive_denials'] + 1)
+            epoch = prior['epoch']
+        else:
+            count, epoch = 1, uuid.uuid4().hex
+        now = _now()
+        sequence = self._conn.execute('''SELECT COALESCE(MAX(last_sequence),0)+1
+            FROM chat_guardian_denial_tallies''').fetchone()[0]
+        self._conn.execute('''INSERT INTO chat_guardian_denial_tallies
+            (session_id,session_instance,principal_key,consecutive_denials,epoch,updated_at,last_sequence)
+            VALUES(?,?,?,?,?,?,?) ON CONFLICT(session_id,session_instance,principal_key)
+            DO UPDATE SET consecutive_denials=excluded.consecutive_denials,
+                          epoch=excluded.epoch,updated_at=excluded.updated_at,
+                          last_sequence=excluded.last_sequence''',
+            (*key, count, epoch, now, sequence))
+        changed = self._conn.execute('''UPDATE chat_approval_tasks
+            SET denial_snapshot_sha256=?,denial_count=?,denial_epoch=?,denial_sequence=?
+            WHERE task_id=? AND origin_id=? AND ready=1 AND task_birth=?''',
+            (snapshot_sha256, count, epoch, sequence, task.id, consumer['origin_id'], task.created_at))
+        if changed.rowcount != 1:
+            raise TaskQueueError('guardian denial association changed')
+        # Keep only the 256 most recently denied consumer keys. Eviction never
+        # removes a task or its historical event; an evicted event cannot warn.
+        self._conn.execute('''DELETE FROM chat_guardian_denial_tallies WHERE rowid IN
+            (SELECT rowid FROM chat_guardian_denial_tallies
+             ORDER BY last_sequence DESC,rowid DESC LIMIT -1 OFFSET ?)''',
+            (_GUARDIAN_CONSUMER_LIMIT,))
+
+    def _reset_chat_guardian_denials_locked(self, task: Task) -> None:
+        """Reset only this task's original consumer within the approval transaction."""
+        consumer = self._chat_denial_consumer_locked(task)
+        if consumer is not None:
+            self._conn.execute('''DELETE FROM chat_guardian_denial_tallies
+                WHERE session_id=? AND session_instance=? AND principal_key=?''',
+                (consumer['session_id'], consumer['session_instance'], consumer['principal_key']))
+
+    def _chat_guardian_denial_locked(self, task: Task, association: sqlite3.Row) -> dict | None:
+        """Project only an exact current DENY; the live tally gates warnings."""
+        if (task.status != TaskStatus.BLOCKED.value or not approval_is_pending(task)
+                or association['ready'] != 1 or association['task_birth'] != task.created_at):
+            return None
+        snapshot, count, epoch, sequence = (
+            association['denial_snapshot_sha256'], association['denial_count'],
+            association['denial_epoch'], association['denial_sequence'],
+        )
+        if (type(snapshot) is not str or _SHA256_HEX.fullmatch(snapshot) is None
+                or type(count) is not int or not 1 <= count <= _GUARDIAN_DENIAL_LIMIT
+                or type(epoch) is not str or _GUARDIAN_EPOCH_HEX.fullmatch(epoch) is None
+                or type(sequence) is not int or sequence <= 0
+                or self._approval_snapshot_digest_locked(task) != snapshot):
+            return None
+        opinion = self._conn.execute('''SELECT snapshot_sha256,annotation,receipt,signature
+            FROM task_smart_approvals WHERE task_id=? AND snapshot_sha256=?''',
+            (task.id, snapshot)).fetchone()
+        if opinion is None or self._unsigned_smart_hold_verdict(opinion) != 'deny':
+            return None
+        consumer = self._chat_denial_consumer_locked(task)
+        if consumer is None:
+            return None
+        tally = self._conn.execute('''SELECT consecutive_denials,epoch
+            FROM chat_guardian_denial_tallies
+            WHERE session_id=? AND session_instance=? AND principal_key=?''',
+            (consumer['session_id'], consumer['session_instance'], consumer['principal_key'])).fetchone()
+        threshold = _guardian_denial_threshold()
+        breaker = bool(
+            threshold and count >= threshold and tally is not None
+            and tally['epoch'] == epoch and type(tally['consecutive_denials']) is int
+            and count <= tally['consecutive_denials'] <= _GUARDIAN_DENIAL_LIMIT
+        )
+        return {'decision': 'deny', 'consecutive_denials': count, 'breaker': breaker}
+
     def _chat_observation_locked(self, association: sqlite3.Row) -> dict:
         digest = association['intent_sha256']
         if (not isinstance(digest, str) or len(digest) != 64
@@ -2418,6 +2556,9 @@ class TaskQueue:
                 item['approval_deadline_at'] = deadline
             if expired_at is not None:
                 item['expired_at'] = expired_at
+            guardian = self._chat_guardian_denial_locked(task, association)
+            if guardian is not None:
+                item['guardian'] = guardian
         if task is not None and task.status != 'expired' and task.human_decision is not None:
             metadata = task.human_decision
             if (not isinstance(metadata.get('id'), str) or len(metadata['id']) != 32
@@ -2450,6 +2591,7 @@ class TaskQueue:
             try:
                 self._conn.execute('BEGIN')
                 observations = []
+                breakers = []
                 for row in self._chat_rows_locked(context):
                     try:
                         item = self._chat_observation_locked(row)
@@ -2458,9 +2600,14 @@ class TaskQueue:
                         continue
                     if item['revision'] != row['acknowledged_revision']:
                         observations.append(item)
+                        if item.get('guardian', {}).get('breaker') is True:
+                            breakers.append((row['denial_sequence'], row['task_id'], item))
                 self._conn.commit()
                 if not self._chat_context(context):
                     return []
+                if breakers:
+                    latest = max(breakers, key=lambda entry: (entry[0], entry[1]))[2]
+                    observations = [latest, *(item for item in observations if item is not latest)]
                 return render_chat_outcomes(observations[:max(0, min(8, limit))], max_bytes=max_bytes)[1]
             except Exception:
                 if self._conn is not None:
@@ -2507,7 +2654,19 @@ class TaskQueue:
             origins = self._conn.execute(f'SELECT * FROM chat_approval_origins WHERE {clause}', params).fetchall()  # nosec B608
             tasks = self._conn.execute(f'''SELECT t.* FROM chat_approval_tasks t
                 JOIN chat_approval_origins o ON o.origin_id=t.origin_id WHERE {clause}''', params).fetchall()  # nosec B608
-            return {'origins': [dict(row) for row in origins], 'tasks': [dict(row) for row in tasks]}
+            if session_instance is None:
+                tallies = self._conn.execute('''SELECT * FROM chat_guardian_denial_tallies
+                    WHERE session_id=? ORDER BY last_sequence DESC LIMIT ?''',
+                    (session_id, _GUARDIAN_CONSUMER_LIMIT)).fetchall()
+            else:
+                tallies = self._conn.execute('''SELECT * FROM chat_guardian_denial_tallies
+                    WHERE session_id=? AND session_instance=?
+                    ORDER BY last_sequence DESC LIMIT ?''',
+                    (session_id, session_instance, _GUARDIAN_CONSUMER_LIMIT)).fetchall()
+            backup = {'origins': [dict(row) for row in origins], 'tasks': [dict(row) for row in tasks]}
+            if tallies:
+                backup['guardian_denials'] = [dict(row) for row in tallies]
+            return backup
 
     def purge_chat_outcomes(self, session_id: str, session_instance: str | None = None) -> int:
         with self._lock:
@@ -2518,6 +2677,13 @@ class TaskQueue:
                 count = self._conn.execute(f'''DELETE FROM chat_approval_tasks WHERE origin_id IN
                     (SELECT origin_id FROM chat_approval_origins WHERE {clause})''', params).rowcount  # nosec B608
                 self._conn.execute(f'DELETE FROM chat_approval_origins WHERE {clause}', params)  # nosec B608
+                if session_instance is None:
+                    self._conn.execute('''DELETE FROM chat_guardian_denial_tallies
+                        WHERE session_id=?''', (session_id,))
+                else:
+                    self._conn.execute('''DELETE FROM chat_guardian_denial_tallies
+                        WHERE session_id=? AND session_instance=?''',
+                        (session_id, session_instance))
                 self._conn.commit()
                 return count
             except Exception:
@@ -2553,6 +2719,13 @@ class TaskQueue:
                 self._conn.execute('UPDATE chat_approval_retention SET last_task_id=? WHERE id=1', (next_cursor,))
                 self._conn.execute('''DELETE FROM chat_approval_origins WHERE NOT EXISTS
                     (SELECT 1 FROM chat_approval_tasks t WHERE t.origin_id=chat_approval_origins.origin_id)''')
+                self._conn.execute('''DELETE FROM chat_guardian_denial_tallies
+                    WHERE updated_at < ? OR NOT EXISTS (
+                        SELECT 1 FROM chat_approval_origins o
+                        WHERE o.session_id=chat_guardian_denial_tallies.session_id
+                          AND o.session_instance=chat_guardian_denial_tallies.session_instance
+                          AND o.principal_key=chat_guardian_denial_tallies.principal_key)''',
+                    (cutoff,))
                 self._conn.commit()
                 return count
             except Exception:
@@ -2699,19 +2872,18 @@ class TaskQueue:
             return False
 
     @staticmethod
-    def _supersedable_smart_hold(prior: sqlite3.Row, next_snapshot: str) -> bool:
-        """Only an intact unsigned hold may yield to a new exact task revision."""
+    def _unsigned_smart_hold_verdict(prior: sqlite3.Row) -> str | None:
+        """Validate one canonical unsigned machine hold before any projection."""
         try:
             previous = prior["snapshot_sha256"]
             if (
                 type(previous) is not str or _SHA256_HEX.fullmatch(previous) is None
-                or previous == next_snapshot
                 or prior["receipt"] is not None or prior["signature"] is not None
                 or type(prior["annotation"]) is not str
             ):
-                return False
+                return None
             annotation = json.loads(prior["annotation"])
-            return (
+            valid = (
                 type(annotation) is dict
                 and set(annotation) == {
                     "decision", "advisory", "judge", "policy_revision", "judge_revision", "at",
@@ -2727,8 +2899,15 @@ class TaskQueue:
                 and math.isfinite(annotation["at"])
                 and canonical_json(annotation).decode("utf-8") == prior["annotation"]
             )
+            return annotation["decision"] if valid else None
         except Exception:
-            return False
+            return None
+
+    @staticmethod
+    def _supersedable_smart_hold(prior: sqlite3.Row, next_snapshot: str) -> bool:
+        """Only an intact unsigned hold may yield to a new exact task revision."""
+        return (prior["snapshot_sha256"] != next_snapshot
+                and TaskQueue._unsigned_smart_hold_verdict(prior) in {"deny", "escalate"})
 
     def store_smart_terminal_judgement(
         self,
@@ -2857,6 +3036,9 @@ class TaskQueue:
                     )
                     group_id = self._withdraw_task_group_locked(task_id)
                     self._record_promotion_effect_locked(group_id, task_id)
+                    self._reset_chat_guardian_denials_locked(task)
+                elif verdict == "deny":
+                    self._record_chat_guardian_denial_locked(task, snapshot_sha256)
                 self._conn.commit()
                 return json.loads(annotation_json), group_id
             except Exception:

@@ -146,6 +146,15 @@
   Both rows stay **partial**; no new equivalence credit or publication.
   See `docs/hermes/h277-smart-terminal-plan-2026-10-03.md` and its mutation evidence.
 
+- 2026-10-03 H485 denial feedback increment: committed guardian DENYs now carry
+  a session-instance/principal-bound consecutive count to the next authenticated
+  owner turn. The default threshold is three; approval resets start a fresh epoch,
+  so older denials cannot revive a warning. Feedback uses the existing bounded
+  observational prompt flow and grants no authority. Same-turn shell/script
+  feedback, forced-redacted observer hooks, native controls and live acceptance
+  remain open. Verification is recorded in
+  `docs/hermes/h485-denial-feedback-plan-2026-10-03.md`; H485 stays **partial**.
+
 - 2026-09-27 H613 ✅ choose how it sounds and how it hears: Piper as a local voice, and the owner's own TTS/STT programs, each run only as a human approved it (equivalent; #1207; headline 190/697).
 
   Nerva spoke through cloud voices or Kokoro and heard only through Whisper. Now:
