@@ -44,6 +44,7 @@ from typing import Awaitable, Callable, Optional
 
 from . import project_context
 from .automation_contracts import ContractTemplate, predicate
+from .autonomy.consent_registration import trusted_registration_key
 from .security.quarantine import strip_invisible_deep
 from .turn_approvals import record_pending_approval
 
@@ -282,6 +283,7 @@ class ToolRPCServer:
         max_result_bytes: int | None = None,
         schema_overrides: SchemaOverrides | None = None,
         gated_review: GatedReview | None = None,
+        consent_revision: str | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
 
@@ -326,6 +328,12 @@ class ToolRPCServer:
                 raise ValueError("max_result_bytes must be a byte count") from exc
             if max_result_bytes <= 0:
                 raise ValueError("max_result_bytes must be positive")
+        if consent_revision is not None and (
+            type(consent_revision) is not str or not 0 < len(consent_revision) <= 128
+            or not all(char.isascii() and (char.isalnum() or char in "._:-")
+                       for char in consent_revision)
+        ):
+            raise ValueError("consent_revision must be a bounded machine identifier")
         if trusted_execution and not gated:
             raise ValueError("trusted execution is only valid for gated tools")
         if gated_intake is not None and (
@@ -363,7 +371,7 @@ class ToolRPCServer:
         existing = self._tools.get(name)
         if existing is not None and existing.get("active_tasks"):
             raise RuntimeError(f"tool has in-flight calls: {name}")
-        self._tools[name] = {
+        spec = {
             "handler": handler,
             "_grouping_epoch": uuid.uuid4().hex,
             "gated": bool(gated),
@@ -378,8 +386,11 @@ class ToolRPCServer:
             "classifier": classifier,
             "max_result_bytes": max_result_bytes,
             "schema_overrides": schema_overrides,
+            "consent_revision": consent_revision,
             "active_tasks": set(),
         }
+        spec["_consent_registration_key"] = trusted_registration_key(name, spec)
+        self._tools[name] = spec
         return self
 
     async def unregister_tool(
@@ -590,6 +601,10 @@ class ToolRPCServer:
                 with tool_approval_scope(name), model_request_scope(
                     actor=effective_actor, tool=name, args=args, epoch=spec.get('_grouping_epoch'),
                     registration_is_live=lambda: self._tools.get(name) is spec,
+                    registration_key=spec.get('_consent_registration_key'),
+                    registration_key_is_live=lambda candidate: (
+                        self._tools.get(name) is spec
+                        and trusted_registration_key(name, spec) == candidate),
                 ):
                     task_id = self._enqueue(
                         effective_actor, f"toolrpc.{name}", title,

@@ -1237,7 +1237,16 @@ class AutonomyWorker:
                     'mode', 'agent_modes', 'cap_per_action', 'daily_ceiling',
                     'earned_autonomy_enabled', 'tier_outcomes', '_spent_today',
                 )}
+                # Canonical signed JSON requires string keys; risk tiers are IntEnums.
+                policy['tier_outcomes'] = {str(int(tier)): outcome for tier, outcome
+                                           in self.policy.tier_outcomes.items()}
                 policy['decision'] = decision.to_dict()
+                capture_source = getattr(self.queue, '_capture_consent_source', None)
+                if callable(capture_source):
+                    try:
+                        capture_source(task.id, policy=policy)
+                    except Exception:
+                        logger.warning('consent provenance unavailable; ordinary approval retained')
                 self.queue.register_pending_group(task.id, context=context, policy=policy)
         except Exception:
             logger.warning('model approval grouping unavailable; independent task retained')

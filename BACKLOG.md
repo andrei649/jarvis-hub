@@ -14,6 +14,15 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-10-03 H487 producer continuation: ported the pinned Hermes terminal warning
+  detector and closed category catalog; added registrar-owned stable provenance
+  and signed private source capture at the real terminal enqueue. Sources bind
+  the exact ready owner-turn association, task birth/intent/deadline and policy;
+  ordinary approvals survive metadata failures. Session purge and settled
+  retention remove the private source in the existing cleanup transaction.
+  Session/always owner choices, follower receipts, monotonic revocation and
+  physical dispatch checks remain unfinished; no equivalent credit is added.
+  See `docs/hermes/evidence/h487-producer-source-progress-2026-10-03.md`.
 - 2026-10-03 H487 local continuation: new CompanyMode approval-wait windows use
   initial verified deadlines plus the 60-second Hermes margin; followers cannot
   renew the ceiling and legacy windows retain 360 seconds. An adjacent signed

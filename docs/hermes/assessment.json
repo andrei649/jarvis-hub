@@ -10512,7 +10512,7 @@
       "id": "H515",
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
-      "summary": "The accepted local ComfyUI choices, approved cloud-image adapter, gallery flow and image HUD remain on their existing image tool/runtime paths. The coordinator still registers image_generate with its existing preflight and gated intake. orchestrator_bindings.py only moves exact callsite positions to track inserted terminal code; it does not change cloud_images binding semantics. Retain partial: the prior ComfyUI unload/restore, native image behavior and frozen media.generate/file.write authority limitations remain as recorded; owner-once terminal execution supplies no image parity or paid-provider evidence. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim.",
+      "summary": "The accepted local ComfyUI choices, approved cloud-image adapter, gallery flow and image HUD remain on their existing image tool/runtime paths. The coordinator still registers image_generate with its existing preflight and gated intake. orchestrator_bindings.py only moves exact callsite positions to track inserted terminal code; it does not change cloud_images binding semantics. Retain partial: the prior ComfyUI unload/restore, native image behavior and frozen media.generate/file.write authority limitations remain as recorded; owner-once terminal execution supplies no image parity or paid-provider evidence. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only adds private stable registrar provenance to terminal intake and the terminal consent revision; image_generate registration, image dispatcher, gated image intake and cloud_images binding bodies are unchanged. All other H515 evidence hashes already match. 349 guarded image/backend/API regressions and the 3,135-case autonomy/ToolRPC integration union pass. Retain partial and every existing remaining requirement; this adds no image equivalence or live-provider claim.",
       "remaining": "The real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need explicit architecture adjudication; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation requires one cloud seam, not eight-provider fan-out. Ambiguous provider attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed. This acknowledgment foundation is not a VRAM swap: canonical aliases, production backend/controller identity, atomic per-generation leases, owner control coordination and authoritative hardware snapshots remain unresolved. Existing coarse headroom and no-victim overcommit behavior remain. ComfyUI unknown submissions need reconciliation before any future exclusive lease can safely release.",
       "evidence": [
         {
@@ -10621,7 +10621,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "390ebc6d046857e4d6abf642057722ad6b2c1193a0ec1225068b8b20ad7ed3ea"
+          "sha256": "a096d2c24cbe42590f9d0ef0dd68b6229573f4becc9f19e9861fca2b20175ace"
         },
         {
           "path": "agents/core/orchestrator_bindings.py",
@@ -12039,7 +12039,7 @@
       "id": "H595",
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
-      "summary": "execute_code still uses its existing host authorization, optional persistent session kernels and bounded redirected stdout/stderr spills with read-back-checked paging notices. The coordinator code-tool/session-kernel registration and spill stores are unchanged. Sandbox now refuses host fallback only when a private owner-once terminal scope is present and requires a one-use physical gate before that Docker shell spawn; ordinary code cells do not hold that scope. Retain partial and the prior SSH/Modal, stream-cap and native-fd limitations. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim.",
+      "summary": "execute_code still uses its existing host authorization, optional persistent session kernels and bounded redirected stdout/stderr spills with read-back-checked paging notices. The coordinator code-tool/session-kernel registration and spill stores are unchanged. Sandbox now refuses host fallback only when a private owner-once terminal scope is present and requires a one-use physical gate before that Docker shell spawn; ordinary code cells do not hold that scope. Retain partial and the prior SSH/Modal, stream-cap and native-fd limitations. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only changes private terminal provenance; code-tool/session-kernel registration and configuration bodies are unchanged. ToolRPC adds an optional registrar declaration, defaulting to none, and a separate consent verifier; its ordinary grouping scope remains valid if consent verification fails. Other pinned evidence already matches. 232 guarded code/kernel/transport cases pass and seven Docker-dependent cases skip; the 3,135-case autonomy/ToolRPC union also passes. Retain partial and all remote/stream/attestation limits. Historical container receipts are not a current live-container run.",
       "remaining": "Generic SSH/Modal provisioning remains unsupported; the validated Docker transport accepts local Unix endpoints. Deliberate native-fd bypass output is not a redirected Python stream. Stream spills are capped at 5,000,000 bytes per stream: later bytes are counted but not kept, so only the inline tail shows a runaway stream's end. Hermes project|strict mode remains intentionally represented by Nerva tool profiles (agent x surface x principal), not copied as a separate switch.",
       "evidence": [
         {
@@ -12052,7 +12052,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "390ebc6d046857e4d6abf642057722ad6b2c1193a0ec1225068b8b20ad7ed3ea"
+          "sha256": "a096d2c24cbe42590f9d0ef0dd68b6229573f4becc9f19e9861fca2b20175ace"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -12080,7 +12080,7 @@
         },
         {
           "path": "agents/core/tool_rpc.py",
-          "sha256": "b352d38a000a39166276263fda1822e649513ceda098693f9400841803d726ed"
+          "sha256": "cb142e67eb8ae20dd26c28d0007d3af0a9a696e34862817957ffccd6d8eab0c4"
         },
         {
           "path": "tests/test_code_tools.py",
@@ -12686,7 +12686,7 @@
       "id": "H660",
       "row_sha256": "6cb94acacb3b84265ebcc49258ca6349094c2e8a033111f74472c8269b252fae",
       "status": "partial",
-      "summary": "The detached Docker worker, mailbox, nonce/liveness, host ToolCallBroker authorization, fallback discipline and stream-spill paths are unchanged. The new Sandbox physical gate applies to owner-once terminal shell dispatch; it does not substitute for or relax the detached code-cell authorization path. Retain partial and the prior remote SSH/Modal/TLS and in-worker output-attestation limitations. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim.",
+      "summary": "The detached Docker worker, mailbox, nonce/liveness, host ToolCallBroker authorization, fallback discipline and stream-spill paths are unchanged. The new Sandbox physical gate applies to owner-once terminal shell dispatch; it does not substitute for or relax the detached code-cell authorization path. Retain partial and the prior remote SSH/Modal/TLS and in-worker output-attestation limitations. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only changes private terminal provenance; code-tool/session-kernel registration and configuration bodies are unchanged. ToolRPC adds an optional registrar declaration, defaulting to none, and a separate consent verifier; its ordinary grouping scope remains valid if consent verification fails. Other pinned evidence already matches. 232 guarded code/kernel/transport cases pass and seven Docker-dependent cases skip; the 3,135-case autonomy/ToolRPC union also passes. Retain partial and all remote/stream/attestation limits. Historical container receipts are not a current live-container run.",
       "remaining": "Generic SSH, Modal and remote TLS provisioning remain unsupported and require an explicitly isolated governed transport design. Docker selection currently supports local Unix endpoints. Correlation tokens/nonces reject stale frames but cannot attest output against Python introspection inside the same worker; authorization is enforced by the host broker. Spills cover redirected Python stdout/stderr up to 5,000,000 bytes per stream; deliberate native-fd bypasses and the part of a runaway stream past that ceiling are not kept on disk. Production deployment evidence is separate from these real-container tests.",
       "evidence": [
         {
@@ -12699,7 +12699,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "390ebc6d046857e4d6abf642057722ad6b2c1193a0ec1225068b8b20ad7ed3ea"
+          "sha256": "a096d2c24cbe42590f9d0ef0dd68b6229573f4becc9f19e9861fca2b20175ace"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",

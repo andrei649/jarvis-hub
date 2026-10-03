@@ -527,6 +527,8 @@ class TaskQueue:
         self._group_namespace = self._conn.execute(
             "SELECT value FROM task_approval_group_state WHERE key='namespace'"
         ).fetchone()['value']
+        from .consent_sources import initialize as initialize_consent_sources
+        initialize_consent_sources(self._conn)
 
         # H33.2: old autonomy databases predate the ask/digest/interrupt split.
         # Preserve their previous push behavior while new ambient proposals set
@@ -2776,6 +2778,11 @@ class TaskQueue:
                     self._conn.execute('''DELETE FROM task_owner_once
                         WHERE session_id=? AND session_instance=?''',
                         (session_id, session_instance))
+                self._conn.execute('''DELETE FROM task_consent_sources WHERE task_id IN (
+                    SELECT t.task_id FROM chat_approval_tasks t
+                    JOIN chat_approval_origins o ON o.origin_id=t.origin_id
+                    WHERE o.session_id=? AND (? IS NULL OR o.session_instance=?))''',
+                    (session_id, session_instance, session_instance))
                 count = self._conn.execute(f'''DELETE FROM chat_approval_tasks WHERE origin_id IN
                     (SELECT origin_id FROM chat_approval_origins WHERE {clause})''', params).rowcount  # nosec B608
                 self._conn.execute(f'DELETE FROM chat_approval_origins WHERE {clause}', params)  # nosec B608
@@ -2816,6 +2823,7 @@ class TaskQueue:
                     if item['state'] not in {'done', 'failed', 'rejected', 'quarantined', 'expired', 'lost'}:
                         continue
                     if item['revision'] == row['acknowledged_revision']:
+                        self._conn.execute('DELETE FROM task_consent_sources WHERE task_id=?', (row['task_id'],))
                         self._conn.execute('DELETE FROM chat_approval_tasks WHERE task_id=?', (row['task_id'],))
                         count += 1
                 next_cursor = rows[-1]['task_id'] if rows and len(rows) == batch else 0
@@ -2827,6 +2835,10 @@ class TaskQueue:
                     WHERE NOT EXISTS (SELECT 1 FROM chat_approval_tasks c
                                       WHERE c.task_id=p.task_id AND c.origin_id=p.origin_id)
                     ORDER BY p.task_id LIMIT ?)''', (batch,))
+                self._conn.execute('''DELETE FROM task_consent_sources WHERE task_id IN (
+                    SELECT s.task_id FROM task_consent_sources s WHERE NOT EXISTS (
+                        SELECT 1 FROM chat_approval_tasks c WHERE c.task_id=s.task_id)
+                    ORDER BY s.task_id LIMIT ?)''', (batch,))
                 self._conn.execute('''DELETE FROM chat_guardian_denial_tallies
                     WHERE updated_at < ? OR NOT EXISTS (
                         SELECT 1 FROM chat_approval_origins o
@@ -2844,6 +2856,16 @@ class TaskQueue:
                 return 0
 
     # ── reads ─────────────────────────────────────────────────────
+    def _capture_consent_source(self, task_id: int, *, policy: dict) -> bool:
+        from .consent_sources import capture_locked
+        with self._lock:
+            return capture_locked(self, task_id, policy=policy)
+
+    def _consent_source(self, task_id: int) -> dict | None:
+        from .consent_sources import read_locked
+        with self._lock:
+            return read_locked(self, task_id)
+
     def approval_snapshot_digest(self, task: Task) -> str | None:
         """Bind an opinion to action bytes and a separate advisory edit revision."""
         with self._lock:

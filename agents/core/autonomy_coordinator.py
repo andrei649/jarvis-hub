@@ -962,6 +962,7 @@ class AutonomyCoordinator:
             """Finalize the typed terminal task before its kernel/intake decision."""
             from .approval_outcomes import tool_approval_scope
             from .autonomy.approval_grouping import model_request_scope
+            from .autonomy.consent_registration import trusted_registration_key
             from .kernel import Action, Decision, Verdict, kernel_enabled
 
             worker = getattr(self._orch, 'autonomy', None)
@@ -982,6 +983,11 @@ class AutonomyCoordinator:
                 actor=actor, tool='terminal_run', args=args,
                 epoch=spec.get('_grouping_epoch') if spec else None,
                 registration_is_live=lambda: server._tools.get('terminal_run') is spec,
+                registration_key=spec.get('_consent_registration_key') if spec else None,
+                registration_key_is_live=lambda candidate: (
+                    server._tools.get('terminal_run') is spec
+                    and trusted_registration_key('terminal_run', spec) == candidate
+                ),
             ):
                 task_id = worker.govern_enqueue(actor, 'toolrpc.terminal_run', title,
                                                 payload=payload, risk_tier=3,
@@ -1035,6 +1041,7 @@ class AutonomyCoordinator:
             capability_id="tool:terminal_run",
             trusted_execution=True,
             schema_overrides=self._terminal_run_overrides,
+            consent_revision="nerva.terminal_run.v1",
         )
 
         async def _rpc_desktop_plan(args):
