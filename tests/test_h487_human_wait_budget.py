@@ -57,6 +57,115 @@ def test_union_cap_does_not_reset_for_second_source(world):
     assert ledger.budget_state(run.id)['exceeded'] == 'seconds'
 
 
+def test_long_initial_deadline_freezes_union_ceiling_across_follower_and_restart(world):
+    clock, q, ledger, run = world
+    ledger.bind_approval_task_reader(q.get)
+    ask(q, ledger, run, deadline=datetime.fromtimestamp(clock[0] + 600, UTC).isoformat())
+    clock[0] += 500
+    ask(q, ledger, run, deadline=datetime.fromtimestamp(clock[0] + 700, UTC).isoformat())
+    reopened = WorkRunLedger(ledger.path, clock=lambda: clock[0])
+    try:
+        reopened.bind_approval_task_reader(q.get)
+        clock[0] += 200
+        state = reopened.budget_state(run.id)
+        assert state['wall_seconds_used'] == 700
+        assert state['human_wait_seconds'] == 660
+        assert state['seconds_used'] == 40 and state['exceeded'] == 'seconds'
+    finally:
+        reopened.close()
+
+
+def test_long_wait_stops_at_first_human_decision(world):
+    clock, q, ledger, run = world
+    ledger.bind_approval_task_reader(q.get)
+    tid, _ = ask(q, ledger, run,
+                 deadline=datetime.fromtimestamp(clock[0] + 900, UTC).isoformat())
+    clock[0] += 400
+    q.transition(tid, TaskStatus.APPROVED, decided_by='owner', decision='accept', human_reason=None)
+    clock[0] += 400
+    state = ledger.budget_state(run.id)
+    assert state['human_wait_seconds'] == 400
+    assert state['seconds_used'] == 400 and state['exceeded'] == 'seconds'
+
+
+def test_legacy_epoch_without_ceiling_keeps_360_limit_after_reopen(world):
+    clock, q, ledger, run = world
+    ledger.bind_approval_task_reader(q.get)
+    ask(q, ledger, run, deadline=datetime.fromtimestamp(clock[0] + 900, UTC).isoformat())
+    meta = ledger._wait_decode(ledger._conn.execute(
+        'SELECT metadata FROM approval_wait_epochs').fetchone()[0])
+    meta.pop('ceiling')
+    meta.pop('initial_sources')
+    ledger._conn.execute('UPDATE approval_wait_epochs SET metadata=?', (ledger._wait_encode(meta),))
+    ledger._conn.commit()
+    reopened = WorkRunLedger(ledger.path, clock=lambda: clock[0])
+    try:
+        reopened.bind_approval_task_reader(q.get)
+        clock[0] += 500
+        state = reopened.budget_state(run.id)
+        assert state['human_wait_seconds'] == 360
+        assert state['seconds_used'] == 140 and state['exceeded'] == 'seconds'
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize('ceiling', [None, True, '960', -1, 60, float('nan'), float('inf')])
+def test_malformed_ceiling_grants_no_credit(world, ceiling):
+    clock, q, ledger, run = world
+    ledger.bind_approval_task_reader(q.get)
+    ask(q, ledger, run, deadline=datetime.fromtimestamp(clock[0] + 900, UTC).isoformat())
+    meta = ledger._wait_decode(ledger._conn.execute(
+        'SELECT metadata FROM approval_wait_epochs').fetchone()[0])
+    meta['ceiling'] = ceiling
+    ledger._conn.execute('UPDATE approval_wait_epochs SET metadata=?', (ledger._wait_encode(meta),))
+    ledger._conn.commit()
+    clock[0] += 100
+    state = ledger.budget_state(run.id)
+    assert state['human_wait_seconds'] == 0
+    assert state['exceeded'] == 'seconds'
+
+
+def test_inflated_checksummed_ceiling_without_initial_source_proof_grants_no_credit(world):
+    clock, q, ledger, run = world
+    ledger.bind_approval_task_reader(q.get)
+    ask(q, ledger, run, deadline=datetime.fromtimestamp(clock[0] + 600, UTC).isoformat())
+    clock[0] += 500
+    ask(q, ledger, run)
+    meta = ledger._wait_decode(ledger._conn.execute(
+        'SELECT metadata FROM approval_wait_epochs').fetchone()[0])
+    meta['ceiling'] = 999999
+    ledger._conn.execute('UPDATE approval_wait_epochs SET metadata=?', (ledger._wait_encode(meta),))
+    ledger._conn.commit()
+    clock[0] += 200
+    assert ledger.budget_state(run.id)['human_wait_seconds'] == 0
+
+
+def test_nonfinite_checksummed_observation_grants_no_credit(world):
+    clock, q, ledger, run = world
+    ledger.bind_approval_task_reader(q.get)
+    ask(q, ledger, run)
+    meta = ledger._wait_decode(ledger._conn.execute(
+        'SELECT metadata FROM approval_wait_epochs').fetchone()[0])
+    meta['observed'] = float('nan')
+    ledger._conn.execute('UPDATE approval_wait_epochs SET metadata=?', (ledger._wait_encode(meta),))
+    ledger._conn.commit()
+    clock[0] += 100
+    assert ledger.budget_state(run.id)['human_wait_seconds'] == 0
+
+
+def test_read_only_reporting_uses_same_long_wait_bound_without_mutating_epoch(world):
+    clock, q, ledger, run = world
+    ledger.bind_approval_task_reader(q.get)
+    ask(q, ledger, run, deadline=datetime.fromtimestamp(clock[0] + 900, UTC).isoformat())
+    clock[0] += 500
+    assert ledger.budget_state(run.id)['human_wait_seconds'] == 500
+    before = ledger._conn.execute('SELECT metadata FROM approval_wait_epochs').fetchone()[0]
+    readonly = ledger.budget_state(run.id, settle=False)
+    assert readonly['human_wait_seconds'] == 500
+    assert readonly['seconds_used'] == 0
+    assert ledger._conn.execute('SELECT metadata FROM approval_wait_epochs').fetchone()[0] == before
+
+
 def test_reasonless_decision_cutoff_survives_delayed_reconcile(world):
     clock, q, ledger, run = world
     ledger.bind_approval_task_reader(q.get)

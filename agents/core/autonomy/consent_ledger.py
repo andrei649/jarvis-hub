@@ -1,0 +1,349 @@
+"""Signed, caller-owned evidence for reusable H487 owner consent.
+
+This is a storage primitive, not execution authority or caller authentication.
+Only an owner-authenticated integration may pass the "owner" or "admin" label.
+The category catalog must come from reviewed server registrations. HMACs do
+not detect rollback of the entire database to an older valid snapshot.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import sqlite3
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass
+
+from .mediation import DetachedHMACSigner
+
+_VERSION = 1
+_NAMESPACE = "h487.reusable_consent"
+_GRANT_PURPOSE = "owner-category-grant"
+_DECISION_PURPOSE = "owner-consent-decision"
+_HUMAN_ORIGINS = frozenset({"owner", "admin"})
+_KEY = re.compile(r"[A-Za-z0-9_.:/-]{1,128}\Z")
+_DECISION_ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
+
+
+@dataclass(frozen=True, slots=True)
+class ConsentContext:
+    principal: str
+    surface: str
+    session_id: str
+    session_instance: str
+    registration_key: str
+    policy_revision: str
+    target_scope: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConsentCategory:
+    key: str
+    permanent: bool = True
+
+
+def _valid_text(value: object) -> bool:
+    if not isinstance(value, str) or not value or value != value.strip() or len(value) > 1024:
+        return False
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        return False
+    try:
+        value.encode("utf-8")
+    except UnicodeError:
+        return False
+    return True
+
+
+def _valid_context(value: object) -> bool:
+    return type(value) is ConsentContext and all(_valid_text(part) for part in asdict(value).values())
+
+
+def _valid_category(value: object) -> bool:
+    return (
+        type(value) is ConsentCategory
+        and isinstance(value.key, str)
+        and _KEY.fullmatch(value.key) is not None
+        and type(value.permanent) is bool
+    )
+
+
+def _canonical(value: dict[str, object]) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def _identity(context: ConsentContext, scope: str) -> dict[str, str]:
+    fields = asdict(context)
+    if scope == "always":
+        fields.pop("session_id")
+        fields.pop("session_instance")
+    return fields
+
+
+def _identity_key(identity: dict[str, str]) -> str:
+    return hashlib.sha256(_canonical(identity)).hexdigest()
+
+
+class ConsentLedger:
+    """Persist signed grants without committing or closing the caller's DB."""
+
+    def __init__(
+        self,
+        conn: sqlite3.Connection,
+        signer: DetachedHMACSigner | None,
+        *,
+        categories: Iterable[ConsentCategory] = (),
+    ) -> None:
+        self._conn = conn
+        self._signer = signer
+        catalog: dict[str, ConsentCategory] = {}
+        try:
+            for category in categories:
+                if not _valid_category(category) or category.key in catalog:
+                    catalog = {}
+                    break
+                catalog[category.key] = category
+        except (TypeError, ValueError):
+            catalog = {}
+        self._catalog = catalog
+
+    def initialize(self) -> None:
+        """Create only private H487 tables, retaining any enclosing transaction."""
+        self._conn.execute("SAVEPOINT h487_consent_initialize")
+        try:
+            self._conn.execute(
+                """CREATE TABLE IF NOT EXISTS h487_consent_decisions (
+                    decision_id TEXT PRIMARY KEY, payload BLOB NOT NULL,
+                    signature TEXT NOT NULL)"""
+            )
+            self._conn.execute(
+                """CREATE TABLE IF NOT EXISTS h487_consent_grants (
+                    identity_key TEXT NOT NULL, scope TEXT NOT NULL,
+                    category_key TEXT NOT NULL, decision_id TEXT NOT NULL,
+                    payload BLOB NOT NULL, signature TEXT NOT NULL,
+                    PRIMARY KEY (identity_key, scope, category_key))"""
+            )
+        except sqlite3.Error:
+            self._conn.execute("ROLLBACK TO SAVEPOINT h487_consent_initialize")
+            self._conn.execute("RELEASE SAVEPOINT h487_consent_initialize")
+            raise
+        self._conn.execute("RELEASE SAVEPOINT h487_consent_initialize")
+
+    def _requested(self, categories: Iterable[ConsentCategory]) -> tuple[ConsentCategory, ...] | None:
+        selected: dict[str, ConsentCategory] = {}
+        try:
+            for category in categories:
+                if not _valid_category(category) or self._catalog.get(category.key) != category:
+                    return None
+                selected[category.key] = category
+        except (TypeError, ValueError):
+            return None
+        return tuple(selected[key] for key in sorted(selected)) or None
+
+    def grant(
+        self,
+        context: ConsentContext,
+        categories: Iterable[ConsentCategory],
+        *,
+        choice: str,
+        decision_id: str,
+        decided_by: str,
+    ) -> bool:
+        """Record one owner decision atomically; this never authorizes execution."""
+        selected = self._requested(categories)
+        if (
+            not _valid_context(context)
+            or selected is None
+            or not isinstance(choice, str)
+            or choice not in {"session", "always"}
+            or not isinstance(decision_id, str)
+            or _DECISION_ID.fullmatch(decision_id) is None
+            or not isinstance(decided_by, str)
+            or decided_by not in _HUMAN_ORIGINS
+            or not isinstance(self._signer, DetachedHMACSigner)
+        ):
+            return False
+        decision = {
+            "purpose": _DECISION_PURPOSE, "namespace": _NAMESPACE, "version": _VERSION,
+            "context": asdict(context), "categories": [asdict(item) for item in selected],
+            "choice": choice, "decision_id": decision_id, "decided_by": decided_by,
+            "state": "active",
+        }
+        decision_payload = _canonical(decision)
+        decision_tag = self._signer.sign(decision_payload)
+        if decision_tag is None:
+            return False
+        rows: list[tuple[str, str, str, str, bytes, str]] = []
+        for category in selected:
+            scope = choice if category.permanent else "session"
+            identity = _identity(context, scope)
+            payload = _canonical({
+                "purpose": _GRANT_PURPOSE, "namespace": _NAMESPACE, "version": _VERSION,
+                "identity": identity, "category": asdict(category), "scope": scope,
+                "choice": choice, "decision_id": decision_id, "decided_by": decided_by,
+            })
+            tag = self._signer.sign(payload)
+            if tag is None:
+                return False
+            rows.append((_identity_key(identity), scope, category.key, decision_id, payload, tag))
+        try:
+            self._conn.execute("SAVEPOINT h487_consent_grant")
+            try:
+                # Consumed IDs remain after revocation, preventing ordinary replay.
+                self._conn.execute(
+                    "INSERT INTO h487_consent_decisions VALUES (?, ?, ?)",
+                    (decision_id, decision_payload, decision_tag),
+                )
+                self._conn.executemany(
+                    """INSERT INTO h487_consent_grants VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(identity_key, scope, category_key) DO UPDATE SET
+                    decision_id=excluded.decision_id, payload=excluded.payload,
+                    signature=excluded.signature""",
+                    rows,
+                )
+            except sqlite3.Error:
+                self._conn.execute("ROLLBACK TO SAVEPOINT h487_consent_grant")
+                self._conn.execute("RELEASE SAVEPOINT h487_consent_grant")
+                return False
+            self._conn.execute("RELEASE SAVEPOINT h487_consent_grant")
+            return True
+        except sqlite3.Error:
+            return False
+
+    def lookup(self, context: ConsentContext, categories: Iterable[ConsentCategory]) -> bool:
+        """Every requested category needs current and correctly signed evidence."""
+        selected = self._requested(categories)
+        if not _valid_context(context) or selected is None or not isinstance(self._signer, DetachedHMACSigner):
+            return False
+        try:
+            self._conn.execute("SAVEPOINT h487_consent_lookup")
+        except sqlite3.Error:
+            return False
+        try:
+            for category in selected:
+                session_key = _identity_key(_identity(context, "session"))
+                always_key = _identity_key(_identity(context, "always"))
+                rows = self._conn.execute(
+                    """SELECT identity_key, scope, category_key, decision_id, payload, signature
+                    FROM h487_consent_grants WHERE category_key=? AND
+                    ((identity_key=? AND scope='session') OR (identity_key=? AND scope='always'))""",
+                    (category.key, session_key, always_key),
+                ).fetchall()
+                if not rows:
+                    return False
+                for identity_key, scope, category_key, decision_id, payload, signature in rows:
+                    if scope == "always" and not category.permanent:
+                        return False
+                    identity = _identity(context, scope)
+                    if identity_key != _identity_key(identity) or category_key != category.key:
+                        return False
+                    if not isinstance(payload, bytes) or not self._signer.verify(payload, signature):
+                        return False
+                    record = json.loads(payload)
+                    if (
+                        type(record) is not dict
+                        or _canonical(record) != payload
+                        or record.get("purpose") != _GRANT_PURPOSE
+                        or record.get("namespace") != _NAMESPACE
+                        or record.get("version") != _VERSION
+                        or record.get("identity") != identity
+                        or record.get("category") != asdict(category)
+                        or record.get("scope") != scope
+                        or record.get("choice") not in {"session", "always"}
+                        or record.get("decision_id") != decision_id
+                        or record.get("decided_by") not in _HUMAN_ORIGINS
+                        or (scope == "always" and record.get("choice") != "always")
+                    ):
+                        return False
+                    decision_row = self._conn.execute(
+                        "SELECT payload, signature FROM h487_consent_decisions WHERE decision_id=?",
+                        (decision_id,),
+                    ).fetchone()
+                    if decision_row is None or not isinstance(decision_row[0], bytes):
+                        return False
+                    decision_payload, decision_tag = decision_row
+                    if not self._signer.verify(decision_payload, decision_tag):
+                        return False
+                    decision = json.loads(decision_payload)
+                    if (
+                        type(decision) is not dict
+                        or _canonical(decision) != decision_payload
+                        or decision.get("purpose") != _DECISION_PURPOSE
+                        or decision.get("namespace") != _NAMESPACE
+                        or decision.get("version") != _VERSION
+                        or decision.get("decision_id") != decision_id
+                        or decision.get("state") != "active"
+                        or decision.get("choice") != record["choice"]
+                        or decision.get("decided_by") != record["decided_by"]
+                        or asdict(category) not in decision.get("categories", [])
+                        or _identity(ConsentContext(**decision["context"]), scope) != identity
+                    ):
+                        return False
+            return True
+        except (sqlite3.Error, ValueError, TypeError, KeyError, UnicodeError):
+            return False
+        finally:
+            try:
+                self._conn.execute("RELEASE SAVEPOINT h487_consent_lookup")
+            except sqlite3.Error:
+                return False
+
+    def revoke(self, context: ConsentContext) -> bool:
+        """Remove grants for this stable identity across all session instances."""
+        if not _valid_context(context) or not isinstance(self._signer, DetachedHMACSigner):
+            return False
+        stable = _identity(context, "always")
+        try:
+            self._conn.execute("SAVEPOINT h487_consent_revoke")
+            try:
+                decisions = self._conn.execute(
+                    "SELECT decision_id, payload, signature FROM h487_consent_decisions"
+                ).fetchall()
+                for decision_id, payload, signature in decisions:
+                    if not isinstance(payload, bytes) or not self._signer.verify(payload, signature):
+                        raise ValueError("invalid decision evidence")
+                    decision = json.loads(payload)
+                    if (
+                        type(decision) is not dict
+                        or _canonical(decision) != payload
+                        or decision.get("purpose") != _DECISION_PURPOSE
+                        or decision.get("namespace") != _NAMESPACE
+                        or decision.get("version") != _VERSION
+                        or decision.get("decision_id") != decision_id
+                        or decision.get("state") not in {"active", "revoked"}
+                    ):
+                        raise ValueError("invalid decision record")
+                    recorded_context = ConsentContext(**decision["context"])
+                    if not _valid_context(recorded_context):
+                        raise ValueError("invalid decision context")
+                    if _identity(recorded_context, "always") == stable and decision.get("state") == "active":
+                        decision["state"] = "revoked"
+                        revoked_payload = _canonical(decision)
+                        revoked_tag = self._signer.sign(revoked_payload)
+                        if revoked_tag is None:
+                            raise ValueError("unavailable signer")
+                        self._conn.execute(
+                            "UPDATE h487_consent_decisions SET payload=?, signature=? WHERE decision_id=?",
+                            (revoked_payload, revoked_tag, decision_id),
+                        )
+                rows = self._conn.execute("SELECT rowid, payload FROM h487_consent_grants").fetchall()
+                delete_ids = []
+                for rowid, payload in rows:
+                    try:
+                        identity = json.loads(payload).get("identity", {})
+                        if all(identity.get(key) == value for key, value in stable.items()):
+                            delete_ids.append((rowid,))
+                    except (TypeError, ValueError, AttributeError):
+                        continue
+                self._conn.executemany("DELETE FROM h487_consent_grants WHERE rowid=?", delete_ids)
+            except (sqlite3.Error, ValueError, TypeError, KeyError, UnicodeError):
+                self._conn.execute("ROLLBACK TO SAVEPOINT h487_consent_revoke")
+                self._conn.execute("RELEASE SAVEPOINT h487_consent_revoke")
+                return False
+            self._conn.execute("RELEASE SAVEPOINT h487_consent_revoke")
+            return True
+        except sqlite3.Error:
+            return False
+
+
+__all__ = ["ConsentCategory", "ConsentContext", "ConsentLedger"]

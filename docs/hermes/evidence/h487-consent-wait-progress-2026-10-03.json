@@ -1,0 +1,52 @@
+{
+  "base_sha": "7b6c08c5558f44a69af6743435face28650b9375",
+  "paths": {
+    "agents/core/autonomy/consent_ledger.py": "1560748baed22266f8df033af6fb8d03d9cef75a028c537dca64a5d2eb46c028",
+    "agents/core/autonomy/work_runs.py": "79db521573a667ae69c88a86360f26dab2866617b95a98cab036b6de134e2cb0",
+    "tests/test_h487_consent_ledger.py": "2150e10b28fe55a789c2c3cfeb6238275a4efa8ab6c9a33beb20154ef8b4e4f4",
+    "tests/test_h487_human_wait_budget.py": "d14de663ccb1d04424b113c4536d68e5b328ca3bf315a77aa17a7dc7ba183a81",
+    "tests/test_h487_human_wait_integration.py": "f4ca74f88d0ac8cc98ce7a49f2baff4d3efe5617202e3e14beb615a1c23df8ac"
+  },
+  "generated_at": "2026-10-03",
+  "goal": "Complete all 697 accepted Hermes capabilities locally; H487 remains incomplete",
+  "guarded_integration": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "841",
+      "time": "11.822",
+      "timestamp": "2026-10-03T21:31:15.010232+03:00",
+      "hostname": "Macmini"
+    }
+  ],
+  "backend_collected": 22010,
+  "full_backend_run": false,
+  "models": {
+    "consent_store": "gpt-6-sol high",
+    "wait_ceiling": "gpt-6-sol high"
+  },
+  "artifacts": {
+    "/tmp/nerva-h487-consent-wait-integrated-20261003.log": "0ea8926e537a93e5f9248e442d6acd56f2508935afb62c13fdb0384e13483059",
+    "/tmp/nerva-h487-consent-wait-integrated-20261003.xml": "22e6f1efb74ff7330dd09e9cca43552370af98eceb5b13e61ab7813c47b90577",
+    "/tmp/nerva-h487-consent-wait-collection-20261003.log": "57638b071cadb011594d4ecffcf055121238fe1aa2e38738a2768d4246da6ab3",
+    "/tmp/nerva-h487-consent-store-20261003-report.md": "696ed6bf7dda6b6e80fc270e3e5a240aa2e5deeabb28d1bfb3a26053c68327f7",
+    "/tmp/nerva-h487-wait-ceiling-20261003-report.md": "a757122e6bb7743baa278005f536c836da5f9578a5d005e901923d6e1451dcdb",
+    "/tmp/nerva-h487-consent-wait-record-gates-20261003.xml": "4161fbb419d08eac8211017b839e2c7d54e4bc6eb329eedf08f9739fd3209429",
+    "/tmp/nerva-h487-consent-wait-record-gates-20261003.log": "81654ff3e27387d55dbfee4a26e7fb1b7438917870ed6b1702a4803b4f9fbde7",
+    "/tmp/nerva-h487-consent-wait-bandit-20261003.json": "1611823f9a00b76e65bc6da2434490c52f75ef039c26680a89f25f98d8232295",
+    "/tmp/nerva-h487-consent-wait-gitleaks-20261003.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+  },
+  "record_gates": {
+    "tests": 228,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "scans": {
+    "bandit_new_findings": 0,
+    "bandit_errors": 0,
+    "gitleaks_findings": 0
+  }
+}

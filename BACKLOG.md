@@ -14,6 +14,14 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-10-03 H487 local continuation: new CompanyMode approval-wait windows use
+  initial verified deadlines plus the 60-second Hermes margin; followers cannot
+  renew the ceiling and legacy windows retain 360 seconds. An adjacent signed
+  category-consent ledger covers persistence, isolation and revocation evidence,
+  but is not yet connected to owner choices or execution. 841 guarded integration
+  cases pass; full collection contains 22,010 cases, not a fresh full-suite run.
+  H487 remains unfinished and no equivalent credit is added. See
+  `docs/hermes/evidence/h487-consent-wait-progress-2026-10-03.md`.
 - 2026-09-28 Codex-sprint review and ledger recovery (Claude, PR #1207): six red-first
   fix rounds on `beb2ee5a` make capability outcomes honest (failure when an attempt could
   have touched the world or machinery broke; nothing for a governance refusal/withhold or a
