@@ -3,7 +3,7 @@
 This is a storage primitive, not execution authority or caller authentication.
 Only an owner-authenticated integration may pass the "owner" or "admin" label.
 The category catalog must come from reviewed server registrations. HMACs do
-not detect rollback of the entire database to an older valid snapshot.
+not detect rollback of the entire database without an external anchor.
 """
 
 from __future__ import annotations
@@ -15,12 +15,13 @@ import sqlite3
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 
-from .mediation import DetachedHMACSigner
+from .mediation import DetachedHMACSigner, MediationHead, MonotonicHeadAnchor
 
 _VERSION = 1
 _NAMESPACE = "h487.reusable_consent"
 _GRANT_PURPOSE = "owner-category-grant"
 _DECISION_PURPOSE = "owner-consent-decision"
+_HEAD_PURPOSE = "h487-consent-head"
 _HUMAN_ORIGINS = frozenset({"owner", "admin"})
 _KEY = re.compile(r"[A-Za-z0-9_.:/-]{1,128}\Z")
 _DECISION_ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
@@ -93,9 +94,11 @@ class ConsentLedger:
         signer: DetachedHMACSigner | None,
         *,
         categories: Iterable[ConsentCategory] = (),
+        head_anchor: MonotonicHeadAnchor | None = None,
     ) -> None:
         self._conn = conn
         self._signer = signer
+        self._head_anchor = head_anchor
         catalog: dict[str, ConsentCategory] = {}
         try:
             for category in categories:
@@ -123,11 +126,105 @@ class ConsentLedger:
                     payload BLOB NOT NULL, signature TEXT NOT NULL,
                     PRIMARY KEY (identity_key, scope, category_key))"""
             )
+            if self._head_anchor is not None:
+                self._conn.execute(
+                    """CREATE TABLE IF NOT EXISTS h487_consent_state (
+                        id INTEGER PRIMARY KEY CHECK (id=1),
+                        version INTEGER NOT NULL, revision INTEGER NOT NULL,
+                        manifest_digest TEXT NOT NULL, signature TEXT NOT NULL)"""
+                )
+                state = self._conn.execute("SELECT 1 FROM h487_consent_state LIMIT 1").fetchone()
+                if state is None:
+                    decisions = self._conn.execute("SELECT 1 FROM h487_consent_decisions LIMIT 1").fetchone()
+                    grants = self._conn.execute("SELECT 1 FROM h487_consent_grants LIMIT 1").fetchone()
+                    if decisions is None and grants is None and self._head_anchor.read() is None:
+                        head = self._make_head_locked(0)
+                        if head is not None and self._head_anchor.advance(None, head):
+                            self._conn.execute(
+                                "INSERT INTO h487_consent_state VALUES (1, 1, ?, ?, ?)",
+                                (head.last_sequence, head.last_event_hash, head.signature),
+                            )
         except sqlite3.Error:
             self._conn.execute("ROLLBACK TO SAVEPOINT h487_consent_initialize")
             self._conn.execute("RELEASE SAVEPOINT h487_consent_initialize")
             raise
         self._conn.execute("RELEASE SAVEPOINT h487_consent_initialize")
+
+    def _manifest_digest_locked(self) -> str:
+        """Bind every stored row column, including primary keys and signed bytes."""
+        digest = hashlib.sha256(_canonical({
+            "purpose": "h487-consent-manifest", "namespace": _NAMESPACE, "version": _VERSION,
+        }))
+        for table, query in (
+            (b"decisions", "SELECT decision_id, payload, signature FROM h487_consent_decisions ORDER BY decision_id"),
+            (b"grants", """SELECT identity_key, scope, category_key, decision_id, payload, signature
+                          FROM h487_consent_grants ORDER BY identity_key, scope, category_key"""),
+        ):
+            digest.update(len(table).to_bytes(8, "big"))
+            digest.update(table)
+            for row in self._conn.execute(query):
+                if table == b"decisions":
+                    valid = isinstance(row[0], str) and isinstance(row[1], bytes) and isinstance(row[2], str)
+                    encoded = [row[0], row[1].hex(), row[2]] if valid else None
+                else:
+                    valid = (
+                        all(isinstance(value, str) for value in row[:4])
+                        and isinstance(row[4], bytes) and isinstance(row[5], str)
+                    )
+                    encoded = [*row[:4], row[4].hex(), row[5]] if valid else None
+                if encoded is None:
+                    raise ValueError("invalid consent row type")
+                item = _canonical({"row": encoded})
+                digest.update(len(item).to_bytes(8, "big"))
+                digest.update(item)
+        return digest.hexdigest()
+
+    def _head_payload(self, revision: int, digest: str) -> bytes:
+        return _canonical({
+            "purpose": _HEAD_PURPOSE, "namespace": _NAMESPACE, "version": _VERSION,
+            "revision": revision, "manifest_digest": digest,
+        })
+
+    def _make_head_locked(self, revision: int) -> MediationHead | None:
+        if not isinstance(self._signer, DetachedHMACSigner):
+            return None
+        digest = self._manifest_digest_locked()
+        signature = self._signer.sign(self._head_payload(revision, digest))
+        if signature is None:
+            return None
+        return MediationHead(1, revision, digest, revision, signature)
+
+    def _verified_head_locked(self) -> MediationHead | None:
+        if self._head_anchor is None or not isinstance(self._signer, DetachedHMACSigner):
+            return None
+        row = self._conn.execute(
+            "SELECT version, revision, manifest_digest, signature FROM h487_consent_state WHERE id=1"
+        ).fetchone()
+        if row is None or row[0] != 1 or type(row[1]) is not int or row[1] < 0:
+            return None
+        digest = self._manifest_digest_locked()
+        if row[2] != digest or not self._signer.verify(self._head_payload(row[1], digest), row[3]):
+            return None
+        try:
+            local = MediationHead(1, row[1], digest, row[1], row[3])
+        except ValueError:
+            return None
+        return local if self._head_anchor.read() == local else None
+
+    def _advance_head_locked(self, previous: MediationHead) -> None:
+        if self._head_anchor is None:
+            return
+        replacement = self._make_head_locked(previous.last_sequence + 1)
+        if replacement is None:
+            raise ValueError("unavailable consent head signer")
+        updated = self._conn.execute(
+            """UPDATE h487_consent_state SET revision=?, manifest_digest=?, signature=?
+               WHERE id=1 AND version=1 AND revision=? AND manifest_digest=? AND signature=?""",
+            (replacement.last_sequence, replacement.last_event_hash, replacement.signature,
+             previous.last_sequence, previous.last_event_hash, previous.signature),
+        )
+        if updated.rowcount != 1 or not self._head_anchor.advance(previous, replacement):
+            raise ValueError("unavailable consent head anchor")
 
     def _requested(self, categories: Iterable[ConsentCategory]) -> tuple[ConsentCategory, ...] | None:
         selected: dict[str, ConsentCategory] = {}
@@ -189,6 +286,9 @@ class ConsentLedger:
         try:
             self._conn.execute("SAVEPOINT h487_consent_grant")
             try:
+                previous = self._verified_head_locked() if self._head_anchor is not None else None
+                if self._head_anchor is not None and previous is None:
+                    raise ValueError("unverified consent head")
                 # Consumed IDs remain after revocation, preventing ordinary replay.
                 self._conn.execute(
                     "INSERT INTO h487_consent_decisions VALUES (?, ?, ?)",
@@ -201,7 +301,9 @@ class ConsentLedger:
                     signature=excluded.signature""",
                     rows,
                 )
-            except sqlite3.Error:
+                if previous is not None:
+                    self._advance_head_locked(previous)
+            except (sqlite3.Error, ValueError):
                 self._conn.execute("ROLLBACK TO SAVEPOINT h487_consent_grant")
                 self._conn.execute("RELEASE SAVEPOINT h487_consent_grant")
                 return False
@@ -220,6 +322,8 @@ class ConsentLedger:
         except sqlite3.Error:
             return False
         try:
+            if self._head_anchor is not None and self._verified_head_locked() is None:
+                return False
             for category in selected:
                 session_key = _identity_key(_identity(context, "session"))
                 always_key = _identity_key(_identity(context, "always"))
@@ -279,7 +383,7 @@ class ConsentLedger:
                         or _identity(ConsentContext(**decision["context"]), scope) != identity
                     ):
                         return False
-            return True
+            return self._head_anchor is None or self._verified_head_locked() is not None
         except (sqlite3.Error, ValueError, TypeError, KeyError, UnicodeError):
             return False
         finally:
@@ -296,6 +400,9 @@ class ConsentLedger:
         try:
             self._conn.execute("SAVEPOINT h487_consent_revoke")
             try:
+                previous = self._verified_head_locked() if self._head_anchor is not None else None
+                if self._head_anchor is not None and previous is None:
+                    raise ValueError("unverified consent head")
                 decisions = self._conn.execute(
                     "SELECT decision_id, payload, signature FROM h487_consent_decisions"
                 ).fetchall()
@@ -336,6 +443,8 @@ class ConsentLedger:
                     except (TypeError, ValueError, AttributeError):
                         continue
                 self._conn.executemany("DELETE FROM h487_consent_grants WHERE rowid=?", delete_ids)
+                if previous is not None:
+                    self._advance_head_locked(previous)
             except (sqlite3.Error, ValueError, TypeError, KeyError, UnicodeError):
                 self._conn.execute("ROLLBACK TO SAVEPOINT h487_consent_revoke")
                 self._conn.execute("RELEASE SAVEPOINT h487_consent_revoke")

@@ -10,7 +10,7 @@ from dataclasses import replace
 import pytest
 
 from agents.core.autonomy.consent_ledger import ConsentCategory, ConsentContext, ConsentLedger
-from agents.core.autonomy.mediation import DetachedHMACSigner
+from agents.core.autonomy.mediation import DetachedHMACSigner, MediationHead, MonotonicHeadAnchor
 
 KEY = b"h487-test-owner-held-hmac-key"
 TERMINAL = ConsentCategory("terminal.run")
@@ -42,6 +42,142 @@ def _ledger(conn: sqlite3.Connection, signer: DetachedHMACSigner | None = None) 
     ledger = ConsentLedger(conn, signer if signer is not None else _signer(), categories=CATEGORIES)
     ledger.initialize()
     return ledger
+
+
+class _HeadStore:
+    def __init__(self) -> None:
+        self.head: MediationHead | None = None
+        self.fail_advance = False
+
+    def anchor(self) -> MonotonicHeadAnchor:
+        def advance(expected: MediationHead | None, replacement: MediationHead) -> bool:
+            if self.fail_advance or self.head != expected:
+                return False
+            self.head = replacement
+            return True
+
+        return MonotonicHeadAnchor(lambda: self.head, advance)
+
+
+def _anchored(conn: sqlite3.Connection, store: _HeadStore, signer: DetachedHMACSigner | None = None) -> ConsentLedger:
+    ledger = ConsentLedger(conn, signer if signer is not None else _signer(), categories=CATEGORIES, head_anchor=store.anchor())
+    ledger.initialize()
+    return ledger
+
+
+def test_anchored_revoke_rejects_old_signed_grant_and_decision_rows(tmp_path):
+    store = _HeadStore()
+    with sqlite3.connect(tmp_path / "consent.db") as conn:
+        ledger = _anchored(conn, store)
+        ctx = _context()
+        assert ledger.grant(ctx, (TERMINAL,), choice="always", decision_id="decision-1", decided_by="owner")
+        old_grant = conn.execute("SELECT * FROM h487_consent_grants").fetchone()
+        old_decision = conn.execute("SELECT * FROM h487_consent_decisions").fetchone()
+        assert ledger.revoke(ctx)
+        conn.execute("DELETE FROM h487_consent_decisions")
+        conn.execute("INSERT INTO h487_consent_decisions VALUES (?, ?, ?)", old_decision)
+        conn.execute("INSERT INTO h487_consent_grants VALUES (?, ?, ?, ?, ?, ?)", old_grant)
+        assert not ledger.lookup(ctx, (TERMINAL,))
+        assert not ledger.grant(ctx, (READ,), choice="always", decision_id="decision-2", decided_by="owner")
+
+
+def test_anchored_revoke_rejects_whole_database_restore(tmp_path):
+    store = _HeadStore()
+    path = tmp_path / "consent.db"
+    with sqlite3.connect(path) as conn:
+        ledger = _anchored(conn, store)
+        assert ledger.grant(_context(), (TERMINAL,), choice="always", decision_id="decision-1", decided_by="owner")
+    old_database = path.read_bytes()
+    with sqlite3.connect(path) as conn:
+        ledger = _anchored(conn, store)
+        assert ledger.revoke(_context())
+    path.write_bytes(old_database)
+    with sqlite3.connect(path) as conn:
+        ledger = _anchored(conn, store)
+        assert not ledger.lookup(_context(), (TERMINAL,))
+        assert not ledger.grant(_context(), (READ,), choice="always", decision_id="decision-2", decided_by="owner")
+
+
+def test_anchored_empty_bootstrap_reopen_and_constraints(tmp_path):
+    store = _HeadStore()
+    path = tmp_path / "consent.db"
+    with sqlite3.connect(path) as conn:
+        ledger = _anchored(conn, store)
+        assert store.head is not None and store.head.last_sequence == 0
+        assert ledger.grant(_context(), (TERMINAL, READ, CONTENT), choice="always", decision_id="decision-1", decided_by="owner")
+        assert store.head.last_sequence == 1
+    with sqlite3.connect(path) as conn:
+        ledger = _anchored(conn, store)
+        later = _context(session_id="later", session_instance="later")
+        assert ledger.lookup(later, (TERMINAL, READ))
+        assert not ledger.lookup(later, (TERMINAL, CONTENT))
+        assert not ledger.lookup(later, (ConsentCategory("unknown"),))
+
+
+def test_anchored_rejects_row_or_head_substitution(tmp_path):
+    store = _HeadStore()
+    with sqlite3.connect(tmp_path / "consent.db") as conn:
+        ledger = _anchored(conn, store)
+        assert ledger.grant(_context(), (TERMINAL,), choice="always", decision_id="decision-1", decided_by="owner")
+        conn.execute("UPDATE h487_consent_grants SET signature=?", ("a" * 64,))
+        assert not ledger.lookup(_context(), (TERMINAL,))
+        conn.rollback()
+        assert ledger.lookup(_context(), (TERMINAL,))
+        store.head = replace(store.head, signature="a" * 64)
+        assert not ledger.lookup(_context(), (TERMINAL,))
+
+
+def test_anchored_cas_or_head_signer_failure_preserves_caller_transaction():
+    store = _HeadStore()
+    with sqlite3.connect(":memory:") as conn:
+        ledger = _anchored(conn, store)
+        conn.execute("CREATE TABLE unrelated(value TEXT)")
+        conn.execute("BEGIN")
+        conn.execute("INSERT INTO unrelated VALUES ('caller')")
+        store.fail_advance = True
+        assert not ledger.grant(_context(), (TERMINAL,), choice="always", decision_id="decision-1", decided_by="owner")
+        assert conn.in_transaction
+        assert conn.execute("SELECT value FROM unrelated").fetchall() == [("caller",)]
+        assert conn.execute("SELECT count(*) FROM h487_consent_decisions").fetchone()[0] == 0
+        store.fail_advance = False
+        conn.commit()
+
+        def mac(payload: bytes) -> str | None:
+            if b'"purpose":"h487-consent-head"' in payload:
+                return None
+            return hmac.new(KEY, payload, hashlib.sha256).hexdigest()
+
+        broken = _anchored(conn, store, DetachedHMACSigner(mac))
+        assert not broken.grant(_context(), (TERMINAL,), choice="always", decision_id="decision-2", decided_by="owner")
+        assert store.head.last_sequence == 0
+        assert conn.execute("SELECT count(*) FROM h487_consent_decisions").fetchone()[0] == 0
+
+
+def test_anchored_outer_rollback_invalidates_local_grant_without_committing_caller():
+    store = _HeadStore()
+    with sqlite3.connect(":memory:") as conn:
+        ledger = _anchored(conn, store)
+        conn.execute("CREATE TABLE unrelated(value TEXT)")
+        conn.execute("BEGIN")
+        conn.execute("INSERT INTO unrelated VALUES ('caller')")
+        assert ledger.grant(_context(), (TERMINAL,), choice="always", decision_id="decision-1", decided_by="owner")
+        assert conn.in_transaction
+        assert conn.execute("SELECT value FROM unrelated").fetchall() == [("caller",)]
+        conn.rollback()
+        assert store.head.last_sequence == 1
+        assert not ledger.lookup(_context(), (TERMINAL,))
+        assert not ledger.grant(_context(), (READ,), choice="always", decision_id="decision-2", decided_by="owner")
+
+
+def test_anchored_does_not_adopt_nonempty_legacy_store(tmp_path):
+    store = _HeadStore()
+    with sqlite3.connect(tmp_path / "consent.db") as conn:
+        legacy = _ledger(conn)
+        assert legacy.grant(_context(), (TERMINAL,), choice="always", decision_id="decision-1", decided_by="owner")
+        anchored = _anchored(conn, store)
+        assert store.head is None
+        assert not anchored.lookup(_context(), (TERMINAL,))
+        assert not anchored.grant(_context(), (READ,), choice="always", decision_id="decision-2", decided_by="owner")
 
 
 def test_always_consent_reopens_and_requires_all_categories(tmp_path):

@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-10-03 H487 revocation continuation: an optional signed consent-state head
+  now uses a separate durable monotonic anchor outside SQLite. Restoring old
+  signed rows or the whole consent database cannot revive revoked grants while
+  that external anchor remains current. Corrupt/missing anchors, stale CAS and
+  caller rollback fail closed; legacy unanchored grants are not adopted.
+  686 guarded relevant cases pass, including the 83-case anchor integration
+  union; these counts overlap. Full collection is 22,093 cases, not a fresh
+  full-backend pass. Real owner choices, follower receipts and physical dispatch
+  integration remain unfinished; no equivalent credit is added. See
+  `docs/hermes/evidence/h487-consent-anchor-progress-2026-10-03.md`.
 - 2026-10-03 H487 producer continuation: ported the pinned Hermes terminal warning
   detector and closed category catalog; added registrar-owned stable provenance
   and signed private source capture at the real terminal enqueue. Sources bind
