@@ -133,10 +133,12 @@ def prepare_local_auxiliary(router, task: str):
             if task == "compression":
                 from agents.core.compaction_hold import DEFAULT_IDLE, stream_summary
 
+                recovery = ({"call_scope": lambda: auxiliary_temperature_recovery_scope(
+                    backend, model)} if isinstance(backend, LMStudioBackend) else {})
                 return await stream_summary(
                     backend, DEFAULT_IDLE if summary_idle is None else summary_idle,
                     model=model, prompt=prompt, system=system,
-                    max_tokens=max_tokens, temperature=temperature,
+                    max_tokens=max_tokens, temperature=temperature, **recovery,
                 )
             if isinstance(backend, LMStudioBackend):
                 with auxiliary_temperature_recovery_scope(backend, model):

@@ -16,6 +16,7 @@ class _RecoveryScope:
     backend: object
     model: str
     task: asyncio.Task | None
+    route: _TemperatureCache | None = None
     active: bool = True
 
 
@@ -44,19 +45,28 @@ def _current_task() -> asyncio.Task | None:
 @contextmanager
 def auxiliary_temperature_recovery_scope(backend: object, model: str):
     """Permit recovery only while this exact backend/model operation is active."""
-    state = _RecoveryScope(backend, model, _current_task())
+    state = _RecoveryScope(backend, model, _current_task(),
+                           _temperature_cache(backend, create=True))
     token = _scope.set(state)
-    try:
-        yield
-    finally:
+
+    def revoke() -> None:
+        # A stream supervisor may revoke before cancelling a child that suppresses
+        # cancellation. This touches shared state, never another task's ContextVar.
         state.active = False
+
+    try:
+        yield revoke
+    finally:
+        revoke()
         _scope.reset(token)
 
 
 def may_repair_temperature(backend: object, model: object) -> bool:
     state = _scope.get()
     return bool(state is not None and state.active and state.backend is backend
-                and state.model == model and state.task is _current_task())
+                and state.model == model and state.task is _current_task()
+                and (state.route is None
+                     or _temperature_cache(backend, create=False) is state.route))
 
 
 def _temperature_cache(backend: object, *, create: bool) -> _TemperatureCache | None:
