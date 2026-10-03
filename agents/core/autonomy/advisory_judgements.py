@@ -1,7 +1,8 @@
 """Bounded, optional advisory work shared by action cards and task decisions.
 
-Storage adapters own pending-state checks and compare-and-store. This runner never
-approves, enqueues, executes, or modifies an action's authorization bytes.
+Storage adapters own pending-state checks and compare-and-store. This runner
+delegates storage and promotion effects; only the task adapter's explicit smart
+terminal path may apply a sealed one-operation approval. Action cards stay advisory.
 """
 from __future__ import annotations
 
@@ -200,6 +201,7 @@ class AdvisoryJudgements:
                 logger.debug("approval judge verdict for %s dropped (decided, cleared or judged)", action_id)
                 return
             self._record_judgement(snapshot, stored)
+            await self._after_judgement(snapshot, stored)
         except Exception:  # noqa: BLE001 — timeout, backend down, refusal: nothing persisted
             logger.debug("approval judge gave no verdict for %s", action_id, exc_info=True)
         finally:
@@ -210,3 +212,6 @@ class AdvisoryJudgements:
 
     def _record_judgement(self, snapshot: dict, annotation: dict) -> None:
         raise NotImplementedError
+
+    async def _after_judgement(self, snapshot: dict, annotation: dict) -> None:
+        """Optional adapter effects after its durable compare-and-store succeeds."""

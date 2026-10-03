@@ -133,6 +133,19 @@
   Generated equivalence counts now reflect stale evidence honestly; older headline
   counts below are dated history, not the current acceptance total. No publication.
 
+- 2026-10-03 H277/H485 smart terminal increment: explicit owner opt-in adds
+  strict APPROVE/DENY/ESCALATE, trusted operator policy and signed one-operation
+  task authority. Exact production intake and the real Action Kernel accept only
+  the ordinary terminal ASK in AUTO after receipt validation; e-stop, taint,
+  budgets, target policy and revocation retain their gates. Human override remains
+  one task, with separate machine attribution. The 137 new backend cases,
+  725 focused regressions and 11 authority mutants pass offline; all 1,884
+  frontend tests, TypeScript and HUD build pass. Final full backend exits zero: 21,509 passed,
+  34 skipped and one expected failure. Native mobile guardian rendering, broader
+  shell/script placement, denial breaker and live model acceptance remain open.
+  Both rows stay **partial**; no new equivalence credit or publication.
+  See `docs/hermes/h277-smart-terminal-plan-2026-10-03.md` and its mutation evidence.
+
 - 2026-09-27 H613 ✅ choose how it sounds and how it hears: Piper as a local voice, and the owner's own TTS/STT programs, each run only as a human approved it (equivalent; #1207; headline 190/697).
 
   Nerva spoke through cloud voices or Kokoro and heard only through Whisper. Now:
@@ -8589,7 +8602,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.26 | **Native chat-command discovery** — list the live `GET /api/commands` catalog with usage, owner tier and unavailable state in the native chat UI. Keep execution on the existing guarded chat path. Browser quickbar discovery ships in HA-4i-catalog. | 2 | P3 | H18.1 | PARITY.md |
 | H18.27 | **Native generated images** — add local-generation status, an exact-prompt approval handoff and authenticated artifact previews/downloads to the native client. Distinguish queued, generating, failed and completed; configuration alone never means a working generator. Reuse HA-4i-image and existing approvals, without automatic generation or cloud fallback. | 3 | P3 | H18.11, HA-4i | PARITY.md |
 | H18.28 | **Native memory-neighborhood navigation** — extend the existing H18.17 entity list/detail with connected-entity navigation and bounded cancellable reads that ignore stale selections. Preserve real empty/unavailable states. Browser slice DW-1 uses the same KG reads; no new backend or graph writes. | 2 | P3 | H18.17 | PARITY.md |
-| H18.29 | **Native advisory approval opinions** — render H277 risk/rationale/identity and optional bounded pending polling without changing decision authority; expose read-only model-role configuration. Preserve original cards when no judge is configured and never claim connectivity from configuration. | 2 | P3 | H18.11, H277 | PARITY.md |
+| H18.29 | **Native approval review opinions and guardian verdicts** — render H277 advisory risk/rationale/identity and optional bounded pending polling; distinguish opt-in terminal guardian DENY/ESCALATE and smart pending labels with one-task owner override. Expose read-only model-role configuration. Preserve original cards when no judge is configured and never claim connectivity from configuration. | 2 | P3 | H18.11, H277 | PARITY.md |
 | H18.21 ✅ | **Native Media Director parity** — the metadata-only Media tab reads the owner-curated `/api/media/devices` registry and `/api/media/session` board, then exposes explicit user present/restore controls over the unchanged guarded API. Safe bounded normalization preserves disabled/error states and distinguishes queued, refused, unverified, and verified nested outcomes; a stale/unregistered target cannot be submitted. Device register/remove controls are isolated behind the configured admin token and no remote media is embedded. Red/green: missing client/screen contracts failed first, then mobile Jest passed (65) + `tsc --noEmit` clean. | 3 | ✅ done (2026-07-13) | O29 | PARITY.md |
 | H18.22 ✅ | **Mobile capability registry board** — folded into the existing Status tab (not a new top-level tab: 13 tabs already fill the bar) as a **Capabilities** card alongside Trust, over the same user-guarded `GET /api/capabilities` the browser's `ReadinessPanel` reads: SEAM/WIRED/VERIFIED/GA counts + the honest "harness pending — wired, not yet proven" note (never claims VERIFIED it can't back). Read-only — no action execution or token-management controls; approvals stay on H18.11. `fetchCapabilities`/`normalizeCapability` in `mobile/src/api/client.ts`. Red/green: `capabilities.test.ts` (+3: shape mapping, malformed-entry drop + honest defaults, sparse-payload normalization), mobile Jest passed (93) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-19) | H18.1, H27.8 | mobile parity |
 

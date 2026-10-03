@@ -16,7 +16,9 @@ transport existed. This module is that transport, deliberately minimal:
   itself.
 - ``docker`` executes through the existing ``Sandbox`` engine with a hard
   ``active_backend() == "docker"`` re-check so a docker-target command can
-  never silently land on the host.
+  never silently land on the host. An opted-in machine approval additionally
+  crosses the ``terminal.exec`` contract and kernel GRANT; legacy owner/manual
+  Docker behavior remains. Unsupported smart cwd/timeout options are refused.
 - ``local`` executes through ``LocalHostTransport`` only when
   ``JARVIS_TERMINAL_LOCAL_HOST`` is on AND the command parses to a plain argv
   (no shell operators) AND the ``terminal.exec`` contract admits it AND the
@@ -32,7 +34,9 @@ transport existed. This module is that transport, deliberately minimal:
 
 The runner performs no gating of its own beyond target policy + contract +
 kernel: reach it through the gated ``terminal_run`` ToolRPC tool, which carries
-the allowlist, ask-tier approval queue, and trusted-execution rail.
+the allowlist, ask-tier approval queue, and trusted-execution rail. Its injected
+request check verifies the exact task, actor and live policy again after an
+awaited kernel decision, immediately before handing off to the transport.
 """
 
 from __future__ import annotations
@@ -102,6 +106,8 @@ class GovernedTargetRunner:
         ssh_transport=None,
         authorizer: Callable[..., Any] | None = None,
         approval_check: Callable[[int], bool] | None = None,
+        request_check: Callable[[int | None, dict], bool] | None = None,
+        smart_approval_check: Callable[[int], bool] | None = None,
     ) -> None:
         if not isinstance(registry, TargetRegistry):
             raise ValueError("registry must be a TargetRegistry")
@@ -113,12 +119,18 @@ class GovernedTargetRunner:
             raise TypeError("authorizer must be callable")
         if approval_check is not None and not callable(approval_check):
             raise TypeError("approval_check must be callable")
+        if request_check is not None and not callable(request_check):
+            raise TypeError("request_check must be callable")
+        if smart_approval_check is not None and not callable(smart_approval_check):
+            raise TypeError("smart_approval_check must be callable")
         self._registry = registry
         self._sandbox = sandbox
         self._local_transport = local_transport
         self._ssh_transport = ssh_transport
         self._authorizer = authorizer
         self._approval_check = approval_check
+        self._request_check = request_check
+        self._smart_approval_check = smart_approval_check
 
     async def run(
         self,
@@ -148,6 +160,14 @@ class GovernedTargetRunner:
                 "reason": f"hardline_denied:{hardline}",
                 "target": target_label,
             }
+
+        request = {"target": target, "command": command}
+        if cwd is not None:
+            request["cwd"] = cwd
+        if timeout is not None:
+            request["timeout"] = timeout
+        if not self._request_current(approved_task_id, request):
+            return {"ok": False, "reason": "terminal_request_changed", "target": target_label}
 
         # Policy next: the audit chain records the decision before any
         # process exists, and a refusal never spawns one.
@@ -180,6 +200,34 @@ class GovernedTargetRunner:
                     "reason": f"docker_backend_unavailable:{active}",
                     **base,
                 }
+            if self._is_smart_approval(approved_task_id):
+                # Sandbox executes sh -c in /workspace with its configured
+                # timeout. Do not approve options this transport cannot honor.
+                actual_timeout = getattr(self._sandbox, "timeout", None)
+                if (cwd is not None and cwd != "/workspace") or (
+                    timeout is not None and timeout != actual_timeout
+                ):
+                    return {"ok": False, "reason": "docker_runtime_options_unsupported", **base}
+                payload = terminal_exec_payload(
+                    target=base["target"], backend="docker", argv=["sh", "-c", command],
+                    cwd="/workspace", roots=["/workspace"], timeout=actual_timeout,
+                    approved_task_id=approved_task_id, max_timeout=600,
+                )
+                verdict = TERMINAL_EXEC_CONTRACT.evaluate(payload)
+                if not verdict.admissible:
+                    return {"ok": False, "reason": f"contract_denied:{verdict.reason}", **base}
+                kernel_refusal = await self._kernel_grant(decision.agent, payload, request=request)
+                if kernel_refusal is not None:
+                    return {"ok": False, **kernel_refusal, **base}
+                if not self._kernel_live():
+                    return {"ok": False, "reason": "action_kernel_disabled", **base}
+                if getattr(self._sandbox, 'timeout', None) != actual_timeout:
+                    return {"ok": False, "reason": "docker_runtime_changed", **base}
+            if not self._request_current(approved_task_id, request):
+                return {"ok": False, "reason": "terminal_request_changed", **base}
+            active = self._sandbox.active_backend()
+            if active != "docker":
+                return {"ok": False, "reason": f"docker_backend_unavailable:{active}", **base}
             result = await self._sandbox.execute_shell(command)
             return {
                 "ok": result.exit_code == 0,
@@ -199,6 +247,7 @@ class GovernedTargetRunner:
                 approved_task_id=approved_task_id,
                 cwd=cwd,
                 timeout=timeout,
+                request=request,
             )
         if decision.backend == "ssh":
             if not env_flag(SSH_HOST_FLAG):
@@ -210,8 +259,33 @@ class GovernedTargetRunner:
                 approved_task_id=approved_task_id,
                 cwd=cwd,
                 timeout=timeout,
+                request=request,
             )
         return {"ok": False, "reason": "backend_unknown", **base}
+
+    def _request_current(self, task_id: int | None, request: dict) -> bool:
+        if self._request_check is None:
+            return True
+        try:
+            return self._request_check(task_id, dict(request)) is True
+        except Exception:
+            return False
+
+    def _is_smart_approval(self, task_id: int | None) -> bool:
+        if self._smart_approval_check is None or task_id is None:
+            return False
+        try:
+            return self._smart_approval_check(task_id) is True
+        except Exception:
+            # A broken classifier cannot downgrade an operation to the
+            # legacy Docker path; require the stricter contract/kernel path.
+            return True
+
+    @staticmethod
+    def _kernel_live() -> bool:
+        from agents.core.kernel import kernel_enabled
+
+        return kernel_enabled()
 
     def _durable_approval(self, approved_task_id: int | None) -> str | None:
         """Return a refusal reason unless a durable accepted task is confirmed."""
@@ -237,6 +311,7 @@ class GovernedTargetRunner:
         approved_task_id: int | None,
         cwd: str | None,
         timeout: int | None,
+        request: dict,
     ) -> dict:
         argv, refusal = parse_argv(command)
         if refusal is not None:
@@ -272,9 +347,14 @@ class GovernedTargetRunner:
         if not verdict.admissible:
             return {"ok": False, "reason": f"contract_denied:{verdict.reason}", **base}
 
-        kernel_refusal = await self._kernel_grant(agent, payload)
+        kernel_refusal = await self._kernel_grant(agent, payload, request=request)
         if kernel_refusal is not None:
             return {"ok": False, **kernel_refusal, **base}
+        if not self._kernel_live() or not env_flag(LOCAL_HOST_FLAG):
+            return {"ok": False, "reason": "terminal_transport_revoked", **base}
+
+        if not self._request_current(approved_task_id, request):
+            return {"ok": False, "reason": "terminal_request_changed", **base}
 
         result = await transport.run(argv, cwd=str(workdir), timeout=bounded)
         return {**result, **base, "approved_task_id": approved_task_id}
@@ -288,6 +368,7 @@ class GovernedTargetRunner:
         approved_task_id: int | None,
         cwd: str | None,
         timeout: int | None,
+        request: dict,
     ) -> dict:
         """Same gate order as the local host; only the wire at the end differs."""
         argv, refusal = parse_argv(command)
@@ -327,14 +408,19 @@ class GovernedTargetRunner:
         if not verdict.admissible:
             return {"ok": False, "reason": f"contract_denied:{verdict.reason}", **base}
 
-        kernel_refusal = await self._kernel_grant(agent, payload)
+        kernel_refusal = await self._kernel_grant(agent, payload, request=request)
         if kernel_refusal is not None:
             return {"ok": False, **kernel_refusal, **base}
+        if not self._kernel_live() or not env_flag(SSH_HOST_FLAG):
+            return {"ok": False, "reason": "terminal_transport_revoked", **base}
+
+        if not self._request_current(approved_task_id, request):
+            return {"ok": False, "reason": "terminal_request_changed", **base}
 
         result = await transport.run(argv, target=host.target, cwd=workdir, timeout=bounded)
         return {**result, **base, "approved_task_id": approved_task_id}
 
-    async def _kernel_grant(self, agent: str, payload: dict) -> dict | None:
+    async def _kernel_grant(self, agent: str, payload: dict, *, request: dict | None = None) -> dict | None:
         """Cross the Action Kernel; return a refusal dict unless it GRANTs."""
         from agents.core.action_origin import current_action_origin
         from agents.core.kernel import Action, Capability, Decision, Verdict, kernel_enabled
@@ -350,8 +436,25 @@ class GovernedTargetRunner:
             payload=dict(payload),
             origin=current_action_origin(),
         )
+        approval_check = None
+        task_id = payload.get('approved_task_id')
+        if (request is not None and self._request_check is not None
+                and self._is_smart_approval(task_id)):
+            from copy import deepcopy
+
+            expected = deepcopy(action)
+            reviewed_request = dict(request)
+
+            def approval_check(candidate):
+                return (candidate == expected and self._is_smart_approval(task_id)
+                        and self._request_current(task_id, reviewed_request))
+
         try:
-            decision = self._authorizer(action, capability=Capability(name=TERMINAL_EXEC_KIND))
+            if approval_check is None:
+                decision = self._authorizer(action, capability=Capability(name=TERMINAL_EXEC_KIND))
+            else:
+                decision = self._authorizer(action, capability=Capability(name=TERMINAL_EXEC_KIND),
+                                            approval_check=approval_check)
             if hasattr(decision, "__await__"):
                 decision = await decision
         except Exception:

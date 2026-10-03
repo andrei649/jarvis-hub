@@ -617,6 +617,28 @@ class AutonomyCoordinator:
 
         execution_token = object()
 
+        def _smart_terminal_approved(task_id):
+            worker = getattr(self._orch, 'autonomy', None)
+            check = getattr(worker, 'smart_terminal_approved', None)
+            try:
+                return callable(check) and check(task_id) is True
+            except Exception:
+                return False
+
+        def _human_terminal_approval(task):
+            metadata = task.human_decision
+            return (task.decision in {'accept', 'edit'}
+                    and str(task.decided_by).lower() not in {'policy', 'smart_approval'}
+                    and isinstance(metadata, dict) and metadata.get('action') == task.decision
+                    and metadata.get('by') == task.decided_by)
+
+        def _smart_terminal_marker(task_id):
+            # Classification is independent of live consent. Revocation must
+            # refuse a machine operation, never downgrade it to legacy Docker.
+            task = self._orch.autonomy_queue.get(task_id)
+            return task is not None and (task.decision == 'smart-approve'
+                                        or task.decided_by == 'smart_approval')
+
         def _approved_execution_context(context, task):
             """Trust only the TaskExecutor turn whose durable row is running."""
             if context is not execution_token:
@@ -642,7 +664,12 @@ class AutonomyCoordinator:
                 and (persisted.kind in _TRUSTED_TOOL_RPC_KINDS or is_image_task(persisted)
                      or is_video_task(persisted))
                 and persisted.autonomy_level == "ask"
-                and persisted.decision in {"accept", "edit"}
+                and ((persisted.decision in {"accept", "edit"}
+                      and (persisted.kind != 'toolrpc.terminal_run' or _human_terminal_approval(persisted)))
+                     or (persisted.kind == 'toolrpc.terminal_run'
+                         and persisted.decision == 'smart-approve'
+                         and queue.execution_fingerprint(persisted) == queue.execution_fingerprint(task)
+                         and _smart_terminal_approved(task_id)))
                 and bool(persisted.decided_by)
                 and str(persisted.decided_by).lower() != "policy"
                 and persisted.payload == getattr(task, "payload", None)
@@ -789,7 +816,7 @@ class AutonomyCoordinator:
         )
 
         def _durable_terminal_approval(task_id):
-            """True only when *task_id* is the running, human-accepted terminal row.
+            """True only for a running terminal row with owner or sealed machine approval.
 
             The local-host backend refuses to spawn anything without this, so the
             check re-reads the durable queue rather than trusting the caller —
@@ -805,10 +832,34 @@ class AutonomyCoordinator:
                 persisted.status == "running"
                 and persisted.kind == "toolrpc.terminal_run"
                 and persisted.autonomy_level == "ask"
-                and persisted.decision in {"accept", "edit"}
+                and (_human_terminal_approval(persisted)
+                     or (persisted.decision == 'smart-approve' and _smart_terminal_approved(task_id)))
                 and bool(persisted.decided_by)
                 and str(persisted.decided_by).lower() != "policy"
             )
+
+        def _terminal_request_check(task_id, request):
+            from .autonomy.smart_approvals import smart_policy
+            from .env_config import env_flag
+            from .kernel import kernel_enabled
+
+            queue = getattr(self._orch, 'autonomy_queue', None)
+            if (queue is None or not env_flag('JARVIS_TERMINAL_TARGETS')
+                    or not smart_policy().command_allowed(request.get('command'))):
+                return False
+            task = queue.get(task_id)
+            from .tool_rpc import current_tool_actor
+
+            if task is not None and _smart_terminal_marker(task_id):
+                from .autonomy.approval_judge import action_is_tainted
+
+                if (not kernel_enabled()
+                        or action_is_tainted({'origin': task.origin, 'payload': task.payload})):
+                    return False
+
+            return (task is not None and task.payload.get('args') == request
+                    and task.agent == current_tool_actor()
+                    and _durable_terminal_approval(task_id))
 
         async def _rpc_terminal_run(args):
             """Run a command on a named target AFTER durable approval (GAP-9).
@@ -831,25 +882,63 @@ class AutonomyCoordinator:
                 getattr(self._orch, "sandbox", None),
                 authorizer=action_kernel,
                 approval_check=_durable_terminal_approval,
+                request_check=_terminal_request_check,
+                smart_approval_check=_smart_terminal_marker,
             )
-            result = await runner.run(
-                target=args["target"],
-                agent="jarvis",
-                command=args["command"],
-                approved_task_id=approved_task_id,
-                cwd=args.get("cwd"),
-                timeout=args.get("timeout"),
-            )
+            from .action_origin import bind_action_origin, reset_action_origin
+
+            origin_token = bind_action_origin(getattr(approved, 'origin', 'generated'))
+            try:
+                result = await runner.run(
+                    target=args["target"], agent=getattr(approved, 'agent', ''),
+                    command=args["command"], approved_task_id=approved_task_id,
+                    cwd=args.get("cwd"), timeout=args.get("timeout"),
+                )
+            finally:
+                reset_action_origin(origin_token)
             from . import project_context   # H594: the terminal moved into a project directory
 
             if approved_task_id is not None and args.get("cwd"):
                 await asyncio.to_thread(project_context.note_terminal, approved_task_id, result, args["cwd"])
             return result
 
+        def _terminal_intake(actor, args):
+            """Finalize the typed terminal task before its kernel/intake decision."""
+            from .approval_outcomes import tool_approval_scope
+            from .autonomy.approval_grouping import model_request_scope
+            from .kernel import Action, Decision, Verdict, kernel_enabled
+
+            worker = getattr(self._orch, 'autonomy', None)
+            if not callable(getattr(worker, 'govern_enqueue', None)):
+                raise ToolRPCValidationError('terminal_intake_unavailable')
+            title = "Tool 'terminal_run' via RPC"
+            payload = {'tool': 'terminal_run', 'target': 'terminal_run', 'args': dict(args)}
+            # Production worker intake owns the bridge and creates one exact
+            # typed Action; do not leave a broad tool.rpc decision for that CAS.
+            if action_kernel is not None and kernel_enabled():
+                decision = action_kernel(Action(kind='toolrpc.terminal_run', agent=actor,
+                                                title=title, payload=payload))
+                if not isinstance(decision, Decision) or decision.verdict is Verdict.DENY:
+                    raise ToolRPCValidationError('kernel_denied')
+            spec = server._tools.get('terminal_run')
+            with tool_approval_scope('terminal_run'), model_request_scope(
+                actor=actor, tool='terminal_run', args=args,
+                epoch=spec.get('_grouping_epoch') if spec else None,
+                registration_is_live=lambda: server._tools.get('terminal_run') is spec,
+            ):
+                task_id = worker.govern_enqueue(actor, 'toolrpc.terminal_run', title,
+                                                payload=payload, risk_tier=3,
+                                                autonomy_level='ask', origin='generated')
+            from . import project_context
+
+            project_context.note_task(task_id)
+            return task_id
+
         server.register_tool(
             "terminal_run",
             _rpc_terminal_run,
             gated=True,
+            gated_intake=_terminal_intake,
             description="Run one bounded shell command on a named governed target.",
             input_schema={
                 "type": "object",

@@ -8,8 +8,8 @@ from agents.core.llm.base import LMStudioBackend
 from agents.core.llm.job_selection import scoped_backend, selection_scope
 from agents.core.llm.openrouter import OpenRouterBackend
 from agents.core.llm.providers import DEFAULT_REGISTRY
-from agents.core.llm.vlm import VLMNotConfigured
 from agents.core.llm.vision_main import selected_main_config
+from agents.core.llm.vlm import VLMNotConfigured
 
 
 def _local(base="http://127.0.0.1:1234"):

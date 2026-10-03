@@ -7,7 +7,6 @@ import argparse
 import importlib.util
 from pathlib import Path
 
-
 HERE = Path(__file__).resolve().parent
 SPEC = importlib.util.spec_from_file_location(
     "h277_mutation_harness", HERE / "h277-vision-normalization-mutations-2026-10-02.py"

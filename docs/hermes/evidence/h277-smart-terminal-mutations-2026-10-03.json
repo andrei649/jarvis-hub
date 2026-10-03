@@ -1,0 +1,287 @@
+{
+  "baseline": {
+    "errors": 0,
+    "failed_tests": [],
+    "failures": 0,
+    "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/baseline.log",
+    "returncode": 0,
+    "seconds": 3.171,
+    "tests": 137,
+    "timed_out": false
+  },
+  "copied_python_files": 759,
+  "counts": {
+    "invalid": 0,
+    "killed": 11,
+    "survived": 0
+  },
+  "live_source_sha256_after": {
+    "agents/core/autonomy/approval_judge.py": "cd0647a0d4a133c0ea8b7650dbd2fbb95dbd3d3ce454bc84f9e10712f60f7dcc",
+    "agents/core/autonomy/queue.py": "0408913c9e22f0827629e60af342190bac3b58edbb9dfeb0d56d637d60a5052d",
+    "agents/core/autonomy/smart_approvals.py": "988da9e441cf82e0ae9b3060bbe34e78137deb05748cd78d8851f032ffdb1008",
+    "agents/core/autonomy/worker.py": "d78b2565904b9c8ffd46886746b9ae1647222fd771f0d9079bf0df16bc70b685",
+    "agents/core/autonomy_coordinator.py": "6c2fa59028faf70a19b5f2d755fb35ab330be6479cc970ff5779e567abb732b1",
+    "agents/core/environments/execution.py": "fc3c0f6a48fe01ff33484eddc49fd64ff37e9c56613006f8557300c719215204",
+    "agents/core/kernel/__init__.py": "cb4d5fee72c3ccb7c105fa5f9a4c006617123e66779ab93666b5be894e4aab30",
+    "agents/core/kernel/binding.py": "696792a324375816d52628ee7ac2a6486ac7f27ea606f4f9554ca9d62f17c782",
+    "tests/test_h277_smart_approval_policy.py": "1402497d600a5446e8c60d9e1be15846733cb68a630f6fbcfba0ff3c2e94be21",
+    "tests/test_h277_smart_judge.py": "c40d8bd66770c09a5f98710ccb6dfa5160327d8aee27f3d170b20b73ce98e352",
+    "tests/test_h277_smart_kernel.py": "0a443ff6eaba5e28995e11339aabb09dfd9360961d21f181a4e4dd5adedbc3ce",
+    "tests/test_h277_smart_terminal_actuation.py": "89635fc743c2356c428d7ab360e981131a133716ea94c95267d12eea6732e1fa",
+    "tests/test_h277_smart_terminal_integration.py": "96983f0e7c0b296125f53eae7272130d8d92b470b9e04220348ac8234adab5e4",
+    "tests/test_h277_smart_terminal_queue.py": "85775e3c0f34eae4980b56726a87c3da7f0090c3e20aec0e98647877a340dff8"
+  },
+  "live_source_unchanged": true,
+  "mutants": [
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_smart_terminal_queue::test_receipt_signature_and_authority_fields_cannot_be_forged"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/signed_receipt_validation_removed.log",
+      "mutant_sha256": "52cafce510cb686c5bcfd0fef9fb6db475fb586d05fc47aee6983c434faf1d46",
+      "name": "signed_receipt_validation_removed",
+      "outcome": "killed",
+      "path": "agents/core/autonomy/queue.py",
+      "returncode": 1,
+      "seconds": 1.627,
+      "selectors": [
+        "tests/test_h277_smart_terminal_queue.py::test_receipt_signature_and_authority_fields_cannot_be_forged"
+      ],
+      "tests": 1,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_smart_judge::test_smart_policy_revocation_during_physical_request_drops_result"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/config_revocation_ignored.log",
+      "mutant_sha256": "93b39960e97435533077758749085d8a09ba4a1ae3e5f7226672ccee093a57a6",
+      "name": "config_revocation_ignored",
+      "outcome": "killed",
+      "path": "agents/core/autonomy/approval_judge.py",
+      "returncode": 1,
+      "seconds": 1.87,
+      "selectors": [
+        "tests/test_h277_smart_terminal_integration.py::test_revoked_smart_mode_after_approval_cannot_execute",
+        "tests/test_h277_smart_judge.py::test_smart_policy_revocation_during_physical_request_drops_result"
+      ],
+      "tests": 2,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_smart_terminal_queue::test_stale_snapshot_and_duplicate_or_wrong_kind_cannot_approve"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/exact_snapshot_digest_ignored.log",
+      "mutant_sha256": "4526e2676b4f56d277db347083896eb62addf160d27b58b667c358e10c11a6d3",
+      "name": "exact_snapshot_digest_ignored",
+      "outcome": "killed",
+      "path": "agents/core/autonomy/queue.py",
+      "returncode": 1,
+      "seconds": 1.652,
+      "selectors": [
+        "tests/test_h277_smart_terminal_queue.py::test_stale_snapshot_and_duplicate_or_wrong_kind_cannot_approve"
+      ],
+      "tests": 1,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_smart_terminal_integration::test_smart_execution_keeps_the_reviewed_agent_at_the_target_and_kernel"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/real_agent_replaced_by_jarvis.log",
+      "mutant_sha256": "b8533e0ff7cb1340929b5c36dcbdfb5f620ef2deb755274487baa7754b704bd1",
+      "name": "real_agent_replaced_by_jarvis",
+      "outcome": "killed",
+      "path": "agents/core/autonomy_coordinator.py",
+      "returncode": 1,
+      "seconds": 1.804,
+      "selectors": [
+        "tests/test_h277_smart_terminal_integration.py::test_smart_execution_keeps_the_reviewed_agent_at_the_target_and_kernel"
+      ],
+      "tests": 1,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_smart_terminal_integration::test_machine_approval_cannot_be_downgraded_to_unsigned_human_accept"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/unsigned_human_downgrade_allowed.log",
+      "mutant_sha256": "dc3e37eef874791bef3551e65250d209ffb4b60ba3e2654b314905347d7533f3",
+      "name": "unsigned_human_downgrade_allowed",
+      "outcome": "killed",
+      "path": "agents/core/autonomy_coordinator.py",
+      "returncode": 1,
+      "seconds": 1.781,
+      "selectors": [
+        "tests/test_h277_smart_terminal_integration.py::test_machine_approval_cannot_be_downgraded_to_unsigned_human_accept"
+      ],
+      "tests": 1,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_smart_terminal_actuation::test_smart_docker_requires_kernel_grant[deny]",
+        "tests.test_h277_smart_terminal_actuation::test_smart_docker_requires_kernel_grant[queue]"
+      ],
+      "failures": 2,
+      "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/docker_kernel_grant_ignored.log",
+      "mutant_sha256": "16944f72b0e626b4f727323384642fb802655f3822ea22c43f51ce46d7be717f",
+      "name": "docker_kernel_grant_ignored",
+      "outcome": "killed",
+      "path": "agents/core/environments/execution.py",
+      "returncode": 1,
+      "seconds": 1.652,
+      "selectors": [
+        "tests/test_h277_smart_terminal_actuation.py::test_smart_docker_requires_kernel_grant"
+      ],
+      "tests": 2,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_smart_terminal_actuation::test_async_kernel_grant_cannot_outlive_approval_revocation"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/post_await_request_guard_omitted.log",
+      "mutant_sha256": "48bd37ae2c15b953ef7a0b1c01af8fb168dd7051d5cd982a009a027ad7408a64",
+      "name": "post_await_request_guard_omitted",
+      "outcome": "killed",
+      "path": "agents/core/environments/execution.py",
+      "returncode": 1,
+      "seconds": 1.622,
+      "selectors": [
+        "tests/test_h277_smart_terminal_actuation.py::test_async_kernel_grant_cannot_outlive_approval_revocation"
+      ],
+      "tests": 1,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_smart_kernel::test_receipt_callback_must_match_actual_action"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/kernel_receipt_callback_forged.log",
+      "mutant_sha256": "c94a14289ae2714984f0f951b54cc80972b3a7f775f8f9d3de6c6003d2caad69",
+      "name": "kernel_receipt_callback_forged",
+      "outcome": "killed",
+      "path": "agents/core/kernel/__init__.py",
+      "returncode": 1,
+      "seconds": 1.595,
+      "selectors": [
+        "tests/test_h277_smart_kernel.py::test_receipt_callback_must_match_actual_action"
+      ],
+      "tests": 1,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_smart_kernel::test_receipt_cannot_override_non_auto_global_mode[ask]",
+        "tests.test_h277_smart_kernel::test_receipt_cannot_override_non_auto_global_mode[off]",
+        "tests.test_h277_smart_kernel::test_receipt_cannot_override_non_auto_global_mode[invalid]",
+        "tests.test_h277_smart_kernel::test_receipt_cannot_override_per_agent_mode[ask]",
+        "tests.test_h277_smart_kernel::test_receipt_cannot_override_per_agent_mode[off]"
+      ],
+      "failures": 5,
+      "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/kernel_auto_mode_guard_omitted.log",
+      "mutant_sha256": "637d07950af17dbb782f68d4852844cfbef9bebc00258529adafde15238ddc25",
+      "name": "kernel_auto_mode_guard_omitted",
+      "outcome": "killed",
+      "path": "agents/core/kernel/__init__.py",
+      "returncode": 1,
+      "seconds": 1.653,
+      "selectors": [
+        "tests/test_h277_smart_kernel.py::test_receipt_cannot_override_non_auto_global_mode",
+        "tests/test_h277_smart_kernel.py::test_receipt_cannot_override_per_agent_mode"
+      ],
+      "tests": 5,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_smart_kernel::test_taint_escalates_even_a_trusted_receipt[external-payload0]",
+        "tests.test_h277_smart_kernel::test_taint_escalates_even_a_trusted_receipt[generated-payload1]"
+      ],
+      "failures": 2,
+      "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/kernel_taint_escalation_omitted.log",
+      "mutant_sha256": "2df402efe94b3c32589c3f6168d5c9cd6e4426ff9e16a0167489d7a372bdfec7",
+      "name": "kernel_taint_escalation_omitted",
+      "outcome": "killed",
+      "path": "agents/core/kernel/__init__.py",
+      "returncode": 1,
+      "seconds": 1.82,
+      "selectors": [
+        "tests/test_h277_smart_kernel.py::test_taint_escalates_even_a_trusted_receipt",
+        "tests/test_h277_smart_terminal_integration.py::test_real_kernel_does_not_let_local_guardian_launder_untrusted_task_origin"
+      ],
+      "tests": 3,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_smart_terminal_integration::test_real_kernel_satisfies_exact_sealed_terminal_approval_in_auto_mode"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/real_worker_callback_forwarding_removed.log",
+      "mutant_sha256": "9bfcc09bd43db1a7188c9ea29f32f641f6102079dfe2b6b619e114ad2b9b01ab",
+      "name": "real_worker_callback_forwarding_removed",
+      "outcome": "killed",
+      "path": "agents/core/autonomy/worker.py",
+      "returncode": 1,
+      "seconds": 1.908,
+      "selectors": [
+        "tests/test_h277_smart_terminal_integration.py::test_real_kernel_satisfies_exact_sealed_terminal_approval_in_auto_mode"
+      ],
+      "tests": 1,
+      "timed_out": false
+    }
+  ],
+  "python": "/tmp/nerva-pr-python-20261001/bin/python",
+  "restoration_sha256_match": true,
+  "restored_baseline": {
+    "errors": 0,
+    "failed_tests": [],
+    "failures": 0,
+    "log": "/tmp/h277-smart-terminal-mutations-wjrowg0o/logs/restored_baseline.log",
+    "returncode": 0,
+    "seconds": 3.726,
+    "tests": 137,
+    "timed_out": false
+  },
+  "source_and_test_sha256": {
+    "agents/core/autonomy/approval_judge.py": "cd0647a0d4a133c0ea8b7650dbd2fbb95dbd3d3ce454bc84f9e10712f60f7dcc",
+    "agents/core/autonomy/queue.py": "0408913c9e22f0827629e60af342190bac3b58edbb9dfeb0d56d637d60a5052d",
+    "agents/core/autonomy/smart_approvals.py": "988da9e441cf82e0ae9b3060bbe34e78137deb05748cd78d8851f032ffdb1008",
+    "agents/core/autonomy/worker.py": "d78b2565904b9c8ffd46886746b9ae1647222fd771f0d9079bf0df16bc70b685",
+    "agents/core/autonomy_coordinator.py": "6c2fa59028faf70a19b5f2d755fb35ab330be6479cc970ff5779e567abb732b1",
+    "agents/core/environments/execution.py": "fc3c0f6a48fe01ff33484eddc49fd64ff37e9c56613006f8557300c719215204",
+    "agents/core/kernel/__init__.py": "cb4d5fee72c3ccb7c105fa5f9a4c006617123e66779ab93666b5be894e4aab30",
+    "agents/core/kernel/binding.py": "696792a324375816d52628ee7ac2a6486ac7f27ea606f4f9554ca9d62f17c782",
+    "tests/test_h277_smart_approval_policy.py": "1402497d600a5446e8c60d9e1be15846733cb68a630f6fbcfba0ff3c2e94be21",
+    "tests/test_h277_smart_judge.py": "c40d8bd66770c09a5f98710ccb6dfa5160327d8aee27f3d170b20b73ce98e352",
+    "tests/test_h277_smart_kernel.py": "0a443ff6eaba5e28995e11339aabb09dfd9360961d21f181a4e4dd5adedbc3ce",
+    "tests/test_h277_smart_terminal_actuation.py": "89635fc743c2356c428d7ab360e981131a133716ea94c95267d12eea6732e1fa",
+    "tests/test_h277_smart_terminal_integration.py": "96983f0e7c0b296125f53eae7272130d8d92b470b9e04220348ac8234adab5e4",
+    "tests/test_h277_smart_terminal_queue.py": "85775e3c0f34eae4980b56726a87c3da7f0090c3e20aec0e98647877a340dff8"
+  },
+  "status": "complete",
+  "survivor_gaps": [],
+  "temporary_root": "/tmp/h277-smart-terminal-mutations-wjrowg0o",
+  "timestamp_utc": "2026-10-03T06:59:00.268790+00:00"
+}

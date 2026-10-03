@@ -1,4 +1,4 @@
-"""Advisory task opinions for the existing Decision Inbox, without new approvals."""
+"""Default advisory opinions and opt-in sealed terminal decisions for Decision Inbox."""
 from __future__ import annotations
 
 import logging
@@ -10,8 +10,10 @@ logger = logging.getLogger("jarvis.autonomy.task_approval_judge")
 
 
 class TaskApprovalJudge(AdvisoryJudgements):
-    def __init__(self, queue: TaskQueue):
+    def __init__(self, queue: TaskQueue, *, worker=None):
         self.queue = queue
+        self._worker = worker
+        self._smart_promotions = {}
         self._init_judgements()
 
     def _snapshot(self, task) -> dict | None:
@@ -54,7 +56,7 @@ class TaskApprovalJudge(AdvisoryJudgements):
             logger.debug("task opinion not scheduled for %s", task_id, exc_info=True)
 
     def resume_pending(self) -> None:
-        """One bounded startup pass; opinions never make a task runnable."""
+        """One bounded startup pass; only opted-in sealed terminal approvals can promote."""
         try:
             if self._judge is None or not self._judge.status().configured:
                 return
@@ -73,6 +75,19 @@ class TaskApprovalJudge(AdvisoryJudgements):
         return snapshot
 
     def _store_judgement(self, snapshot: dict, annotation: dict):
+        from .smart_approvals import SmartApprovalResult
+
+        if type(annotation) is SmartApprovalResult:
+            judge = self._judge
+            if judge is None:
+                return None
+            stored, group_id = self.queue.store_smart_terminal_judgement(
+                snapshot['task_id'], snapshot['snapshot_sha256'], annotation,
+                check=lambda: self._judge is judge and judge.smart_current(annotation, snapshot),
+            )
+            if stored is not None and stored.get('decision') == 'approve':
+                self._smart_promotions[snapshot['id']] = group_id
+            return stored
         # A revoke/change during generation cannot attach an old opinion.
         live = self._pending_snapshot(snapshot["id"])
         current = self._judge.status() if self._judge is not None else None
@@ -83,8 +98,46 @@ class TaskApprovalJudge(AdvisoryJudgements):
             snapshot["task_id"], snapshot["snapshot_sha256"], annotation,
         )
 
+    def verify_smart_approval(self, task_id: int) -> bool:
+        """Check a signed machine decision with the current dedicated judge policy."""
+        from .approval_judge import action_is_tainted, normalise_snapshot
+        from .smart_approvals import SmartApprovalResult
+
+        try:
+            task = self.queue.get(task_id)
+            judge = self._judge
+            if task is None or judge is None:
+                return False
+            description = {'kind': task.kind, 'payload': task.payload, 'risk_tier': task.risk_tier,
+                           'origin': task.origin, 'autonomy_level': task.autonomy_level}
+            snapshot = normalise_snapshot({'task_id': task.id, 'tool': task.payload.get('tool'),
+                                           'agent': task.agent, 'args': description})
+            if action_is_tainted(description):
+                snapshot['tainted'] = True
+
+            def current(receipt):
+                result = SmartApprovalResult('approve', receipt['policy_revision'], receipt['judge_revision'],
+                                             receipt['judge'], receipt['at'])
+                return self._judge is judge and judge.smart_current(result, snapshot)
+
+            return self.queue.verify_smart_terminal_approval(task_id, check=current)
+        except Exception:
+            return False
+
+    async def _after_judgement(self, snapshot: dict, annotation: dict) -> None:
+        if snapshot['id'] not in self._smart_promotions:
+            return
+        group_id = self._smart_promotions.pop(snapshot['id'])
+        worker = self._worker
+        task = self.queue.get(snapshot['task_id'])
+        if worker is None or task is None or task.decision != 'smart-approve':
+            return
+        worker._audit('autonomy.smart_approve', task, 'one operation approved by the configured guardian')
+        worker._reconcile_waiting_run(task)
+        await worker._push_promoted_group(group_id)
+
     def project(self, task) -> dict:
-        """Add public advisory fields; the persisted Task schema stays untouched."""
+        """Add public review fields; the persisted Task schema stays untouched."""
         out = task.to_dict()
         try:
             snapshot = self._snapshot(task)
@@ -98,6 +151,10 @@ class TaskApprovalJudge(AdvisoryJudgements):
                     pending = snapshot["id"] in self._judge_pending
                 if pending and self._pending_snapshot(snapshot["id"]) is not None:
                     out["judge_pending"] = True
+                    from .smart_approvals import smart_policy, terminal_args
+
+                    if smart_policy(getattr(self._judge, '_env', None)).enabled and terminal_args(snapshot):
+                        out['judge_mode'] = 'smart'
         except Exception:
             logger.debug("task opinion projection unavailable", exc_info=True)
         return out
@@ -115,12 +172,14 @@ class TaskApprovalJudge(AdvisoryJudgements):
             return
         try:
             self._audit.record(
-                actor="approval_judge", action="task_approval.judged", why=ADVISORY_WHY,
+                actor="approval_judge", action="task_approval.judged",
+                why=(ADVISORY_WHY if annotation.get('advisory', True) else 'configured guardian terminal verdict'),
                 cause=f"autonomy_task:{snapshot['task_id']}", metadata={
                     "task_id": snapshot["task_id"], "snapshot_sha256": snapshot["snapshot_sha256"],
                     "tool": snapshot["tool"], "agent": snapshot["agent"],
                     "score": annotation.get("score"), "flags": list(annotation.get("flags") or []),
                     "judge": annotation.get("judge"), "rationale_sha256": rationale_sha256(annotation),
+                    **({'decision': annotation['decision']} if 'decision' in annotation else {}),
                 },
             )
         except Exception:

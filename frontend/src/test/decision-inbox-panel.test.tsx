@@ -290,6 +290,30 @@ describe('H277 Decision Inbox advisory judge', () => {
   async function mount() { await act(async () => { render(<DecisionInboxPanel />); }); }
   async function advance(ms) { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); }
 
+  it.each(['deny', 'escalate'])('shows the smart %s verdict without a fabricated advisory risk score', async decision => {
+    queueFetch(() => ({ tasks: [{ ...task, kind: 'toolrpc.terminal_run', judge: {
+      decision, advisory: false, judge: { provider: 'lm-studio', model: 'guardian', local: true },
+    } }] }));
+    await mount();
+    expect(screen.getByLabelText('Guardian terminal verdict')).toBeTruthy();
+    expect(screen.getByText(decision === 'deny' ? /Guardian denied this command/ : /Guardian escalated this command/)).toBeTruthy();
+    expect(screen.getByText(/lm-studio.*guardian.*local/)).toBeTruthy();
+    expect(screen.queryByText(/Risk score/)).toBeNull();
+    expect(screen.queryByText(/advisory only/)).toBeNull();
+    expect(screen.getByText(/approval applies once/)).toBeTruthy();
+    for (const title of ['accept', 'reject', 'defer', 'edit']) {
+      expect(screen.getByTitle(title).disabled).toBe(false);
+    }
+  });
+
+  it('labels an opted-in pending terminal review as guardian work', async () => {
+    queueFetch(() => ({ tasks: [{ ...task, kind: 'toolrpc.terminal_run', judge_pending: true, judge_mode: 'smart' }] }));
+    await mount();
+    expect(screen.getByText(/Guardian review pending/)).toBeTruthy();
+    expect(screen.queryByText(/Advisory model opinion pending/)).toBeNull();
+    expect(screen.getByTitle('accept').disabled).toBe(false);
+  });
+
   it('renders an escaped, attributed risk opinion as advisory while keeping decisions available', async () => {
     queueFetch(() => ({ tasks: [{ ...task, judge: opinion }], judge: { configured: true, timeout: 20 } }));
     await mount();

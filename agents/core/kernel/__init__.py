@@ -21,6 +21,7 @@ if __name__ != "agents.core.kernel":
     raise ImportError("Action Kernel authority must be imported as agents.core.kernel")
 
 import contextlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -118,13 +119,16 @@ def _emit_audit(audit, action: Action, decision: Decision) -> None:
         return
     # best-effort: an audit hiccup must never block authorization
     with contextlib.suppress(Exception):  # pragma: no cover
+        metadata = {"verdict": decision.verdict.value, "tier": decision.tier,
+                    "scope": action.scope, "agent": action.agent}
+        if decision.verdict is Verdict.GRANT and decision.task_id is not None:
+            metadata["approved_task_id"] = decision.task_id
         audit.record(
             actor="kernel",
             action=f"authorize:{action.kind}",
             why=f"{decision.verdict.value}:{decision.reason}" if decision.reason
             else decision.verdict.value,
-            metadata={"verdict": decision.verdict.value, "tier": decision.tier,
-                      "scope": action.scope, "agent": action.agent},
+            metadata=metadata,
         )
 
 
@@ -138,7 +142,8 @@ def authorize(action: Action,
               audit=None,
               budget_ledger: BudgetLedger | None = None,
               loop_detector: LoopDetector | None = None,
-              now: float | None = None) -> Decision:
+              now: float | None = None,
+              approval_check: Callable[[Action], bool] | None = None) -> Decision:
     """Mediate a privileged *action*. Composes the existing nucleus + policy + audit.
 
     Order (mirrors the design diagram): kill-switch + capability → budget/loop
@@ -150,7 +155,7 @@ def authorize(action: Action,
     unchanged for them.
     """
     from ..autonomy.dry_run import preview_task
-    from ..autonomy.policy import ACT, NOTIFY
+    from ..autonomy.policy import ACT, ASK, NOTIFY, RiskTier
 
     capability = capability or Capability()
     # `budget` is accepted but inert in K1 (money caps live in the policy, the
@@ -209,9 +214,34 @@ def authorize(action: Action,
     if pdec.outcome in (ACT, NOTIFY):
         decision = Decision(Verdict.GRANT, reason=pdec.reason, tier=tier)
     else:  # ASK (or anything unexpected) → queue for approval
-        card = preview_task({"kind": action.kind, "title": action.title,
-                             "payload": action.payload, "risk_tier": tier})
-        decision = Decision(Verdict.QUEUE, reason=pdec.reason, tier=tier, card=card)
+        # H277: only a trusted, action-bound receipt can satisfy the ordinary
+        # terminal.exec policy ASK. The payload's ID alone carries no authority.
+        approved_task_id = (
+            action.payload.get("approved_task_id")
+            if isinstance(action.payload, dict) else None
+        )
+        trusted_receipt = False
+        if (
+            action.kind == "terminal.exec"
+            and pdec.outcome == ASK
+            and tier == int(RiskTier.IRREVERSIBLE_OR_MONEY)
+            and isinstance(approved_task_id, int)
+            and not isinstance(approved_task_id, bool)
+            and approved_task_id > 0
+            and callable(approval_check)
+        ):
+            # A missing/broken mode hook or receipt checker fails closed. The
+            # callback receives the actual Action, not an untrusted ID alone.
+            with contextlib.suppress(Exception):
+                if policy.effective_mode(action.agent) == "auto":
+                    trusted_receipt = approval_check(action) is True
+        if trusted_receipt:
+            decision = Decision(Verdict.GRANT, reason=f"sealed_terminal_approval; {pdec.reason}", tier=tier,
+                                task_id=approved_task_id)
+        else:
+            card = preview_task({"kind": action.kind, "title": action.title,
+                                 "payload": action.payload, "risk_tier": tier})
+            decision = Decision(Verdict.QUEUE, reason=pdec.reason, tier=tier, card=card)
 
     # 3b) Taint (H23.6 / CDX-7) — an action carrying content from an untrusted source
     #     can't auto-execute; escalate a GRANT to approval (indirect-injection guard).

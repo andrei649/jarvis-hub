@@ -111,10 +111,18 @@ model through selection guards before creating a client. The opt-in `video_analy
 ToolRPC consumer dispatches approved video through compatible or native Gemini
 routes, with signed source/route binding and independent role consent; inbound
 video ingestion remains separate work.
-The optional approval judge is advisory: `autonomy/advisory_judgements.py` shares
+The optional approval judge is advisory by default: `autonomy/advisory_judgements.py` shares
 bounded work between action cards and `autonomy/task_approval_judge.py` for blocked
 Decision Inbox tasks. Task opinions are stored separately from signed payloads and
 receipts, and checked against the current execution digest before publication.
+Trusted `JARVIS_SMART_APPROVALS=1` instead lets eligible `terminal_run` tasks use
+the named guardian's strict APPROVE/DENY/ESCALATE response. The queue applies a
+one-operation approval through an exact-snapshot transaction and a separate signed
+receipt; execution verifies the receipt and live judge/policy binding. Owner
+decisions retain their own attribution and control. Smart Docker commands additionally
+cross the `terminal.exec` contract/kernel; existing manual Docker behavior remains.
+Action-card scores and other task kinds remain advisory. No flag is enabled by
+development or by model output. See `hermes/h277-smart-terminal-plan-2026-10-03.md`.
 
 | Path | Purpose | Key symbols |
 |------|---------|-------------|

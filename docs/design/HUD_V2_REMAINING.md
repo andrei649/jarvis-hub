@@ -24,6 +24,12 @@ Role configuration is shown beside Model Fingerprints through authenticated
 late results, refreshes, failed reads and browser-throttled timers; this is not a
 claim of a live model or native mobile acceptance run.
 
+H277 terminal guardian (2026-10-03): trusted owner opt-in can apply a signed
+one-operation smart approval to terminal tasks. Decision Inbox distinguishes
+guardian DENY/ESCALATE from advisory risk scores and preserves owner controls;
+pending guardian reviews have their own label. Advisory defaults remain.
+Native labels/configuration remain H18.29; no live-provider/device proof is claimed.
+
 H277 video continuation (2026-10-02): the default-off `video_analyze` tool uses the
 existing Decision Inbox approval surface. Security Posture has an independent
 Video analysis consent row and independent Video fallback 1–4 controls for configured

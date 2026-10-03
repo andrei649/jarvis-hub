@@ -69,7 +69,7 @@ class MediationKernelBridge:
         self._kernel = kernel
         self._pending = ContextVar(f"mediation_kernel_decision_{id(self)}", default=None)
 
-    def __call__(self, action, capability=None, budget=None):
+    def __call__(self, action, capability=None, budget=None, *, approval_check=None):
         if not callable(self._kernel):
             raise RuntimeError("action kernel is unavailable")
         self._pending.set(None)
@@ -77,12 +77,22 @@ class MediationKernelBridge:
             authorized_action = deepcopy(action)
         except Exception as exc:
             raise RuntimeError("action could not be snapshotted for mediation") from exc
-        if capability is None and budget is None:
-            decision = self._kernel(action)
+        # Preserve the existing call shapes exactly unless the trusted
+        # receipt callback is explicitly supplied by the runner.
+        if approval_check is None:
+            if capability is None and budget is None:
+                decision = self._kernel(action)
+            elif budget is None:
+                decision = self._kernel(action, capability)
+            else:
+                decision = self._kernel(action, capability=capability, budget=budget)
+        elif capability is None and budget is None:
+            decision = self._kernel(action, approval_check=approval_check)
         elif budget is None:
-            decision = self._kernel(action, capability)
+            decision = self._kernel(action, capability, approval_check=approval_check)
         else:
-            decision = self._kernel(action, capability=capability, budget=budget)
+            decision = self._kernel(action, capability=capability, budget=budget,
+                                    approval_check=approval_check)
         self._pending.set(_OneShotDecision(authorized_action, decision))
         return decision
 

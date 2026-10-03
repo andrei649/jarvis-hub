@@ -3312,7 +3312,16 @@ export function DecisionInboxPanel() {
             placeholder="Your decision reason (optional)" maxLength={280}
             value={decisionReasons[t.id] || ''} style={taS}
             onChange={event => setDecisionReasons(previous => ({ ...previous, [t.id]: event.target.value }))} />
-          {t.judge && <div aria-label="Advisory model opinion" style={{ margin: '4px 0 8px 12px', fontSize: 11, overflowWrap: 'anywhere' }}>
+          {t.judge?.advisory === false && <div aria-label="Guardian terminal verdict" style={{ margin: '4px 0 8px 12px', fontSize: 11, overflowWrap: 'anywhere' }}>
+            <div style={{ color: 'var(--amber)' }}>
+              {t.judge.decision === 'deny' ? 'Guardian denied this command' : 'Guardian escalated this command'} · awaiting your decision
+            </div>
+            <div style={{ color: 'var(--ink-2)' }}>
+              {t.judge.judge?.provider || 'unknown provider'} · {t.judge.judge?.model || 'unknown model'} · {t.judge.judge?.local ? 'local' : 'remote'}
+            </div>
+            <div>Your approval applies once to this task.</div>
+          </div>}
+          {t.judge && t.judge.advisory !== false && <div aria-label="Advisory model opinion" style={{ margin: '4px 0 8px 12px', fontSize: 11, overflowWrap: 'anywhere' }}>
             <div style={{ color: 'var(--ink-2)' }}>Model opinion · advisory only · you decide</div>
             <div style={{ color: Number(t.judge.score) >= 70 ? 'var(--amber)' : 'var(--ink-2)' }}>
               Risk score {t.judge.score}/100 · {t.judge.judge?.provider || 'unknown provider'} · {t.judge.judge?.model || 'unknown model'} · {t.judge.judge?.local ? 'local' : 'remote'}
@@ -3325,7 +3334,9 @@ export function DecisionInboxPanel() {
             <blockquote style={{ margin: '4px 0', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>{t.judge.rationale || 'No rationale supplied.'}</blockquote>
           </div>}
           {!t.judge && t.judge_pending === true && <div style={{ margin: '4px 0 8px 12px', fontSize: 11, color: 'var(--ink-2)' }}>
-            {judgeExpired.has(t.id) ? 'Advisory model opinion is taking longer · refresh to check again; you can decide now.' : 'Advisory model opinion pending · you can decide now.'}
+            {t.judge_mode === 'smart'
+              ? (judgeExpired.has(t.id) ? 'Guardian review is taking longer · refresh to check again; you can decide now.' : 'Guardian review pending · you can decide now.')
+              : (judgeExpired.has(t.id) ? 'Advisory model opinion is taking longer · refresh to check again; you can decide now.' : 'Advisory model opinion pending · you can decide now.')}
           </div>}
           {isImageProposal(t) && <div style={{ fontSize: 12, margin: '6px 0' }}>
             <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{typeof (isCloudImageProposal(t) ? t.payload?.image?.body?.prompt : t.payload?.args?.prompt) === 'string' ? (isCloudImageProposal(t) ? t.payload.image.body.prompt : t.payload.args.prompt).slice(0,4000) : 'Image prompt unavailable.'}</p>

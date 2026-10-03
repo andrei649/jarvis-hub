@@ -622,13 +622,17 @@ class AutonomyWorker:
         )
 
     def attach_approval_judge(self, judge, *, loop=None, capacity=None, audit=None) -> None:
-        """Bind an optional advisory adapter, independent of all task authority."""
+        """Bind default advisory review and optional sealed smart terminal decisions."""
         from .task_approval_judge import TaskApprovalJudge
 
-        adapter = TaskApprovalJudge(self.queue)
+        adapter = TaskApprovalJudge(self.queue, worker=self)
         adapter.attach_judge(judge, loop=loop, capacity=capacity)
         adapter.attach_audit(audit)
         self.approval_judge = adapter
+
+    def smart_terminal_approved(self, task_id: int) -> bool:
+        adapter = self.approval_judge
+        return adapter is not None and adapter.verify_smart_approval(task_id)
 
     def _schedule_approval_judge(self, task: Task) -> None:
         adapter = self.approval_judge
@@ -645,7 +649,7 @@ class AutonomyWorker:
         self._mediation_kernel = kernel
         self._mediation_signer = signer or DetachedHMACSigner(None)
 
-    def kernel_gate(self, action, capability=None, budget=None):
+    def kernel_gate(self, action, capability=None, budget=None, *, approval_check=None):
         """Broker-facing kernel hook that preserves the exact decision for enqueue."""
 
         kernel = self._mediation_kernel
@@ -663,7 +667,11 @@ class AutonomyWorker:
             scope=action.scope,
             origin=origin,
         )
-        decision = kernel(finalized_action, capability=capability, budget=budget)
+        if approval_check is None:
+            decision = kernel(finalized_action, capability=capability, budget=budget)
+        else:
+            decision = kernel(finalized_action, capability=capability, budget=budget,
+                              approval_check=approval_check)
         try:
             from ..kernel import Verdict
 

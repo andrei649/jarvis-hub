@@ -46,6 +46,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Memory neighborhood navigation | user `GET /api/kg/entities`, `GET /api/kg/entities/{name}` | ✅ live search, selectable connections, bounded reads; samples only in explicit Demo | 🟡 entity list/detail exists; connected-neighbor navigation and request-bound parity remain | DW-1 / H18.28 |
 | Action approval queue + rollback story | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 / H27.6 |
 | Advisory approval model opinions (H277) | Optional `judge` / `judge_pending` on blocked tasks; `GET /api/llm/roles` configuration | ✅ Decision Inbox opinion, bounded polling and model roles viewer | ⬜ opinion rendering and role configuration; existing decisions remain usable | H18.29 / H277 |
+| Opt-in terminal guardian verdicts (H277) | Same blocked-task projection: `judge.advisory=false`, strict `decision`; pending `judge_mode=smart` | ✅ DENY/ESCALATE, guardian identity and one-task owner override; smart approvals leave the inbox | ⬜ distinct guardian verdict/pending labels; existing owner decisions remain usable | H18.29 / H277 |
 | Capability registry board | `GET /api/capabilities` | ✅ | ✅ | H18.22 / H27.8 |
 | WorldView bridge (World tab: liveness + recon read data) | `GET /api/worldview/status`, `GET /api/worldview/overview` | ✅ | ⬜ | |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
