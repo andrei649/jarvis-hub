@@ -1,10 +1,10 @@
-import { Text } from '../components/ThemedText';
-import React, { useCallback, useEffect, useState } from 'react';
+import { Text, TextInput } from '../components/ThemedText';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import {
   ApiError,
-  decideApproval,
   fetchApprovals,
+  validatedConsentOffer,
   type ApprovalAction,
   type ApprovalTask,
   type ApprovalsResponse,
@@ -12,8 +12,9 @@ import {
 import { useServer } from '../context/ServerContext';
 import { useThemeStyles, type Theme } from '../theme';
 import { approvalPolicy } from './approvalPolicy';
+import { ApprovalDecisionController, type ApprovalBusy, type ApprovalSelection } from './approvalDecision';
 
-type Busy = { id: number; action: ApprovalAction } | null;
+type Busy = ApprovalBusy;
 
 function riskColor(task: ApprovalTask, theme: Theme): string {
   if (task.reversible === false || (task.risk_tier ?? 0) >= 3) return theme.danger;
@@ -71,21 +72,33 @@ function ApprovalCard({
 }: {
   task: ApprovalTask;
   busy: Busy;
-  onDecision: (task: ApprovalTask, action: ApprovalAction) => void;
+  onDecision: (task: ApprovalTask, selection: ApprovalSelection, reason?: string) => void;
 }) {
   const { theme, styles } = useThemeStyles(makeStyles);
   const policy = approvalPolicy(task);
+  const offer = policy.canApprove ? validatedConsentOffer(task.consent_offer) : null;
+  const [reason, setReason] = useState('');
   const color = riskColor(task, theme);
   const preview = policy.showPayload ? payloadPreview(task) : null;
   const active = busy?.id === task.id;
 
   const button = (action: ApprovalAction, label: string, style: object, textStyle?: object) => (
     <Pressable
-      style={[styles.actionBtn, style, active && styles.actionDisabled]}
-      disabled={active}
-      onPress={() => onDecision(task, action)}
+      style={[styles.actionBtn, style, !!busy && styles.actionDisabled]}
+      disabled={!!busy}
+      onPress={() => onDecision(task, { action }, reason || undefined)}
     >
       <Text style={[styles.actionText, textStyle]}>{active && busy?.action === action ? '...' : label}</Text>
+    </Pressable>
+  );
+
+  const consentButton = (choice: 'session' | 'always' | 'deny', label: string, style: object) => (
+    <Pressable
+      style={[styles.actionBtn, style, !!busy && styles.actionDisabled]}
+      disabled={!!busy}
+      onPress={() => onDecision(task, { choice }, reason || undefined)}
+    >
+      <Text style={styles.actionText}>{active && busy?.action === choice ? '...' : label}</Text>
     </Pressable>
   );
 
@@ -116,9 +129,35 @@ function ApprovalCard({
         </View>
       )}
 
+      {offer && (
+        <View style={styles.rollbackBox}>
+          <Text style={styles.rollbackTitle}>Reusable consent · {offer.count} pending request{offer.count === 1 ? '' : 's'}</Text>
+          {offer.categories.map((category, index) => (
+            <Text key={String(index)} style={styles.rollbackText}>{category.description}</Text>
+          ))}
+        </View>
+      )}
+      <TextInput
+        style={styles.reasonInput}
+        value={reason}
+        onChangeText={value => setReason(Array.from(value).slice(0, 280).join(''))}
+        placeholder="Reason (optional)"
+        placeholderTextColor={theme.textDim}
+        accessibilityLabel="Reason for approval decision"
+        editable={!busy}
+        multiline
+      />
+      <Text style={styles.meta}>{Array.from(reason).length}/280</Text>
       <View style={styles.actions}>
-        {policy.canApprove && button('accept', 'Approve', styles.approveBtn)}
-        {policy.canReject && button('reject', 'Reject', styles.rejectBtn)}
+        {offer ? <>
+          {consentButton('session', 'This session', styles.approveBtn)}
+          {offer.categories.every(category => category.permanent)
+            && consentButton('always', 'Always', styles.approveBtn)}
+          {consentButton('deny', 'Deny', styles.rejectBtn)}
+        </> : <>
+          {policy.canApprove && button('accept', 'Approve', styles.approveBtn)}
+          {policy.canReject && button('reject', 'Reject', styles.rejectBtn)}
+        </>}
         {policy.canDefer && button('defer', 'Defer', styles.deferBtn, styles.deferText)}
       </View>
     </View>
@@ -127,44 +166,59 @@ function ApprovalCard({
 
 export function ApprovalsScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const { theme, styles } = useThemeStyles(makeStyles);
-  const { config, configured } = useServer();
-  const [data, setData] = useState<ApprovalsResponse | null>(null);
+  const { config, configured, connectionEpoch } = useServer();
+  const [snapshot, setSnapshot] = useState<{ epoch: number; data: ApprovalsResponse } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<Busy>(null);
+  const controller = useRef(new ApprovalDecisionController());
+  const epoch = useRef(connectionEpoch);
+  epoch.current = connectionEpoch;
+  const mounted = useRef(true);
+  const loadSequence = useRef(0);
+  const data = snapshot?.epoch === connectionEpoch ? snapshot.data : null;
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const load = useCallback(async () => {
     if (!configured || !config.adminToken.trim()) return;
+    const sequence = ++loadSequence.current;
+    const current = () => mounted.current && epoch.current === connectionEpoch
+      && loadSequence.current === sequence;
     setLoading(true);
     setError(null);
     try {
-      setData(await fetchApprovals(config));
+      const fetched = await fetchApprovals(config);
+      if (current()) setSnapshot({ epoch: connectionEpoch, data: fetched });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to load approvals');
-      setData(null);
+      if (current()) {
+        setError(e instanceof ApiError ? e.message : 'Failed to load approvals');
+        setSnapshot(null);
+      }
     } finally {
-      setLoading(false);
+      if (current()) setLoading(false);
     }
-  }, [config, configured]);
+  }, [config, configured, connectionEpoch]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   const decide = useCallback(
-    async (task: ApprovalTask, action: ApprovalAction) => {
-      setBusy({ id: task.id, action });
+    async (task: ApprovalTask, selection: ApprovalSelection, reason?: string) => {
+      if (controller.current.busy) return;
+      const isCurrent = () => mounted.current && epoch.current === connectionEpoch;
       setError(null);
       try {
-        await decideApproval(config, task.id, action);
-        await load();
+        await controller.current.submit({ config, task, selection, reason, isCurrent,
+          onApplied: load, onBusy: value => { if (mounted.current) setBusy(value); } });
       } catch (e) {
-        setError(e instanceof ApiError ? e.message : 'Decision failed');
-      } finally {
-        setBusy(null);
+        if (isCurrent()) setError(e instanceof ApiError ? e.message : 'Decision failed');
       }
     },
-    [config, load],
+    [config, load, connectionEpoch],
   );
 
   if (!configured) return <EmptyState onGoToSettings={onGoToSettings} />;
@@ -198,7 +252,7 @@ export function ApprovalsScreen({ onGoToSettings }: { onGoToSettings: () => void
       )}
 
       {tasks.map((task) => (
-        <ApprovalCard key={String(task.id)} task={task} busy={busy} onDecision={decide} />
+        <ApprovalCard key={`${connectionEpoch}:${task.id}`} task={task} busy={busy} onDecision={decide} />
       ))}
 
       {!loading && tasks.length === 0 && !error && (
@@ -214,6 +268,8 @@ export function ApprovalsScreen({ onGoToSettings }: { onGoToSettings: () => void
 const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 12, paddingBottom: 24 },
+  reasonInput: { color: theme.text, borderWidth: 1, borderColor: theme.border,
+    borderRadius: 8, padding: 8, marginTop: 10, minHeight: 40 },
   summary: {
     flexDirection: 'row',
     gap: 8,

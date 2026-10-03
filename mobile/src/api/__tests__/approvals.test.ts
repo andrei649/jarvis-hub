@@ -83,4 +83,15 @@ describe('mobile approval API', () => {
     );
     expect(out.task?.status).toBe('approved');
   });
+
+  it('includes an optional human reason without changing the ordinary decision route', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ ok: true, task: { id: 42, status: 'rejected' } }));
+    await decideApproval(
+      { baseUrl: 'http://jarvis.lan', token: '', adminToken: 'adm' },
+      42, 'reject', 'Needs owner review',
+    );
+    expect(JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string)).toEqual({
+      action: 'reject', reason: 'Needs owner review',
+    });
+  });
 });

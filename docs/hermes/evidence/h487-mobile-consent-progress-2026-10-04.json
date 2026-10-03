@@ -1,0 +1,52 @@
+{
+  "generated_at": "2026-10-03T23:51:30.106255+00:00",
+  "goal": "All697 pinned Hermes capabilities; native H487 mobile continuation",
+  "base_sha": "87b2a1b86bb4f5d0580118623b5c3f43156c7371",
+  "state": "Local native reusable consent controls implemented; H487 remains partial",
+  "source_sha256": {
+    "mobile/src/api/client.ts": "c685b16d1cfdc6fa0c2e1f10a3045e92a3d6f09f12bc2d4dc478ce6827c6ae28",
+    "mobile/src/api/__tests__/approvals.test.ts": "cfb6ac436486e1f9e5e2e961d264eccff54eaedd49fe84302389e873b72ced7f",
+    "mobile/src/api/__tests__/consent.test.ts": "cab2847b89a559a51e80cc13104d06183e5394d872f81920af2e9d351f94e406",
+    "mobile/src/screens/ApprovalsScreen.tsx": "f520e7653b1fa04b40181765f5a164b6e0661e8608e572467a8a8999781f3a88",
+    "mobile/src/screens/approvalDecision.ts": "1f065d5ea696e870b424d060d78f59dba8f9e168e76ca4286b58fb0e33fb0e75",
+    "mobile/src/screens/__tests__/approvalDecision.test.ts": "6c9d4a0f0ba8b6c5b14457a60a27d0d6104b5fbce8293682ea36e2ddbf490868"
+  },
+  "verification": {
+    "jest_suites": 36,
+    "jest_tests": 185,
+    "passed": 185,
+    "failures": 0,
+    "jest_json_sha256": "56c1e58dda8f7d3cd9b4fbe83eef0dd58604291659f7acce6ff3b98c7b10fb48",
+    "typescript": "passed",
+    "native_offline_exports": {
+      "ios": {
+        "offline_export": "passed",
+        "bundles": 1,
+        "metadata_sha256": "c071fd187733bbfae13a304676a3402b2e5c665395f2e65579d164e296aa60ef"
+      },
+      "android": {
+        "offline_export": "passed",
+        "bundles": 1,
+        "metadata_sha256": "41e885a03cd0ddb6c811cae8aeb031e1d5f4cc4d338e45b8b7d09993f12d9969"
+      }
+    },
+    "review": "Independent read-only source review found no concrete mobile defects; root tightened replies to the actual <=64 distinct approved/rejected task snapshot contract."
+  },
+  "contracts": [
+    "Exact displayed revision, admin authentication, no actor/source/proof body",
+    "Optional reasons <=280 Unicode codepoints; ordinary omitted-reason body preserved",
+    "Synchronous shared busy lock until confirmed response and refresh",
+    "Stale/error/false confirmation does not refresh or adopt another revision",
+    "Connection epoch fences old responses; protected desktop tasks keep reject/defer only",
+    "Malformed offers cannot produce reusable choices; permanent requires every category"
+  ],
+  "backend": "No backend implementation is part of this mobile rollback unit; prior backend milestone remains22327 total. Separate live runtime wait work is uncommitted and not included in this record.",
+  "remaining": [
+    "Native deadline authoring",
+    "Remaining accepted producers",
+    "Native inline timeout/denial reason UX",
+    "Live provider/transport/device acceptance",
+    "All other incomplete Hermes rows"
+  ],
+  "new_equivalent_credit": 0
+}

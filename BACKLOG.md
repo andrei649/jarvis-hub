@@ -14,6 +14,15 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-10-04 H487 native mobile continuation: validated current offers expose
+  session / always / deny with exact revision and optional280-code-point reasons.
+  Synchronous busy exclusion, strict <=64 distinct committed-task confirmation
+  and connection epochs prevent duplicate/stale application; desktop approval
+  remains in Owner HUD, with ordinary reject/defer retained on mobile.
+  All185 mobile tests, TypeScript and offline iOS/Android exports pass.
+  No device/provider activation or new equivalent credit; H487 stays partial.
+  See `docs/hermes/evidence/h487-mobile-consent-progress-2026-10-04.json`.
+
 - 2026-10-04 H487 Telegram / CLI continuation: actual owner callbacks now choose
   session / always / deny on verified native cards, including web-origin requests.
   Signed decider attribution is distinct from the captured request grant scope.

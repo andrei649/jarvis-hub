@@ -1137,6 +1137,36 @@ export async function fetchTasks(config: ServerConfig): Promise<TasksResponse> {
 // ── Approvals ────────────────────────────────────────────────────
 
 export type ApprovalAction = 'accept' | 'reject' | 'defer';
+export type ApprovalConsentChoice = 'session' | 'always' | 'deny';
+
+export type ApprovalConsentOffer = {
+  revision: string;
+  count: number;
+  choices: ApprovalConsentChoice[];
+  categories: { description: string; permanent: boolean }[];
+};
+
+const CONSENT_REVISION = /^[a-f0-9]{64}$/;
+const CONSENT_CHOICES: ApprovalConsentChoice[] = ['session', 'always', 'deny'];
+
+/** Copy only the bounded, public fields that the autonomy approval route projects. */
+export function validatedConsentOffer(value: unknown): ApprovalConsentOffer | null {
+  if (!isRecord(value)) return null;
+  const { revision, count, choices, categories } = value;
+  if (typeof revision !== 'string' || !CONSENT_REVISION.test(revision)
+    || !Number.isSafeInteger(count) || (count as number) < 1 || (count as number) > 64
+    || !Array.isArray(choices) || choices.length !== CONSENT_CHOICES.length
+    || !CONSENT_CHOICES.every(choice => choices.includes(choice))
+    || !Array.isArray(categories) || categories.length < 1 || categories.length > 64) return null;
+  const projectedCategories: ApprovalConsentOffer['categories'] = [];
+  for (const category of categories) {
+    if (!isRecord(category) || typeof category.description !== 'string'
+      || category.description.trim().length < 1 || Array.from(category.description).length > 1024
+      || typeof category.permanent !== 'boolean') return null;
+    projectedCategories.push({ description: category.description, permanent: category.permanent });
+  }
+  return { revision, count: count as number, choices: [...choices], categories: projectedCategories };
+}
 
 export type RollbackContract = {
   mode: 'none' | 'cancel' | 'compensate' | 'restore' | 'revoke' | 'disable' | 'implementation_specific';
@@ -1161,6 +1191,9 @@ export type ApprovalTask = {
   tier_name?: string;
   capability_id?: string | null;
   rollback?: RollbackContract | null;
+  consent_offer?: unknown;
+  human_decision?: { action?: string; reason?: string; at?: string; by?: string } | null;
+  approval_deadline_at?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -1211,18 +1244,62 @@ export type ApprovalDecisionResponse = {
   task?: ApprovalTask;
 };
 
+function decisionReason(reason: string | undefined): string | undefined {
+  if (reason !== undefined && (typeof reason !== 'string' || Array.from(reason).length > 280)) {
+    throw new ApiError('Reason must be at most 280 characters');
+  }
+  return reason;
+}
+
 export function decideApproval(
   config: ServerConfig,
   taskId: number,
   action: ApprovalAction,
+  reason?: string,
 ): Promise<ApprovalDecisionResponse> {
   return request<ApprovalDecisionResponse>(
     config,
     'POST',
     `/autonomy/tasks/${encodeURIComponent(String(taskId))}/decision`,
-    { action },
+    reason === undefined ? { action } : { action, reason: decisionReason(reason) },
     { admin: true },
   );
+}
+
+export type ApprovalConsentResponse = { ok: true; tasks: ApprovalTask[] };
+
+export async function decideApprovalConsent(
+  config: ServerConfig,
+  taskId: number,
+  choice: ApprovalConsentChoice,
+  revision: string,
+  reason?: string,
+): Promise<ApprovalConsentResponse> {
+  if (!Number.isSafeInteger(taskId) || taskId <= 0) throw new ApiError('Task ID must be a positive safe integer');
+  if (!CONSENT_CHOICES.includes(choice)) throw new ApiError('Unsupported consent choice');
+  if (typeof revision !== 'string' || !CONSENT_REVISION.test(revision)) {
+    throw new ApiError('Consent revision must be 64 lowercase hex characters');
+  }
+  decisionReason(reason);
+  const body = reason === undefined ? { choice, revision } : { choice, revision, reason };
+  const reply = await request<unknown>(
+    config, 'POST', `/autonomy/tasks/${taskId}/consent`, body, { admin: true },
+  );
+  if (!isRecord(reply) || reply.ok !== true || !Array.isArray(reply.tasks)
+    || reply.tasks.length < 1 || reply.tasks.length > 64) {
+    throw new ApiError('Consent was not confirmed by the server');
+  }
+  const expectedStatus = choice === 'deny' ? 'rejected' : 'approved';
+  const seenIds = new Set<number>();
+  for (const task of reply.tasks) {
+    if (!isRecord(task) || !Number.isSafeInteger(task.id) || (task.id as number) <= 0
+      || task.status !== expectedStatus || seenIds.has(task.id as number)) {
+      throw new ApiError('Consent was not confirmed by the server');
+    }
+    seenIds.add(task.id as number);
+  }
+  if (!seenIds.has(taskId)) throw new ApiError('Consent was not confirmed by the server');
+  return { ok: true, tasks: reply.tasks as ApprovalTask[] };
 }
 
 // ── Channel Inbox ────────────────────────────────────────────────
