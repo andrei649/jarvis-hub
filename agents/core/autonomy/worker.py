@@ -719,6 +719,27 @@ class AutonomyWorker:
     def execution_allowed(self, task: Task) -> bool:
         """Guard a TaskExecutor call with the worker's private validated-claim context."""
 
+        try:
+            persisted = self.queue.get(getattr(task, 'id', 0))
+            marker = getattr(self.queue, 'consent_task_marker', None)
+            consent = any(
+                value is not None and (
+                    value.decided_by == 'consent'
+                    or str(value.decision or '').startswith(('consent-', 'auto-consent-'))
+                ) for value in (task, persisted)
+            ) or (callable(marker) and marker(task.id))
+            if consent:
+                from .consent_execution import consent_current
+
+                fingerprint = TaskQueue.execution_fingerprint(task)
+                if (persisted is None or persisted.status != TaskStatus.RUNNING.value
+                        or fingerprint is None
+                        or fingerprint != TaskQueue.execution_fingerprint(persisted)
+                        or not consent_current(task.id)):
+                    return False
+        except Exception:
+            return False
+
         if self.queue.mediation_mode == "off":
             try:
                 persisted = self.queue.get(getattr(task, "id", 0))
@@ -1248,6 +1269,10 @@ class AutonomyWorker:
                     except Exception:
                         logger.warning('consent provenance unavailable; ordinary approval retained')
                 self.queue.register_pending_group(task.id, context=context, policy=policy)
+                if self.queue.approve_with_current_consent(task.id):
+                    task = self.queue.get(task.id)
+                    self._audit('autonomy.consent.reuse', task, 'current owner category consent')
+                    return task.id
         except Exception:
             logger.warning('model approval grouping unavailable; independent task retained')
         self._schedule_approval_judge(task)
@@ -1633,6 +1658,13 @@ class AutonomyWorker:
             if self._halted(task.agent):
                 held += 1
                 continue
+            if self.queue.consent_task_marker(task.id):
+                summary = await self._run_consent(task)
+                ran += summary['ran']
+                done += summary['done']
+                failed += summary['failed']
+                held += summary['held']
+                continue
             if self.queue.mediation_mode == "off":
                 mediated = False
             else:
@@ -1793,6 +1825,88 @@ class AutonomyWorker:
                     execution_permit.revoke()
                 self._execution_context.reset(execution_token)
         return {"ran": ran, "done": done, "failed": failed, "held": held, "reaped": reaped}
+
+    async def _run_consent(self, task: Task) -> dict:
+        """Spend one private consent claim; every exit settles one attempt."""
+        from .consent_execution import _worker_scope as consent_worker_scope
+        from .consent_execution import consent_current
+        from .executor import TaskExecutor
+
+        empty = {'ran': 0, 'done': 0, 'failed': 0, 'held': 1}
+        executor = getattr(self.executor, '__self__', None)
+        trusted_execute = self.executor
+        trusted_guard = getattr(executor, 'execution_guard', None)
+        if (self.queue.mediation_mode not in {'off', 'enforce'}
+                or task.status != TaskStatus.APPROVED.value or task.attempts != 0
+                or type(executor) is not TaskExecutor
+                or not callable(trusted_guard)):
+            return empty
+
+        def worker_live():
+            return (self.executor == trusted_execute and executor.execution_guard is trusted_guard
+                    and not (self._halted() or self._halted(task.agent)
+                             or (task.mediation_scope and self._halted(task.mediation_scope))))
+
+        if not worker_live() or asyncio.current_task().cancelling():
+            return empty
+        claim = self.queue.claim_consent(task.id, execution_id=str(uuid.uuid4()),
+                                         live_check=worker_live)
+        if claim is None:
+            return empty
+        execution_permit = None
+        try:
+            attempt = self.queue.increment_attempts(task.id)
+            task = self.queue.get(task.id)
+            if task is None or task.status != TaskStatus.RUNNING.value or attempt != 1:
+                raise TaskQueueError('consent attempt state changed')
+            if self.queue.mediation_mode == 'enforce':
+                fingerprint = TaskQueue.execution_fingerprint(task)
+                if not fingerprint or not self.queue.validate_mediated_execution(task, fingerprint):
+                    raise TaskQueueError('consent mediation unavailable')
+                execution_permit = _ExecutionPermit(task)
+            self._observe_qa4_intake(task)
+            token = self._execution_context.set(execution_permit)
+            try:
+                with consent_worker_scope(
+                    self.queue, claim, worker_live, trusted_executor=self.executor,
+                    dispatch_check=lambda: execution_permit is None or execution_permit.consumed,
+                ) as scope:
+                    if not consent_current(task.id):
+                        raise TaskQueueError('consent claim unavailable')
+                    result = await self._execute(task)
+                    dispatched = self.queue.consent_execution_dispatched(
+                        task.id, claim, live_check=scope.live,
+                    )
+                    live_after = scope.live()
+                    scope.close()
+            finally:
+                if execution_permit is not None:
+                    execution_permit.revoke()
+                self._execution_context.reset(token)
+            if (not live_after or not dispatched or type(result) is not dict
+                    or result.get('status') in {'refused', 'failed', 'noop'}):
+                raise TaskQueueError('consent execution did not complete with a physical dispatch proof')
+            self.queue.transition(task.id, TaskStatus.DONE, result=result)
+            if self._exercises_capability(task):
+                self._record_capability_outcome(task, success=True, result=result)
+            self._settle_spend(task)
+            self._audit('autonomy.done', task, 'owner category consent executed')
+            return {'ran': 1, 'done': 1, 'failed': 0, 'held': 0}
+        except asyncio.CancelledError:
+            current = self.queue.get(claim.task_id)
+            if current is not None and current.status == TaskStatus.RUNNING.value:
+                self.queue.transition(current.id, TaskStatus.FAILED,
+                                      result={'error': 'consent execution cancelled'})
+            raise
+        except Exception as exc:
+            current = self.queue.get(claim.task_id)
+            if current is not None and current.status == TaskStatus.RUNNING.value:
+                self.queue.transition(current.id, TaskStatus.FAILED, result=_failure_record(exc))
+            if current is not None:
+                if self._exercises_capability(current):
+                    self._record_capability_outcome(current, success=False, error=exc)
+                self._audit('autonomy.failed', current, 'owner category consent execution failed')
+            return {'ran': 1, 'done': 0, 'failed': 1, 'held': 0}
 
     async def _run_owner_once(self, claim: OwnerOnceClaim, *,
                               live_check: Callable[[], bool]) -> dict:
@@ -2084,6 +2198,35 @@ class AutonomyWorker:
                     logger.warning('Preference record failed for #%s', task.id, exc_info=True)
             self._reconcile_waiting_run(task)
         return rejected
+
+    async def apply_consent_decision(self, task_id: int, revision: str, *,
+                                     choice: str, actor, reason: str | None = None):
+        """Apply one authenticated owner choice before per-task observations."""
+        from .queue import TaskApprovalExpired
+
+        try:
+            result = self.queue.decide_reusable_consent(
+                task_id, revision, choice=choice, actor=actor, reason=reason,
+            )
+        except TaskApprovalExpired as exc:
+            await self._consume_committed_expiry(exc.batch)
+            return None
+        if result is None:
+            return None
+        for task in result.tasks:
+            if self.approval_judge is not None:
+                self.approval_judge.clear_pending(task.id)
+            self._audit(f'autonomy.decision.consent.{choice}', task, f'by {actor.decided_by}')
+            if self.prefs:
+                try:
+                    self.prefs.record(task, 'reject' if choice == 'deny' else 'accept',
+                                      decided_by=actor.decided_by)
+                except Exception:
+                    logger.warning('Preference record failed for #%s', task.id, exc_info=True)
+            self._reconcile_waiting_run(task)
+        for group_id in result.group_ids:
+            await self._push_promoted_group(group_id)
+        return result
 
     async def apply_decision(
         self, task_id: int, action: str, decided_by: str = "user", payload: dict = None,

@@ -247,6 +247,13 @@ class TargetRegistry:
         with self._lock:
             return sorted(self._targets)
 
+    def snapshot(self, name: str) -> TerminalTarget | None:
+        """Read immutable declared policy without auditing or opening a transport."""
+        if not isinstance(name, str):
+            return None
+        with self._lock:
+            return self._targets.get(name)
+
     def usable_names(self, agent: str, capability: str) -> list[str]:
         """The targets :meth:`authorize` would not deny *agent* for *capability*, sorted
         (H296: what terminal_run advertises). A read, not a decision: nothing is audited."""

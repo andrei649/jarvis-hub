@@ -19,7 +19,7 @@ digest builders, …) stay inline at call time as in the originals.
 
 from dataclasses import asdict
 from datetime import datetime, UTC
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
@@ -158,6 +158,13 @@ class AutonomyDecisionBody(BaseModel):
     reason: Optional[str] = Field(None, max_length=280, strict=True)
 
 
+class AutonomyConsentBody(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    choice: Literal['session', 'always', 'deny']
+    revision: str = Field(pattern=r'^[a-f0-9]{64}$', strict=True)
+    reason: Optional[str] = Field(None, max_length=280, strict=True)
+
+
 class AutonomyGroupRejectBody(BaseModel):
     model_config = ConfigDict(extra='forbid')
     snapshot: str = Field(min_length=32, max_length=32, strict=True)
@@ -178,6 +185,25 @@ def _task_judge_status(orch) -> dict:
     return {"judge": status} if status.get("configured") else {}
 
 
+def _consent_projection(queue, task) -> dict:
+    """Expose reviewed choices without private producer or owner evidence."""
+    from agents.core.autonomy.terminal_consent_categories import terminal_consent_descriptions
+
+    lookup = getattr(queue, 'pending_consent_offer', None)
+    offer = lookup(task.id) if callable(lookup) else None
+    if offer is None:
+        return {}
+    descriptions = terminal_consent_descriptions()
+    if any(category.key not in descriptions for category in offer.categories):
+        return {}
+    return {'consent_offer': {
+        'revision': offer.revision, 'count': len(offer.member_ids),
+        'choices': ['session', 'always', 'deny'],
+        'categories': [{'description': descriptions[category.key], 'permanent': category.permanent}
+                       for category in offer.categories],
+    }}
+
+
 @router.get("/autonomy/tasks", dependencies=[Depends(admin_guard)])
 async def autonomy_list(status: str = None, origin: str = None, limit: int = Query(100, ge=1, le=200)):
     """List autonomy tasks, optionally filtered by status/origin."""
@@ -190,7 +216,8 @@ async def autonomy_list(status: str = None, origin: str = None, limit: int = Que
         visible = {task.id for task in tasks}
         groups = [group for group in orch.autonomy_queue.pending_groups()
                   if set(group['member_ids']) <= visible]
-    return nocache_json({"tasks": [_approval_projection(t, _task_judge(orch)) for t in tasks], "total": len(tasks),
+    return nocache_json({"tasks": [{**_approval_projection(t, _task_judge(orch)),
+                                   **_consent_projection(orch.autonomy_queue, t)} for t in tasks], "total": len(tasks),
                          **_task_judge_status(orch), **({'groups': groups} if groups else {})})
 
 
@@ -289,6 +316,46 @@ async def autonomy_decide(task_id: int, body: AutonomyDecisionBody):
     except TaskQueueError as e:
         return error_json(e, 409, "decision could not be applied")
     return nocache_json({"ok": True, "task": task.to_dict()})
+
+
+def _consent_admin_current(request: Request, orch) -> bool:
+    """Recheck the existing admin credential policy at the queue mutation seam."""
+    from agents.core.routers._deps import _web
+
+    try:
+        web = _web()
+        if web is None or get_orch() is not orch:
+            return False
+        if web._admin_credential_ok(request.headers.get('x-admin-token', '')):
+            return True
+        return (not web._admin_configured()
+                and web._real_client_host(request) in web._LOCALHOSTS)
+    except Exception:
+        return False
+
+
+@router.post("/autonomy/tasks/{task_id}/consent", dependencies=[Depends(admin_guard)])
+async def autonomy_consent(task_id: int, body: AutonomyConsentBody, request: Request):
+    """Resolve an exact reusable offer using the authenticated owner identity."""
+    from agents.core.autonomy.consent_types import OwnerConsentActor
+    from agents.core.autonomy.queue import TaskQueueError
+
+    orch = get_orch()
+    apply = getattr(getattr(orch, 'autonomy', None), 'apply_consent_decision', None)
+    if orch is None or not callable(apply):
+        return JSONResponse({'error': 'consent runtime not initialized'}, status_code=503)
+    actor = OwnerConsentActor(
+        label='admin', decided_by='admin',
+        live=lambda: _consent_admin_current(request, orch),
+    )
+    try:
+        result = await apply(task_id, body.revision, choice=body.choice,
+                             actor=actor, reason=body.reason)
+    except TaskQueueError as exc:
+        return error_json(exc, 409, 'consent offer changed')
+    if result is None:
+        return JSONResponse({'error': 'consent offer changed'}, status_code=409)
+    return nocache_json({'ok': True, 'tasks': [task.to_dict() for task in result.tasks]})
 
 
 @router.get("/autonomy/brief", dependencies=[Depends(admin_guard)])

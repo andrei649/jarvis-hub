@@ -17,6 +17,42 @@ function mockFetch(payload) {
   return fn;
 }
 
+it('shows reusable terminal choices and sends only the exact offer revision', async () => {
+  const revision = 'a'.repeat(64);
+  const fn = mockFetch({ tasks: [{ id: 73, title: 'Reviewed terminal request',
+    kind: 'toolrpc.terminal_run', status: 'blocked', consent_offer: {
+      revision, count: 2, choices: ['session', 'always', 'deny'],
+      categories: [{ description: 'git reset destroys uncommitted changes', permanent: true }],
+    },
+  }] });
+  localStorage.setItem('hud.admin_token', 'synthetic-owner');
+  render(<DecisionInboxPanel />);
+  await screen.findByText('git reset destroys uncommitted changes');
+  expect(screen.getByText('Applies to 2 matching requests.')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Your decision reason for Reviewed terminal request'),
+    { target: { value: 'Use the synthetic workspace' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Allow this session' }));
+  await waitFor(() => expect(fn.mock.calls.some(([url, init]) =>
+    url === '/autonomy/tasks/73/consent' && JSON.stringify(JSON.parse(init?.body || '{}'))
+      === JSON.stringify({ choice: 'session', revision, reason: 'Use the synthetic workspace' })
+  )).toBe(true));
+  const post = fn.mock.calls.find(([url]) => url === '/autonomy/tasks/73/consent');
+  expect(post[1].headers['X-Admin-Token']).toBe('synthetic-owner');
+  expect(screen.getByTitle('accept')).toBeTruthy();
+});
+
+it.each([undefined, { revision: 'stale', count: 1, choices: ['always'], categories: [] }])(
+  'keeps ordinary once controls when a reusable offer is absent or malformed', async consent_offer => {
+    mockFetch({ tasks: [{ id: 74, title: 'Ordinary terminal request',
+      kind: 'toolrpc.terminal_run', status: 'blocked', consent_offer }] });
+    render(<DecisionInboxPanel />);
+    await screen.findByText('Ordinary terminal request');
+    expect(screen.queryByRole('button', { name: 'Allow this session' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Allow always' })).toBeNull();
+    expect(screen.getByTitle('accept').disabled).toBe(false);
+  },
+);
+
 it('shows the current request deadline without changing its single-use decision', async () => {
   const deadline = '2030-01-02T03:04:05.000000+00:00';
   const fn = mockFetch({ tasks: [

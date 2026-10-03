@@ -46,3 +46,6 @@ agents/*/HEARTBEAT.local.md
 # Playwright E2E artifacts (H23.17)
 frontend/e2e/artifacts/
 frontend/e2e/.results/
+
+# graft's local repository settings — not committed.
+/.graft/

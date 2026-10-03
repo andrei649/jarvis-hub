@@ -1,6 +1,7 @@
 """Private signed enqueue provenance. A source is never an execution grant."""
 from __future__ import annotations
 
+import hashlib
 import json
 
 from .approval_grouping import current_model_producer, model_consent_semantics
@@ -10,12 +11,40 @@ from .mediation import MAX_CANONICAL_BYTES, canonical_json
 _PURPOSE = 'nerva.pending-consent-source'
 _FIELDS = frozenset({'purpose', 'version', 'namespace', 'task_id', 'task_birth',
                      'snapshot', 'deadline', 'association', 'producer', 'policy'})
+_FIELDS_V2 = _FIELDS | {'descriptor'}
 
 
 def initialize(conn):
     conn.execute('''CREATE TABLE IF NOT EXISTS task_consent_sources (
-        task_id INTEGER PRIMARY KEY, source TEXT NOT NULL, signature TEXT NOT NULL
+        task_id INTEGER PRIMARY KEY, source TEXT NOT NULL, signature TEXT NOT NULL,
+        group_key TEXT
     )''')
+    columns = {row['name'] for row in conn.execute('PRAGMA table_info(task_consent_sources)')}
+    if 'group_key' not in columns:
+        conn.execute('ALTER TABLE task_consent_sources ADD COLUMN group_key TEXT')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_task_consent_group_key '
+                 'ON task_consent_sources(group_key, task_id)')
+
+
+def group_key(queue, task, source):
+    """Index only equal signed producer, policy, descriptor and task semantics."""
+    if type(source) is not dict or source.get('version') != 2:
+        return None
+    try:
+        encoded = canonical_json({
+            'purpose': 'h487-pending-consent-followers', 'version': 1,
+            'namespace': queue._group_namespace,
+            'producer': source['producer'], 'policy': source['policy'],
+            'descriptor': source['descriptor'],
+            'task': {name: getattr(task, name) for name in (
+                'agent', 'kind', 'title', 'payload', 'risk_tier',
+                'autonomy_level', 'attention_mode', 'origin',
+                'approval_deadline_at',
+            )},
+        })
+        return hashlib.sha256(encoded).hexdigest()
+    except Exception:
+        return None
 
 
 def _pending(queue, task_id):
@@ -78,13 +107,21 @@ def capture_locked(queue, task_id, *, policy):
                   'task_id': task.id, 'task_birth': task.created_at, 'snapshot': snapshot,
                   'deadline': task.approval_deadline_at, 'association': association,
                   'producer': producer, 'policy': policy}
+        descriptor = queue._resolve_consent_descriptor(task, source)
+        if descriptor is not None and queue._consent_ledger is not None:
+            source['version'] = 2
+            source['descriptor'] = queue._consent_descriptor_data(descriptor)
         encoded = canonical_json(source)
         signature = queue._mediation_signer.sign(encoded)
         if signature is None:
             return False
+        fingerprint = group_key(queue, task, source)
+        if source['version'] == 2 and fingerprint is None:
+            return False
         # Never repair/re-sign altered provenance or replace its original origin.
-        changed = conn.execute('INSERT OR IGNORE INTO task_consent_sources VALUES(?,?,?)',
-                               (task.id, encoded.decode('utf-8'), signature))
+        changed = conn.execute('''INSERT OR IGNORE INTO task_consent_sources
+            (task_id,source,signature,group_key) VALUES(?,?,?,?)''',
+            (task.id, encoded.decode('utf-8'), signature, fingerprint))
         conn.commit()
         started = False
         return changed.rowcount == 1
@@ -95,19 +132,16 @@ def capture_locked(queue, task_id, *, policy):
             conn.rollback()
 
 
-def read_locked(queue, task_id):
-    """Return a still-pending signed source, with no status or permission change.
+def current_locked(queue, task_id, *, pending_only=False):
+    """Validate signed origin and immutable intent in the caller's transaction.
 
-    Policy/registration/target must be checked live by a future consent consumer;
-    this read proves only the original captured source and current pending intent.
+    Consent consumers use this after a task is approved/running. The old read
+    wrapper below remains pending-only and never conveys execution authority.
     """
     conn = queue._conn
-    if conn is None or conn.in_transaction:
+    if conn is None or not conn.in_transaction:
         return None
-    started = False
     try:
-        conn.execute('BEGIN')
-        started = True
         row = conn.execute('SELECT * FROM task_consent_sources WHERE task_id=?',
                            (task_id,)).fetchone()
         if row is None or type(row['source']) is not str:
@@ -116,24 +150,45 @@ def read_locked(queue, task_id):
         if not encoded or len(encoded) > MAX_CANONICAL_BYTES:
             return None
         source = json.loads(encoded)
-        if (type(source) is not dict or source.keys() != _FIELDS
+        version = source.get('version') if type(source) is dict else None
+        if (type(source) is not dict or source.keys() != (_FIELDS_V2 if version == 2 else _FIELDS)
                 or canonical_json(source) != encoded
                 or not queue._mediation_signer.verify(encoded, row['signature'])
                 or source['purpose'] != _PURPOSE or type(source['version']) is not int
-                or source['version'] != 1 or source['namespace'] != queue._group_namespace
+                or source['version'] not in {1, 2} or source['namespace'] != queue._group_namespace
                 or type(source['task_id']) is not int or source['task_id'] != task_id):
             return None
-        pending = _pending(queue, task_id)
-        if pending is None:
+        from .queue import _row_to_task
+        task_row = conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+        task = _row_to_task(task_row) if task_row else None
+        if task is None or (pending_only and _pending(queue, task_id) is None):
             return None
-        task, snapshot = pending
-        if (source['task_birth'] != task.created_at or source['snapshot'] != snapshot
+        if (source['task_birth'] != task.created_at
                 or source['deadline'] != task.approval_deadline_at
-                or source['association'] != _association(queue, task)):
+                or source['association'] != _association(queue, task)
+                or (pending_only and source['snapshot'] != queue._approval_snapshot_digest_locked(task))):
+            return None
+        if version == 2:
+            descriptor = queue._resolve_consent_descriptor(task, source)
+            if descriptor is None or queue._consent_descriptor_data(descriptor) != source['descriptor']:
+                return None
+            fingerprint = group_key(queue, task, source)
+            if fingerprint is None or (row['group_key'] is not None and row['group_key'] != fingerprint):
+                return None
+        elif row['group_key'] is not None:
             return None
         return source
     except Exception:
         return None
+
+
+def read_locked(queue, task_id):
+    """Legacy pending-only source read; no permission or status change."""
+    conn = queue._conn
+    if conn is None or conn.in_transaction:
+        return None
+    try:
+        conn.execute('BEGIN')
+        return current_locked(queue, task_id, pending_only=True)
     finally:
-        if started:
-            conn.rollback()
+        conn.rollback()

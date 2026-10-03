@@ -392,6 +392,65 @@ class ConsentLedger:
             except sqlite3.Error:
                 return False
 
+    def current_witness(self, context: ConsentContext,
+                        categories: Iterable[ConsentCategory], *,
+                        decision_id: str | None = None) -> dict[str, dict[str, str]] | None:
+        """Return exact active decision IDs and scopes from the anchored ledger.
+
+        Callers must retain this witness on each task and compare it with a fresh
+        lookup at claim and dispatch. An unrelated head advance is harmless;
+        replacing a revoked category grant changes its decision ID.
+        """
+        selected = self._requested(categories)
+        if self._head_anchor is None or selected is None or not self.lookup(context, selected):
+            return None
+        try:
+            witness: dict[str, dict[str, str]] = {}
+            for category in selected:
+                for scope in ("session", "always"):
+                    identity = _identity(context, scope)
+                    row = self._conn.execute(
+                        """SELECT decision_id FROM h487_consent_grants
+                           WHERE identity_key=? AND scope=? AND category_key=?""",
+                        (_identity_key(identity), scope, category.key),
+                    ).fetchone()
+                    if row is not None and (decision_id is None or row[0] == decision_id):
+                        witness[category.key] = {"scope": scope, "decision_id": row[0]}
+                        break
+                if category.key not in witness:
+                    return None
+            return witness if self._verified_head_locked() is not None else None
+        except (sqlite3.Error, ValueError, TypeError):
+            return None
+
+    def witness_current(self, context: ConsentContext,
+                        categories: Iterable[ConsentCategory], witness: object) -> bool:
+        """Verify precisely the recorded category/scope/decision IDs remain active."""
+        selected = self._requested(categories)
+        if (self._head_anchor is None or selected is None or type(witness) is not dict
+                or set(witness) != {item.key for item in selected}
+                or not self.lookup(context, selected)):
+            return False
+        try:
+            for category in selected:
+                entry = witness[category.key]
+                if (type(entry) is not dict or set(entry) != {"scope", "decision_id"}
+                        or entry["scope"] not in {"session", "always"}
+                        or (entry["scope"] == "always" and not category.permanent)
+                        or type(entry["decision_id"]) is not str):
+                    return False
+                scope = entry["scope"]
+                row = self._conn.execute(
+                    """SELECT decision_id FROM h487_consent_grants
+                       WHERE identity_key=? AND scope=? AND category_key=?""",
+                    (_identity_key(_identity(context, scope)), scope, category.key),
+                ).fetchone()
+                if row is None or row[0] != entry["decision_id"]:
+                    return False
+            return self._verified_head_locked() is not None
+        except (sqlite3.Error, ValueError, TypeError):
+            return False
+
     def revoke(self, context: ConsentContext) -> bool:
         """Remove grants for this stable identity across all session instances."""
         if not _valid_context(context) or not isinstance(self._signer, DetachedHMACSigner):

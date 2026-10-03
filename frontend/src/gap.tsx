@@ -3236,6 +3236,35 @@ export function DecisionInboxPanel() {
   const [draft, setDraft] = useState('');
   const [decisionReasons, setDecisionReasons] = useState<Record<string, string>>({});
   const [groupError, setGroupError] = useState('');
+  const [consentPending, setConsentPending] = useState(new Set<number>());
+  const consentOffer = (task) => {
+    const offer = task?.consent_offer;
+    if (!offer || !/^[a-f0-9]{64}$/.test(offer.revision || '')
+        || !Number.isSafeInteger(offer.count) || offer.count < 1 || offer.count > 64
+        || !Array.isArray(offer.choices) || offer.choices.join(',') !== 'session,always,deny'
+        || !Array.isArray(offer.categories) || !offer.categories.length || offer.categories.length > 64
+        || !offer.categories.every(category => typeof category.description === 'string'
+          && category.description.length > 0 && category.description.length <= 500
+          && typeof category.permanent === 'boolean')) return null;
+    return offer;
+  };
+  const decideConsent = (task, choice) => {
+    const offer = consentOffer(task);
+    if (!offer || consentPending.has(task.id)) return;
+    const reason = (decisionReasons[task.id] || '').trim();
+    setGroupError('');
+    setConsentPending(previous => new Set(previous).add(task.id));
+    const settled = () => setConsentPending(previous => {
+      const next = new Set(previous); next.delete(task.id); return next;
+    });
+    return actA('/autonomy/tasks/' + task.id + '/consent', {
+      choice, revision: offer.revision, ...(reason ? { reason } : {}),
+    }, () => { settled(); reload(); }, err => {
+      settled();
+      setGroupError(err?.body?.error || err?.message || 'Consent offer changed; reload and review.');
+      reload();
+    });
+  };
   const rejectGroup = (group) => {
     setGroupError('');
     const reason = (decisionReasons[group.leader_id] || '').trim();
@@ -3312,6 +3341,19 @@ export function DecisionInboxPanel() {
             placeholder="Your decision reason (optional)" maxLength={280}
             value={decisionReasons[t.id] || ''} style={taS}
             onChange={event => setDecisionReasons(previous => ({ ...previous, [t.id]: event.target.value }))} />
+          {consentOffer(t) && <div aria-label="Reusable terminal consent" style={{ margin: '6px 0 10px 12px', fontSize: 11 }}>
+            {consentOffer(t).categories.map((category, index) => <div key={index}>
+              {category.description}{!category.permanent && ' · session only'}
+            </div>)}
+            <div>Applies to {consentOffer(t).count} matching requests.</div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 5 }}>
+              <button className="tool-btn" disabled={consentPending.has(t.id)} onClick={() => decideConsent(t, 'session')}>Allow this session</button>
+              <button className="tool-btn" disabled={consentPending.has(t.id)} onClick={() => decideConsent(t, 'always')}>Allow always</button>
+              <button className="tool-btn" disabled={consentPending.has(t.id)} onClick={() => decideConsent(t, 'deny')}>Deny matching requests</button>
+            </div>
+            {consentOffer(t).categories.some(category => !category.permanent)
+              && <div>Session-only warnings stay limited to this session when you choose always.</div>}
+          </div>}
           {t.judge?.advisory === false && <div aria-label="Guardian terminal verdict" style={{ margin: '4px 0 8px 12px', fontSize: 11, overflowWrap: 'anywhere' }}>
             <div style={{ color: 'var(--amber)' }}>
               {t.judge.decision === 'deny' ? 'Guardian denied this command' : 'Guardian escalated this command'} · awaiting your decision

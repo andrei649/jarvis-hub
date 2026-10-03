@@ -190,6 +190,12 @@ class LocalHostTransport:
         env = prepare_python_child_env(self._env_source())
         fingerprint = argv_fingerprint(argv_list)
         start = time.monotonic()
+        from .consent_dispatch import physical_gate as consent_physical_gate
+
+        if consent_physical_gate(self, backend="local", argv=tuple(argv_list),
+                                 cwd=str(workdir), timeout=bounded) is False:
+            return {"ok": False, "reason": "consent_dispatch_unavailable",
+                    "argv_sha256": fingerprint}
         from .owner_once_dispatch import physical_gate
 
         if physical_gate(self, backend="local", argv=tuple(argv_list),

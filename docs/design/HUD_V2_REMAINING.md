@@ -16,6 +16,14 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
+H487 terminal consent (2026-10-04): Decision Inbox shows only server-projected
+reviewed categories and current session/always/deny choices. Choices submit the
+exact offer revision through the admin route; changed offers reload for review.
+Session-only categories retain their bound even when always is chosen. Ordinary
+once/edit/reject/defer remain. Native reusable controls, Telegram cards and all
+other accepted consent producers remain open; terminal-only delivery is not
+full H487 or live/device acceptance.
+
 H277 (2026-09-27): Decision Inbox renders advisory risk scores, escaped rationale,
 judge identity/locality and truncation/flag warnings. Pending opinions poll with
 an independent wall-clock limit per task; decision controls remain available.

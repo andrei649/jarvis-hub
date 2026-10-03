@@ -379,10 +379,13 @@ class Sandbox:
     async def execute_shell(self, command: str) -> SandboxResult:
         if self._has_docker:
             return await self._execute_docker_shell(command)
+        from .environments.consent_dispatch import consent_dispatch_scope_present
         from .environments.owner_once_dispatch import owner_once_scope_present
 
         if owner_once_scope_present():
             return SandboxResult(stderr="Owner-once Docker backend unavailable", exit_code=-1)
+        if consent_dispatch_scope_present():
+            return SandboxResult(stderr="Consented Docker backend unavailable", exit_code=-1)
         if not self.allow_subprocess:
             return SandboxResult(
                 stderr="Code execution disabled: no Docker/WASM isolation and the host "
@@ -443,6 +446,12 @@ class Sandbox:
             self.docker_image,
         ] + cmd
 
+        from .environments.consent_dispatch import physical_gate as consent_physical_gate
+
+        if consent_physical_gate(self, backend="docker", argv=tuple(cmd), cwd="/workspace",
+                                 timeout=self.timeout) is False:
+            return SandboxResult(stderr="Consent dispatch unavailable", exit_code=-1,
+                                 duration=time.monotonic() - start)
         from .environments.owner_once_dispatch import physical_gate
 
         if physical_gate(self, backend="docker", argv=tuple(cmd), cwd="/workspace",
@@ -510,10 +519,14 @@ class Sandbox:
         except FileNotFoundError:
             logger.warning("Docker not found")
             self._has_docker = False
+            from .environments.consent_dispatch import consent_dispatch_scope_present
             from .environments.owner_once_dispatch import owner_once_scope_present
 
             if owner_once_scope_present():
                 return SandboxResult(stderr="Owner-once Docker backend unavailable",
+                                     exit_code=-1, duration=time.monotonic() - start)
+            if consent_dispatch_scope_present():
+                return SandboxResult(stderr="Consented Docker backend unavailable",
                                      exit_code=-1, duration=time.monotonic() - start)
             if not self.allow_subprocess:
                 return SandboxResult(

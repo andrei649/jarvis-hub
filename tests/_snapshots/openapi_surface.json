@@ -530,6 +530,7 @@
   "POST /autonomy/policy": "autonomy_set_policy_autonomy_policy_post",
   "POST /autonomy/tasks": "autonomy_submit_autonomy_tasks_post",
   "POST /autonomy/tasks/groups/{group_id}/reject": "autonomy_reject_group_autonomy_tasks_groups__group_id__reject_post",
+  "POST /autonomy/tasks/{task_id}/consent": "autonomy_consent_autonomy_tasks__task_id__consent_post",
   "POST /autonomy/tasks/{task_id}/decision": "autonomy_decide_autonomy_tasks__task_id__decision_post",
   "POST /chat": "chat_chat_post",
   "POST /chat/stream": "chat_stream_chat_stream_post",

@@ -534,6 +534,7 @@
   "POST /autonomy/policy": "admin",
   "POST /autonomy/tasks": "admin",
   "POST /autonomy/tasks/groups/{group_id}/reject": "admin",
+  "POST /autonomy/tasks/{task_id}/consent": "admin",
   "POST /autonomy/tasks/{task_id}/decision": "admin",
   "POST /chat": "user",
   "POST /chat/stream": "user",

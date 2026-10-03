@@ -732,6 +732,8 @@ class Orchestrator:
             make_task_mediation_anchor,
             resolve_task_mediation_mode,
         )
+        from .autonomy.consent_head_store import make_consent_head_anchor
+        from .autonomy.terminal_consent_categories import terminal_consent_catalog
 
         _task_mediation_signer = DetachedHMACSigner(
             getattr(getattr(self, "intent_log", None), "sign_detached", None)
@@ -747,6 +749,8 @@ class Orchestrator:
             mediation_head_anchor=make_task_mediation_anchor(),
             mediation_scope="*",
             mediation_policy_revision="nerva.action.v1",
+            consent_categories=terminal_consent_catalog(),
+            consent_head_anchor=make_consent_head_anchor(),
         )
         self.autonomy_prefs = PreferenceStore()
         # Mission Workspaces (0.32): persistent long-horizon workspaces — goal,

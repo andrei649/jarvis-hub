@@ -388,6 +388,11 @@ class SshTransport:
         }
         remote = self.remote_command(argv_list, workdir)
         start = time.monotonic()
+        from .consent_dispatch import physical_gate as consent_physical_gate
+
+        if consent_physical_gate(self, backend="ssh", argv=tuple(argv_list),
+                                 cwd=workdir, timeout=bounded) is False:
+            return {"ok": False, "reason": "consent_dispatch_unavailable", **base}
         from .owner_once_dispatch import physical_gate
 
         if physical_gate(self, backend="ssh", argv=tuple(argv_list),

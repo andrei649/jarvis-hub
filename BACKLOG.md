@@ -14,12 +14,33 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-10-04 H487 connected terminal continuation: authenticated HUD session /
+  always / deny choices now bind exact signed source, current credentials,
+  category witnesses and pending followers (including real QA4 off-mode intake).
+  Future compatible requests reuse consent without fabricated human attribution.
+  Private one-use worker claims reach adjacent local / SSH / Docker dispatch gates;
+  halt, policy / target changes, revoke and cancellation after claim prevent spawn.
+  Actual effects are mocked, not live acceptance. 167 connected focused cases,
+  4,456 collateral passes with 11 skips, all 1,889 frontend cases and 17 route /
+  doc / typegen gates pass; these counts overlap. SSH canonical tuple serialization
+  was fixed after a real producer regression. Full collection is 22,210 cases;
+  the full run had six collateral failures (API sweep, auth snapshot and queue
+  test doubles), corrected with 52 focused passes; a full rerun remains required.
+  H487 stays partial:
+  Telegram reusable callbacks and remaining accepted producers are not delivered.
+  Shared changed pins require claim-specific review before restoring counts;
+  no new equivalent credit. See `docs/hermes/h487-owner-consent-runtime-plan-2026-10-03.md`.
+
 - 2026-10-03 H487 full-backend review: 22,093 guarded cases executed at c70e0407;
   22,057 pass, 34 skip, one existing xfail, and one exact binding-writer inventory
   failure. The focused RED reproduced 14 coordinator callsites displaced by
   seven provenance lines; their literal coordinates were corrected without
   weakening ownership or AST guards, and all 50 binding tests pass. A complete
-  guarded rerun remains pending. Claim-specific source/diff/module review of
+  guarded rerun completed on 01191f70: 22,058 pass, 34 skip and one existing
+  xfail, with all 2,525 frozen source paths unchanged. This is baseline proof,
+  not coverage of the later runtime. See
+  `docs/hermes/evidence/h487-baseline-full-verified-2026-10-04.json`.
+  Claim-specific source/diff/module review of
   H262/H298/H309/H314/H315/H507/H594/H681 restores their existing equivalent
   verdicts: 181/697 (26.0%), not new feature delivery. H487 remains unfinished.
   See `docs/hermes/evidence/h487-consent-anchor-full-review-2026-10-03.md`.

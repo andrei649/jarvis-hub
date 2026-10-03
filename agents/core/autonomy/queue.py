@@ -28,7 +28,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
@@ -60,6 +60,14 @@ from agents.core.autonomy.mediation import (
 from agents.core.env_config import env_str
 from agents.core.paths import data_path
 
+from .consent_ledger import ConsentCategory, ConsentLedger, _valid_context
+from .consent_types import (
+    ConsentClaim,
+    ConsentDecisionResult,
+    ConsentDescriptor,
+    ConsentOffer,
+    OwnerConsentActor,
+)
 from .decision_reasons import normalize_reason
 from .owner_once import OwnerOnceClaim, OwnerOnceOffer, OwnerOnceOwner
 from .smart_approvals import SmartApprovalResult
@@ -181,7 +189,12 @@ def _canonical_mediation_classification(kind: str) -> bool | None:
     try:
         from agents.core.kernel.registry import Mediation, classify
 
-        mediation = classify(kind)
+        # The registered ToolRPC terminal producer persists its queue task as
+        # toolrpc.terminal_run, while the physical Action Kernel owns
+        # terminal.exec. Only this exact producer kind uses that contract;
+        # other toolrpc kinds remain unclassified by the kernel registry.
+        registry_kind = "terminal.exec" if kind == "toolrpc.terminal_run" else kind
+        mediation = classify(registry_kind)
         if mediation is Mediation.KERNEL:
             return True
         if mediation is Mediation.INTENTIONALLY_DIRECT:
@@ -333,6 +346,8 @@ class TaskQueue:
         mediation_scope: str = "autonomy.queue",
         mediation_policy_revision: str = "v1",
         mediation_clock_ms: Callable[[], int] | None = None,
+        consent_categories: tuple[ConsentCategory, ...] = (),
+        consent_head_anchor: MonotonicHeadAnchor | None = None,
     ):
         if db_path is None:
             # Resolve at init (not module import) so a JARVIS_HOME set *after* this
@@ -361,6 +376,12 @@ class TaskQueue:
         self._mediation_scope = str(mediation_scope or "").strip()
         self._mediation_policy_revision = str(mediation_policy_revision or "").strip()
         self._mediation_clock_ms = mediation_clock_ms or (lambda: int(time.time() * 1000))
+        self._consent_categories = tuple(consent_categories)
+        self._consent_head_anchor = consent_head_anchor
+        self._consent_ledger: ConsentLedger | None = None
+        self._consent_resolver: Callable[[Task, dict], ConsentDescriptor | None] | None = None
+        self._consent_queue_key = object()
+        self._consent_claims: dict[int, ConsentClaim] = {}
 
     # ── lifecycle ─────────────────────────────────────────────────
     def initialize(self) -> "TaskQueue":
@@ -529,6 +550,16 @@ class TaskQueue:
         ).fetchone()['value']
         from .consent_sources import initialize as initialize_consent_sources
         initialize_consent_sources(self._conn)
+        self._conn.execute('''CREATE TABLE IF NOT EXISTS task_consent_proofs (
+            task_id INTEGER PRIMARY KEY, payload BLOB NOT NULL, signature TEXT NOT NULL,
+            claim_payload BLOB, claim_signature TEXT, state TEXT NOT NULL
+        )''')
+        if self._consent_head_anchor is not None:
+            self._consent_ledger = ConsentLedger(
+                self._conn, self._mediation_signer, categories=self._consent_categories,
+                head_anchor=self._consent_head_anchor,
+            )
+            self._consent_ledger.initialize()
 
         # H33.2: old autonomy databases predate the ask/digest/interrupt split.
         # Preserve their previous push behavior while new ambient proposals set
@@ -1708,6 +1739,9 @@ class TaskQueue:
                 if row is None or row["status"] != TaskStatus.APPROVED.value:
                     self._conn.rollback()
                     return None
+                if self._consent_marked_locked(row):
+                    self._conn.rollback()
+                    return None
                 if row['decided_by'] == 'owner_once' or row['decision'] == 'owner-once':
                     self._conn.rollback()
                     return None
@@ -1986,6 +2020,28 @@ class TaskQueue:
                     raise TaskQueueError(
                         f"illegal transition {cur_status.value} → {new_status.value} (task {task_id})"
                     )
+                if (decided_by == 'consent'
+                        or (type(decision) is str and
+                            (decision.startswith('auto-consent-') or
+                             decision.startswith('consent-')))):
+                    raise TaskQueueError('consent decision requires private queue authority')
+                if self._consent_marked_locked(row) and (
+                    (cur_status == TaskStatus.APPROVED and new_status == TaskStatus.RUNNING)
+                    or (cur_status == TaskStatus.RUNNING and new_status == TaskStatus.APPROVED)
+                    or new_status in {TaskStatus.BLOCKED, TaskStatus.DEFERRED}
+                    or decided_by is not None or decision is not None or record_human
+                ):
+                    raise TaskQueueError('consent transition requires private queue authority')
+                if (self._consent_marked_locked(row)
+                        and cur_status == TaskStatus.RUNNING
+                        and new_status == TaskStatus.DONE):
+                    claim = self._consent_claims.get(task_id)
+                    bound = self._conn.execute(
+                        'SELECT state FROM task_consent_proofs WHERE task_id=?', (task_id,)
+                    ).fetchone()
+                    if (bound is None or bound['state'] != 'dispatching' or claim is None
+                            or not self._consent_claim_current_locked(task_id, claim, lambda: True)):
+                        raise TaskQueueError('consent execution has not dispatched')
                 if (new_status == TaskStatus.APPROVED and decision in {'accept', 'edit'}
                         and self._current_smart_denial_locked(task)):
                     raise TaskQueueError('smart denial requires exact owner-once reply')
@@ -2022,6 +2078,8 @@ class TaskQueue:
                 if record_human and new_status == TaskStatus.APPROVED and decision in {'accept', 'edit'}:
                     self._reset_chat_guardian_denials_locked(task)
                 self._conn.commit()
+                if new_status in {TaskStatus.DONE, TaskStatus.FAILED}:
+                    self._consent_claims.pop(task_id, None)
                 return _row_to_task(updated), group_id
             except TaskApprovalExpired:
                 raise  # expiry already committed; never roll it back
@@ -2287,6 +2345,8 @@ class TaskQueue:
             self._conn.execute('BEGIN IMMEDIATE')
             try:
                 row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                if row is not None and self._consent_marked_locked(row):
+                    raise TaskQueueError('consent task cannot be edited')
                 instant = _approval_now()
                 if row is not None:
                     self._raise_due_approval_locked(row, instant)
@@ -2338,6 +2398,8 @@ class TaskQueue:
                 task = _row_to_task(row) if row else None
                 if task is None:
                     raise TaskQueueError(f"task {task_id} not found")
+                if self._consent_marked_locked(row) or decided_by == 'consent':
+                    raise TaskQueueError('consent task cannot be edited')
                 instant = _approval_now()
                 self._raise_due_approval_locked(row, instant)
                 if (record_human or approve) and self._current_smart_denial_locked(task):
@@ -2865,6 +2927,527 @@ class TaskQueue:
         from .consent_sources import read_locked
         with self._lock:
             return read_locked(self, task_id)
+
+    def bind_consent_resolver(self, resolve: Callable[[Task, dict], ConsentDescriptor | None]) -> None:
+        """Bind the server's current producer/policy/target classifier."""
+        if not callable(resolve):
+            raise ValueError('consent resolver must be callable')
+        with self._lock:
+            self._consent_resolver = resolve
+
+    def _resolve_consent_descriptor(self, task: Task, source: dict) -> ConsentDescriptor | None:
+        try:
+            if self._consent_ledger is None or not callable(self._consent_resolver):
+                return None
+            descriptor = self._consent_resolver(task, source)
+            producer = source['producer']
+            if (type(descriptor) is not ConsentDescriptor
+                    or not _valid_context(descriptor.context)
+                    or type(descriptor.categories) is not tuple
+                    or self._consent_ledger._requested(descriptor.categories) != descriptor.categories
+                    or type(descriptor.registration_epoch) is not str
+                    or descriptor.registration_epoch != producer['registration_epoch']
+                    or descriptor.context.registration_key != producer['registration_key']
+                    or descriptor.context.principal != producer['principal']
+                    or descriptor.context.session_id != producer['session_id']
+                    or descriptor.context.session_instance != producer['session_instance']):
+                return None
+            return descriptor
+        except Exception:
+            return None
+
+    @staticmethod
+    def _consent_descriptor_data(descriptor: ConsentDescriptor) -> dict:
+        return {'context': asdict(descriptor.context),
+                'categories': [asdict(item) for item in descriptor.categories],
+                'registration_epoch': descriptor.registration_epoch}
+
+    @staticmethod
+    def _consent_marker_row(row: sqlite3.Row) -> bool:
+        return (type(row['decision']) is str
+                and (row['decision'].startswith('auto-consent-')
+                     or row['decision'].startswith('consent-')))
+
+    def _consent_marked_locked(self, row: sqlite3.Row) -> bool:
+        return (self._consent_marker_row(row) or self._conn.execute(
+            'SELECT 1 FROM task_consent_proofs WHERE task_id=?', (row['id'],)
+        ).fetchone() is not None)
+
+    def _consent_intake_locked(self, row: sqlite3.Row) -> bool:
+        """Verify this task's own QA4 evidence without broadening grouping."""
+        if bool(row['kernel_intake_id']) != bool(row['kernel_intake_evidence']):
+            return False
+        if not row['kernel_intake_id']:
+            return self.mediation_mode == 'enforce'
+        try:
+            evidence = json.loads(row['kernel_intake_evidence'])
+            return (type(evidence) is dict
+                    and evidence.get('intake_id') == row['kernel_intake_id']
+                    and verify_intake_evidence(
+                        self._mediation_signer, evidence,
+                        agent=row['agent'], kind=row['kind'], title=row['title'],
+                        origin=row['origin'], payload=json.loads(row['payload']),
+                        tier=None, task_tier=int(row['risk_tier']),
+                        now_ms=self._clock_ms(), task_id=int(row['id']),
+                    ))
+        except Exception:
+            return False
+
+    def consent_task_marker(self, task_id: int) -> bool:
+        if type(task_id) is not int or task_id <= 0:
+            return False
+        with self._lock:
+            try:
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                return row is not None and self._consent_marked_locked(row)
+            except Exception:
+                return True  # An unreadable marker cannot permit ordinary fallback.
+
+    def _consent_offer_locked(self, task_id: int):
+        from .consent_sources import current_locked, group_key
+        if self._consent_ledger is None or type(task_id) is not int or task_id <= 0:
+            return None
+        if self._consent_ledger._verified_head_locked() is None:
+            return None
+        leader = self._conn.execute('''SELECT tasks.*, s.group_key AS consent_group_key
+            FROM tasks JOIN task_consent_sources s ON s.task_id=tasks.id
+            WHERE tasks.id=?''', (task_id,)).fetchone()
+        if leader is None:
+            return None
+        leader_source = current_locked(self, task_id, pending_only=True)
+        fingerprint = group_key(self, _row_to_task(leader), leader_source)
+        if fingerprint is None:
+            return None
+        if leader['consent_group_key'] is None:
+            # Pending v2 source captured before the private index existed may
+            # retain its singleton offer; it never borrows another task's key.
+            rows = [leader]
+        elif leader['consent_group_key'] == fingerprint:
+            rows = self._conn.execute('''SELECT tasks.* FROM tasks
+                JOIN task_consent_sources s ON s.task_id=tasks.id
+                WHERE s.group_key=? AND tasks.status='blocked'
+                ORDER BY tasks.id LIMIT 65''', (fingerprint,)).fetchall()
+        else:
+            return None
+        if not rows or len(rows) > 64 or task_id not in {row['id'] for row in rows}:
+            return None
+        first = None
+        members = []
+        group_bindings = []
+        for row in rows:
+            task = _row_to_task(row)
+            source = current_locked(self, task.id, pending_only=True)
+            if (source is None or source['version'] != 2 or row['status'] != 'blocked'
+                    or self._consent_marked_locked(row)
+                    or not self._consent_intake_locked(row)
+                    or (self.mediation_mode == 'off' and self._row_has_mediation_provenance(row))
+                    or (self.mediation_mode == 'enforce' and self._consent_b7_locked(row) is None)):
+                return None
+            descriptor = self._resolve_consent_descriptor(task, source)
+            if descriptor is None or (first is not None and descriptor != first):
+                return None
+            if group_key(self, task, source) != fingerprint:
+                return None
+            first = descriptor
+            members.append((row, source, descriptor))
+            membership = self._conn.execute('''SELECT group_id,snapshot
+                FROM task_approval_groups WHERE task_id=?''', (task.id,)).fetchone()
+            group_bindings.append([task.id, membership['group_id'], membership['snapshot']]
+                                  if membership else [task.id, None, None])
+        group_ids = tuple(dict.fromkeys(binding[1] for binding in group_bindings
+                                       if binding[1] is not None))
+        revision = canonical_digest({
+            'purpose': 'h487-consent-offer', 'group_key': fingerprint,
+            'group_bindings': group_bindings,
+            'members': [[row['id'], source['snapshot'],
+                         self._chat_intent_locked(_row_to_task(row))]
+                        for row, source, _ in members],
+            'descriptor': self._consent_descriptor_data(first),
+        })
+        return ConsentOffer(task_id, revision, tuple(row['id'] for row in rows),
+                            first.categories), members, group_ids
+
+    def pending_consent_offer(self, task_id: int) -> ConsentOffer | None:
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                result = self._consent_offer_locked(task_id)
+                self._conn.rollback()
+                return result[0] if result else None
+            except Exception:
+                self._conn.rollback()
+                return None
+
+    def _consent_proof_insert_locked(self, row: sqlite3.Row, source: dict,
+                                     descriptor: ConsentDescriptor, witness: dict,
+                                     *, marker: str, decision_id: str,
+                                     human_id: str | None) -> bool:
+        task = _row_to_task(row)
+        payload = canonical_json({
+            'purpose': 'h487-consent-task-proof', 'version': 1,
+            'namespace': self._group_namespace, 'task_id': task.id,
+            'birth': task.created_at, 'source_sha256': canonical_digest(source),
+            'intent_sha256': self._chat_intent_locked(task),
+            'descriptor': self._consent_descriptor_data(descriptor), 'witness': witness,
+            'marker': marker, 'decision_id': decision_id, 'human_id': human_id,
+        })
+        signature = self._mediation_signer.sign(payload)
+        if signature is None:
+            return False
+        self._conn.execute(
+            'INSERT INTO task_consent_proofs(task_id,payload,signature,state) VALUES(?,?,?,?)',
+            (task.id, payload, signature, 'approved'),
+        )
+        return True
+
+    def _consent_actor_current(self, actor: OwnerConsentActor,
+                               descriptor: ConsentDescriptor) -> bool:
+        try:
+            if (type(actor) is not OwnerConsentActor or actor.label not in {'admin', 'owner'}
+                    or actor.decided_by not in {'admin', 'telegram'}
+                    or (actor.label, actor.decided_by) not in {
+                        ('admin', 'admin'), ('owner', 'telegram')}
+                    or actor.live() is not True):
+                return False
+            return (actor.decided_by != 'telegram'
+                    or actor.principal_key == descriptor.context.principal)
+        except Exception:
+            return False
+
+    def decide_reusable_consent(self, task_id: int, revision: str, *, choice: str,
+                                actor: OwnerConsentActor, reason: str | None = None
+                                ) -> ConsentDecisionResult | None:
+        if (choice not in {'session', 'always', 'deny'} or type(revision) is not str
+                or not revision or type(task_id) is not int):
+            return None
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                offered = self._consent_offer_locked(task_id)
+                if offered is None or offered[0].revision != revision:
+                    self._conn.rollback()
+                    return None
+                _offer, members, group_ids = offered
+                descriptor = members[0][2]
+                if not self._consent_actor_current(actor, descriptor):
+                    self._conn.rollback()
+                    return None
+                normalized = normalize_reason(reason)
+                now = _now()
+                decision_id = uuid.uuid4().hex
+                if choice != 'deny':
+                    if not self._consent_ledger.grant(
+                        descriptor.context, descriptor.categories, choice=choice,
+                        decision_id=decision_id, decided_by=actor.label,
+                    ):
+                        self._conn.rollback()
+                        return None
+                    witness = self._consent_ledger.current_witness(
+                        descriptor.context, descriptor.categories, decision_id=decision_id,
+                    )
+                    if witness is None:
+                        self._conn.rollback()
+                        return None
+                else:
+                    witness = None
+                for row, source, desc in members:
+                    if not self._consent_actor_current(actor, desc):
+                        self._conn.rollback()
+                        return None
+                    human = {'id': uuid.uuid4().hex, 'action': choice,
+                             'reason': normalized, 'by': actor.decided_by,
+                             'at': now, 'first_at': now}
+                    marker = f'consent-{choice}'
+                    if choice != 'deny' and not self._consent_proof_insert_locked(
+                        row, source, desc, witness, marker=marker,
+                        decision_id=decision_id, human_id=human['id'],
+                    ):
+                        self._conn.rollback()
+                        return None
+                    changed = self._conn.execute(
+                        '''UPDATE tasks SET status=?,decided_by=?,decision=?,human_decision=?,updated_at=?
+                           WHERE id=? AND status='blocked' AND decided_by='policy'
+                           AND decision='needs-approval' ''',
+                        ('rejected' if choice == 'deny' else 'approved', actor.decided_by,
+                         marker, json.dumps(human, ensure_ascii=False), now, row['id']),
+                    )
+                    if changed.rowcount != 1:
+                        self._conn.rollback()
+                        return None
+                    self._withdraw_task_group_locked(row['id'])
+                tasks = tuple(_row_to_task(self._conn.execute(
+                    'SELECT * FROM tasks WHERE id=?', (row['id'],)
+                ).fetchone()) for row, _, _ in members)
+                self._conn.commit()
+                return ConsentDecisionResult(tasks, group_ids)
+            except Exception:
+                self._conn.rollback()
+                return None
+
+    def approve_with_current_consent(self, task_id: int) -> bool:
+        from .consent_sources import current_locked
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                source = current_locked(self, task_id, pending_only=True)
+                if (row is None or source is None or source['version'] != 2
+                        or self._consent_marked_locked(row)
+                        or not self._consent_intake_locked(row)
+                        or (self.mediation_mode == 'off' and self._row_has_mediation_provenance(row))
+                        or (self.mediation_mode == 'enforce' and self._consent_b7_locked(row) is None)):
+                    self._conn.rollback()
+                    return False
+                descriptor = self._resolve_consent_descriptor(_row_to_task(row), source)
+                witness = (self._consent_ledger.current_witness(
+                    descriptor.context, descriptor.categories,
+                ) if descriptor is not None else None)
+                if witness is None:
+                    self._conn.rollback()
+                    return False
+                marker = ('auto-consent-always' if all(item['scope'] == 'always'
+                          for item in witness.values()) else 'auto-consent-session')
+                decision_id = canonical_digest(witness)
+                if not self._consent_proof_insert_locked(
+                    row, source, descriptor, witness, marker=marker,
+                    decision_id=decision_id, human_id=None,
+                ):
+                    self._conn.rollback()
+                    return False
+                updated = self._conn.execute(
+                    '''UPDATE tasks SET status='approved',decided_by='consent',decision=?,
+                       human_decision=NULL,updated_at=? WHERE id=? AND status='blocked'
+                       AND decided_by='policy' AND decision='needs-approval' ''',
+                    (marker, _now(), task_id),
+                )
+                if updated.rowcount != 1:
+                    self._conn.rollback()
+                    return False
+                group_id = self._withdraw_task_group_locked(task_id)
+                self._record_promotion_effect_locked(group_id, task_id)
+                self._conn.commit()
+                return True
+            except Exception:
+                self._conn.rollback()
+                return False
+
+    def _consent_proof_locked(self, row: sqlite3.Row) -> tuple[sqlite3.Row, dict] | None:
+        from .consent_sources import current_locked
+        if self._consent_ledger is None or not self._consent_marked_locked(row):
+            return None
+        bound = self._conn.execute(
+            'SELECT * FROM task_consent_proofs WHERE task_id=?', (row['id'],)
+        ).fetchone()
+        if bound is None or not isinstance(bound['payload'], bytes):
+            return None
+        payload = bound['payload']
+        if not self._mediation_signer.verify(payload, bound['signature']):
+            return None
+        proof = json.loads(payload)
+        if (type(proof) is not dict or canonical_json(proof) != payload
+                or set(proof) != {'purpose', 'version', 'namespace', 'task_id', 'birth',
+                                  'source_sha256', 'intent_sha256', 'descriptor',
+                                  'witness', 'marker', 'decision_id', 'human_id'}
+                or proof['purpose'] != 'h487-consent-task-proof' or proof['version'] != 1
+                or proof['namespace'] != self._group_namespace
+                or proof['task_id'] != row['id'] or proof['birth'] != row['created_at']
+                or proof['marker'] != row['decision']
+                or proof['intent_sha256'] != self._chat_intent_locked(_row_to_task(row))):
+            return None
+        if proof['marker'].startswith('auto-consent-'):
+            if row['decided_by'] != 'consent' or row['human_decision'] is not None or proof['human_id'] is not None:
+                return None
+        elif proof['marker'] in {'consent-session', 'consent-always'}:
+            human = json.loads(row['human_decision']) if row['human_decision'] else None
+            if (row['decided_by'] not in {'admin', 'telegram'} or type(human) is not dict
+                    or human.get('id') != proof['human_id']
+                    or human.get('action') != proof['marker'].removeprefix('consent-')
+                    or human.get('by') != row['decided_by']):
+                return None
+        else:
+            return None
+        source = current_locked(self, row['id'], pending_only=False)
+        if (source is None or source['version'] != 2
+                or canonical_digest(source) != proof['source_sha256']
+                or not self._consent_intake_locked(row)):
+            return None
+        descriptor = self._resolve_consent_descriptor(_row_to_task(row), source)
+        if descriptor is None or self._consent_descriptor_data(descriptor) != proof['descriptor']:
+            return None
+        if not self._consent_ledger.witness_current(
+            descriptor.context, descriptor.categories, proof['witness'],
+        ):
+            return None
+        return bound, proof
+
+    def _consent_b7_locked(self, row: sqlite3.Row, *, execution_id: str | None = None):
+        if self.mediation_mode == 'off':
+            return (None, None, None) if not self._row_has_mediation_provenance(row) else None
+        if self.mediation_mode != 'enforce' or self._classification(row['kind']) is not True:
+            return None
+        snapshot = self._validated_mediation_snapshot_locked()
+        if snapshot is None:
+            return None
+        receipt, expectation, digest = self._row_receipt_and_expectation(row)
+        receipt_digest = canonical_digest(receipt.to_dict())
+        authorized = self._conn.execute('''SELECT COUNT(*) FROM task_mediation_events
+            WHERE task_id=? AND enqueue_id=? AND outcome='authorized_enqueue'
+            AND receipt_id=? AND receipt_sha256=?''',
+            (row['id'], expectation.enqueue_id, receipt.receipt_id, receipt_digest)).fetchone()[0]
+        if (authorized != 1 or digest != row['mediation_task_sha256']
+                or int(row['risk_tier']) != receipt.effective_tier
+                or not self._scope_allowed(expectation.scope)
+                or expectation.policy_revision != self._mediation_policy_revision
+                or not self._event_chain_valid_locked()
+                or not verify_receipt(self._mediation_signer, receipt, expected=expectation,
+                                      now_ms=self._clock_ms())):
+            return None
+        if execution_id is None:
+            if row['mediation_execution_id'] is not None:
+                return None
+        else:
+            governed = self._conn.execute('''SELECT COUNT(*) FROM task_mediation_events
+                WHERE task_id=? AND enqueue_id=? AND outcome='governed' AND execution_id=?
+                AND receipt_id=? AND receipt_sha256=?''',
+                (row['id'], expectation.enqueue_id, execution_id,
+                 receipt.receipt_id, receipt_digest)).fetchone()[0]
+            if row['mediation_execution_id'] != execution_id or governed != 1:
+                return None
+        return snapshot[0], receipt, expectation
+
+    def claim_consent(self, task_id: int, *, execution_id: str,
+                      live_check: Callable[[], bool]) -> ConsentClaim | None:
+        if (type(task_id) is not int or task_id <= 0 or type(execution_id) is not str
+                or not execution_id or len(execution_id) > 128 or not callable(live_check)):
+            return None
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+                if (row is None or row['status'] != 'approved'
+                        or live_check() is not True
+                        or self._consent_proof_locked(row) is None):
+                    self._conn.rollback()
+                    return None
+                b7 = self._consent_b7_locked(row)
+                if b7 is None:
+                    self._conn.rollback()
+                    return None
+                nonce = uuid.uuid4().hex
+                claim_body = canonical_json({
+                    'purpose': 'h487-consent-claim', 'version': 1,
+                    'task_id': task_id, 'execution_id': execution_id,
+                    'nonce': nonce,
+                    'proof_sha256': hashlib.sha256(self._conn.execute(
+                        'SELECT payload FROM task_consent_proofs WHERE task_id=?',
+                        (task_id,),
+                    ).fetchone()[0]).hexdigest(),
+                })
+                claim_signature = self._mediation_signer.sign(claim_body)
+                if claim_signature is None:
+                    self._conn.rollback()
+                    return None
+                changed = self._conn.execute('''UPDATE tasks SET status='running',
+                    mediation_execution_id=?,updated_at=? WHERE id=? AND status='approved'
+                    AND mediation_execution_id IS NULL''',
+                    (execution_id if self.mediation_mode == 'enforce' else None,
+                     _now(), task_id))
+                if changed.rowcount != 1:
+                    self._conn.rollback()
+                    return None
+                changed = self._conn.execute('''UPDATE task_consent_proofs
+                    SET claim_payload=?,claim_signature=?,state='claimed'
+                    WHERE task_id=? AND state='approved' ''',
+                    (claim_body, claim_signature, task_id))
+                if changed.rowcount != 1:
+                    self._conn.rollback()
+                    return None
+                if self.mediation_mode == 'enforce':
+                    self._append_mediation_event_locked(
+                        outcome='governed', task_id=task_id,
+                        enqueue_id=b7[2].enqueue_id, receipt=b7[1],
+                        execution_id=execution_id, verified_state=b7[0],
+                    )
+                self._conn.commit()
+                claim = ConsentClaim(task_id, nonce, execution_id, self._consent_queue_key)
+                self._consent_claims[task_id] = claim
+                return claim
+            except Exception:
+                self._conn.rollback()
+                return None
+
+    def _consent_claim_current_locked(self, task_id: int, claim: ConsentClaim,
+                                      live_check: Callable[[], bool]) -> bool:
+        if (type(claim) is not ConsentClaim or claim.task_id != task_id
+                or claim._queue_key is not self._consent_queue_key
+                or self._consent_claims.get(task_id) is not claim
+                or not callable(live_check) or live_check() is not True):
+            return False
+        row = self._conn.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
+        if row is None or row['status'] != 'running':
+            return False
+        found = self._consent_proof_locked(row)
+        if found is None:
+            return False
+        bound, _proof = found
+        claim_payload = bound['claim_payload']
+        if (bound['state'] not in {'claimed', 'dispatching'}
+                or not isinstance(claim_payload, bytes)
+                or not self._mediation_signer.verify(claim_payload, bound['claim_signature'])):
+            return False
+        data = json.loads(claim_payload)
+        if (type(data) is not dict or canonical_json(data) != claim_payload
+                or data != {'purpose': 'h487-consent-claim', 'version': 1,
+                            'task_id': task_id, 'execution_id': claim.execution_id,
+                            'nonce': claim.nonce,
+                            'proof_sha256': hashlib.sha256(bound['payload']).hexdigest()}):
+            return False
+        return self._consent_b7_locked(row, execution_id=claim.execution_id) is not None
+
+    def verify_consent_execution(self, task_id: int, claim: ConsentClaim, *,
+                                 live_check: Callable[[], bool]) -> bool:
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN')
+                valid = self._consent_claim_current_locked(task_id, claim, live_check)
+                self._conn.rollback()
+                return valid
+            except Exception:
+                self._conn.rollback()
+                return False
+
+    def consent_dispatch_current(self, task_id: int, claim: ConsentClaim, *,
+                                 live_check: Callable[[], bool]) -> bool:
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN IMMEDIATE')
+                if not self._consent_claim_current_locked(task_id, claim, live_check):
+                    self._conn.rollback()
+                    return False
+                changed = self._conn.execute('''UPDATE task_consent_proofs
+                    SET state='dispatching' WHERE task_id=? AND state='claimed' ''',
+                    (task_id,))
+                self._conn.commit()
+                return changed.rowcount == 1
+            except Exception:
+                self._conn.rollback()
+                return False
+
+    def consent_execution_dispatched(self, task_id: int, claim: ConsentClaim, *,
+                                     live_check: Callable[[], bool]) -> bool:
+        """Read-only proof that this exact live claim spent its dispatch slot."""
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN')
+                valid = self._consent_claim_current_locked(task_id, claim, live_check)
+                bound = self._conn.execute(
+                    'SELECT state FROM task_consent_proofs WHERE task_id=?', (task_id,)
+                ).fetchone() if valid else None
+                self._conn.rollback()
+                return bound is not None and bound['state'] == 'dispatching'
+            except Exception:
+                self._conn.rollback()
+                return False
 
     def approval_snapshot_digest(self, task: Task) -> str | None:
         """Bind an opinion to action bytes and a separate advisory edit revision."""

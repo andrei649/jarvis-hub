@@ -530,6 +530,7 @@
   "POST /autonomy/policy",
   "POST /autonomy/tasks",
   "POST /autonomy/tasks/groups/{group_id}/reject",
+  "POST /autonomy/tasks/{task_id}/consent",
   "POST /autonomy/tasks/{task_id}/decision",
   "POST /chat",
   "POST /chat/stream",

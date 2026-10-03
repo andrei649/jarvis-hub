@@ -111,6 +111,8 @@ class GovernedTargetRunner:
         smart_approval_check: Callable[[int], bool] | None = None,
         owner_approval_check: Callable[[int], bool] | None = None,
         owner_kernel_check: Callable[..., Any] | None = None,
+        consent_approval_check: Callable[[int], bool] | None = None,
+        consent_kernel_check: Callable[..., Any] | None = None,
     ) -> None:
         if not isinstance(registry, TargetRegistry):
             raise ValueError("registry must be a TargetRegistry")
@@ -130,6 +132,10 @@ class GovernedTargetRunner:
             raise TypeError("owner_approval_check must be callable")
         if owner_kernel_check is not None and not callable(owner_kernel_check):
             raise TypeError("owner_kernel_check must be callable")
+        if consent_approval_check is not None and not callable(consent_approval_check):
+            raise TypeError("consent_approval_check must be callable")
+        if consent_kernel_check is not None and not callable(consent_kernel_check):
+            raise TypeError("consent_kernel_check must be callable")
         self._registry = registry
         self._sandbox = sandbox
         self._local_transport = local_transport
@@ -140,6 +146,8 @@ class GovernedTargetRunner:
         self._smart_approval_check = smart_approval_check
         self._owner_approval_check = owner_approval_check
         self._owner_kernel_check = owner_kernel_check
+        self._consent_approval_check = consent_approval_check
+        self._consent_kernel_check = consent_kernel_check
 
     async def run(
         self,
@@ -192,21 +200,26 @@ class GovernedTargetRunner:
             "outcome": decision.outcome,
         }
         owner_marked = self._is_owner_approval(approved_task_id)
+        consent_marked = self._is_consent_approval(approved_task_id)
         if decision.outcome not in {APPROVAL_REQUIRED, ALLOW}:
             return {"ok": False, "reason": decision.reason, **base}
-        if owner_marked and self._request_check is None:
-            return {"ok": False, "reason": "owner_request_check_unbound", **base}
-        if decision.outcome == APPROVAL_REQUIRED or owner_marked:
+        if owner_marked and consent_marked:
+            return {"ok": False, "reason": "mixed_approval_authority", **base}
+        if (owner_marked or consent_marked) and self._request_check is None:
+            return {"ok": False, "reason": "owner_request_check_unbound" if owner_marked
+                    else "consent_request_check_unbound", **base}
+        if decision.outcome == APPROVAL_REQUIRED or owner_marked or consent_marked:
             durable = self._durable_approval(approved_task_id)
             if durable is not None:
                 return {"ok": False, "reason": durable, **base}
 
         if decision.backend == "docker":
-            if owner_marked:
+            if owner_marked or consent_marked:
                 from agents.core.sandbox import Sandbox
 
                 if type(self._sandbox) is not Sandbox:
-                    return {"ok": False, "reason": "owner_transport_unsupported", **base}
+                    return {"ok": False, "reason": "consent_transport_unsupported" if consent_marked
+                            else "owner_transport_unsupported", **base}
             # Never let a docker-target command silently degrade onto the
             # host: the sandbox engine's active backend must actually be
             # docker at execution time.
@@ -217,7 +230,7 @@ class GovernedTargetRunner:
                     "reason": f"docker_backend_unavailable:{active}",
                     **base,
                 }
-            if self._is_smart_approval(approved_task_id) or owner_marked:
+            if self._is_smart_approval(approved_task_id) or owner_marked or consent_marked:
                 # Sandbox executes sh -c in /workspace with its configured
                 # timeout. Do not approve options this transport cannot honor.
                 actual_timeout = getattr(self._sandbox, "timeout", None)
@@ -234,9 +247,11 @@ class GovernedTargetRunner:
                 if not verdict.admissible:
                     return {"ok": False, "reason": f"contract_denied:{verdict.reason}", **base}
                 owner_kernel_rechecks: list[Callable[[], bool]] = []
+                consent_kernel_rechecks: list[Callable[[], bool]] = []
                 kernel_refusal = await self._kernel_grant(
                     decision.agent, payload, request=request,
                     owner_rechecks=owner_kernel_rechecks if owner_marked else None,
+                    consent_rechecks=consent_kernel_rechecks if consent_marked else None,
                 )
                 if kernel_refusal is not None:
                     return {"ok": False, **kernel_refusal, **base}
@@ -249,7 +264,29 @@ class GovernedTargetRunner:
             active = self._sandbox.active_backend()
             if active != "docker":
                 return {"ok": False, "reason": f"docker_backend_unavailable:{active}", **base}
-            if owner_marked:
+            if consent_marked:
+                from .consent_dispatch import ConsentDispatchScope, bind_consent_dispatch
+
+                expected_runtime = (self._sandbox.timeout, self._sandbox.docker_image,
+                                    self._sandbox.max_memory_mb, str(self._sandbox.work_dir),
+                                    self._sandbox.allow_subprocess)
+
+                def current():
+                    return (self._consent_current(approved_task_id, request)
+                            and self._policy_current(decision)
+                            and len(consent_kernel_rechecks) == 1
+                            and consent_kernel_rechecks[0]()
+                            and self._kernel_live() and self._sandbox.active_backend() == "docker"
+                            and (self._sandbox.timeout, self._sandbox.docker_image,
+                                 self._sandbox.max_memory_mb, str(self._sandbox.work_dir),
+                                 self._sandbox.allow_subprocess) == expected_runtime)
+
+                scope = ConsentDispatchScope(
+                    approved_task_id, "docker", base["target"], ("sh", "-c", command),
+                    "/workspace", self._sandbox.timeout, self._sandbox, dict(request), current,
+                )
+                context = bind_consent_dispatch(scope)
+            elif owner_marked:
                 from .owner_once_dispatch import OwnerOnceDispatchScope, bind_owner_once_dispatch
 
                 expected_runtime = (self._sandbox.timeout, self._sandbox.docker_image,
@@ -295,6 +332,7 @@ class GovernedTargetRunner:
                 timeout=timeout,
                 request=request,
                 owner_marked=owner_marked,
+                consent_marked=consent_marked,
                 expected_decision=decision,
             )
         if decision.backend == "ssh":
@@ -309,6 +347,7 @@ class GovernedTargetRunner:
                 timeout=timeout,
                 request=request,
                 owner_marked=owner_marked,
+                consent_marked=consent_marked,
                 expected_decision=decision,
             )
         return {"ok": False, "reason": "backend_unknown", **base}
@@ -339,6 +378,32 @@ class GovernedTargetRunner:
         except Exception:
             # Unknown owner marker is never permission to use legacy Docker.
             return True
+
+    def _is_consent_approval(self, task_id: int | None) -> bool:
+        from agents.core.autonomy.consent_execution import consent_scope_present
+
+        if consent_scope_present():
+            return True
+        if self._consent_approval_check is None or type(task_id) is not int or task_id <= 0:
+            return False
+        try:
+            return self._consent_approval_check(task_id) is True
+        except Exception:
+            # A failed marker lookup must not reach the ordinary Docker lane.
+            return True
+
+    def _consent_current(self, task_id: int, request: dict) -> bool:
+        from agents.core.autonomy.consent_execution import consent_current
+
+        if (not self._is_consent_approval(task_id) or self._is_owner_approval(task_id)
+                or self._approval_check is None
+                or not self._request_current(task_id, request)
+                or not consent_current(task_id)):
+            return False
+        try:
+            return self._approval_check(task_id) is True
+        except Exception:
+            return False
 
     def _owner_current(self, task_id: int, request: dict) -> bool:
         if (not self._is_owner_approval(task_id) or self._approval_check is None
@@ -392,6 +457,7 @@ class GovernedTargetRunner:
         timeout: int | None,
         request: dict,
         owner_marked: bool = False,
+        consent_marked: bool = False,
         expected_decision: TargetDecision | None = None,
     ) -> dict:
         argv, refusal = parse_argv(command)
@@ -406,11 +472,12 @@ class GovernedTargetRunner:
             except (ValueError, OSError):
                 return {"ok": False, "reason": "local_transport_unavailable", **base}
             self._local_transport = transport
-        if owner_marked:
+        if owner_marked or consent_marked:
             from .local_transport import LocalHostTransport
 
             if type(transport) is not LocalHostTransport:
-                return {"ok": False, "reason": "owner_transport_unsupported", **base}
+                return {"ok": False, "reason": "consent_transport_unsupported" if consent_marked
+                        else "owner_transport_unsupported", **base}
 
         bounded = transport.bound_timeout(timeout)
         if bounded is None:
@@ -434,9 +501,11 @@ class GovernedTargetRunner:
             return {"ok": False, "reason": f"contract_denied:{verdict.reason}", **base}
 
         owner_kernel_rechecks: list[Callable[[], bool]] = []
+        consent_kernel_rechecks: list[Callable[[], bool]] = []
         kernel_refusal = await self._kernel_grant(
             agent, payload, request=request,
             owner_rechecks=owner_kernel_rechecks if owner_marked else None,
+            consent_rechecks=consent_kernel_rechecks if consent_marked else None,
         )
         if kernel_refusal is not None:
             return {"ok": False, **kernel_refusal, **base}
@@ -446,7 +515,27 @@ class GovernedTargetRunner:
         if not self._request_current(approved_task_id, request):
             return {"ok": False, "reason": "terminal_request_changed", **base}
 
-        if owner_marked:
+        if consent_marked:
+            from .consent_dispatch import ConsentDispatchScope, bind_consent_dispatch
+
+            expected_roots = transport.roots
+
+            def current():
+                return (self._consent_current(approved_task_id, request)
+                        and expected_decision is not None
+                        and self._policy_current(expected_decision)
+                        and len(consent_kernel_rechecks) == 1
+                        and consent_kernel_rechecks[0]()
+                        and self._kernel_live() and env_flag(LOCAL_HOST_FLAG)
+                        and transport.roots == expected_roots
+                        and transport.resolve_cwd(cwd) == workdir)
+
+            scope = ConsentDispatchScope(
+                approved_task_id, "local", base["target"], tuple(argv), str(workdir),
+                bounded, transport, dict(request), current,
+            )
+            context = bind_consent_dispatch(scope)
+        elif owner_marked:
             from .owner_once_dispatch import OwnerOnceDispatchScope, bind_owner_once_dispatch
 
             expected_roots = transport.roots
@@ -483,6 +572,7 @@ class GovernedTargetRunner:
         timeout: int | None,
         request: dict,
         owner_marked: bool = False,
+        consent_marked: bool = False,
         expected_decision: TargetDecision | None = None,
     ) -> dict:
         """Same gate order as the local host; only the wire at the end differs."""
@@ -498,11 +588,12 @@ class GovernedTargetRunner:
             except (ValueError, OSError):
                 return {"ok": False, "reason": "ssh_transport_unavailable", **base}
             self._ssh_transport = transport
-        if owner_marked:
+        if owner_marked or consent_marked:
             from .ssh_transport import SshTransport
 
             if type(transport) is not SshTransport:
-                return {"ok": False, "reason": "owner_transport_unsupported", **base}
+                return {"ok": False, "reason": "consent_transport_unsupported" if consent_marked
+                        else "owner_transport_unsupported", **base}
 
         host = transport.host_for(base["target"])
         if host is None:
@@ -529,9 +620,11 @@ class GovernedTargetRunner:
             return {"ok": False, "reason": f"contract_denied:{verdict.reason}", **base}
 
         owner_kernel_rechecks: list[Callable[[], bool]] = []
+        consent_kernel_rechecks: list[Callable[[], bool]] = []
         kernel_refusal = await self._kernel_grant(
             agent, payload, request=request,
             owner_rechecks=owner_kernel_rechecks if owner_marked else None,
+            consent_rechecks=consent_kernel_rechecks if consent_marked else None,
         )
         if kernel_refusal is not None:
             return {"ok": False, **kernel_refusal, **base}
@@ -541,7 +634,32 @@ class GovernedTargetRunner:
         if not self._request_current(approved_task_id, request):
             return {"ok": False, "reason": "terminal_request_changed", **base}
 
-        if owner_marked:
+        if consent_marked:
+            from .consent_dispatch import ConsentDispatchScope, bind_consent_dispatch
+
+            expected_known_hosts = transport._known_hosts
+            expected_ssh_path = transport.ssh_path
+            expected_connect_timeout = transport.connect_timeout
+
+            def current():
+                return (self._consent_current(approved_task_id, request)
+                        and expected_decision is not None
+                        and self._policy_current(expected_decision)
+                        and len(consent_kernel_rechecks) == 1
+                        and consent_kernel_rechecks[0]()
+                        and self._kernel_live() and env_flag(SSH_HOST_FLAG)
+                        and transport.host_for(host.target) == host
+                        and transport._known_hosts == expected_known_hosts
+                        and transport.ssh_path == expected_ssh_path
+                        and transport.connect_timeout == expected_connect_timeout
+                        and transport.resolve_cwd(host.target, cwd) == workdir)
+
+            scope = ConsentDispatchScope(
+                approved_task_id, "ssh", base["target"], tuple(argv), workdir,
+                bounded, transport, dict(request), current,
+            )
+            context = bind_consent_dispatch(scope)
+        elif owner_marked:
             from .owner_once_dispatch import OwnerOnceDispatchScope, bind_owner_once_dispatch
 
             expected_known_hosts = transport._known_hosts
@@ -575,6 +693,7 @@ class GovernedTargetRunner:
     async def _kernel_grant(
         self, agent: str, payload: dict, *, request: dict | None = None,
         owner_rechecks: list[Callable[[], bool]] | None = None,
+        consent_rechecks: list[Callable[[], bool]] | None = None,
     ) -> dict | None:
         """Cross the Action Kernel; return a refusal dict unless it GRANTs."""
         from agents.core.action_origin import current_action_origin
@@ -594,8 +713,11 @@ class GovernedTargetRunner:
         approval_check = None
         task_id = payload.get('approved_task_id')
         owner_marked = self._is_owner_approval(task_id)
+        consent_marked = self._is_consent_approval(task_id)
+        if owner_marked and consent_marked:
+            return {"reason": "mixed_approval_authority"}
         if (request is not None and self._request_check is not None
-                and (self._is_smart_approval(task_id) or owner_marked)):
+                and (self._is_smart_approval(task_id) or owner_marked or consent_marked)):
             from copy import deepcopy
 
             expected = deepcopy(action)
@@ -604,10 +726,15 @@ class GovernedTargetRunner:
             def approval_check(candidate):
                 return (candidate == expected and self._request_current(task_id, reviewed_request)
                         and ((owner_marked and self._owner_current(task_id, reviewed_request))
-                             or (not owner_marked and self._is_smart_approval(task_id))))
+                             or (consent_marked and self._consent_current(task_id, reviewed_request))
+                             or (not owner_marked and not consent_marked
+                                 and self._is_smart_approval(task_id))))
 
         if owner_marked and (self._owner_kernel_check is None or owner_rechecks is None
                              or approval_check is None):
+            return {"reason": "kernel_revalidator_unavailable"}
+        if consent_marked and (self._consent_kernel_check is None or consent_rechecks is None
+                               or approval_check is None):
             return {"reason": "kernel_revalidator_unavailable"}
 
         capability = Capability(name=TERMINAL_EXEC_KIND)
@@ -628,14 +755,14 @@ class GovernedTargetRunner:
             return {"reason": "kernel_denied", "detail": str(decision.reason or "")[:200]}
         if decision.verdict is not Verdict.GRANT:
             return {"reason": "kernel_queued", "detail": str(decision.reason or "")[:200]}
-        if owner_marked:
+        if owner_marked or consent_marked:
             from copy import deepcopy
             from inspect import isawaitable, iscoroutine
 
             bound_action = deepcopy(action)
             bound_capability = capability
             bound_approval_check = approval_check
-            checker = self._owner_kernel_check
+            checker = self._owner_kernel_check if owner_marked else self._consent_kernel_check
 
             def recheck() -> bool:
                 try:
@@ -653,7 +780,7 @@ class GovernedTargetRunner:
                 except Exception:
                     return False
 
-            owner_rechecks.append(recheck)
+            (owner_rechecks if owner_marked else consent_rechecks).append(recheck)
         return None
 
 

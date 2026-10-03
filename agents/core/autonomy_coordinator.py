@@ -688,6 +688,16 @@ class AutonomyCoordinator:
 
             return owner_once_current(task_id)
 
+        def _consent_terminal_marker(task_id):
+            queue = getattr(self._orch, 'autonomy_queue', None)
+            marker = getattr(queue, 'consent_task_marker', None)
+            return callable(marker) and marker(task_id)
+
+        def _consent_terminal_approved(task_id):
+            from .autonomy.consent_execution import consent_current
+
+            return _consent_terminal_marker(task_id) and consent_current(task_id)
+
         def _approved_execution_context(context, task):
             """Trust only the TaskExecutor turn whose durable row is running."""
             if context is not execution_token:
@@ -722,7 +732,11 @@ class AutonomyCoordinator:
                      or (persisted.kind == 'toolrpc.terminal_run'
                          and _owner_terminal_marker(task_id)
                          and queue.execution_fingerprint(persisted) == queue.execution_fingerprint(task)
-                         and _owner_terminal_approved(task_id)))
+                         and _owner_terminal_approved(task_id))
+                     or (persisted.kind == 'toolrpc.terminal_run'
+                         and _consent_terminal_marker(task_id)
+                         and queue.execution_fingerprint(persisted) == queue.execution_fingerprint(task)
+                         and _consent_terminal_approved(task_id)))
                 and bool(persisted.decided_by)
                 and str(persisted.decided_by).lower() != "policy"
                 and persisted.payload == getattr(task, "payload", None)
@@ -887,7 +901,8 @@ class AutonomyCoordinator:
                 and persisted.autonomy_level == "ask"
                 and (_human_terminal_approval(persisted)
                      or (persisted.decision == 'smart-approve' and _smart_terminal_approved(task_id))
-                     or (_owner_terminal_marker(task_id) and _owner_terminal_approved(task_id)))
+                     or (_owner_terminal_marker(task_id) and _owner_terminal_approved(task_id))
+                     or (_consent_terminal_marker(task_id) and _consent_terminal_approved(task_id)))
                 and bool(persisted.decided_by)
                 and str(persisted.decided_by).lower() != "policy"
             )
@@ -904,7 +919,8 @@ class AutonomyCoordinator:
             task = queue.get(task_id)
             from .tool_rpc import current_tool_actor
 
-            if task is not None and (_smart_terminal_marker(task_id) or _owner_terminal_marker(task_id)):
+            if task is not None and (_smart_terminal_marker(task_id) or _owner_terminal_marker(task_id)
+                                     or _consent_terminal_marker(task_id)):
                 from .autonomy.approval_judge import action_is_tainted
 
                 if (not kernel_enabled()
@@ -940,6 +956,8 @@ class AutonomyCoordinator:
                 smart_approval_check=_smart_terminal_marker,
                 owner_approval_check=_owner_terminal_marker,
                 owner_kernel_check=getattr(self._orch.autonomy, 'kernel_dispatch_current', None),
+                consent_approval_check=_consent_terminal_marker,
+                consent_kernel_check=getattr(self._orch.autonomy, 'kernel_dispatch_current', None),
             )
             from .action_origin import bind_action_origin, reset_action_origin
 
@@ -1043,6 +1061,15 @@ class AutonomyCoordinator:
             schema_overrides=self._terminal_run_overrides,
             consent_revision="nerva.terminal_run.v1",
         )
+
+        queue = getattr(self._orch, 'autonomy_queue', None)
+        bind_consent = getattr(queue, 'bind_consent_resolver', None)
+        if callable(bind_consent):
+            from .autonomy.terminal_consent_runtime import build_terminal_consent_resolver
+
+            bind_consent(build_terminal_consent_resolver(
+                self._orch, self._target_registry, server, server._tools['terminal_run'],
+            ))
 
         async def _rpc_desktop_plan(args):
             """T-0.25 / DRA-43 — the row's own "model ToolRPC registration".
