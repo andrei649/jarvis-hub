@@ -123,6 +123,11 @@ decisions retain their own attribution and control. Smart Docker commands additi
 cross the `terminal.exec` contract/kernel; existing manual Docker behavior remains.
 Action-card scores and other task kinds remain advisory. No flag is enabled by
 development or by model output. See `hermes/h277-smart-terminal-plan-2026-10-03.md`.
+H485 adds paired observer-only guardian events through the consented extension
+bus: one validated native send attempt and the corresponding committed
+APPROVE/DENY. Forced scanner/catalogue masking precedes bounded excerpt output;
+preparation and delivery cannot alter decisions. See `EXTENSIONS.md` for the
+privacy limits and `hermes/h485-smart-observers-plan-2026-10-03.md` for verification.
 
 | Path | Purpose | Key symbols |
 |------|---------|-------------|

@@ -166,6 +166,8 @@ class AdvisoryJudgements:
         task.add_done_callback(_done)
 
     async def _judge_one(self, snapshot: dict, status) -> None:
+        from .smart_observers import decided_after_store, judgement_scope
+
         action_id = snapshot["id"]
 
         async def dispatch():
@@ -190,22 +192,24 @@ class AdvisoryJudgements:
             with judgement_request_scope(still_current):
                 return await judge.score(snapshot, current)
 
-        try:
-            # The timeout bounds the dispatch and one judge call, not the slot wait.
-            async with self._slots_for(asyncio.get_running_loop()):
-                annotation = await asyncio.wait_for(dispatch(), timeout=status.timeout)
-            if not annotation:
-                return
-            stored = self._store_judgement(snapshot, annotation)
-            if stored is None:
-                logger.debug("approval judge verdict for %s dropped (decided, cleared or judged)", action_id)
-                return
-            self._record_judgement(snapshot, stored)
-            await self._after_judgement(snapshot, stored)
-        except Exception:  # noqa: BLE001 — timeout, backend down, refusal: nothing persisted
-            logger.debug("approval judge gave no verdict for %s", action_id, exc_info=True)
-        finally:
-            self._unmark_judging(action_id)
+        with judgement_scope(snapshot) as observation:
+            try:
+                # The timeout bounds the dispatch and one judge call, not the slot wait.
+                async with self._slots_for(asyncio.get_running_loop()):
+                    annotation = await asyncio.wait_for(dispatch(), timeout=status.timeout)
+                if not annotation:
+                    return
+                stored = self._store_judgement(snapshot, annotation)
+                if stored is None:
+                    logger.debug("approval judge verdict for %s dropped (decided, cleared or judged)", action_id)
+                    return
+                decided_after_store(observation, self, snapshot, annotation, stored)
+                self._record_judgement(snapshot, stored)
+                await self._after_judgement(snapshot, stored)
+            except Exception:  # noqa: BLE001 — timeout, backend down, refusal: nothing persisted
+                logger.debug("approval judge gave no verdict for %s", action_id, exc_info=True)
+            finally:
+                self._unmark_judging(action_id)
 
     def _store_judgement(self, snapshot: dict, annotation: dict):
         return self.annotate(snapshot["id"], annotation)

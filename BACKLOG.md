@@ -155,6 +155,14 @@
   remain open. Verification is recorded in
   `docs/hermes/h485-denial-feedback-plan-2026-10-03.md`; H485 stays **partial**.
 
+- 2026-10-03 H485 guardian observers: declared, consented sandbox extensions can
+  receive a force-scanned excerpt before one valid native model send attempt and
+  after its exact smart APPROVE/DENY is committed. Observer output, failure and
+  timeout grant no authority. Static DENY, advisory, ESCALATE and stale stores do
+  not claim a model decision event. Synchronous shell/script placement, native
+  controls and live acceptance remain open; H485 stays **partial**. See
+  `docs/hermes/h485-smart-observers-plan-2026-10-03.md` for verification and privacy limits.
+
 - 2026-09-27 H613 ✅ choose how it sounds and how it hears: Piper as a local voice, and the owner's own TTS/STT programs, each run only as a human approved it (equivalent; #1207; headline 190/697).
 
   Nerva spoke through cloud voices or Kokoro and heard only through Whisper. Now:

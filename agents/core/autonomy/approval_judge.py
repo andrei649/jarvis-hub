@@ -652,7 +652,10 @@ class ApprovalJudge:
 
         policy = smart_policy(self._env)
         if policy.enabled and terminal_args(snapshot) is not None:
-            return await self.smart_score(snapshot, status)
+            from .smart_observers import score_scope
+
+            with score_scope(snapshot):
+                return await self.smart_score(snapshot, status)
         try:
             prompt, flags, truncated = build_prompt(snapshot)
         except ValueError:
@@ -740,10 +743,13 @@ class ApprovalJudge:
             return escalated if self.smart_current(escalated, snapshot) and request_current() else None
 
         try:
+            from .smart_observers import requested
+
             text = await self._generate_text(
                 snapshot, status, prompt=prompt, system=system, max_tokens=16,
                 extra_check=lambda: self.smart_current(result("escalate"), snapshot)
                 and request_current(),
+                on_request=lambda: requested(snapshot),
             )
         except (DataHandlingRefused, SelectionError):
             return None
@@ -754,7 +760,8 @@ class ApprovalJudge:
         return answer if self.smart_current(answer, snapshot) and request_current() else None
 
     async def _generate_text(self, snapshot: Mapping, status: JudgeStatus, *, prompt: str,
-                             system: str, max_tokens: int, extra_check: Callable | None = None) -> str:
+                             system: str, max_tokens: int, extra_check: Callable | None = None,
+                             on_request: Callable | None = None) -> str:
         """Generate through the H513 physical transport and live queue validity guards."""
         from ..llm.job_selection import SelectionError, current_selection
 
@@ -824,6 +831,9 @@ class ApprovalJudge:
                         or request.headers.get("Cookie")):
                     raise DataHandlingRefused("approval judge physical request identity changed")
                 require_direct_async_transport(backend.client, request.url)
+                if on_request is not None:
+                    check()
+                    on_request()
                 # HTTPX copies extensions onto redirects; rebuilt native retries start fresh.
                 request.extensions["nerva_approval_judge_request"] = request_marker
 
