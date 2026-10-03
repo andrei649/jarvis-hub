@@ -175,6 +175,24 @@
   equivalence credit or activation. See
   `docs/hermes/h485-synchronous-review-plan-2026-10-03.md` for scope and evidence.
 
+- 2026-10-03 H485 same-invocation terminal continuation: the registrar now joins
+  the exact native review before returning to the model. APPROVE executes only
+  its named task through the existing worker and requires signed completion
+  evidence; DENY returns sanitized feedback without a pending-approval footer.
+  The authenticated session breaker blocks a fourth gated operation even in one
+  batch. Durable-answer acknowledgment requires exact model-visible facts;
+  truncated/failed-answer feedback remains. All 66 new cases, 3,293 earlier focused
+  regressions and 101 final compatibility checks pass; nine isolated faults are killed.
+  The full run returned 21,701 passed and two failures: stale callsite positions
+  and an invocation that disabled pytest's configured socket guard. Their focused
+  reproduction/correction now passes all 119 binding/socket/new-case checks;
+  the complete guarded rerun passes 21,703 tests with 34 skipped and one existing
+  xfailed, and its count/frozen hashes match. Broader shell/nested/scheduled
+  behavior, context-aware DENY notifications and
+  native/live acceptance remain; H277/H485 stay **partial**, with no new parity
+  credit, publication or activation. See
+  `docs/hermes/evidence/h485-toolrpc-actuation-verification-2026-10-03.md`.
+
 - 2026-09-27 H613 ✅ choose how it sounds and how it hears: Piper as a local voice, and the owner's own TTS/STT programs, each run only as a human approved it (equivalent; #1207; headline 190/697).
 
   Nerva spoke through cloud voices or Kokoro and heard only through Whisper. Now:

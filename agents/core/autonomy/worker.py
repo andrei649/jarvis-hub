@@ -1515,12 +1515,15 @@ class AutonomyWorker:
         if not self._halted():
             await self._drain_approval_expiry(batch, already_cleared=cleared)
 
-    async def tick(self, limit: int = 10, max_tier: Optional[int] = None) -> dict:
+    async def tick(self, limit: int = 10, max_tier: Optional[int] = None, *,
+                   task_id: int | None = None) -> dict:
         """Run approved tasks. Returns a small summary dict.
 
         `max_tier` caps which risk tiers run this pass — used by the night shift
         to batch only reversible/read-only work (max_tier=1).
         """
+        if task_id is not None and (type(task_id) is not int or task_id <= 0):
+            raise ValueError("task_id must be a positive integer")
         ran = done = failed = held = 0
         await self.approval_housekeeping(limit=limit, reconcile=not self._halted())
         # Q6: reap crash-stranded RUNNING tasks first — bookkeeping, not an
@@ -1532,7 +1535,9 @@ class AutonomyWorker:
         if self._halted():
             logger.warning("kill-switch engaged — autonomy tick skipped (tasks held)")
             return {"ran": 0, "done": 0, "failed": 0, "halted": True, "held": 0, "reaped": reaped}
-        for task in self.queue.runnable(limit=limit, max_tier=max_tier):
+        runnable = (self.queue.runnable(limit=limit, max_tier=max_tier) if task_id is None
+                    else self.queue.runnable(limit=limit, max_tier=max_tier, task_id=task_id))
+        for task in runnable:
             # Q6: a per-agent halt (scope = the agent's name, ch07 GOV-178)
             # holds that agent's tasks at this same kernel-independent seam —
             # they stay APPROVED and run on the first tick after release.
@@ -1561,7 +1566,20 @@ class AutonomyWorker:
                     continue
                 task = claimed
             else:
-                self.queue.transition(task.id, TaskStatus.RUNNING)
+                try:
+                    self.queue.transition(task.id, TaskStatus.RUNNING,
+                                          expected_status=TaskStatus.APPROVED)
+                except TaskQueueError as exc:
+                    # A competing tick may claim the same approved row between
+                    # runnable() and this transactional transition. Only that
+                    # exact expected-status loss is benign; store errors propagate.
+                    stale = any(
+                        str(exc) == f"unexpected task status {state.value} (task {task.id})"
+                        for state in TaskStatus if state is not TaskStatus.APPROVED
+                    )
+                    if stale:
+                        continue
+                    raise
                 task = self.queue.get(task.id)
             ran += 1
             attempts = self.queue.increment_attempts(task.id)
@@ -1643,6 +1661,10 @@ class AutonomyWorker:
                         logger.info(f"Task #{task.id} failed (attempt {attempts}), will retry: {e}")
                     continue
                 try:
+                    if (task.kind == "toolrpc.terminal_run"
+                            and task.decided_by == "smart_approval"
+                            and task.decision == "smart-approve"):
+                        result = self.queue.issue_smart_terminal_result(task, result)
                     self.queue.transition(task.id, TaskStatus.DONE, result=result)
                 except Exception as e:
                     # The handler returned; the WORKER's own bookkeeping raised (round 5,

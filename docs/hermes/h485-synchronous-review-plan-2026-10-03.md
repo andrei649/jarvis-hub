@@ -61,10 +61,10 @@ Consumes Task 1 `wait_for_review`; produces notification hold/release after trus
 
 Owned next: coordinator shared contracts `agents/core/tool_rpc.py`, `agents/core/autonomy_coordinator.py`, `agents/core/agent_runtime.py`, `agents/core/approval_outcomes.py`; split implementation only after contract review.
 
-- [ ] Add server-owned async post-intake review seam for terminal_run; model arguments cannot select callbacks, timeout or authority.
-- [ ] Return bounded DENY feedback in the same invocation, including existing birth-checked session breaker; preserve feedback until the answer is durably persisted.
-- [ ] Wait/execute named APPROVE task through existing worker claims, signed one-operation receipt, kernel and actual handler. Never report command success merely because it was approved or queued.
-- [ ] Prove two successive exact operations, normal/streaming loop behavior, cancellation/expiry/edit/revocation, and no duplicate execution or receipt reuse.
+- [x] Add server-owned async post-intake review seam for terminal_run; model arguments cannot select callbacks, timeout or authority.
+- [x] Return bounded DENY feedback in the same invocation, including existing birth-checked session breaker; preserve feedback until the answer is durably persisted.
+- [x] Wait/execute named APPROVE task through existing worker claims, signed one-operation receipt, kernel and actual handler. Never report command success merely because it was approved or queued.
+- [x] Prove two successive exact operations, normal/streaming loop behavior, cancellation/expiry/edit/revocation, and no duplicate execution or receipt reuse.
 - [ ] Extend shell/script entry points only through their actual governed intake and hardline/taint/irreversibility floors.
 
 ## Milestone verification and records
@@ -72,10 +72,12 @@ Owned next: coordinator shared contracts `agents/core/tool_rpc.py`, `agents/core
 - [x] Isolated mutation checks for the newly changed authority/lifecycle boundaries.
 - [x] Serial full backend suite at the integrated milestone; frontend/mobile only when touched. Separate reused prior test evidence from newly run checks.
 - [x] Refresh only affected assessment evidence, preserve partial verdicts until whole contracts are proved, regenerate status/count artifacts and run record/doc gates.
-- [ ] Exact staged secret scan, local commit and clean checkout. No publication.
+- [x] Exact staged secret scan, local commit and clean checkout for the delivered terminal slice; closure is confirmed by the local delivery transaction's terminal checks. No publication. The uncompleted Task 2/3 requirements above remain open.
 
 ## Execution ledger
 
 Initial ruling: stage the shared waiting lifecycle before notification and ToolRPC integration. Those paths depend on an exact bounded attempt handle; polling the queue or creating an independent judge would violate the existing cancellation/capacity boundary. Tasks 2/3 remain required.
 
 Checkpoint: Task 1 and notification ordering are verified locally with 35 new cases, 1022 focused cases, nine killed isolated faults and the complete backend (21637 passed, 34 skipped, one xfailed). Independent review findings for expired cards and removed notifiers were reproduced red and fixed. Task 3, coordinated DENY notification handling, broader producers/native/live acceptance remain required. Source/test/harness freeze matches after full suite. Base d5e95763; no publication or activation.
+
+Task 3 update, 2026-10-03, base 08cb4430: the four terminal integration items above are implemented. All 66 new cases and nine isolated faults pass; the final guarded backend passes 21,703 tests with 34 skipped and one existing xfailed. See `docs/hermes/evidence/h485-toolrpc-actuation-verification-2026-10-03.md` for the failed invocation, corrections, frozen hashes and verification boundaries. Coordinated DENY/once-only owner handling, broader shell/nested/scheduled origin evidence, native controls and live acceptance remain open. Current model code is isolated Docker/WASM; pinned Hermes also skips whole-script approval for comparable isolated containers, so a blanket pre-spawn script prompt is not required by that comparison. No publication or activation.

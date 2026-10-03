@@ -542,6 +542,7 @@ class AgentToolRuntime:
         restated: dict[str, str] = {}   # a restated tool's last answer, as a revision
         scripts_run = 0                 # scripts this turn: each one opens a new revision
         seen_results: dict[str, str] = {}
+        guardian_stopped = False
 
         # H298 — what this turn has already put in the window, and how big that window
         # is. One cap cannot express the first: five results at 40% of the limit each
@@ -622,16 +623,21 @@ class AgentToolRuntime:
             from .llm.data_handling import physical_request_scope
             # Scope only generation/retries, never ToolRPC or spawned judge work.
             with physical_request_scope(before_model_call):
+                from .approval_outcomes import mark_invocation_outcomes_visible
+                mark_invocation_outcomes_visible(messages)
                 turn = await backend.generate_tool_turn(
                     model=model,
                     messages=messages,
-                    tools=tools,
+                    tools=[] if guardian_stopped else tools,
                     max_tokens=max_tokens,
                     temperature=temperature,
                 )
             self._report_usage(usage_sink, turn)
             if not turn.tool_calls:
                 return turn.content
+            if guardian_stopped:
+                from .approval_outcomes import DENIAL_BREAKER_NOTICE
+                return DENIAL_BREAKER_NOTICE
 
             # A provider response is untrusted input. Keep at most the executable
             # fan-out plus one representative overflow call so both scheduling
@@ -725,6 +731,11 @@ class AgentToolRuntime:
                         restated[name] = f"script:{scripts_run}"
             if any(result.get("reason") == "approval_required" for result, _ in observations):
                 return _approval_reply(result for result, _ in observations)
+            from .approval_outcomes import _has_active_denial_breaker
+            if any(result.get('reason') == 'guardian_denied' and _has_active_denial_breaker(result)
+                   for result, _ in observations):
+                guardian_stopped = True
+                continue
             failing = self._note_failures(bounded_calls, observations, failure_streaks)
             if failing is not None:
                 call, result = failing
@@ -1078,7 +1089,7 @@ class AgentToolRuntime:
             )
 
         approval_lock = asyncio.Lock()
-        approval_state = {"required": False}
+        approval_state = {"required": False, "guardian_stopped": False}
         pending = [
             self._execute_one(
                 call,
@@ -1243,6 +1254,12 @@ class AgentToolRuntime:
 
         if gated:
             async with approval_lock:
+                if approval_state.get('guardian_stopped'):
+                    from .approval_outcomes import DENIAL_BREAKER_NOTICE
+                    return await self._local_failure(
+                        call, agent_id=agent_id, reason='guardian_denied',
+                        event_sink=event_sink, extra={'notice': DENIAL_BREAKER_NOTICE}, spent=spent,
+                    )
                 if approval_state["required"]:
                     return await self._local_failure(
                         call,
@@ -1259,6 +1276,10 @@ class AgentToolRuntime:
                 )
                 if observation[0].get("reason") == "approval_required":
                     approval_state["required"] = True
+                from .approval_outcomes import _has_active_denial_breaker
+                if (observation[0].get('reason') == 'guardian_denied'
+                        and _has_active_denial_breaker(observation[0])):
+                    approval_state['guardian_stopped'] = True
                 return observation
 
         # `spent` belongs here above all: this is the path an ordinary tool call

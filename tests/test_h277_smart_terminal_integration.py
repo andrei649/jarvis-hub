@@ -59,6 +59,9 @@ def runtime(tmp_path, monkeypatch):
     coordinator = AutonomyCoordinator(orch)
     orch._test_coordinator = coordinator
     coordinator._wire_agent_tool_runtime(action_kernel=authorize)
+    # These tests inspect the queued approval before a separate scheduler tick.
+    # Same-invocation review/actuation has its own actual coordinator integration suite.
+    orch.tool_rpc._tools['terminal_run']['gated_review'] = None
     executor.register('toolrpc.terminal_run', coordinator._approved_desktop_tool_rpc_execute)
     yield queue, worker, orch, sandbox, seen
     queue.close()
@@ -144,7 +147,7 @@ async def test_nonapproval_remains_pending_with_clear_machine_outcome_and_owner_
     assert sandbox.commands == ['printf hello']
 
 
-def use_real_kernel(runtime):
+def use_real_kernel(runtime, *, synchronous=False):
     from agents.core.kernel.binding import make_action_kernel
 
     queue, worker, orch, _sandbox, _seen = runtime
@@ -154,6 +157,8 @@ def use_real_kernel(runtime):
     worker.bind_mediation(real, queue._mediation_signer)
     coordinator = orch._test_coordinator
     coordinator._wire_agent_tool_runtime(action_kernel=worker.kernel_gate)
+    if not synchronous:
+        orch.tool_rpc._tools['terminal_run']['gated_review'] = None
     executor = TaskExecutor()
     executor.register('toolrpc.terminal_run', coordinator._approved_desktop_tool_rpc_execute)
     worker.executor = executor.execute

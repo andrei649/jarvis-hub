@@ -70,6 +70,7 @@ MAX_ATTEMPTS = 3
 _DATABASE_INIT_LOCK = threading.Lock()
 _HUMAN_REASON_UNSET = object()
 _SMART_TERMINAL_PURPOSE = "nerva.smart-terminal-approval"
+_SMART_EXECUTION_PURPOSE = "nerva.smart-terminal-execution"
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}\Z")
 _GUARDIAN_EPOCH_HEX = re.compile(r"[0-9a-f]{32}\Z")
 _TERMINAL_TARGET = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
@@ -2576,12 +2577,45 @@ class TaskQueue:
         item['revision'] = hashlib.sha256(encoded.encode()).hexdigest()
         return item
 
-    def _chat_rows_locked(self, context: ApprovalTurnContext):
+    def _chat_rows_locked(self, context: ApprovalTurnContext, *, include_current: bool = False):
+        params = (context.session_id, context.session_instance, context.principal_key)
+        if include_current:
+            return self._conn.execute('''SELECT t.* FROM chat_approval_tasks t
+                JOIN chat_approval_origins o ON o.origin_id=t.origin_id
+                WHERE o.session_id=? AND o.session_instance=? AND o.principal_key=?
+                AND t.ready=1 ORDER BY t.task_id LIMIT 256''', params).fetchall()
         return self._conn.execute('''SELECT t.* FROM chat_approval_tasks t
             JOIN chat_approval_origins o ON o.origin_id=t.origin_id
             WHERE o.session_id=? AND o.session_instance=? AND o.principal_key=?
             AND t.origin_id!=? AND t.ready=1 ORDER BY t.task_id LIMIT 256''',
-            (context.session_id, context.session_instance, context.principal_key, context.turn_id)).fetchall()
+            (*params, context.turn_id)).fetchall()
+
+    def chat_invocation_outcome(self, context, task_id: int) -> dict | None:
+        """Read one ready association from this live turn without acknowledging it."""
+        if not self._chat_context(context) or type(task_id) is not int or task_id <= 0:
+            return None
+        with self._lock:
+            try:
+                self._conn.execute('BEGIN')
+                row = self._conn.execute('''SELECT t.* FROM chat_approval_tasks t
+                    JOIN chat_approval_origins o ON o.origin_id=t.origin_id
+                    WHERE t.task_id=? AND t.origin_id=? AND t.ready=1
+                    AND o.session_id=? AND o.session_instance=? AND o.principal_key=?''',
+                    (task_id, context.turn_id, context.session_id,
+                     context.session_instance, context.principal_key)).fetchone()
+                item = self._chat_observation_locked(row) if row is not None else None
+                acknowledged = row['acknowledged_revision'] if row is not None else None
+                self._conn.commit()
+                if (item is None or item['revision'] == acknowledged
+                        or not self._chat_context(context)):
+                    return None
+                included = render_chat_outcomes([item])[1]
+                return included[0] if included and self._chat_context(context) else None
+            except Exception:
+                if self._conn is not None:
+                    self._conn.rollback()
+                logger.warning('chat invocation observation unavailable; no outcome inferred')
+                return None
 
     def chat_outcome_snapshot(self, context, *, limit: int = 8, max_bytes: int = 4096) -> list[dict]:
         if not self._chat_context(context):
@@ -2625,7 +2659,7 @@ class TaskQueue:
             try:
                 self._conn.execute('BEGIN IMMEDIATE')
                 count = 0
-                for row in self._chat_rows_locked(context):
+                for row in self._chat_rows_locked(context, include_current=True):
                     try:
                         item = self._chat_observation_locked(row)
                     except (TypeError, ValueError, KeyError):
@@ -2809,7 +2843,8 @@ class TaskQueue:
                 self._conn.rollback()
                 raise
 
-    def _smart_terminal_mediation_valid_locked(self, row: sqlite3.Row) -> bool:
+    def _smart_terminal_mediation_valid_locked(self, row: sqlite3.Row, *,
+                                                allow_done: bool = False) -> bool:
         """Keep a smart verdict behind any existing task mediation boundary."""
         if bool(row["kernel_intake_id"]) != bool(row["kernel_intake_evidence"]):
             return False
@@ -2845,7 +2880,9 @@ class TaskQueue:
                 (row["id"], expected.enqueue_id, receipt.receipt_id,
                  canonical_digest(receipt.to_dict())),
             ).fetchone()
-            if row["status"] == TaskStatus.RUNNING.value:
+            if row["status"] == TaskStatus.RUNNING.value or (
+                allow_done and row["status"] == TaskStatus.DONE.value
+            ):
                 execution_id = row["mediation_execution_id"]
                 governed = self._conn.execute(
                     """SELECT COUNT(*) AS count FROM task_mediation_events
@@ -3045,6 +3082,56 @@ class TaskQueue:
                 self._conn.rollback()
                 return None, None
 
+    def _smart_terminal_receipt_locked(self, row: sqlite3.Row | None, *,
+                                       allow_done: bool = False) -> dict | None:
+        """Verify the original approval, including a completed mediated row."""
+        try:
+            task = _row_to_task(row) if row else None
+            allowed = {"approved", "running", "done"} if allow_done else {"approved", "running"}
+            if (task is None or task.status not in allowed
+                    or task.decided_by != "smart_approval" or task.decision != "smart-approve"
+                    or task.human_decision is not None or _smart_terminal_args(task) is None
+                    or not self._smart_terminal_mediation_valid_locked(row, allow_done=allow_done)):
+                return None
+            stored = self._conn.execute(
+                "SELECT * FROM task_smart_approvals WHERE task_id=?", (task.id,),
+            ).fetchone()
+            if stored is None or not stored["receipt"] or not stored["signature"]:
+                return None
+            receipt = json.loads(stored["receipt"])
+            if type(receipt) is not dict or set(receipt) != {
+                "schema", "purpose", "task_id", "preapproval_sha256",
+                "approved_execution_sha256", "policy_revision", "judge_revision",
+                "judge", "at", "nonce", "command_target_sha256",
+            }:
+                return None
+            approval_phase = replace(task, mediation_execution_id=None)
+            expected_sha = self.execution_fingerprint(approval_phase)
+            if (
+                type(receipt["schema"]) is not int or receipt["schema"] != 1
+                or receipt["purpose"] != _SMART_TERMINAL_PURPOSE
+                or type(receipt["task_id"]) is not int or receipt["task_id"] != task.id
+                or type(receipt["preapproval_sha256"]) is not str
+                or receipt["preapproval_sha256"] != stored["snapshot_sha256"]
+                or _SHA256_HEX.fullmatch(receipt["preapproval_sha256"]) is None
+                or receipt["approved_execution_sha256"] != expected_sha
+                or receipt["command_target_sha256"] != canonical_digest(_smart_terminal_args(task))
+                or type(receipt["policy_revision"]) is not str
+                or _SHA256_HEX.fullmatch(receipt["policy_revision"]) is None
+                or type(receipt["judge_revision"]) is not str
+                or _SHA256_HEX.fullmatch(receipt["judge_revision"]) is None
+                or type(receipt["judge"]) is not dict
+                or type(receipt["at"]) not in {int, float} or not math.isfinite(receipt["at"])
+                or str(uuid.UUID(receipt["nonce"])) != receipt["nonce"]
+            ):
+                return None
+            receipt_bytes = canonical_json(receipt)
+            return (json.loads(receipt_bytes) if self._mediation_signer.verify(
+                receipt_bytes, stored["signature"],
+            ) else None)
+        except Exception:
+            return None
+
     def verify_smart_terminal_approval(
         self, task_id: int, *, check: Callable[[dict], bool],
     ) -> bool:
@@ -3054,51 +3141,115 @@ class TaskQueue:
         with self._lock:
             try:
                 row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                receipt = self._smart_terminal_receipt_locked(row)
+                return receipt is not None and check(receipt) is True
+            except Exception:
+                return False
+
+    @staticmethod
+    def _smart_result_body(result: dict) -> dict:
+        """Reserve the completion proof key for the worker, never the executor."""
+        return {key: value for key, value in result.items() if key != "_smart_execution"}
+
+    def issue_smart_terminal_result(self, task: Task, result: dict) -> dict:
+        """Seal an actual RUNNING smart terminal result before the worker stores DONE.
+
+        This is evidence of completion, not an execution permit. Failure to seal
+        leaves the operation result intact but cannot prove successful execution.
+        """
+        if type(result) is not dict:
+            return result
+        body = self._smart_result_body(result)
+        if (type(task) is not Task or task.status != TaskStatus.RUNNING.value
+                or type(task.id) is not int or task.id <= 0
+                or task.attempts <= 0
+                or body.get("status") != "ok"
+                or type(body.get("result")) is not dict
+                or body["result"].get("ok") is not True):
+            return body
+        with self._lock:
+            try:
+                row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task.id,)).fetchone()
+                persisted = _row_to_task(row) if row else None
+                receipt = self._smart_terminal_receipt_locked(row)
+                if (persisted is None or persisted.status != TaskStatus.RUNNING.value
+                        or receipt is None or persisted.created_at != task.created_at
+                        or self.execution_fingerprint(persisted) != self.execution_fingerprint(task)):
+                    return body
+                # The proof itself is small and bounded even if stdout is not.
+                # Reject non-JSON values rather than certify a different result.
+                result_sha256 = hashlib.sha256(json.dumps(
+                    body, ensure_ascii=False, allow_nan=False,
+                    sort_keys=True, separators=(",", ":"),
+                ).encode("utf-8")).hexdigest()
+                proof = {
+                    "schema": 1,
+                    "purpose": _SMART_EXECUTION_PURPOSE,
+                    "task_id": task.id,
+                    "task_birth": task.created_at,
+                    "running_execution_sha256": self.execution_fingerprint(task),
+                    "kernel_intake_sha256": canonical_digest({
+                        "id": task.kernel_intake_id,
+                        "evidence": task.kernel_intake_evidence,
+                    }),
+                    "approval_receipt_sha256": canonical_digest(receipt),
+                    "result_sha256": result_sha256,
+                    "nonce": uuid.uuid4().hex,
+                }
+                signature = self._mediation_signer.sign(canonical_json(proof))
+                if signature is None:
+                    return body
+                return {**body, "_smart_execution": {**proof, "signature": signature}}
+            except Exception:
+                return body
+
+    def verify_smart_terminal_result(self, task_id: int) -> bool:
+        """Check durable DONE bytes against one worker-sealed result receipt."""
+        if type(task_id) is not int or task_id <= 0:
+            return False
+        with self._lock:
+            try:
+                row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
                 task = _row_to_task(row) if row else None
-                if (
-                    task is None or task.status not in {"approved", "running"}
-                    or task.decided_by != "smart_approval" or task.decision != "smart-approve"
-                    or task.human_decision is not None
-                    or _smart_terminal_args(task) is None
-                    or not self._smart_terminal_mediation_valid_locked(row)
-                ):
+                receipt = self._smart_terminal_receipt_locked(row, allow_done=True)
+                if (task is None or task.status != TaskStatus.DONE.value
+                        or receipt is None or type(task.result) is not dict):
                     return False
-                stored = self._conn.execute(
-                    "SELECT * FROM task_smart_approvals WHERE task_id=?", (task_id,),
-                ).fetchone()
-                if stored is None or not stored["receipt"] or not stored["signature"]:
-                    return False
-                receipt = json.loads(stored["receipt"])
-                if type(receipt) is not dict or set(receipt) != {
-                    "schema", "purpose", "task_id", "preapproval_sha256",
-                    "approved_execution_sha256", "policy_revision", "judge_revision",
-                    "judge", "at", "nonce", "command_target_sha256",
+                proof = task.result.get("_smart_execution")
+                if type(proof) is not dict or set(proof) != {
+                    "schema", "purpose", "task_id", "task_birth",
+                    "running_execution_sha256", "kernel_intake_sha256",
+                    "approval_receipt_sha256", "result_sha256", "nonce", "signature",
                 }:
                     return False
-                approval_phase = replace(task, mediation_execution_id=None)
-                expected_sha = self.execution_fingerprint(approval_phase)
+                body = self._smart_result_body(task.result)
+                if (body.get("status") != "ok" or type(body.get("result")) is not dict
+                        or body["result"].get("ok") is not True):
+                    return False
+                result_sha256 = hashlib.sha256(json.dumps(
+                    body, ensure_ascii=False, allow_nan=False,
+                    sort_keys=True, separators=(",", ":"),
+                ).encode("utf-8")).hexdigest()
                 if (
-                    type(receipt["schema"]) is not int or receipt["schema"] != 1
-                    or receipt["purpose"] != _SMART_TERMINAL_PURPOSE
-                    or type(receipt["task_id"]) is not int or receipt["task_id"] != task_id
-                    or type(receipt["preapproval_sha256"]) is not str
-                    or receipt["preapproval_sha256"] != stored["snapshot_sha256"]
-                    or _SHA256_HEX.fullmatch(receipt["preapproval_sha256"]) is None
-                    or receipt["approved_execution_sha256"] != expected_sha
-                    or receipt["command_target_sha256"] != canonical_digest(_smart_terminal_args(task))
-                    or type(receipt["policy_revision"]) is not str
-                    or _SHA256_HEX.fullmatch(receipt["policy_revision"]) is None
-                    or type(receipt["judge_revision"]) is not str
-                    or _SHA256_HEX.fullmatch(receipt["judge_revision"]) is None
-                    or type(receipt["judge"]) is not dict
-                    or type(receipt["at"]) not in {int, float} or not math.isfinite(receipt["at"])
-                    or str(uuid.UUID(receipt["nonce"])) != receipt["nonce"]
+                    type(proof["schema"]) is not int or proof["schema"] != 1
+                    or proof["purpose"] != _SMART_EXECUTION_PURPOSE
+                    or type(proof["task_id"]) is not int or proof["task_id"] != task_id
+                    or proof["task_birth"] != task.created_at
+                    or proof["running_execution_sha256"] != self.execution_fingerprint(task)
+                    or proof["kernel_intake_sha256"] != canonical_digest({
+                        "id": task.kernel_intake_id,
+                        "evidence": task.kernel_intake_evidence,
+                    })
+                    or proof["approval_receipt_sha256"] != canonical_digest(receipt)
+                    or proof["result_sha256"] != result_sha256
+                    or type(proof["nonce"]) is not str
+                    or uuid.UUID(hex=proof["nonce"]).hex != proof["nonce"]
+                    or uuid.UUID(hex=proof["nonce"]).version != 4
                 ):
                     return False
-                receipt_bytes = canonical_json(receipt)
-                if not self._mediation_signer.verify(receipt_bytes, stored["signature"]):
-                    return False
-                return check(json.loads(receipt_bytes)) is True
+                signature = proof["signature"]
+                core = {key: value for key, value in proof.items() if key != "signature"}
+                return self._mediation_signer.verify(canonical_json(core), signature)
             except Exception:
                 return False
 
@@ -3161,17 +3312,23 @@ class TaskQueue:
             )
         return reaped
 
-    def runnable(self, limit: int = 10, max_tier: Optional[int] = None) -> list[Task]:
+    def runnable(self, limit: int = 10, max_tier: Optional[int] = None, *,
+                 task_id: int | None = None) -> list[Task]:
         """Approved tasks that have not exhausted their retry budget.
 
         `max_tier` (optional) caps the risk tier — the night shift passes 1 to
         batch only reversible/read-only work.
         """
+        if task_id is not None and (type(task_id) is not int or task_id <= 0):
+            raise ValueError("task_id must be a positive integer")
         clause = "status='approved' AND attempts < ?"
         params: list = [MAX_ATTEMPTS]
         if max_tier is not None:
             clause += " AND risk_tier <= ?"
             params.append(int(max_tier))
+        if task_id is not None:
+            clause += " AND id=?"
+            params.append(task_id)
         params.append(limit)
         with self._lock:
             rows = self._conn.execute(

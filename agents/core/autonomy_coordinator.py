@@ -934,11 +934,23 @@ class AutonomyCoordinator:
             project_context.note_task(task_id)
             return task_id
 
+        async def _terminal_review(actor, args, task_id):
+            from .autonomy.terminal_review import review_terminal_task
+
+            worker = getattr(self._orch, 'autonomy', None)
+            spec = server._tools.get('terminal_run')
+            return await review_terminal_task(
+                worker, actor=actor, args=args, task_id=task_id,
+                registration_is_live=lambda: (server._tools.get('terminal_run') is spec
+                                               and getattr(self._orch, 'autonomy', None) is worker),
+            )
+
         server.register_tool(
             "terminal_run",
             _rpc_terminal_run,
             gated=True,
             gated_intake=_terminal_intake,
+            gated_review=_terminal_review,
             description="Run one bounded shell command on a named governed target.",
             input_schema={
                 "type": "object",

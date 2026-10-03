@@ -3296,14 +3296,18 @@ class Orchestrator:
         return block
 
     def _ack_chat_outcomes(self, reply):
-        from .approval_outcomes import current_approval_turn
+        from .approval_outcomes import current_approval_turn, invocation_outcomes
 
         state = _TURN_CHAT_OUTCOMES.get()
-        if (state is None or not state["persisted"] or not state["included"]
+        if (state is None or not state["persisted"]
                 or current_approval_turn() is not state["context"] or is_failed_turn_reply(None, reply)):
             return
+        current = invocation_outcomes(state['context'])
+        observations = [*current, *state['included']][:8]
+        if not observations:
+            return
         try:
-            state["queue"].ack_chat_outcomes(state["context"], state["included"])
+            state["queue"].ack_chat_outcomes(state["context"], observations)
         except Exception:
             # A persisted answer may safely repeat the observation on a later turn.
             logger.warning("chat approval observation acknowledgment unavailable", exc_info=True)

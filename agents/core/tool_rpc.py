@@ -33,6 +33,7 @@ and offline-testable. The injected sink/secret-broker keep it decoupled.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 import uuid
@@ -88,6 +89,7 @@ def current_tool_turn() -> Optional[str]:
 Handler = Callable[[dict], Awaitable]
 Preflight = Callable[[dict], Mapping]
 GatedIntake = Callable[[str, dict], int]
+GatedReview = Callable[[str, dict, int], Awaitable[dict | None]]
 #: H506 — a *registrar-supplied* look at one call's arguments that answers "is this
 #: call a distinct class of thing the owner must be told about?". Returns a small
 #: mapping of labels (``class``, ``notice``, plus flat scalars) or ``None``. It is
@@ -279,6 +281,7 @@ class ToolRPCServer:
         classifier: Classifier | None = None,
         max_result_bytes: int | None = None,
         schema_overrides: SchemaOverrides | None = None,
+        gated_review: GatedReview | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
 
@@ -296,6 +299,11 @@ class ToolRPCServer:
         refuses a call whose approved card did not carry the class it belongs to —
         so a classed call can only ever run off an approval that named the class.
         Gated tools only: an ungated tool never produces a card to label.
+
+        ``gated_review`` is an async, registrar-owned continuation for a trusted
+        custom intake. It sees the finalized arguments and persisted task id
+        before the turn records a pending manual approval. A returned dict is
+        the registrar's result; ``None`` or an error keeps manual handling.
 
         ``max_result_bytes`` is this tool's own statement of how much it may put in
         the context window (H298). It is the fourth rung of the threshold ladder —
@@ -324,6 +332,13 @@ class ToolRPCServer:
             not callable(gated_intake) or not gated or not trusted_execution
         ):
             raise ValueError("custom intake requires a trusted gated tool")
+        if gated_review is not None and (
+            not gated or not trusted_execution or gated_intake is None
+            or not callable(gated_review)
+            or not (inspect.iscoroutinefunction(gated_review)
+                    or inspect.iscoroutinefunction(type(gated_review).__call__))
+        ):
+            raise ValueError("gated review requires async trusted custom intake")
         if classifier is not None and (not callable(classifier) or not gated):
             raise ValueError("a call classifier requires a gated tool")
         if schema_overrides is not None and not callable(schema_overrides):
@@ -359,6 +374,7 @@ class ToolRPCServer:
             "trusted_execution": bool(trusted_execution),
             "untrusted_output": bool(untrusted_output),
             "gated_intake": gated_intake,
+            "gated_review": gated_review,
             "classifier": classifier,
             "max_result_bytes": max_result_bytes,
             "schema_overrides": schema_overrides,
@@ -454,6 +470,13 @@ class ToolRPCServer:
             # Not on the allowlist — the sandbox cannot reach it.
             return {"ok": False, "reason": "tool_not_allowed", "tool": name}
 
+        if spec.get("gated_review") is not None:
+            # Preflight may rewrite nested values; it must not mutate a caller's
+            # request while finalizing a reviewed operation.
+            try:
+                args = deepcopy(args)
+            except Exception:
+                return {"ok": False, "reason": "validation_failed", "tool": name}
         args, denial = self._run_preflight(spec, args, name)
         if denial is not None:
             return denial
@@ -490,17 +513,43 @@ class ToolRPCServer:
             # gate and governed enqueue; call data cannot select this callback.
             intake = spec.get("gated_intake")
             if intake is not None:
+                review = spec.get("gated_review")
+                if review is not None:
+                    try:
+                        finalized_args = deepcopy(args)
+                        intake_args = deepcopy(finalized_args)
+                    except Exception:
+                        return {"ok": False, "reason": "validation_failed", "tool": name}
+                else:
+                    intake_args = args
                 try:
                     from .approval_outcomes import tool_approval_scope
                     # Specialized intake finalization is not yet proven for this slice.
                     with tool_approval_scope(None):
-                        task_id = intake(effective_actor, args)
+                        task_id = intake(effective_actor, intake_args)
                 except ToolRPCValidationError as exc:
                     return {"ok": False, "reason": exc.reason, "tool": name}
                 except Exception:
                     logger.warning("tool-rpc bound intake failed", exc_info=True)
                     return {"ok": False, "reason": "enqueue_failed", "tool": name}
                 self._record("toolrpc.gated", name, agent=effective_actor)
+                if review is not None:
+                    if self._tools.get(name) is not spec:
+                        return {"ok": False, "reason": "registration_changed", "tool": name,
+                                "task_id": task_id}
+                    if type(task_id) is int and task_id > 0:
+                        try:
+                            reviewed = await review(effective_actor, deepcopy(finalized_args), task_id)
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            logger.warning("tool-rpc gated review unavailable; manual approval retained")
+                            reviewed = None
+                        if self._tools.get(name) is not spec:
+                            return {"ok": False, "reason": "registration_changed", "tool": name,
+                                    "task_id": task_id}
+                        if type(reviewed) is dict:
+                            return reviewed
                 # The caller of the *turn* only ever sees the loop's prose reply, so
                 # the id is noted here too — where it is known — for the collector the
                 # turn holds. Reporting only: the row stays proposed either way.
