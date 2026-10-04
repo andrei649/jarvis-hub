@@ -2,7 +2,7 @@
   "generated_at": "2026-10-04",
   "goal": "All697 pinned Hermes capabilities; local auxiliary cap-repair dependency",
   "base_sha": "31a1d193",
-  "state": "Integrated root focused and affected regression verification; next full milestone pending",
+  "state": "Integrated root focused, affected and frozen full backend verification; local only",
   "root_verification": {
     "red": {
       "tests": 33,
@@ -38,7 +38,7 @@
     "Local LM Studio max_tokens wire only; other providers/field encodings remain separate work",
     "Hermes broader SDK/gateway unchanged-request retries are not implemented by this strict local increment",
     "No paid provider use, activation, push, merge or deploy",
-    "Prior full22418 excludes these subsequent source/test edits; next integrated backend milestone pending"
+    "Prior full22418 excludes these source/test edits; separate full22465 now covers the integrated final sources"
   ],
   "recorded_command_issue": "Initial GREEN invocation named a nonexistent temperature_route_capability module and exited4 before collection; rerun used actual repository paths, no source correction required",
   "ruff": "Four changed Python paths pass",
@@ -71,5 +71,21 @@
     "junit_sha256": "c5658c056db40eccc08ee491f7299e78ae9d36f9d557b5f2a8480bfb3dbe87e7",
     "scope": "Common suite before explicit scope-None Bandit correction; affected92 rerun afterward, no unchanged-full-source claim"
   },
-  "collected_backend_cases": 22465
+  "collected_backend_cases": 22465,
+  "full_backend_receipt": "docs/hermes/evidence/h487-auxiliary-outcomes-full-2026-10-04.json",
+  "full_backend": {
+    "tests": 22465,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 35,
+    "passed": 22430,
+    "ordinary_skips": 34,
+    "existing_xfail": 1,
+    "expected_failure_cases": [
+      "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+    ],
+    "junit_sha256": "7903d6d7eefed3efb43128ee7ac3acb8d2e53be9fdd1e21fc8baf4ffadf37001",
+    "log_sha256": "6424a0f2a3f5a124382800a393134009c8d97e6b0887444e08666070451b4faf"
+  },
+  "verified_head_sha": "e84f0922b230a2349933c67d8511cd3684c17e1a"
 }

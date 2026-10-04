@@ -8,7 +8,9 @@
 > callback publication; observations never grant execution.
 > The168-module common regression passed4,303 cases. After the Bandit assert
 > correction,92 affected cases passed; final Bandit/Ruff pass. Backend collection
-> is22,465; the new full milestone is pending. H277/H487 remain partial.
+> is22,465; the frozen full completed with22,430 passes,34 ordinary
+> skips,one existing xfail,zero failures/errors and3,020 unchanged inputs.
+> H277/H487 remain partial. See the [full receipt](hermes/evidence/h487-auxiliary-outcomes-full-2026-10-04.json).
 > See [auxiliary evidence](hermes/evidence/h277-auxiliary-output-cap-progress-2026-10-04.json)
 > and [owner-once evidence](hermes/evidence/h487-owner-once-outcomes-progress-2026-10-04.json).
 

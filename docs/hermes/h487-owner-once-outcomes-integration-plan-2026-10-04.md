@@ -74,3 +74,5 @@ apply the new14-case module before source, then record actual RED/GREEN.
 - [ ] Create an exact owned-path unified patch from hash-verified baseline, prove `git apply --check` in a fresh baseline copy, and record RED/GREEN evidence and limitations.
 
 **Generation time:** 2026-10-04. **Next action:** write RED tests before production code.
+
+Root terminal checkpoint: integrated source commits `48e911ed` and `c479790b`, verified head `e84f0922b230a2349933c67d8511cd3684c17e1a`. Frozen full backend: 22,465 total, 22,430 passed, 34 ordinary skips, 1 existing expected failure, zero failures/errors; all 3,020 input hashes unchanged. See [separate full receipt](evidence/h487-auxiliary-outcomes-full-2026-10-04.json). Implementation and root verification steps above are delivered; prototype checklist is retained as its pre-code historical plan. H277/H487 remain partial. Next action: reviewed next source units and remaining all697 work.

@@ -145,6 +145,11 @@
       "path": "docs/hermes/evidence/h487-auxiliary-outcomes-delivery-paths-2026-10-04.json",
       "unit": "integrated-records",
       "rationale": "Exact delivery path manifest for the two independently revertible source units and shared records"
+    },
+    {
+      "path": "docs/hermes/evidence/h487-auxiliary-outcomes-full-2026-10-04.json",
+      "unit": "integrated-records",
+      "rationale": "Actual terminal frozen full backend evidence for final source commits"
     }
   ],
   "verification": {
@@ -165,8 +170,27 @@
     "bandit": "Final source baseline exit0 after initial B101 correction",
     "ruff": "All changed Python paths passed",
     "backend_collected": 22465,
-    "new_full_backend": "Pending; prior full22418 covers only original video milestone",
-    "documented_equivalence": "182/697=26.1%; restored existing semantic evidence, no H277/H487 full credit"
+    "new_full_backend": {
+      "tests": 22465,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 22430,
+      "ordinary_skips": 34,
+      "existing_xfail": 1,
+      "expected_failure_cases": [
+        "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+      ],
+      "junit_sha256": "7903d6d7eefed3efb43128ee7ac3acb8d2e53be9fdd1e21fc8baf4ffadf37001",
+      "log_sha256": "6424a0f2a3f5a124382800a393134009c8d97e6b0887444e08666070451b4faf"
+    },
+    "documented_equivalence": "182/697=26.1%; restored existing semantic evidence, no H277/H487 full credit",
+    "full_backend_receipt": "docs/hermes/evidence/h487-auxiliary-outcomes-full-2026-10-04.json",
+    "frozen_inputs": {
+      "paths": 3020,
+      "drift": 0,
+      "manifest_sha256": "214c7436f1df6a4b2fa4b17d7f002e815f3f1e991e83970428e7fd1e289f61f2"
+    }
   },
   "limits": [
     "No new provider/device/live/GitHub acceptance",
