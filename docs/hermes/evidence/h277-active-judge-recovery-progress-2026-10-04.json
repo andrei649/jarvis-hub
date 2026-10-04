@@ -1,0 +1,124 @@
+{
+  "generated_at": "2026-10-04T04:38:09.111510+00:00",
+  "goal": "All697 pinned Hermes capabilities; active approval-judge auxiliary recovery dependency",
+  "base_sha": "23af87a931a8f16a4c457af4436901eb527ae535",
+  "state": "Root native RED/GREEN, initial-hook cleanup RED/GREEN and current owner/judge union passed; full milestone pending",
+  "prototype_patch_sha256": "9c6d80430f0c6f2b5a3d4f9c212259696fb0232788e0b7a216538559dc6a07f0",
+  "source_sha256": {
+    "agents/core/autonomy/approval_judge.py": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "tests/test_h277_auxiliary_active_route_recovery.py": "3f091ce9dd262f453ac6480418d6d28cd2a398bd157b5a2337ea4afea251a3e0"
+  },
+  "root_verification": {
+    "red": {
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "33858eee8fa029a593f3fbe1311fea567c7bc51d45fd1e1d02f7406d9cb1d1ee",
+      "log_sha256": "8c36b9dceac886524e38a05e1efb9b6a48fedea0662193f77987f83a9182eb15"
+    },
+    "initial-green": {
+      "tests": 26,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "ea2cf866fa11031c5237e04a94b40ab29e6dcaa444b26f930d9dc705382641df",
+      "log_sha256": "64576d99c4cef913eb9b9bd4e5a096807fe2289f77eb08a67c7de2e43fc6349d"
+    },
+    "cleanup-red": {
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "e61c0a03f60a70bad65e8cda0f276e996dec51db27f966c75a5fb45f09b69afe",
+      "log_sha256": "e2cfc2c40e4b4d5571ed2481f867925352918c6e296f1245ecbd830b963b3925"
+    },
+    "green": {
+      "tests": 28,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "6cc45b3d35d750f7a91aefc2539c52f7238bc43165193068a5360bf36980c673",
+      "log_sha256": "a4ba55c7ec7daeede2ecfea3dda9a793665ee142066911215af4f033a9e8412a"
+    },
+    "owner_judge_union": {
+      "tests": 1003,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "777856f1ebd8d23a30a0520355877f731987a4b833a377fe8d5a18a81faee1af",
+      "log_sha256": "6038a13f848001896d4deb403cf672e6662cd0e027a601cb011b414c7710490e"
+    }
+  },
+  "union_files": [
+    "tests/test_h277_acquisition_auxiliary.py",
+    "tests/test_h277_approval_judge.py",
+    "tests/test_h277_auxiliary_active_route_recovery.py",
+    "tests/test_h277_auxiliary_output_cap_recovery.py",
+    "tests/test_h277_auxiliary_parameter_recovery.py",
+    "tests/test_h277_auxiliary_rejection_wording.py",
+    "tests/test_h277_local_auxiliary.py",
+    "tests/test_h277_smart_judge.py",
+    "tests/test_h277_soul_description_auxiliary.py",
+    "tests/test_h485_owner_once_actuation.py",
+    "tests/test_h485_owner_once_completion.py",
+    "tests/test_h485_owner_once_context.py",
+    "tests/test_h485_owner_once_continuation.py",
+    "tests/test_h485_owner_once_kernel.py",
+    "tests/test_h485_owner_once_prompts.py",
+    "tests/test_h485_owner_once_queue.py",
+    "tests/test_h485_owner_once_telegram.py",
+    "tests/test_h485_owner_once_transport.py",
+    "tests/test_h485_owner_once_worker.py",
+    "tests/test_h485_telegram_callback_ack.py",
+    "tests/test_h485_telegram_owner_identity.py",
+    "tests/test_h487_consent_owner_runtime.py",
+    "tests/test_h487_human_wait_budget.py",
+    "tests/test_h487_human_wait_integration.py",
+    "tests/test_h487_native_runtime_human_wait.py",
+    "tests/test_h487_owner_once_outcomes.py",
+    "tests/test_h487_telegram_consent_authority.py",
+    "tests/test_h487_telegram_consent_denial.py",
+    "tests/test_h487_telegram_consent_integration.py",
+    "tests/test_h487_telegram_consent_prompts.py",
+    "tests/test_h487_telegram_consent_transport.py",
+    "tests/test_h487_telegram_lanes.py",
+    "tests/test_h487_telegram_owner_once_denial.py",
+    "tests/test_h487_telegram_reasons.py",
+    "tests/test_h513_approval_judge_policy.py"
+  ],
+  "review": {
+    "initial_finding": "Missing or late recorder-hook refusal before cleanup leaked the owned HTTPX client",
+    "root_repair": "Moved only the hook availability refusal inside existing owned-client try/finally",
+    "proof": "Both zero-send real native refusal/client-closed regressions failed before repair and passed after it",
+    "other_findings": "Independent source-only bounded review found no other reproducible issue; root read exact production delta and full new tests"
+  },
+  "invariants": [
+    "Explicit current configured/acknowledged native compatible approval judge only",
+    "One structured unsupported-temperature replay, at most two sends under original total timeout",
+    "Exact 96 advisory / 16 smart output caps preserved on every send",
+    "Exact native body/model/messages/URL/key and direct physical transport rechecked",
+    "Current role/job/H513/safe-mode/queue/smart validity checked before replay/physical sends and after cleanup",
+    "Observers see each authorized physical attempt; no stale opinion stored",
+    "New judgement restores temperature; unrelated failure never retries; HTTPX errors sanitized",
+    "Cancellation/timeout and initial hook refusal close the owned client",
+    "Seven strictly local auxiliary routes and provider settings unchanged"
+  ],
+  "ruff": "Two changed Python paths passed",
+  "bandit": {
+    "command": "python -m bandit -r agents scripts -q -b .bandit-baseline.json",
+    "exit_code": 0,
+    "log_sha256": "0ecd458ebe063aeeb3fa9c37727c478804b1d817e1da1a40fbc422aeca484146"
+  },
+  "warnings": [
+    "Existing Starlette TestClient/httpx deprecation in root union"
+  ],
+  "limits": [
+    "H277 remains partial; this is not broad auxiliary/provider/SDK parity",
+    "No output-cap omission, SDK retry, fallback, role registry duplication or activation",
+    "Prior full22465 excludes this and newer integrated units",
+    "No live provider/network/device/terminal or paid calls",
+    "No push, merge or deployment"
+  ],
+  "next_action": "Shared counts/architecture and claim-specific reviewed collateral, then clean frozen serial full milestone; H011 checkpoint parity design proceeds independently"
+}

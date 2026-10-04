@@ -511,18 +511,26 @@ class _CompatibleJudgeBackend:
                                        trust_env=False)
 
     async def generate(self, model: str, prompt: str, system: str = "", max_tokens: int = MAX_TOKENS,
-                       temperature: float = 0.0) -> str:
+                       temperature: float | None = 0.0) -> str:
         headers = {"Content-Type": "application/json"}
         if self._key:
             headers["Authorization"] = f"Bearer {self._key}"
-        payload = {"model": model, "max_tokens": max_tokens, "temperature": temperature, "stream": False,
-                   "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
+        payload = _compatible_judge_body(model, prompt, system, max_tokens, temperature)
         resp = await self.client.post("/chat/completions", json=payload, headers=headers)
         resp.raise_for_status()
         return str(resp.json()["choices"][0]["message"].get("content") or "")
 
     async def aclose(self) -> None:
         await self.client.aclose()
+
+
+def _compatible_judge_body(model: str, prompt: str, system: str, max_tokens: int,
+                           temperature: float | None) -> dict:
+    body = {"model": model, "max_tokens": max_tokens, "stream": False,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
+    if temperature is not None:
+        body["temperature"] = temperature
+    return body
 
 
 def _judge_key(status: JudgeStatus, *, env=None) -> str:
@@ -796,6 +804,17 @@ class ApprovalJudge:
 
         base = httpx.URL(target.binding[4])
         expected_url = base.copy_with(raw_path=base.raw_path + path.encode().lstrip(b"/"))
+        native_compatible = (
+            target.provider == "openai-compatible" and type(backend) is _CompatibleJudgeBackend
+            and getattr(backend.generate, "__func__", None) is _CompatibleJudgeBackend.generate
+        )
+        expected_body = (_compatible_judge_body(model, prompt, system, max_tokens, 0)
+                         if native_compatible else None)
+        body_fingerprint = (json.dumps(expected_body, sort_keys=True, separators=(",", ":"),
+                                       ensure_ascii=False, allow_nan=False)
+                            if expected_body is not None else None)
+        request_hooks = tuple(backend.client.event_hooks.get("request", ())) if native_compatible else ()
+        physical_attempts = 0
 
         def check():
             if current_selection() is not None:
@@ -814,10 +833,15 @@ class ApprovalJudge:
                 raise DataHandlingRefused("approval judge wire identity is unavailable") from exc
             if actual != target:
                 raise DataHandlingRefused("approval judge wire identity changed")
+            if native_compatible and tuple(backend.client.event_hooks.get("request", ())) != request_hooks:
+                raise DataHandlingRefused("approval judge physical request hook changed")
             require_direct_async_transport(backend.client, expected_url)
             return authorize_role_target(self._router, target)
 
         try:
+            if native_compatible and (not request_hooks
+                                      or not getattr(request_hooks[-1], "_nerva_egress_recorder", False)):
+                raise DataHandlingRefused("approval judge physical request hook is unavailable")
             check()
             if backend.client.build_request("POST", path).url != expected_url:
                 raise DataHandlingRefused("approval judge request URL is unsupported")
@@ -825,21 +849,72 @@ class ApprovalJudge:
             request_marker = object()
 
             def request_check(request):
+                nonlocal physical_attempts
                 if (request.extensions.get("nerva_approval_judge_request") is request_marker
                         or request.method != "POST" or request.url != expected_url
                         or request.headers.get("Authorization", "") != target.binding[5]
                         or request.headers.get("Cookie")):
                     raise DataHandlingRefused("approval judge physical request identity changed")
+                if native_compatible:
+                    def unique_pairs(pairs):
+                        result = {}
+                        for key, value in pairs:
+                            if key in result:
+                                raise ValueError("duplicate field")
+                            result[key] = value
+                        return result
+
+                    try:
+                        body = json.loads(request.content, object_pairs_hook=unique_pairs)
+                        actual_body = json.dumps(body, sort_keys=True, separators=(",", ":"),
+                                                 ensure_ascii=False, allow_nan=False)
+                    except (ValueError, TypeError, httpx.RequestNotRead):
+                        actual_body = None
+                    if (actual_body != body_fingerprint or physical_attempts >= 2
+                            or request.headers.get("Content-Type") != "application/json"
+                            or request.headers.get("Proxy-Authorization")):
+                        raise DataHandlingRefused("approval judge physical request body changed")
                 require_direct_async_transport(backend.client, request.url)
                 if on_request is not None:
                     check()
                     on_request()
                 # HTTPX copies extensions onto redirects; rebuilt native retries start fresh.
                 request.extensions["nerva_approval_judge_request"] = request_marker
+                if native_compatible:
+                    physical_attempts += 1
 
             with physical_request_scope(check, request_check=request_check):
-                text = await backend.generate(model=model, prompt=prompt, system=system,
-                                              max_tokens=max_tokens, temperature=0)
+                if native_compatible:
+                    import asyncio
+
+                    from ..llm.auxiliary_recovery import rejects_temperature
+
+                    # One operation clock covers both native sends; a fresh judgement starts
+                    # with its configured temperature and exact output cap again.
+                    async with asyncio.timeout(status.timeout):
+                        try:
+                            text = await backend.generate(model=model, prompt=prompt, system=system,
+                                                          max_tokens=max_tokens, temperature=0)
+                        except httpx.HTTPStatusError as exc:
+                            if physical_attempts != 1 or not rejects_temperature(exc):
+                                raise RuntimeError("approval judge provider request failed") from None
+                            check()
+                            expected_body = _compatible_judge_body(
+                                model, prompt, system, max_tokens, None)
+                            body_fingerprint = json.dumps(
+                                expected_body, sort_keys=True, separators=(",", ":"),
+                                ensure_ascii=False, allow_nan=False)
+                            try:
+                                text = await backend.generate(
+                                    model=model, prompt=prompt, system=system,
+                                    max_tokens=max_tokens, temperature=None)
+                            except httpx.HTTPError:
+                                raise RuntimeError("approval judge provider request failed") from None
+                        except httpx.HTTPError:
+                            raise RuntimeError("approval judge provider request failed") from None
+                else:
+                    text = await backend.generate(model=model, prompt=prompt, system=system,
+                                                  max_tokens=max_tokens, temperature=0)
                 check()
         finally:
             if owned and hasattr(backend, "aclose"):
