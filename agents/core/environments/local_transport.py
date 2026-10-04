@@ -28,8 +28,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import threading
 import time
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -47,8 +49,43 @@ from .terminal_contract import (
 
 DEFAULT_MAX_OUTPUT_BYTES = 16_000
 _MAX_OUTPUT_CEILING = 1_000_000
+_CHECKPOINT_CANCEL_OBSERVE_S = 0.25
 
 Spawn = Callable[..., Awaitable[Any]]
+
+
+def _consume_background(task: asyncio.Task) -> None:
+    """Observe a detached cleanup result even if its original caller is gone."""
+    with contextlib.suppress(BaseException):
+        task.result()
+
+
+@dataclass(frozen=True)
+class TerminalCheckpointIntent:
+    """Runner-created observation request; it confers no execution authority."""
+
+    history: Any
+    argv: tuple[str, ...]
+    cwd: str
+    timeout: int
+    current: Callable[[], bool]
+    source_kind: str
+    source_key: str
+    target: str
+
+
+def destructive_argv(argv: Sequence[str]) -> bool:
+    """Recognize direct argv operations that can replace or remove local files."""
+    if not argv:
+        return False
+    name = Path(argv[0]).name
+    if name in {"rm", "rmdir", "mv", "cp", "install", "truncate", "dd", "shred"}:
+        return True
+    if name == "sed" and any(arg == "-i" or arg.startswith("-i") for arg in argv[1:]):
+        return True
+    if name == "git" and len(argv) > 1:
+        return argv[1] in {"checkout", "restore", "reset", "clean"}
+    return False
 
 
 def default_roots() -> list[str]:
@@ -164,6 +201,7 @@ class LocalHostTransport:
         cwd: str | Path | None = None,
         timeout: int | None = None,
         max_output: int | None = None,
+        checkpoint_intent: TerminalCheckpointIntent | None = None,
     ) -> dict[str, Any]:
         """Execute ``argv`` verbatim; every refusal is a named reason, never an exception."""
         invalid = self.validate_argv(argv)
@@ -191,17 +229,131 @@ class LocalHostTransport:
         fingerprint = argv_fingerprint(argv_list)
         start = time.monotonic()
         from .consent_dispatch import physical_gate as consent_physical_gate
+        from .owner_once_dispatch import physical_gate
+        checkpoint = None
+        def same_checkpoint_root() -> bool:
+            if checkpoint is None:
+                return True
+            try:
+                info = os.stat(workdir, follow_symlinks=False)
+                return (info.st_dev, info.st_ino) == checkpoint["root_identity"]
+            except OSError:
+                return False
+
+        if checkpoint_intent is not None:
+            intent = checkpoint_intent
+            if (intent.argv != tuple(argv_list) or intent.cwd != str(workdir)
+                    or intent.timeout != bounded or not intent.current()):
+                return {"ok": False, "reason": "terminal_checkpoint_intent_changed",
+                        "argv_sha256": fingerprint}
+            abandoned = threading.Event()
+            capture_task = asyncio.create_task(asyncio.to_thread(
+                intent.history.begin_scope, workdir,
+                source_kind=intent.source_kind, source_key=intent.source_key,
+                target=intent.target, argv_sha256=fingerprint,
+                cancelled=abandoned,
+            ))
+            try:
+                checkpoint = await asyncio.shield(capture_task)
+            except asyncio.CancelledError:
+                abandoned.set()
+
+                async def close_late_capture() -> None:
+                    try:
+                        captured = await capture_task
+                    except BaseException:
+                        # begin_scope durably marks a failed pre-capture itself.
+                        return
+                    try:
+                        await asyncio.to_thread(
+                            intent.history.mark_scope_no_process, captured["id"],
+                            reason="capture_cancelled", run_id=captured["run_id"],
+                        )
+                    except Exception:
+                        with contextlib.suppress(Exception):
+                            await asyncio.to_thread(
+                                intent.history.mark_scope_incomplete, captured["id"],
+                                reason="late_capture_close_failed",
+                                run_id=captured["run_id"],
+                            )
+
+                observer = asyncio.create_task(close_late_capture())
+                observer.add_done_callback(_consume_background)
+                await asyncio.wait({observer}, timeout=_CHECKPOINT_CANCEL_OBSERVE_S)
+                raise
+            except Exception:
+                return {"ok": False, "reason": "terminal_checkpoint_unavailable",
+                        "argv_sha256": fingerprint}
+            if checkpoint["status"] not in {"ready", "running"}:
+                return {"ok": False, "reason": "terminal_checkpoint_unavailable",
+                        "argv_sha256": fingerprint}
+            # Capture can be slow; all physical authority fences must still hold.
+            if not intent.current() or not same_checkpoint_root():
+                await asyncio.to_thread(intent.history.mark_scope_no_process,
+                                        checkpoint["id"], reason="dispatch_revoked",
+                                        run_id=checkpoint["run_id"])
+                return {"ok": False, "reason": "terminal_dispatch_revoked",
+                        "argv_sha256": fingerprint,
+                        "checkpoint": {"id": checkpoint["id"], "status": "no_process"}}
 
         if consent_physical_gate(self, backend="local", argv=tuple(argv_list),
                                  cwd=str(workdir), timeout=bounded) is False:
+            if checkpoint is not None:
+                await asyncio.to_thread(checkpoint_intent.history.mark_scope_no_process,
+                                        checkpoint["id"], reason="consent_dispatch_unavailable",
+                                        run_id=checkpoint["run_id"])
             return {"ok": False, "reason": "consent_dispatch_unavailable",
                     "argv_sha256": fingerprint}
-        from .owner_once_dispatch import physical_gate
-
         if physical_gate(self, backend="local", argv=tuple(argv_list),
                          cwd=str(workdir), timeout=bounded) is False:
+            if checkpoint is not None:
+                await asyncio.to_thread(checkpoint_intent.history.mark_scope_no_process,
+                                        checkpoint["id"], reason="owner_once_dispatch_unavailable",
+                                        run_id=checkpoint["run_id"])
             return {"ok": False, "reason": "owner_once_dispatch_unavailable",
                     "argv_sha256": fingerprint}
+        if not same_checkpoint_root():
+            await asyncio.to_thread(checkpoint_intent.history.mark_scope_no_process,
+                                    checkpoint["id"], reason="root_changed_before_spawn",
+                                    run_id=checkpoint["run_id"])
+            return {"ok": False, "reason": "terminal_checkpoint_root_changed",
+                    "argv_sha256": fingerprint}
+
+        async def finalize(*, reaped: bool) -> dict | None:
+            if checkpoint is None or checkpoint_intent is None:
+                return None
+
+            async def settle_postscan() -> dict:
+                try:
+                    return await asyncio.to_thread(
+                        checkpoint_intent.history.finish_scope, checkpoint["id"],
+                        reaped=reaped, run_id=checkpoint["run_id"],
+                    )
+                except Exception:
+                    with contextlib.suppress(Exception):
+                        await asyncio.to_thread(
+                            checkpoint_intent.history.mark_scope_incomplete,
+                            checkpoint["id"], reason="postscan_failed",
+                            run_id=checkpoint["run_id"],
+                        )
+                    return {"id": checkpoint["id"], "status": "incomplete",
+                            "reason": "postscan_failed"}
+
+            job = asyncio.create_task(settle_postscan())
+            job.add_done_callback(_consume_background)
+            if asyncio.current_task().cancelling():
+                # Cancellation may already have been caught while reading the
+                # child. Shield alone would then wait indefinitely for postscan.
+                await asyncio.wait({job}, timeout=_CHECKPOINT_CANCEL_OBSERVE_S)
+                return job.result() if job.done() else None
+            try:
+                return await asyncio.shield(job)
+            except asyncio.CancelledError:
+                # The process is already exited/reaped. The postscan continues
+                # in the observer without holding this cancellation indefinitely.
+                await asyncio.wait({job}, timeout=_CHECKPOINT_CANCEL_OBSERVE_S)
+                raise
+
         try:
             proc = await self._spawn(
                 *argv_list,
@@ -212,14 +364,33 @@ class LocalHostTransport:
                 env=env,
             )
         except FileNotFoundError:
+            if checkpoint is not None:
+                await asyncio.to_thread(checkpoint_intent.history.mark_scope_no_process,
+                                        checkpoint["id"], reason="executable_not_found",
+                                        run_id=checkpoint["run_id"])
             return {"ok": False, "reason": "executable_not_found", "argv_sha256": fingerprint}
         except PermissionError:
+            if checkpoint is not None:
+                await asyncio.to_thread(checkpoint_intent.history.mark_scope_no_process,
+                                        checkpoint["id"], reason="executable_not_permitted",
+                                        run_id=checkpoint["run_id"])
             return {"ok": False, "reason": "executable_not_permitted", "argv_sha256": fingerprint}
         except OSError:
+            if checkpoint is not None:
+                await asyncio.to_thread(checkpoint_intent.history.mark_scope_no_process,
+                                        checkpoint["id"], reason="spawn_failed",
+                                        run_id=checkpoint["run_id"])
             return {"ok": False, "reason": "spawn_failed", "argv_sha256": fingerprint}
+        except asyncio.CancelledError:
+            if checkpoint is not None:
+                await asyncio.to_thread(checkpoint_intent.history.mark_scope_incomplete,
+                                        checkpoint["id"], reason="spawn_cancelled_uncertain",
+                                        run_id=checkpoint["run_id"])
+            raise
 
         if asyncio.current_task().cancelling():
-            await self._kill(proc)
+            reaped = await self._kill(proc)
+            await finalize(reaped=reaped)
             raise asyncio.CancelledError
 
         from .output_capture import OutputCapture
@@ -234,7 +405,8 @@ class LocalHostTransport:
             )
             await asyncio.wait_for(proc.wait(), timeout=bounded)
         except TimeoutError:
-            await self._kill(proc)
+            reaped = await self._kill(proc)
+            terminal_checkpoint = await finalize(reaped=reaped)
             return {
                 "ok": False,
                 "reason": "timeout",
@@ -242,10 +414,13 @@ class LocalHostTransport:
                 "duration": round(time.monotonic() - start, 3),
                 "timeout": bounded,
                 "argv_sha256": fingerprint,
+                **({"checkpoint": terminal_checkpoint} if terminal_checkpoint else {}),
             }
         except asyncio.CancelledError:
-            await self._kill(proc)
+            reaped = await self._kill(proc)
+            await finalize(reaped=reaped)
             raise
+        terminal_checkpoint = await finalize(reaped=True)
         stdout = render_capped(out_head, out_tail, out_total, max_content_bytes=cap, label="STDOUT")
         stderr = render_capped(err_head, err_tail, err_total, max_content_bytes=cap, label="STDERR")
         exit_code = proc.returncode if isinstance(proc.returncode, int) else -1
@@ -259,16 +434,18 @@ class LocalHostTransport:
             "duration": round(time.monotonic() - start, 3),
             "cwd": str(workdir),
             "argv_sha256": fingerprint,
+            **({"checkpoint": terminal_checkpoint} if terminal_checkpoint else {}),
         }
 
     @staticmethod
-    async def _kill(proc: Any) -> None:
-        try:
+    async def _kill(proc: Any) -> bool:
+        with contextlib.suppress(ProcessLookupError, OSError):
             proc.kill()
-        except (ProcessLookupError, OSError):
-            return
-        with contextlib.suppress(TimeoutError, OSError):
+        try:
             await asyncio.wait_for(proc.wait(), timeout=5)
+            return True
+        except (TimeoutError, OSError):
+            return False
 
 
 __all__ = ["DEFAULT_MAX_OUTPUT_BYTES", "LocalHostTransport", "default_roots", "default_timeout"]

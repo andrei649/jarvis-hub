@@ -1032,6 +1032,26 @@ class AutonomyCoordinator:
                         and manual_execution_current(task_id)
                         and _terminal_request_check(task_id, request))
 
+            def checkpoint_origin_lookup(task_id):
+                """Read only the exact executing birth's durable provenance."""
+                import uuid
+
+                if (type(task_id) is not int or task_id <= 0 or approved is None
+                        or task_id != approved.id or manual_queue is None
+                        or self._orch.autonomy is not worker
+                        or self._orch.autonomy_queue is not manual_queue
+                        or getattr(worker, 'queue', None) is not manual_queue):
+                    return None
+                try:
+                    task = manual_queue.get(task_id)
+                    if (task is None or task.kind != 'toolrpc.terminal_run'
+                            or task.created_at != approved.created_at):
+                        return None
+                    origin = manual_queue.checkpoint_origin_turn(task_id, task.created_at)
+                    return task.created_at, str(uuid.UUID(hex=origin)) if origin else None
+                except Exception:
+                    return None
+
             runner = GovernedTargetRunner(
                 self._target_registry(),
                 getattr(self._orch, "sandbox", None),
@@ -1044,6 +1064,7 @@ class AutonomyCoordinator:
                 consent_approval_check=_consent_terminal_marker,
                 consent_kernel_check=getattr(worker, 'kernel_dispatch_current', None),
                 legacy_kernel_check=getattr(worker, 'kernel_dispatch_current', None),
+                checkpoint_origin_lookup=checkpoint_origin_lookup,
             )
             from .action_origin import bind_action_origin, reset_action_origin
 

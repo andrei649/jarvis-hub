@@ -42,7 +42,9 @@ awaited kernel decision, immediately before handing off to the transport.
 from __future__ import annotations
 
 import os
+import secrets
 import shlex
+import uuid
 from collections.abc import Callable
 from contextlib import nullcontext
 from typing import Any
@@ -114,6 +116,7 @@ class GovernedTargetRunner:
         consent_approval_check: Callable[[int], bool] | None = None,
         consent_kernel_check: Callable[..., Any] | None = None,
         legacy_kernel_check: Callable[..., Any] | None = None,
+        checkpoint_origin_lookup: Callable[[int], tuple[str, str | None] | None] | None = None,
     ) -> None:
         if not isinstance(registry, TargetRegistry):
             raise ValueError("registry must be a TargetRegistry")
@@ -139,6 +142,8 @@ class GovernedTargetRunner:
             raise TypeError("consent_kernel_check must be callable")
         if legacy_kernel_check is not None and not callable(legacy_kernel_check):
             raise TypeError("legacy_kernel_check must be callable")
+        if checkpoint_origin_lookup is not None and not callable(checkpoint_origin_lookup):
+            raise TypeError("checkpoint_origin_lookup must be callable")
         self._registry = registry
         self._sandbox = sandbox
         self._local_transport = local_transport
@@ -152,6 +157,7 @@ class GovernedTargetRunner:
         self._consent_approval_check = consent_approval_check
         self._consent_kernel_check = consent_kernel_check
         self._legacy_kernel_check = legacy_kernel_check
+        self._checkpoint_origin_lookup = checkpoint_origin_lookup
 
     async def run(
         self,
@@ -585,6 +591,7 @@ class GovernedTargetRunner:
                 bounded, transport, dict(request), current,
             )
             context = bind_consent_dispatch(scope)
+            checkpoint_current = current
         elif owner_marked:
             from .owner_once_dispatch import OwnerOnceDispatchScope, bind_owner_once_dispatch
 
@@ -605,10 +612,79 @@ class GovernedTargetRunner:
                 bounded, transport, dict(request), current,
             )
             context = bind_owner_once_dispatch(scope)
+            checkpoint_current = current
         else:
             context = nullcontext()
+            expected_roots = transport.roots
+
+            def checkpoint_current():
+                return (self._request_current(approved_task_id, request)
+                        and (approved_task_id is None
+                             or self._manual_current(approved_task_id, request))
+                        and expected_decision is not None
+                        and self._policy_current(expected_decision)
+                        and self._kernel_live() and env_flag(LOCAL_HOST_FLAG)
+                        and transport.roots == expected_roots
+                        and transport.resolve_cwd(cwd) == workdir)
+
+        checkpoint_intent = None
+        from .local_transport import LocalHostTransport, TerminalCheckpointIntent, destructive_argv
+
+        if (env_flag("JARVIS_TERMINAL_CHECKPOINTS") and destructive_argv(argv)
+                and type(transport) is LocalHostTransport):
+            from agents.core.file_checkpoint_history import HISTORY_SUPPORTED, FileCheckpointHistory
+            from agents.core.file_tools import FileScope, SnapshotStore
+
+            if not HISTORY_SUPPORTED:
+                return {"ok": False, "reason": "terminal_checkpoint_unsupported", **base}
+            history = FileCheckpointHistory(SnapshotStore(), FileScope([workdir]))
+            source_kind, source_key = "terminal_invocation", secrets.token_hex(16)
+            if approved_task_id is not None and self._checkpoint_origin_lookup is not None:
+                try:
+                    observed = self._checkpoint_origin_lookup(approved_task_id)
+                except Exception:
+                    observed = None
+                if (isinstance(observed, tuple) and len(observed) == 2
+                        and isinstance(observed[0], str)
+                        and 1 <= len(observed[0]) <= 128
+                        and observed[0] == observed[0].strip()
+                        and not any(ord(char) < 32 or ord(char) == 127
+                                    for char in observed[0])):
+                    try:
+                        birth = observed[0]
+                        turn = None
+                        if observed[1] is not None:
+                            if not isinstance(observed[1], str):
+                                raise ValueError("origin turn is not a string")
+                            parsed = uuid.UUID(observed[1])
+                            if parsed.version != 4 or str(parsed) != observed[1]:
+                                raise ValueError("origin turn is not a canonical UUID v4")
+                            turn = observed[1]
+                    except (ValueError, TypeError):
+                        pass
+                    else:
+                        source_kind = "terminal_turn" if turn else "terminal_task"
+                        source_key = turn or f"{approved_task_id}:{birth}"
+                        previous_current = checkpoint_current
+
+                        def checkpoint_current():
+                            try:
+                                return (previous_current() and
+                                        self._checkpoint_origin_lookup(approved_task_id)
+                                        == observed)
+                            except Exception:
+                                return False
+
+            checkpoint_intent = TerminalCheckpointIntent(
+                history, tuple(argv), str(workdir), bounded, checkpoint_current,
+                source_kind, source_key, base["target"],
+            )
         with context:
-            result = await transport.run(argv, cwd=str(workdir), timeout=bounded)
+            if checkpoint_intent is not None:
+                result = await transport.run(argv, cwd=str(workdir), timeout=bounded,
+                                             checkpoint_intent=checkpoint_intent)
+            else:
+                result = await transport.run(argv, cwd=str(workdir), timeout=bounded)
         return {**result, **base, "approved_task_id": approved_task_id}
 
     async def _run_ssh(
