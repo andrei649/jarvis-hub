@@ -124,7 +124,9 @@ the named guardian's strict APPROVE/DENY/ESCALATE response. The queue applies a
 one-operation approval through an exact-snapshot transaction and a separate signed
 receipt; execution verifies the receipt and live judge/policy binding. Owner
 decisions retain their own attribution and control. Smart Docker commands additionally
-cross the `terminal.exec` contract/kernel; existing manual Docker behavior remains.
+cross the `terminal.exec` contract/kernel. Human-approved manual Docker tasks also
+require the current kernel grant and originating task/receipt at the physical
+dispatch gate; local and SSH backend behavior remains separate.
 Action-card scores and other task kinds remain advisory. No flag is enabled by
 development or by model output. See `hermes/h277-smart-terminal-plan-2026-10-03.md`.
 H485 adds paired observer-only guardian events through the consented extension
@@ -132,6 +134,15 @@ bus: one validated native send attempt and the corresponding committed
 APPROVE/DENY. Forced scanner/catalogue masking precedes bounded excerpt output;
 preparation and delivery cannot alter decisions. See `EXTENSIONS.md` for the
 privacy limits and `hermes/h485-smart-observers-plan-2026-10-03.md` for verification.
+
+Explicit DeepInfra main selection uses its own native text/tool/SSE adapter and
+canonical HTTPS API authority, with the selected model/key reused only by guarded
+main-image dispatch. It remains opt-in under the current data policy.
+Native Telegram `/deny [reason]` can reject a reusable-consent offer only as an
+original direct reply to its delivered card. A private bounded dispatch lane
+releases the waiting tool turn; owner/source/card/deadline checks precede the
+existing queue CAS. Text supplies denial metadata only. Owner-once free-text
+reasons remain a separate unfinished integration.
 
 | Path | Purpose | Key symbols |
 |------|---------|-------------|

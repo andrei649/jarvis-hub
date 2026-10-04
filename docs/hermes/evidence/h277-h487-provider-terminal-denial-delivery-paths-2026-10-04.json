@@ -1,0 +1,209 @@
+{
+  "generated_at": "2026-10-04T04:02:20.053923+00:00",
+  "goal": "All697 local functional parity; scoped provider/terminal/native-denial milestone",
+  "base_sha": "9bfa085c2caa4d82ec5efe20082904052c5aae85",
+  "source_commits": [
+    "e37ffa765d667d4ea8494695a5279ee698b1d06b",
+    "326c6bef89d078a0aab464b912fa5457f8b5e50e",
+    "02aba7049efb455ed43dbee8afa3d0d2bbaab2c6",
+    "06812d4e36c8a5a6380b464e3a26503b80a25f4e",
+    "9a23ea72645df7e48cf183364bb4118090a015e1"
+  ],
+  "files": [
+    {
+      "path": "GO_LIVE_PLAN.md",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "NERVA.md",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "README.md",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "STATUS.md",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/autonomy/consent_prompts.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/autonomy_coordinator.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/channels/telegram.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/environments/execution.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/environments/legacy_terminal_dispatch.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/llm/auxiliary_recovery.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/llm/deepinfra.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/llm/hybrid_router.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/llm/providers/__init__.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/llm/vision_main.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/orchestrator_bindings.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/sandbox.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "agents/core/settings_db.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/FLAGS.md",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-auxiliary-wording-progress-2026-10-04.json",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-deepinfra-main-progress-2026-10-04.json",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-h487-provider-terminal-denial-delivery-paths-2026-10-04.json",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-h487-provider-terminal-denial-regression-2026-10-04.json",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-legacy-docker-kernel-progress-2026-10-04.json",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/hermes/evidence/h487-native-consent-denial-progress-2026-10-04.json",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/hermes/h277-auxiliary-wording-integration-plan-2026-10-04.md",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/hermes/h277-deepinfra-main-integration-plan-2026-10-04.md",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/hermes/h277-h487-provider-terminal-denial-batch-plan-2026-10-04.md",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/hermes/h277-legacy-docker-kernel-integration-plan-2026-10-04.md",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "docs/hermes/h487-native-consent-denial-integration-plan-2026-10-04.md",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "project-status.json",
+      "unit": "shared-evidence-and-documentation",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "tests/test_h277_auxiliary_rejection_wording.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "tests/test_h277_deepinfra_main.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "tests/test_h277_deepinfra_vision_roles.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "tests/test_h277_legacy_docker_kernel.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "tests/test_h277_smart_terminal_integration.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "tests/test_h487_telegram_consent_denial.py",
+      "unit": "source-unit",
+      "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    }
+  ],
+  "verification": {
+    "affected_regression_receipt": "docs/hermes/evidence/h277-h487-provider-terminal-denial-regression-2026-10-04.json",
+    "backend_collected": 22632,
+    "new_full_backend": "Pending separate frozen run; prior22465 excludes current batch"
+  },
+  "limits": [
+    "No new equivalent capability credit",
+    "Historical JS counts are retained",
+    "No publication or live acceptance"
+  ]
+}

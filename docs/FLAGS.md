@@ -698,8 +698,19 @@ deadline and a2 MiB response limit. A later image POST never discovers another
 model: it requires the reviewed selection and independent remote/selection
 confirmations. Keys, models and physical-request changes invalidate old approval.
 Data policy is unknown. Local-only consumers stay local; inherited signed video
-refuses with `video_vision_provider_unsupported`. Main-chat DeepInfra routing
-remains unfinished.
+refuses with `video_vision_provider_unsupported`.
+
+**Explicit DeepInfra main routing** requires `llm.compatible_provider=deepinfra`,
+an explicit `llm.compatible_model` and `DEEPINFRA_API_KEY`. Its endpoint is exactly
+`https://api.deepinfra.com/v1/openai`; a trailing slash or explicit port443 is
+normalized, while other paths/origins are refused before a request. The same rule
+applies to `DEEPINFRA_BASE_URL` for this main route. It supports text, tool turns
+and native SSE streaming; an inherited main image turn uses the exact selected
+model and credential under the existing independent image/data acknowledgements.
+The unknown data policy still requires the applicable current H513 acknowledgement.
+An incomplete explicit DeepInfra selection refuses cloud fallback. This main
+route does not discover a default model or use the dedicated vision role's custom
+endpoint behavior. Live model/tool/stream/image compatibility remains unverified.
 
 **Opt-in automatic image selection** uses `JARVIS_ROLE_VISION_PROVIDER=auto`.
 The standalone composer has no selected conversation-main route, so it tries

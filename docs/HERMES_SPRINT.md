@@ -1,5 +1,18 @@
 # Sprint: echivalarea funcțiilor Hermes
 
+> Local provider/terminal/denial increment2026-10-04: explicit DeepInfra main text,
+> tools and native SSE are integrated under canonical current route guards. Human-
+> approved manual Docker tasks now cross kernel/current receipt physical checks.
+> Local auxiliary errors recover explicit unsupported-field wording without
+> treating value complaints as field-removal authority. Exact delivered-card
+> Telegram `/deny [reason]` settles reusable-consent waits outside the occupied
+> originating chat lane; owner-once reasons remain the next separate unit.
+> The189-module affected run passed5,135 cases,with7 ordinary skips and zero
+> failures/errors;15 static route/doc gates and50 binding checks pass. Actual
+> backend collection is22,632. Prior full22,465 is an earlier snapshot; the next
+> frozen full milestone is pending. H277/H487 remain partial. See the
+> [affected regression receipt](hermes/evidence/h277-h487-provider-terminal-denial-regression-2026-10-04.json).
+
 > Local auxiliary/owner-once increment2026-10-04: supported guarded local tasks
 > recover a typed unsupported output cap once per operation; no cross-call cap
 > memory, no post-frame stream replay and no reset of compaction idle deadlines.
