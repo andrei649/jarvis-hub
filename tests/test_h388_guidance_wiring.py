@@ -72,3 +72,34 @@ def test_product_guidance_setting_is_persisted_and_visible_in_admin(tmp_path, mo
     updated, errors = settings_db.put_category("llm", {"operating_guidance": config})
     assert updated == 1 and errors == []
     assert settings_db.get_value("llm", "operating_guidance") == config
+
+
+@pytest.mark.asyncio
+async def test_execution_facts_bind_only_for_exact_terminal_offer_and_enabled_environment(monkeypatch):
+    from agents.core import execution_guidance_context as module
+
+    observed = []
+    def facts(coordinator, aid):
+        observed.append(aid)
+        return {'profile': aid, 'environment': {'targets': 'synthetic-local (local): one argv; cwd /synthetic'}}
+    monkeypatch.setattr(module, 'execution_guidance_context', facts)
+    runtime, values = wired({'enabled': True})
+    token = bind_turn_principal(Principal(channel='web', admin=True))
+    try:
+        backend = Backend()
+        await run(runtime, backend)
+        assert observed == ['jarvis']
+        system = backend.requests[0]['messages'][0]['content']
+        assert 'synthetic-local' in system and '# Active profile' in system
+        assert 'jarvis' in system
+        runtime._tool_profile = lambda aid, rows: ([r for r in rows if r['name'] != 'terminal_run'], None)
+        restricted = Backend()
+        await run(runtime, restricted)
+        assert observed == ['jarvis']
+        assert 'synthetic-local' not in restricted.requests[0]['messages'][0]['content']
+        runtime._tool_profile = None
+        values['llm.operating_guidance']['flags'] = {'environment_hint': False}
+        await run(runtime, Backend())
+        assert observed == ['jarvis']
+    finally:
+        reset_turn_principal(token)

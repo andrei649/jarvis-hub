@@ -1,6 +1,24 @@
 """Carry a prepared instruction prefix and its original authority separately."""
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 from .conversation_clock import render_snapshot
+
+_preview: ContextVar[bool] = ContextVar("nerva_guidance_preview", default=False)
+
+
+@contextmanager
+def guidance_preview_scope():
+    token = _preview.set(True)
+    try:
+        yield
+    finally:
+        _preview.reset(token)
+
+
+def is_guidance_preview() -> bool:
+    return _preview.get()
 
 
 class OperatingPrompt(str):

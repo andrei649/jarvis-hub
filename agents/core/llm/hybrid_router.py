@@ -514,6 +514,18 @@ class HybridRouter(LLMRouter):
             raise ModelNotApprovedError(msg)
         logger.warning("model pin violation (JARVIS_STRICT_MODELS=0, allowing): %s", msg)
 
+    def preview_backend(self, agent_id: str, prompt: str) -> tuple[LLMBackend, str, str]:
+        """Read-only route preview; no job pin resolution or provider dispatch."""
+        backend, model, route = self._select_backend_inner(agent_id, prompt)
+        compatible = getattr(self, "_compatible_backend", None)
+        if compatible is not None and route.startswith("cloud"):
+            backend, model, route = compatible, self._compatible_model, "cloud-compatible"
+        if (getattr(self, "_compatible_provider_id", "") == "deepinfra"
+                and route.startswith("cloud") and compatible is None):
+            raise LocalBackendUnavailableError("explicit DeepInfra main route is unavailable")
+        self._enforce_approved_models(agent_id, model, route)
+        return backend, model, route
+
     def select_backend(self, agent_id: str, prompt: str) -> tuple[LLMBackend, str, str]:
         """Select backend + model + route, then enforce the agent's approved-model
         allowlist (H23.2). Returns: (backend, model_name, route_name)."""

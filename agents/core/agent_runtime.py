@@ -320,11 +320,12 @@ class AgentToolRuntime:
         return tools, gated_tools, untrusted_tools
 
     def _guided_system(self, base: str, *, model: str, agent_id: str,
-                       metadata: list[dict[str, Any]]) -> str:
+                       metadata: list[dict[str, Any]], backend: Any = None) -> str:
         """Optional upstream advice over the exact offer, never tool authority."""
         from .conversation_clock import active_clock, render_snapshot
         from .operating_guidance import build_operating_guidance
         from .operating_prompt import OperatingPrompt, original_prompt
+        from .steering import steering_available
 
         frame = active_clock()
         base = render_snapshot(original_prompt(base), frame.snapshot if frame is not None else None)
@@ -336,12 +337,22 @@ class AgentToolRuntime:
                 return base
             capabilities = frozenset({"parallel_tool_calls", *(
                 "tool:" + row["name"] for row in metadata)})
+            environment = context.get("environment")
+            facts = context.get("execution_context")
+            if (callable(facts) and "tool:terminal_run" in capabilities
+                    and (context.get("enabled") or {}).get("environment_hint", True)):
+                try:
+                    environment = facts().get("environment")
+                except Exception:
+                    logger.debug("optional execution facts unavailable")
             guidance = build_operating_guidance(
                 model=model, surface=context.get("surface", ""),
                 enabled=context.get("enabled"), capabilities=capabilities,
-                environment=context.get("environment"),
+                environment=environment,
                 platform_overrides=context.get("platform_overrides"),
                 profile=context.get("profile"),
+                steer_available=steering_available(agent_id),
+                provider=getattr(getattr(backend, "profile", None), "id", ""),
             )
         except Exception:
             logger.warning("optional operating guidance could not be built; tool profile unchanged")
@@ -352,7 +363,7 @@ class AgentToolRuntime:
                        agent_id: str, allow_tools: bool = True) -> str:
         """Prepare the same prefix before cache acquisition or text generation."""
         metadata = self._resolve_offer(agent_id) if allow_tools and self.can_run(backend, agent_id=agent_id) else []
-        return self._guided_system(base, model=model, agent_id=agent_id, metadata=metadata)
+        return self._guided_system(base, model=model, agent_id=agent_id, metadata=metadata, backend=backend)
 
     def guidance_budget_tokens(self, agent_id: str) -> int:
         """Conservative family/registry union for planning before model selection."""
@@ -577,7 +588,7 @@ class AgentToolRuntime:
         tools, gated_tools, untrusted_tools = self._specs_for(metadata)
         messages = [
             {"role": "system", "content": self._guided_system(
-                system, model=model, agent_id=agent_id, metadata=metadata)},
+                system, model=model, agent_id=agent_id, metadata=metadata, backend=backend)},
             {"role": "user", "content": prompt},
         ]
         limit = self._iteration_limit()
@@ -601,6 +612,9 @@ class AgentToolRuntime:
                                  "effective_window": known_window or 0}
         schema_tokens = estimate_tokens(json.dumps([tool.as_openai() for tool in tools])) if known_window else 0
         while budget.consume():
+            from .steering import prepare_steering_rows
+            steering = prepare_steering_rows(agent_id)
+            messages.extend(steering.rows)
             folds_before = len(compacted)
             if (known_window is not None or len(messages) > 2) and not await self._compact_context(
                 messages,
@@ -662,7 +676,7 @@ class AgentToolRuntime:
                         if known_window else 0
                     )
                 rebuilt = self._guided_system(system, model=model, agent_id=agent_id,
-                                              metadata=metadata)
+                                              metadata=metadata, backend=backend)
                 if rebuilt != messages[0]["content"]:
                     messages[0] = {**messages[0], "content": rebuilt}
                     if not await self._compact_context(
@@ -684,11 +698,13 @@ class AgentToolRuntime:
                 mark_invocation_outcomes_visible(messages)
                 turn = await backend.generate_tool_turn(
                     model=model,
-                    messages=messages,
+                    messages=[{key: value for key, value in row.items() if key != "display_kind"}
+                              for row in messages],
                     tools=[] if guardian_stopped else tools,
                     max_tokens=max_tokens,
                     temperature=temperature,
                 )
+            steering.acknowledge()
             self._report_usage(usage_sink, turn)
             if not turn.tool_calls:
                 return turn.content

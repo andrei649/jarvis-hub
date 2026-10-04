@@ -1552,10 +1552,14 @@ class AutonomyCoordinator:
             flags, overrides = config.get("flags", {}), specific.get("flags", {})
             if not isinstance(flags, dict) or not isinstance(overrides, dict):
                 return None
+            from .execution_guidance_context import execution_guidance_context
+
             return {
                 "surface": _turn_principal().channel,
                 "enabled": {**flags, **overrides},
                 "platform_overrides": config.get("platform_overrides"),
+                "profile": agent_id,
+                "execution_context": lambda: execution_guidance_context(self, agent_id),
             }
 
         runtime = AgentToolRuntime(
@@ -2202,9 +2206,11 @@ def make_subagent_runner(orch):
     from .llm.provider_errors import provider_failure_scope
     from .subagents import SubAgentProviderError
 
-    async def _subagent_runner(task, session_id, agent):
+    async def _subagent_runner(task, session_id, agent, *, steer=None):
         picked = agent if agent in orch.agents else "jarvis"
-        with provider_failure_scope() as failures:
+        from .steering import steering_scope
+
+        with provider_failure_scope() as failures, steering_scope(steer, agent_id=picked):
             if current_selection() is not None:
                 router = getattr(orch, "llm_router", None)
                 if not callable(getattr(router, "select_backend", None)):

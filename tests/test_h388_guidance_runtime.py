@@ -155,3 +155,20 @@ async def test_compaction_rebuild_removes_advice_for_a_withdrawn_tool(monkeypatc
     assert "session_search" not in backend.requests[-1]["messages"][0]["content"]
     assert "# Finishing the job" in backend.requests[-1]["messages"][0]["content"]
     assert calls == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_alibaba_identity_uses_actual_backend_profile_and_not_model_family():
+    from types import SimpleNamespace
+
+    runtime = setup_runtime()
+    runtime._guidance_context = lambda aid: {}
+    configured = Backend()
+    configured.profile = SimpleNamespace(id='alibaba')
+    await run(runtime, configured, model='vendor/Real-Model-ID')
+    system = configured.requests[0]['messages'][0]['content']
+    assert 'The exact model ID is vendor/Real-Model-ID' in system
+    unconfigured = Backend()
+    unconfigured.profile = SimpleNamespace(id='lm-studio')
+    await run(runtime, unconfigured, model='qwen3')
+    assert 'The exact model ID' not in unconfigured.requests[0]['messages'][0]['content']

@@ -1007,6 +1007,11 @@ class Agent:
 
         from .llm.data_handling import physical_request_scope
         from .llm.usage_context import text_usage_scope
+        from .steering import prepare_steering_rows
+
+        steering = prepare_steering_rows(getattr(self, "id", ""))
+        if steering.rows:
+            prompt = "\n\n".join([prompt, *(row["content"] for row in steering.rows)])
 
         check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
         guard = (lambda: check(backend, model)) if callable(check) else None
@@ -1014,7 +1019,7 @@ class Agent:
             if callable(check):
                 check(backend, model)
             if on_token and hasattr(backend, "generate_stream"):
-                return await backend.generate_stream(
+                response = await backend.generate_stream(
                     model=model,
                     prompt=prompt,
                     system=system,
@@ -1022,6 +1027,8 @@ class Agent:
                     temperature=temperature,
                     on_token=on_token,
                 )
+                steering.acknowledge()
+                return response
 
             response = await backend.generate(
                 model=model,
@@ -1030,6 +1037,7 @@ class Agent:
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
+            steering.acknowledge()
             if on_token:
                 emitted = on_token(response)
                 if inspect.isawaitable(emitted):
