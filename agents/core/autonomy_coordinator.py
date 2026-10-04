@@ -1537,6 +1537,18 @@ class AutonomyCoordinator:
                     frozenset(str(tool.get("name") or "") for tool in offered))
             return offered, decision
 
+        def _guidance_context(_agent_id):
+            # Presentation follows the authenticated turn, never the prompt text.
+            # Missing/unreadable advice does not change the profiled tool offer.
+            config = _get_setting("llm.operating_guidance", None)
+            if not isinstance(config, dict) or config.get("enabled") is not True:
+                return None
+            return {
+                "surface": _turn_principal().channel,
+                "enabled": config.get("flags"),
+                "platform_overrides": config.get("platform_overrides"),
+            }
+
         runtime = AgentToolRuntime(
             server,
             enabled=lambda: _get_setting("llm.tool_loop_enabled", False) is True,
@@ -1565,6 +1577,7 @@ class AutonomyCoordinator:
             context_window_tokens=lambda: int(
                 _get_setting("llm.tool_result_context_window", 0) or 0),
             tool_profile=_profile_and_note_offer,
+            guidance_context=_guidance_context,
         )
         bind_external_orchestrator_attribute(self._orch, "tool_rpc", server)
         bind_external_orchestrator_attribute(self._orch, "agent_tool_runtime", runtime)

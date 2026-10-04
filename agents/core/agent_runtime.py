@@ -211,9 +211,11 @@ class AgentToolRuntime:
         result_store: Any | None = None,
         result_thresholds: Callable[[], Mapping[str, object]] | None = None,
         context_window_tokens: Callable[[], int] | None = None,
+        guidance_context: Callable[[str], Mapping[str, Any] | None] | None = None,
     ) -> None:
         self._server = server
         self._tool_profile = tool_profile
+        self._guidance_context = guidance_context
         self._repeat_limit = _safe_int(repeat_limit, default=_DEFAULT_REPEAT_LIMIT, minimum=0)
         self._failure_limit = _safe_int(failure_limit, default=_DEFAULT_FAILURE_LIMIT, minimum=0)
         self._per_tool_limit = per_tool_limit
@@ -316,6 +318,34 @@ class AgentToolRuntime:
             tool["name"] for tool in metadata if tool.get("untrusted_output") is True
         }
         return tools, gated_tools, untrusted_tools
+
+    def _guided_system(self, base: str, *, model: str, agent_id: str,
+                       metadata: list[dict[str, Any]]) -> str:
+        """Optional upstream advice over the exact offer, never tool authority."""
+        from .conversation_clock import active_clock, render_snapshot
+        from .operating_guidance import build_operating_guidance
+
+        frame = active_clock()
+        base = render_snapshot(base, frame.snapshot if frame is not None else None)
+        if self._guidance_context is None:
+            return base
+        try:
+            context = self._guidance_context(agent_id)
+            if context is None:
+                return base
+            capabilities = frozenset({"parallel_tool_calls", *(
+                "tool:" + row["name"] for row in metadata)})
+            guidance = build_operating_guidance(
+                model=model, surface=context.get("surface", ""),
+                enabled=context.get("enabled"), capabilities=capabilities,
+                environment=context.get("environment"),
+                platform_overrides=context.get("platform_overrides"),
+                profile=context.get("profile"),
+            )
+        except Exception:
+            logger.warning("optional operating guidance could not be built; tool profile unchanged")
+            return base
+        return "\n\n".join(part for part in (base, guidance) if part)
 
     def _resolve_offer(self, agent_id: str) -> list[dict[str, Any]]:
         """Re-resolve the offer from the LIVE registry, for a compaction boundary (H672).
@@ -534,7 +564,8 @@ class AgentToolRuntime:
             return _NO_TOOLS_REPLY
         tools, gated_tools, untrusted_tools = self._specs_for(metadata)
         messages = [
-            {"role": "system", "content": system},
+            {"role": "system", "content": self._guided_system(
+                system, model=model, agent_id=agent_id, metadata=metadata)},
             {"role": "user", "content": prompt},
         ]
         limit = self._iteration_limit()
@@ -618,6 +649,16 @@ class AgentToolRuntime:
                         estimate_tokens(json.dumps([tool.as_openai() for tool in tools]))
                         if known_window else 0
                     )
+                rebuilt = self._guided_system(system, model=model, agent_id=agent_id,
+                                              metadata=metadata)
+                if rebuilt != messages[0]["content"]:
+                    messages[0] = {**messages[0], "content": rebuilt}
+                    if not await self._compact_context(
+                        messages, compacted, model=model, max_tokens=max_tokens,
+                        effective_window=known_window, schema_tokens=schema_tokens,
+                        agent_id=agent_id, event_sink=event_sink,
+                    ):
+                        return _CONTEXT_REPLY
             # H513: every round rechecks revocation after tool/profile awaits.
             # Errors propagate before provider I/O; an unreadable gate never widens.
             if before_model_call is not None:
