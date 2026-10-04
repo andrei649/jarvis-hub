@@ -1,5 +1,12 @@
 # Sprint: echivalarea funcțiilor Hermes
 
+
+> Frozen H011/H277 milestone, 2026-10-04, source `b9d4d22d`: complete backend
+> 23,086 passed, 34 ordinary skips, one existing xfail, zero failures/errors;
+> all 3,109 frozen inputs unchanged. Serial clients passed HUD V2 1,889,
+> mobile 185 and legacy HUD 233; their source inputs remain unchanged.
+> H011/H277 remain partial. See [exact full evidence](hermes/evidence/h011-h277-reconciled-full-2026-10-04.json).
+
 > Frozen H011/H277 follow-up, 2026-10-04, source `f2318ee0`: the first complete
 > backend ran 23,120 cases: 23,080 passed, five failed, 34 skipped, one existing
 > xfail; all 3,098 frozen inputs were unchanged. Two old-signature persistence
@@ -8,7 +15,7 @@
 > legacy HUD 233. The original prepared H277 49-fault campaign has 48 initial
 > detections plus one test gap; the accepted exact-fault public-route regression
 > detects that gap, yielding 43 assertion and six behavior-exception detections.
-> H011/H277 stay partial. The second complete backend milestone is pending.
+> H011/H277 stay partial. The subsequent frozen backend milestone is verified in the exact full evidence above.
 > See [prepared49 evidence](handoff/h277/prepared49-refresh-2026-10-04/root-integration.json)
 > and [reconciliation plan](hermes/h011-frozen-milestone-reconciliation-2026-10-04.md).
 

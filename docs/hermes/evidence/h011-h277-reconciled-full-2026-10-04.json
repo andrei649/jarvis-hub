@@ -1,0 +1,132 @@
+{
+  "goal": "All697 pinned Hermes capabilities; full tests are not full functional parity",
+  "generated_at": "2026-10-04T09:36:03.709834Z",
+  "source_head": "b9d4d22dab2f9a663b162003db9f66a27a054d39",
+  "base_sha": "45a2a9c2e3e730a5ffe1663b33001c2a43aa81f4",
+  "state": "verified local frozen backend and separately verified serial clients",
+  "full_backend": {
+    "tests": 23121,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 35,
+    "passed": 23086,
+    "ordinary_skips": 34,
+    "existing_xfail": 1,
+    "expected_failure_cases": [
+      "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+    ],
+    "junit_sha256": "553dfdbae6128cd3fe36317789a32c62fd8cb600054aa5cef0ed6fd4c2969576",
+    "log_sha256": "4d37cf9df60cd93857b0763cb1ba49bd89599a253ff095d7f99d7e0a54d701ca",
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests",
+      "-n",
+      "3",
+      "--dist",
+      "loadfile",
+      "--timeout=90",
+      "-q",
+      "--tb=short",
+      "--junitxml=/tmp/nerva-h011-h277-reconciled-full-backend-20261004.xml"
+    ],
+    "exit_code": 0,
+    "xml": "/tmp/nerva-h011-h277-reconciled-full-backend-20261004.xml",
+    "log": "/tmp/nerva-h011-h277-reconciled-full-backend-20261004.log"
+  },
+  "frozen_inputs": {
+    "paths": 3109,
+    "drift": 0,
+    "manifest_sha256": "ff4e5e2a4e105b67cc9dec46ac383af38efb820cbb7d456767bb19a330e8ab79"
+  },
+  "serial_clients": {
+    "head": "45a2a9c2e3e730a5ffe1663b33001c2a43aa81f4",
+    "surfaces": [
+      {
+        "surface": "hud_v2",
+        "exit_code": 0,
+        "command": [
+          "npm",
+          "test",
+          "--",
+          "--reporter=json",
+          "--outputFile=/tmp/nerva-h011-owner-effect-full-clients-final-20261004-hud_v2.json"
+        ],
+        "cwd": "/Users/andrei649/Projects/nerva-pr-worktrees/consent/frontend",
+        "log": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-hud_v2.log",
+        "result": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-hud_v2.json",
+        "reported": {
+          "success": true,
+          "numTotalTests": 1889,
+          "numPassedTests": 1889,
+          "numFailedTests": 0,
+          "numPendingTests": 0,
+          "numTotalTestSuites": 558,
+          "numFailedTestSuites": 0
+        },
+        "drift": []
+      },
+      {
+        "surface": "mobile",
+        "exit_code": 0,
+        "command": [
+          "npm",
+          "test",
+          "--",
+          "--runInBand",
+          "--json",
+          "--outputFile=/tmp/nerva-h011-owner-effect-full-clients-final-20261004-mobile.json"
+        ],
+        "cwd": "/Users/andrei649/Projects/nerva-pr-worktrees/consent/mobile",
+        "log": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-mobile.log",
+        "result": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-mobile.json",
+        "reported": {
+          "success": true,
+          "numTotalTests": 185,
+          "numPassedTests": 185,
+          "numFailedTests": 0,
+          "numPendingTests": 0,
+          "numTotalTestSuites": 36,
+          "numFailedTestSuites": 0
+        },
+        "drift": []
+      },
+      {
+        "surface": "legacy_hud",
+        "exit_code": 0,
+        "command": [
+          "npm",
+          "test",
+          "--",
+          "--reporter=json",
+          "--outputFile=/tmp/nerva-h011-owner-effect-full-clients-final-20261004-legacy_hud.json"
+        ],
+        "cwd": "/Users/andrei649/Projects/nerva-pr-worktrees/consent",
+        "log": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-legacy_hud.log",
+        "result": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-legacy_hud.json",
+        "reported": {
+          "success": true,
+          "numTotalTests": 233,
+          "numPassedTests": 233,
+          "numFailedTests": 0,
+          "numPendingTests": 0,
+          "numTotalTestSuites": 115,
+          "numFailedTestSuites": 0
+        },
+        "drift": []
+      }
+    ],
+    "client_source_drift_since_run": [],
+    "dependency_links_removed": true
+  },
+  "reconciliation": "Five first-run failures corrected in tests only: modern metadata-compatible persistence spies with real temporary durable writes, readiness WIRED snapshot and executable harness counts33/110. Initial failed full run preserved in owner effect receipt. Current production unchanged by test reconciliation.",
+  "prepared49": "Root integrated exact public API assertion; original49 coverage43 assertion+6 behavioral exception detections, initial survivor and narrower scopes retained in prepared49 report.",
+  "limits": [
+    "34 ordinary skips and existing xfail separately reported",
+    "No configured coverage threshold or 100 percent coverage claim",
+    "Existing test warnings remain; no live/provider/device, publication or GitHub CI acceptance",
+    "H011/H277 remain partial; all697 objective remains unfinished"
+  ],
+  "next_action": "Implement checkpoint-owned payload accounting/reclamation plus retention/cap/orphan controls, dedicated clients/Windows and the wider remaining Hermes scope; no push, merge or deploy."
+}

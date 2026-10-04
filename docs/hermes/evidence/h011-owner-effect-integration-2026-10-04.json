@@ -212,7 +212,125 @@
       "check": "/tmp/nerva-h011-h277-frozen-reconciliation-graft-final-check-20261004.json",
       "optional_context": "missing; no concept/LLM pass claimed"
     },
-    "full_suites": "First full backend:23080 passed,5 failures,34 ordinary skips,1 existing xfail,0 drift; tests corrected with200 passing affected cases. HUD1889/mobile185/legacy233 pass. Second backend full milestone pending.",
+    "full_suites": {
+      "backend": {
+        "tests": 23121,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 35,
+        "passed": 23086,
+        "ordinary_skips": 34,
+        "existing_xfail": 1,
+        "expected_failure_cases": [
+          "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+        ],
+        "junit_sha256": "553dfdbae6128cd3fe36317789a32c62fd8cb600054aa5cef0ed6fd4c2969576",
+        "log_sha256": "4d37cf9df60cd93857b0763cb1ba49bd89599a253ff095d7f99d7e0a54d701ca",
+        "command": [
+          "/tmp/nerva-pr-python-20261001/bin/python",
+          "-m",
+          "pytest",
+          "tests",
+          "-n",
+          "3",
+          "--dist",
+          "loadfile",
+          "--timeout=90",
+          "-q",
+          "--tb=short",
+          "--junitxml=/tmp/nerva-h011-h277-reconciled-full-backend-20261004.xml"
+        ],
+        "exit_code": 0,
+        "xml": "/tmp/nerva-h011-h277-reconciled-full-backend-20261004.xml",
+        "log": "/tmp/nerva-h011-h277-reconciled-full-backend-20261004.log"
+      },
+      "frozen_inputs": {
+        "paths": 3109,
+        "drift": 0,
+        "manifest_sha256": "ff4e5e2a4e105b67cc9dec46ac383af38efb820cbb7d456767bb19a330e8ab79"
+      },
+      "serial_clients": {
+        "head": "45a2a9c2e3e730a5ffe1663b33001c2a43aa81f4",
+        "surfaces": [
+          {
+            "surface": "hud_v2",
+            "exit_code": 0,
+            "command": [
+              "npm",
+              "test",
+              "--",
+              "--reporter=json",
+              "--outputFile=/tmp/nerva-h011-owner-effect-full-clients-final-20261004-hud_v2.json"
+            ],
+            "cwd": "/Users/andrei649/Projects/nerva-pr-worktrees/consent/frontend",
+            "log": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-hud_v2.log",
+            "result": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-hud_v2.json",
+            "reported": {
+              "success": true,
+              "numTotalTests": 1889,
+              "numPassedTests": 1889,
+              "numFailedTests": 0,
+              "numPendingTests": 0,
+              "numTotalTestSuites": 558,
+              "numFailedTestSuites": 0
+            },
+            "drift": []
+          },
+          {
+            "surface": "mobile",
+            "exit_code": 0,
+            "command": [
+              "npm",
+              "test",
+              "--",
+              "--runInBand",
+              "--json",
+              "--outputFile=/tmp/nerva-h011-owner-effect-full-clients-final-20261004-mobile.json"
+            ],
+            "cwd": "/Users/andrei649/Projects/nerva-pr-worktrees/consent/mobile",
+            "log": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-mobile.log",
+            "result": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-mobile.json",
+            "reported": {
+              "success": true,
+              "numTotalTests": 185,
+              "numPassedTests": 185,
+              "numFailedTests": 0,
+              "numPendingTests": 0,
+              "numTotalTestSuites": 36,
+              "numFailedTestSuites": 0
+            },
+            "drift": []
+          },
+          {
+            "surface": "legacy_hud",
+            "exit_code": 0,
+            "command": [
+              "npm",
+              "test",
+              "--",
+              "--reporter=json",
+              "--outputFile=/tmp/nerva-h011-owner-effect-full-clients-final-20261004-legacy_hud.json"
+            ],
+            "cwd": "/Users/andrei649/Projects/nerva-pr-worktrees/consent",
+            "log": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-legacy_hud.log",
+            "result": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-legacy_hud.json",
+            "reported": {
+              "success": true,
+              "numTotalTests": 233,
+              "numPassedTests": 233,
+              "numFailedTests": 0,
+              "numPendingTests": 0,
+              "numTotalTestSuites": 115,
+              "numFailedTestSuites": 0
+            },
+            "drift": []
+          }
+        ],
+        "client_source_drift_since_run": [],
+        "dependency_links_removed": true
+      },
+      "receipt": "docs/hermes/evidence/h011-h277-reconciled-full-2026-10-04.json"
+    },
     "coverage_threshold": "None configured; no threshold compliance or 100 percent coverage claim",
     "collateral_22_modules": {
       "path": "/tmp/nerva-h011-owner-effect-collateral-green-20261004.xml",
@@ -385,13 +503,13 @@
     "complete checkpoint-owned payload cleanup; shared generic snapshots/blobs retained",
     "dedicated HUD/mobile controls and native acceptance",
     "Windows checkpoint capture/restore",
-    "frozen full suites and deeper crash/power-loss acceptance"
+    "deeper crash/power-loss acceptance"
   ],
   "agents": {
     "selection_and_operation_journal": "gpt-6-sol High isolated packages; reviewed and synthetic-tested by root",
     "cli_and_kernel": "gpt-6-sol High isolated packages; reviewed and integrated by root",
     "read_only_review": "gpt-6-luna Medium; no reproducible substantive finding, did not independently rerun tests; root then strengthened pure SQL identity and memory-rewire fences"
   },
-  "next_action": "Freeze second full backend after reviewed records and actual collection; continue H011 maintenance ownership/retention/cap and all697 remaining scope.",
+  "next_action": "Implement checkpoint-owned payload accounting/reclamation plus retention/cap/orphan controls, dedicated clients/Windows and the wider remaining Hermes scope; no push, merge or deploy.",
   "collateral_review": "Reviewed complete 38a14d46..dfca1a8a coordinator diff: only six lines register checkpoint.restore/checkpoint.maintenance with CheckpointController. Image preflight/gated intake and code/session/stream registration bodies are unchanged. Binding follow-up changes only subagents/task_executor literal line coordinates by +6. The 22-module H515/H595/H660/binding/authority union passed 697 cases with seven Docker-dependent skips. All three rows remain partial with every existing limitation; no fresh live Docker/image/provider or equivalent credit."
 }
