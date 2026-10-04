@@ -1,5 +1,17 @@
 # Sprint: echivalarea funcțiilor Hermes
 
+> Local auxiliary/owner-once increment2026-10-04: supported guarded local tasks
+> recover a typed unsupported output cap once per operation; no cross-call cap
+> memory, no post-frame stream replay and no reset of compaction idle deadlines.
+> Delivered terminal owner-once waits distinguish expiry, withdrawal, real owner
+> denial and approved-but-held handoff. Exact durable denial survives delayed
+> callback publication; observations never grant execution.
+> The168-module common regression passed4,303 cases. After the Bandit assert
+> correction,92 affected cases passed; final Bandit/Ruff pass. Backend collection
+> is22,465; the new full milestone is pending. H277/H487 remain partial.
+> See [auxiliary evidence](hermes/evidence/h277-auxiliary-output-cap-progress-2026-10-04.json)
+> and [owner-once evidence](hermes/evidence/h487-owner-once-outcomes-progress-2026-10-04.json).
+
 > OpenRouter native-video increment 2026-10-04: explicit primary, guarded vision
 > inheritance/model override and fixed-slot fallback now use the signed video
 > ToolRPC. Full video bytes, scoped keys and the approved provider privacy block

@@ -1,0 +1,176 @@
+{
+  "generated_at": "2026-10-04",
+  "base_sha": "31a1d193",
+  "source_commits": [
+    "48e911ed7340c63d026fa3628850640eaa882b18",
+    "c479790b8dae324061e1c29e0bc54967b914ee35"
+  ],
+  "files": [
+    {
+      "path": "agents/core/llm/auxiliary_recovery.py",
+      "unit": "h277-aux-output-cap",
+      "rationale": "Scoped implementation"
+    },
+    {
+      "path": "agents/core/llm/base.py",
+      "unit": "h277-aux-output-cap",
+      "rationale": "Scoped implementation"
+    },
+    {
+      "path": "agents/core/llm/auxiliary_text.py",
+      "unit": "h277-aux-output-cap",
+      "rationale": "Scoped implementation"
+    },
+    {
+      "path": "tests/test_h277_auxiliary_output_cap_recovery.py",
+      "unit": "h277-aux-output-cap",
+      "rationale": "Behavior regression and necessary old expectation"
+    },
+    {
+      "path": "docs/hermes/h277-auxiliary-output-cap-integration-plan-2026-10-04.md",
+      "unit": "h277-aux-output-cap",
+      "rationale": "Pre-code plan or exact scoped verification evidence"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-auxiliary-output-cap-progress-2026-10-04.json",
+      "unit": "h277-aux-output-cap",
+      "rationale": "Pre-code plan or exact scoped verification evidence"
+    },
+    {
+      "path": "agents/core/autonomy/owner_once.py",
+      "unit": "h487-owner-once-outcomes",
+      "rationale": "Scoped implementation"
+    },
+    {
+      "path": "agents/core/autonomy/owner_once_prompts.py",
+      "unit": "h487-owner-once-outcomes",
+      "rationale": "Scoped implementation"
+    },
+    {
+      "path": "agents/core/autonomy/terminal_review.py",
+      "unit": "h487-owner-once-outcomes",
+      "rationale": "Scoped implementation"
+    },
+    {
+      "path": "tests/test_h487_owner_once_outcomes.py",
+      "unit": "h487-owner-once-outcomes",
+      "rationale": "Behavior regression and necessary old expectation"
+    },
+    {
+      "path": "tests/test_h485_owner_once_prompts.py",
+      "unit": "h487-owner-once-outcomes",
+      "rationale": "Behavior regression and necessary old expectation"
+    },
+    {
+      "path": "tests/test_h485_owner_once_actuation.py",
+      "unit": "h487-owner-once-outcomes",
+      "rationale": "Behavior regression and necessary old expectation"
+    },
+    {
+      "path": "tests/test_h487_telegram_consent_integration.py",
+      "unit": "h487-owner-once-outcomes",
+      "rationale": "Behavior regression and necessary old expectation"
+    },
+    {
+      "path": "docs/hermes/h487-owner-once-outcomes-integration-plan-2026-10-04.md",
+      "unit": "h487-owner-once-outcomes",
+      "rationale": "Pre-code plan or exact scoped verification evidence"
+    },
+    {
+      "path": "docs/hermes/evidence/h487-owner-once-outcomes-progress-2026-10-04.json",
+      "unit": "h487-owner-once-outcomes",
+      "rationale": "Pre-code plan or exact scoped verification evidence"
+    },
+    {
+      "path": "GO_LIVE_PLAN.md",
+      "unit": "integrated-records",
+      "rationale": "Current collected test counts and generated status"
+    },
+    {
+      "path": "HERMES_STATUS.md",
+      "unit": "integrated-records",
+      "rationale": "Claim-specific semantic preservation and synchronized Hermes reports"
+    },
+    {
+      "path": "NERVA.md",
+      "unit": "integrated-records",
+      "rationale": "Current collected test counts and generated status"
+    },
+    {
+      "path": "README.md",
+      "unit": "integrated-records",
+      "rationale": "Current collected test counts and generated status"
+    },
+    {
+      "path": "STATUS.md",
+      "unit": "integrated-records",
+      "rationale": "Current collected test counts and generated status"
+    },
+    {
+      "path": "docs/HERMES_CAPABILITIES.md",
+      "unit": "integrated-records",
+      "rationale": "Claim-specific semantic preservation and synchronized Hermes reports"
+    },
+    {
+      "path": "docs/HERMES_SPRINT.md",
+      "unit": "integrated-records",
+      "rationale": "Claim-specific semantic preservation and synchronized Hermes reports"
+    },
+    {
+      "path": "docs/hermes/assessment.json",
+      "unit": "integrated-records",
+      "rationale": "Claim-specific semantic preservation and synchronized Hermes reports"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-auxiliary-output-cap-collateral-review-2026-10-04.md",
+      "unit": "integrated-records",
+      "rationale": "Claim-specific semantic preservation and synchronized Hermes reports"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-video-headline-collateral-review-2026-10-04.md",
+      "unit": "integrated-records",
+      "rationale": "Claim-specific semantic preservation and synchronized Hermes reports"
+    },
+    {
+      "path": "docs/hermes/evidence/h487-owner-once-outcomes-collateral-review-2026-10-04.md",
+      "unit": "integrated-records",
+      "rationale": "Claim-specific semantic preservation and synchronized Hermes reports"
+    },
+    {
+      "path": "project-status.json",
+      "unit": "integrated-records",
+      "rationale": "Current collected test counts and generated status"
+    },
+    {
+      "path": "docs/hermes/evidence/h487-auxiliary-outcomes-delivery-paths-2026-10-04.json",
+      "unit": "integrated-records",
+      "rationale": "Exact delivery path manifest for the two independently revertible source units and shared records"
+    }
+  ],
+  "verification": {
+    "root_union": {
+      "tests": 4303,
+      "modules": 168,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "scope": "Before Bandit explicit-None correction; affected92 passed afterward"
+    },
+    "final_record_gates": {
+      "tests": 151,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "bandit": "Final source baseline exit0 after initial B101 correction",
+    "ruff": "All changed Python paths passed",
+    "backend_collected": 22465,
+    "new_full_backend": "Pending; prior full22418 covers only original video milestone",
+    "documented_equivalence": "182/697=26.1%; restored existing semantic evidence, no H277/H487 full credit"
+  },
+  "limits": [
+    "No new provider/device/live/GitHub acceptance",
+    "No push, merge or deployment",
+    "All697 goal remains active"
+  ]
+}
