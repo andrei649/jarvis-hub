@@ -1,0 +1,220 @@
+{
+  "generated_at": "2026-10-04T04:10:39.426944+00:00",
+  "goal": "All697 local functional parity; claim-specific collateral verification after provider/terminal/native-denial source changes",
+  "verified_source_head_sha": "1f48fa6fb072940edab0a4040688a8e27f4e480a",
+  "collateral_base_sha": "9bfa085c2caa4d82ec5efe20082904052c5aae85",
+  "patch_sha256": "eca94bd138d7cb134bda2632d798d14694319b7c2d3f7b2e5cfbcc8bfb625584",
+  "reviewed_rows": [
+    {
+      "id": "H117",
+      "status": "equivalent"
+    },
+    {
+      "id": "H135",
+      "status": "equivalent"
+    },
+    {
+      "id": "H153",
+      "status": "equivalent"
+    },
+    {
+      "id": "H157",
+      "status": "equivalent"
+    },
+    {
+      "id": "H176",
+      "status": "partial"
+    },
+    {
+      "id": "H218",
+      "status": "partial"
+    },
+    {
+      "id": "H247",
+      "status": "equivalent"
+    },
+    {
+      "id": "H259",
+      "status": "equivalent"
+    },
+    {
+      "id": "H262",
+      "status": "equivalent"
+    },
+    {
+      "id": "H273",
+      "status": "equivalent"
+    },
+    {
+      "id": "H285",
+      "status": "equivalent"
+    },
+    {
+      "id": "H298",
+      "status": "equivalent"
+    },
+    {
+      "id": "H309",
+      "status": "equivalent"
+    },
+    {
+      "id": "H314",
+      "status": "equivalent"
+    },
+    {
+      "id": "H315",
+      "status": "equivalent"
+    },
+    {
+      "id": "H329",
+      "status": "equivalent"
+    },
+    {
+      "id": "H340",
+      "status": "equivalent"
+    },
+    {
+      "id": "H368",
+      "status": "equivalent"
+    },
+    {
+      "id": "H378",
+      "status": "equivalent"
+    },
+    {
+      "id": "H413",
+      "status": "equivalent"
+    },
+    {
+      "id": "H428",
+      "status": "equivalent"
+    },
+    {
+      "id": "H433",
+      "status": "equivalent"
+    },
+    {
+      "id": "H441",
+      "status": "equivalent"
+    },
+    {
+      "id": "H465",
+      "status": "equivalent"
+    },
+    {
+      "id": "H487",
+      "status": "partial"
+    },
+    {
+      "id": "H490",
+      "status": "equivalent"
+    },
+    {
+      "id": "H504",
+      "status": "equivalent"
+    },
+    {
+      "id": "H507",
+      "status": "equivalent"
+    },
+    {
+      "id": "H515",
+      "status": "partial"
+    },
+    {
+      "id": "H517",
+      "status": "partial"
+    },
+    {
+      "id": "H579",
+      "status": "equivalent"
+    },
+    {
+      "id": "H583",
+      "status": "equivalent"
+    },
+    {
+      "id": "H594",
+      "status": "equivalent"
+    },
+    {
+      "id": "H595",
+      "status": "partial"
+    },
+    {
+      "id": "H613",
+      "status": "partial"
+    },
+    {
+      "id": "H660",
+      "status": "partial"
+    },
+    {
+      "id": "H667",
+      "status": "equivalent"
+    },
+    {
+      "id": "H670",
+      "status": "equivalent"
+    },
+    {
+      "id": "H671",
+      "status": "equivalent"
+    },
+    {
+      "id": "H674",
+      "status": "equivalent"
+    },
+    {
+      "id": "H677",
+      "status": "equivalent"
+    },
+    {
+      "id": "H679",
+      "status": "equivalent"
+    },
+    {
+      "id": "H681",
+      "status": "equivalent"
+    },
+    {
+      "id": "H687",
+      "status": "equivalent"
+    },
+    {
+      "id": "H691",
+      "status": "equivalent"
+    }
+  ],
+  "semantic_review": "All45 were current at prior milestone and invalidated only by settled source/doc evidence changes. Root inspected scoped diffs, per-row dispositions and actual moved citations; independently rehashed24 committed evidence files and constrained final assessment diff to exactly45 reviews. No status upgrade. H368 caller inventory and H677 fast-task inventory were corrected; H487 remaining narrows only the delivered reusable-consent denial gap.",
+  "assessment_sha256": "d6988ce161b34a4583830d34e5ab7d03d037784c37508ec7a27bdc687474aa21",
+  "current_counts": {
+    "equivalent": 182,
+    "partial": 260,
+    "missing": 62,
+    "excluded": 0,
+    "needs_review": 193,
+    "current_reviews": 141,
+    "inherited_equivalent": 108
+  },
+  "record_gates": {
+    "tests": 151,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "20dbe4d9c34a572bf81b4eec8d9e165c1783d0b35d0c470d73b9b83e610803b5"
+  },
+  "checks": [
+    "hermes_status.py check passed",
+    "status_sync.py --check --reuse-test-counts passed; backend22632, historical frontend1889/mobile185"
+  ],
+  "source_regression_receipt": "docs/hermes/evidence/h277-h487-provider-terminal-denial-regression-2026-10-04.json",
+  "limits": [
+    "86 already-stale reviews and470 unreviewed inventory rows excluded from collateral refresh; no H277/H513/H485 full re-review claim",
+    "Exactly37 equivalent and8 partial verdicts restored; no new equivalence credit",
+    "No new full backend/live/provider/CI or mutation acceptance; prior receipts retain their earlier source snapshots",
+    "Owner-once native denial remains a separately reviewed external prototype",
+    "No push, merge or deploy"
+  ],
+  "next_action": "Review/integrate owner-once native denial, then exact updated records and one serial frozen full milestone"
+}

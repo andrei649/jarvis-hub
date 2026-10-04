@@ -194,12 +194,40 @@
       "path": "tests/test_h487_telegram_consent_denial.py",
       "unit": "source-unit",
       "rationale": "Scoped implementation/test or truthful generated count, source integration description and verification evidence"
+    },
+    {
+      "path": "HERMES_STATUS.md",
+      "unit": "claim-specific-collateral",
+      "rationale": "Exact45 previously-current semantic reviews, moved citations, truthful generated reports and151 required record gates; no verdict upgrades"
+    },
+    {
+      "path": "docs/HERMES_CAPABILITIES.md",
+      "unit": "claim-specific-collateral",
+      "rationale": "Exact45 previously-current semantic reviews, moved citations, truthful generated reports and151 required record gates; no verdict upgrades"
+    },
+    {
+      "path": "docs/hermes/assessment.json",
+      "unit": "claim-specific-collateral",
+      "rationale": "Exact45 previously-current semantic reviews, moved citations, truthful generated reports and151 required record gates; no verdict upgrades"
+    },
+    {
+      "path": "docs/hermes/evidence/h277-h487-provider-terminal-denial-collateral-2026-10-04.json",
+      "unit": "claim-specific-collateral",
+      "rationale": "Exact45 previously-current semantic reviews, moved citations, truthful generated reports and151 required record gates; no verdict upgrades"
     }
   ],
   "verification": {
     "affected_regression_receipt": "docs/hermes/evidence/h277-h487-provider-terminal-denial-regression-2026-10-04.json",
     "backend_collected": 22632,
-    "new_full_backend": "Pending separate frozen run; prior22465 excludes current batch"
+    "new_full_backend": "Pending separate frozen run; prior22465 excludes current batch",
+    "final_record_gates": {
+      "tests": 151,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "documented_equivalence": "182/697=26.1%; same existing verdicts restored after explicit collateral review, no new completion credit",
+    "collateral_receipt": "docs/hermes/evidence/h277-h487-provider-terminal-denial-collateral-2026-10-04.json"
   },
   "limits": [
     "No new equivalent capability credit",
