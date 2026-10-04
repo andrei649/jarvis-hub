@@ -138,11 +138,19 @@ privacy limits and `hermes/h485-smart-observers-plan-2026-10-03.md` for verifica
 Explicit DeepInfra main selection uses its own native text/tool/SSE adapter and
 canonical HTTPS API authority, with the selected model/key reused only by guarded
 main-image dispatch. It remains opt-in under the current data policy.
-Native Telegram `/deny [reason]` can reject a reusable-consent offer only as an
-original direct reply to its delivered card. A private bounded dispatch lane
-releases the waiting tool turn; owner/source/card/deadline checks precede the
-existing queue CAS. Text supplies denial metadata only. Owner-once free-text
-reasons remain a separate unfinished integration.
+Native Telegram `/deny [reason]` can reject an owner-once or reusable-consent offer
+only as an original direct reply to its delivered card. Pure selectors choose
+exactly one registry; private bounded dispatch releases the occupied tool turn.
+Owner/source/card/native-deadline checks precede the existing queue rejection CAS.
+Text supplies denial metadata only. Owner-once reasons have a separate MAC bound
+to the original durable task/denial/offer/card and human decision; one-shot outcome
+reconciliation cannot attribute coherently modified text to the owner. Accepted
+claims and execution authority are unchanged.
+The explicitly configured native compatible approval judge may repeat one request
+after a structured unsupported-temperature HTTP400. Its exact caller output cap
+and all other payload fields stay fixed, under one total timeout and current role,
+H513, queue, transport and request-body guards at each physical send. This does not
+change the seven strict-local auxiliary routes or enable a provider.
 
 | Path | Purpose | Key symbols |
 |------|---------|-------------|

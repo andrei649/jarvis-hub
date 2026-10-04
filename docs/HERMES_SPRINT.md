@@ -1,5 +1,17 @@
 # Sprint: echivalarea funcțiilor Hermes
 
+> Local owner-denial/active-judge increment2026-10-04: native Telegram `/deny`
+> now settles owner-once waits with the original bounded human reason, protected
+> by a denial-specific MAC. Accepted execution authority stays unchanged. The
+> explicitly configured compatible approval judge can recover one typed
+> temperature rejection with the exact generation cap and current request guards;
+> early hook refusal also closes the owned client. The35-module common regression
+> passed1,003 cases,zero failures/errors/skips. Actual backend collection is22,699;
+> frontend1,889/mobile185 remain historical snapshots. H277/H487 remain partial;
+> the clean frozen full milestone and wider functional scope remain open. See
+> [owner-denial evidence](hermes/evidence/h487-native-owner-denial-progress-2026-10-04.json)
+> and [active-judge evidence](hermes/evidence/h277-active-judge-recovery-progress-2026-10-04.json).
+
 > Local provider/terminal/denial increment2026-10-04: explicit DeepInfra main text,
 > tools and native SSE are integrated under canonical current route guards. Human-
 > approved manual Docker tasks now cross kernel/current receipt physical checks.

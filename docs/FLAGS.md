@@ -905,6 +905,14 @@ temperature progression from 0.2 to 0; policy, configuration and provider failur
 do not become JSON retries. There is no model-ID editor or auxiliary listing in the HUD/native app
 for these environment settings. Broader auxiliary discovery/recovery remains open.
 
+The explicitly configured native OpenAI-compatible approval judge may repeat once
+after a bounded structured HTTP400 that rejects `temperature`. Only temperature
+is omitted; the exact96-token advisory or16-token smart cap and all other request
+fields remain. Both sends share the original total timeout and recheck current
+role configuration, H513 consent, queue validity and direct physical request
+identity. A later judgement starts with temperature again. Other failures do not
+replay; this changes no strict-local auxiliary route or provider activation.
+
 **The approval judge** (`JARVIS_ROLE_APPROVAL_JUDGE_MODEL` set): each tool call queued on
 the action-approval queue is shown to that model **after** the card exists; its risk
 score (0–100) and one-line reason appear on the card as a labelled *model opinion*, with
