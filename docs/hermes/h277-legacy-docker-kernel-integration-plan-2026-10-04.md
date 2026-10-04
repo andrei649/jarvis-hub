@@ -38,3 +38,5 @@ counts/status. No paid/provider/terminal/device effects, activation, push, merge
 or deployment. Prior full22465 excludes this new source/test unit. H277 remains
 partial; all other accepted shell/producers and697 requirements remain.
 Next action: root test-only RED, then source integration and bounded GREEN.
+
+Root collateral correction plan: legacy_manual classification was before the backend branch and unintentionally changed SSH/local refusal precedence. Reproduce the existing SSH-flag-off assertion, restrict this new manual Docker lane to decision.backend==docker, then run that regression plus full SSH/local-target modules and the previously affected Docker/owner/consent modules. Keep canonical trusted coordinator current task checks; no shared kernel relaxation. Record the correction separately from the initial source checkpoint.

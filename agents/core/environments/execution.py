@@ -206,7 +206,8 @@ class GovernedTargetRunner:
         owner_marked = self._is_owner_approval(approved_task_id)
         consent_marked = self._is_consent_approval(approved_task_id)
         smart_marked = self._is_smart_approval(approved_task_id)
-        legacy_manual = (type(approved_task_id) is int and approved_task_id > 0
+        legacy_manual = (decision.backend == "docker"
+                         and type(approved_task_id) is int and approved_task_id > 0
                          and not (smart_marked or owner_marked or consent_marked))
         if decision.outcome not in {APPROVAL_REQUIRED, ALLOW}:
             return {"ok": False, "reason": decision.reason, **base}

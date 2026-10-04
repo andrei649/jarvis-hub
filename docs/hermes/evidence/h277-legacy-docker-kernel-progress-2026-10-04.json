@@ -5,7 +5,7 @@
   "state": "Integrated root RED/GREEN and22-module adjacent regression; later full milestone pending",
   "prototype_patch_sha256": "911d518a245f5861f171b7936d9fac61cb4b30ac36448222e7897c20092a3b7c",
   "source_sha256": {
-    "agents/core/environments/execution.py": "89a5b2660ab8bab8c5ddfcd430d2e0ac710d145dd23c4c1842b6f0eca6a8d663",
+    "agents/core/environments/execution.py": "2109367db7189c70038d047b9f06c263676e3fae097be3b1094ae5f4ebb699b4",
     "agents/core/autonomy_coordinator.py": "66d9cd9e790a33b68a23c17ed9501dfb81788c398a99dd28e1d2e252ed27f5d3",
     "agents/core/sandbox.py": "42bef3d5a553d6339646fe0067a9ab45ea0ec7e7c0ee9cd04b9daca92b266305",
     "agents/core/environments/legacy_terminal_dispatch.py": "bad5094d35e31ff500b8eca2547ea743d7ead8481598b0627582b7e407c7dc53",
@@ -50,5 +50,34 @@
     "No-task Docker ALLOW outside manually approved task increment",
     "No push, merge, deploy or provider activation"
   ],
-  "next_action": "Shared counts/architecture/claim-specific collateral, fresh Graft, combined regression and later serial full milestone"
+  "next_action": "Shared counts/architecture/claim-specific collateral, fresh Graft, combined regression and later serial full milestone",
+  "original_prototype_source_sha256": {
+    "agents/core/environments/execution.py": "89a5b2660ab8bab8c5ddfcd430d2e0ac710d145dd23c4c1842b6f0eca6a8d663",
+    "agents/core/autonomy_coordinator.py": "66d9cd9e790a33b68a23c17ed9501dfb81788c398a99dd28e1d2e252ed27f5d3",
+    "agents/core/sandbox.py": "42bef3d5a553d6339646fe0067a9ab45ea0ec7e7c0ee9cd04b9daca92b266305",
+    "agents/core/environments/legacy_terminal_dispatch.py": "bad5094d35e31ff500b8eca2547ea743d7ead8481598b0627582b7e407c7dc53",
+    "tests/test_h277_legacy_docker_kernel.py": "e12e6d88817a993545aac108fe0a039c54bf800479ed61a950ebae73f18eaf96",
+    "tests/test_h277_smart_terminal_integration.py": "bf6c342fc71fbe55311099f2456a07ec39d1aeeca796023e837570d5bfaa0823"
+  },
+  "collateral_scope_correction": {
+    "finding": "Early positive unmarked task classification unintentionally changed SSH/local refusal precedence",
+    "root_red": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "9da45d70189eff4c2b1fdb04548db48e9216617a5fa750ba048edfdb1146e3ed"
+    },
+    "fix": "New legacy_manual scope only when decision.backend is docker; trusted coordinator current approval and receipt checks remain",
+    "root_green": {
+      "tests": 413,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "4d2e10e41aa1f3042f39cd09feab4e3b014da5d550501808b74c1b3062fe25fa"
+    },
+    "scope": "Whole SSH/local transport/target modules plus new Docker and smart terminal modules; zero effects, zero failures/errors/skips",
+    "initial_checkpoint_scope": "Original34/349 root checkpoint preceded this one-line classification correction; final413 verifies corrected execution source",
+    "final_bandit": "agents/scripts baseline-aware scan exit0"
+  }
 }
