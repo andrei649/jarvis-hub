@@ -40,3 +40,11 @@ equivalence claim. No frontend/mobile source changed in this unit. Roll back the
 two source units independently and regenerate shared metadata coherently; retain
 the additive inert nullable denial-MAC column rather than deleting task data.
 Next action: shared records and reviewed collateral, then frozen full milestone.
+
+Record checkpoint2026-10-04: exactly seven previously-current claims were reviewed
+against the source/doc delta, with real citation mappings. Six equivalent verdicts
+and H487 partial were preserved; only its delivered owner-once native reason gap
+was removed from remaining scope. Current182/697=26.1%,141 current reviews restores
+the existing basis without new capability credit. External Graft graph is fresh
+with49,490 nodes,zero source drift; its optional deep pass remains unbuilt. See the
+[collateral receipt](evidence/h277-h487-owner-judge-collateral-2026-10-04.json).
