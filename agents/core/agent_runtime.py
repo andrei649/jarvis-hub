@@ -324,9 +324,10 @@ class AgentToolRuntime:
         """Optional upstream advice over the exact offer, never tool authority."""
         from .conversation_clock import active_clock, render_snapshot
         from .operating_guidance import build_operating_guidance
+        from .operating_prompt import OperatingPrompt, original_prompt
 
         frame = active_clock()
-        base = render_snapshot(base, frame.snapshot if frame is not None else None)
+        base = render_snapshot(original_prompt(base), frame.snapshot if frame is not None else None)
         if self._guidance_context is None:
             return base
         try:
@@ -345,7 +346,18 @@ class AgentToolRuntime:
         except Exception:
             logger.warning("optional operating guidance could not be built; tool profile unchanged")
             return base
-        return "\n\n".join(part for part in (base, guidance) if part)
+        return OperatingPrompt("\n\n".join(part for part in (base, guidance) if part), base=base, model=model)
+
+    def prepare_system(self, base: str, *, backend: Any, model: str,
+                       agent_id: str, allow_tools: bool = True) -> str:
+        """Prepare the same prefix before cache acquisition or text generation."""
+        metadata = self._resolve_offer(agent_id) if allow_tools and self.can_run(backend, agent_id=agent_id) else []
+        return self._guided_system(base, model=model, agent_id=agent_id, metadata=metadata)
+
+    def guidance_budget_tokens(self, agent_id: str) -> int:
+        """Conservative family/registry union for planning before model selection."""
+        return estimate_messages([{"role": "system", "content": self._guided_system(
+            "", model="gpt gemini", agent_id=agent_id, metadata=self._server.tools())}])
 
     def _resolve_offer(self, agent_id: str) -> list[dict[str, Any]]:
         """Re-resolve the offer from the LIVE registry, for a compaction boundary (H672).

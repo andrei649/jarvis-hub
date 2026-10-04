@@ -57,3 +57,55 @@ Implemented batch at base/head dba0fb56 (working changes, 2026-10-04):
   deterministic compaction tests; production compaction itself is exercised.
 - Next action: continue the remaining H388 blocks and direct/synthesis/stream
   prompt/cache seams from pinned Hermes. This batch leaves H388 partial.
+
+Next local batch (2026-10-04, base/head 40ed2ac3): root owns the real
+Agent/direct/synthesis/stream/cache and route-budget seams plus live per-agent
+JSON overrides. Use a typed internal prepared prompt to retain its original
+base; rebuilding never strips authority by matching a text marker. Guidance is
+computed from the actual route before cache acquisition, and tool advice is
+omitted for synthesis, which has no tool loop. One Sol High implementer prepares
+memory/user/skills/help/kanban blocks in /tmp; a second prepares provider-local
+role adaptation. No children or overlapping writers. Tests exercise actual model
+requests, cache-prefix equality, independent overrides and exact profiled offers.
+Keep existing authorization and local-only synthesis routing. Rollback reverts
+this batch's optional guidance hooks/blocks without changing tools or settings.
+
+Implemented in this batch:
+- Nerva memory/user-profile, skills and Help blocks reuse the Hermes semantics
+  and name only actual offered tools. Disabled memory is not asserted as loaded.
+  Kanban has no Nerva tool family yet; its workflow remains an open requirement.
+- Actual direct/stream calls and synthesis receive the routed presentation
+  prefix. Synthesis does not advertise tool execution. Per-agent JSON
+  `agents.<id>.enabled/flags` overrides are live and cannot widen an offer.
+- A prepared internal string carries its original authority separately. Model
+  dispatch and committed folds rebuild from that base. Cache lookup/generation
+  share one prefix even when settings change during lookup, with real managed
+  clocks as well as unmanaged calls. Route planning reserves guidance overhead.
+- OpenRouter's explicit OpenAI GPT-5/Codex models receive the upstream developer
+  role on the real plain/tool wire. Other models/custom-compatible profiles are
+  unchanged. Alibaba identity remains blocked on a missing provider binding,
+  not guessed from model names. Copyright and full MIT notices are retained.
+- Both implementers used gpt-6-sol/high without children and edited only /tmp
+  copies; root reviewed/integrated patches. Their focused source tests passed
+  before integration. The initial broad root union exposed a stale binding
+  callsite inventory; updating its literal coordinates fixed all50 cases.
+- The pre-expansion root union passed all691 integration cases. Completion of
+  H388 and the full697 goal is not claimed: authoritative environment/profile
+  probes, missing platform/steer/HUD notes, Kanban and Alibaba remain open.
+
+Final local verification (2026-10-04, batch base 40ed2ac3): the substantive
+Hermes execution and Google blocks are now adapted with their prerequisite,
+persistence, completion, external read-back, literal-preservation and dependency
+rules. Tool names are included only when offered. The final affected union
+passed 704 tests with zero failures, errors or skips. Whole-repository Ruff and
+baseline-aware Bandit exited zero; the explicitly rebuilt Graft graph is current.
+This is affected-suite evidence, not a new full backend or live-provider run.
+The 691-case run above predates this final expansion.
+
+Next action: finish H388's authoritative host/profile facts and missing
+platform/steer/HUD/provider/Kanban contracts using upstream implementations
+where compatible. The read-only collateral review also identified H227's raw
+inspector prompt as needing comparison with the newly prepared model prefix;
+it is not marked equivalent. Prefer complete functional batches and reuse
+upstream tests, with broader suites at frozen milestones. Local rollback is
+one commit reverting this optional guidance expansion.

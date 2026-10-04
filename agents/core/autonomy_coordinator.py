@@ -1537,15 +1537,24 @@ class AutonomyCoordinator:
                     frozenset(str(tool.get("name") or "") for tool in offered))
             return offered, decision
 
-        def _guidance_context(_agent_id):
+        def _guidance_context(agent_id):
             # Presentation follows the authenticated turn, never the prompt text.
             # Missing/unreadable advice does not change the profiled tool offer.
             config = _get_setting("llm.operating_guidance", None)
             if not isinstance(config, dict) or config.get("enabled") is not True:
                 return None
+            agents = config.get("agents", {})
+            if not isinstance(agents, dict) or len(agents) > 256:
+                return None
+            specific = agents.get(agent_id, {})
+            if not isinstance(specific, dict) or specific.get("enabled", True) is not True:
+                return None
+            flags, overrides = config.get("flags", {}), specific.get("flags", {})
+            if not isinstance(flags, dict) or not isinstance(overrides, dict):
+                return None
             return {
                 "surface": _turn_principal().channel,
-                "enabled": config.get("flags"),
+                "enabled": {**flags, **overrides},
                 "platform_overrides": config.get("platform_overrides"),
             }
 

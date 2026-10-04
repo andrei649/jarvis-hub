@@ -2434,6 +2434,11 @@ class Orchestrator:
                         backend, router_model, route_name = self.llm_router.select_backend(agent_id, prompt)
                     if router_model:
                         model = router_model
+                    prepare_system = getattr(agent, "model_system_prompt", None)
+                    if callable(prepare_system):
+                        system_prompt = prepare_system(backend, model, system_prompt)
+                    from .operating_prompt import clocked_prompt
+                    system_prompt = clocked_prompt(system_prompt, prompt_clock.get())
                     # Reasoning models on the deep slot need a far larger budget:
                     # 1–2k tokens is consumed by chain-of-thought before any
                     # answer, so a small cap truncates mid-thought.
@@ -4203,6 +4208,9 @@ class Orchestrator:
                 if runtime is not None:
                     # A conservative superset: profile filtering can only remove tools.
                     overhead += estimate_tokens(json.dumps(runtime._server.tools()))
+                    guidance_budget = getattr(runtime, "guidance_budget_tokens", None)
+                    if callable(guidance_budget):
+                        overhead += guidance_budget(aid)
                 prompts[aid] = (prompt, overhead, enriched, runtime is not None)
             return prompts
 

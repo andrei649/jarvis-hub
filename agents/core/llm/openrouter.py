@@ -13,6 +13,25 @@ serve it. ``HybridRouter`` hands the backend a reader of the llm settings
 an owner's change through the HUD or ``nerva config set`` governs the next request,
 not the next ``detect()``. A row that no longer validates refuses that request —
 nothing is sent — rather than dropping the knob and widening routing.
+
+The H388 developer-role selector is adapted from Hermes Agent 59b2aeef6c7a.
+MIT License
+Copyright (c) 2025 Nous Research
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 """
 
 from __future__ import annotations
@@ -46,6 +65,24 @@ _ROUTING_SETTINGS = " / ".join(
 
 class _RoutingUnavailable(Exception):
     """The provider object for this request could not be built; nothing is sent."""
+
+
+def _openrouter_instruction_messages(model: str, messages: list[dict]) -> list[dict]:
+    """Use the OpenAI developer role for OpenRouter's GPT-5/Codex models.
+
+    Adapted from Hermes Agent ``agent/transports/chat_completions.py`` at
+    59b2aeef6c7a (MIT). This is limited to OpenRouter's ``openai/`` model ids;
+    a custom OpenAI-compatible endpoint has no declared role semantics.
+    """
+    name = (model or "").lower()
+    openai_model = name.removeprefix("openai/") if name.startswith("openai/") else ""
+    supports_developer = any(
+        openai_model == family or openai_model.startswith((family + "-", family + "."))
+        for family in ("gpt-5", "codex")
+    )
+    if supports_developer and messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+        return [{**messages[0], "role": "developer"}, *messages[1:]]
+    return messages
 
 
 class OpenRouterBackend(LLMBackend):
@@ -125,6 +162,8 @@ class OpenRouterBackend(LLMBackend):
         payload.update(compatible_parameters(self.profile, payload["model"], self.reasoning_effort))
         merge_extra_body(payload)
         reconcile_payload(payload)
+        if self.profile.id == "openrouter":
+            payload["messages"] = _openrouter_instruction_messages(payload["model"], payload["messages"])
         if block:
             payload["provider"] = block
         return payload

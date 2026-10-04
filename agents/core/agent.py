@@ -582,6 +582,17 @@ class Agent:
             identity = identity.replace(_SOUL_FALLBACK_RULES, "").strip()
         return "\n\n".join(part for part in (identity, hint_block(), persona) if part)
 
+    def model_system_prompt(self, backend, model: str, system: str, *, allow_tools: bool = True) -> str:
+        """Bind operating advice to the actual route, also before cache lookup."""
+        from .operating_prompt import OperatingPrompt
+
+        if isinstance(system, OperatingPrompt) and system.model == model:
+            return system
+        prepare = getattr(getattr(self, "tool_runtime", None), "prepare_system", None)
+        if callable(prepare):
+            return prepare(system, backend=backend, model=model, agent_id=self.id, allow_tools=allow_tools)
+        return system
+
     def _load_identity(self) -> None:
         self._identity_kept = False
         path = None
@@ -911,16 +922,17 @@ class Agent:
                                 temperature, on_token=None, wall_seconds=None,
                                 usage_sink=None, session_id=None, effective_window=None,
                                 clock_snapshot=CLOCK_UNSET) -> str:
-        from .conversation_clock import capture_clock, clock_scope, render_snapshot
+        from .conversation_clock import capture_clock, clock_scope
         from .llm.request_context import current_session, session_scope
         from .llm.usage_context import current_observer, observer_scope, text_usage_scope
+        from .operating_prompt import clocked_prompt
 
         sid = session_id or current_session()
         manager = self._checkpoint_manager
         snapshot = capture_clock(manager, sid, agent_id=self.id) if clock_snapshot is CLOCK_UNSET else clock_snapshot
         if snapshot is not None and snapshot.session_id != sid:
             snapshot = None
-        system = render_snapshot(system, snapshot)
+        system = clocked_prompt(system, snapshot)
         sink = usage_sink if usage_sink is not None else current_observer()
         with clock_scope(manager, snapshot), session_scope(sid), observer_scope(sink) as observer, text_usage_scope(None):
             return await self._generate_response(
@@ -957,6 +969,7 @@ class Agent:
         (Hermes absorption 5c).
         """
         from .llm.job_selection import selected_window
+        system = self.model_system_prompt(backend, model, system)
         pinned_window = selected_window(model)
         if pinned_window is not None:
             cap = pinned_window // 4
@@ -1248,6 +1261,7 @@ class Agent:
             residency = manager.using(model) if (manager is not None and route_name.startswith("local")) else _NullCtx()
 
             max_tokens, temperature = self._gen_params(route_name)
+            system_prompt = self.model_system_prompt(backend, model, system_prompt, allow_tools=False)
             async with residency:
                 check = getattr(self.llm_router, "check_data_handling", None)
                 if callable(check):
