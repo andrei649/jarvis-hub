@@ -546,6 +546,7 @@ class CheckpointManager:
                        ("session_clock", "clock", "session_id", False),
                        ("session_continuations", "continuation", "session_id", False),
                        ("session_history_instances", "history_instance", "session_id", False),
+                       ("session_history_rewinds", "rewind", "session_id", False),
                        ("sessions", "session", "id", False))
 
     def session_rows_for_backup(self, session_id: str) -> dict:

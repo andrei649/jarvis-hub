@@ -46,6 +46,14 @@ def initialize(conn):
         root_id TEXT NOT NULL, root_instance_id TEXT NOT NULL, root_birth_at TEXT NOT NULL,
         seed_json TEXT NOT NULL, seed_sha256 TEXT NOT NULL, created_at TEXT NOT NULL
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS session_history_rewinds (
+        session_id TEXT PRIMARY KEY, instance_id TEXT NOT NULL,
+        revision INTEGER NOT NULL, snapshot_sha256 TEXT NOT NULL
+    )""")
+    conn.execute("""CREATE TRIGGER IF NOT EXISTS session_rewind_on_delete
+        AFTER DELETE ON sessions BEGIN
+        DELETE FROM session_history_rewinds WHERE session_id=OLD.id;
+    END""")
 
 
 def identity(conn, sid):
@@ -69,6 +77,13 @@ def history_identity(conn, sid):
     if current is None or binding is None or binding[0] != current[1]:
         raise ContinuationRefused("history_identity_changed")
     return binding
+
+
+def rewind_head(conn, sid):
+    return conn.execute(
+        "SELECT instance_id,revision,snapshot_sha256 FROM session_history_rewinds WHERE session_id=?",
+        (sid,),
+    ).fetchone()
 
 
 def validate_seed(row):
@@ -295,14 +310,34 @@ def _load_locked(orch, sid):
     conversation = orch.memory.conversation
     with orch.checkpoints._lock:
         instance, legacy = history_identity(orch.checkpoints._conn, sid)
+        head = rewind_head(orch.checkpoints._conn, sid)
+    if head is not None and head[0] != instance:
+        raise ContinuationRefused("history_identity_changed")
     if sid in conversation.sessions:
         known = conversation.instances.get(sid)
         if known != instance and not (known is None and legacy):
             raise ContinuationRefused("history_identity_changed")
         turns = [turn.to_dict() for turn in conversation.sessions[sid]]
-        seed_json(turns)
+        if head is not None:
+            try:
+                document, digest = persistence.read_snapshot_for_rewind(sid)
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                raise ContinuationRefused("invalid_history") from None
+            if (document.get("instance_id") != instance
+                    or document.get("rewound") is not True
+                    or document.get("revision", 0) != conversation.revisions.get(sid, 0)
+                    or document["turns"] != turns
+                    or document.get("revision", 0) != head[1]
+                    or digest != head[2]):
+                raise ContinuationRefused("invalid_history")
+        if not turns:
+            if head is None or conversation.revisions.get(sid) != head[1]:
+                raise ContinuationRefused("invalid_history")
+        else:
+            seed_json(turns)
         return turns
     path = persistence.memory_dir() / f"{sid}.json"
+    loaded_revision = 0
     if path.exists():
         # Never silently fall back to an old seed when a newer snapshot is corrupt.
         try:
@@ -317,10 +352,28 @@ def _load_locked(orch, sid):
             if known != instance and not (known is None and legacy):
                 raise ContinuationRefused("history_identity_changed")
             turns = document.get("turns")
-            seed_json(turns)
+            revision = document.get("revision", 0)
+            loaded_revision = revision
+            if head is not None:
+                if (document.get("rewound") is not True
+                        or type(revision) is not int or revision != head[1]
+                        or persistence.snapshot_digest(document) != head[2]):
+                    raise ContinuationRefused("invalid_history")
+            elif document.get("rewound") is True:
+                # JSON landed but its SQLite transaction never committed.
+                raise ContinuationRefused("invalid_history")
+            if turns == []:
+                if (head is None or document.get("rewound") is not True
+                        or known != instance):
+                    raise ContinuationRefused("invalid_history")
+            else:
+                seed_json(turns)
         except (OSError, ValueError, TypeError):
             raise ContinuationRefused("invalid_history") from None
     else:
+        if head is not None:
+            # A missing rewound snapshot must never resurrect the immutable seed.
+            raise ContinuationRefused("invalid_history")
         turns = ContinuationStore(orch.checkpoints).seed(sid)
         if turns is None:
             raise ContinuationRefused("session_not_found", 404)
@@ -335,6 +388,9 @@ def _load_locked(orch, sid):
     conversation.invalidate_active_images(sid)
     conversation.sessions[sid] = restored
     conversation.instances[sid] = instance
+    conversation.revisions[sid] = loaded_revision
+    if head is not None:
+        conversation.rewound_sessions.add(sid)
     return turns
 
 

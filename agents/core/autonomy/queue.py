@@ -2532,6 +2532,31 @@ class TaskQueue:
     def _chat_context(context) -> bool:
         return isinstance(context, ApprovalTurnContext) and context.live()
 
+    def checkpoint_origin_turn(self, task_id: int, task_birth: str) -> str | None:
+        """Observe an exact terminal task's durable chat origin, never a grant.
+
+        The originating chat may already have closed while approval waits.
+        Callers must independently enforce all execution/currentness fences.
+        """
+        if (type(task_id) is not int or task_id <= 0 or type(task_birth) is not str
+                or not task_birth or len(task_birth) > 128):
+            return None
+        try:
+            with self._lock:
+                row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+                task = _row_to_task(row) if row else None
+                if task is None or task.created_at != task_birth:
+                    return None
+                association = self._chat_denial_consumer_locked(task)
+                if (association is None
+                        or association['intent_sha256'] != self._chat_intent_locked(task)):
+                    return None
+                origin = association['origin_id']
+                parsed = uuid.UUID(hex=origin) if type(origin) is str else None
+                return origin if parsed is not None and parsed.hex == origin and parsed.version == 4 else None
+        except (sqlite3.Error, ValueError, TypeError, KeyError):
+            return None
+
     def _chat_denial_consumer_locked(self, task: Task) -> sqlite3.Row | None:
         """Return only the server-created, ready association for this task birth."""
         row = self._conn.execute('''SELECT t.*, o.session_id, o.session_instance, o.principal_key
