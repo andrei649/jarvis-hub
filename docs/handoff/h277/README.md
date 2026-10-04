@@ -1,5 +1,19 @@
 # Handoff — H277 in progress on PR #1207 (2026-09-27)
 
+
+## Prepared49 current-source follow-up (2026-10-04)
+
+The [new exact-source campaign](prepared49-refresh-2026-10-04/REPORT.md) preserves
+all49 original prepared faults. Existing tests detect42 by assertion and6 by
+behavior-changing exceptions; one original public-projection fault survived.
+The accepted regression in source `f2318ee0` passes on current production and
+fails under that exact fault for a configured nonlocal custom loopback judge.
+Expanded coverage therefore detects43 by assertion and6 by exception. This is
+an added test for a correct production guard, not a current privacy defect.
+Baseline/final359 Python and40 HUD tests pass;942 copied input hashes restored.
+See [root integration and limits](prepared49-refresh-2026-10-04/root-integration.json).
+H277 remains partial; this campaign does not establish wider provider/native parity.
+
 ## Exact-image review continuation (2026-10-02)
 
 The selected browser review now binds the one-use token to the SHA-256 digests

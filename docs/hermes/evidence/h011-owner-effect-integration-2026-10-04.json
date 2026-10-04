@@ -2,7 +2,7 @@
   "goal": "Complete all 697 pinned Hermes capabilities; H011 remains partial",
   "generated_at": "2026-10-04T08:50:38.167818+00:00",
   "base_sha": "38a14d46553b00c936593494c9baa58fd4aa0375",
-  "source_head": "825533f449d5dd0b02c763e1d19bb08683f3fd0d",
+  "source_head": "f2318ee0afca0f7d4ea4210b3c7071ee8c633c93",
   "scope": "Owner CLI/chat diff, selected/force restore, signed human task, live kernel and worker, durable operation journal, physical fences, complete-filesystem-success then current-last-user rewind, approved index maintenance",
   "source": [
     {
@@ -202,16 +202,17 @@
     "exact_staged_secret_scans": [
       "/tmp/nerva-h011-owner-effect-code-final-selected-index-scan-20261004-manifest.json",
       "/tmp/nerva-h011-owner-effect-mobile-final-selected-index-scan-20261004-manifest.json",
-      "/tmp/nerva-h011-owner-effect-binding-final-selected-index-scan-20261004-manifest.json"
+      "/tmp/nerva-h011-owner-effect-binding-final-selected-index-scan-20261004-manifest.json",
+      "/tmp/nerva-h011-h277-frozen-reconciliation-tests-final-selected-index-scan-20261004-manifest.json"
     ],
     "graft_graph": {
       "ok": true,
       "cache": "/tmp/nerva-consent-graft-20261004",
-      "node_count": 50069,
-      "check": "/tmp/nerva-h011-owner-effect-binding-graft-final-check-20261004.json",
+      "node_count": 50072,
+      "check": "/tmp/nerva-h011-h277-frozen-reconciliation-graft-final-check-20261004.json",
       "optional_context": "missing; no concept/LLM pass claimed"
     },
-    "full_suites": "Not yet run at this source milestone; affected suites are not full acceptance",
+    "full_suites": "First full backend:23080 passed,5 failures,34 ordinary skips,1 existing xfail,0 drift; tests corrected with200 passing affected cases. HUD1889/mobile185/legacy233 pass. Second backend full milestone pending.",
     "coverage_threshold": "None configured; no threshold compliance or 100 percent coverage claim",
     "collateral_22_modules": {
       "path": "/tmp/nerva-h011-owner-effect-collateral-green-20261004.xml",
@@ -228,7 +229,134 @@
       "failures": 0,
       "errors": 0,
       "skipped": 0
-    }
+    },
+    "first_frozen_backend": {
+      "head": "45a2a9c2e3e730a5ffe1663b33001c2a43aa81f4",
+      "state": "terminal_review_required",
+      "exit_code": 1,
+      "drift": [],
+      "full_backend": {
+        "tests": 23120,
+        "failures": 5,
+        "errors": 0,
+        "skipped": 35,
+        "passed": 23080,
+        "ordinary_skips": 34,
+        "existing_xfail": 1,
+        "expected_failure_cases": [
+          "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+        ],
+        "junit_sha256": "98a28e0e2c693dbaeeef0b53bff749a9feb5a2362decddf1d3aac6f70b22330c",
+        "log_sha256": "c641f17b796da16e13f4297b4942e8fb7acf6811dbb3ea49b1f685aca6ed7b34"
+      },
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests",
+        "--timeout=90",
+        "-q",
+        "--tb=short",
+        "--junitxml=/tmp/nerva-h011-owner-effect-full-backend-20261004.xml"
+      ],
+      "freeze": "/tmp/nerva-h011-owner-effect-full-backend-20261004-frozen.json",
+      "log": "/tmp/nerva-h011-owner-effect-full-backend-20261004.log",
+      "xml": "/tmp/nerva-h011-owner-effect-full-backend-20261004.xml"
+    },
+    "serial_frozen_clients": {
+      "state": "terminal_pass",
+      "head": "45a2a9c2e3e730a5ffe1663b33001c2a43aa81f4",
+      "backend_state": "terminal_review_required",
+      "input_count": 3098,
+      "surfaces": [
+        {
+          "surface": "hud_v2",
+          "exit_code": 0,
+          "command": [
+            "npm",
+            "test",
+            "--",
+            "--reporter=json",
+            "--outputFile=/tmp/nerva-h011-owner-effect-full-clients-final-20261004-hud_v2.json"
+          ],
+          "cwd": "/Users/andrei649/Projects/nerva-pr-worktrees/consent/frontend",
+          "log": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-hud_v2.log",
+          "result": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-hud_v2.json",
+          "reported": {
+            "success": true,
+            "numTotalTests": 1889,
+            "numPassedTests": 1889,
+            "numFailedTests": 0,
+            "numPendingTests": 0,
+            "numTotalTestSuites": 558,
+            "numFailedTestSuites": 0
+          },
+          "drift": []
+        },
+        {
+          "surface": "mobile",
+          "exit_code": 0,
+          "command": [
+            "npm",
+            "test",
+            "--",
+            "--runInBand",
+            "--json",
+            "--outputFile=/tmp/nerva-h011-owner-effect-full-clients-final-20261004-mobile.json"
+          ],
+          "cwd": "/Users/andrei649/Projects/nerva-pr-worktrees/consent/mobile",
+          "log": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-mobile.log",
+          "result": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-mobile.json",
+          "reported": {
+            "success": true,
+            "numTotalTests": 185,
+            "numPassedTests": 185,
+            "numFailedTests": 0,
+            "numPendingTests": 0,
+            "numTotalTestSuites": 36,
+            "numFailedTestSuites": 0
+          },
+          "drift": []
+        },
+        {
+          "surface": "legacy_hud",
+          "exit_code": 0,
+          "command": [
+            "npm",
+            "test",
+            "--",
+            "--reporter=json",
+            "--outputFile=/tmp/nerva-h011-owner-effect-full-clients-final-20261004-legacy_hud.json"
+          ],
+          "cwd": "/Users/andrei649/Projects/nerva-pr-worktrees/consent",
+          "log": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-legacy_hud.log",
+          "result": "/tmp/nerva-h011-owner-effect-full-clients-final-20261004-legacy_hud.json",
+          "reported": {
+            "success": true,
+            "numTotalTests": 233,
+            "numPassedTests": 233,
+            "numFailedTests": 0,
+            "numPendingTests": 0,
+            "numTotalTestSuites": 115,
+            "numFailedTestSuites": 0
+          },
+          "drift": []
+        }
+      ],
+      "active_surface": "legacy_hud",
+      "pid": 35173,
+      "created_dependency_links_removed": true
+    },
+    "five_failure_reconciliation": {
+      "path": "/tmp/nerva-h011-h277-frozen-five-fixes-green-20261004.xml",
+      "sha256": "bcb5694d92a36a9a7ba11647d7eb5f9f4b844933e0fa3eb10f3d0ee3b15c9033",
+      "tests": 200,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "reconciliation_ruff": "passed; /tmp/nerva-h011-h277-frozen-reconciliation-ruff-final-20261004.log",
+    "reconciliation_record_gates": "151 passed; /tmp/nerva-h011-h277-frozen-reconciliation-record-gates-green-20261004.xml"
   },
   "acceptance": {
     "real_cli_to_web_to_owner_registry_to_signed_queue_to_worker": true,
@@ -264,6 +392,6 @@
     "cli_and_kernel": "gpt-6-sol High isolated packages; reviewed and integrated by root",
     "read_only_review": "gpt-6-luna Medium; no reproducible substantive finding, did not independently rerun tests; root then strengthened pure SQL identity and memory-rewire fences"
   },
-  "next_action": "Run frozen backend/frontend/mobile suites, reconcile new failures, keep H011 partial until remaining accepted requirements are delivered.",
+  "next_action": "Freeze second full backend after reviewed records and actual collection; continue H011 maintenance ownership/retention/cap and all697 remaining scope.",
   "collateral_review": "Reviewed complete 38a14d46..dfca1a8a coordinator diff: only six lines register checkpoint.restore/checkpoint.maintenance with CheckpointController. Image preflight/gated intake and code/session/stream registration bodies are unchanged. Binding follow-up changes only subagents/task_executor literal line coordinates by +6. The 22-module H515/H595/H660/binding/authority union passed 697 cases with seven Docker-dependent skips. All three rows remain partial with every existing limitation; no fresh live Docker/image/provider or equivalent credit."
 }

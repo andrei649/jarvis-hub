@@ -1,5 +1,17 @@
 # Sprint: echivalarea funcțiilor Hermes
 
+> Frozen H011/H277 follow-up, 2026-10-04, source `f2318ee0`: the first complete
+> backend ran 23,120 cases: 23,080 passed, five failed, 34 skipped, one existing
+> xfail; all 3,098 frozen inputs were unchanged. Two old-signature persistence
+> fakes and three intentional readiness/harness-count updates are corrected;
+> 200 affected tests pass. Serial full clients pass: HUD V2 1,889, mobile 185,
+> legacy HUD 233. The original prepared H277 49-fault campaign has 48 initial
+> detections plus one test gap; the accepted exact-fault public-route regression
+> detects that gap, yielding 43 assertion and six behavior-exception detections.
+> H011/H277 stay partial. The second complete backend milestone is pending.
+> See [prepared49 evidence](handoff/h277/prepared49-refresh-2026-10-04/root-integration.json)
+> and [reconciliation plan](hermes/h011-frozen-milestone-reconciliation-2026-10-04.md).
+
 > H011 owner effect increment, 2026-10-04, source `825533f4`: CLI/chat diff and
 > selected/force restore now use the preappend owner path, durable exact intents,
 > signed enforce-mode human tasks and real kernel/worker execution. Physical

@@ -1,0 +1,1200 @@
+[
+  {
+    "index": 1,
+    "label": "roles_pick_legacy_wins_over_role_name",
+    "original_file": "agents/core/llm/model_roles.py",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "    if new:\n",
+    "b": "    if new and not legacy:\n",
+    "mapping": "Comment was added before return; mutate the current precedence condition.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_llm_model_config.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable",
+    "original_intent": {
+      "file": "agents/core/llm/model_roles.py",
+      "a": "    if new:\n        return new, new_name,",
+      "b": "    if new and not legacy:\n        return new, new_name,"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Comment was added before return; mutate the current precedence condition."
+  },
+  {
+    "index": 2,
+    "label": "roles_pick_shadowed_legacy_not_reported",
+    "original_file": "agents/core/llm/model_roles.py",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "([legacy_name] if legacy and legacy != new else [])",
+    "b": "[]",
+    "mapping": "Round2 now compares case-sensitive values; drop the equivalent ignored-legacy report.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_doctor.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable",
+    "original_intent": {
+      "file": "agents/core/llm/model_roles.py",
+      "a": "([legacy_name] if legacy and legacy.lower() != new.lower() else [])",
+      "b": "[]"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Round2 now compares case-sensitive values; drop the equivalent ignored-legacy report."
+  },
+  {
+    "index": 3,
+    "label": "roles_pick_legacy_fallback_dropped",
+    "original_file": "agents/core/llm/model_roles.py",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "    if legacy:\n        return legacy, legacy_name, []",
+    "b": "    if False:\n        return legacy, legacy_name, []",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_llm_model_config.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_vision_role_falls_back_to_jarvis_vlm_model",
+    "original_intent": {
+      "file": "agents/core/llm/model_roles.py",
+      "a": "    if legacy:\n        return legacy, legacy_name, []",
+      "b": "    if False:\n        return legacy, legacy_name, []"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 4,
+    "label": "roles_vision_view_legacy_url_wins",
+    "original_file": "agents/core/llm/model_roles.py",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "url = role_url or legacy_url",
+    "b": "url = legacy_url or role_url",
+    "mapping": "Round2 extracts URL variables; invert the equivalent precedence.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_vlm_h13_1.py",
+      "tests/test_composer_vision.py",
+      "tests/test_screen_reflex_route.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_the_legacy_vlm_key_never_goes_to_a_foreign_role_base_url",
+    "original_intent": {
+      "file": "agents/core/llm/model_roles.py",
+      "a": "url = read(spec.env_name(\"base_url\")).strip() or read(\"JARVIS_VLM_URL\")",
+      "b": "url = read(\"JARVIS_VLM_URL\") or read(spec.env_name(\"base_url\")).strip()"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Round2 extracts URL variables; invert the equivalent precedence."
+  },
+  {
+    "index": 5,
+    "label": "roles_vision_view_provider_not_validated",
+    "original_file": "agents/core/llm/model_roles.py",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "_VISION_BACKEND_OF[_validate(spec, role_provider)] if role_provider",
+    "b": "_VISION_BACKEND_OF.get(role_provider.lower(), \"\") if role_provider",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_vlm_h13_1.py",
+      "tests/test_composer_vision.py",
+      "tests/test_screen_reflex_route.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_unknown_vision_provider_is_rejected",
+    "original_intent": {
+      "file": "agents/core/llm/model_roles.py",
+      "a": "_VISION_BACKEND_OF[_validate(spec, role_provider)] if role_provider",
+      "b": "_VISION_BACKEND_OF.get(role_provider.lower(), \"\") if role_provider"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 6,
+    "label": "roles_validate_supported_set_check_dropped",
+    "original_file": "agents/core/llm/model_roles.py",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "if spec.providers is None or value not in spec.providers:",
+    "b": "if spec.providers is None:",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_a_real_provider_the_vision_path_cannot_speak_is_unsupported",
+    "original_intent": {
+      "file": "agents/core/llm/model_roles.py",
+      "a": "if spec.providers is None or value not in spec.providers:",
+      "b": "if spec.providers is None:"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 7,
+    "label": "roles_main_becomes_env_selectable",
+    "original_file": "agents/core/llm/model_roles.py",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "    if role == \"main\":",
+    "b": "    if role == \"__main__\":",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_doctor.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_main_role_is_not_env_selectable",
+    "original_intent": {
+      "file": "agents/core/llm/model_roles.py",
+      "a": "    if role == \"main\":",
+      "b": "    if role == \"__main__\":"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 8,
+    "label": "roles_env_role_default_provider_ollama",
+    "original_file": "agents/core/llm/model_roles.py",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "provider = _validate(spec, raw_provider) if raw_provider else \"lm-studio\"",
+    "b": "provider = _validate(spec, raw_provider) if raw_provider else \"ollama\"",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_judge_role_uses_the_provider_profile_base_url",
+    "original_intent": {
+      "file": "agents/core/llm/model_roles.py",
+      "a": "provider = _validate(spec, raw_provider) if raw_provider else \"lm-studio\"",
+      "b": "provider = _validate(spec, raw_provider) if raw_provider else \"ollama\""
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 9,
+    "label": "roles_env_role_unset_model_guard_dropped",
+    "original_file": "agents/core/llm/model_roles.py",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "    if not model:\n        return ResolvedRole(spec.name, False,",
+    "b": "    if False:\n        return ResolvedRole(spec.name, False,",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_doctor_model_roles_row_ok_by_default",
+    "original_intent": {
+      "file": "agents/core/llm/model_roles.py",
+      "a": "    if not model:\n        return ResolvedRole(spec.name, False,",
+      "b": "    if False:\n        return ResolvedRole(spec.name, False,"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 10,
+    "label": "roles_locality_or_instead_of_and",
+    "original_file": "agents/core/llm/model_roles.py",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "(policy == \"local\" and _is_loopback_base(base_url))",
+    "b": "(policy == \"local\" or _is_loopback_base(base_url))",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_judge_role_uses_the_provider_profile_base_url",
+    "original_intent": {
+      "file": "agents/core/llm/model_roles.py",
+      "a": "(policy == \"local\" and _is_loopback_base(base_url))",
+      "b": "(policy == \"local\" or _is_loopback_base(base_url))"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 11,
+    "label": "roles_vision_lmstudio_default_url_dropped",
+    "original_file": "agents/core/llm/model_roles.py",
+    "file": "agents/core/llm/vlm.py",
+    "a": "base = url or LMSTUDIO_VLM_BASE",
+    "b": "base = url",
+    "mapping": "Default URL now belongs to resolve_vlm_config in vlm.py; remove that default at the current consumer.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping",
+    "original_intent": {
+      "file": "agents/core/llm/model_roles.py",
+      "a": "        url = url or LMSTUDIO_VLM_BASE",
+      "b": "        url = url"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "9b4c461d1d38eea47903d63f0b48ee29184f93a37bba2302b26044d5e6cde01b",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Default URL now belongs to resolve_vlm_config in vlm.py; remove that default at the current consumer."
+  },
+  {
+    "index": 12,
+    "label": "roles_describe_catches_wrong_error",
+    "original_file": "agents/core/llm/model_roles.py",
+    "file": "agents/core/llm/model_roles.py",
+    "a": "        except RoleConfigError as exc:\n            row.update(",
+    "b": "        except KeyError as exc:\n            row.update(",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_doctor.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_describe_never_raises_and_reports_a_bad_role",
+    "original_intent": {
+      "file": "agents/core/llm/model_roles.py",
+      "a": "        except RoleConfigError as exc:\n            row.update(",
+      "b": "        except KeyError as exc:\n            row.update("
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 13,
+    "label": "vlm_role_error_reason_masked",
+    "original_file": "agents/core/llm/vlm.py",
+    "file": "agents/core/llm/vlm.py",
+    "a": "raise VLMNotConfigured(exc.reason) from exc",
+    "b": "raise VLMNotConfigured(\"vlm_disabled\") from exc",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_vlm_h13_1.py",
+      "tests/test_composer_vision.py",
+      "tests/test_screen_reflex_route.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_unknown_vision_provider_is_rejected",
+    "original_intent": {
+      "file": "agents/core/llm/vlm.py",
+      "a": "raise VLMNotConfigured(exc.reason) from exc",
+      "b": "raise VLMNotConfigured(\"vlm_disabled\") from exc"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "9b4c461d1d38eea47903d63f0b48ee29184f93a37bba2302b26044d5e6cde01b",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 14,
+    "label": "model_config_override_flag_inverted",
+    "original_file": "agents/core/llm/model_config.py",
+    "file": "agents/core/llm/model_config.py",
+    "a": ".source[\"model\"] != \"default\"",
+    "b": ".source[\"model\"] == \"default\"",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_llm_model_config.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_deep_role_defaults_and_is_not_pinned",
+    "original_intent": {
+      "file": "agents/core/llm/model_config.py",
+      "a": ".source[\"model\"] != \"default\"",
+      "b": ".source[\"model\"] == \"default\""
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "06c03a37c0eeac3278ebb3dce23a4e5a00fb0ab0c294ce510f2adcd21dfd9217",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 15,
+    "label": "judge_safe_mode_check_dropped",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    if safe_mode.enabled():\n        return _off(\"safe_mode\", **ident)",
+    "b": "    if False:\n        return _off(\"safe_mode\", **ident)",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py",
+      "tests/test_h275_safe_mode.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "    if safe_mode.enabled():\n        return _off(\"safe_mode\", **ident)",
+      "b": "    if False:\n        return _off(\"safe_mode\", **ident)"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 16,
+    "label": "judge_protocol_refusal_dropped",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    if host_protocol.protocol_refusal(provider, base_url):",
+    "b": "    if False:",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "    if host_protocol.protocol_refusal(provider, base_url):",
+      "b": "    if False:"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 17,
+    "label": "judge_h378_findings_ignored",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    if findings:\n",
+    "b": "    if False:\n",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "    if findings:\n",
+      "b": "    if False:\n"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 18,
+    "label": "judge_remote_gate_applies_to_local",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    if not local:\n        if not env_flag(ENV_ALLOW_REMOTE):",
+    "b": "    if local:\n        if not env_flag(ENV_ALLOW_REMOTE):",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_configured_judge_annotates_the_item_and_changes_nothing_else",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "    if not local:\n        if not env_flag(ENV_ALLOW_REMOTE):",
+      "b": "    if local:\n        if not env_flag(ENV_ALLOW_REMOTE):"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 19,
+    "label": "judge_allow_remote_inverted",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if not env_flag(ENV_ALLOW_REMOTE):",
+    "b": "        if env_flag(ENV_ALLOW_REMOTE):",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "        if not env_flag(ENV_ALLOW_REMOTE):",
+      "b": "        if env_flag(ENV_ALLOW_REMOTE):"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 20,
+    "label": "judge_strict_local_ignored",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if env_flag(\"JARVIS_STRICT_LOCAL\"):",
+    "b": "        if False:",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "        if env_flag(\"JARVIS_STRICT_LOCAL\"):",
+      "b": "        if False:"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 21,
+    "label": "judge_cloud_fallback_never_ignored",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if fallback == \"never\":",
+    "b": "        if fallback == \"off\":",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "        if fallback == \"never\":",
+      "b": "        if fallback == \"off\":"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 22,
+    "label": "judge_timeout_floor_dropped",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "env_float(ENV_TIMEOUT, DEFAULT_TIMEOUT, minimum=MIN_TIMEOUT)",
+    "b": "env_float(ENV_TIMEOUT, DEFAULT_TIMEOUT)",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_the_default_timeout_is_bounded",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "env_float(ENV_TIMEOUT, DEFAULT_TIMEOUT, minimum=MIN_TIMEOUT)",
+      "b": "env_float(ENV_TIMEOUT, DEFAULT_TIMEOUT)"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 23,
+    "label": "judge_public_leaks_remote_base_url",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if self.configured and self.local:",
+    "b": "        if self.configured:",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_an_allowed_remote_judge_runs_and_says_it_is_remote",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "        if self.configured and self.local:",
+      "b": "        if self.configured:"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 24,
+    "label": "judge_prompt_not_fenced",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "fenced, flags = quarantine.fence_tool_result(encoded, source=FENCE_SOURCE)",
+    "b": "fenced, flags = encoded, []",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_prompt_fences_untrusted_arguments_and_flags_injection",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "fenced, flags = quarantine.fence_tool_result(encoded, source=FENCE_SOURCE)",
+      "b": "fenced, flags = encoded, []"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 25,
+    "label": "judge_parse_extra_keys_allowed",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "set(data) != {\"risk\", \"why\"}",
+    "b": "not {\"risk\", \"why\"} <= set(data)",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_parse_verdict_rejects",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "set(data) != {\"risk\", \"why\"}",
+      "b": "not {\"risk\", \"why\"} <= set(data)"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 26,
+    "label": "judge_parse_fractional_risk_allowed",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "(risk != risk or not risk.is_integer())",
+    "b": "(risk != risk)",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_parse_verdict_rejects",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "(risk != risk or not risk.is_integer())",
+      "b": "(risk != risk)"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 27,
+    "label": "judge_parse_empty_why_allowed",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    if not why:\n        return None",
+    "b": "    if False:\n        return None",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_parse_verdict_rejects",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "    if not why:\n        return None",
+      "b": "    if False:\n        return None"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 28,
+    "label": "judge_parse_code_fence_unanchored",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "\\n?```\\Z\"",
+    "b": "\\n?```\"",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_parse_verdict_rejects",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "\\n?```\\Z\"",
+      "b": "\\n?```\""
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 29,
+    "label": "judge_clamp_upper_bound_raised",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "max(0, min(100, int(risk)))",
+    "b": "max(0, min(1000, int(risk)))",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_parse_verdict_clamps",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "max(0, min(100, int(risk)))",
+      "b": "max(0, min(1000, int(risk)))"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 30,
+    "label": "judge_rationale_fence_markers_kept",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "    out = _MARKER_RE.sub(\" \", out)\n",
+    "b": "",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_parse_verdict_sanitises_the_rationale",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "    out = _MARKER_RE.sub(\" \", out)\n",
+      "b": ""
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 31,
+    "label": "judge_wants_unconfigured_guard_dropped",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if not status.configured:\n            return False",
+    "b": "        if False:\n            return False",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_attached_but_unconfigured_judge_is_never_called",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "        if not status.configured:\n            return False",
+      "b": "        if False:\n            return False"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 32,
+    "label": "judge_wants_skill_card_judged",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if snapshot.get(\"tool\") == CARD_TOOL:",
+    "b": "        if False:",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_a_skill_change_card_is_never_judged",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "        if snapshot.get(\"tool\") == CARD_TOOL:",
+      "b": "        if False:"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 33,
+    "label": "judge_wants_local_agent_sent_remote",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "            if self._agent_is_local(str(snapshot.get(\"agent\") or \"\")):",
+    "b": "            if False:",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_a_remote_judge_never_sees_local_or_tainted_items",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "            if self._agent_is_local(str(snapshot.get(\"agent\") or \"\")):",
+      "b": "            if False:"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 34,
+    "label": "judge_wants_tainted_sent_remote",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "            if taint.is_tainted(dict(snapshot)) or _deep_tainted(snapshot.get(\"args\")):",
+    "b": "            if False:",
+    "mapping": "Round2 replaced shallow args taint with deep args taint; remove current equivalent gate.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_a_remote_judge_never_sees_local_or_tainted_items",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "            if taint.is_tainted(dict(snapshot)) or taint.is_tainted(args):",
+      "b": "            if False:"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Round2 replaced shallow args taint with deep args taint; remove current equivalent gate."
+  },
+  {
+    "index": 35,
+    "label": "judge_selection_pin_check_inverted",
+    "original_file": "agents/core/autonomy/approval_judge.py",
+    "file": "agents/core/autonomy/approval_judge.py",
+    "a": "        if current_selection() is not None:\n            raise SelectionError(\"job model pins exclude the approval judge\")\n\n        policy = smart_policy",
+    "b": "        if current_selection() is None:\n            raise SelectionError(\"job model pins exclude the approval judge\")\n\n        policy = smart_policy",
+    "mapping": "Only score() entry guard is inverted; present code has three guard occurrences, so scope mutation to one unique score path.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_configured_judge_annotates_the_item_and_changes_nothing_else",
+    "original_intent": {
+      "file": "agents/core/autonomy/approval_judge.py",
+      "a": "        if current_selection() is not None:",
+      "b": "        if current_selection() is None:"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Only score() entry guard is inverted; present code has three guard occurrences, so scope mutation to one unique score path."
+  },
+  {
+    "index": 36,
+    "label": "queue_annotate_after_decision",
+    "original_file": "agents/core/autonomy/action_approvals.py",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "if item is None or item.get(\"status\") != \"pending\" or \"judge\" in item:",
+    "b": "if item is None or \"judge\" in item:",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_annotate_after_decision_regression.py::test_annotate_rejects_decided_item_even_without_active_judge",
+    "original_intent": {
+      "file": "agents/core/autonomy/action_approvals.py",
+      "a": "if item is None or item.get(\"status\") != \"pending\" or \"judge\" in item:",
+      "b": "if item is None or \"judge\" in item:"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "9ee9d1bbf42dd011b75b51e607750b187bd31ccf5f0a88e99bb5ce016067709b",
+    "mapping_review": "Exact original late-annotation guard removal on current annotate() API; current production direct-call regression now exercises the decided-item path."
+  },
+  {
+    "index": 37,
+    "label": "queue_annotate_second_answer_overwrites",
+    "original_file": "agents/core/autonomy/action_approvals.py",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "if item is None or item.get(\"status\") != \"pending\" or \"judge\" in item:",
+    "b": "if item is None or item.get(\"status\") != \"pending\":",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_the_first_annotation_wins",
+    "original_intent": {
+      "file": "agents/core/autonomy/action_approvals.py",
+      "a": "if item is None or item.get(\"status\") != \"pending\" or \"judge\" in item:",
+      "b": "if item is None or item.get(\"status\") != \"pending\":"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "9ee9d1bbf42dd011b75b51e607750b187bd31ccf5f0a88e99bb5ce016067709b",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 38,
+    "label": "queue_annotate_low_score_auto_approves",
+    "original_file": "agents/core/autonomy/action_approvals.py",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "            item[\"judge\"] = dict(annotation)\n",
+    "b": "            item[\"judge\"] = dict(annotation)\n            if int(annotation.get(\"score\", 100)) < 30:\n                item[\"status\"] = \"approved\"\n",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_a_judge_that_says_approve_changes_nothing",
+    "original_intent": {
+      "file": "agents/core/autonomy/action_approvals.py",
+      "a": "            item[\"judge\"] = dict(annotation)\n",
+      "b": "            item[\"judge\"] = dict(annotation)\n            if int(annotation.get(\"score\", 100)) < 30:\n                item[\"status\"] = \"approved\"\n"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "9ee9d1bbf42dd011b75b51e607750b187bd31ccf5f0a88e99bb5ce016067709b",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 39,
+    "label": "queue_snapshot_is_stored_item",
+    "original_file": "agents/core/autonomy/action_approvals.py",
+    "file": "agents/core/autonomy/advisory_judgements.py",
+    "a": "snapshot = normalise_snapshot(item)",
+    "b": "snapshot = item",
+    "mapping": "Runner moved to shared advisory_judgements; bypass normalization to alias live item.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_the_judge_never_holds_the_stored_args",
+    "original_intent": {
+      "file": "agents/core/autonomy/action_approvals.py",
+      "a": "snapshot = json.loads(json.dumps(item, default=str))",
+      "b": "snapshot = item"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "ec90ed9ac95c64385d6a627f6793fc4f1864d73a43571447f655a82290514eb9",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Runner moved to shared advisory_judgements; bypass normalization to alias live item."
+  },
+  {
+    "index": 40,
+    "label": "queue_judge_inherits_caller_context",
+    "original_file": "agents/core/autonomy/action_approvals.py",
+    "file": "agents/core/autonomy/advisory_judgements.py",
+    "a": "self._spawn(running, snapshot, status, fresh, attempt)",
+    "b": "self._spawn(running, snapshot, status, contextvars.copy_context(), attempt)",
+    "mapping": "Runner moved to shared advisory_judgements and gained attempt argument; pass caller context.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_the_judge_runs_outside_a_childs_selection_and_overrides",
+    "original_intent": {
+      "file": "agents/core/autonomy/action_approvals.py",
+      "a": "            self._spawn(running, snapshot, status, fresh)\n",
+      "b": "            self._spawn(running, snapshot, status, contextvars.copy_context())\n"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "ec90ed9ac95c64385d6a627f6793fc4f1864d73a43571447f655a82290514eb9",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Runner moved to shared advisory_judgements and gained attempt argument; pass caller context."
+  },
+  {
+    "index": 41,
+    "label": "queue_short_lived_loop_not_judged_on_hub",
+    "original_file": "agents/core/autonomy/action_approvals.py",
+    "file": "agents/core/autonomy/advisory_judgements.py",
+    "a": "if running is not None and (running is loop or not hub_up):",
+    "b": "if running is not None:",
+    "mapping": "Runner moved to shared advisory_judgements; short-lived loop is used instead of hub loop.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop",
+    "original_intent": {
+      "file": "agents/core/autonomy/action_approvals.py",
+      "a": "if running is not None and (running is loop or not hub_up):",
+      "b": "if running is not None:"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "ec90ed9ac95c64385d6a627f6793fc4f1864d73a43571447f655a82290514eb9",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Runner moved to shared advisory_judgements; short-lived loop is used instead of hub loop."
+  },
+  {
+    "index": 42,
+    "label": "queue_decided_audit_drops_judge_identity",
+    "original_file": "agents/core/autonomy/action_approvals.py",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "\"judge\": (decided.get(\"judge\") or {}).get(\"judge\"),",
+    "b": "\"judge\": None,",
+    "mapping": "Decision audit gained adjacent metadata; drop only judge identity field.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity",
+    "original_intent": {
+      "file": "agents/core/autonomy/action_approvals.py",
+      "a": "\"judge\": (decided.get(\"judge\") or {}).get(\"judge\")})",
+      "b": "\"judge\": None})"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "9ee9d1bbf42dd011b75b51e607750b187bd31ccf5f0a88e99bb5ce016067709b",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Decision audit gained adjacent metadata; drop only judge identity field."
+  },
+  {
+    "index": 43,
+    "label": "queue_judged_audit_drops_judge_identity",
+    "original_file": "agents/core/autonomy/action_approvals.py",
+    "file": "agents/core/autonomy/action_approvals.py",
+    "a": "\"judge\": stored.get(\"judge\"), \"rationale_sha256\"",
+    "b": "\"judge\": None, \"rationale_sha256\"",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity",
+    "original_intent": {
+      "file": "agents/core/autonomy/action_approvals.py",
+      "a": "\"judge\": stored.get(\"judge\"), \"rationale_sha256\"",
+      "b": "\"judge\": None, \"rationale_sha256\""
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "9ee9d1bbf42dd011b75b51e607750b187bd31ccf5f0a88e99bb5ce016067709b",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 44,
+    "label": "route_pending_drops_judge_key",
+    "original_file": "agents/core/routers/actions.py",
+    "file": "agents/core/routers/actions.py",
+    "a": "return nocache_json({\"actions\": q.list(\"pending\"), \"judge\": _judge_status(q), **_groups_projection(q)})",
+    "b": "return nocache_json({\"actions\": q.list(\"pending\"), **_groups_projection(q)})",
+    "mapping": "Pending route gained group projection; remove only judge key, retaining groups.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_approval_judge.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_approval_judge.py::test_pending_route_carries_the_judge_status_and_no_secret",
+    "original_intent": {
+      "file": "agents/core/routers/actions.py",
+      "a": "nocache_json({\"actions\": q.list(\"pending\"), \"judge\": _judge_status(q)})",
+      "b": "nocache_json({\"actions\": q.list(\"pending\")})"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "3f10f71cd726ba81625de27ad0ec013536b81e4a31511e1ae53c1aa371c69842",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Pending route gained group projection; remove only judge key, retaining groups."
+  },
+  {
+    "index": 45,
+    "label": "doctor_model_roles_attention_ignored",
+    "original_file": "scripts/doctor.py",
+    "file": "scripts/doctor.py",
+    "a": "    if attention:\n        return _result(\"model_roles\", False,",
+    "b": "    if False:\n        return _result(\"model_roles\", False,",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_doctor.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_a_bad_provider",
+    "original_intent": {
+      "file": "scripts/doctor.py",
+      "a": "    if attention:\n        return _result(\"model_roles\", False,",
+      "b": "    if False:\n        return _result(\"model_roles\", False,"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "9255ad2000d6ec8b830d10d2aaf276c13e01d1c9d867ca380e32fa2dc715f620",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 46,
+    "label": "doctor_model_roles_ignored_not_flagged",
+    "original_file": "scripts/doctor.py",
+    "file": "scripts/doctor.py",
+    "a": "            attention.append(f\"{name}:ignored\")\n",
+    "b": "",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "py",
+    "original_tests": [
+      "tests/test_h277_model_roles.py",
+      "tests/test_doctor.py"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_ast",
+    "focused_test": "tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_an_ignored_main_variable",
+    "original_intent": {
+      "file": "scripts/doctor.py",
+      "a": "            attention.append(f\"{name}:ignored\")\n",
+      "b": ""
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "9255ad2000d6ec8b830d10d2aaf276c13e01d1c9d867ca380e32fa2dc715f620",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 47,
+    "label": "hud_opinion_shown_on_skill_card",
+    "original_file": "agents/web/static/tools.js",
+    "file": "agents/web/static/tools.js",
+    "a": "if (!status || !status.configured || a.tool === 'skill.patch_proposal') return null;",
+    "b": "if (!status || !status.configured) return null;",
+    "mapping": "Original fault anchor remains present with the same semantic change.",
+    "run": "js",
+    "original_tests": [
+      "tests/frontend/tools.test.js"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_node_check",
+    "js_test_name": "never shows an opinion line on a skill-change card",
+    "original_intent": {
+      "file": "agents/web/static/tools.js",
+      "a": "if (!status || !status.configured || a.tool === 'skill.patch_proposal') return null;",
+      "b": "if (!status || !status.configured) return null;"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "45c4536ecd983d7871a3f313bd1f216062ea72f7cec50810b31c2ae9e7357ccb",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change."
+  },
+  {
+    "index": 48,
+    "label": "hud_repoll_never_stops",
+    "original_file": "agents/web/static/tools.js",
+    "file": "agents/web/static/tools.js",
+    "a": "return polls.current[id] > Date.now();",
+    "b": "return true;",
+    "mapping": "Round2 replaced poll-count cap with wall-clock deadlines; bypass final timer deadline guard.",
+    "run": "js",
+    "original_tests": [
+      "tests/frontend/tools.test.js"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_node_check",
+    "js_test_name": "does not poll when a throttled timer wakes after its hard deadline",
+    "original_intent": {
+      "file": "agents/web/static/tools.js",
+      "a": "if (polls.current.n >= polls.current.max) return undefined;",
+      "b": "if (false) return undefined;"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "45c4536ecd983d7871a3f313bd1f216062ea72f7cec50810b31c2ae9e7357ccb",
+    "mapping_review": "Unique present anchor; original semantic fault retained. Round2 replaced poll-count cap with wall-clock deadlines; bypass final timer deadline guard."
+  },
+  {
+    "index": 49,
+    "label": "hud_opinion_advisory_label_dropped",
+    "original_file": "agents/web/static/tools.js",
+    "file": "agents/web/static/tools.js",
+    "a": "'\u201d \u00b7 advisory only, it decides nothing'",
+    "b": "'\u201d'",
+    "mapping": "HUD now uses typographic closing quote; remove the same advisory label.",
+    "run": "js",
+    "original_tests": [
+      "tests/frontend/tools.test.js"
+    ],
+    "anchor_count": 1,
+    "syntax": "valid_node_check",
+    "js_test_name": "shows the score as a labelled, advisory model opinion under the summary",
+    "original_intent": {
+      "file": "agents/web/static/tools.js",
+      "a": "'\" \u00b7 advisory only, it decides nothing'",
+      "b": "'\"'"
+    },
+    "current_anchor_count": 1,
+    "current_source_sha256": "45c4536ecd983d7871a3f313bd1f216062ea72f7cec50810b31c2ae9e7357ccb",
+    "mapping_review": "Unique present anchor; original semantic fault retained. HUD now uses typographic closing quote; remove the same advisory label."
+  }
+]
