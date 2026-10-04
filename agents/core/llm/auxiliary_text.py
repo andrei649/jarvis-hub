@@ -8,7 +8,10 @@ from types import MappingProxyType
 
 from agents.core.env_config import env_str
 
-from .auxiliary_recovery import auxiliary_temperature_recovery_scope
+from .auxiliary_recovery import (
+    auxiliary_temperature_recovery_scope,
+    may_omit_rejected_output_cap,
+)
 from .base import LMStudioBackend, OllamaBackend
 from .data_handling import auxiliary_request_scope
 from .job_selection import SelectionError, current_selection
@@ -79,8 +82,10 @@ def _direct_local_request_check(router, backend, model, prompt, system, max_toke
             messages = ([{"role": "system", "content": system}] if system and system.strip() else [])
             messages.append({"role": "user", "content": prompt})
             allowed = {"model", "messages", "stream", "max_tokens", "temperature"}
+            cap_valid = (body["max_tokens"] == max_tokens if "max_tokens" in body
+                         else may_omit_rejected_output_cap(backend, model))
             if (set(body) - allowed or body.get("messages") != messages
-                    or body.get("max_tokens") != max_tokens
+                    or not cap_valid
                     or ("temperature" in body and body["temperature"] != temperature)):
                 raise DataHandlingRefused("private auxiliary prompt changed")
         else:
@@ -134,14 +139,14 @@ def prepare_local_auxiliary(router, task: str):
                 from agents.core.compaction_hold import DEFAULT_IDLE, stream_summary
 
                 recovery = ({"call_scope": lambda: auxiliary_temperature_recovery_scope(
-                    backend, model)} if isinstance(backend, LMStudioBackend) else {})
+                    backend, model, role=task)} if isinstance(backend, LMStudioBackend) else {})
                 return await stream_summary(
                     backend, DEFAULT_IDLE if summary_idle is None else summary_idle,
                     model=model, prompt=prompt, system=system,
                     max_tokens=max_tokens, temperature=temperature, **recovery,
                 )
             if isinstance(backend, LMStudioBackend):
-                with auxiliary_temperature_recovery_scope(backend, model):
+                with auxiliary_temperature_recovery_scope(backend, model, role=task):
                     return await backend.generate(
                         model=model, prompt=prompt, system=system,
                         max_tokens=max_tokens, temperature=temperature,

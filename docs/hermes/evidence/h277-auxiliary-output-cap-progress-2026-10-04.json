@@ -1,0 +1,75 @@
+{
+  "generated_at": "2026-10-04",
+  "goal": "All697 pinned Hermes capabilities; local auxiliary cap-repair dependency",
+  "base_sha": "31a1d193",
+  "state": "Integrated root focused and affected regression verification; next full milestone pending",
+  "root_verification": {
+    "red": {
+      "tests": 33,
+      "failures": 15,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "cb7f8b979b5a9df67b3f22bf881562d74b8e0b7177e8e5e0950cbca674a445cc"
+    },
+    "green": {
+      "tests": 97,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "4af846027abe6690486648c350c7ff0d16b8c9d4b1154cca7cef1b85a7bba25b"
+    },
+    "broad": {
+      "tests": 424,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "f144af9236c8379f44731ac806014827e184760d4607da5450c77a8231f65f94"
+    }
+  },
+  "source_sha256": {
+    "agents/core/llm/auxiliary_recovery.py": "0461194a5c07e19dea74291500b89fb271c654f4ad0aaf0806aa9454d1cecdf0",
+    "agents/core/llm/base.py": "dce2091bd4d85355661301f6ac537f420a37496e584548d7c558f0cce8046c2f",
+    "agents/core/llm/auxiliary_text.py": "d88e152794fbab5750b01ce10657da82cf02d3519afd09e30f9cc9f860b73c94",
+    "tests/test_h277_auxiliary_output_cap_recovery.py": "2b4ea222f884fd98aef925296947becd9da7e5613f725ae193c8e3a5ecda1ad2"
+  },
+  "prototype_patch_sha256": "a965d9867a71252428c153d4b7ab9b536dd333bda99965e80c19686dcd333d2e",
+  "limits": [
+    "No full H277 equivalent credit",
+    "Local LM Studio max_tokens wire only; other providers/field encodings remain separate work",
+    "Hermes broader SDK/gateway unchanged-request retries are not implemented by this strict local increment",
+    "No paid provider use, activation, push, merge or deploy",
+    "Prior full22418 excludes these subsequent source/test edits; next integrated backend milestone pending"
+  ],
+  "recorded_command_issue": "Initial GREEN invocation named a nonexistent temperature_route_capability module and exited4 before collection; rerun used actual repository paths, no source correction required",
+  "ruff": "Four changed Python paths pass",
+  "behavior": [
+    "Typed bounded explicit max_tokens 400 recovery only in exact current guarded auxiliary operation",
+    "One retry per rejected field; one unloaded-model retry; at most four sends",
+    "No output-cap omission cache between operations; existing route-scoped temperature cache preserved",
+    "Before-send current direct local H513 authorization and strict SOUL body checks preserved",
+    "Stream repair only before any activity, after cleanup, without extending idle deadlines"
+  ],
+  "security_fix": {
+    "finding": "Bandit B101 flagged newly added assert as optimizer-dependent",
+    "fix": "Explicit state-None refusal, no baseline suppression",
+    "regression": {
+      "tests": 92,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "junit_sha256": "5c77521ec98f310d64f7479f901af60e2107028f5d40ddce9396ef50aa5538b2",
+    "final_bandit": "agents/scripts baseline scan exit0"
+  },
+  "collateral_review": "docs/hermes/evidence/h277-auxiliary-output-cap-collateral-review-2026-10-04.md",
+  "integrated_common_regression": {
+    "tests": 4303,
+    "modules": 168,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "c5658c056db40eccc08ee491f7299e78ae9d36f9d557b5f2a8480bfb3dbe87e7",
+    "scope": "Common suite before explicit scope-None Bandit correction; affected92 rerun afterward, no unchanged-full-source claim"
+  },
+  "collected_backend_cases": 22465
+}

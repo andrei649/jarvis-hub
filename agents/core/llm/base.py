@@ -13,7 +13,9 @@ from typing import Any, Callable
 import httpx
 
 from .auxiliary_recovery import (
+    may_repair_output_cap,
     may_repair_temperature,
+    note_output_cap_rejection,
     omit_rejected_temperature,
     rejects_temperature,
     remember_temperature_rejection,
@@ -531,16 +533,19 @@ class LMStudioBackend(LLMBackend):
         await self.client.aclose()
 
     async def _post_chat(self, payload: dict) -> httpx.Response:
-        """POST a completion with at most one unload and scoped temperature repair."""
+        """POST with one unload and independent scoped temperature/cap rungs."""
         current = payload
         model = payload.get("model")
         if ("temperature" in payload and "tools" not in payload
                 and payload.get("stream") is False
                 and omit_rejected_temperature(self, model)):
             current = {key: value for key, value in payload.items() if key != "temperature"}
+        auxiliary_recovery = may_repair_temperature(self, model)
+        cap_recovery = may_repair_output_cap(self, model)
         unloaded_retried = False
         temperature_retried = False
-        for _ in range(3):
+        output_cap_retried = False
+        for _ in range(2 + int(auxiliary_recovery) + int(cap_recovery and "max_tokens" in current)):
             resp = await self.client.post("/v1/chat/completions", json=current)
             try:
                 resp.raise_for_status()
@@ -563,6 +568,12 @@ class LMStudioBackend(LLMBackend):
                         and rejects_temperature(exc)):
                     temperature_retried = True
                     current = {key: value for key, value in current.items() if key != "temperature"}
+                    continue
+                if (not output_cap_retried and "max_tokens" in current
+                        and "tools" not in current
+                        and note_output_cap_rejection(self, current.get("model"), exc)):
+                    output_cap_retried = True
+                    current = {key: value for key, value in current.items() if key != "max_tokens"}
                     continue
                 raise
         raise RuntimeError("local completion retry limit exceeded")
@@ -655,11 +666,13 @@ class LMStudioBackend(LLMBackend):
         # Auxiliary parameter repair is permitted only for this exact task, backend
         # and model. Ordinary streams keep their original unload-only behavior.
         auxiliary_recovery = may_repair_temperature(self, model)
+        cap_recovery = may_repair_output_cap(self, model)
         if auxiliary_recovery and omit_rejected_temperature(self, model):
             payload = {key: value for key, value in payload.items() if key != "temperature"}
         unloaded_retried = False
         temperature_retried = False
-        for _ in range(3 if auxiliary_recovery else 2):
+        output_cap_retried = False
+        for _ in range(2 + int(auxiliary_recovery) + int(cap_recovery and "max_tokens" in payload)):
             emitted = ""          # filtered text actually streamed to the user
             reasoning_full = ""   # accumulated reasoning_content (never emitted live)
             finish = None
@@ -766,6 +779,13 @@ class LMStudioBackend(LLMBackend):
                     temperature_retried = True
                     payload = {key: value for key, value in payload.items()
                                if key != "temperature"}
+                    continue
+                if (cap_recovery and can_retry and not output_cap_retried
+                        and "max_tokens" in payload
+                        and note_output_cap_rejection(self, model, e)):
+                    output_cap_retried = True
+                    payload = {key: value for key, value in payload.items()
+                               if key != "max_tokens"}
                     continue
                 err = local_backend_degraded_reply(
                     "LM Studio", f"LM Studio ({self.base_url})", e, model=model

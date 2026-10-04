@@ -17,6 +17,8 @@ class _RecoveryScope:
     model: str
     task: asyncio.Task | None
     route: _TemperatureCache | None = None
+    role: str | None = None
+    output_cap_rejected: bool = False
     active: bool = True
 
 
@@ -30,6 +32,10 @@ class _TemperatureCache:
 
 
 _MAX_TEMPERATURE_ROUTES = 128
+_OUTPUT_CAP_ROLES = frozenset({
+    "session_title", "query_rewrite", "review", "compression",
+    "acquisition_capability", "acquisition_draft", "soul_description",
+})
 
 
 _scope: ContextVar[_RecoveryScope | None] = ContextVar("auxiliary_parameter_recovery", default=None)
@@ -43,10 +49,10 @@ def _current_task() -> asyncio.Task | None:
 
 
 @contextmanager
-def auxiliary_temperature_recovery_scope(backend: object, model: str):
-    """Permit recovery only while this exact backend/model operation is active."""
+def auxiliary_temperature_recovery_scope(backend: object, model: str, *, role: str | None = None):
+    """Permit temperature repair; cap repair also needs a supported guarded role."""
     state = _RecoveryScope(backend, model, _current_task(),
-                           _temperature_cache(backend, create=True))
+                           _temperature_cache(backend, create=True), role=role)
     token = _scope.set(state)
 
     def revoke() -> None:
@@ -154,3 +160,80 @@ def rejects_temperature(exc: BaseException) -> bool:
         or re.search(rf"\b{field}\s*[:=]?\s*['\"]?temperature['\"]?\s+(?:is\s+)?{marker}\b", words)
         or re.search(rf"\btemperature\b\s+(?:is\s+)?(?:an?\s+)?{marker}\b", words)
     )
+
+
+def may_repair_output_cap(backend: object, model: object) -> bool:
+    """Permit a cap rung only on the current direct, guarded local auxiliary route."""
+    if not may_repair_temperature(backend, model):
+        return False
+    state = _scope.get()
+    if state is None or state.role not in _OUTPUT_CAP_ROLES or state.route is None:
+        return False
+    from .data_handling import _physical_guard
+    from .direct_transport import require_direct_async_transport
+    from .model_roles import public_local_origin, same_origin
+
+    guard = _physical_guard.get()
+    route = state.route
+    if guard is None or not guard.active or guard.check is None:
+        return False
+    if (not public_local_origin(route.base_url)
+            or not same_origin(route.base_url, route.client_base_url)):
+        return False
+    try:
+        request_url = route.client.build_request("POST", "/v1/chat/completions").url
+        require_direct_async_transport(route.client, request_url)
+    except Exception:
+        return False
+    return True
+
+
+def rejects_output_cap(exc: BaseException) -> bool:
+    """Recognize only a bounded structured HTTP 400 naming unsupported max_tokens."""
+    if not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code != 400:
+        return False
+    try:
+        if len(exc.response.content) > 4096:
+            return False
+        body = exc.response.json()
+    except (ValueError, RuntimeError):
+        return False
+    if not isinstance(body, dict) or not isinstance(body.get("error"), dict):
+        return False
+    error = body["error"]
+    param = error.get("param")
+    if param is not None and param != "max_tokens":
+        return False
+    code = error.get("code")
+    if param == "max_tokens" and code in {
+            "unsupported_parameter", "unknown_parameter", "unrecognized_parameter"}:
+        return True
+    message = error.get("message")
+    if not isinstance(message, str) or len(message) > 512:
+        return False
+    words = message.lower()
+    marker = r"(?:unsupported|unknown|unrecognized)"
+    field = r"(?:parameter|argument|setting|value)"
+    return bool(
+        re.search(rf"\b{marker}\s+{field}\s*[:=]?\s*['\"]?max_tokens\b", words)
+        or re.search(rf"\b{field}\s*[:=]?\s*['\"]?max_tokens['\"]?\s+(?:is\s+)?{marker}\b", words)
+        or re.search(rf"\bmax_tokens\b\s+(?:is\s+)?(?:an?\s+)?{marker}\b", words)
+    )
+
+
+def note_output_cap_rejection(backend: object, model: object, exc: BaseException) -> bool:
+    """Authorize omission only after this operation's actual typed rejection."""
+    if not may_repair_output_cap(backend, model) or not rejects_output_cap(exc):
+        return False
+    state = _scope.get()
+    if state is None:
+        return False
+    state.output_cap_rejected = True
+    return True
+
+
+def may_omit_rejected_output_cap(backend: object, model: object) -> bool:
+    """The strict SOUL physical body guard's exact-operation omission flag."""
+    state = _scope.get()
+    return bool(state is not None and state.output_cap_rejected
+                and may_repair_output_cap(backend, model))
