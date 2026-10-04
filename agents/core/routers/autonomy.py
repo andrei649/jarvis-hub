@@ -35,6 +35,31 @@ from agents.core.app_state import get_orch
 router = APIRouter(tags=["autonomy"])
 
 
+class KanbanDispatchBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    board: str = Field("default", pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$", max_length=64, strict=True)
+    limit: int = Field(4, ge=1, le=16, strict=True)
+
+
+@router.post("/api/autonomy/kanban/dispatch", dependencies=[Depends(admin_guard)])
+async def autonomy_kanban_dispatch(body: KanbanDispatchBody):
+    """Ask the governed dispatcher to intake ready cards from one board."""
+    from agents.core.commands import Principal
+
+    orch = get_orch()
+    coordinator = getattr(orch, "_autonomy", None) if orch is not None else None
+    controller = getattr(coordinator, "kanban_dispatcher", None)
+    if not callable(controller):
+        return nocache_json(
+            {"ok": False, "status": "refused", "reason": "governed_worker_unavailable", "queued": []},
+            status_code=503,
+        )
+    result = await controller().request(
+        Principal(channel="web", admin=True), board=body.board, limit=body.limit
+    )
+    return nocache_json(result, status_code=200 if result.get("ok") else 503)
+
+
 @router.post("/api/autonomy/preview", dependencies=[Depends(user_guard)])
 async def autonomy_preview(req: Request):
     """H12.5 — dry-run preview of an action (no execution). Body: a task dict."""

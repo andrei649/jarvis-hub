@@ -344,6 +344,7 @@
   "POST /api/artifacts/{artifact_id}/pin",
   "POST /api/autonomy/call",
   "POST /api/autonomy/escalate",
+  "POST /api/autonomy/kanban/dispatch",
   "POST /api/autonomy/preview",
   "POST /api/browser/check",
   "POST /api/browser/plan/preview",

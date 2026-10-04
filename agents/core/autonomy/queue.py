@@ -4948,6 +4948,32 @@ class TaskQueue:
             except Exception:
                 return False
 
+    def find_submission_task(self, kind: str, submission_id: str) -> Optional[Task]:
+        """Recover a durable outbox handoff without a bounded history scan.
+
+        A duplicate is corruption, never permission to pick one or enqueue more.
+        This lookup grants no execution authority; normal signed-row checks apply.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM tasks WHERE kind=? AND "
+                "json_extract(CASE WHEN json_valid(payload) THEN payload ELSE '{}' END, "
+                "'$.submission_id')=? LIMIT 2", (kind, submission_id),
+            ).fetchall()
+            if len(rows) > 1:
+                raise TaskQueueError("duplicate submission identity")
+            return _row_to_task(rows[0]) if rows else None
+
+    def active_kind_tasks(self, kind: str) -> list[Task]:
+        """Complete durable capacity projection, independent of history limits."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM tasks WHERE kind=? AND status IN "
+                "('proposed','approved','blocked','deferred','running') ORDER BY id",
+                (kind,),
+            ).fetchall()
+        return [_row_to_task(row) for row in rows]
+
     def get(self, task_id: int) -> Optional[Task]:
         with self._lock:
             row = self._conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()

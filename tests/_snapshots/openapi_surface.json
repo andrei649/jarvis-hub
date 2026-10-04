@@ -344,6 +344,7 @@
   "POST /api/artifacts/{artifact_id}/pin": "artifacts_pin_api_artifacts__artifact_id__pin_post",
   "POST /api/autonomy/call": "autonomy_call_api_autonomy_call_post",
   "POST /api/autonomy/escalate": "escalation_send_api_autonomy_escalate_post",
+  "POST /api/autonomy/kanban/dispatch": "autonomy_kanban_dispatch_api_autonomy_kanban_dispatch_post",
   "POST /api/autonomy/preview": "autonomy_preview_api_autonomy_preview_post",
   "POST /api/browser/check": "browser_check_api_browser_check_post",
   "POST /api/browser/plan/preview": "browser_plan_preview_api_browser_plan_preview_post",

@@ -152,12 +152,21 @@ def _desktop_run_overrides() -> dict:
 class AutonomyCoordinator:
     def __init__(self, orchestrator):
         self._orch = orchestrator
+        self._kanban_dispatcher = None
         self._reason_windows = {}
         self._reason_prompts = {}
         self._reason_clock = time.monotonic
         # 0.34 (opt-in): lazily-built durable workflow pending-queue, drained each
         # tick only when JARVIS_WORKFLOW_PERSIST is set (else stays None, no drain).
         self._pending_queue = None
+
+    def kanban_dispatcher(self):
+        """One controller shared by intake, the admin route, and approved execution."""
+        if self._kanban_dispatcher is None:
+            from .kanban.dispatcher import KanbanDispatcher
+
+            self._kanban_dispatcher = KanbanDispatcher(self._orch)
+        return self._kanban_dispatcher
 
     async def _drain_workflow_pending(self) -> None:
         """Drain due durable workflow runs once per tick (0.34 wiring).
@@ -597,6 +606,14 @@ class AutonomyCoordinator:
                     if is_night_window(datetime.now().hour, start, end):
                         max_tier = 1  # reversible/read-only only
                 await self._orch.autonomy.tick(max_tier=max_tier)
+                try:
+                    if amode != "off" and all(
+                        self._orch.get_setting(key, False) is True
+                        for key in ("llm.kanban", "llm.kanban_dispatch", "llm.tool_loop_enabled")
+                    ):
+                        await self.kanban_dispatcher().tick()
+                except Exception:
+                    logger.warning("Kanban dispatcher intake failed", exc_info=True)
                 # Proactive passes self-generate new tasks — paused entirely in OFF mode.
                 if amode != "off":
                     # Sample the host and turn state changes into gated tasks.
@@ -1806,6 +1823,12 @@ class AutonomyCoordinator:
             budget_ledger=_budget_ledger,
             execution_guard=getattr(self._orch.autonomy, "execution_allowed", None),
         )
+        from .kanban.dispatcher import KanbanDispatcher
+
+        async def _kanban_worker(task):
+            return await self.kanban_dispatcher().execute(task)
+
+        executor.register(KanbanDispatcher.KIND, _kanban_worker)
         self._wire_url_monitor(executor)
         self._wire_cloud_image(executor)
         for kw in ("research", "search", "monitor", "scan", "lookup", "check"):

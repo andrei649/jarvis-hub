@@ -348,6 +348,7 @@
   "POST /api/artifacts/{artifact_id}/pin": "user",
   "POST /api/autonomy/call": "user",
   "POST /api/autonomy/escalate": "admin",
+  "POST /api/autonomy/kanban/dispatch": "admin",
   "POST /api/autonomy/preview": "user",
   "POST /api/browser/check": "user",
   "POST /api/browser/plan/preview": "user",

@@ -116,6 +116,19 @@ def _action(
 
 # Explicit product decisions.  A drift test pins this key set to ACTION_REGISTRY.
 ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
+    "kanban.worker": _action(
+        "kanban.worker",
+        "Run an exact approved board prompt in its isolated agent session and claimed run.",
+        required=("submission_id", "task_id", "board", "input_sha256", "prompt", "prompt_sha256"),
+        risk="sensitive",
+        supports=("execute", "review"),
+        rollback=RollbackContract(
+            mode="none",
+            description="A failed or cancelled turn releases only its own current board claim.",
+            limitations="Board bookkeeping does not undo tool effects; each tool retains its own authorization and rollback contract.",
+        ),
+        implementation="agents.core.kanban.dispatcher:KanbanDispatcher.execute",
+    ),
     "node.dispatch": _action(
         "node.dispatch",
         "Dispatch an allowlisted operation to a registered execution node.",

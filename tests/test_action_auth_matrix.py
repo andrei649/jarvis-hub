@@ -799,6 +799,23 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
                     "refused" if enabled else "unavailable")
 
         asyncio.run(exercise_checkpoint())
+    elif kind == "kanban.worker":
+        import asyncio
+
+        from agents.core.kernel import kernel_enabled
+        from tests.test_hermes_kanban_dispatcher import OWNER, create, fixture_runtime
+
+        enabled = kernel_enabled()
+        controller, orch, _, _, _ = fixture_runtime(tmp_path, monkeypatch)
+        if not enabled:
+            monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+        orch.autonomy.bind_mediation(spy, orch.autonomy_queue._mediation_signer)
+        try:
+            create(controller)
+            result = asyncio.run(controller.request(OWNER))
+            assert bool(result["queued"]) == (enabled and spy._verdict is not Verdict.DENY)
+        finally:
+            orch.autonomy_queue.close()
     elif kind == "settings.voice_command":
         import asyncio
 

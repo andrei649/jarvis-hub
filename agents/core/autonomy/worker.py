@@ -320,6 +320,9 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     "terminal.exec": (),
     # These handlers return an explicit refusal/partial result, never `failed`
     # with a governance reason. Post-claim partial effects remain failures.
+    # The board handler's preflight refusals use status=refused; execution
+    # failures raise. It never returns a failed/refusal reason to classify here.
+    "kanban.worker": (),
     "checkpoint.restore": (),
     "checkpoint.maintenance": (),
     "file.write": (),

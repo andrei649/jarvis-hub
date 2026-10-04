@@ -541,6 +541,9 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # H075/H581: approved backend dispatch exists; dedicated board/worker
+    # controls remain in HUD_V2_REMAINING.md and native task H18.30.
+    "/api/autonomy/kanban/dispatch",
     # Nous account operations have a working owner CLI (agents/cli/nous_auth.py).
     # HUD account controls remain unfinished, recorded in HUD_V2_REMAINING.md.
     "/api/oauth/nous/login",

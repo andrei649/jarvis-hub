@@ -156,7 +156,7 @@ def _cross_process_init_lock(path: Path):
 
 
 @contextlib.contextmanager
-def _dispatch_tick_lock(db_path: Path):
+def _dispatch_tick_lock(db_path: Path, *, strict: bool = False):
     """Non-blocking single-writer guard around one dispatcher tick; yields
     ``True`` if this process holds the board's ``.dispatch.lock``, else
     ``False`` (caller skips the tick).
@@ -166,7 +166,9 @@ def _dispatch_tick_lock(db_path: Path):
     multi-writer corruption; this is defense-in-depth behind
     ``_guard_supervised_gateway_conflict``. Non-blocking on purpose: the
     gateway's async watcher must never stall; the loser retries next interval.
-    Without ``fcntl``/``msvcrt`` it degrades to a no-op (yields ``True``).
+    With ``strict=True`` the Nerva adapter skips dispatch when opening the
+    lock is unavailable. The pinned donor's best-effort default is retained
+    for legacy callers.
 
     Motivation (issue #35240): a ``hermes gateway run --replace`` / ``gateway restart`` invoked from a shell
     on a systemd/launchd host can leave an orphan gateway whose dispatcher escapes the service cgroup,
@@ -186,9 +188,8 @@ def _dispatch_tick_lock(db_path: Path):
         except (OSError, AttributeError):
             acquired = False
     except OSError:
-        # Can't even open the lock file (permissions, read-only FS): degrade to
-        # a no-op so a probe failure never blocks dispatch.
-        acquired = True
+        # Nerva requires proven single-writer ownership before queue intake.
+        acquired = not strict
         handle = None
     try:
         yield acquired

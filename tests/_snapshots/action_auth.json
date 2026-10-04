@@ -13,6 +13,7 @@
  "house.control": "kernel",
  "house.recovery": "kernel",
  "house.security_control": "kernel",
+ "kanban.worker": "kernel",
  "kg.write": "kernel",
  "mcp.mutating": "kernel",
  "media.present": "kernel",
