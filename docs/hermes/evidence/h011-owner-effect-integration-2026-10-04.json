@@ -1,0 +1,269 @@
+{
+  "goal": "Complete all 697 pinned Hermes capabilities; H011 remains partial",
+  "generated_at": "2026-10-04T08:50:38.167818+00:00",
+  "base_sha": "38a14d46553b00c936593494c9baa58fd4aa0375",
+  "source_head": "825533f449d5dd0b02c763e1d19bb08683f3fd0d",
+  "scope": "Owner CLI/chat diff, selected/force restore, signed human task, live kernel and worker, durable operation journal, physical fences, complete-filesystem-success then current-last-user rewind, approved index maintenance",
+  "source": [
+    {
+      "path": "agents/cli/nerva.py",
+      "sha256": "16086082ab4bbeb04b606a04e92e4f084a77e083226d10b9035f3d0ae1a00cf0"
+    },
+    {
+      "path": "agents/core/autonomy/worker.py",
+      "sha256": "ddfa7b57bef4fec2ea272f9ed42b36406f203b4c6a93bec36c5929b7fba7a0aa"
+    },
+    {
+      "path": "agents/core/autonomy_coordinator.py",
+      "sha256": "ba5464f35e2c8395953307ac48bae04bce343b3e35f010a2d7ab8913e503eb3e"
+    },
+    {
+      "path": "agents/core/capability_manifests.py",
+      "sha256": "ff5490d4c6c483ee3f800d68124661a8a6d509b823c349a4b73a851f88be0f49"
+    },
+    {
+      "path": "agents/core/checkpoint_commands.py",
+      "sha256": "7d6f661179834773e90085c99f28541ee90fa74e8f116aee7829e42003e0bfd7"
+    },
+    {
+      "path": "agents/core/checkpoint_controller.py",
+      "sha256": "c011dfcf866d7dea3aaa9fda169f5c7530010fbf1fa38e9f64a22330cfa626b6"
+    },
+    {
+      "path": "agents/core/checkpoint_inventory.py",
+      "sha256": "ea2a2586ff955cae9a6b0c0096c4a40b0ae8360e5b6c6d3f6bcae5a9af7fd7fa"
+    },
+    {
+      "path": "agents/core/checkpoint_operations.py",
+      "sha256": "d808f679fa7a04b7b9553556da4653dbea8937c5f191c4a1f60602f5d0af412a"
+    },
+    {
+      "path": "agents/core/checkpoint_selection.py",
+      "sha256": "071061eccdf817091f022eb90833cb6ecde0224724fd188c5b61cb96a30a0586"
+    },
+    {
+      "path": "agents/core/commands.py",
+      "sha256": "dcbae7baf2f3024f4a0b9ede71eca01113ce7dae9f0f1427c2a7b08dc50459df"
+    },
+    {
+      "path": "agents/core/kernel/__init__.py",
+      "sha256": "4c0ee6076e63100c4fa825a16b598fe8afdd87fecdfd9204e07fc176c03a6544"
+    },
+    {
+      "path": "agents/core/kernel/registry.py",
+      "sha256": "7fa3450d52b17b6d23af4ebf4901e25b88d1873d5aeda101e80f5069d5d8cb0a"
+    },
+    {
+      "path": "agents/core/memory/manager.py",
+      "sha256": "37430eae474cb7bdffa6278e663ff29fb8721f9a51ae65a7d504d21ac05828ca"
+    },
+    {
+      "path": "docs/design/HUD_V2_REMAINING.md",
+      "sha256": "34f3178f0cdb9f26360892975688ca8b7f8c678d48fd3ced45b47fac6ec18b91"
+    },
+    {
+      "path": "docs/hermes/h011-owner-effect-integration-plan-2026-10-04.md",
+      "sha256": "739c2e9f286b7420f261e71a05d3e751d67533bc8d3d90130b5cf7c8cb946686"
+    },
+    {
+      "path": "tests/_snapshots/action_auth.json",
+      "sha256": "e7f0399f14be50e72e45982753cdf758d4221ffc7a9f871afc5ffce0ba120517"
+    },
+    {
+      "path": "tests/test_action_auth_matrix.py",
+      "sha256": "abbfdd48871ae0f20d490e441bae21c35d3293d620e10b6db80ca8ec8d350944"
+    },
+    {
+      "path": "tests/test_h011_checkpoint_kernel.py",
+      "sha256": "79cd29ed811f954d04a08007a5fe5ea77699ce3a63317c6174a19908c0263d0f"
+    },
+    {
+      "path": "tests/test_h011_checkpoint_operations.py",
+      "sha256": "ce821760f21502506f76d83975e1cbb243abd56e98785d160d86056ec80118d1"
+    },
+    {
+      "path": "tests/test_h011_checkpoint_owner_pipeline.py",
+      "sha256": "b0e7d16431440056da3bd35f79ae1c3906aa05372f8e72b3b2d684c521899d6b"
+    },
+    {
+      "path": "tests/test_h011_checkpoint_selection.py",
+      "sha256": "064f7c53b4cbe9060e9367e292f1d72b7a7445a493b7bf6f437f81edf7168cb7"
+    },
+    {
+      "path": "tests/test_h011_checkpoints_cli.py",
+      "sha256": "548ea247dfa8f28e16d95529f85d27310ef0ce1e02f1af9f963b1c39b113eb2a"
+    },
+    {
+      "path": "tests/test_h011_owner_checkpoint_selection.py",
+      "sha256": "963a6d21635f33e3aed17501fe3828252a60a17fc0a527ef8ba15d8714253315"
+    },
+    {
+      "path": "tests/test_h011_rewind_ticket_discard.py",
+      "sha256": "5068d00ec31e25748d729ec8ac41f6126fc5a7076aa48acfc4913be2064add1e"
+    },
+    {
+      "path": "tests/test_nerva_cli.py",
+      "sha256": "bcac1f32e23bbfe4c6ca105c51640afacabdcede85a364af84be5de73b958590"
+    },
+    {
+      "path": "mobile/PARITY.md",
+      "sha256": "94597b74895014ab696337df33754862bd6f461114053fc4e25eef14c58ba1ff"
+    },
+    {
+      "path": "agents/core/orchestrator_bindings.py",
+      "sha256": "9dc3247459a5ae714e2dd15601dc524d98f70df48240c39063cf713126e42958"
+    }
+  ],
+  "verification": {
+    "owner_pipeline_kernel_matrix": {
+      "path": "/tmp/nerva-h011-owner-pipeline-session-final-green-20261004.xml",
+      "sha256": "ca773f83ba302260bcdbd2e186bdc81b21f3b862f09dd0e1c01b0d4f2a9c3e58",
+      "tests": 96,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "final_affected_93_modules": {
+      "path": "/tmp/nerva-h011-owner-effect-root-affected-final-green-20261004.xml",
+      "sha256": "18682d9afe5e3bef98349c6b3467fa074705e9820d4f4b6a5c7309cdf2a709fe",
+      "tests": 2276,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 3
+    },
+    "vocabulary_owner_final": {
+      "path": "/tmp/nerva-h011-owner-effect-vocabulary-final-green-20261004.xml",
+      "sha256": "2b9faac4005383d1b2fc5b3330ef5b13a8fba8bff8d2106813ee2a5e8baf846d",
+      "tests": 112,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "meaningful_red": [
+      {
+        "path": "/tmp/nerva-h011-owner-cli-root-red-20261004.xml",
+        "sha256": "0f0bd384d49f167ab75ca27a5327c8c22ff522ce4e8736d5edca682fd739318d",
+        "tests": 83,
+        "failures": 16,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "/tmp/nerva-h011-rewind-discard-root-red-20261004.xml",
+        "sha256": "e9cdc91a2f1d6fc2f3457910b8cd9b389f4e388a443e058185bc0055245a0cb8",
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "/tmp/nerva-h011-owner-pipeline-root-red-20261004.xml",
+        "sha256": "5a2a202ea43583a452bc45c34f9c2f83621f8c038806347306f431f4b47989c6",
+        "tests": 10,
+        "failures": 9,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "/tmp/nerva-h011-checkpoint-kernel-root-red-20261004.xml",
+        "sha256": "49dc216960fa7fbcd67cda06e887a9fbee642f7ca55c819427af15380848b48d",
+        "tests": 40,
+        "failures": 6,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "/tmp/nerva-h011-action-matrix-root-red-20261004.xml",
+        "sha256": "40190975d1f0c821c6e48f98b1d20ee467e39423ce990b80f19fc88b7f2a35e5",
+        "tests": 36,
+        "failures": 3,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "/tmp/nerva-h011-pure-session-fence-root-red-20261004.xml",
+        "sha256": "c6fa72f17632e211b0d9f554ebaa170ab239074b9abac66838e99a7c3fea27ca",
+        "tests": 2,
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "/tmp/nerva-h011-memory-rewire-root-red-20261004.xml",
+        "sha256": "b09d919fe9c82f3b1f2d45dc1872ad15e9a3687ca32ca04023061fcf965aeb84",
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "ruff_whole_repository": "passed; /tmp/nerva-h011-owner-effect-root-ruff-final-20261004.log",
+    "bandit_agents_scripts_baseline": "passed; /tmp/nerva-h011-owner-effect-root-bandit-final-20261004.log",
+    "exact_staged_secret_scans": [
+      "/tmp/nerva-h011-owner-effect-code-final-selected-index-scan-20261004-manifest.json",
+      "/tmp/nerva-h011-owner-effect-mobile-final-selected-index-scan-20261004-manifest.json",
+      "/tmp/nerva-h011-owner-effect-binding-final-selected-index-scan-20261004-manifest.json"
+    ],
+    "graft_graph": {
+      "ok": true,
+      "cache": "/tmp/nerva-consent-graft-20261004",
+      "node_count": 50069,
+      "check": "/tmp/nerva-h011-owner-effect-binding-graft-final-check-20261004.json",
+      "optional_context": "missing; no concept/LLM pass claimed"
+    },
+    "full_suites": "Not yet run at this source milestone; affected suites are not full acceptance",
+    "coverage_threshold": "None configured; no threshold compliance or 100 percent coverage claim",
+    "collateral_22_modules": {
+      "path": "/tmp/nerva-h011-owner-effect-collateral-green-20261004.xml",
+      "sha256": "2d850aa413744a3a34fcd118103b1839f8141ede90630fe25163c28e66ca2db9",
+      "tests": 704,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 7
+    },
+    "route_doc_status_gates": {
+      "path": "/tmp/nerva-h011-owner-effect-root-record-gates-final-v2-green-20261004.xml",
+      "sha256": "fec6945d0b8f739a4ea9f1a80a5af16b450c6136f4c90e60f5c67b3594955a1c",
+      "tests": 151,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "acceptance": {
+    "real_cli_to_web_to_owner_registry_to_signed_queue_to_worker": true,
+    "synthetic_files_and_durable_conversation_restart": true,
+    "live_provider_or_real_device": false,
+    "native_hud_or_mobile_acceptance": false,
+    "publication": false
+  },
+  "handled_edges": [
+    "guest before probes",
+    "bare preview never effects",
+    "ordinary human approval required",
+    "late halt and ASK/OFF/kernel revocation",
+    "changed configured roots and accepted tail",
+    "force exact-current fingerprint",
+    "instruction-sensitive tier three",
+    "forged task/neighbor kind",
+    "running journal never auto-replayed",
+    "partial group retains chat and pre-undo",
+    "file/chat persistence split reported",
+    "pure durable session identity and clock reads",
+    "memory rewire cleanup on original manager"
+  ],
+  "remaining": [
+    "retention/size/per-project/orphan controls",
+    "complete checkpoint-owned payload cleanup; shared generic snapshots/blobs retained",
+    "dedicated HUD/mobile controls and native acceptance",
+    "Windows checkpoint capture/restore",
+    "frozen full suites and deeper crash/power-loss acceptance"
+  ],
+  "agents": {
+    "selection_and_operation_journal": "gpt-6-sol High isolated packages; reviewed and synthetic-tested by root",
+    "cli_and_kernel": "gpt-6-sol High isolated packages; reviewed and integrated by root",
+    "read_only_review": "gpt-6-luna Medium; no reproducible substantive finding, did not independently rerun tests; root then strengthened pure SQL identity and memory-rewire fences"
+  },
+  "next_action": "Run frozen backend/frontend/mobile suites, reconcile new failures, keep H011 partial until remaining accepted requirements are delivered.",
+  "collateral_review": "Reviewed complete 38a14d46..dfca1a8a coordinator diff: only six lines register checkpoint.restore/checkpoint.maintenance with CheckpointController. Image preflight/gated intake and code/session/stream registration bodies are unchanged. Binding follow-up changes only subagents/task_executor literal line coordinates by +6. The 22-module H515/H595/H660/binding/authority union passed 697 cases with seven Docker-dependent skips. All three rows remain partial with every existing limitation; no fresh live Docker/image/provider or equivalent credit."
+}

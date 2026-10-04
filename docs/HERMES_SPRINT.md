@@ -1,19 +1,19 @@
 # Sprint: echivalarea funcțiilor Hermes
 
-> H011 local owner/storage increment, 2026-10-04, source `6abf999f`: authenticated
-> checkpoint inventory and exact maintenance previews now cross CLI → web →
-> orchestrator → registry before chat/history/context mutation. Manual local/SSH
-> terminal tasks use current real-kernel receipts. Selected/forced file restore
-> binds current fingerprints, preserves pre-undo and reports resumable partial
-> groups. Durable index maintenance checks authority inside its write transaction
-> and retains shared blobs. The 40-module affected run passed 1,304 with 3 skips;
-> the final SQL/static correction passed 139 affected cases; image/binding
-> collateral passed 399. Backend collection is 22,972; frontend/mobile counts are
-> reused historical records. H011 stays partial: real approved restore/cleanup,
-> conversation rewind composition, retention/size controls, dedicated clients
-> and the frozen full milestone remain open. Other stale capability evidence
-> receives no automatic credit. See the
-> [integration receipt](hermes/evidence/h011-owner-storage-integration-2026-10-04.json).
+> H011 owner effect increment, 2026-10-04, source `825533f4`: CLI/chat diff and
+> selected/force restore now use the preappend owner path, durable exact intents,
+> signed enforce-mode human tasks and real kernel/worker execution. Physical
+> fences bind the accepted root, current bytes and durable session identity;
+> complete file success then commits the current-last-user conversation rewind.
+> Partial groups and persistence splits keep undo and conversation history.
+> Approved index maintenance retains shared blobs. The final 93-module affected
+> run passed 2,273 with 3 optional skips; whole-repository Ruff and agents/scripts
+> Bandit passed. H011 stays partial: retention/size controls, complete payload
+> cleanup, dedicated clients, Windows support and the frozen full milestone
+> remain open. The 22-module image/code/binding collateral run passed 697 cases with
+> 7 Docker-dependent skips; 151 route/status/doc gates pass. Other stale
+> evidence receives no automatic credit. See the
+> [integration receipt](hermes/evidence/h011-owner-effect-integration-2026-10-04.json).
 
 > Local owner-denial/active-judge increment2026-10-04: native Telegram `/deny`
 > now settles owner-once waits with the original bounded human reason, protected
