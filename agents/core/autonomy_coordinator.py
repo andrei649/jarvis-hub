@@ -977,17 +977,73 @@ class AutonomyCoordinator:
                 return {"ok": False, "reason": "terminal_targets_disabled"}
             approved = _APPROVED_TASK.get()
             approved_task_id = getattr(approved, "id", None) if approved is not None else None
+            from .autonomy.consent_registration import trusted_registration_key
+
+            worker = getattr(self._orch, 'autonomy', None)
+            terminal_spec = server._tools.get('terminal_run')
+            registration_snapshot = (trusted_registration_key('terminal_run', terminal_spec)
+                                     if terminal_spec is not None else None)
+            manual_task = (approved if approved is not None
+                           and _human_terminal_approval(approved) else None)
+            manual_queue = getattr(self._orch, 'autonomy_queue', None)
+            manual_mode = getattr(manual_queue, 'mediation_mode', None)
+            manual_fingerprint = (manual_queue.execution_fingerprint(manual_task)
+                                  if manual_task is not None and manual_queue is not None else None)
+            manual_mediated = (manual_task is not None and any(
+                getattr(manual_task, name, None) not in (None, '')
+                for name in ('mediation_enqueue_id', 'mediation_enqueue_revision',
+                             'mediation_scope', 'mediation_policy_revision',
+                             'mediation_receipt', 'mediation_task_sha256',
+                             'mediation_execution_id')
+            ))
+
+            def manual_execution_current(task_id):
+                if manual_task is None:
+                    return True
+                if (task_id != manual_task.id or not manual_fingerprint
+                        or manual_mode not in {'off', 'enforce'}
+                        or (manual_mediated and manual_mode != 'enforce')
+                        or self._orch.autonomy_queue is not manual_queue
+                        or getattr(worker, 'queue', None) is not manual_queue
+                        or manual_queue.mediation_mode != manual_mode):
+                    return False
+                try:
+                    if manual_queue.execution_fingerprint(manual_task) != manual_fingerprint:
+                        return False
+                    if manual_mode == 'enforce':
+                        return manual_queue.validate_mediated_execution(
+                            manual_task, manual_fingerprint) is True
+                    persisted = manual_queue.get(task_id)
+                    return (persisted is not None and persisted.status == 'running'
+                            and manual_queue.execution_fingerprint(persisted)
+                            == manual_fingerprint
+                            and manual_queue.mediation_mode == 'off')
+                except Exception:
+                    return False
+
+            def current_request(task_id, request):
+                return (self._orch.autonomy is worker
+                        and self._orch.tool_rpc is server
+                        and terminal_spec is not None
+                        and server._tools.get('terminal_run') is terminal_spec
+                        and registration_snapshot is not None
+                        and trusted_registration_key('terminal_run', terminal_spec)
+                        == registration_snapshot
+                        and manual_execution_current(task_id)
+                        and _terminal_request_check(task_id, request))
+
             runner = GovernedTargetRunner(
                 self._target_registry(),
                 getattr(self._orch, "sandbox", None),
                 authorizer=action_kernel,
                 approval_check=_durable_terminal_approval,
-                request_check=_terminal_request_check,
+                request_check=current_request,
                 smart_approval_check=_smart_terminal_marker,
                 owner_approval_check=_owner_terminal_marker,
-                owner_kernel_check=getattr(self._orch.autonomy, 'kernel_dispatch_current', None),
+                owner_kernel_check=getattr(worker, 'kernel_dispatch_current', None),
                 consent_approval_check=_consent_terminal_marker,
-                consent_kernel_check=getattr(self._orch.autonomy, 'kernel_dispatch_current', None),
+                consent_kernel_check=getattr(worker, 'kernel_dispatch_current', None),
+                legacy_kernel_check=getattr(worker, 'kernel_dispatch_current', None),
             )
             from .action_origin import bind_action_origin, reset_action_origin
 

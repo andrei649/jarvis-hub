@@ -100,14 +100,14 @@ async def propose(orch):
 
 
 @pytest.mark.asyncio
-async def test_manual_docker_approval_preserves_kernel_disabled_execution(runtime, monkeypatch):
+async def test_manual_docker_approval_refuses_kernel_disabled_execution(runtime, monkeypatch):
     queue, worker, orch, sandbox, _seen = runtime
     answer = await propose(orch)
     await worker.apply_decision(answer['task_id'], 'accept', 'user')
     monkeypatch.setenv('JARVIS_ACTION_KERNEL', '0')
     await worker.tick()
-    assert queue.get(answer['task_id']).status == 'done'
-    assert sandbox.commands == ['printf hello']
+    assert queue.get(answer['task_id']).result['reason'] == 'action_kernel_disabled'
+    assert sandbox.commands == []
 
 
 @pytest.mark.asyncio
@@ -150,6 +150,8 @@ async def test_deny_settles_while_escalation_retains_manual_owner_override(runti
             await worker.apply_decision(task.id, 'accept', 'user')
         assert queue.get(task.id).human_decision is None
         return
+    # A GRANT-only fixture has no current kernel revalidator for physical dispatch.
+    use_real_kernel(runtime)
     await worker.apply_decision(task.id, 'accept', 'user')
     await worker.tick()
     assert sandbox.commands == ['printf hello']

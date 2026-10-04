@@ -380,8 +380,11 @@ class Sandbox:
         if self._has_docker:
             return await self._execute_docker_shell(command)
         from .environments.consent_dispatch import consent_dispatch_scope_present
+        from .environments.legacy_terminal_dispatch import legacy_terminal_scope_present
         from .environments.owner_once_dispatch import owner_once_scope_present
 
+        if legacy_terminal_scope_present():
+            return SandboxResult(stderr="Legacy terminal Docker backend unavailable", exit_code=-1)
         if owner_once_scope_present():
             return SandboxResult(stderr="Owner-once Docker backend unavailable", exit_code=-1)
         if consent_dispatch_scope_present():
@@ -458,6 +461,12 @@ class Sandbox:
                          timeout=self.timeout) is False:
             return SandboxResult(stderr="Owner-once dispatch unavailable", exit_code=-1,
                                  duration=time.monotonic() - start)
+        from .environments.legacy_terminal_dispatch import physical_gate as legacy_terminal_gate
+
+        if legacy_terminal_gate(self, backend="docker", argv=tuple(cmd), cwd="/workspace",
+                                timeout=self.timeout) is False:
+            return SandboxResult(stderr="Legacy terminal dispatch unavailable", exit_code=-1,
+                                 duration=time.monotonic() - start)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -520,8 +529,12 @@ class Sandbox:
             logger.warning("Docker not found")
             self._has_docker = False
             from .environments.consent_dispatch import consent_dispatch_scope_present
+            from .environments.legacy_terminal_dispatch import legacy_terminal_scope_present
             from .environments.owner_once_dispatch import owner_once_scope_present
 
+            if legacy_terminal_scope_present():
+                return SandboxResult(stderr="Legacy terminal Docker backend unavailable",
+                                     exit_code=-1, duration=time.monotonic() - start)
             if owner_once_scope_present():
                 return SandboxResult(stderr="Owner-once Docker backend unavailable",
                                      exit_code=-1, duration=time.monotonic() - start)
