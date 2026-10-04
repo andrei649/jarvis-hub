@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "817dd9d6ff597e525aea77f0730906715633b1cd",
-  "assessed_at": "2026-10-04T12:17:17Z",
+  "base_sha": "38ca4ad4b483f7275b90c4c399ce4f4e089d862c",
+  "assessed_at": "2026-10-04T13:37:15Z",
   "reviews": [
     {
       "id": "H001",
@@ -953,6 +953,75 @@
         {
           "path": "tests/test_telegram_voice_reply.py",
           "sha256": "3021117889f54adfd8e9644f62ab26487489e28a0b2206396d9dec49cd14b6e8"
+        }
+      ]
+    },
+    {
+      "id": "H075",
+      "row_sha256": "0abcb5457d864e176b1192d6b2432ed37e941ec0876f55f5ba8f264f247bfec9",
+      "status": "partial",
+      "summary": "Pinned Hermes 59b2aeef6c7a SQLite/task/graph/run/review/attachment state and all fourteen tool schemas/handlers are ported into a private Nerva namespace with the MIT notice. The real coordinator registers them behind default-off llm.kanban. Owner metadata edits and exact owned-run tools use trusted Nerva identity/session/home, never ambient Hermes variables or model-provided provenance. Focused real ToolRPC tests cover durable creation, links, review/rework, blocks/unblocks, heartbeat, inline attachments and completion. Atomic claims, stale run refusal, board separation, DB/FileScope path guards and delegate/closed-lifetime refusal are verified. A delegate cannot recreate owner authority or change a sibling task through a dependency link. This is local state/tool integration, not full board/worker acceptance. Configuration follow-up: claim TTL, crash grace and cooldown retain pinned defaults without ambient Hermes overrides; task context uses its own runtime limit rather than ambient TERMINAL_TIMEOUT. Optional executable lookup uses the existing env_config leaf. The exact coordinator registry regression explicitly includes all fourteen board tools while retaining the complete existing non-board inventory assertion. The focused runtime/environment/state/tools union passes 145 cases without failures, errors or skips; Ruff and baseline-aware Bandit pass without baseline relaxation.",
+      "remaining": "Approved Nerva TaskQueue/kernel worker dispatch, watchdog/reaping and restart, FileScope workspace/project lifecycle, goal judge, approved network attachments, channel subscriptions/delivery, watchers/websocket, tenant controls and CLI/dashboard/native board consumers remain required. Unsupported effect adapters refuse explicitly before activation; no live provider, real worker, remote process, push, merge or deployment was performed.",
+      "evidence": [
+        {
+          "path": "agents/core/kanban/README.md",
+          "sha256": "ad1ff51635eb5a329e8e59ce43f3f174c7f6e35e7e37e21539e874fff6676d92"
+        },
+        {
+          "path": "agents/core/kanban/context.py",
+          "sha256": "f65d71a7f889541da8324bb1b18f972a23b88c3b9010577087c3dbdacd7abf75"
+        },
+        {
+          "path": "agents/core/kanban/runtime.py",
+          "sha256": "ba072d18eb491b11d22641f00106db7ef9d7756d21dca827a0e6da2804bf3d2e"
+        },
+        {
+          "path": "agents/core/kanban/tools.py",
+          "sha256": "1ce12fff43014698661c09658046b78323559cc0897860acb640d27229b6fb15"
+        },
+        {
+          "path": "agents/core/kanban/schemas.py",
+          "sha256": "c570802050dfcca41541a935ce01b11de12f47a7bc5facc705b47c970c9264f4"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db.py",
+          "sha256": "87872a4acc794ef9a69c197e75e14c17f1ba1df9d0576d720afac4e51a92d9e1"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_connect.py",
+          "sha256": "f2f815d1891defa81bf98a7a3285bc6b01141d83fb4858e21ecd059589d93363"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_graph.py",
+          "sha256": "1e97ae4db5e053b0cb9999736973849fb33655a6d20d225ccacf1d09b8a6266f"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_dispatch.py",
+          "sha256": "4cb58f306bd99eb73bf7cfbfe8224a628256cd605938c6a8291a43f8745b9a86"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_workspace.py",
+          "sha256": "14c931ac9b41634c3daae7b3be38c89291f3cf978849fd0427fc8533691e1671"
+        },
+        {
+          "path": "tests/test_hermes_kanban_state_port.py",
+          "sha256": "5ed35f0d568cdef09bde9a2b2452880805fad53c4022a90de6dd4632eaae3283"
+        },
+        {
+          "path": "tests/test_hermes_kanban_tools_port.py",
+          "sha256": "da990253f17e455a38fb916c364f60de127b5995460fd2861123b53b40fcd70d"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "1eee0b4f7f25f528cc4ebeba68214c77a364bfff24f1dcd1c439b90d62085cf3"
+        },
+        {
+          "path": "agents/core/tool_profiles.py",
+          "sha256": "823501bdd718dd7ee7faf38fd5b35f7c83bf2953af3e7f512464dd4f4e5108ba"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "9e3fbd70a55fff17d81d5a7bb256f7c5fd7b5e9b2dea81c317b7cd105becca0b"
         }
       ]
     },
@@ -3165,8 +3234,8 @@
       "id": "H227",
       "row_sha256": "4f9c0d30c2a5fab5c2b3f64fa932518a530579ad6d97986c602f974fc939d0b3",
       "status": "partial",
-      "summary": "The existing read-only inspector still serves principal-specific status/tools/skills/MCP/fixed prompt sections through its admin route, CLI and HUD. This batch repairs the backend prompt preview: HybridRouter.preview_backend selects a route without applying a job pin or provider dispatch, and the actual Agent.model_system_prompt builds the profiled operating prefix. Route resolution/model fields are returned; failures are explicit and do not leak exception contents. Guidance preview reads existing toolchain cache only, never starts a local probe or mutates it, and never dequeues a child's steering. Existing redaction, prompt cap, principal isolation, exact offer and MCP metadata remain tested. The 203 focused producer/inspector/channel union and 1,023 affected integration cases pass. Preserve partial while the client disclosure and active-turn boundaries below remain; historic mutation and frontend receipts are not new acceptance evidence.",
-      "remaining": "The CLI/HUD still need review of route-resolution/model disclosure and unresolved-preview rendering. The fixed empty-turn estimate excludes actual history, user input, tool schemas and active-job/cache state. Cold local toolchain probes are intentionally unavailable during read-only inspection, so the preview cannot promise byte equality with a future first generation. Earlier unrelated shared CLI/web evidence drift is not automatically declared equivalent by this backend repair.",
+      "summary": "The read-only admin inspector resolves a route/model without provider dispatch, job-pin mutation, cache acquisition, local probes or steering consumption, then previews the actual Agent operating prefix over its principal-specific offer. Redaction, 64KB cap and failure disclosure remain. CLI and HUD now disclose resolved model/route, unresolved base-only, legacy unreported and withheld states, with fixed empty-turn and cached-runtime limits. HUD refresh replaces prior prompt/route details and removes them when withheld. Real client/backend focused tests, the full 1892-case frontend suite and TypeScript checking pass. Full functional equivalence remains unclaimed for the explicit boundaries and unreviewed shared evidence below.",
+      "remaining": "The fixed empty-turn estimate excludes actual history, input, schemas and active-job/cache state. Cold local toolchain facts stay unavailable during read-only inspection, so this is not byte equality with a future generation. Historical shared CLI/web evidence outside the repaired preview still requires claim review; client rendering alone does not establish full Hermes-equivalence acceptance.",
       "evidence": [
         {
           "path": "agents/core/inspector.py",
@@ -3178,7 +3247,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "16086082ab4bbeb04b606a04e92e4f084a77e083226d10b9035f3d0ae1a00cf0"
+          "sha256": "59ba91058760fd1a3e5065495b77cf961a89f03670fc3569fe408d880556140c"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -3186,15 +3255,15 @@
         },
         {
           "path": "frontend/src/panels/inspector.tsx",
-          "sha256": "2c3bfa9864c7a300853a1d3b2c244fa9326d4fc0607609b8f641d0b1b98b8e7b"
+          "sha256": "835e6873b81fbd053db1e42a56817e007bc61d11544231fd81268de7361b9245"
         },
         {
           "path": "tests/test_inspector.py",
-          "sha256": "e09f958aa7111a1f79697cbcf20e6c8c47d95595f5ecb96a079d94c3fda9bab5"
+          "sha256": "59d39e74c67879777a41d8c0e440f4d420342a0af2b29c82f0c1de5c860b7dd8"
         },
         {
           "path": "frontend/src/panels/inspector.test.tsx",
-          "sha256": "a0cc60e976eb8a62675761b45f3d0adf5fd3dbb0f2c404e70f4ec6483e2c8459"
+          "sha256": "39f46fac5a9e25d14e1df9f352713de0bed3ef0277272887500f6bf31835fe9e"
         },
         {
           "path": "tests/test_h277_vision_selection_cli.py",
@@ -3231,6 +3300,10 @@
         {
           "path": "tests/test_h388_steering_runtime.py",
           "sha256": "f625159a2de33610e21d6fc62b24ca246d3d1c97276ad32e84230dd5fa262427"
+        },
+        {
+          "path": "tests/test_h227_prompt_preview_clients.py",
+          "sha256": "2aa1000da20407038900a04927ee6afd91240751cac444a24af9310c0b146e3f"
         }
       ]
     },
@@ -6607,6 +6680,75 @@
       ]
     },
     {
+      "id": "H358",
+      "row_sha256": "7fd63b274bb46365034efb98d2da20fa7eb56a9726aa0914215dd42f62978b61",
+      "status": "partial",
+      "summary": "Pinned Hermes 59b2aeef6c7a SQLite/task/graph/run/review/attachment state and all fourteen tool schemas/handlers are ported into a private Nerva namespace with the MIT notice. The real coordinator registers them behind default-off llm.kanban. Owner metadata edits and exact owned-run tools use trusted Nerva identity/session/home, never ambient Hermes variables or model-provided provenance. Focused real ToolRPC tests cover durable creation, links, review/rework, blocks/unblocks, heartbeat, inline attachments and completion. Atomic claims, stale run refusal, board separation, DB/FileScope path guards and delegate/closed-lifetime refusal are verified. A delegate cannot recreate owner authority or change a sibling task through a dependency link. This is local state/tool integration, not full board/worker acceptance. This advances only the Kanban plugin component of this broader plugin row. Configuration follow-up: claim TTL, crash grace and cooldown retain pinned defaults without ambient Hermes overrides; task context uses its own runtime limit rather than ambient TERMINAL_TIMEOUT. Optional executable lookup uses the existing env_config leaf. The exact coordinator registry regression explicitly includes all fourteen board tools while retaining the complete existing non-board inventory assertion. The focused runtime/environment/state/tools union passes 145 cases without failures, errors or skips; Ruff and baseline-aware Bandit pass without baseline relaxation.",
+      "remaining": "Approved Nerva TaskQueue/kernel worker dispatch, watchdog/reaping and restart, FileScope workspace/project lifecycle, goal judge, approved network attachments, channel subscriptions/delivery, watchers/websocket, tenant controls and CLI/dashboard/native board consumers remain required. Unsupported effect adapters refuse explicitly before activation; no live provider, real worker, remote process, push, merge or deployment was performed. Achievements, disk-cleanup, google_meet, spotify, Teams pipeline, Langfuse and security-guidance components still require independent reassessment/integration.",
+      "evidence": [
+        {
+          "path": "agents/core/kanban/README.md",
+          "sha256": "ad1ff51635eb5a329e8e59ce43f3f174c7f6e35e7e37e21539e874fff6676d92"
+        },
+        {
+          "path": "agents/core/kanban/context.py",
+          "sha256": "f65d71a7f889541da8324bb1b18f972a23b88c3b9010577087c3dbdacd7abf75"
+        },
+        {
+          "path": "agents/core/kanban/runtime.py",
+          "sha256": "ba072d18eb491b11d22641f00106db7ef9d7756d21dca827a0e6da2804bf3d2e"
+        },
+        {
+          "path": "agents/core/kanban/tools.py",
+          "sha256": "1ce12fff43014698661c09658046b78323559cc0897860acb640d27229b6fb15"
+        },
+        {
+          "path": "agents/core/kanban/schemas.py",
+          "sha256": "c570802050dfcca41541a935ce01b11de12f47a7bc5facc705b47c970c9264f4"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db.py",
+          "sha256": "87872a4acc794ef9a69c197e75e14c17f1ba1df9d0576d720afac4e51a92d9e1"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_connect.py",
+          "sha256": "f2f815d1891defa81bf98a7a3285bc6b01141d83fb4858e21ecd059589d93363"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_graph.py",
+          "sha256": "1e97ae4db5e053b0cb9999736973849fb33655a6d20d225ccacf1d09b8a6266f"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_dispatch.py",
+          "sha256": "4cb58f306bd99eb73bf7cfbfe8224a628256cd605938c6a8291a43f8745b9a86"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_workspace.py",
+          "sha256": "14c931ac9b41634c3daae7b3be38c89291f3cf978849fd0427fc8533691e1671"
+        },
+        {
+          "path": "tests/test_hermes_kanban_state_port.py",
+          "sha256": "5ed35f0d568cdef09bde9a2b2452880805fad53c4022a90de6dd4632eaae3283"
+        },
+        {
+          "path": "tests/test_hermes_kanban_tools_port.py",
+          "sha256": "da990253f17e455a38fb916c364f60de127b5995460fd2861123b53b40fcd70d"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "1eee0b4f7f25f528cc4ebeba68214c77a364bfff24f1dcd1c439b90d62085cf3"
+        },
+        {
+          "path": "agents/core/tool_profiles.py",
+          "sha256": "823501bdd718dd7ee7faf38fd5b35f7c83bf2953af3e7f512464dd4f4e5108ba"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "9e3fbd70a55fff17d81d5a7bb256f7c5fd7b5e9b2dea81c317b7cd105becca0b"
+        }
+      ]
+    },
+    {
       "id": "H362",
       "row_sha256": "ff5c8494a612fa422b26f9bc489ff87d0da768813f27fa2b29420e2255ccdd27",
       "status": "partial",
@@ -7371,8 +7513,8 @@
       "id": "H388",
       "row_sha256": "54e8097a6bb7059590d12ac44b62f91d83f461a93e6a6e17324a2002ae68a381",
       "status": "partial",
-      "summary": "Pinned Hermes 59b2aeef6c7a operating guidance, steering frames and local Python/pip/PEP668/uv probe are reused with full MIT notices. Nerva binds the actual routed model, authenticated surface, configured agent ID and exact profiled tool offer. Direct/tool/synthesis/cache prefixes and committed-compaction rebuilding preserve the existing authority and managed clock. Local target facts require an offered terminal and enabled eligible local target; Docker and SSH keep their own cwd/transport descriptions. The production subagent runner binds its real per-child channel; queued user and delegated-agent input reaches actual plain/tool requests, is staged before fitting and acknowledged after generation, and cannot grant approval. Closed scopes and wrong agents cannot drain it. Explicit Alibaba profile identity uses the exact routed model; it is never inferred from Qwen names. Additional platform advice and HUD/Kanban prose name only actually offered tools. The inspector's prepared fixed-turn preview is read-only and does not dispatch providers, write job pins, acquire caches, run probes or consume steering. The final affected integration union passes 1,023 cases with no failures, errors or skips; 203 focused producer/channel/inspector cases also pass. Whole-repository Ruff and baseline-aware Bandit pass. Details, probe resource limits and rollback are in the integration plan. This advances runtime behavior without claiming all H388 or 697-row equivalence. The first frozen complete backend run selected 23,247 cases and exposed one incomplete concurrent-stream fake Agent; the unchanged isolation assertions pass after binding the real preparation method, alongside 57 concurrency/generation/steering/cache cases. That first run remains recorded as failed; the reconciled complete milestone is separate.",
-      "remaining": "Actual Kanban board/tools/lifecycle and a floating HUD producer/tool binding remain absent; conditional pure prose is not runtime completion. Alibaba has no registered main provider binding; generic compatible-provider instruction roles and Windows bash need verified wire contracts. Environment facts describe eligible named targets, not an already selected execution machine. Toolchain caching is keyed by agent/PATH/roots and has no freshness TTL; each probe child has a deadline but temporary-file output bytes and total sequential probe duration are not capped. The inspector previews a fixed empty turn; cold probe results are unavailable and it is not active-turn/history/cache state. No live-provider, remote-terminal, container activation or full-equivalence acceptance is asserted.",
+      "summary": "Pinned Hermes 59b2aeef6c7a operating guidance, local Python/pip/PEP668/uv probes and steering frames retain MIT notices and remain bound to the actual model, authenticated surface, configured agent and profiled offer. Direct/tool/synthesis/cache preparation and compaction preserve existing authority and managed clocks. Per-child steering reaches actual requests without granting approval; wrong/closed scopes cannot consume it. The Kanban state/tool port now registers real board handlers in the coordinator and supplies scoped assigned-task guidance to actual model requests only for the matching worker identity and offered tools. Ordinary delegates and late inherited scopes cannot acquire parent board authority. Inspector previews remain read-only and explicitly fixed-turn. Local state/tool integration is delivered; complete board/worker/HUD/697-row parity is not claimed. Configuration follow-up: claim TTL, crash grace and cooldown retain pinned defaults without ambient Hermes overrides; task context uses its own runtime limit rather than ambient TERMINAL_TIMEOUT. Optional executable lookup uses the existing env_config leaf. The exact coordinator registry regression explicitly includes all fourteen board tools while retaining the complete existing non-board inventory assertion. The focused runtime/environment/state/tools union passes 145 cases without failures, errors or skips; Ruff and baseline-aware Bandit pass without baseline relaxation.",
+      "remaining": "Approved Nerva TaskQueue/kernel worker dispatch, watchdog/reaping and restart, FileScope workspace/project lifecycle, goal judge, approved network attachments, channel subscriptions/delivery, watchers/websocket, tenant controls and CLI/dashboard/native board consumers remain required. Unsupported effect adapters refuse explicitly before activation; no live provider, real worker, remote process, push, merge or deployment was performed. A floating HUD producer/tool binding, Alibaba main provider integration, compatible instruction roles, Windows bash wire contracts and the execution-probe freshness/resource limitations remain. The Inspector is a fixed empty-turn preview.",
       "evidence": [
         {
           "path": "agents/core/operating_guidance.py",
@@ -7380,15 +7522,15 @@
         },
         {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "356fcc96880e27a3113a5b062cc19bc35597255229c9dff517fd7b08eb98be24"
+          "sha256": "b95920f05031eedcec45df674628bd1977817e60e01797163d7a3a0cefa887b6"
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "cc36323a506d15a0a99b4b0a7a0d1cdb908ccfd97b2493be04ac9568113ec317"
+          "sha256": "1eee0b4f7f25f528cc4ebeba68214c77a364bfff24f1dcd1c439b90d62085cf3"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "7ccdf436321b5e077707fbfe9ac60eea1968bcdcf21a0318b1264e28306e671c"
+          "sha256": "9e3fbd70a55fff17d81d5a7bb256f7c5fd7b5e9b2dea81c317b7cd105becca0b"
         },
         {
           "path": "tests/test_h388_operating_guidance.py",
@@ -7476,11 +7618,63 @@
         },
         {
           "path": "tests/test_inspector.py",
-          "sha256": "e09f958aa7111a1f79697cbcf20e6c8c47d95595f5ecb96a079d94c3fda9bab5"
+          "sha256": "59d39e74c67879777a41d8c0e440f4d420342a0af2b29c82f0c1de5c860b7dd8"
         },
         {
           "path": "tests/test_concurrent_session_isolation.py",
           "sha256": "a56cc1819ed1d46a4cf9be2d53d6a4e5f10cb68628ba88d72ac7b4f96b7dbbb1"
+        },
+        {
+          "path": "agents/core/kanban/README.md",
+          "sha256": "ad1ff51635eb5a329e8e59ce43f3f174c7f6e35e7e37e21539e874fff6676d92"
+        },
+        {
+          "path": "agents/core/kanban/context.py",
+          "sha256": "f65d71a7f889541da8324bb1b18f972a23b88c3b9010577087c3dbdacd7abf75"
+        },
+        {
+          "path": "agents/core/kanban/runtime.py",
+          "sha256": "ba072d18eb491b11d22641f00106db7ef9d7756d21dca827a0e6da2804bf3d2e"
+        },
+        {
+          "path": "agents/core/kanban/tools.py",
+          "sha256": "1ce12fff43014698661c09658046b78323559cc0897860acb640d27229b6fb15"
+        },
+        {
+          "path": "agents/core/kanban/schemas.py",
+          "sha256": "c570802050dfcca41541a935ce01b11de12f47a7bc5facc705b47c970c9264f4"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db.py",
+          "sha256": "87872a4acc794ef9a69c197e75e14c17f1ba1df9d0576d720afac4e51a92d9e1"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_connect.py",
+          "sha256": "f2f815d1891defa81bf98a7a3285bc6b01141d83fb4858e21ecd059589d93363"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_graph.py",
+          "sha256": "1e97ae4db5e053b0cb9999736973849fb33655a6d20d225ccacf1d09b8a6266f"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_dispatch.py",
+          "sha256": "4cb58f306bd99eb73bf7cfbfe8224a628256cd605938c6a8291a43f8745b9a86"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_workspace.py",
+          "sha256": "14c931ac9b41634c3daae7b3be38c89291f3cf978849fd0427fc8533691e1671"
+        },
+        {
+          "path": "tests/test_hermes_kanban_state_port.py",
+          "sha256": "5ed35f0d568cdef09bde9a2b2452880805fad53c4022a90de6dd4632eaae3283"
+        },
+        {
+          "path": "tests/test_hermes_kanban_tools_port.py",
+          "sha256": "da990253f17e455a38fb916c364f60de127b5995460fd2861123b53b40fcd70d"
+        },
+        {
+          "path": "agents/core/tool_profiles.py",
+          "sha256": "823501bdd718dd7ee7faf38fd5b35f7c83bf2953af3e7f512464dd4f4e5108ba"
         }
       ]
     },
@@ -11534,7 +11728,7 @@
       "id": "H515",
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
-      "summary": "The accepted local ComfyUI choices, approved cloud-image adapter, gallery flow and image HUD remain on their existing image tool/runtime paths. The coordinator still registers image_generate with its existing preflight and gated intake. orchestrator_bindings.py only moves exact callsite positions to track inserted terminal code; it does not change cloud_images binding semantics. Retain partial: the prior ComfyUI unload/restore, native image behavior and frozen media.generate/file.write authority limitations remain as recorded; owner-once terminal execution supplies no image parity or paid-provider evidence. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only adds private stable registrar provenance to terminal intake and the terminal consent revision; image_generate registration, image dispatcher, gated image intake and cloud_images binding bodies are unchanged. All other H515 evidence hashes already match. 349 guarded image/backend/API regressions and the 3,135-case autonomy/ToolRPC integration union pass. Retain partial and every existing remaining requirement; this adds no image equivalence or live-provider claim.\n\nBinding-coordinate follow-up (2026-10-03, c70e0407): the full guarded backend exposed fourteen coordinator callsite line positions seven lines behind production. Only those literal coordinates changed; cloud_images remains the same single inventoried writer, with identical name/path/column and bind function. All fifty exact-inventory/protocol/alias binding tests pass after correction. Referenced H515 backend modules in the frozen complete run have 302 passing cases and 0 skips, with no failures; that overall run still has the separate binding failure and is not a full-suite success. Every other H515 source/test pin is current. Partial status and all remaining image/native/VRAM requirements are retained, without new provider/live acceptance. See docs/hermes/evidence/h487-consent-anchor-full-review-2026-10-03.md. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): The manual Docker branch is terminal-only; image_generate registration/preflight and ComfyUI/cloud image flows are unchanged. The orchestrator_bindings inventory updates only exact coordinator callsite line numbers by +56 after that insertion; its lexical binding test passes 50 cases without relaxed assertions. Keep partial and its image/runtime limits. H011 collateral review (2026-10-04, source 6abf999f): inspected the complete abc2fd89→2757922d coordinator/binding diff: it adds only the terminal exact-birth origin observer and runner kwarg; fourteen binding line coordinates move by +21. Current image_generate registration/preflight/gated intake and cloud_images binding bodies are unchanged. Root ran 399 image/backend/API/model-manager/binding regressions with no failures or skips. Preserve partial and every remaining image/VRAM/native requirement; no live/billed provider or new equivalent credit. H011 owner-effect collateral review (2026-10-04, source 825533f4): Reviewed complete 38a14d46..dfca1a8a coordinator diff: only six lines register checkpoint.restore/checkpoint.maintenance with CheckpointController. Image preflight/gated intake and code/session/stream registration bodies are unchanged. Binding follow-up changes only subagents/task_executor literal line coordinates by +6. The 22-module H515/H595/H660/binding/authority union passed 697 cases with seven Docker-dependent skips. All three rows remain partial with every existing limitation; no fresh live Docker/image/provider or equivalent credit. H388 collateral review (2026-10-04, base dba0fb56): read the complete coordinator/binding diff. Only the optional authenticated-channel guidance callback and its constructor argument are added; downstream binding coordinates shift by thirteen lines. Image preflight/gated dispatch, execute_code registration, session-kernel and stream-spill bodies are unchanged. All other evidence pins match. The final runtime/settings/profile/compaction/binding/image/code/kernel union passes all 502 cases without skips, failures or errors. Keep partial and all existing limits; no new image/code equivalence, provider or deployment proof. Expanded H388 collateral review (2026-10-04, base 40ed2ac3): complete coordinator diff adds only per-agent guidance configuration; binding inventory changes literal callsite coordinates by nine lines. Image preflight/gated dispatch, execute_code registration, session-kernel and stream-spill bodies remain unchanged. Final affected runtime/image/code/kernel/binding union passes 704 cases without skips, failures or errors. All other evidence hashes remain current. Retain partial and all existing requirements; no additional image/code, live-provider or full-suite acceptance.\n\nH388 producer collateral review (2026-10-04, base817dd9d6): inspected the complete coordinator/binding diff. It adds deferred execution facts/configured agent profile to optional guidance and binds the actual steering channel in the child runner. Binding inventory coordinates move by four lines. Image preflight/gated intake, code/session-kernel registration and stream-spill dispatch bodies are unchanged. The 1,023-case affected runtime/provider/image/code/kernel/binding union passes with zero skips, failures or errors. All other retained evidence files remain unchanged relative to their previous pins. Preserve the partial verdict and existing limits; no new image/code, provider, remote or container activation credit.",
+      "summary": "The accepted local ComfyUI choices, approved cloud-image adapter, gallery flow and image HUD remain on their existing image tool/runtime paths. The coordinator still registers image_generate with its existing preflight and gated intake. orchestrator_bindings.py only moves exact callsite positions to track inserted terminal code; it does not change cloud_images binding semantics. Retain partial: the prior ComfyUI unload/restore, native image behavior and frozen media.generate/file.write authority limitations remain as recorded; owner-once terminal execution supplies no image parity or paid-provider evidence. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only adds private stable registrar provenance to terminal intake and the terminal consent revision; image_generate registration, image dispatcher, gated image intake and cloud_images binding bodies are unchanged. All other H515 evidence hashes already match. 349 guarded image/backend/API regressions and the 3,135-case autonomy/ToolRPC integration union pass. Retain partial and every existing remaining requirement; this adds no image equivalence or live-provider claim.\n\nBinding-coordinate follow-up (2026-10-03, c70e0407): the full guarded backend exposed fourteen coordinator callsite line positions seven lines behind production. Only those literal coordinates changed; cloud_images remains the same single inventoried writer, with identical name/path/column and bind function. All fifty exact-inventory/protocol/alias binding tests pass after correction. Referenced H515 backend modules in the frozen complete run have 302 passing cases and 0 skips, with no failures; that overall run still has the separate binding failure and is not a full-suite success. Every other H515 source/test pin is current. Partial status and all remaining image/native/VRAM requirements are retained, without new provider/live acceptance. See docs/hermes/evidence/h487-consent-anchor-full-review-2026-10-03.md. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): The manual Docker branch is terminal-only; image_generate registration/preflight and ComfyUI/cloud image flows are unchanged. The orchestrator_bindings inventory updates only exact coordinator callsite line numbers by +56 after that insertion; its lexical binding test passes 50 cases without relaxed assertions. Keep partial and its image/runtime limits. H011 collateral review (2026-10-04, source 6abf999f): inspected the complete abc2fd89→2757922d coordinator/binding diff: it adds only the terminal exact-birth origin observer and runner kwarg; fourteen binding line coordinates move by +21. Current image_generate registration/preflight/gated intake and cloud_images binding bodies are unchanged. Root ran 399 image/backend/API/model-manager/binding regressions with no failures or skips. Preserve partial and every remaining image/VRAM/native requirement; no live/billed provider or new equivalent credit. H011 owner-effect collateral review (2026-10-04, source 825533f4): Reviewed complete 38a14d46..dfca1a8a coordinator diff: only six lines register checkpoint.restore/checkpoint.maintenance with CheckpointController. Image preflight/gated intake and code/session/stream registration bodies are unchanged. Binding follow-up changes only subagents/task_executor literal line coordinates by +6. The 22-module H515/H595/H660/binding/authority union passed 697 cases with seven Docker-dependent skips. All three rows remain partial with every existing limitation; no fresh live Docker/image/provider or equivalent credit. H388 collateral review (2026-10-04, base dba0fb56): read the complete coordinator/binding diff. Only the optional authenticated-channel guidance callback and its constructor argument are added; downstream binding coordinates shift by thirteen lines. Image preflight/gated dispatch, execute_code registration, session-kernel and stream-spill bodies are unchanged. All other evidence pins match. The final runtime/settings/profile/compaction/binding/image/code/kernel union passes all 502 cases without skips, failures or errors. Keep partial and all existing limits; no new image/code equivalence, provider or deployment proof. Expanded H388 collateral review (2026-10-04, base 40ed2ac3): complete coordinator diff adds only per-agent guidance configuration; binding inventory changes literal callsite coordinates by nine lines. Image preflight/gated dispatch, execute_code registration, session-kernel and stream-spill bodies remain unchanged. Final affected runtime/image/code/kernel/binding union passes 704 cases without skips, failures or errors. All other evidence hashes remain current. Retain partial and all existing requirements; no additional image/code, live-provider or full-suite acceptance.\n\nH388 producer collateral review (2026-10-04, base817dd9d6): inspected the complete coordinator/binding diff. It adds deferred execution facts/configured agent profile to optional guidance and binds the actual steering channel in the child runner. Binding inventory coordinates move by four lines. Image preflight/gated intake, code/session-kernel registration and stream-spill dispatch bodies are unchanged. The 1,023-case affected runtime/provider/image/code/kernel/binding union passes with zero skips, failures or errors. All other retained evidence files remain unchanged relative to their previous pins. Preserve the partial verdict and existing limits; no new image/code, provider, remote or container activation credit.\n\nKanban integration collateral review (2026-10-04, base38ca4ad4): read the complete coordinator/binding diff. It adds default-off board-tool registration and clears board authority in ordinary delegates; exact binding coordinates after registration move by eleven lines. Image preflight/gated intake, code/session-kernel registration and stream-spill dispatch bodies are unchanged. All other retained evidence pins match. The affected image/code/kernel/binding union selects 668 cases, with 661 passing and 7 existing skips, zero failures or errors. Retain partial and every existing limitation; no new image/code equivalence or live provider/container acceptance. The initial general suite was deliberately cancelled after the separate metadata regression exposed stale shared-source pins; that cancelled run is not a full-suite success.",
       "remaining": "The real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need explicit architecture adjudication; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation requires one cloud seam, not eight-provider fan-out. Ambiguous provider attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed. This acknowledgment foundation is not a VRAM swap: canonical aliases, production backend/controller identity, atomic per-generation leases, owner control coordination and authoritative hardware snapshots remain unresolved. Existing coarse headroom and no-victim overcommit behavior remain. ComfyUI unknown submissions need reconciliation before any future exclusive lease can safely release.",
       "evidence": [
         {
@@ -11643,11 +11837,11 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "cc36323a506d15a0a99b4b0a7a0d1cdb908ccfd97b2493be04ac9568113ec317"
+          "sha256": "1eee0b4f7f25f528cc4ebeba68214c77a364bfff24f1dcd1c439b90d62085cf3"
         },
         {
           "path": "agents/core/orchestrator_bindings.py",
-          "sha256": "1f9a9a3c5cbbf0168c8e76f5c95a42beeb7d778259ca00353dd5b52aaba15a26"
+          "sha256": "1e47d0a8c89ca634b5eda7ebe0aedd2ac839310c8e94c6795b5f9bac2f0af231"
         },
         {
           "path": "agents/core/llm/model_manager.py",
@@ -12791,6 +12985,75 @@
       ]
     },
     {
+      "id": "H581",
+      "row_sha256": "4d9a37765db17a643d6551089e6ac2f75f878b6d20380d9d07f42c0e802d5f95",
+      "status": "partial",
+      "summary": "Pinned Hermes 59b2aeef6c7a SQLite/task/graph/run/review/attachment state and all fourteen tool schemas/handlers are ported into a private Nerva namespace with the MIT notice. The real coordinator registers them behind default-off llm.kanban. Owner metadata edits and exact owned-run tools use trusted Nerva identity/session/home, never ambient Hermes variables or model-provided provenance. Focused real ToolRPC tests cover durable creation, links, review/rework, blocks/unblocks, heartbeat, inline attachments and completion. Atomic claims, stale run refusal, board separation, DB/FileScope path guards and delegate/closed-lifetime refusal are verified. A delegate cannot recreate owner authority or change a sibling task through a dependency link. This is local state/tool integration, not full board/worker acceptance. Configuration follow-up: claim TTL, crash grace and cooldown retain pinned defaults without ambient Hermes overrides; task context uses its own runtime limit rather than ambient TERMINAL_TIMEOUT. Optional executable lookup uses the existing env_config leaf. The exact coordinator registry regression explicitly includes all fourteen board tools while retaining the complete existing non-board inventory assertion. The focused runtime/environment/state/tools union passes 145 cases without failures, errors or skips; Ruff and baseline-aware Bandit pass without baseline relaxation.",
+      "remaining": "Approved Nerva TaskQueue/kernel worker dispatch, watchdog/reaping and restart, FileScope workspace/project lifecycle, goal judge, approved network attachments, channel subscriptions/delivery, watchers/websocket, tenant controls and CLI/dashboard/native board consumers remain required. Unsupported effect adapters refuse explicitly before activation; no live provider, real worker, remote process, push, merge or deployment was performed.",
+      "evidence": [
+        {
+          "path": "agents/core/kanban/README.md",
+          "sha256": "ad1ff51635eb5a329e8e59ce43f3f174c7f6e35e7e37e21539e874fff6676d92"
+        },
+        {
+          "path": "agents/core/kanban/context.py",
+          "sha256": "f65d71a7f889541da8324bb1b18f972a23b88c3b9010577087c3dbdacd7abf75"
+        },
+        {
+          "path": "agents/core/kanban/runtime.py",
+          "sha256": "ba072d18eb491b11d22641f00106db7ef9d7756d21dca827a0e6da2804bf3d2e"
+        },
+        {
+          "path": "agents/core/kanban/tools.py",
+          "sha256": "1ce12fff43014698661c09658046b78323559cc0897860acb640d27229b6fb15"
+        },
+        {
+          "path": "agents/core/kanban/schemas.py",
+          "sha256": "c570802050dfcca41541a935ce01b11de12f47a7bc5facc705b47c970c9264f4"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db.py",
+          "sha256": "87872a4acc794ef9a69c197e75e14c17f1ba1df9d0576d720afac4e51a92d9e1"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_connect.py",
+          "sha256": "f2f815d1891defa81bf98a7a3285bc6b01141d83fb4858e21ecd059589d93363"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_graph.py",
+          "sha256": "1e97ae4db5e053b0cb9999736973849fb33655a6d20d225ccacf1d09b8a6266f"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_dispatch.py",
+          "sha256": "4cb58f306bd99eb73bf7cfbfe8224a628256cd605938c6a8291a43f8745b9a86"
+        },
+        {
+          "path": "agents/core/kanban/upstream/kanban_db_workspace.py",
+          "sha256": "14c931ac9b41634c3daae7b3be38c89291f3cf978849fd0427fc8533691e1671"
+        },
+        {
+          "path": "tests/test_hermes_kanban_state_port.py",
+          "sha256": "5ed35f0d568cdef09bde9a2b2452880805fad53c4022a90de6dd4632eaae3283"
+        },
+        {
+          "path": "tests/test_hermes_kanban_tools_port.py",
+          "sha256": "da990253f17e455a38fb916c364f60de127b5995460fd2861123b53b40fcd70d"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "1eee0b4f7f25f528cc4ebeba68214c77a364bfff24f1dcd1c439b90d62085cf3"
+        },
+        {
+          "path": "agents/core/tool_profiles.py",
+          "sha256": "823501bdd718dd7ee7faf38fd5b35f7c83bf2953af3e7f512464dd4f4e5108ba"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "9e3fbd70a55fff17d81d5a7bb256f7c5fd7b5e9b2dea81c317b7cd105becca0b"
+        }
+      ]
+    },
+    {
       "id": "H583",
       "row_sha256": "203e2ee0ad26a9c0397a82e50a2663d8ea6ad8fff56266b6ab8bf8c89d01363a",
       "status": "equivalent",
@@ -13093,7 +13356,7 @@
       "id": "H595",
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
-      "summary": "execute_code still uses its existing host authorization, optional persistent session kernels and bounded redirected stdout/stderr spills with read-back-checked paging notices. The coordinator code-tool/session-kernel registration and spill stores are unchanged. Sandbox now refuses host fallback only when a private owner-once terminal scope is present and requires a one-use physical gate before that Docker shell spawn; ordinary code cells do not hold that scope. Retain partial and the prior SSH/Modal, stream-cap and native-fd limitations. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only changes private terminal provenance; code-tool/session-kernel registration and configuration bodies are unchanged. ToolRPC adds an optional registrar declaration, defaulting to none, and a separate consent verifier; its ordinary grouping scope remains valid if consent verification fails. Other pinned evidence already matches. 232 guarded code/kernel/transport cases pass and seven Docker-dependent cases skip; the 3,135-case autonomy/ToolRPC union also passes. Retain partial and all remote/stream/attestation limits. Historical container receipts are not a current live-container run. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): Sandbox host fallback is now refused while a private manual Docker scope exists, alongside owner-once/consent scopes. Ordinary execute_code isolation, stream spills and host policy remain unchanged. Keep the existing partial limitations. H011 collateral review (2026-10-04, source 6abf999f): inspected the complete abc2fd89→2757922d coordinator diff; its added exact-birth checkpoint observer and runner kwarg exist only in terminal_run. Current execute_code registration, host authorizer, session-kernel configuration and stream-spill/read-back bodies remain unchanged. Every other source/test pin matches. Root ran 232 guarded code/kernel/transport tests with 7 Docker-dependent skips and 77 sandbox/spill pipeline tests with no failures. Preserve partial and all remote/native-output limits; historical container receipts do not establish a fresh live Docker run. H011 owner-effect collateral review (2026-10-04, source 825533f4): Reviewed complete 38a14d46..dfca1a8a coordinator diff: only six lines register checkpoint.restore/checkpoint.maintenance with CheckpointController. Image preflight/gated intake and code/session/stream registration bodies are unchanged. Binding follow-up changes only subagents/task_executor literal line coordinates by +6. The 22-module H515/H595/H660/binding/authority union passed 697 cases with seven Docker-dependent skips. All three rows remain partial with every existing limitation; no fresh live Docker/image/provider or equivalent credit. H388 collateral review (2026-10-04, base dba0fb56): read the complete coordinator/binding diff. Only the optional authenticated-channel guidance callback and its constructor argument are added; downstream binding coordinates shift by thirteen lines. Image preflight/gated dispatch, execute_code registration, session-kernel and stream-spill bodies are unchanged. All other evidence pins match. The final runtime/settings/profile/compaction/binding/image/code/kernel union passes all 502 cases without skips, failures or errors. Keep partial and all existing limits; no new image/code equivalence, provider or deployment proof. Expanded H388 collateral review (2026-10-04, base 40ed2ac3): complete coordinator diff adds only per-agent guidance configuration; binding inventory changes literal callsite coordinates by nine lines. Image preflight/gated dispatch, execute_code registration, session-kernel and stream-spill bodies remain unchanged. Final affected runtime/image/code/kernel/binding union passes 704 cases without skips, failures or errors. All other evidence hashes remain current. Retain partial and all existing requirements; no additional image/code, live-provider or full-suite acceptance.\n\nH388 producer collateral review (2026-10-04, base817dd9d6): inspected the complete coordinator/binding diff. It adds deferred execution facts/configured agent profile to optional guidance and binds the actual steering channel in the child runner. Binding inventory coordinates move by four lines. Image preflight/gated intake, code/session-kernel registration and stream-spill dispatch bodies are unchanged. The 1,023-case affected runtime/provider/image/code/kernel/binding union passes with zero skips, failures or errors. All other retained evidence files remain unchanged relative to their previous pins. Preserve the partial verdict and existing limits; no new image/code, provider, remote or container activation credit.",
+      "summary": "execute_code still uses its existing host authorization, optional persistent session kernels and bounded redirected stdout/stderr spills with read-back-checked paging notices. The coordinator code-tool/session-kernel registration and spill stores are unchanged. Sandbox now refuses host fallback only when a private owner-once terminal scope is present and requires a one-use physical gate before that Docker shell spawn; ordinary code cells do not hold that scope. Retain partial and the prior SSH/Modal, stream-cap and native-fd limitations. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only changes private terminal provenance; code-tool/session-kernel registration and configuration bodies are unchanged. ToolRPC adds an optional registrar declaration, defaulting to none, and a separate consent verifier; its ordinary grouping scope remains valid if consent verification fails. Other pinned evidence already matches. 232 guarded code/kernel/transport cases pass and seven Docker-dependent cases skip; the 3,135-case autonomy/ToolRPC union also passes. Retain partial and all remote/stream/attestation limits. Historical container receipts are not a current live-container run. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): Sandbox host fallback is now refused while a private manual Docker scope exists, alongside owner-once/consent scopes. Ordinary execute_code isolation, stream spills and host policy remain unchanged. Keep the existing partial limitations. H011 collateral review (2026-10-04, source 6abf999f): inspected the complete abc2fd89→2757922d coordinator diff; its added exact-birth checkpoint observer and runner kwarg exist only in terminal_run. Current execute_code registration, host authorizer, session-kernel configuration and stream-spill/read-back bodies remain unchanged. Every other source/test pin matches. Root ran 232 guarded code/kernel/transport tests with 7 Docker-dependent skips and 77 sandbox/spill pipeline tests with no failures. Preserve partial and all remote/native-output limits; historical container receipts do not establish a fresh live Docker run. H011 owner-effect collateral review (2026-10-04, source 825533f4): Reviewed complete 38a14d46..dfca1a8a coordinator diff: only six lines register checkpoint.restore/checkpoint.maintenance with CheckpointController. Image preflight/gated intake and code/session/stream registration bodies are unchanged. Binding follow-up changes only subagents/task_executor literal line coordinates by +6. The 22-module H515/H595/H660/binding/authority union passed 697 cases with seven Docker-dependent skips. All three rows remain partial with every existing limitation; no fresh live Docker/image/provider or equivalent credit. H388 collateral review (2026-10-04, base dba0fb56): read the complete coordinator/binding diff. Only the optional authenticated-channel guidance callback and its constructor argument are added; downstream binding coordinates shift by thirteen lines. Image preflight/gated dispatch, execute_code registration, session-kernel and stream-spill bodies are unchanged. All other evidence pins match. The final runtime/settings/profile/compaction/binding/image/code/kernel union passes all 502 cases without skips, failures or errors. Keep partial and all existing limits; no new image/code equivalence, provider or deployment proof. Expanded H388 collateral review (2026-10-04, base 40ed2ac3): complete coordinator diff adds only per-agent guidance configuration; binding inventory changes literal callsite coordinates by nine lines. Image preflight/gated dispatch, execute_code registration, session-kernel and stream-spill bodies remain unchanged. Final affected runtime/image/code/kernel/binding union passes 704 cases without skips, failures or errors. All other evidence hashes remain current. Retain partial and all existing requirements; no additional image/code, live-provider or full-suite acceptance.\n\nH388 producer collateral review (2026-10-04, base817dd9d6): inspected the complete coordinator/binding diff. It adds deferred execution facts/configured agent profile to optional guidance and binds the actual steering channel in the child runner. Binding inventory coordinates move by four lines. Image preflight/gated intake, code/session-kernel registration and stream-spill dispatch bodies are unchanged. The 1,023-case affected runtime/provider/image/code/kernel/binding union passes with zero skips, failures or errors. All other retained evidence files remain unchanged relative to their previous pins. Preserve the partial verdict and existing limits; no new image/code, provider, remote or container activation credit.\n\nKanban integration collateral review (2026-10-04, base38ca4ad4): read the complete coordinator/binding diff. It adds default-off board-tool registration and clears board authority in ordinary delegates; exact binding coordinates after registration move by eleven lines. Image preflight/gated intake, code/session-kernel registration and stream-spill dispatch bodies are unchanged. All other retained evidence pins match. The affected image/code/kernel/binding union selects 668 cases, with 661 passing and 7 existing skips, zero failures or errors. Retain partial and every existing limitation; no new image/code equivalence or live provider/container acceptance. The initial general suite was deliberately cancelled after the separate metadata regression exposed stale shared-source pins; that cancelled run is not a full-suite success.",
       "remaining": "Generic SSH/Modal provisioning remains unsupported; the validated Docker transport accepts local Unix endpoints. Deliberate native-fd bypass output is not a redirected Python stream. Stream spills are capped at 5,000,000 bytes per stream: later bytes are counted but not kept, so only the inline tail shows a runaway stream's end. Hermes project|strict mode remains intentionally represented by Nerva tool profiles (agent x surface x principal), not copied as a separate switch.",
       "evidence": [
         {
@@ -13106,7 +13369,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "cc36323a506d15a0a99b4b0a7a0d1cdb908ccfd97b2493be04ac9568113ec317"
+          "sha256": "1eee0b4f7f25f528cc4ebeba68214c77a364bfff24f1dcd1c439b90d62085cf3"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -13748,7 +14011,7 @@
       "id": "H660",
       "row_sha256": "6cb94acacb3b84265ebcc49258ca6349094c2e8a033111f74472c8269b252fae",
       "status": "partial",
-      "summary": "The detached Docker worker, mailbox, nonce/liveness, host ToolCallBroker authorization, fallback discipline and stream-spill paths are unchanged. The new Sandbox physical gate applies to owner-once terminal shell dispatch; it does not substitute for or relax the detached code-cell authorization path. Retain partial and the prior remote SSH/Modal/TLS and in-worker output-attestation limitations. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only changes private terminal provenance; code-tool/session-kernel registration and configuration bodies are unchanged. ToolRPC adds an optional registrar declaration, defaulting to none, and a separate consent verifier; its ordinary grouping scope remains valid if consent verification fails. Other pinned evidence already matches. 232 guarded code/kernel/transport cases pass and seven Docker-dependent cases skip; the 3,135-case autonomy/ToolRPC union also passes. Retain partial and all remote/stream/attestation limits. Historical container receipts are not a current live-container run. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): The manual Docker physical gate applies to terminal shell dispatch, not the detached code-cell worker or ToolCallBroker. Keep the existing partial remote-transport limits. H011 collateral review (2026-10-04, source 6abf999f): inspected the complete abc2fd89→2757922d coordinator diff; its added exact-birth checkpoint observer and runner kwarg exist only in terminal_run. Current execute_code registration, host authorizer, session-kernel configuration and stream-spill/read-back bodies remain unchanged. Every other source/test pin matches. Root ran 232 guarded code/kernel/transport tests with 7 Docker-dependent skips and 77 sandbox/spill pipeline tests with no failures. Preserve partial and all remote/native-output limits; historical container receipts do not establish a fresh live Docker run. H011 owner-effect collateral review (2026-10-04, source 825533f4): Reviewed complete 38a14d46..dfca1a8a coordinator diff: only six lines register checkpoint.restore/checkpoint.maintenance with CheckpointController. Image preflight/gated intake and code/session/stream registration bodies are unchanged. Binding follow-up changes only subagents/task_executor literal line coordinates by +6. The 22-module H515/H595/H660/binding/authority union passed 697 cases with seven Docker-dependent skips. All three rows remain partial with every existing limitation; no fresh live Docker/image/provider or equivalent credit. H388 collateral review (2026-10-04, base dba0fb56): read the complete coordinator/binding diff. Only the optional authenticated-channel guidance callback and its constructor argument are added; downstream binding coordinates shift by thirteen lines. Image preflight/gated dispatch, execute_code registration, session-kernel and stream-spill bodies are unchanged. All other evidence pins match. The final runtime/settings/profile/compaction/binding/image/code/kernel union passes all 502 cases without skips, failures or errors. Keep partial and all existing limits; no new image/code equivalence, provider or deployment proof. Expanded H388 collateral review (2026-10-04, base 40ed2ac3): complete coordinator diff adds only per-agent guidance configuration; binding inventory changes literal callsite coordinates by nine lines. Image preflight/gated dispatch, execute_code registration, session-kernel and stream-spill bodies remain unchanged. Final affected runtime/image/code/kernel/binding union passes 704 cases without skips, failures or errors. All other evidence hashes remain current. Retain partial and all existing requirements; no additional image/code, live-provider or full-suite acceptance.\n\nH388 producer collateral review (2026-10-04, base817dd9d6): inspected the complete coordinator/binding diff. It adds deferred execution facts/configured agent profile to optional guidance and binds the actual steering channel in the child runner. Binding inventory coordinates move by four lines. Image preflight/gated intake, code/session-kernel registration and stream-spill dispatch bodies are unchanged. The 1,023-case affected runtime/provider/image/code/kernel/binding union passes with zero skips, failures or errors. All other retained evidence files remain unchanged relative to their previous pins. Preserve the partial verdict and existing limits; no new image/code, provider, remote or container activation credit.",
+      "summary": "The detached Docker worker, mailbox, nonce/liveness, host ToolCallBroker authorization, fallback discipline and stream-spill paths are unchanged. The new Sandbox physical gate applies to owner-once terminal shell dispatch; it does not substitute for or relax the detached code-cell authorization path. Retain partial and the prior remote SSH/Modal/TLS and in-worker output-attestation limitations. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only changes private terminal provenance; code-tool/session-kernel registration and configuration bodies are unchanged. ToolRPC adds an optional registrar declaration, defaulting to none, and a separate consent verifier; its ordinary grouping scope remains valid if consent verification fails. Other pinned evidence already matches. 232 guarded code/kernel/transport cases pass and seven Docker-dependent cases skip; the 3,135-case autonomy/ToolRPC union also passes. Retain partial and all remote/stream/attestation limits. Historical container receipts are not a current live-container run. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): The manual Docker physical gate applies to terminal shell dispatch, not the detached code-cell worker or ToolCallBroker. Keep the existing partial remote-transport limits. H011 collateral review (2026-10-04, source 6abf999f): inspected the complete abc2fd89→2757922d coordinator diff; its added exact-birth checkpoint observer and runner kwarg exist only in terminal_run. Current execute_code registration, host authorizer, session-kernel configuration and stream-spill/read-back bodies remain unchanged. Every other source/test pin matches. Root ran 232 guarded code/kernel/transport tests with 7 Docker-dependent skips and 77 sandbox/spill pipeline tests with no failures. Preserve partial and all remote/native-output limits; historical container receipts do not establish a fresh live Docker run. H011 owner-effect collateral review (2026-10-04, source 825533f4): Reviewed complete 38a14d46..dfca1a8a coordinator diff: only six lines register checkpoint.restore/checkpoint.maintenance with CheckpointController. Image preflight/gated intake and code/session/stream registration bodies are unchanged. Binding follow-up changes only subagents/task_executor literal line coordinates by +6. The 22-module H515/H595/H660/binding/authority union passed 697 cases with seven Docker-dependent skips. All three rows remain partial with every existing limitation; no fresh live Docker/image/provider or equivalent credit. H388 collateral review (2026-10-04, base dba0fb56): read the complete coordinator/binding diff. Only the optional authenticated-channel guidance callback and its constructor argument are added; downstream binding coordinates shift by thirteen lines. Image preflight/gated dispatch, execute_code registration, session-kernel and stream-spill bodies are unchanged. All other evidence pins match. The final runtime/settings/profile/compaction/binding/image/code/kernel union passes all 502 cases without skips, failures or errors. Keep partial and all existing limits; no new image/code equivalence, provider or deployment proof. Expanded H388 collateral review (2026-10-04, base 40ed2ac3): complete coordinator diff adds only per-agent guidance configuration; binding inventory changes literal callsite coordinates by nine lines. Image preflight/gated dispatch, execute_code registration, session-kernel and stream-spill bodies remain unchanged. Final affected runtime/image/code/kernel/binding union passes 704 cases without skips, failures or errors. All other evidence hashes remain current. Retain partial and all existing requirements; no additional image/code, live-provider or full-suite acceptance.\n\nH388 producer collateral review (2026-10-04, base817dd9d6): inspected the complete coordinator/binding diff. It adds deferred execution facts/configured agent profile to optional guidance and binds the actual steering channel in the child runner. Binding inventory coordinates move by four lines. Image preflight/gated intake, code/session-kernel registration and stream-spill dispatch bodies are unchanged. The 1,023-case affected runtime/provider/image/code/kernel/binding union passes with zero skips, failures or errors. All other retained evidence files remain unchanged relative to their previous pins. Preserve the partial verdict and existing limits; no new image/code, provider, remote or container activation credit.\n\nKanban integration collateral review (2026-10-04, base38ca4ad4): read the complete coordinator/binding diff. It adds default-off board-tool registration and clears board authority in ordinary delegates; exact binding coordinates after registration move by eleven lines. Image preflight/gated intake, code/session-kernel registration and stream-spill dispatch bodies are unchanged. All other retained evidence pins match. The affected image/code/kernel/binding union selects 668 cases, with 661 passing and 7 existing skips, zero failures or errors. Retain partial and every existing limitation; no new image/code equivalence or live provider/container acceptance. The initial general suite was deliberately cancelled after the separate metadata regression exposed stale shared-source pins; that cancelled run is not a full-suite success.",
       "remaining": "Generic SSH, Modal and remote TLS provisioning remain unsupported and require an explicitly isolated governed transport design. Docker selection currently supports local Unix endpoints. Correlation tokens/nonces reject stale frames but cannot attest output against Python introspection inside the same worker; authorization is enforced by the host broker. Spills cover redirected Python stdout/stderr up to 5,000,000 bytes per stream; deliberate native-fd bypasses and the part of a runaway stream past that ceiling are not kept on disk. Production deployment evidence is separate from these real-container tests.",
       "evidence": [
         {
@@ -13761,7 +14024,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "cc36323a506d15a0a99b4b0a7a0d1cdb908ccfd97b2493be04ac9568113ec317"
+          "sha256": "1eee0b4f7f25f528cc4ebeba68214c77a364bfff24f1dcd1c439b90d62085cf3"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",

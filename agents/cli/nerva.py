@@ -1140,6 +1140,18 @@ def render_inspector(payload: Mapping[str, Any], *, only: str | None = None) -> 
         if prompt.get("withheld"):
             lines.append("prompt   withheld: the secret redactor could not be loaded")
         else:
+            if prompt.get("resolved") is True:
+                model, route = prompt.get("model"), prompt.get("route")
+                if isinstance(model, str) and model and isinstance(route, str) and route:
+                    lines.append(f"prompt   resolved for model {model} via {route}")
+                else:
+                    lines.append("prompt   unresolved: route details incomplete")
+            elif prompt.get("resolved") is False:
+                reason = "route unavailable" if prompt.get("route_error") == "unavailable" else "route not resolved"
+                lines.append(f"prompt   unresolved: base system prompt only ({reason})")
+            else:
+                lines.append("prompt   legacy preview: route resolution not reported; model-specific prompt additions unverified")
+            lines.append("prompt   fixed empty user message; active history, user input and tool schemas omitted; cached runtime facts may differ")
             size = f"prompt   {prompt.get('bytes', 0)} bytes, about {prompt.get('tokens', 0)} tokens before any history"
             if prompt.get("truncated"):
                 size += f", shown to {prompt.get('cap')}"

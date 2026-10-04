@@ -32,6 +32,8 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Owner checkpoint operations (H011, partial) | Existing `POST /chat`, `POST /chat/stream`; no new route | Owner inventory, diff, selected/force restore and index maintenance through typed commands and host CLI; signed human task + kernel execution; successful restore rewinds only the current last-user exchange | ⬜ dedicated checkpoint UI and native acceptance; no native implementation claimed | H011 / H18.26; size/retention controls and complete checkpoint-owned payload cleanup remain open; shared blobs retained |
 | Chat history persistence | — (client-side) | ✅ | ✅ | H18.2 |
 | Agent selection | `GET /api/agents`, `agent` param | ✅ | ✅ | H18.3 |
+| Runtime Inspector (H227) | Existing admin inspector route | ✅ model/route resolution, unresolved/legacy/withheld states and fixed empty-turn limits | ⬜ dedicated native inspector; intentional owner administration gap | H18.26 / H227 |
+| Durable Kanban metadata (H075/H581, partial) | Existing owner chat/ToolRPC; `llm.kanban` default off | 🟡 tools only; no board panel or dispatcher yet | ⬜ native board/worker controls | H18.26 / H075 / H581 |
 | Markdown rendering | — (client-side) | ✅ | ✅ | H18.4 |
 | Status / telemetry | `GET /status` | ✅ | ✅ | H18.1 |
 | Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ✅ | H18.5 |

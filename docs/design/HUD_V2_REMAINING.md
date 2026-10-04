@@ -16,6 +16,18 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
+H227 inspector (2026-10-04): the existing Inspector panel now shows the resolved
+model/route and distinguishes unresolved base, legacy and withheld previews.
+Refresh replaces stale route/prompt details. Its estimate is a fixed empty-turn
+preview; history, user input, tool schemas and active cache state are omitted.
+
+H075/H581 Kanban (2026-10-04, partial): the pinned durable SQLite state and local
+tool handlers are registered behind `llm.kanban` (default off) in the existing
+owner ToolRPC/chat path. There is no board panel, task drawer, websocket watcher,
+tenant UI or approved worker dispatcher yet. These remain required Hermes work;
+the library/tool port alone does not close those rows. Workspace/project, goal
+judging and network-attachment adapters refuse explicitly until integrated.
+
 H011 checkpoints (2026-10-04): authenticated owner status/list and exact
 maintenance previews now use typed `/checkpoints` and bare `/rollback` through
 the existing chat routes; the host CLI uses the same owner notice contract.

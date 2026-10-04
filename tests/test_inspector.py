@@ -182,11 +182,13 @@ async def test_every_view_is_the_posture_it_names(tmp_path, view, principal, ori
     assert _names(payload) == _expected(o, principal, origin)
 
 
-async def test_the_owner_on_the_hud_is_offered_the_whole_registry(tmp_path):
+async def test_the_owner_on_the_hud_is_offered_the_enabled_registry(tmp_path):
     o = _orch(tmp_path)
     payload = await ins.build_inspector(o, "jarvis", view="owner", sections=["tools"])
-    assert _names(payload) == [t["name"] for t in o.tool_rpc.tools() if allows(t["name"])]
-    assert payload["tools"]["withheld"] == []
+    assert _names(payload) == [t["name"] for t in o.tool_rpc.tools()
+                               if allows(t["name"]) and not t["name"].startswith("kanban_")]
+    assert set(payload["tools"]["withheld"]) == {
+        t["name"] for t in o.tool_rpc.tools() if t["name"].startswith("kanban_")}
 
 
 async def test_the_agents_own_list_narrows_the_offer(tmp_path):

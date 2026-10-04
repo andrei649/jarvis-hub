@@ -1894,7 +1894,17 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     from agents.core.todo_tool import DESCRIPTION as TODO_DESCRIPTION
     from agents.core.todo_tool import INPUT_SCHEMA as TODO_SCHEMA
 
-    assert orch.tool_rpc.tools() == [
+    wired_tools = orch.tool_rpc.tools()
+    kanban_tools = [tool for tool in wired_tools if tool["name"].startswith("kanban_")]
+    assert {tool["name"] for tool in kanban_tools} == {
+        "kanban_create", "kanban_list", "kanban_show",
+        "kanban_comment", "kanban_link", "kanban_complete",
+        "kanban_block", "kanban_unblock", "kanban_heartbeat",
+        "kanban_request_review", "kanban_request_changes", "kanban_attach",
+        "kanban_attach_url", "kanban_attachments",
+    }
+    assert all(tool["gated"] is False for tool in kanban_tools)
+    assert [tool for tool in wired_tools if not tool["name"].startswith("kanban_")] == [
         {
             # H309: the model points at the owner's HUD (ungated, named anchors only).
             "name": "canvas_point",

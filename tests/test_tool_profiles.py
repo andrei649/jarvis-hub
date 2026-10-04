@@ -353,7 +353,9 @@ def test_coordinator_resolves_from_the_turn_principal_and_the_agent_config(tmp_p
     token = bind_turn_principal(Principal(channel="web", admin=True))
     try:
         offered, decision = runtime._profiled("jarvis", registry)
-        assert [t["name"] for t in offered] == all_names
+        # The board is registered but disabled by default, including for the owner.
+        assert [t["name"] for t in offered] == [n for n in all_names if not n.startswith("kanban_")]
+        assert {n for n in all_names if n.startswith("kanban_")} <= set(decision.withheld)
         assert (decision.surface, decision.principal) == ("operator", "owner")
         offered, decision = runtime._profiled("friday", registry)
         # The agent's own list narrows the owner's posture — which includes the gated file

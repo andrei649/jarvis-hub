@@ -190,6 +190,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="cost_confirm_usd_per_mtok", value=40,          label="Ask before choosing a model whose output costs at least this many USD per million tokens (0 = never ask)", kind="number"),
     dict(category="llm",     key="hybrid_flash_max", value=1000000,                label="Cloud Flash routing threshold — above N input tokens escalates to Pro (0 = unlimited)", kind="number"),
     dict(category="llm",     key="tool_loop_enabled", value=False,                  label="Agent tool loop (experimental)", kind="toggle"),
+    dict(category="llm", key="kanban", value=False, label="Owner Kanban board tools (local metadata; worker dispatch not yet available)", kind="toggle"),
     dict(category="llm", key="operating_guidance", value={"enabled": True, "flags": {}, "platform_overrides": {}, "agents": {}},
          label="Model operating guidance: enabled, independent flags, per-agent overrides and channel presentation", kind="json"),
     dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),

@@ -1412,6 +1412,17 @@ class AutonomyCoordinator:
 
             return current_principal()
 
+        from .kanban.runtime import register_kanban_tools
+        from .paths import data_path
+        register_kanban_tools(
+            server,
+            home=lambda: data_path("kanban"),
+            enabled=lambda: _get_setting("llm.kanban", False) is True,
+            principal=_turn_principal,
+            session_id=lambda: str(getattr(self._orch, "session_id", "") or "") or None,
+            profiles=lambda: tuple(getattr(self._orch, "agents", {}) or {}),
+        )
+
         def _agent_tool_patterns(agent_id):
             config = getattr(self._orch, "config", None)
             agents = getattr(config, "agents", None) or {}
@@ -2209,8 +2220,9 @@ def make_subagent_runner(orch):
     async def _subagent_runner(task, session_id, agent, *, steer=None):
         picked = agent if agent in orch.agents else "jarvis"
         from .steering import steering_scope
+        from .kanban.runtime import delegate_scope
 
-        with provider_failure_scope() as failures, steering_scope(steer, agent_id=picked):
+        with provider_failure_scope() as failures, steering_scope(steer, agent_id=picked), delegate_scope():
             if current_selection() is not None:
                 router = getattr(orch, "llm_router", None)
                 if not callable(getattr(router, "select_backend", None)):

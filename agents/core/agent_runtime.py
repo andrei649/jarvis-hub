@@ -323,6 +323,7 @@ class AgentToolRuntime:
                        metadata: list[dict[str, Any]], backend: Any = None) -> str:
         """Optional upstream advice over the exact offer, never tool authority."""
         from .conversation_clock import active_clock, render_snapshot
+        from .kanban.context import current_context as current_kanban_context
         from .operating_guidance import build_operating_guidance
         from .operating_prompt import OperatingPrompt, original_prompt
         from .steering import steering_available
@@ -345,6 +346,10 @@ class AgentToolRuntime:
                     environment = facts().get("environment")
                 except Exception:
                     logger.debug("optional execution facts unavailable")
+            board_context = current_kanban_context()
+            assigned_task = (board_context.task_id if board_context is not None
+                             and board_context.profile == agent_id
+                             and board_context.can_mutate and not board_context.delegated else None)
             guidance = build_operating_guidance(
                 model=model, surface=context.get("surface", ""),
                 enabled=context.get("enabled"), capabilities=capabilities,
@@ -352,6 +357,7 @@ class AgentToolRuntime:
                 platform_overrides=context.get("platform_overrides"),
                 profile=context.get("profile"),
                 steer_available=steering_available(agent_id),
+                kanban_task=assigned_task,
                 provider=getattr(getattr(backend, "profile", None), "id", ""),
             )
         except Exception:

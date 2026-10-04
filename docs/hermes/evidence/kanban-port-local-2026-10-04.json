@@ -1,0 +1,176 @@
+{
+  "generated_at": "2026-10-04T13:45:02.922520+00:00",
+  "goal": "Local functional parity with all 697 pinned Hermes capabilities remains active.",
+  "tested_precommit_head": "38ca4ad4b483f7275b90c4c399ce4f4e089d862c",
+  "hermes_reference": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "delivery": "Private MIT Kanban state/tools and scoped real coordinator integration; H227 CLI/HUD preview disclosure. Integration remains partial.",
+  "backend_runs": [
+    {
+      "label": "cancelled_initial",
+      "handle": "/tmp/nerva-kanban-surface-full-backend-20261004-handle.json",
+      "handle_sha256": "57d823ad481a955682acb314c21957dc7219bcdbd632b02e757da9c91b3ec7c7",
+      "state": "terminal_review_required",
+      "exit_code": 2,
+      "head": "38ca4ad4b483f7275b90c4c399ce4f4e089d862c",
+      "frozen_paths": 3159,
+      "expected_cases": 23278,
+      "drift": [],
+      "full_backend": {
+        "tests": 2363,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "passed": 2363,
+        "ordinary_skips": 0,
+        "existing_xfail": 0,
+        "expected_failure_cases": [],
+        "junit_sha256": "4859a67d30b10ba357b0c1bd223f8a5396dfd98a1860e1acd28da4ae1b30faaa",
+        "log_sha256": "9e2172f6aabf5e827861b07e9123fc7e39d4236668c3232933318b4e28772521"
+      }
+    },
+    {
+      "label": "integration_failure",
+      "handle": "/tmp/nerva-kanban-surface-reconciled-full-backend-20261004-handle.json",
+      "handle_sha256": "85cf03ff30c5813dd0edfe40f382f932f5b352dc90292df9b328730f0bc502ad",
+      "state": "terminal_review_required",
+      "exit_code": 1,
+      "head": "38ca4ad4b483f7275b90c4c399ce4f4e089d862c",
+      "frozen_paths": 3159,
+      "expected_cases": 23278,
+      "drift": [],
+      "full_backend": {
+        "tests": 23278,
+        "failures": 3,
+        "errors": 0,
+        "skipped": 35,
+        "passed": 23240,
+        "ordinary_skips": 34,
+        "existing_xfail": 1,
+        "expected_failure_cases": [
+          "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+        ],
+        "junit_sha256": "8b36c51a88a7b0eb4dbe57561982462471655e804280910984016aa61c2e8318",
+        "log_sha256": "c13365c92a499b9be9dddeacb7b7d81ae5df38250234a88890ec1a9c97584af9"
+      }
+    },
+    {
+      "label": "final",
+      "handle": "/tmp/nerva-kanban-surface-final-full-backend-20261004-handle.json",
+      "handle_sha256": "e119cd08bc2f165c622ed2e3f96c92811a17655576eeb32b5c5aff6687e902a4",
+      "state": "terminal_pass",
+      "exit_code": 0,
+      "head": "38ca4ad4b483f7275b90c4c399ce4f4e089d862c",
+      "frozen_paths": 3159,
+      "expected_cases": 23278,
+      "drift": [],
+      "full_backend": {
+        "tests": 23278,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 35,
+        "passed": 23243,
+        "ordinary_skips": 34,
+        "existing_xfail": 1,
+        "expected_failure_cases": [
+          "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+        ],
+        "junit_sha256": "388c4acca4b078c5dfd298f7e405ccd97063bcfb7b59187cf69fae1333757e4c",
+        "log_sha256": "580e5a3248ec223900300b3f2947f805eccc20b6e7b5c6eb4bb427e1e070fbbb"
+      }
+    }
+  ],
+  "freeze": {
+    "path": "/tmp/nerva-kanban-surface-final-full-backend-20261004-frozen.json",
+    "sha256": "a90a76e5c5b6b44a81d6d412c33f1ede046e3b146d538506d72a1ace80e9c23e",
+    "drift": []
+  },
+  "frontend": {
+    "artifact": "/tmp/nerva-kanban-inspector-full-frontend-20261004.json",
+    "sha256": "da0b2d82ed7bd678e26dc5c4216303934ad773a6e6d63572ad4f72942c8e0ec0",
+    "selected": 1892,
+    "passed": 1892,
+    "failed": 0
+  },
+  "typescript": {
+    "log": "/tmp/nerva-kanban-inspector-typecheck-20261004.log",
+    "sha256": "4be34ed489a8a21324d3820825f37970c5f569bb436ce7a05ef560bca4b87b8a",
+    "exit_code": 0
+  },
+  "focused": {
+    "configuration_runtime_state_tools": 145,
+    "image_code_kernel_binding": {
+      "selected": 668,
+      "passed": 661,
+      "skipped": 7
+    },
+    "ledger_document_references": 54
+  },
+  "static": {
+    "ruff": "pass",
+    "bandit_findings": 0,
+    "gitleaks_source_findings": 0,
+    "graft_graph_fresh": true
+  },
+  "tested_changed_file_hashes": {
+    "GO_LIVE_PLAN.md": "eff1f611699f1a5e128f8104458590bab57b001b269f58371907ad0a4064c56c",
+    "HERMES_STATUS.md": "201c592ede90c51d067104cffa0db296b5934278ff2f53423d235d73ad911174",
+    "NERVA.md": "6d9186d983b19ec592b5e90015ade28f024f1a6cde713e5c74c035ac9b78c700",
+    "README.md": "b332081115c480eff80eb04c25fb2e5363479d363ad83210ef67ad2b513a6363",
+    "STATUS.md": "221d7796cbfac74d2e10a54ebd6b9048e3dce428a71242fd95a3d34ad26349ff",
+    "agents/cli/nerva.py": "59ba91058760fd1a3e5065495b77cf961a89f03670fc3569fe408d880556140c",
+    "agents/core/agent_runtime.py": "b95920f05031eedcec45df674628bd1977817e60e01797163d7a3a0cefa887b6",
+    "agents/core/autonomy_coordinator.py": "1eee0b4f7f25f528cc4ebeba68214c77a364bfff24f1dcd1c439b90d62085cf3",
+    "agents/core/kanban/README.md": "ad1ff51635eb5a329e8e59ce43f3f174c7f6e35e7e37e21539e874fff6676d92",
+    "agents/core/kanban/__init__.py": "5e9e9a7ece73be37841622a58380324630aed763a4166aa47712a51beb2827a0",
+    "agents/core/kanban/context.py": "f65d71a7f889541da8324bb1b18f972a23b88c3b9010577087c3dbdacd7abf75",
+    "agents/core/kanban/runtime.py": "ba072d18eb491b11d22641f00106db7ef9d7756d21dca827a0e6da2804bf3d2e",
+    "agents/core/kanban/schemas.py": "c570802050dfcca41541a935ce01b11de12f47a7bc5facc705b47c970c9264f4",
+    "agents/core/kanban/tool_compat.py": "b895256be95ba523116e44ef208df8d650386350925bcc71508c3c0aa832e077",
+    "agents/core/kanban/tools.py": "1ce12fff43014698661c09658046b78323559cc0897860acb640d27229b6fb15",
+    "agents/core/kanban/upstream/LICENSE": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6",
+    "agents/core/kanban/upstream/__init__.py": "9c38935c0f6c4c2134ff7dbe0a1bc541645801ed36ed6cb5a771ea7a46d41238",
+    "agents/core/kanban/upstream/compat.py": "021fe90de2ed868928b098ea539df5379dc0602806a73781eb3d118d167b1339",
+    "agents/core/kanban/upstream/hermes_state_errors.py": "5ffb4e0f0d41e22dc291a9210b9996c81a463637f5aaac049cf9532eb1af7bfe",
+    "agents/core/kanban/upstream/hermes_state_wal.py": "4e507e4dfc0195fe9a0a5959c24fd2d39cd37856d425b3ac03a16ceaea14b085",
+    "agents/core/kanban/upstream/kanban_db.py": "87872a4acc794ef9a69c197e75e14c17f1ba1df9d0576d720afac4e51a92d9e1",
+    "agents/core/kanban/upstream/kanban_db_connect.py": "f2f815d1891defa81bf98a7a3285bc6b01141d83fb4858e21ecd059589d93363",
+    "agents/core/kanban/upstream/kanban_db_dispatch.py": "4cb58f306bd99eb73bf7cfbfe8224a628256cd605938c6a8291a43f8745b9a86",
+    "agents/core/kanban/upstream/kanban_db_graph.py": "1e97ae4db5e053b0cb9999736973849fb33655a6d20d225ccacf1d09b8a6266f",
+    "agents/core/kanban/upstream/kanban_db_notify.py": "cc068cb60550981a04d9acb2f80876c21e2c8a69a23b18dc99760f074edbb3f4",
+    "agents/core/kanban/upstream/kanban_db_workspace.py": "14c931ac9b41634c3daae7b3be38c89291f3cf978849fd0427fc8533691e1671",
+    "agents/core/kanban/upstream/kanban_pr_acceptance.py": "438ddd5e230a8829aee4e7c91a0e53e94af22441285bec45607afb376b9be180",
+    "agents/core/kanban/upstream/kanban_pr_acceptance_store.py": "8e350cb9a1ebdfa2c87bdd8954d287ffe1574fe1f474b4b56968f22fb2b9f962",
+    "agents/core/kanban/upstream/sqlite_runtime.py": "bd1d32131e66c7a6b9b732e22543e4b9518a30422ce69cbb35fca8c4de45845a",
+    "agents/core/kanban/upstream/sqlite_safe_read.py": "e92b1f812bc4c0f3dece7e88a84cf9a8f41af82f9b0ab74562493f4045aad3f7",
+    "agents/core/kanban/upstream/sqlite_util.py": "948b57eee3899edd80483cc618f8da21aebde0f5c38d8ad884ef5c75c22412d8",
+    "agents/core/orchestrator_bindings.py": "1e47d0a8c89ca634b5eda7ebe0aedd2ac839310c8e94c6795b5f9bac2f0af231",
+    "agents/core/settings_db.py": "9e3fbd70a55fff17d81d5a7bb256f7c5fd7b5e9b2dea81c317b7cd105becca0b",
+    "agents/core/tool_profiles.py": "823501bdd718dd7ee7faf38fd5b35f7c83bf2953af3e7f512464dd4f4e5108ba",
+    "docs/HERMES_CAPABILITIES.md": "36863e8d89d8d4cfe163fa24e67b924c7bf910d4a2c547e8986f83c2457da265",
+    "docs/design/HUD_V2_REMAINING.md": "895fad5a27c8b02ea18c1e8ac59d260dae58fc1cecab0707e00bb9a50975b656",
+    "docs/hermes/assessment.json": "4ba110fe377c82e9c54bb8572f484a58d7d9f8e8f69da7a4061c1bd8712a8f22",
+    "docs/hermes/h388-kanban-port-plan-2026-10-04.md": "e4a471c4acef172e14f9214767e1470f00b8b8655b15ca15bfdd56ba9b18a7cf",
+    "frontend/src/panels/inspector.test.tsx": "39f46fac5a9e25d14e1df9f352713de0bed3ef0277272887500f6bf31835fe9e",
+    "frontend/src/panels/inspector.tsx": "835e6873b81fbd053db1e42a56817e007bc61d11544231fd81268de7361b9245",
+    "mobile/PARITY.md": "612ee248bad9a384360e671e91d466a638dfaa8a09f44f410b83ad9af96a4ded",
+    "project-status.json": "a923f25caf73d1bc6406e2dc9bc750ee3f16a04c3c0a737b67b0f21b07e351d8",
+    "tests/_snapshots/tool_profiles.json": "545a35727208d058843a58881d4407284d015b9b152cf64c1650eb096ae15022",
+    "tests/test_agent_runtime_v2.py": "4c0e2898bd9065179d1c09d2e2e5d35582cc3e37342f23cd538f11987b609b06",
+    "tests/test_h227_prompt_preview_clients.py": "2aa1000da20407038900a04927ee6afd91240751cac444a24af9310c0b146e3f",
+    "tests/test_hermes_kanban_state_port.py": "5ed35f0d568cdef09bde9a2b2452880805fad53c4022a90de6dd4632eaae3283",
+    "tests/test_hermes_kanban_tools_port.py": "da990253f17e455a38fb916c364f60de127b5995460fd2861123b53b40fcd70d",
+    "tests/test_inspector.py": "59d39e74c67879777a41d8c0e440f4d420342a0af2b29c82f0c1de5c860b7dd8",
+    "tests/test_tool_profiles.py": "b118ca7a6600f69fe8d76d59139e9ea0880eccfbeaf9d790f7c12e068db8b522"
+  },
+  "verification_limit": "Synthetic/local coordinator tests; no live provider, container, remote worker, native device or production deployment acceptance. No coverage percentage is claimed.",
+  "remaining": [
+    "Approved TaskQueue/kernel worker dispatch and restart/reaping",
+    "FileScope workspace/project lifecycle",
+    "Goal judge and network attachment adapters",
+    "Channel delivery/watchers/websocket and tenant controls",
+    "CLI/dashboard/native board consumers",
+    "Other Hermes plugin and capability gaps; shared historical stale reviews require claim review"
+  ],
+  "next_action": "Adapt pinned Hermes dispatcher and its behavioral tests to approved durable Nerva queue tasks and the existing agent runner; preserve exact task/run ownership.",
+  "publication": "Local only; no push, merge or deployment."
+}
