@@ -178,3 +178,14 @@ Next rows: **H487**, then the rest of `docs/hermes/build-queue.md`. The owner as
 to go last: rows that need `agents/core/security/**` (e.g. **H512**) and the `github-advanced-security`
 check are the owner's. H696 / H334 need network access; H427 waits on owner decision P30.2
 (`docs/OWNER_TASKS.md`).
+
+## Fresh N1–N7 verification — 2026-10-04
+
+The [focused mutation refresh](mutation-refresh-2026-10-04.md) and its
+[structured result](mutation-refresh-2026-10-04.json) record11 behavioral kills:
+10 assertion failures and1 intended runtime ImportError, with successful Python
+and browser baselines, zero setup errors/timeouts/survivors, and complete snapshot
+restoration. The six named source/test fingerprints match local milestone
+cc4618a1. This updates the named handoff regressions only; H277 provider/routing,
+other accepted dependencies and live acceptance remain unfinished. Historical
+receipts retain their original source scope and are not rewritten.
