@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "abc2fd892dea9fd78b3d40931f823e877d3febea",
-  "assessed_at": "2026-10-04T06:24:37Z",
+  "base_sha": "6abf999f8fe341ed7483719b16157b5792989906",
+  "assessed_at": "2026-10-04T07:58:17.376684Z",
   "reviews": [
     {
       "id": "H001",
@@ -171,8 +171,8 @@
       "id": "H011",
       "row_sha256": "0b4bb66ca1a465a07d3b7fa45a4645417bba7e6a6cf9b1d095d5e95afbbc8eb7",
       "status": "partial",
-      "summary": "Actual governed FileTools write/delete now persist ordered pre/post checkpoints in a local SQLite index over the existing content-addressed SnapshotStore. The first unit provides scoped listing/status, bounded secret/PII-redacted diff, exact-currentness restore with durable pre-undo snapshots, and conservative shared-ref maintenance primitives. Root verified meaningful regressions and 146 passing FileTools/history cases; capture and stored-blob reads are bounded and no-follow. Restore/prune remain private trusted primitives, with no public authority grant. This is a per-file storage dependency, not full Hermes checkpoint parity. Durable current-last-user rewind is now integrated as a private prepared/commit ticket with session-instance, clock, tail, JSON and SQLite head checks. Restart cannot resurrect erased continuation history; cold binding defers verification, invalid sessions are quarantined individually, and encrypted delete backup preserves the rewind marker. The terminal queue now exposes a read-only exact-birth/intent origin observer, without execution authority. Root current affected integration has 452 passes and collateral has 909 passes; no public rollback or new equivalent credit is claimed.",
-      "remaining": "Owner CLI checkpoints status/list/prune/clear/clear-legacy and /rollback interception/authorization are absent. Whole-root local-terminal checkpoint groups and actual originating-turn callback wiring are absent. Private conversation rewind still needs the root authorized file-effect orchestration, preappend interception, bounded session lease and derived prompt/cache invalidation. Irreversible maintenance approval and per-project size/orphan handling need their owner-facing flow. History is POSIX-only; Windows keeps ordinary governed FileTools with history unsupported. General terminal/process/network/outside-root effects are not reversible. Full integrated suites and behavior acceptance remain required.",
+      "summary": "Governed per-file and bounded local-terminal checkpoint groups persist pre/post state over the existing SnapshotStore, including exact-birth queue origin observation. Authenticated owner status/list and exact maintenance previews now run through CLI, existing web chat, preappend orchestrator interception and the ADMIN registry without model, notes, attached-file or conversation mutation. The integrated manual local/SSH path requires a durable accepted task, exact current request and real kernel checks before physical dispatch. Private restore now supports selected group paths, explicit current-fingerprint-bound force, durable pre-undo and resumable partial results; private maintenance records at-most-once claims and checks exact rows/roots plus live authority inside the SQLite write transaction immediately before deletion. Shared generic snapshot records/blobs remain retained. Existing durable prepared/commit rewind still binds session instance, clock, tail and persistent heads. Root evidence: 1,304 passed / 3 skipped in 40 affected modules; final literal-SQL correction 139 passed; 399 image/binding collateral passed. H011 remains partial and no approved owner restore/cleanup or full-suite acceptance is claimed. See docs/hermes/evidence/h011-owner-storage-integration-2026-10-04.json.",
+      "remaining": "Owner diff/typed-ID/ordinal/per-file selection and force UX are not connected. Approved restore and irreversible maintenance producers, exact queue/kernel/session binding, durable operation orchestration and filesystem-success-then-current-last-user rewind composition remain required. Size/retention/per-project/orphan controls and complete checkpoint-owned payload cleanup remain open; index-only maintenance retains shared blobs. Dedicated HUD/native interfaces and acceptance remain open. History is POSIX-only; Windows remains unsupported for capture/restore. General process/network/outside-root effects are not reversible. Frozen full integration suites, restart/approval waits and behavior acceptance remain required.",
       "evidence": [
         {
           "path": "agents/core/file_tools.py",
@@ -180,7 +180,7 @@
         },
         {
           "path": "agents/core/file_checkpoint_history.py",
-          "sha256": "85baf4246034bd98cf483bb51357af88ff2931766d23c9867e596414d54b193f"
+          "sha256": "7fea56380d56a1b8981a2567d358990da7c6cbbfd2aa33636adec3908055aa43"
         },
         {
           "path": "tests/test_h011_file_checkpoint_history.py",
@@ -241,6 +241,110 @@
         {
           "path": "docs/hermes/evidence/h011-rewind-origin-unit-2026-10-04.json",
           "sha256": "25885f0200c69c46404768954bc2f70d91821118a496df992a4a17b008c1b753"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "7682bc79625cb1b438987f9348f7c08d6da6346b31ca93dc382b4b95a92d4bc0"
+        },
+        {
+          "path": "agents/core/checkpoint_commands.py",
+          "sha256": "2ee64e98b9cd2a4c36d990a473d4578775ecf7cb6c9e68ebb5db4daae335b33a"
+        },
+        {
+          "path": "agents/core/checkpoint_inventory.py",
+          "sha256": "27887df2325f8a65b2d01056d46cc3ebc33e3d04210550a87b92ba521f04eda3"
+        },
+        {
+          "path": "agents/core/checkpoint_maintenance.py",
+          "sha256": "6dbea7fcc274dd8df5e83a23ccc14f021f92b023923d865730630a69f0683d29"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "2adb7d96d9a2f4a54d7a8f11e339f42de4ffbcd71061d1e7aff2f8a9d314a501"
+        },
+        {
+          "path": "agents/core/environments/execution.py",
+          "sha256": "eaff9aa16c5d07d6556475601898bc555327bb575a689ada65eed206dc658d5d"
+        },
+        {
+          "path": "agents/core/environments/legacy_terminal_dispatch.py",
+          "sha256": "242081397d741f9e5d0229784c36651797eb77e1c4a30fab6f01943c63ed84eb"
+        },
+        {
+          "path": "agents/core/environments/local_transport.py",
+          "sha256": "7b742f3ebc1325225f2779035b71acd3967ef762120eb3eea6185839ba674e1f"
+        },
+        {
+          "path": "agents/core/environments/ssh_transport.py",
+          "sha256": "49d8e0491f5034151b4b8ac5088c0df11f50b5f64cfc8f7a39ab20965d3c8bb2"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "ed8f76769a1ae7c25e46a3ad10f761c50d43c8e5d86eb4299f4bae1ba6b4ec6a"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "c849fd048c7bb90bab1a9e6d0566d39a46dc11beb1b6f0d5edb249352efe798f"
+        },
+        {
+          "path": "tests/test_h011_checkpoint_inventory.py",
+          "sha256": "808846b690b40b988e2ebf67656311600141781d567f7445fbd7bad062c54e1c"
+        },
+        {
+          "path": "tests/test_h011_checkpoint_maintenance_executor.py",
+          "sha256": "61e214fde943bd392ab82a464f1ada8fe735fe8db5e07d6a24bbd0484bf1d545"
+        },
+        {
+          "path": "tests/test_h011_checkpoints_cli.py",
+          "sha256": "3ca732a4b095fdd56f4b03f021bd192c25da1065151fc01ad5ad725bc59e978b"
+        },
+        {
+          "path": "tests/test_h011_manual_host_kernel.py",
+          "sha256": "7b33c487f19d92820f745fd7e87e4fe4a534d8ff47d43381d44d96b00efc8bb3"
+        },
+        {
+          "path": "tests/test_h011_owner_checkpoint_commands.py",
+          "sha256": "531ba69069b64ec923b7f800246d956dfc276466d19145fa09fe5594a6ba367f"
+        },
+        {
+          "path": "tests/test_h011_preappend_commands.py",
+          "sha256": "be006da87bcfc0b0a1919ec89f94f68058e11822a0586e677eef29c34164ff34"
+        },
+        {
+          "path": "tests/test_h011_selected_force_restore.py",
+          "sha256": "66baf1c563c7dca5c4d963ced96f8b41a05e43d8fdc2411649009950d86cc7de"
+        },
+        {
+          "path": "tests/test_h011_terminal_queue_integration.py",
+          "sha256": "1b53f762d6676ce673d909df4fc141f164cc38f1e01b620d0570f3a0942b6c12"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "21c8e92dc0a964d85ec32d89833b868e6961491020f53325cd0bcccf78aa4331"
+        },
+        {
+          "path": "tests/test_slash_commands.py",
+          "sha256": "70a7298ec67a184a6ac08096d731a8118982088bebe823e276386b014c3aa0b4"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "a09181b46a5b52e512bcb91de57474dbb4814ffca6405749e07987e1380715e7"
+        },
+        {
+          "path": "tests/test_h011_terminal_group_checkpoint.py",
+          "sha256": "a1951c606080fa5d46024691cdddb1347a8c7fff331acc99b3d47e7556f75e49"
+        },
+        {
+          "path": "tests/test_h011_group_restore.py",
+          "sha256": "a3e0fd906aa98baad9f54591d1fa375ddfd625108a489c8d1d4cf92c314499e8"
+        },
+        {
+          "path": "tests/test_h011_terminal_root_boundary.py",
+          "sha256": "cf4d4d1a369425f67b70058004eafa37e17077b290d64b1ba1fe2749de80e6bb"
+        },
+        {
+          "path": "docs/hermes/evidence/h011-owner-storage-integration-2026-10-04.json",
+          "sha256": "79df96651917b44b213149995ed067f823199f846531abfd40a9059e4513c33d"
         }
       ]
     },
@@ -11189,7 +11293,7 @@
       "id": "H515",
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
-      "summary": "The accepted local ComfyUI choices, approved cloud-image adapter, gallery flow and image HUD remain on their existing image tool/runtime paths. The coordinator still registers image_generate with its existing preflight and gated intake. orchestrator_bindings.py only moves exact callsite positions to track inserted terminal code; it does not change cloud_images binding semantics. Retain partial: the prior ComfyUI unload/restore, native image behavior and frozen media.generate/file.write authority limitations remain as recorded; owner-once terminal execution supplies no image parity or paid-provider evidence. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only adds private stable registrar provenance to terminal intake and the terminal consent revision; image_generate registration, image dispatcher, gated image intake and cloud_images binding bodies are unchanged. All other H515 evidence hashes already match. 349 guarded image/backend/API regressions and the 3,135-case autonomy/ToolRPC integration union pass. Retain partial and every existing remaining requirement; this adds no image equivalence or live-provider claim.\n\nBinding-coordinate follow-up (2026-10-03, c70e0407): the full guarded backend exposed fourteen coordinator callsite line positions seven lines behind production. Only those literal coordinates changed; cloud_images remains the same single inventoried writer, with identical name/path/column and bind function. All fifty exact-inventory/protocol/alias binding tests pass after correction. Referenced H515 backend modules in the frozen complete run have 302 passing cases and 0 skips, with no failures; that overall run still has the separate binding failure and is not a full-suite success. Every other H515 source/test pin is current. Partial status and all remaining image/native/VRAM requirements are retained, without new provider/live acceptance. See docs/hermes/evidence/h487-consent-anchor-full-review-2026-10-03.md. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): The manual Docker branch is terminal-only; image_generate registration/preflight and ComfyUI/cloud image flows are unchanged. The orchestrator_bindings inventory updates only exact coordinator callsite line numbers by +56 after that insertion; its lexical binding test passes 50 cases without relaxed assertions. Keep partial and its image/runtime limits.",
+      "summary": "The accepted local ComfyUI choices, approved cloud-image adapter, gallery flow and image HUD remain on their existing image tool/runtime paths. The coordinator still registers image_generate with its existing preflight and gated intake. orchestrator_bindings.py only moves exact callsite positions to track inserted terminal code; it does not change cloud_images binding semantics. Retain partial: the prior ComfyUI unload/restore, native image behavior and frozen media.generate/file.write authority limitations remain as recorded; owner-once terminal execution supplies no image parity or paid-provider evidence. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only adds private stable registrar provenance to terminal intake and the terminal consent revision; image_generate registration, image dispatcher, gated image intake and cloud_images binding bodies are unchanged. All other H515 evidence hashes already match. 349 guarded image/backend/API regressions and the 3,135-case autonomy/ToolRPC integration union pass. Retain partial and every existing remaining requirement; this adds no image equivalence or live-provider claim.\n\nBinding-coordinate follow-up (2026-10-03, c70e0407): the full guarded backend exposed fourteen coordinator callsite line positions seven lines behind production. Only those literal coordinates changed; cloud_images remains the same single inventoried writer, with identical name/path/column and bind function. All fifty exact-inventory/protocol/alias binding tests pass after correction. Referenced H515 backend modules in the frozen complete run have 302 passing cases and 0 skips, with no failures; that overall run still has the separate binding failure and is not a full-suite success. Every other H515 source/test pin is current. Partial status and all remaining image/native/VRAM requirements are retained, without new provider/live acceptance. See docs/hermes/evidence/h487-consent-anchor-full-review-2026-10-03.md. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): The manual Docker branch is terminal-only; image_generate registration/preflight and ComfyUI/cloud image flows are unchanged. The orchestrator_bindings inventory updates only exact coordinator callsite line numbers by +56 after that insertion; its lexical binding test passes 50 cases without relaxed assertions. Keep partial and its image/runtime limits. H011 collateral review (2026-10-04, source 6abf999f): inspected the complete abc2fd89→2757922d coordinator/binding diff: it adds only the terminal exact-birth origin observer and runner kwarg; fourteen binding line coordinates move by +21. Current image_generate registration/preflight/gated intake and cloud_images binding bodies are unchanged. Root ran 399 image/backend/API/model-manager/binding regressions with no failures or skips. Preserve partial and every remaining image/VRAM/native requirement; no live/billed provider or new equivalent credit.",
       "remaining": "The real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need explicit architecture adjudication; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation requires one cloud seam, not eight-provider fan-out. Ambiguous provider attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed. This acknowledgment foundation is not a VRAM swap: canonical aliases, production backend/controller identity, atomic per-generation leases, owner control coordination and authoritative hardware snapshots remain unresolved. Existing coarse headroom and no-victim overcommit behavior remain. ComfyUI unknown submissions need reconciliation before any future exclusive lease can safely release.",
       "evidence": [
         {
@@ -11298,11 +11402,11 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "66d9cd9e790a33b68a23c17ed9501dfb81788c398a99dd28e1d2e252ed27f5d3"
+          "sha256": "a09181b46a5b52e512bcb91de57474dbb4814ffca6405749e07987e1380715e7"
         },
         {
           "path": "agents/core/orchestrator_bindings.py",
-          "sha256": "4ce62b9ae203b1057a074417fd65cd176c9975d3c326b2fc5bd91682042b8d23"
+          "sha256": "bea2910fcde690f6f78453e55e18788b48ef45da476049da6917e66b541c0e95"
         },
         {
           "path": "agents/core/llm/model_manager.py",
@@ -11339,6 +11443,10 @@
         {
           "path": "docs/hermes/evidence/h277-h487-provider-terminal-denial-regression-2026-10-04.json",
           "sha256": "ddbb6ed4d48d9b8f7bde56d3333f72ee50e99592988a42110de15f8c05946be1"
+        },
+        {
+          "path": "docs/hermes/evidence/h011-owner-storage-integration-2026-10-04.json",
+          "sha256": "79df96651917b44b213149995ed067f823199f846531abfd40a9059e4513c33d"
         }
       ]
     },
@@ -12744,7 +12852,7 @@
       "id": "H595",
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
-      "summary": "execute_code still uses its existing host authorization, optional persistent session kernels and bounded redirected stdout/stderr spills with read-back-checked paging notices. The coordinator code-tool/session-kernel registration and spill stores are unchanged. Sandbox now refuses host fallback only when a private owner-once terminal scope is present and requires a one-use physical gate before that Docker shell spawn; ordinary code cells do not hold that scope. Retain partial and the prior SSH/Modal, stream-cap and native-fd limitations. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only changes private terminal provenance; code-tool/session-kernel registration and configuration bodies are unchanged. ToolRPC adds an optional registrar declaration, defaulting to none, and a separate consent verifier; its ordinary grouping scope remains valid if consent verification fails. Other pinned evidence already matches. 232 guarded code/kernel/transport cases pass and seven Docker-dependent cases skip; the 3,135-case autonomy/ToolRPC union also passes. Retain partial and all remote/stream/attestation limits. Historical container receipts are not a current live-container run. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): Sandbox host fallback is now refused while a private manual Docker scope exists, alongside owner-once/consent scopes. Ordinary execute_code isolation, stream spills and host policy remain unchanged. Keep the existing partial limitations.",
+      "summary": "execute_code still uses its existing host authorization, optional persistent session kernels and bounded redirected stdout/stderr spills with read-back-checked paging notices. The coordinator code-tool/session-kernel registration and spill stores are unchanged. Sandbox now refuses host fallback only when a private owner-once terminal scope is present and requires a one-use physical gate before that Docker shell spawn; ordinary code cells do not hold that scope. Retain partial and the prior SSH/Modal, stream-cap and native-fd limitations. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only changes private terminal provenance; code-tool/session-kernel registration and configuration bodies are unchanged. ToolRPC adds an optional registrar declaration, defaulting to none, and a separate consent verifier; its ordinary grouping scope remains valid if consent verification fails. Other pinned evidence already matches. 232 guarded code/kernel/transport cases pass and seven Docker-dependent cases skip; the 3,135-case autonomy/ToolRPC union also passes. Retain partial and all remote/stream/attestation limits. Historical container receipts are not a current live-container run. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): Sandbox host fallback is now refused while a private manual Docker scope exists, alongside owner-once/consent scopes. Ordinary execute_code isolation, stream spills and host policy remain unchanged. Keep the existing partial limitations. H011 collateral review (2026-10-04, source 6abf999f): inspected the complete abc2fd89→2757922d coordinator diff; its added exact-birth checkpoint observer and runner kwarg exist only in terminal_run. Current execute_code registration, host authorizer, session-kernel configuration and stream-spill/read-back bodies remain unchanged. Every other source/test pin matches. Root ran 232 guarded code/kernel/transport tests with 7 Docker-dependent skips and 77 sandbox/spill pipeline tests with no failures. Preserve partial and all remote/native-output limits; historical container receipts do not establish a fresh live Docker run.",
       "remaining": "Generic SSH/Modal provisioning remains unsupported; the validated Docker transport accepts local Unix endpoints. Deliberate native-fd bypass output is not a redirected Python stream. Stream spills are capped at 5,000,000 bytes per stream: later bytes are counted but not kept, so only the inline tail shows a runaway stream's end. Hermes project|strict mode remains intentionally represented by Nerva tool profiles (agent x surface x principal), not copied as a separate switch.",
       "evidence": [
         {
@@ -12757,7 +12865,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "66d9cd9e790a33b68a23c17ed9501dfb81788c398a99dd28e1d2e252ed27f5d3"
+          "sha256": "a09181b46a5b52e512bcb91de57474dbb4814ffca6405749e07987e1380715e7"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -12838,6 +12946,10 @@
         {
           "path": "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md",
           "sha256": "919db624f593ccfbe10974970d2680ed35b9ab65b401d6ae7f3fa342a44caf1a"
+        },
+        {
+          "path": "docs/hermes/evidence/h011-owner-storage-integration-2026-10-04.json",
+          "sha256": "79df96651917b44b213149995ed067f823199f846531abfd40a9059e4513c33d"
         }
       ]
     },
@@ -13395,7 +13507,7 @@
       "id": "H660",
       "row_sha256": "6cb94acacb3b84265ebcc49258ca6349094c2e8a033111f74472c8269b252fae",
       "status": "partial",
-      "summary": "The detached Docker worker, mailbox, nonce/liveness, host ToolCallBroker authorization, fallback discipline and stream-spill paths are unchanged. The new Sandbox physical gate applies to owner-once terminal shell dispatch; it does not substitute for or relax the detached code-cell authorization path. Retain partial and the prior remote SSH/Modal/TLS and in-worker output-attestation limitations. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only changes private terminal provenance; code-tool/session-kernel registration and configuration bodies are unchanged. ToolRPC adds an optional registrar declaration, defaulting to none, and a separate consent verifier; its ordinary grouping scope remains valid if consent verification fails. Other pinned evidence already matches. 232 guarded code/kernel/transport cases pass and seven Docker-dependent cases skip; the 3,135-case autonomy/ToolRPC union also passes. Retain partial and all remote/stream/attestation limits. Historical container receipts are not a current live-container run. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): The manual Docker physical gate applies to terminal shell dispatch, not the detached code-cell worker or ToolCallBroker. Keep the existing partial remote-transport limits.",
+      "summary": "The detached Docker worker, mailbox, nonce/liveness, host ToolCallBroker authorization, fallback discipline and stream-spill paths are unchanged. The new Sandbox physical gate applies to owner-once terminal shell dispatch; it does not substitute for or relax the detached code-cell authorization path. Retain partial and the prior remote SSH/Modal/TLS and in-worker output-attestation limitations. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim. H487 producer collateral review (2026-10-03, base 27bf6cb0): the complete coordinator diff only changes private terminal provenance; code-tool/session-kernel registration and configuration bodies are unchanged. ToolRPC adds an optional registrar declaration, defaulting to none, and a separate consent verifier; its ordinary grouping scope remains valid if consent verification fails. Other pinned evidence already matches. 232 guarded code/kernel/transport cases pass and seven Docker-dependent cases skip; the 3,135-case autonomy/ToolRPC union also passes. Retain partial and all remote/stream/attestation limits. Historical container receipts are not a current live-container run. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): The manual Docker physical gate applies to terminal shell dispatch, not the detached code-cell worker or ToolCallBroker. Keep the existing partial remote-transport limits. H011 collateral review (2026-10-04, source 6abf999f): inspected the complete abc2fd89→2757922d coordinator diff; its added exact-birth checkpoint observer and runner kwarg exist only in terminal_run. Current execute_code registration, host authorizer, session-kernel configuration and stream-spill/read-back bodies remain unchanged. Every other source/test pin matches. Root ran 232 guarded code/kernel/transport tests with 7 Docker-dependent skips and 77 sandbox/spill pipeline tests with no failures. Preserve partial and all remote/native-output limits; historical container receipts do not establish a fresh live Docker run.",
       "remaining": "Generic SSH, Modal and remote TLS provisioning remain unsupported and require an explicitly isolated governed transport design. Docker selection currently supports local Unix endpoints. Correlation tokens/nonces reject stale frames but cannot attest output against Python introspection inside the same worker; authorization is enforced by the host broker. Spills cover redirected Python stdout/stderr up to 5,000,000 bytes per stream; deliberate native-fd bypasses and the part of a runaway stream past that ceiling are not kept on disk. Production deployment evidence is separate from these real-container tests.",
       "evidence": [
         {
@@ -13408,7 +13520,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "66d9cd9e790a33b68a23c17ed9501dfb81788c398a99dd28e1d2e252ed27f5d3"
+          "sha256": "a09181b46a5b52e512bcb91de57474dbb4814ffca6405749e07987e1380715e7"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -13477,6 +13589,10 @@
         {
           "path": "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md",
           "sha256": "919db624f593ccfbe10974970d2680ed35b9ab65b401d6ae7f3fa342a44caf1a"
+        },
+        {
+          "path": "docs/hermes/evidence/h011-owner-storage-integration-2026-10-04.json",
+          "sha256": "79df96651917b44b213149995ed067f823199f846531abfd40a9059e4513c33d"
         }
       ]
     },

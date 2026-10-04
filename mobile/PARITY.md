@@ -29,6 +29,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 |---------|---------------------|:-------:|:------:|------|
 | Chat (streaming) | `POST /chat/stream`, `POST /chat` | ✅ | ✅ | H18.1 |
 | Chat-command catalog (live registry, filtered by chat principal) | `GET /api/commands` | ✅ quickbar menu | ⬜ discovery menu; typed commands still use chat | H18.26 |
+| Owner checkpoint queries (H011, partial) | Existing `POST /chat`, `POST /chat/stream`; no new route | Owner status/list and maintenance previews through typed commands; host CLI wrapper | ⬜ dedicated checkpoint UI and native acceptance; no native implementation claimed | H011 / H18.26; approved restore/cleanup orchestration remains open |
 | Chat history persistence | — (client-side) | ✅ | ✅ | H18.2 |
 | Agent selection | `GET /api/agents`, `agent` param | ✅ | ✅ | H18.3 |
 | Markdown rendering | — (client-side) | ✅ | ✅ | H18.4 |

@@ -1,5 +1,20 @@
 # Sprint: echivalarea funcțiilor Hermes
 
+> H011 local owner/storage increment, 2026-10-04, source `6abf999f`: authenticated
+> checkpoint inventory and exact maintenance previews now cross CLI → web →
+> orchestrator → registry before chat/history/context mutation. Manual local/SSH
+> terminal tasks use current real-kernel receipts. Selected/forced file restore
+> binds current fingerprints, preserves pre-undo and reports resumable partial
+> groups. Durable index maintenance checks authority inside its write transaction
+> and retains shared blobs. The 40-module affected run passed 1,304 with 3 skips;
+> the final SQL/static correction passed 139 affected cases; image/binding
+> collateral passed 399. Backend collection is 22,972; frontend/mobile counts are
+> reused historical records. H011 stays partial: real approved restore/cleanup,
+> conversation rewind composition, retention/size controls, dedicated clients
+> and the frozen full milestone remain open. Other stale capability evidence
+> receives no automatic credit. See the
+> [integration receipt](hermes/evidence/h011-owner-storage-integration-2026-10-04.json).
+
 > Local owner-denial/active-judge increment2026-10-04: native Telegram `/deny`
 > now settles owner-once waits with the original bounded human reason, protected
 > by a denial-specific MAC. Accepted execution authority stays unchanged. The

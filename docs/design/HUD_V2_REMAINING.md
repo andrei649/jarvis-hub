@@ -16,6 +16,15 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
+H011 checkpoints (2026-10-04): authenticated owner status/list and exact
+maintenance previews now use typed `/checkpoints` and bare `/rollback` through
+the existing chat routes; the host CLI uses the same owner notice contract.
+These commands do not enter backend conversation history or attached context.
+Dedicated checkpoint selection/diff/restore controls and the approved cleanup
+flow remain open. Private selected/forced restore and index-maintenance helpers
+are not a completed user-facing rollback. No browser or native acceptance run is
+claimed; shared snapshot blobs remain retained.
+
 H487 terminal consent (2026-10-04): Decision Inbox shows only server-projected
 reviewed categories and current session/always/deny choices. Choices submit the
 exact offer revision through the admin route; changed offers reload for review.
