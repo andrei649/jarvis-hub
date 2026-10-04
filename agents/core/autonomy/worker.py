@@ -24,6 +24,7 @@ import logging
 import threading
 import time
 import uuid
+from collections import Counter
 from contextvars import ContextVar
 from datetime import UTC, date
 from typing import Awaitable, Callable, Optional
@@ -612,6 +613,7 @@ class AutonomyWorker:
         if hasattr(self.policy, "outcome_provider"):
             self.policy.outcome_provider = self._capability_outcome_stats
         self.executor = executor
+        self._parallel_tick_lock = asyncio.Lock()
         self.notifier = notifier
         self.budget = budget or InterruptBudget()
         self.delivery_broker = delivery_broker or getattr(self.budget, "delivery_broker", None)
@@ -1637,15 +1639,34 @@ class AutonomyWorker:
             await self._drain_approval_expiry(batch, already_cleared=cleared)
 
     async def tick(self, limit: int = 10, max_tier: Optional[int] = None, *,
-                   task_id: int | None = None) -> dict:
+                   task_id: int | None = None, parallel_kind: str | None = None,
+                   parallel_limit: int = 1, parallel_agent_limit: int = 1) -> dict:
         """Run approved tasks. Returns a small summary dict.
 
         `max_tier` caps which risk tiers run this pass — used by the night shift
         to batch only reversible/read-only work (max_tier=1).
+        Optional concurrency applies only to one named kind; other kinds stay serial.
+        Zero capacity holds that kind's approvals without holding unrelated tasks.
         """
+        if parallel_kind is None:
+            return await self._tick(limit, max_tier, task_id=task_id)
+        if not isinstance(parallel_kind, str) or not parallel_kind.strip():
+            raise ValueError("parallel_kind must be a nonempty string")
+        if any(type(value) is not int or not 0 <= value <= 16
+               for value in (parallel_limit, parallel_agent_limit)):
+            raise ValueError("parallel capacities must be integers from 0 through 16")
+        # Serialize selection with execution for competing configured ticks. Queue
+        # CAS and signed permits remain the authority for each individual row.
+        async with self._parallel_tick_lock:
+            return await self._tick(
+                limit, max_tier, task_id=task_id, parallel_kind=parallel_kind,
+                parallel_limit=parallel_limit, parallel_agent_limit=parallel_agent_limit,
+            )
+
+    async def _tick(self, limit, max_tier, *, task_id=None, parallel_kind=None,
+                    parallel_limit=1, parallel_agent_limit=1):
         if task_id is not None and (type(task_id) is not int or task_id <= 0):
             raise ValueError("task_id must be a positive integer")
-        ran = done = failed = held = 0
         await self.approval_housekeeping(limit=limit, reconcile=not self._halted())
         # Q6: reap crash-stranded RUNNING tasks first — bookkeeping, not an
         # action, so it runs even under a halt (the stuck state is honest).
@@ -1658,6 +1679,47 @@ class AutonomyWorker:
             return {"ran": 0, "done": 0, "failed": 0, "halted": True, "held": 0, "reaped": reaped}
         runnable = (self.queue.runnable(limit=limit, max_tier=max_tier) if task_id is None
                     else self.queue.runnable(limit=limit, max_tier=max_tier, task_id=task_id))
+        if parallel_kind is None:
+            summary = await self._run_runnable(runnable)
+        else:
+            summary = await self._run_parallel(
+                runnable, parallel_kind, parallel_limit, parallel_agent_limit,
+            )
+        return {**summary, "reaped": reaped}
+
+    async def _run_parallel(self, runnable, kind, total_cap, agent_cap):
+        running = [t for t in self.queue.active_kind_tasks(kind) if t.status == "running"]
+        counts = Counter(t.agent for t in running)
+        slots = max(0, total_cap - len(running))
+        selected, ordinary = [], []
+        held = 0
+        for task in runnable:
+            if task.kind != kind:
+                ordinary.append(task)
+            elif (self._halted(task.agent)
+                  or (task.mediation_scope and self._halted(task.mediation_scope))
+                  or slots <= 0 or counts[task.agent] >= agent_cap):
+                held += 1
+            else:
+                selected.append(task)
+                counts[task.agent] += 1
+                slots -= 1
+        # Finish the ordinary serial batch before potentially long board turns;
+        # opting into background workers must not delay the hub's other queue work.
+        summary = await self._run_runnable(ordinary)
+        # Each child reaches the original guard/claim/permit path, with independent
+        # ContextVars. TaskGroup awaits all cleanup when the parent is cancelled.
+        async with asyncio.TaskGroup() as group:
+            children = [group.create_task(self._run_runnable([task])) for task in selected]
+        summary["held"] += held
+        for child in children:
+            for key, value in child.result().items():
+                summary[key] += value
+        return summary
+
+    async def _run_runnable(self, runnable):
+        """Original serial execution path, shared by ordinary and parallel rows."""
+        ran = done = failed = held = 0
         for task in runnable:
             # Q6: a per-agent halt (scope = the agent's name, ch07 GOV-178)
             # holds that agent's tasks at this same kernel-independent seam —
@@ -1831,7 +1893,7 @@ class AutonomyWorker:
                 if execution_permit is not None:
                     execution_permit.revoke()
                 self._execution_context.reset(execution_token)
-        return {"ran": ran, "done": done, "failed": failed, "held": held, "reaped": reaped}
+        return {"ran": ran, "done": done, "failed": failed, "held": held}
 
     async def _run_consent(self, task: Task) -> dict:
         """Spend one private consent claim; every exit settles one attempt."""

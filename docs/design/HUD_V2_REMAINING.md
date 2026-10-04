@@ -26,7 +26,8 @@ tool handlers are registered behind `llm.kanban` (default off) in the existing
 owner ToolRPC/chat path. There is no board panel, task drawer, websocket watcher,
 tenant UI yet. Approved worker intake is available through the existing admin API
 and coordinator with a separate default-off dispatch flag; approvals use the
-existing inbox. Dedicated board/worker controls remain required Hermes work;
+existing inbox. The coordinator runs approved workers concurrently within total
+and per-agent caps. Dedicated board/worker controls remain required Hermes work;
 the library/tool port alone does not close those rows. Workspace/project, goal
 judging and network-attachment adapters refuse explicitly until integrated.
 

@@ -1,0 +1,172 @@
+{
+  "generated_at": "2026-10-04T16:22:34.346674+00:00",
+  "goal": "Complete local functional parity with all 697 pinned Hermes capabilities",
+  "base_sha": "e8d4992b90228c9ac1b55b5f790345eb6240a870",
+  "donor_sha": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "unit": "Simultaneous approved Kanban workers through the original signed queue guard path",
+  "models": [
+    {
+      "role": "bounded wiring implementer",
+      "model": "gpt-6-sol",
+      "effort": "high"
+    }
+  ],
+  "changed_paths": [
+    "GO_LIVE_PLAN.md",
+    "HERMES_STATUS.md",
+    "NERVA.md",
+    "README.md",
+    "STATUS.md",
+    "agents/core/autonomy/worker.py",
+    "agents/core/autonomy_coordinator.py",
+    "agents/core/kanban/README.md",
+    "agents/core/kanban/dispatcher.py",
+    "agents/core/orchestrator_bindings.py",
+    "docs/HERMES_CAPABILITIES.md",
+    "docs/design/HUD_V2_REMAINING.md",
+    "docs/hermes/assessment.json",
+    "docs/hermes/kanban-parallel-plan-2026-10-04.md",
+    "mobile/PARITY.md",
+    "project-status.json",
+    "tests/test_cloud_image.py",
+    "tests/test_hermes_kanban_dispatch_wiring.py",
+    "tests/test_hermes_kanban_parallel.py"
+  ],
+  "full_backend": {
+    "tests": 23347,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 35,
+    "passed": 23312,
+    "ordinary_skips": 34,
+    "existing_xfail": 1,
+    "expected_failure_cases": [
+      "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+    ],
+    "junit_sha256": "acf3e2c44de4a8c5444b5724278f958f12e30b9e6663ee0b3f67ed999bf5486f",
+    "log_sha256": "6b9bfa411214e5d64265021f6860e540e3c577579280fd68c43b74309bb44831"
+  },
+  "full_run_handle": "/tmp/nerva-kanban-parallel-reconciled-full-backend-20261004-handle.json",
+  "previous_full_runs": [
+    {
+      "generated_at": "2026-10-04T16:02:17.739062+00:00",
+      "state": "terminal_review_required",
+      "pid": 39642,
+      "runner_pid": 39636,
+      "head": "e8d4992b90228c9ac1b55b5f790345eb6240a870",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests",
+        "-n",
+        "3",
+        "--dist",
+        "loadfile",
+        "--timeout=90",
+        "-q",
+        "--tb=short",
+        "--junitxml=/tmp/nerva-kanban-parallel-full-backend-20261004.xml"
+      ],
+      "log": "/tmp/nerva-kanban-parallel-full-backend-20261004.log",
+      "xml": "/tmp/nerva-kanban-parallel-full-backend-20261004.xml",
+      "freeze": "/tmp/nerva-kanban-parallel-full-backend-20261004-frozen.json",
+      "frozen_paths": 3172,
+      "expected_cases": 23347,
+      "previous_goal_turn": "previous goal turn no implementation progress; current unit implements actual signed simultaneous board workers, bounded total/per-agent execution, strict host batch lock, isolated cleanup and same original guard/claim/outcome loop; full697 remains open",
+      "next_action": "Poll this exact process/session. At terminal inspect failures and frozen rehash; write separate evidence, exact staged scan and local commit only. Workspace/project, network, channel, full UI, multi-board/event watcher and judge adapters remain in all697 scope.",
+      "verified_at": "2026-10-04T16:08:12.905142+00:00",
+      "exit_code": 1,
+      "drift": [],
+      "full_backend": {
+        "tests": 23347,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 35,
+        "passed": 23311,
+        "ordinary_skips": 34,
+        "existing_xfail": 1,
+        "expected_failure_cases": [
+          "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+        ],
+        "junit_sha256": "83f18d81e86bc0d3295bf27de7d4b3f92172825e7798ea4243c70d4babdc9bce",
+        "log_sha256": "11bc3473e38294aec63d96bacc3a2a82ebb52fba1d4a9bca4186b00c62b3270d"
+      }
+    }
+  ],
+  "fault_injection_correction": {
+    "path": "/tmp/nerva-kanban-parallel-final-reconciliation-20261004.xml",
+    "sha256": "ad359fd8ac05705f6b1359541344393ea1121e0e35afd1b9c13a42f9d41f4166",
+    "tests": 283,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 283
+  },
+  "freeze": {
+    "path": "/tmp/nerva-kanban-parallel-reconciled-full-backend-20261004-frozen.json",
+    "sha256": "6e337fe86d04ff64debcad47c1b1909b30c89b6a6a50fed037b760766e3ff4c7",
+    "paths": 3172,
+    "drift": []
+  },
+  "unit_tests": {
+    "path": "/tmp/nerva-kanban-parallel-final-unit-20261004.xml",
+    "sha256": "5b6ba824625b4f8576a10d6b858772d7fc19b56f7e99e719d88f9b6b77f7f947",
+    "tests": 67,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 67
+  },
+  "affected_tests": {
+    "path": "/tmp/nerva-kanban-parallel-affected-final-20261004.xml",
+    "sha256": "fb72010c2e97f0ae6504d669af60b72b6f75eb31fe812e9552fd9a40781c597b",
+    "tests": 3798,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1,
+    "passed": 3797
+  },
+  "red_tests": [
+    "missing parallel API",
+    "halted agent reserving capacity",
+    "ordinary work delayed by board batch",
+    "transient settings error allowing serial board execution"
+  ],
+  "mutation": {
+    "name": "replace concurrent scheduling with original serial loop",
+    "result": "killed",
+    "junit": "/tmp/nerva-kanban-parallel-serial-mutant-20261004.xml"
+  },
+  "review": "Original guard/claim/permit/outcome loop checked AST-identical after extraction. Coordinator changes only queue scheduling; image/code/session/stream registrations unchanged. Binding changes only fourteen AST line coordinates. Two signed workers reach a barrier simultaneously with distinct board/session/permit contexts; caps include durable RUNNING rows. Failure isolates peers; parent cancellation awaits owned board cleanup. Ordinary kinds stay serial before board batch.",
+  "static_checks": {
+    "ruff": "whole agents/scripts plus changed tests pass",
+    "bandit": "whole agents/scripts pass with unchanged baseline",
+    "hermes_status": "697 reports in sync",
+    "status_sync": "generated counts in sync"
+  },
+  "graft": {
+    "path": "/tmp/nerva-kanban-parallel-reconciled-graft-check-20261004.json",
+    "sha256": "4817de79b75078026d77952cd7e592a367666308fc79f97a6744b487558c7c3a",
+    "graph_ok": true,
+    "nodes": 51079,
+    "context_missing": true
+  },
+  "frontend": {
+    "new_run": false,
+    "reason": "No frontend source/test changes; prior verified 1892-case milestone retained, not new UI acceptance"
+  },
+  "remaining": [
+    "full multi-board/event watchers and tenant controls",
+    "FileScope workspace/project lifecycle",
+    "goal judge",
+    "approved network attachments",
+    "channel subscription/delivery",
+    "CLI/HUD/native board controls",
+    "live provider/worker and physical host-crash acceptance",
+    "Cancellation retains queue RUNNING crash/reaper bookkeeping while owned board claims are released"
+  ],
+  "status": "partial; no new equivalent row or full parity claim",
+  "publication": "local only; no push, merge, deployment, billed provider or real worker activation",
+  "rollback": "Revert this scheduling unit and consumers together; retain all queue, board and session data"
+}

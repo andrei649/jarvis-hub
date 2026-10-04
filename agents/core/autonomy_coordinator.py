@@ -605,12 +605,31 @@ class AutonomyCoordinator:
                     end = int(self._orch.get_setting("autonomy.night_end", 6) or 6)
                     if is_night_window(datetime.now().hour, start, end):
                         max_tier = 1  # reversible/read-only only
-                await self._orch.autonomy.tick(max_tier=max_tier)
+                dispatch_settings_unavailable = False
                 try:
-                    if amode != "off" and all(
+                    dispatch_enabled = amode != "off" and all(
                         self._orch.get_setting(key, False) is True
                         for key in ("llm.kanban", "llm.kanban_dispatch", "llm.tool_loop_enabled")
-                    ):
+                    )
+                except Exception:
+                    logger.warning("Kanban dispatch settings unavailable", exc_info=True)
+                    dispatch_enabled = False
+                    dispatch_settings_unavailable = True
+                if dispatch_enabled:
+                    await self.kanban_dispatcher().approved_tick(max_tier=max_tier)
+                elif dispatch_settings_unavailable:
+                    from .kanban.dispatcher import KanbanDispatcher
+
+                    await self._orch.autonomy.tick(
+                        max_tier=max_tier,
+                        parallel_kind=KanbanDispatcher.KIND,
+                        parallel_limit=0,
+                        parallel_agent_limit=0,
+                    )
+                else:
+                    await self._orch.autonomy.tick(max_tier=max_tier)
+                try:
+                    if dispatch_enabled:
                         await self.kanban_dispatcher().tick()
                 except Exception:
                     logger.warning("Kanban dispatcher intake failed", exc_info=True)

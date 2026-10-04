@@ -7,10 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agents.core.autonomy.policy import AutonomyPolicy
-from agents.core.autonomy.queue import Task
+from agents.core.autonomy.queue import Task, TaskStatus
 from agents.core.autonomy_coordinator import AutonomyCoordinator
 from agents.core.commands import Principal
 from agents.core.kanban.dispatcher import KanbanDispatcher
+from agents.core.kanban.upstream import kanban_db_connect as kbc
 from agents.core.routers import autonomy as autonomy_router
 from agents.core.routers._deps import admin_guard
 from agents.core.settings_db import DEFAULTS
@@ -145,7 +146,7 @@ def test_disabled_governed_runtime_gives_meaningful_route_refusal(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("state", ["disabled", "enabled", "unavailable"])
-async def test_coordinator_loop_intakes_only_when_flags_enabled_and_keeps_normal_tick(
+async def test_coordinator_loop_uses_approved_tick_only_when_flags_enabled(
     monkeypatch,
     state,
 ):
@@ -154,7 +155,7 @@ async def test_coordinator_loop_intakes_only_when_flags_enabled_and_keeps_normal
     events = []
 
     async def normal_tick(**kwargs):
-        events.append("normal")
+        events.append(("normal", kwargs))
 
     enabled = state == "enabled"
     configured = state != "disabled"
@@ -182,11 +183,15 @@ async def test_coordinator_loop_intakes_only_when_flags_enabled_and_keeps_normal
     )
     coordinator = AutonomyCoordinator(orch)
 
-    async def dispatch_tick():
-        events.append("dispatch")
+    async def approved_tick(max_tier=None):
+        events.append(("approved", max_tier))
         return {"ok": True, "status": "queued", "queued": []}
 
+    async def dispatch_tick():
+        events.append("dispatch")
+
     if enabled:
+        monkeypatch.setattr(coordinator.kanban_dispatcher(), "approved_tick", approved_tick)
         monkeypatch.setattr(coordinator.kanban_dispatcher(), "tick", dispatch_tick)
 
     async def no_drain():
@@ -210,9 +215,217 @@ async def test_coordinator_loop_intakes_only_when_flags_enabled_and_keeps_normal
     monkeypatch.setattr(asyncio, "sleep", one_cycle)
     with pytest.raises(asyncio.CancelledError):
         await coordinator.loop()
-    assert events == (["normal", "dispatch", "record-ok"] if enabled else ["normal", "record-ok"])
+    if enabled:
+        assert events == [("approved", None), "dispatch", "record-ok"]
+    elif state == "unavailable":
+        assert events == [
+            ("normal", {
+                "max_tier": None,
+                "parallel_kind": KanbanDispatcher.KIND,
+                "parallel_limit": 0,
+                "parallel_agent_limit": 0,
+            }),
+            "record-ok",
+        ]
+    else:
+        assert events == [("normal", {"max_tier": None}), "record-ok"]
     if not enabled:
         assert coordinator._kanban_dispatcher is None
+
+
+@pytest.mark.asyncio
+async def test_temporarily_unavailable_flag_holds_signed_board_approval(
+    tmp_path, monkeypatch
+):
+    from agents.core import estop
+    from tests.test_hermes_kanban_dispatcher import OWNER, create, fixture_runtime, read
+
+    controller, orch, settings, seen, _ = fixture_runtime(tmp_path, monkeypatch)
+    tid = create(controller)
+    qid = (await controller.request(OWNER))["queued"][0]["queue_id"]
+    orch.autonomy_queue.transition(qid, TaskStatus.APPROVED, decided_by="owner", decision="approve")
+    settings["system.error_backlog_sync_enabled"] = False
+    original_get_setting = orch.get_setting
+    reads = 0
+
+    def get_setting(key, default=None):
+        nonlocal reads
+        if key == "llm.kanban_dispatch":
+            reads += 1
+            if reads == 1:
+                raise RuntimeError("settings temporarily unavailable")
+        return original_get_setting(key, default)
+
+    orch.get_setting = get_setting
+    for attr in (
+        "observer", "event_watcher", "reflector", "curator", "cognition", "ingestion_watcher"
+    ):
+        setattr(orch, attr, None)
+    coordinator = AutonomyCoordinator(orch)
+
+    async def no_drain():
+        return None
+
+    monkeypatch.setattr(coordinator, "_drain_workflow_pending", no_drain)
+    monkeypatch.setattr(coordinator, "_record_cycle", lambda **kwargs: None)
+    monkeypatch.setattr(estop, "check_paused", lambda *args: False)
+    sleeps = 0
+
+    async def one_cycle(_seconds):
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps == 2:
+            raise asyncio.CancelledError()
+
+    monkeypatch.setattr(asyncio, "sleep", one_cycle)
+    with pytest.raises(asyncio.CancelledError):
+        await coordinator.loop()
+    assert reads == 1
+    assert orch.autonomy_queue.get(qid).status == "approved"
+    assert read(controller, tid).status == "ready"
+    assert seen == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("total", "per_agent", "expected"),
+    [(0, 7, (0, 0)), (99, 99, (16, 16)), (-2, 4, (0, 0)), (3, 9, (3, 3))],
+)
+async def test_approved_tick_bounds_settings_and_calls_real_worker_tick(
+    tmp_path, monkeypatch, total, per_agent, expected
+):
+    calls = []
+
+    async def worker_tick(**kwargs):
+        calls.append(kwargs)
+        return {"done": 0}
+
+    settings = {
+        "llm.kanban_max_workers": total,
+        "llm.kanban_max_workers_per_agent": per_agent,
+    }
+    worker = SimpleNamespace(tick=worker_tick)
+    orch = SimpleNamespace(
+        autonomy=worker,
+        get_setting=lambda key, default=None: settings.get(key, default),
+    )
+    dispatcher = KanbanDispatcher(orch, home=tmp_path)
+    monkeypatch.setattr(dispatcher, "_runtime", lambda: (worker, object()))
+    assert await dispatcher.approved_tick(max_tier=1) == {"done": 0}
+    assert calls == [
+        {
+            "max_tier": 1,
+            "parallel_kind": KanbanDispatcher.KIND,
+            "parallel_limit": expected[0],
+            "parallel_agent_limit": expected[1],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_approved_tick_holds_board_when_runtime_unavailable(tmp_path, monkeypatch):
+    calls = []
+
+    async def worker_tick(**kwargs):
+        calls.append(kwargs)
+        return {"done": 1}
+
+    worker = SimpleNamespace(tick=worker_tick)
+    dispatcher = KanbanDispatcher(SimpleNamespace(autonomy=worker), home=tmp_path)
+    monkeypatch.setattr(dispatcher, "_runtime", lambda: (None, None))
+    assert await dispatcher.approved_tick() == {"done": 1}
+    assert calls == [
+        {
+            "max_tier": None,
+            "parallel_kind": KanbanDispatcher.KIND,
+            "parallel_limit": 0,
+            "parallel_agent_limit": 0,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_approved_tick_holds_board_when_cap_setting_is_unavailable(tmp_path, monkeypatch):
+    calls = []
+
+    async def worker_tick(**kwargs):
+        calls.append(kwargs)
+        return {"done": 1}
+
+    def get_setting(key, default=None):
+        raise RuntimeError("settings temporarily unavailable")
+
+    worker = SimpleNamespace(tick=worker_tick)
+    dispatcher = KanbanDispatcher(
+        SimpleNamespace(autonomy=worker, get_setting=get_setting), home=tmp_path
+    )
+    monkeypatch.setattr(dispatcher, "_runtime", lambda: (worker, object()))
+    assert await dispatcher.approved_tick() == {"done": 1}
+    assert calls[0]["parallel_limit"] == 0
+    assert calls[0]["parallel_agent_limit"] == 0
+
+
+@pytest.mark.asyncio
+async def test_approved_tick_skips_execution_when_host_flock_busy(tmp_path, monkeypatch):
+    calls = []
+
+    async def worker_tick(**kwargs):
+        calls.append(kwargs)
+
+    worker = SimpleNamespace(tick=worker_tick)
+    dispatcher = KanbanDispatcher(
+        SimpleNamespace(autonomy=worker, get_setting=lambda k, d=None: d), home=tmp_path
+    )
+    monkeypatch.setattr(dispatcher, "_runtime", lambda: (worker, object()))
+    with kbc._dispatch_tick_lock(tmp_path / "nerva-host-workers", strict=True) as held:
+        assert held
+        assert (await dispatcher.approved_tick())["status"] == "busy"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_approved_tick_does_not_wait_for_same_process_tick(tmp_path, monkeypatch):
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def worker_tick(**kwargs):
+        entered.set()
+        await release.wait()
+        return {"done": 1}
+
+    worker = SimpleNamespace(tick=worker_tick)
+    dispatcher = KanbanDispatcher(
+        SimpleNamespace(autonomy=worker, get_setting=lambda k, d=None: d), home=tmp_path
+    )
+    monkeypatch.setattr(dispatcher, "_runtime", lambda: (worker, object()))
+    first = asyncio.create_task(dispatcher.approved_tick())
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        assert (await asyncio.wait_for(dispatcher.approved_tick(), 1))["status"] == "busy"
+    finally:
+        release.set()
+        await first
+
+
+@pytest.mark.asyncio
+async def test_second_controller_cannot_run_signed_approval_while_host_flock_held(
+    tmp_path, monkeypatch
+):
+    from tests.test_hermes_kanban_dispatcher import OWNER, create, fixture_runtime, read
+
+    first, orch, _, seen, _ = fixture_runtime(tmp_path, monkeypatch)
+    second = KanbanDispatcher(orch, home=first.home, runner=first.runner)
+    tid = create(first)
+    qid = (await first.request(OWNER))["queued"][0]["queue_id"]
+    orch.autonomy_queue.transition(qid, TaskStatus.APPROVED, decided_by="owner", decision="approve")
+    with kbc._dispatch_tick_lock(first.home / "nerva-host-workers", strict=True) as held:
+        assert held
+        assert (await second.approved_tick())["status"] == "busy"
+        assert orch.autonomy_queue.get(qid).status == "approved"
+        assert seen == []
+    assert (await second.approved_tick())["done"] == 1
+    assert read(first, tid).status == "done"
+    assert len(seen) == 1
 
 
 def test_dispatch_settings_are_default_off_with_separate_total_and_agent_caps():

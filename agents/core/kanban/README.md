@@ -29,9 +29,12 @@ use isolated sessions, task-owned model pins, exact run ownership, heartbeat,
 timeout/cancellation accounting and review reservation. Total and per-agent
 capacity includes pending proposals on every board. The default watcher intakes
 the default board; explicit requests can target another board.
-The current queue tick executes board turns serially; simultaneous board workers
-remain an explicit parity requirement. A zero total or per-agent budget withholds
-new work rather than substituting a larger default. Safe mode disables both
+The enabled coordinator runs approved board turns concurrently through the same
+signed queue claims and execution permits. Total and per-agent budgets include
+durable running queue rows; excess approvals wait. A strict host worker lock
+prevents overlapping dispatcher batches. Ordinary kinds retain serial execution.
+A zero total or per-agent budget withholds board execution and new proposals
+rather than substituting a larger default. Safe mode disables both
 opt-ins and clamps these budgets to the stricter shipped value.
 
 This is an integration in progress. Full multi-board/event watchers,

@@ -19,6 +19,7 @@ from .upstream import kanban_db_dispatch as kbd
 
 _ACTIVE_QUEUE_STATES = frozenset({"proposed", "approved", "blocked", "deferred", "running"})
 _LOCKS: dict[str, asyncio.Lock] = {}
+_APPROVED_LOCKS: dict[str, asyncio.Lock] = {}
 
 
 class KanbanExecutionRefused(RuntimeError):
@@ -27,6 +28,13 @@ class KanbanExecutionRefused(RuntimeError):
 
 def _refused(reason):
     return {"ok": False, "status": "refused", "reason": reason, "queued": []}
+
+
+def _bounded_worker_cap(value):
+    try:
+        return max(0, min(int(value), 16)) if not isinstance(value, bool) else 0
+    except (TypeError, ValueError):
+        return 0
 
 
 class KanbanDispatcher:
@@ -70,6 +78,43 @@ class KanbanDispatcher:
 
     async def tick(self):
         return await self._dispatch(board="default", limit=4)
+
+    async def approved_tick(self, max_tier=None):
+        """Execute approved tasks with board-only capacity under one host owner."""
+        key = str(self.home.resolve())
+        lock = _APPROVED_LOCKS.setdefault(key, asyncio.Lock())
+        if lock.locked():
+            return {"ok": True, "status": "busy", "queued": []}
+        await lock.acquire()
+        try:
+            with kbc._dispatch_tick_lock(self.home / "nerva-host-workers", strict=True) as held:
+                if not held:
+                    return {"ok": True, "status": "busy", "queued": []}
+                worker = getattr(self.orch, "autonomy", None)
+                total = per_agent = 0
+                try:
+                    runtime_worker, _ = self._runtime()
+                    if runtime_worker is not None:
+                        total = _bounded_worker_cap(
+                            self.orch.get_setting("llm.kanban_max_workers", 2)
+                        )
+                        per_agent = min(
+                            total,
+                            _bounded_worker_cap(
+                                self.orch.get_setting("llm.kanban_max_workers_per_agent", 1)
+                            ),
+                        )
+                except Exception:
+                    # Keep ordinary queue work moving while board execution is held.
+                    total = per_agent = 0
+                return await worker.tick(
+                    max_tier=max_tier,
+                    parallel_kind=self.KIND,
+                    parallel_limit=total,
+                    parallel_agent_limit=per_agent,
+                )
+        finally:
+            lock.release()
 
     async def _dispatch(self, *, board, limit):
         worker, queue = self._runtime()
