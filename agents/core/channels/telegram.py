@@ -99,11 +99,14 @@ class _Page(NamedTuple):
     ``wall`` on the host's wall clock (None when unreadable), and ``previous``, the ``now`` of
     the page before it (None before the first page, or after a page whose reading failed). A
     page whose handling raised before every update in it was handled does not count: the
-    updates after the failing one come again, and the page before it stays their bound."""
+    updates after the failing one come again, and the page before it stays their bound.
+    ``native_at`` is a separate monotonic getUpdates-return stamp for native consent:
+    configurable reason clocks and Telegram's coarse date never extend its deadline."""
 
     previous: Optional[float]
     now: Optional[float]
     wall: Optional[float]
+    native_at: Optional[float] = None
 
 
 def _is_instant(value) -> bool:
@@ -262,12 +265,14 @@ class TelegramChannel(ChannelAdapter):
         self._owner_once_generation: str | None = None
         self._owner_once_fast: dict[str, asyncio.Task] = {}
         self._consent_fast: dict[str, asyncio.Task] = {}
+        self._consent_denial_fast: dict[tuple[int, int], asyncio.Task] = {}
         # Registration-owned hooks; the channel does not decide owner identity.
         self.owner_once_pending: Optional[Callable] = None
         self.on_owner_once_callback: Optional[Callable] = None
         self.on_owner_once_stop: Optional[Callable] = None
         self.consent_pending: Optional[Callable] = None
         self.on_consent_callback: Optional[Callable] = None
+        self.on_consent_denial_reply: Optional[Callable] = None
         self.on_consent_stop: Optional[Callable] = None
         # H677: while the poll loop runs, each chat's turns go to that chat's lane, so
         # one slow answer never holds another chat's messages.
@@ -368,6 +373,7 @@ class TelegramChannel(ChannelAdapter):
                 logger.warning("Reusable-consent stop hook failed", exc_info=True)
         fast = tuple(getattr(self, "_owner_once_fast", {}).values())
         fast += tuple(getattr(self, "_consent_fast", {}).values())
+        fast += tuple(getattr(self, "_consent_denial_fast", {}).values())
         for task in fast:
             task.cancel()
         if fast:
@@ -376,6 +382,8 @@ class TelegramChannel(ChannelAdapter):
             self._owner_once_fast.clear()
         if hasattr(self, "_consent_fast"):
             self._consent_fast.clear()
+        if hasattr(self, "_consent_denial_fast"):
+            self._consent_denial_fast.clear()
         if self._poll_task:
             self._poll_task.cancel()
             # H117: the cancel lands at one of the loop's awaits, so the hand-over at its
@@ -533,6 +541,15 @@ class TelegramChannel(ChannelAdapter):
                 and self._owner_once_generation == generation
                 and isinstance(poller, asyncio.Task) and not poller.done()
                 and not poller.cancelling())
+
+    def _consent_denial_hook_live(self, generation: str | None, hook: Callable | None) -> bool:
+        registry = getattr(self.on_consent_callback, "__self__", None)
+        return (
+            self._owner_once_live(generation) and registry is not None
+            and hook is getattr(registry, "_denial_hook", None)
+            and self.consent_pending is getattr(registry, "_pending_hook", None)
+            and self.on_consent_stop is getattr(registry, "_stop_hook", None)
+        )
 
     @staticmethod
     def _owner_once_parts(text: str) -> tuple[str, ...] | None:
@@ -768,6 +785,41 @@ class TelegramChannel(ChannelAdapter):
         # the orchestrator, echoed, or logged as message text.
         if await self._maybe_pair_deeplink(text, uid, chat_id):
             return
+        # A native consent denial is a direct reply to one delivered card. Dispatch it
+        # outside the chat lane: that lane may contain the very tool turn waiting for it.
+        # Consume every exact /deny command, including stale or malformed attempts, so
+        # an old card reply cannot become a model turn.
+        if (type(text) is str and text.startswith("/deny")
+                and (len(text) == 5 or text[5].isspace())):
+            reply_id = (msg.get("reply_to_message") or {}).get("message_id")
+            message_id = msg.get("message_id")
+            generation = self._owner_once_generation
+            hook = self.on_consent_denial_reply
+            key = (chat_id, message_id)
+            if (up.get("message") is None or attachment is not None
+                    or any(msg.get(field) for field in (
+                        "forward_origin", "forward_from", "forward_from_chat",
+                        "forward_sender_name",
+                    ))
+                    or type(chat_id) is not int or type(uid) is not int
+                    or type(message_id) is not int or message_id <= 0
+                    or type(reply_id) is not int or reply_id <= 0
+                    or not self._consent_denial_hook_live(generation, hook)
+                    or key in self._consent_denial_fast
+                    or len(self._consent_denial_fast) >= 32):
+                await self._consent_denial_ack(chat_id, "Not applied.")
+                return
+            reason = text[5:].lstrip() or None
+            received_at = page.native_at if page is not None else time.monotonic()
+            task = asyncio.create_task(self._handle_consent_denial_reply(
+                reason, chat_id, uid, message_id, reply_id, received_at, generation, hook,
+            ))
+            self._consent_denial_fast[key] = task
+            task.add_done_callback(
+                lambda done, k=key: self._consent_denial_fast.get(k) is done
+                and self._consent_denial_fast.pop(k, None)
+            )
+            return
         # Only a fresh, directly authored reply can explain a decision. Edited,
         # forwarded, attachment and command messages retain their existing paths.
         if (self.on_decision_reason and up.get("message") is not None and text
@@ -844,10 +896,11 @@ class TelegramChannel(ChannelAdapter):
     def _page_received(self) -> _Page:
         """Read once per getUpdates page, as it comes back: when it did, and when the page
         before it did. A page whose reading failed leaves the next one no previous page."""
+        native_at = time.monotonic()
         reading = self._clock_reading()
         now, wall = reading if reading is not None else (None, None)
         previous, self._last_page_at = self._last_page_at, now
-        return _Page(previous, now, wall)
+        return _Page(previous, now, wall, native_at)
 
     def _reason_arrival(self, msg: dict, page: Optional[_Page]):
         """The stamp of a claimed reply, on ``decision_reason_clock``: the instant its page came
@@ -1089,6 +1142,37 @@ class TelegramChannel(ChannelAdapter):
         except Exception:
             logger.warning("Reusable-consent callback dispatch failed")
             await self._answer_callback(cb.get("id", ""), "Not applied.")
+
+    async def _consent_denial_ack(self, chat_id: int, message: str) -> None:
+        try:
+            await self.send(message, chat_id=chat_id, voice=False, plain=True)
+        except Exception:
+            logger.warning("Reusable-consent denial acknowledgement failed")
+
+    async def _handle_consent_denial_reply(
+        self, reason: str | None, chat_id: int, user_id: int, message_id: int,
+        reply_id: int,
+        received_at: float | None, generation: str, hook: Callable,
+    ) -> None:
+        try:
+            if (not self._consent_denial_hook_live(generation, hook)
+                    or self.on_consent_denial_reply is not hook):
+                result = None
+            else:
+                result = await hook(
+                    reason, chat_id=chat_id, user_id=user_id,
+                    message_id=message_id, reply_to_message_id=reply_id,
+                    received_at=received_at,
+                )
+            answer = ("Denied." if result == "accepted" else
+                      "Use a reason of at most 280 characters." if result == "invalid_reason"
+                      else "Not applied.")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("Reusable-consent denial dispatch failed")
+            answer = "Not applied."
+        await self._consent_denial_ack(chat_id, answer)
 
 
     async def _maybe_pair_deeplink(self, text: str, uid, chat_id) -> bool:

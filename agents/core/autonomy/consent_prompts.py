@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import math
 import secrets
 import threading
 import time
@@ -18,6 +19,7 @@ from ..native_human_wait import native_human_wait_window
 from ..owner_once_context import OwnerReplySource, current_owner_reply_source
 from .consent_authority import make_telegram_consent_actor
 from .consent_types import ConsentDecisionResult, ConsentOffer, ConsentWaitOutcome
+from .decision_reasons import normalize_reason
 from .inbox import build_consent_card, parse_consent_callback_data
 
 _MAX_PENDING = 32
@@ -50,8 +52,10 @@ class _Prompt:
     delivery: asyncio.Future | None = None
     nonce: str = ""
     message_id: int | None = None
+    delivered_at: float | None = None
     active: bool = True
     inflight: bool = False
+    denial_task: asyncio.Task | None = None
     settled_result: ConsentDecisionResult | None = None
 
 
@@ -71,11 +75,13 @@ class ConsentPrompts:
         self._lock = threading.RLock()
         self._pending_hook = self.pending
         self._callback_hook = self.callback
+        self._denial_hook = self.denial_reply
         self._stop_hook = self.stop
 
     def install(self, channel) -> None:
         channel.consent_pending = self._pending_hook
         channel.on_consent_callback = self._callback_hook
+        channel.on_consent_denial_reply = self._denial_hook
         channel.on_consent_stop = self._stop_hook
 
     @staticmethod
@@ -107,6 +113,7 @@ class ConsentPrompts:
                 and orch.channels.get("telegram") is channel
                 and channel.consent_pending is self._pending_hook
                 and channel.on_consent_callback is self._callback_hook
+                and channel.on_consent_denial_reply is self._denial_hook
                 and channel.on_consent_stop is self._stop_hook
                 and channel._owner_once_live(generation)
                 and type(chat_id) is int and str(chat_id) == binding[0]
@@ -423,6 +430,7 @@ class ConsentPrompts:
             with self._lock:
                 if not prompt.active:
                     return None
+                prompt.delivered_at = time.monotonic()
                 prompt.message_id = message_id
                 prompt.delivery.set_result(True)
                 delivered = True
@@ -497,6 +505,7 @@ class ConsentPrompts:
             with self._lock:
                 if not prompt.active:
                     return False
+                prompt.delivered_at = time.monotonic()
                 prompt.message_id = message_id
                 prompt.delivery.set_result(True)
             return True
@@ -567,6 +576,78 @@ class ConsentPrompts:
                 return None
             result = await self.worker.apply_consent_decision(
                 prompt.offer.task_id, prompt.offer.revision, choice=choice, actor=actor,
+            )
+            return "accepted" if result is not None else None
+        finally:
+            self._retire(prompt, result)
+
+    async def denial_reply(
+        self, reason: str | None, *, chat_id, user_id, message_id,
+        reply_to_message_id, received_at,
+    ) -> str | None:
+        """Reject only the exact delivered card reached through native Telegram dispatch.
+
+        The update text carries metadata, never a task selector or grant. The private
+        fast-task registration proves this call came from the channel's original
+        message path; queue CAS still owns the durable decision.
+        """
+        dispatch_task = asyncio.current_task()
+        channel = self.coordinator._orch.channels.get("telegram")
+        if (type(chat_id) is not int or type(user_id) is not int
+                or type(message_id) is not int or message_id <= 0
+                or type(reply_to_message_id) is not int or reply_to_message_id <= 0
+                or type(received_at) not in (int, float)
+                or not math.isfinite(received_at)
+                or channel is None
+                or channel._consent_denial_fast.get((chat_id, message_id)) is not dispatch_task):
+            return None
+        try:
+            normalize_reason(reason)
+        except ValueError:
+            return "invalid_reason"
+        with self._lock:
+            matches = tuple(prompt for prompt in self._pending.values()
+                            if prompt.channel is channel and prompt.chat_id == chat_id
+                            and prompt.message_id == reply_to_message_id
+                            and prompt.delivered_at is not None)
+        if len(matches) != 1:
+            return None
+        prompt = matches[0]
+        if (received_at < prompt.delivered_at or received_at >= prompt.deadline
+                or self._matched(prompt.nonce, chat_id=chat_id, user_id=user_id,
+                                 message_id=reply_to_message_id) is not prompt):
+            return None
+        with self._lock:
+            if self._pending.get(prompt.nonce) is not prompt or prompt.inflight:
+                return None
+            prompt.inflight = True
+            prompt.denial_task = dispatch_task
+
+        def current() -> bool:
+            # Called inside queue's write transaction: do not read queue here.
+            return (
+                self._pending.get(prompt.nonce) is prompt and prompt.inflight
+                and prompt.denial_task is dispatch_task
+                and asyncio.current_task() is dispatch_task
+                and channel._consent_denial_fast.get((chat_id, message_id)) is dispatch_task
+                and channel.on_consent_denial_reply is self._denial_hook
+                and self._transport_live(prompt) and self._request_live(prompt)
+                and self.coordinator._callback_is_owner(chat_id, user_id) is True
+                and chat_id == prompt.chat_id
+                and reply_to_message_id == prompt.message_id
+                and (prompt.source is None or user_id == prompt.source.user_id)
+            )
+
+        result = None
+        try:
+            actor = make_telegram_consent_actor(
+                user_id=user_id, chat_id=chat_id, current=current,
+            )
+            if actor is None or not current():
+                return None
+            result = await self.worker.apply_consent_decision(
+                prompt.offer.task_id, prompt.offer.revision,
+                choice="deny", actor=actor, reason=reason,
             )
             return "accepted" if result is not None else None
         finally:

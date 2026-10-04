@@ -1,0 +1,58 @@
+{
+  "generated_at": "2026-10-04T03:52:43.427351+00:00",
+  "goal": "All697 pinned Hermes capabilities; native reusable-consent denial dependency",
+  "base_sha": "06812d4e36c8a5a6380b464e3a26503b80a25f4e",
+  "state": "Root native occupied-lane RED/GREEN and adjacent regressions; later combined/full pending",
+  "prototype_patch_sha256": "0ebb76d63cd37ea1f823474ef06ea8710118c181e27a2d1bc6f5cc4d3192799a",
+  "source_sha256": {
+    "agents/core/autonomy/consent_prompts.py": "903529e701fcea6e3f85cb549868a5ae4ddf632543012fffc3130b82f1f85fa6",
+    "agents/core/channels/telegram.py": "c8f32be9a90897334814d6d72fd7a736fa64845ec4abdfe840ff7447aea5532c",
+    "tests/test_h487_telegram_consent_denial.py": "793a460eac8fdad0a3936cba4dfdd148f39c22e00d02260417b0a42afebd1b76"
+  },
+  "root_verification": {
+    "red": {
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "4399ff2347f6e05f7ccafd802b7f55675bbda24b0d14063c80b4489726a18972"
+    },
+    "green": {
+      "tests": 56,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "592ebc29c715a82778130c368c22835e63aa87de9e1c30fae66e929b44abeb37"
+    },
+    "broad": {
+      "tests": 225,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "bff55f0fde87e79632a3ca064b99b72b8a3a28cf26b2a6a89d8e7f8aa3c9f1e8"
+    }
+  },
+  "broad_files": [
+    "tests/test_h485_owner_once_prompts.py",
+    "tests/test_h485_owner_once_telegram.py",
+    "tests/test_h487_consent_runtime_integration.py",
+    "tests/test_h487_inline_consent_outcomes.py",
+    "tests/test_h487_native_runtime_human_wait.py",
+    "tests/test_h487_telegram_consent_denial.py",
+    "tests/test_h487_telegram_consent_integration.py",
+    "tests/test_h487_telegram_reasons.py"
+  ],
+  "review": "Independent source-only scoped review found no reproducible substantive flaw; root reviewed exact delta and ran fresh native/adjacent tests",
+  "red_scope": "Two real signed queue/worker/ToolRPC failures in off/enforce: exact text denial deadlocked in originating occupied chat lane; zero setup errors",
+  "ruff": "Three changed Python paths passed",
+  "bandit": "Current agents/scripts baseline-aware scan exit0",
+  "limits": [
+    "No full H487 equivalence credit; owner-once reason still unfinished",
+    "Prototype adjacent223 preceded last2 new parameterized tests; current root broad225 replaces it for this unit",
+    "Prior full22465 precedes and excludes this unit",
+    "Only existing worker/queue denial CAS; no accepted proof, grant, queue or kernel edits",
+    "All Bot API and physical effects simulated; no live/provider/device acceptance",
+    "No push, merge, deploy or provider activation"
+  ],
+  "next_action": "Owner-once denial prototype and shared exact claim-specific records/counts; later combined and frozen full milestone"
+}
