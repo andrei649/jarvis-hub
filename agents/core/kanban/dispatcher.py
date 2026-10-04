@@ -8,12 +8,13 @@ from collections import Counter
 from pathlib import Path
 
 from agents.core.autonomy.queue import TaskQueue, TaskQueueError, TaskStatus
+from agents.core.commands import CommandContext
 from agents.core.kernel import kernel_enabled
 from agents.core.paths import data_path
 from agents.core.tool_profiles import classify_turn
 
 from . import dispatch_store as store
-from .context import KanbanContext, kanban_scope
+from .context import KanbanContext, kanban_scope, require_mutation
 from .upstream import kanban_db as kb
 from .upstream import kanban_db_connect as kbc
 from .upstream import kanban_db_dispatch as kbd
@@ -75,6 +76,26 @@ class KanbanDispatcher:
 
     async def request(self, principal, *, board="default", limit=4):
         if classify_turn(principal).key != "operator/owner":
+            return _refused("owner_required")
+        return await self._dispatch(board=board, limit=limit)
+
+    async def request_owner_command(self, command, *, board="default", limit=4):
+        """Explicit owner slash commands may propose work from authenticated chat.
+
+        This entry is not registered as a model tool. Ordinary inbound tool
+        requests retain the operator-only rule in request(). All proposals still
+        use the same signed queue and kernel approval path.
+        """
+        if (not isinstance(command, CommandContext) or command.name != "kanban"
+                or command.orch is not self.orch
+                or classify_turn(command.principal).key not in {"operator/owner", "inbound/owner"}):
+            return _refused("owner_required")
+        try:
+            scope = require_mutation()
+        except PermissionError:
+            return _refused("owner_required")
+        if (scope.task_id is not None or scope.run_id is not None or scope.profile != "owner"
+                or scope.home.resolve() != self.home.resolve() or scope.board != board):
             return _refused("owner_required")
         return await self._dispatch(board=board, limit=limit)
 

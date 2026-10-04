@@ -795,8 +795,8 @@ async def _rate_limit(request: Request, call_next):
 # with Starlette's last-added-runs-first order, it runs BEFORE the limiter and every
 # route (a refused request never touches a rate bucket) and INSIDE _security_headers
 # and _golden_signals, so the 400 still carries the headers and is counted.
-# Residuals, named: @app.middleware("http") does not cover WebSocket scopes — there
-# are no WebSocket routes today, so a future one must call host_accepted() itself.
+# @app.middleware("http") does not cover WebSocket scopes. Kanban's event
+# upgrade calls host_accepted() and the admin guard explicitly in its router.
 # The probe paths (_PROBE_PATHS, including the unauthenticated /metrics scrape) are
 # exempt by design so a monitor reaching the box by any name keeps working; a
 # rebound page can therefore still read the golden-signal counters.
@@ -1546,6 +1546,7 @@ from agents.core.routers.admin import router as _admin_router  # noqa: E402
 from agents.core.routers.analytics import router as _analytics_router  # noqa: E402
 from agents.core.routers.arena import router as _arena_router  # noqa: E402
 from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
+from agents.core.routers.kanban import router as _kanban_router  # noqa: E402
 from agents.core.routers.missions import router as _missions_router  # noqa: E402
 from agents.core.routers.bench import router as _bench_router  # noqa: E402
 from agents.core.routers.ops import router as _ops_router  # noqa: E402
@@ -1659,6 +1660,7 @@ app.include_router(_packs_router)
 app.include_router(_secrets_router)
 app.include_router(_mesh_router)
 app.include_router(_autonomy_router)
+app.include_router(_kanban_router)
 app.include_router(_missions_router)
 app.include_router(_models_llm_router)
 app.include_router(_oauth_router)

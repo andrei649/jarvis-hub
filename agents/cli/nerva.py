@@ -124,6 +124,9 @@ def build_parser() -> argparse.ArgumentParser:
     from .nous_auth import configure_parser as configure_nous_auth
     configure_nous_auth(verbs)
 
+    from agents.core.kanban.cli_parser import build_parser as configure_kanban
+    configure_kanban(verbs)
+
     doctor = verbs.add_parser("doctor", help="install check-up, one named reason per check (offline)")
     doctor.add_argument("--json", action="store_true")
     doctor.add_argument("--smoke", action="store_true", help="also run the install smoke (~30 s)")
@@ -3201,7 +3204,19 @@ def cmd_auth(ns: argparse.Namespace, ctx: Context) -> int:
     return run(ns, ctx)
 
 
+def cmd_kanban(ns: argparse.Namespace, ctx: Context) -> int:
+    result = ctx.client().post("/api/kanban/command", {"argv": ns._kanban_argv})
+    if not isinstance(result, dict) or type(result.get("exit_code")) is not int:
+        ctx.err.write("Kanban returned an invalid command result\n")
+        return EXIT_FAILED
+    if result.get("output"):
+        ctx.say(str(result["output"]))
+    code = result["exit_code"]
+    return code if 0 <= code <= 255 and (code != 0 or result.get("ok") is True) else EXIT_FAILED
+
+
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
+    "kanban": cmd_kanban,
     "auth": cmd_auth,
     "doctor": cmd_doctor,
     "prompt-size": cmd_prompt_size,
@@ -3230,11 +3245,14 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
 
 def main(argv: list[str] | None = None, *, context: Context | None = None) -> int:
     parser = build_parser()
+    raw = list(argv) if argv is not None else sys.argv[1:]
     try:
-        ns = parser.parse_args(argv)
+        ns = parser.parse_args(raw)
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else EXIT_USAGE
     ctx = context or Context(environ=os.environ)
+    if ns.verb == "kanban":
+        ns._kanban_argv = raw[1:]
     try:
         return _VERBS[ns.verb](ns, ctx)
     except HubUnavailable as exc:

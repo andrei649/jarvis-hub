@@ -475,6 +475,7 @@ _CLIENT_GLOBS = (
 # inheriting a bare list. The audit's own count came down from 86 to 68 precisely because
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
+    "/api/kanban/command": "owner host CLI bridge, used by nerva kanban; board UI uses dedicated REST routes",
     "/api/vlm/composer/status":
         "legacy vision preview read by `nerva chat --image`; the web composer uses "
         "prompt-bound /api/vlm/composer/prepare instead",
@@ -541,6 +542,46 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # H075/H581: scoped server/API consumers exist; dedicated HUD/native board,
+    # task drawer, attachments and configuration controls remain unfinished.
+    # Each exact path is also recorded in docs/design/HUD_V2_REMAINING.md.
+    "/api/kanban/assignees",
+    "/api/kanban/attachments/{attachment_id}",
+    "/api/kanban/board",
+    "/api/kanban/boards",
+    "/api/kanban/boards/import",
+    "/api/kanban/boards/{slug}",
+    "/api/kanban/boards/{slug}/export",
+    "/api/kanban/boards/{slug}/switch",
+    "/api/kanban/config",
+    "/api/kanban/diagnostics",
+    "/api/kanban/dispatch",
+    "/api/kanban/estimate",
+    "/api/kanban/home-channels",
+    "/api/kanban/links",
+    "/api/kanban/model-options",
+    "/api/kanban/orchestration",
+    "/api/kanban/profiles",
+    "/api/kanban/profiles/{profile_name}",
+    "/api/kanban/profiles/{profile_name}/describe-auto",
+    "/api/kanban/projects",
+    "/api/kanban/runs/{run_id}",
+    "/api/kanban/runs/{run_id}/inspect",
+    "/api/kanban/runs/{run_id}/terminate",
+    "/api/kanban/stats",
+    "/api/kanban/tasks",
+    "/api/kanban/tasks/bulk",
+    "/api/kanban/tasks/{task_id}",
+    "/api/kanban/tasks/{task_id}/attachments",
+    "/api/kanban/tasks/{task_id}/comments",
+    "/api/kanban/tasks/{task_id}/decompose",
+    "/api/kanban/tasks/{task_id}/estimate",
+    "/api/kanban/tasks/{task_id}/home-subscribe/{platform}",
+    "/api/kanban/tasks/{task_id}/log",
+    "/api/kanban/tasks/{task_id}/reassign",
+    "/api/kanban/tasks/{task_id}/reclaim",
+    "/api/kanban/tasks/{task_id}/specify",
+    "/api/kanban/workers/active",
     # H075/H581: approved backend dispatch exists; dedicated board/worker
     # controls remain in HUD_V2_REMAINING.md and native task H18.30.
     "/api/autonomy/kanban/dispatch",

@@ -33,7 +33,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Chat history persistence | — (client-side) | ✅ | ✅ | H18.2 |
 | Agent selection | `GET /api/agents`, `agent` param | ✅ | ✅ | H18.3 |
 | Runtime Inspector (H227) | Existing admin inspector route | ✅ model/route resolution, unresolved/legacy/withheld states and fixed empty-turn limits | ⬜ dedicated native inspector; intentional owner administration gap | H18.26 / H227 |
-| Durable Kanban and approved workers (H075/H581, partial) | Owner chat/ToolRPC plus admin `POST /api/autonomy/kanban/dispatch`; bounded parallel workers, immediate cancellation settlement and separately approved URL attachments; flags default off | 🟡 metadata tools and governed dispatch API; existing approval queue; no board panel/attachment drawer | ⬜ native board/worker controls and attachments | H18.30 / H075 / H581 |
+| Durable Kanban and approved workers (H075/H581, partial) | Owner `/kanban` and `nerva kanban`, scoped admin `/api/kanban` metadata/file APIs and authenticated board event WebSocket; signed dispatch, bounded parallel workers, cancellation and separately approved URL attachments; flags default off | 🟡 API/chat/CLI and existing approval queue; no board panel, stream consumer or attachment drawer | ⬜ native board/worker controls and attachments | H18.30 / H075 / H581 |
 | Markdown rendering | — (client-side) | ✅ | ✅ | H18.4 |
 | Status / telemetry | `GET /status` | ✅ | ✅ | H18.1 |
 | Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ✅ | H18.5 |

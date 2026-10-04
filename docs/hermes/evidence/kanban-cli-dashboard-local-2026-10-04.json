@@ -1,0 +1,204 @@
+{
+  "generated_at": "2026-10-04T18:50:45.718610+00:00",
+  "base_head": "4d7f52382ab5c18e9be0a5c56306b7c15232f764",
+  "unit": "Pinned Hermes Kanban CLI, typed owner command and authenticated dashboard API",
+  "scope": "Partial H075/H581 and related consumers; the complete original 697-capability goal remains active. No complete Kanban/HUD/native/live/provider claim.",
+  "behavior": [
+    "Copied full donor CLI parser and adapted command/state/rendering helpers; host nerva kanban, typed /kanban and POST command share real scoped state and existing signed dispatcher.",
+    "Adapted all 46 donor HTTP method/path pairs plus the command mount under admin_guard; unsupported provider/process/workspace/channel/auxiliary effects explicitly fail.",
+    "Owner board selection persists; workers cannot switch scope, forge authors/principal, retain closed scope or borrow parent approvals.",
+    "Separate WebSocket verifies host/origin/admin authority, refuses URL credentials, bounds cursors/batches, resumes events and closes on revocation.",
+    "Strict metadata validation precedes writes; direct transitions recheck current runs/parents inside the donor writer boundary; one shared donor diagnostics engine.",
+    "OpenAPI/auth/route snapshots and types regenerated; 37 actual missing graphical consumers remain explicit backlog entries. No graphical parity claim."
+  ],
+  "implementer": [
+    "Two bounded gpt-6-sol/high implementers, CLI and API; root owns shared/auth/security/integration. No child delegation."
+  ],
+  "verification": {
+    "full_backend": {
+      "tests": 23416,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 23381,
+      "ordinary_skips": 34,
+      "existing_xfail": 1,
+      "expected_failure_cases": [
+        "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+      ],
+      "junit_sha256": "5e455db57c8564d6ab2f099028d1113ec7dd4304c717c01f86e6f2b3cf088e82",
+      "log_sha256": "14d26cc1d79c87a243c57f1e7675a0446a28ba215bfc87c0a9b643b8a3fade1f",
+      "state": "terminal_pass",
+      "exit_code": 0,
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests",
+        "-n",
+        "1",
+        "--dist",
+        "loadfile",
+        "--timeout=90",
+        "-q",
+        "--tb=short",
+        "--junitxml=/tmp/nerva-kanban-cli-dashboard-full-backend-r3-20261004.xml"
+      ],
+      "freeze_sha256": "8d58e017ed08671cc811e29981d356f48b0aaa0e7086535582e9dc76e4d3c899",
+      "frozen_paths": 3197,
+      "drift": []
+    },
+    "prior_terminal_runs": [
+      {
+        "state": "terminal_review_required",
+        "exit_code": 1,
+        "counts": {
+          "tests": 23416,
+          "failures": 5,
+          "errors": 0,
+          "skipped": 35,
+          "passed": 23376,
+          "ordinary_skips": 34,
+          "existing_xfail": 1,
+          "expected_failure_cases": [
+            "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+          ],
+          "junit_sha256": "b9acc718d9b9e8e0830096b87e6affabe0794bac7ac6e4ef8e6d74f7f3085c80",
+          "log_sha256": "a9d61632956dad845fce7917ce133fbde2472744d6dc272d3e787260cb5a6de6"
+        },
+        "command": [
+          "/tmp/nerva-pr-python-20261001/bin/python",
+          "-m",
+          "pytest",
+          "tests",
+          "-n",
+          "3",
+          "--dist",
+          "loadfile",
+          "--timeout=90",
+          "-q",
+          "--tb=short",
+          "--junitxml=/tmp/nerva-kanban-cli-dashboard-full-backend-20261004.xml"
+        ],
+        "resolution": "Generated API manual and explicit HUD client gaps"
+      },
+      {
+        "state": "terminal_review_required",
+        "exit_code": 1,
+        "counts": {
+          "tests": 23416,
+          "failures": 4,
+          "errors": 0,
+          "skipped": 35,
+          "passed": 23377,
+          "ordinary_skips": 34,
+          "existing_xfail": 1,
+          "expected_failure_cases": [
+            "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+          ],
+          "junit_sha256": "ddf679586c11d2987516a2a7a21ec4a7506990869f8afd5141e6571c55fc0f53",
+          "log_sha256": "81c3eb162e5a222a0cfda1fdef6aecccb0bad7e92974d8936e500c1b9791dbc0"
+        },
+        "command": [
+          "/tmp/nerva-pr-python-20261001/bin/python",
+          "-m",
+          "pytest",
+          "tests",
+          "-n",
+          "3",
+          "--dist",
+          "loadfile",
+          "--timeout=90",
+          "-q",
+          "--tb=short",
+          "--junitxml=/tmp/nerva-kanban-cli-dashboard-full-backend-r2-20261004.xml"
+        ],
+        "resolution": "Roadmap count corrected; timing tests passed separately unchanged and in the final full single-worker suite"
+      }
+    ],
+    "focused": {
+      "consumers": 201,
+      "kanban_integration": 175,
+      "route_gates": 67,
+      "reconciled": 128,
+      "catalog_gates": 19,
+      "roadmap_hud_gates": 19,
+      "unchanged_native_timing_cases_serial": 8
+    },
+    "ruff": "agents, scripts and changed Python tests: passed",
+    "bandit": {
+      "state": "passed",
+      "baseline": "unchanged .bandit-baseline.json",
+      "log_sha256": "76bcddfdf7787ddba47c2f7884f7807cf5f6dda0a5d94e54f8aa5f3c6e9cbe06"
+    },
+    "frontend": "TypeScript compilation passed; generated schema only, no runtime frontend change. Prior frontend 1892-case evidence is not a new full frontend run.",
+    "metadata": "status_sync backend result verified at 23416 selected cases; generated project status and all 697 Hermes reports in sync; diff check passed",
+    "graft": {
+      "graph_ok": true,
+      "nodes": 51477,
+      "changed": 0,
+      "context_missing": true,
+      "note": "Instruction/context generation intentionally not initialized; source graph freshness is verified."
+    },
+    "pre_receipt_exact_index_secret_scan": {
+      "paths": 43,
+      "exit_code": 0,
+      "findings": 0,
+      "manifest_sha256": "a693debe71fdf6ae52a18ef8ef8f5a34fd4562bd79abc0ece9c11d53904acc8c"
+    }
+  },
+  "changed_path_sha256_before_receipt": {
+    "GO_LIVE_PLAN.md": "1873770e589d96690622f282280527f0afe7ab82b4db04a494d94c8715fe76b2",
+    "HERMES_STATUS.md": "9586b2e401b9df0c61ea28191f8c469be35e5ccfdc300447e38b7d7701aa1ae3",
+    "NERVA.md": "a17f60ed3cd244e26da7458e59930bc2aea2447415b8ad3ba6fc27e25ced8afc",
+    "README.md": "22d254ec94101c0a18497d7f250c9e29736c9c9da3ade243409fa983156e859f",
+    "STATUS.md": "b878f3e3bdbf27d496c27eeb8601bff43ce281b43d13a6b3512131986100ef5c",
+    "agents/cli/nerva.py": "6efdd1e15c0672635a1c219ba5dd25b2efe510f91bd41969de8c835aac07148d",
+    "agents/core/commands.py": "2ef33cda1d4ef3f5586c0bed14c0358dde7d9cc65c2607bc730e09be20c695d5",
+    "agents/core/kanban/README.md": "aeac4c1bbbcd32b07f5ddc44ca2a6a504c65b4e0946012a37e7c965d4fb7670e",
+    "agents/core/kanban/cli.py": "ebb6c86fd41e66f36361cf8f3abe6c7237bfad4b8dafddb87f961467636d4698",
+    "agents/core/kanban/cli_parser.py": "5d4b7e40d69b03693c4b3a5bb02b29bfc31a6d07ea9fe40f0dc2d2b501741d41",
+    "agents/core/kanban/cli_upstream/LICENSE": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6",
+    "agents/core/kanban/cli_upstream/__init__.py": "75faf5797879418b6cc74a7d01b4b3bc22a79861a2653a0b7e03fe6c384a8ef6",
+    "agents/core/kanban/cli_upstream/board_selection.py": "7292482aac4ca775c09851652d398c0cd115d958b44905d7bdb498201d4ff3a3",
+    "agents/core/kanban/cli_upstream/boards.py": "a47e83b7f32dedfb47e206ce3ff19fa40c6e97e8cf9648e0a3f148d5cd65d965",
+    "agents/core/kanban/cli_upstream/handlers.py": "305baa317439f416608d6f67e426a36666d5cf13743327b5e3c54fec77351dbd",
+    "agents/core/kanban/cli_upstream/ops.py": "cba8435b1b2123624c21e385a90e8ddcb44cf55e03ff79ec5e266552bea8b852",
+    "agents/core/kanban/cli_upstream/output.py": "74bb4bfbdb1a9f9483d21c2802406caed44fa97706b631c759c9292f811399c5",
+    "agents/core/kanban/cli_upstream/sink.py": "ec8441fcdfefa16761b6d2eea611da614f28ce863b48db459efb7784d63cd4e5",
+    "agents/core/kanban/dashboard_api.py": "217add0f258b7b587214ac3f89f8c8d887e08ef55215510e7d795ee11f2efada",
+    "agents/core/kanban/dashboard_upstream/LICENSE": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6",
+    "agents/core/kanban/dashboard_upstream/__init__.py": "6db1d30d71a68be410e2c437edf2f5a319097350b9133020e8c1090ff45fb3d0",
+    "agents/core/kanban/dispatcher.py": "1eb3a8a83f4f19494c83b3ba73de3e33065514f2e65cf289e6a7047c1298671f",
+    "agents/core/kanban/upstream/kanban_diagnostics.py": "42cc04e103b4521d31b1421f8c5a4088515b20ffded53fdb79b2898fcee0e683",
+    "agents/core/routers/kanban.py": "bf3ba156bf9c80b85c59d281c027d1299bdc69312916c4fe9d1ac3b486d64fab",
+    "agents/web.py": "01c68adbc08911d3312f28c84a81d81997c939d1f686c5023e15abba29debfe1",
+    "docs/DEVELOPMENT_ROADMAP.md": "e0e7fa259cff6b189f1292919e9f91879bd7e819090d854f7ebc0d01b2b1b08a",
+    "docs/HERMES_CAPABILITIES.md": "e671177b8178227fe80fb001bb84803b302a005642f4cbd9c85913656169c73a",
+    "docs/design/HUD_V2_REMAINING.md": "87a5226e0e5b0b70f2f0f87cdb5a9e1ed1e802133b9a697d451110d391ffaa56",
+    "docs/hermes/assessment.json": "89ae1b2ce7e12b8de49db9eed22eda46b3eb4e8cd34054fab3435b1ac5a9f07e",
+    "docs/hermes/kanban-cli-dashboard-plan-2026-10-04.md": "6b5646996d8037a0227f05e3194b99bd38a9016624ed1581ab041a8e4d99c325",
+    "docs/test-manual/14-api-surface-sweep.md": "d15b3f6ef2908e603038ba5c1710276bd684a57344c573c4409ae0ef6a7af8f6",
+    "frontend/src/api/schema.gen.ts": "076529227e557904c4338164a8b891d29b7c35480cf914abcdc09bc8508aa2a4",
+    "mobile/PARITY.md": "575db056fb1d2eeca2d625acd81ff4b9947b9994b77db60b63f10c5b68d6c790",
+    "project-status.json": "18f003f4bfa75223e9c963a595e2b3817088ce6d2d2d964fbb1b0aa4df4df64d",
+    "tests/_snapshots/openapi_surface.json": "50f309220d02d32bf8eb078f392c76c733cc2048718d244d5e0c96597d7a2f23",
+    "tests/_snapshots/route_auth.json": "f9daa5f062695f3445f696221d511ea8cfc092975558574df4bac9f86cb968de",
+    "tests/_snapshots/route_surface.json": "d412220987e58f3081fe4d2df68586e1c9dd75cf52782004e47cb6c9745c2315",
+    "tests/test_hermes_kanban_cli.py": "b78d02085ddd386e499f3ee8e4fcbff0ba20453e830038562331c2b3b3267995",
+    "tests/test_hermes_kanban_dashboard.py": "b2b35f6daaa935da17bbab11b24c9c6f2c29deccb2f5571ce0f4c2733ed52c08",
+    "tests/test_hermes_kanban_surfaces_wiring.py": "f46dc61c4cdd7fc5da6ebc4e92ad0dc1f788ec3bb89731731256a486362813f1",
+    "tests/test_hud_v2_parity.py": "caa2cb010019be943d6c7afc4ca914152916bd47e58b42f0601b1f7c672d489b",
+    "tests/test_nerva_cli.py": "94bf6f8cd6eded247e8dee408e6eb5f62a453d8168d84c786c5ac21b2f5675c3",
+    "tests/test_slash_commands.py": "0d3183a02a51d6c40e2c4401be659598aa2e68ed20b639cd8fa6c76be50bc4cb"
+  },
+  "remaining": [
+    "Workspace scratch/dir/worktree and project/Git lifecycle, actual worker cwd/FileScope integration and complete signed source/target binding.",
+    "Scoped provider/config/profile/project and auxiliary specify/decompose/goal bindings; process controls, gateway multi-board watchers, tenants, pinned skills/swarm, notifications/artifacts, transfers/hard deletion.",
+    "Complete HUD board/task drawer/Triage and native consumers; live/physical-crash/provider acceptance and all other original 697-capability requirements including reopened exclusions.",
+    "Three native timing cases failed with 250ms execution budgets in the second parallel run; the unchanged eight-case file and whole suite passed serially. Parallel-load sensitivity remains a test-harness follow-up.",
+    "Existing unrelated action-hierarchy ToolRPC registration xfail remains."
+  ],
+  "next_source_map": "External prepared source map: /tmp/nerva-kanban-effect-adapters-next-unit-20261004.md; next unit will record its own source/implementation evidence.",
+  "remote_actions": []
+}

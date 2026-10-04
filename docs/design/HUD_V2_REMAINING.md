@@ -23,16 +23,66 @@ preview; history, user input, tool schemas and active cache state are omitted.
 
 H075/H581 Kanban (2026-10-04, partial): the pinned durable SQLite state and local
 tool handlers are registered behind `llm.kanban` (default off) in the existing
-owner ToolRPC/chat path. There is no board panel, task drawer, websocket watcher,
-tenant UI yet. Approved worker intake is available through the existing admin API
+owner ToolRPC/chat path. The adapted Hermes CLI is available as `nerva kanban`
+and the typed owner `/kanban` command. The 46 donor HTTP method/path pairs and
+command endpoint are mounted under `/api/kanban` with admin authentication;
+the separate event WebSocket checks host, origin, current admin authority and
+board scope. CLI/API board selection is shared and persistent. There is no
+HUD board panel, task drawer, event-stream consumer or tenant UI yet.
+Approved worker intake is available through the existing admin API
 and coordinator with a separate default-off dispatch flag; approvals use the
 existing inbox. The coordinator runs approved workers concurrently within total
-and per-agent caps. Dedicated board/worker controls remain required Hermes work;
+and per-agent caps. Explicit owner chat dispatch uses the same signed queue;
+the ordinary inbound model-tool restriction is unchanged.
+Dedicated board/worker controls remain required Hermes work;
 the library/tool port alone does not close those rows. Workspace/project, goal
 judging adapters refuse explicitly until integrated. URL attachments now propose
 separate signed egress approvals behind `llm.kanban_network_attachments`; each
 redirect requires another approval. The chat tool uses the existing Decision
 Inbox, but the dedicated attachment drawer and board controls remain absent.
+
+Kanban client route gaps: the following server contracts still need their
+HUD/native consumers. Host CLI/chat and API bindings above are local progress;
+registered but unbound effects retain explicit failures until their adapters land.
+
+- `/api/kanban/assignees`
+- `/api/kanban/attachments/{attachment_id}`
+- `/api/kanban/board`
+- `/api/kanban/boards`
+- `/api/kanban/boards/import`
+- `/api/kanban/boards/{slug}`
+- `/api/kanban/boards/{slug}/export`
+- `/api/kanban/boards/{slug}/switch`
+- `/api/kanban/config`
+- `/api/kanban/diagnostics`
+- `/api/kanban/dispatch`
+- `/api/kanban/estimate`
+- `/api/kanban/home-channels`
+- `/api/kanban/links`
+- `/api/kanban/model-options`
+- `/api/kanban/orchestration`
+- `/api/kanban/profiles`
+- `/api/kanban/profiles/{profile_name}`
+- `/api/kanban/profiles/{profile_name}/describe-auto`
+- `/api/kanban/projects`
+- `/api/kanban/runs/{run_id}`
+- `/api/kanban/runs/{run_id}/inspect`
+- `/api/kanban/runs/{run_id}/terminate`
+- `/api/kanban/stats`
+- `/api/kanban/tasks`
+- `/api/kanban/tasks/bulk`
+- `/api/kanban/tasks/{task_id}`
+- `/api/kanban/tasks/{task_id}/attachments`
+- `/api/kanban/tasks/{task_id}/comments`
+- `/api/kanban/tasks/{task_id}/decompose`
+- `/api/kanban/tasks/{task_id}/estimate`
+- `/api/kanban/tasks/{task_id}/home-subscribe/{platform}`
+- `/api/kanban/tasks/{task_id}/log`
+- `/api/kanban/tasks/{task_id}/reassign`
+- `/api/kanban/tasks/{task_id}/reclaim`
+- `/api/kanban/tasks/{task_id}/specify`
+- `/api/kanban/workers/active`
+
 
 H011 checkpoints (2026-10-04): authenticated owner status/list and exact
 maintenance previews now use typed `/checkpoints` and bare `/rollback` through

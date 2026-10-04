@@ -20,6 +20,7 @@ from __future__ import annotations
 import inspect
 import logging
 import re
+import shlex
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -140,6 +141,8 @@ class CommandRegistry:
         if parsed is None:
             return None
         name, args = parsed
+        if name == "kanban" and len(text.strip()) > _MAX_ARGS:
+            return self._observed(CommandOutcome(name, "refused", "Kanban command is too long; nothing changed."))
         command = self.get(name)
         if command is None:
             # Deliberately NOT observed. `name` here is whatever the sender typed, so
@@ -413,6 +416,18 @@ async def _recap(ctx: CommandContext) -> str:
     return render_recap(turns, exchanges=exchanges)["text"]
 
 
+async def _kanban(ctx: CommandContext) -> str:
+    from .kanban.cli import execute_command
+
+    try:
+        argv = shlex.split(ctx.args or "")
+    except ValueError:
+        return "kanban: invalid quoted arguments"
+    result = await execute_command(ctx.orch, argv, ctx.principal,
+                                   session_id=getattr(ctx.orch, "session_id", None), owner_command=ctx)
+    return result["output"]
+
+
 def build_default_registry() -> CommandRegistry:
     from .checkpoint_commands import checkpoint_command
 
@@ -434,4 +449,6 @@ def build_default_registry() -> CommandRegistry:
                                    usage="[status|list|diff|restore|prune|clear|clear-legacy]"))
     registry.register(SlashCommand("rollback", "list checkpoints or request an approved restore",
                                    checkpoint_command, tier=ADMIN, usage="[checkpoint]"))
+    registry.register(SlashCommand("kanban", "manage your task boards", _kanban,
+                                   tier=ADMIN, usage="<action> [arguments]"))
     return registry

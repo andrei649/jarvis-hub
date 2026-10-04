@@ -15,6 +15,13 @@ approval. Approved requests use DNS-pinned public HTTP(S), credential-free URLs,
 identity bytes, the donor's 25 MiB cap and a 30-second deadline. Revoked settings,
 kernel denial or changed worker ownership prevent publication.
 The database lives under Nerva's private `data_path('kanban')`, never `~/.hermes`.
+The copied CLI argument tree is available through `nerva kanban ...` and the
+typed owner `/kanban ...` command. Both share the scoped state service with the
+admin-only `/api/kanban` board/file APIs. The event WebSocket authenticates host,
+origin and current admin authority; credentials are never accepted in its URL.
+Owner board selection persists across CLI/API requests. Explicit owner chat
+dispatch proposes work through the same signed queue; inbound model tools keep
+their existing operator restriction. Unsupported effects return failures.
 Handlers use the real caller identity and session, not model-provided identity
 or ambient `HERMES_*` values. A worker needs a live scoped task/run; it cannot
 switch boards, change another task's dependencies or borrow a successor's run.
