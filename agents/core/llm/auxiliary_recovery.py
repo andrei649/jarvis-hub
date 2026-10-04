@@ -129,6 +129,22 @@ def remember_temperature_rejection(backend: object, model: object) -> None:
     cache.models.add(model)
 
 
+def _explicit_not_supported(words: str, field: str) -> bool:
+    """Match an unsupported field, not an unrelated model or value complaint."""
+    name = rf"(?<![\w-])['\"]?{re.escape(field)}['\"]?(?![\w-])"
+    end = r"(?=\s*(?:[.!;:]|$))"
+    return bool(
+        re.search(
+            rf"{name}\s+is\s+not\s+supported"
+            rf"(?:\s+for\s+(?:this|the)\s+model)?{end}", words,
+        )
+        or re.search(
+            rf"\b(?:this|the)\s+model\s+does\s+not\s+support\s+"
+            rf"(?:the\s+)?{name}(?:\s+field\b)?{end}", words,
+        )
+    )
+
+
 def rejects_temperature(exc: BaseException) -> bool:
     """Recognize only a small structured HTTP 400 parameter rejection."""
     if not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code != 400:
@@ -159,6 +175,7 @@ def rejects_temperature(exc: BaseException) -> bool:
         re.search(rf"\b{marker}\s+{field}\s*[:=]?\s*['\"]?temperature\b", words)
         or re.search(rf"\b{field}\s*[:=]?\s*['\"]?temperature['\"]?\s+(?:is\s+)?{marker}\b", words)
         or re.search(rf"\btemperature\b\s+(?:is\s+)?(?:an?\s+)?{marker}\b", words)
+        or _explicit_not_supported(words, "temperature")
     )
 
 
@@ -218,6 +235,7 @@ def rejects_output_cap(exc: BaseException) -> bool:
         re.search(rf"\b{marker}\s+{field}\s*[:=]?\s*['\"]?max_tokens\b", words)
         or re.search(rf"\b{field}\s*[:=]?\s*['\"]?max_tokens['\"]?\s+(?:is\s+)?{marker}\b", words)
         or re.search(rf"\bmax_tokens\b\s+(?:is\s+)?(?:an?\s+)?{marker}\b", words)
+        or _explicit_not_supported(words, "max_tokens")
     )
 
 
