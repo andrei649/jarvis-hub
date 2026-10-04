@@ -1330,3 +1330,27 @@ def test_round2_remote_wants_refuses_an_already_normalised_deep_snapshot(monkeyp
         args = {"nested": args}
     snapshot = aj.normalise_snapshot(dict(ACTION, args=args))
     assert remote_judge(monkeypatch, FakeBackend()).wants(snapshot) is False
+
+
+async def test_nonlocal_loopback_custom_judge_keeps_origin_out_of_pending_route(rig, tmp_path, monkeypatch):
+    """A custom endpoint's loopback host does not make its unknown policy local."""
+    monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_MODEL", "judge-m")
+    monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_BASE_URL",
+                       "http://owner:secret@localhost:1234/private?token=hidden")
+    monkeypatch.setenv("JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE", "1")
+    judge = ApprovalJudge(settings=settings_of())
+    status = judge.status()
+    assert status.configured is True and status.local is False
+    q = queue(tmp_path)
+    item = q.request(ACTION)  # no judge attached yet, so no model send occurs
+    q.attach_judge(judge)
+    rig.state.orch.action_approvals = q
+    async with http(rig) as client:
+        pending = (await client.get("/api/actions/pending")).json()
+        listing = (await client.get("/api/actions")).json()
+    assert pending["actions"][0]["id"] == item["id"]
+    for public in (pending["judge"], listing["judge"]):
+        assert public["configured"] is True and public["local"] is False
+        assert "base_url" not in public
+    assert "secret" not in json.dumps(pending) and "secret" not in json.dumps(listing)

@@ -4,6 +4,8 @@
   "action:browser.step": "wired",
   "action:call.outbound": "wired",
   "action:channel.reply": "wired",
+  "action:checkpoint.maintenance": "wired",
+  "action:checkpoint.restore": "wired",
   "action:desktop.step": "wired",
   "action:file.write": "wired",
   "action:goal.approve": "wired",
