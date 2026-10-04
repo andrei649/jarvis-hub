@@ -1,0 +1,111 @@
+{
+  "generated_at": "2026-10-04T01:56:47.759027+00:00",
+  "goal": "All697 pinned Hermes capabilities; one native-video provider dependency",
+  "base_sha": "4f265c6c",
+  "state": "Integrated offline verification and successful frozen full backend milestone",
+  "new_cases": 22,
+  "root_red": {
+    "tests": 22,
+    "failures": 21,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "667b3db967ba480a40121d081c916f70349546c40e6ca9e7bee29a52a68ff324",
+    "scope": "21 failures in22 cases on original production code; unsupported-role exceptions and missing behavior, no test setup errors"
+  },
+  "root_focused": {
+    "tests": 597,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "bc17cab675ae66a3a6a567ef6b2629c6227ef29ad8ffc9e6bebbb9de06f74976"
+  },
+  "root_broad": {
+    "tests": 3012,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "modules": 136,
+    "junit_sha256": "23b1a40ea34ee1582bd1d7e818d041ba925dca23134492e2c408e156d2d7aa9e",
+    "module_list_sha256": "65d58f5e371adf5ffc68561dcc333ada3e7ce69a6e3202a8d735d31821a91478",
+    "overlap": "Includes focused cases, not additive"
+  },
+  "source_sha256": {
+    "agents/core/llm/model_roles.py": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "agents/core/llm/video_policy.py": "e32c063f358832f37c40a5b7b1e4148d4715a8e397d5618c041f6e1a664c5a92",
+    "agents/core/llm/video_routes.py": "daf71275804e7c9833b764c5fdd8d611ecd18df8de3cb1f0b7acd7e0e592888d",
+    "agents/core/video_analysis.py": "9865d53cfe1ca9300f5c352ace9ebcae370391d253c5d9cb92db743b55fd0301",
+    "tests/test_h277_openrouter_video.py": "0a6bf2b57d0849ef549bc8555ce1127a143a28caaa325e0a7fc2aaeff5dcd860",
+    "tests/test_h277_openrouter_vision_resolution.py": "5a974ea62acc4afadbec0644787fe50714ba2b9547301cd7ab27fba48d7b651b"
+  },
+  "review": {
+    "role": "gpt-6-luna Medium read-only",
+    "report_sha256": "8089f9e5ff7caba04055647ba434dd7365fff1abe0be26e7b432b81a38e2c074",
+    "result": "No reproducible substantive finding in stated six-path proposal scope"
+  },
+  "source_checks": {
+    "ruff": "Six changed Python paths pass",
+    "bandit": "agents and scripts with existing baseline, exit0",
+    "graft": {
+      "graph_fresh": true,
+      "nodes": 49195,
+      "optional_deep_context_missing": true,
+      "global_mcp_available": false
+    }
+  },
+  "impact_review": {
+    "report_sha256": "62461d4a97268ddf9f829b68c073d9685cc932bbefb4909a56228ca468288d21",
+    "already_stale_rows": [
+      "H275",
+      "H277",
+      "H513"
+    ],
+    "ruling": "Root re-read H275 shared gate, binding and physical-send order; preserved equivalent verdict after successful full run. H277/H513 already-stale wider claims not refreshed.",
+    "h275_review": "docs/hermes/h275-native-video-collateral-review-2026-10-04.md"
+  },
+  "behavior": [
+    "Explicit/inherited-model-override/fixed-slot OpenRouter routes",
+    "Whole MIME-base64 video data URL on approved physical chat/completions request",
+    "Validated live provider privacy block frozen in approval identity and emitted in request",
+    "Dedicated or exact matching guarded vision key; isolated fallback slot key",
+    "Before-send and after-cleanup key/model/URL/preference/remote-grant changes refuse",
+    "Unsupported media returns sanitized refusal without surprise retry/fallback"
+  ],
+  "reference": "https://openrouter.ai/docs/guides/overview/multimodal/videos",
+  "limits": [
+    "No full H277 equivalent credit",
+    "Model-specific video acceptance unprobed; only offline HTTPX fixtures",
+    "Native mobile/video-picker/preferences editor and inbound video ingestion remain open",
+    "Other native provider adapters and accepted auxiliary dependencies remain open",
+    "No paid provider use, activation, push, merge or deploy",
+    "Full backend:22383 passed,34 ordinary skips,one existing xfail; earlier22395 receipt retains its original source scope"
+  ],
+  "record_verification": {
+    "initial_gate_failure": "test_real_inventory_covers_exactly_697_rows_and_reports_are_current: generated reports predated final documentation edits; reports regenerated",
+    "test_manual": "Changed chapter02 passes; checker exit0 flags two pre-existing groups in unchanged chapters06 and08 (two missing worldview paths and two malformed table rows)",
+    "api_sweep": "Current; no new endpoint",
+    "final_gates": {
+      "tests": 151,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "8da95a378af5c1be0ffd03747ddd182b7ad141fe15166d394ed8fc87d38259b4"
+    }
+  },
+  "mutation_receipt": "docs/hermes/evidence/h277-openrouter-video-mutations-2026-10-04.json",
+  "mutation_outcomes": {
+    "assertion": 2,
+    "expected_refusal": 2,
+    "behavioral_exception": 1,
+    "survivors": 0,
+    "baseline": 22,
+    "final": 22,
+    "restored_inputs": 2066
+  },
+  "full_backend_receipt": "docs/hermes/evidence/h277-openrouter-video-full-2026-10-04.json",
+  "documented_equivalence": {
+    "equivalent": 179,
+    "total": 697,
+    "percent": 25.7,
+    "change_from_committed_report": "H441,H586,H670 evidence expired; H275 previous equivalent verdict restored after semantic collateral review, without new functionality credit"
+  }
+}

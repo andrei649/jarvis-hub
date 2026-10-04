@@ -48,6 +48,11 @@ task notices/results; there is no in-HUD editor for either environment setting.
 Enabled empty recovery reports its consumer-call index separately from each
 route's attempt index. A malformed or blocked result does not permit this restart.
 
+H277 OpenRouter video (2026-10-04): primary, inherited vision and fallback routes
+use the same Decision Inbox and role-consent controls. The request emits the
+approved provider privacy block. An in-HUD video-role/preferences editor and
+video picker remain open; offline verification does not prove live model support.
+
 H277 local auxiliary models (2026-10-02): server-side title generation, recall
 rewriting, conversation review, compression and governed acquisition capability/plan
 generation can use independent local model IDs. Existing output surfaces are

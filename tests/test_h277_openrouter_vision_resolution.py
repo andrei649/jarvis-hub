@@ -98,11 +98,12 @@ def test_loopback_http_is_allowed_only_with_dedicated_key():
     assert config.is_local is True and config.api_key == "dedicated"
 
 
-def test_inherited_video_refuses_openrouter_with_specific_reason():
+def test_inherited_video_uses_guarded_openrouter_vision_destination():
     route = model_roles.resolve_video_route(_env())
-    assert route.role.configured is False
-    assert route.role.reason == "video_vision_provider_unsupported"
-    assert route.request_url == "" and route.inherited is False
+    assert route.role.configured is True
+    assert (route.role.provider_id, route.role.model) == ("openrouter", "vendor/vision-model")
+    assert route.request_url == "https://openrouter.ai/api/v1/chat/completions"
+    assert route.inherited is True
 
 
 def test_provider_block_defaults_to_data_collection_deny(monkeypatch):

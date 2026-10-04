@@ -1,5 +1,14 @@
 # Sprint: echivalarea funcțiilor Hermes
 
+> OpenRouter native-video increment 2026-10-04: explicit primary, guarded vision
+> inheritance/model override and fixed-slot fallback now use the signed video
+> ToolRPC. Full video bytes, scoped keys and the approved provider privacy block
+> are verified offline; changes before send or disclosure refuse.597 affected
+> cases pass. The frozen22,418-case backend completed:22,383 passed,34 ordinary
+> skips,one existing expected failure,zero failures/errors;3,008 inputs unchanged.
+> See the [full receipt](hermes/evidence/h277-openrouter-video-full-2026-10-04.json).
+> H277 remains partial. See the [integration plan](hermes/h277-openrouter-video-plan-2026-10-04.md).
+
 > Local progress 2026-10-04: exact reusable inline choices now wake native waits
 > across approval surfaces. Timeout, withdrawal and denial remain distinct;
 > matching decisions observed after the wait ends cannot revive execution.

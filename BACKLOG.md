@@ -2061,6 +2061,13 @@
   provider or VRAM orchestration acceptance is claimed. See
   [implementation and verification](docs/hermes/2026-10-01-comfy-publication-guard.md).
 
+- 2026-10-04 HEQ-1 OpenRouter native-video continuation: explicit primary,
+  guarded vision inheritance/model override and fixed-slot fallback now preserve
+  signed approvals, scoped keys and the actual provider privacy request block.
+  597 affected offline tests pass; full backend and live/model acceptance remain
+  separate. H277 stays partial. See the
+  [integration plan](docs/hermes/h277-openrouter-video-plan-2026-10-04.md).
+
 - 2026-10-02 HEQ-1 local continuation: revalidated H277 shared-judge scheduling with
   14 killed mutations on the exact main snapshot and 310 focused current regressions.
   Permission-grant replay now retains one task-bound effect across audit/commit

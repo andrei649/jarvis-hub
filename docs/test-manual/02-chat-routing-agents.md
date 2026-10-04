@@ -893,6 +893,19 @@ Observations only — no code was changed. Every pointer is `file:line` at the r
   such logic exists — a leading `pepper` token is an unconditional wake word
   (`agents/core/router.py:236-248`). Cosmetic, but it is a documented behaviour with no implementation.
 
+## OpenRouter native-video approval regression (H277, 2026-10-04)
+
+Run this case offline with the synthetic clip and native HTTPX mock transport;
+it does not require provider credentials or a live model.
+
+| ID | Check | Do | Expect | Fail | Auto |
+|----|-------|----|--------|------|------|
+| CHT-121 | Approved OpenRouter video preserves the physical request | Run `python -m pytest tests/test_h277_openrouter_video.py -q`; inspect the full-data-URL request, fallback slot key and preference/key revocation cases | No request before the owner decision; approved request includes full video bytes and provider privacy preferences; altered authority withholds dispatch or disclosure; unsupported media does not retry | BLOCKER if unauthorized dispatch or foreign credential reuse | ✅tests/test_h277_openrouter_video.py |
+
+Live acceptance with a video-capable OpenRouter model remains unverified and
+requires separate owner authorization for provider use. Native mobile controls,
+inbound video ingestion and additional provider adapters remain open.
+
 **Line-number caveat.** Every `file:line` above was read at the working-tree revision of this pass
 (post-`06cf011`; 404 entries in `tests/_snapshots/route_surface.json`; 408 in `route_auth.json`; backend
 suite count in `project-status.json` → `tests.backend`). Line numbers drift with any refactor — re-grep the

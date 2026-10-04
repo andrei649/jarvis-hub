@@ -133,7 +133,7 @@ ROLES: Mapping[str, RoleSpec] = MappingProxyType({
         ("agents/core/llm/vlm.py resolve_vlm_config",)),
     "video": RoleSpec(
         "video", "reads approved video sources through video_analyze", "JARVIS_ROLE_VIDEO", MappingProxyType({}),
-        frozenset({"lm-studio", "openai-compatible", "gemini"}),
+        frozenset({"lm-studio", "openai-compatible", "gemini", "openrouter"}),
         ("agents/core/video_analysis.py video_analyze ToolRPC",)),
     "approval_judge": RoleSpec(
         "approval_judge", "scores a queued tool-call approval (advisory only)",
@@ -500,7 +500,7 @@ def resolve_video_route(env: Mapping[str, str] | None = None) -> ResolvedVideoRo
                                                     "model": "default", "base_url": "default"}),
                                   None, "", exc.reason))
     if vision.configured:
-        if vision.provider_id in {"openrouter", "deepinfra", "nous"}:
+        if vision.provider_id in {"deepinfra", "nous"}:
             source = dict(vision.source)
             source["model"] = spec.env_name("model") if model else vision.source["model"]
             return ResolvedVideoRoute(ResolvedRole("video", False, "", "", "",
@@ -534,8 +534,13 @@ def resolve_video_route(env: Mapping[str, str] | None = None) -> ResolvedVideoRo
         source["model"] = spec.env_name("model") if model else vision.source["model"]
         chosen_model = model or vision.model
         local = bool(config.is_local)
-        policy = ("unknown" if vision.provider_id == "openai-compatible" or not local
-                  else get_profile(vision.provider_id).data_policy_for(chosen_model)[0])
+        if vision.provider_id == "openrouter":
+            from .vision_openrouter import current_provider_block, policy_for
+
+            policy = policy_for(chosen_model, current_provider_block())[0]
+        else:
+            policy = ("unknown" if vision.provider_id == "openai-compatible" or not local
+                      else get_profile(vision.provider_id).data_policy_for(chosen_model)[0])
         return ResolvedVideoRoute(ResolvedRole("video", True, vision.provider_id, chosen_model,
                                   vision.base_url, MappingProxyType(source), local, policy),
                                   native.request_url, True)

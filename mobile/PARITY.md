@@ -268,6 +268,11 @@ full-chain retry settings have no native editor. Their additional send budgets a
 shown through the existing server-generated task approval notice. Native-device and live video-provider acceptance
 remain unverified.
 
+OpenRouter native video (2026-10-04) uses those same responsive-web task/role
+consent surfaces. Provider privacy preferences are server-side and bound to the
+approval; there is no new native mobile editor or video picker. Offline tests do
+not establish native-device or live/model acceptance.
+
 Local auxiliary model selection (H277, 2026-10-02) runs on the server for session
 titles, recall rewriting, conversation review, compression and governed acquisition
 capability/plan generation. Existing results reach the same clients; the six

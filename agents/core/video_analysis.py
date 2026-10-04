@@ -278,6 +278,8 @@ class VideoAnalysisTool:
             legend = ("lm=LM Studio,oc=OpenAI-compatible,g=Gemini" if any(
                 identity.provider == "gemini" for identity in identities)
                 else "lm=LM Studio,oc=OpenAI-compatible")
+            if any(identity.provider == "openrouter" for identity in identities):
+                legend += ",or=OpenRouter"
             if retry_count and empty_count:
                 prefix = "Video full-chain empty restart once; primary transient retry once: "
             elif empty_count:
@@ -288,7 +290,8 @@ class VideoAnalysisTool:
             lanes = []
             for index, identity in enumerate(identities, 1):
                 origin = urlsplit(identity.request_url)
-                code = {"lm-studio": "lm", "openai-compatible": "oc", "gemini": "g"}[identity.provider]
+                code = {"lm-studio": "lm", "openai-compatible": "oc", "gemini": "g",
+                        "openrouter": "or"}[identity.provider]
                 label = f"{index}{'L' if identity.local else 'R'}:{code}/"
                 available = per_lane - len(label) - 1
                 model_budget = max(7, available // 2)
@@ -309,15 +312,19 @@ class VideoAnalysisTool:
                              f"{provider}/{model} at {origin.scheme}://{origin.netloc}")
             notice = "Analyze video with approved routes: " + "; ".join(lanes)
             if len(notice) > 200:
-                prefix = ("Video routes (lm=LM Studio,oc=OpenAI-compatible,g=Gemini): "
+                legend = ("lm=LM Studio,oc=OpenAI-compatible,g=Gemini"
                           if any(item.provider == "gemini" for item in identities) else
-                          "Video routes (lm=LM Studio,oc=OpenAI-compatible): ")
+                          "lm=LM Studio,oc=OpenAI-compatible")
+                if any(item.provider == "openrouter" for item in identities):
+                    legend += ",or=OpenRouter"
+                prefix = f"Video routes ({legend}): "
                 per_lane = (200 - len(prefix) - 2 * (len(identities) - 1)) // len(identities)
                 compact = []
                 for index, identity in enumerate(identities, 1):
                     origin = urlsplit(identity.request_url)
                     origin_text = f"{origin.scheme}://{origin.netloc}"
-                    code = {"lm-studio": "lm", "openai-compatible": "oc", "gemini": "g"}[identity.provider]
+                    code = {"lm-studio": "lm", "openai-compatible": "oc", "gemini": "g",
+                            "openrouter": "or"}[identity.provider]
                     label = f"{index}{'L' if identity.local else 'R'}:{code}/"
                     available = per_lane - len(label) - 1  # one separator before origin
                     model_budget = max(7, available // 3)
@@ -355,6 +362,8 @@ class VideoAnalysisTool:
         body = gemini_video_body(prompt, data_url) if identity.provider == "gemini" else {"model": identity.model, "messages": [{"role": "user", "content": [
             {"type": "text", "text": prompt}, {"type": "video_url", "video_url": {"url": data_url}},
         ]}], "stream": False}
+        if identity.provider == "openrouter":
+            body["provider"] = json.loads(identity.provider_block)
         physical_send = False
 
         def record_use():

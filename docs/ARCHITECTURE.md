@@ -108,8 +108,12 @@ H277 role configuration lives in `agents/core/llm/model_roles.py`. User-authenti
 URLs; `reachable: null` means no connectivity probe was performed. Vision dispatch
 at `/api/vlm/describe` requires a loopback endpoint and checks the actual requested
 model through selection guards before creating a client. The opt-in `video_analyze`
-ToolRPC consumer dispatches approved video through compatible or native Gemini
-routes, with signed source/route binding and independent role consent; inbound
+ToolRPC consumer dispatches approved video through compatible, native Gemini or
+OpenRouter routes, with signed source/route binding and independent role consent.
+OpenRouter primary/inherited/fallback routes bind the validated provider privacy
+preferences and emit full-video data URLs; credential reuse requires the same
+guarded provider and exact physical URL. Model-specific video support remains
+unverified. Inbound
 video ingestion remains separate work.
 The optional approval judge is advisory by default: `autonomy/advisory_judgements.py` shares
 bounded work between action cards and `autonomy/task_approval_judge.py` for blocked

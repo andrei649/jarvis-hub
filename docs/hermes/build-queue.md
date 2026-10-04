@@ -292,6 +292,13 @@ Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scr
 
 **Separate models for separate jobs (vision, video, approval judging)** (env) — partial, ~9 h.
 
+Local continuation 2026-10-04: OpenRouter native-video primary, guarded vision
+inheritance/model override and fixed-slot fallback are integrated offline. The
+current routing/privacy block is bound to approval and emitted on the request;
+keys remain destination/slot scoped.597 affected cases pass. See the
+[integration plan](h277-openrouter-video-plan-2026-10-04.md); full backend milestone
+and live/model acceptance remain separate. H277 stays partial.
+
 Files: `agents/core/llm/model_roles.py`, `agents/core/llm/vlm.py`, `agents/core/llm/model_config.py`, `agents/core/autonomy/action_approvals.py`, `agents/core/settings_db.py`, `frontend/src/gap.tsx`, `docs/FLAGS.md`, `tests/test_model_roles.py`, `tests/test_action_approval_judge.py`
 
 Plan: 1. Add agents/core/llm/model_roles.py with a frozen ROLES table (main, deep, vision, video, approval_judge). Each role resolves {provider_id, model, base_url} from JARVIS_ROLE_<NAME>_PROVIDER/_MODEL/_BASE_URL and falls back to the existing JARVIS_VLM_* / JARVIS_DEEP_MODEL names, so current installs behave the same. provider_id is validated against the ProviderProfile ids in agents/core/llm/providers. 2. Route resolve_vlm_config and deep_model_name through it. 3. Add an optional judge step, invoked from ActionApprovalQueue.request (or its caller), that runs only when approval_judge is configured. It asks the judge model for a risk score and a one-line rationale and stores {score, rationale, judge:{provider, model}} on the item. The same judge identity goes into the audit row for that action. The judge never changes status. 4. Show the score on the HUD approval card. 5. Red-first tests: - tests/test_model_roles.py: the vision role falls back to JARVIS_VLM_MODEL; an unknown provider is rejected. - tests/test_action_approval_judge.py: a configured fake judge annotates the item with its model id and the audit entry carries it; an unconfigured judge leaves the item byte-identical; a judge that answers 'approve' does not change the pending status.
