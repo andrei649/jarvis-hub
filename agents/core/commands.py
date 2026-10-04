@@ -429,9 +429,9 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("remind", "arm a reminder: /remind <when> | <message>", _remind, tier=ADMIN, usage="<when> | <message>"))
     registry.register(SlashCommand("voice", "spoken replies in this chat: off, voice-for-voice, or always", _voice, usage="[off|voice|always]"))
     registry.register(SlashCommand("refine", "review this conversation now for memories and skill changes", _refine, tier=ADMIN, usage="[focus]"))
-    registry.register(SlashCommand("checkpoints", "checkpoint inventory and maintenance preview",
+    registry.register(SlashCommand("checkpoints", "checkpoint previews and approved owner operations",
                                    checkpoint_command, tier=ADMIN,
-                                   usage="[status|list|prune|clear|clear-legacy]"))
+                                   usage="[status|list|diff|restore|prune|clear|clear-legacy]"))
     registry.register(SlashCommand("rollback", "list checkpoints or request an approved restore",
                                    checkpoint_command, tier=ADMIN, usage="[checkpoint]"))
     return registry

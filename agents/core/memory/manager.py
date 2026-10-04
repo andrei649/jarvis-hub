@@ -374,6 +374,15 @@ class MemoryManager:
             self._rollback_tickets[ticket.nonce] = ticket
             return ticket
 
+    async def discard_rollback_rewind(self, ticket: RollbackRewindTicket) -> bool:
+        """Release an exact unused ticket without changing the conversation."""
+        async with self._lock:
+            if (type(ticket) is not RollbackRewindTicket
+                    or self._rollback_tickets.get(ticket.nonce) is not ticket):
+                return False
+            del self._rollback_tickets[ticket.nonce]
+            return True
+
     async def commit_rollback_rewind(self, ticket: RollbackRewindTicket) -> RollbackRewindResult:
         """Commit a prepared suffix only after the filesystem restore succeeded."""
         from ..session_continuation import history_identity, identity

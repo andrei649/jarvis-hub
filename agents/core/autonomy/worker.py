@@ -318,6 +318,10 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     "permission.grant": ("kind_mismatch", "human_decision_required", "decision_not_approval",
                          "payload_required", "contract_denied", "never_entry"),
     "terminal.exec": (),
+    # These handlers return an explicit refusal/partial result, never `failed`
+    # with a governance reason. Post-claim partial effects remain failures.
+    "checkpoint.restore": (),
+    "checkpoint.maintenance": (),
     "file.write": (),
     "model.pull": (),
     "report.export": (),

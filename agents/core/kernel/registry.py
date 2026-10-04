@@ -112,6 +112,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # first; a durable accepted task is required before any process exists, and
     # the irreversible tier keeps this at the approval QUEUE floor.
     "terminal.exec": Mediation.KERNEL,
+    # Owner checkpoint effects still require an exact human task at the producer
+    # and executor; this classification makes their kernel crossing visible.
+    "checkpoint.restore": Mediation.KERNEL,
+    "checkpoint.maintenance": Mediation.KERNEL,
     # A governed file write/delete crosses the kernel before the bytes move; the
     # previous bytes are snapshotted so the rollback contract is real.
     "file.write": Mediation.KERNEL,
@@ -157,6 +161,8 @@ def known_broker_action_kinds() -> set[str]:
     kinds.add(SKILL_INSTALL_CONTRACT_KIND)
     from ..voice.command_settings import APPROVAL_KIND as VOICE_COMMAND_KIND
     kinds.add(VOICE_COMMAND_KIND)
+    from ..checkpoint_controller import CHECKPOINT_KINDS
+    kinds.update(CHECKPOINT_KINDS)
     return kinds
 
 

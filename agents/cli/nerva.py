@@ -194,6 +194,18 @@ def build_parser() -> argparse.ArgumentParser:
         query = checkpoint_verbs.add_parser(action, help="show checkpoint storage and projects")
         query.add_argument("--project", metavar="ROOT")
         query.add_argument("--limit", type=int, metavar="N")
+    diff = checkpoint_verbs.add_parser("diff", help="preview one checkpoint's bounded diff")
+    diff.add_argument("identifier", metavar="ID")
+    diff.add_argument("--project", metavar="ROOT")
+    restore = checkpoint_verbs.add_parser("restore", help="preview or request an approved restore")
+    restore.add_argument("identifier", metavar="ID")
+    restore.add_argument("--project", metavar="ROOT")
+    restore.add_argument("--path", dest="paths", action="append", metavar="REL")
+    restore_mode = restore.add_mutually_exclusive_group()
+    restore_mode.add_argument("--dry-run", action="store_true", help="preview only (default)")
+    restore_mode.add_argument("--execute", action="store_true", help="request governed approval")
+    restore.add_argument("--force", action="store_true",
+                         help="preview or request an owner overwrite; never bypass approval")
     for action in ("prune", "clear", "clear-legacy"):
         change = checkpoint_verbs.add_parser(action, help="preview or request owner approval")
         if action == "prune":
@@ -1248,6 +1260,23 @@ _CHECKPOINT_NOTICE_CODES = frozenset({
 _CHECKPOINT_SUCCESS_CODES = frozenset({"checkpoint.complete", "checkpoint.preview"})
 
 
+def _checkpoint_identifier(value: object) -> bool:
+    if type(value) is not str or not 1 <= len(value) <= 64:
+        return False
+    if re.fullmatch(r"file:[1-9][0-9]*|group:[0-9a-f]{32}", value):
+        return True
+    return bool(re.fullmatch(r"[1-9][0-9]*", value)) and int(value) <= 500
+
+
+def _checkpoint_path(value: object) -> bool:
+    if (type(value) is not str or not 1 <= len(value) <= 4096
+            or value.startswith("/") or "\\" in value
+            or re.match(r"^[A-Za-z]:", value)
+            or any(ord(ch) < 32 or 127 <= ord(ch) <= 159 for ch in value)):
+        return False
+    return all(part not in {"", ".", ".."} for part in value.split("/"))
+
+
 def cmd_checkpoints(ns: argparse.Namespace, ctx: Context) -> int:
     """Forward a fixed owner command; only the hub's checkpoint notice decides success."""
     action = ns.action or "status"
@@ -1262,22 +1291,42 @@ def cmd_checkpoints(ns: argparse.Namespace, ctx: Context) -> int:
     if limit is not None and not 1 <= limit <= 500:
         ctx.err.write("limit must be between 1 and 500\n")
         return EXIT_USAGE
+    identifier = getattr(ns, "identifier", None)
+    if action in {"diff", "restore"} and not _checkpoint_identifier(identifier):
+        ctx.err.write("checkpoint ID must be canonical file/group ID or ordinal 1..500\n")
+        return EXIT_USAGE
+    paths = getattr(ns, "paths", None) or []
+    if len(paths) > 500 or len(set(paths)) != len(paths) or not all(
+        _checkpoint_path(path) for path in paths
+    ):
+        ctx.err.write("paths must be unique canonical relative paths (at most 500)\n")
+        return EXIT_USAGE
+    if paths and isinstance(identifier, str) and identifier.startswith("file:"):
+        ctx.err.write("--path selects group members, not a file checkpoint\n")
+        return EXIT_USAGE
     execute = bool(getattr(ns, "execute", False))
     force = bool(getattr(ns, "force", False))
-    if force and not execute:
+    if force and not execute and action != "restore":
         ctx.err.write("--force requires --execute and does not bypass approval\n")
         return EXIT_USAGE
 
     tokens = ["/checkpoints", action]
+    if identifier is not None:
+        tokens.append(identifier)
     if project is not None:
         tokens.extend(("--project", project))
     if limit is not None:
         tokens.extend(("--limit", str(limit)))
-    if action in {"prune", "clear", "clear-legacy"}:
+    for path in paths:
+        tokens.extend(("--path", path))
+    if action in {"prune", "clear", "clear-legacy", "restore"}:
         tokens.append("--execute" if execute else "--dry-run")
     if force:
         tokens.append("--force")
     command = " ".join(shlex.quote(token) for token in tokens)
+    if len(command.partition(" ")[2]) > 2_000:
+        ctx.err.write("checkpoint command is too long\n")
+        return EXIT_USAGE
     reply = ctx.client().post("/chat", {"message": command})
     if not isinstance(reply, Mapping):
         ctx.err.write("checkpoint result unavailable: malformed hub reply\n")

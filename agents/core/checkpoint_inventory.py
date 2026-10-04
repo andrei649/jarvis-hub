@@ -322,7 +322,12 @@ class CheckpointInventory:
             "index_state": view["index_state"], "complete": view["complete"],
             "rows": [(row["id"], row["root_state"], row["_generation"])
                      for row in rows],
-            "storage": view["storage_names"],
+            # The controller's approval/claim journal changes during this operation;
+            # it contains no checkpoint payload and cannot invalidate its own preview.
+            "storage": [item for item in view["storage_names"] if item[0] not in {
+                "checkpoint_operations.sqlite3", "checkpoint_operations.sqlite3-wal",
+                "checkpoint_operations.sqlite3-shm", "checkpoint_operations.sqlite3-journal",
+            }],
             "candidates": [row["id"] for row in selected],
         }
         generation = hashlib.sha256(json.dumps(

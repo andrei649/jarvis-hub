@@ -4,6 +4,8 @@
  "browser.step": "kernel",
  "call.outbound": "kernel",
  "channel.reply": "kernel",
+ "checkpoint.maintenance": "kernel",
+ "checkpoint.restore": "kernel",
  "desktop.step": "kernel",
  "file.write": "kernel",
  "goal.approve": "kernel",

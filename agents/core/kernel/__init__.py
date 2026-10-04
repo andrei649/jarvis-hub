@@ -222,15 +222,18 @@ def authorize(action: Action,
     if pdec.outcome in (ACT, NOTIFY):
         decision = Decision(Verdict.GRANT, reason=pdec.reason, tier=tier)
     else:  # ASK (or anything unexpected) → queue for approval
-        # H277: only a trusted, action-bound receipt can satisfy the ordinary
-        # terminal.exec policy ASK. The payload's ID alone carries no authority.
+        # Only a trusted, action-bound receipt can satisfy the ordinary tier-3
+        # policy ASK for terminal or the two checkpoint effects. The payload's
+        # ID alone carries no authority.
         approved_task_id = (
             action.payload.get("approved_task_id")
             if isinstance(action.payload, dict) else None
         )
         trusted_receipt = False
+        sealed_terminal = action.kind == "terminal.exec"
+        sealed_checkpoint = action.kind in {"checkpoint.restore", "checkpoint.maintenance"}
         if (
-            action.kind == "terminal.exec"
+            (sealed_terminal or sealed_checkpoint)
             and pdec.outcome == ASK
             and tier == int(RiskTier.IRREVERSIBLE_OR_MONEY)
             and isinstance(approved_task_id, int)
@@ -244,7 +247,8 @@ def authorize(action: Action,
                 if policy.effective_mode(action.agent) == "auto":
                     trusted_receipt = approval_check(action) is True
         if trusted_receipt:
-            decision = Decision(Verdict.GRANT, reason=f"sealed_terminal_approval; {pdec.reason}", tier=tier,
+            seal_reason = "sealed_terminal_approval" if sealed_terminal else "sealed_checkpoint_approval"
+            decision = Decision(Verdict.GRANT, reason=f"{seal_reason}; {pdec.reason}", tier=tier,
                                 task_id=approved_task_id)
         else:
             card = preview_task({"kind": action.kind, "title": action.title,

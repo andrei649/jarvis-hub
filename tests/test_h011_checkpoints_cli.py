@@ -165,3 +165,113 @@ def test_existing_hub_auth_and_unavailable_exit_codes(failure, expected):
     code, out, err, calls = run(["status"], failure)
     assert code == expected and out == "" and err
     assert calls == [("POST", "/chat", {"message": "/checkpoints status"})]
+
+
+@pytest.mark.parametrize("args,expected", [
+    (["diff", "file:12"], "/checkpoints diff file:12"),
+    (["diff", "group:" + "a" * 32, "--project", "/tmp/a b's"],
+     "/checkpoints diff group:" + "a" * 32 + " --project '/tmp/a b'\"'\"'s'"),
+    (["restore", "1"], "/checkpoints restore 1 --dry-run"),
+    (["restore", "file:12", "--force"],
+     "/checkpoints restore file:12 --dry-run --force"),
+    (["restore", "group:" + "a" * 32, "--project", "/tmp/project",
+      "--path", "a b.txt", "--path", "SOUL.md", "--execute", "--force"],
+     "/checkpoints restore group:" + "a" * 32
+     + " --project /tmp/project --path 'a b.txt' --path SOUL.md --execute --force"),
+])
+def test_diff_restore_exact_quoted_chat_commands(args, expected):
+    code, out, err, calls = run(args, notice("checkpoint.preview", "preview"))
+    assert code == EXIT_OK and out == "preview\n" and err == ""
+    assert calls == [("POST", "/chat", {"message": expected})]
+    assert shlex.split(calls[0][2]["message"]) == shlex.split(expected)
+
+
+def test_restore_execute_pending_approval_never_reports_success():
+    answer = notice("checkpoint.complete", "done")
+    answer["pending_approvals"] = [73]
+    code, out, err, calls = run(["restore", "file:5", "--execute"], answer)
+    assert code == EXIT_FAILED and out == "" and "#73" in err
+    assert calls == [("POST", "/chat", {"message": "/checkpoints restore file:5 --execute"})]
+
+
+@pytest.mark.parametrize("status", ["checkpoint.queued", "checkpoint.refused",
+                                    "checkpoint.unavailable", "checkpoint.partial"])
+def test_restore_non_success_notice_stays_nonzero(status):
+    code, out, err, calls = run(["restore", "file:5", "--execute"],
+                                notice(status, "not completed"))
+    assert code == EXIT_FAILED and out == "" and "not completed" in err
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("args", [
+    ["diff"], ["restore"], ["diff", "file:0"], ["restore", "file:01"],
+    ["restore", "group:" + "A" * 32], ["diff", "501"],
+    ["restore", "01"], ["diff", "../../file:1"],
+    ["diff", "file:" + "9" * 100],
+    ["restore", "file:1", "--path", ""],
+    ["restore", "file:1", "--path", "../x"],
+    ["restore", "file:1", "--path", "/tmp/x"],
+    ["restore", "file:1", "--path", "a/./b"],
+    ["restore", "file:1", "--path", "a//b"],
+    ["restore", "file:1", "--path", "a\\b"],
+    ["restore", "file:1", "--path", "x\n/rollback"],
+    ["restore", "file:1", "--path", "x" * 4097],
+    ["restore", "file:1", "--path", "x", "--path", "x"],
+    ["restore", "file:1", "--dry-run", "--execute"],
+    ["diff", "file:1", "--execute"],
+    ["diff", "file:1", "--path", "x"],
+    ["restore", "file:1", "--project", "x\n/rollback"],
+])
+def test_bad_diff_restore_arguments_do_not_contact_hub(args, capsys):
+    code, out, err, calls = run(args, notice("checkpoint.complete", "done"))
+    assert code == EXIT_USAGE and out == "" and (err or capsys.readouterr().err)
+    assert calls == []
+
+
+def test_restore_path_count_is_bounded_before_network():
+    args = ["restore", "group:" + "a" * 32]
+    for index in range(501):
+        args.extend(("--path", f"file-{index}.txt"))
+    code, out, err, calls = run(args, notice("checkpoint.complete"))
+    assert code == EXIT_USAGE and out == "" and err and calls == []
+
+
+def test_diff_restore_do_not_open_local_store(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "data"))
+    for args in (["diff", "file:1"], ["restore", "file:1"]):
+        code, out, err, calls = run(args, notice("checkpoint.preview", "preview"))
+        assert code == EXIT_OK and out == "preview\n" and err == "" and len(calls) == 1
+    assert not (tmp_path / "data").exists()
+
+
+def test_restore_ambiguous_notice_never_uses_reply_prose_as_success():
+    answer = {"notices": [{"code": "checkpoint.preview", "text": "maybe"},
+                          {"code": "checkpoint.queued", "text": "pending"}],
+              "reply": "done"}
+    code, out, err, calls = run(["restore", "file:5"], answer)
+    assert code == EXIT_FAILED and out == "" and "ambiguous" in err
+    assert len(calls) == 1
+
+
+def test_file_checkpoint_cannot_select_group_member():
+    code, out, err, calls = run(["restore", "file:1", "--path", "note.txt"],
+                                notice("checkpoint.complete"))
+    assert code == EXIT_USAGE and out == "" and "group" in err and calls == []
+
+
+def test_valid_individual_paths_cannot_exceed_server_command_bound():
+    args = ["restore", "group:" + "a" * 32,
+            "--path", "a" * 1000, "--path", "b" * 1000]
+    code, out, err, calls = run(args, notice("checkpoint.complete"))
+    assert code == EXIT_USAGE and out == "" and "too long" in err and calls == []
+
+
+def test_parser_completion_tree_exposes_new_checkpoint_verbs():
+    from agents.cli.nerva import build_parser, command_tree, completion_script
+
+    assert command_tree(build_parser())["checkpoints"] == [
+        "clear", "clear-legacy", "diff", "list", "prune", "restore", "status",
+    ]
+    for shell in ("bash", "zsh", "fish"):
+        script = completion_script(shell)
+        assert "diff" in script and "restore" in script

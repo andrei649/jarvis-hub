@@ -20,10 +20,13 @@ H011 checkpoints (2026-10-04): authenticated owner status/list and exact
 maintenance previews now use typed `/checkpoints` and bare `/rollback` through
 the existing chat routes; the host CLI uses the same owner notice contract.
 These commands do not enter backend conversation history or attached context.
-Dedicated checkpoint selection/diff/restore controls and the approved cleanup
-flow remain open. Private selected/forced restore and index-maintenance helpers
-are not a completed user-facing rollback. No browser or native acceptance run is
-claimed; shared snapshot blobs remain retained.
+Owner typed commands and host CLI now support diff, selected/force restore and
+index maintenance. Effects require a signed current human task, the live kernel,
+exact intent/root checks and the original session lease. Only complete file
+restore commits the current-last-user conversation rewind; partial effects keep
+undo and conversation history. Dedicated checkpoint controls, size/retention
+settings and complete checkpoint-owned payload cleanup remain open. Shared blobs
+are retained. No browser or native acceptance run is claimed.
 
 H487 terminal consent (2026-10-04): Decision Inbox shows only server-projected
 reviewed categories and current session/always/deny choices. Choices submit the

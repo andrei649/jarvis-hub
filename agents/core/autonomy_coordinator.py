@@ -2051,6 +2051,12 @@ class AutonomyCoordinator:
         for kind in irreversible.kinds():
             executor.register(kind, _apply_irreversible)
 
+        from .checkpoint_controller import CHECKPOINT_KINDS, CheckpointController
+
+        checkpoints = CheckpointController(self._orch)
+        for kind in CHECKPOINT_KINDS:
+            executor.register(kind, checkpoints.execute)
+
         acquisition = getattr(self._orch, "acquisition", None)
         if acquisition is not None:
             from .acquisition.promotion import make_skill_install_kernel_gate

@@ -771,6 +771,34 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             checks=(SuccessCheck(id="brief", describe="the brief exists"),),
         )
         propose(draft, lambda **kwargs: 1, authorizer=spy, now=0.0)
+    elif kind in {"checkpoint.restore", "checkpoint.maintenance"}:
+        import asyncio
+
+        from agents.core.checkpoint_commands import _parse
+        from agents.core.checkpoint_controller import CheckpointController
+        from agents.core.commands import Principal
+        from agents.core.kernel import kernel_enabled
+        from tests.test_h011_checkpoint_owner_pipeline import checkpoint, make_pipeline
+
+        enabled = kernel_enabled()
+
+        async def exercise_checkpoint():
+            checkpoint_tmp = tmp_path / kind
+            checkpoint_tmp.mkdir()
+            async with make_pipeline(checkpoint_tmp, monkeypatch) as (orch, root, snapshots, _sid):
+                if not enabled:
+                    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+                orch.autonomy.bind_mediation(spy, orch.autonomy_queue._mediation_signer)
+                _note, identifier = await checkpoint(root, snapshots)
+                args = ("restore " + identifier + " --execute"
+                        if kind == "checkpoint.restore" else "clear --execute")
+                result = await CheckpointController(orch).request(
+                    Principal(channel="web", admin=True), _parse(args, rollback=False))
+                assert result["status"] == (
+                    "queued" if enabled and spy._verdict is not Verdict.DENY else
+                    "refused" if enabled else "unavailable")
+
+        asyncio.run(exercise_checkpoint())
     elif kind == "settings.voice_command":
         import asyncio
 

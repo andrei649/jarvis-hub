@@ -12,6 +12,7 @@ import logging
 import shlex
 
 from .checkpoint_inventory import CheckpointInventory
+from .checkpoint_selection import CheckpointSelection
 from .commands import CommandContext, Principal
 from .env_config import env_flag
 from .file_tools import FileScope, SnapshotStore
@@ -25,15 +26,23 @@ _MAX_REPLY = 14_000
 def _parse(args: str, *, rollback: bool) -> dict:
     tokens = shlex.split(args)
     action = tokens.pop(0).lower() if tokens else ("list" if rollback else "status")
-    if rollback and action != "list":
-        return {"action": "restore_unavailable"}
-    if action not in {"status", "list", *_MAINTENANCE}:
+    if rollback and action not in {"list", "diff", "restore"}:
+        tokens.insert(0, action)
+        action = "restore"
+    if action not in {"status", "list", "diff", "restore", *_MAINTENANCE}:
         raise ValueError("invalid action")
-    result = {"action": action, "project": None, "limit": 20, "execute": False}
+    result = {"action": action, "project": None, "limit": 20, "execute": False,
+              "identifier": None, "paths": None, "force": False}
+    if action in {"diff", "restore"}:
+        if not tokens:
+            raise ValueError("missing checkpoint")
+        result["identifier"] = tokens.pop(0)
+        if CheckpointSelection._identifier(result["identifier"]) == (None, None):
+            raise ValueError("invalid checkpoint")
     seen = set()
     while tokens:
         flag = tokens.pop(0)
-        if flag in seen:
+        if flag in seen and flag != "--path":
             raise ValueError("duplicate option")
         seen.add(flag)
         if flag in {"--project", "--limit"}:
@@ -46,14 +55,23 @@ def _parse(args: str, *, rollback: bool) -> dict:
                 result["limit"] = int(value)
             else:
                 result["project"] = value
+        elif flag == "--path":
+            if action != "restore" or not tokens:
+                raise ValueError("invalid path option")
+            value = tokens.pop(0)
+            paths = result["paths"] or []
+            if not value or len(value) > 4096 or value in paths or len(paths) >= 500:
+                raise ValueError("invalid path")
+            result["paths"] = [*paths, value]
         elif flag in {"--dry-run", "--execute", "--force"}:
-            if action not in _MAINTENANCE:
+            if action not in {*_MAINTENANCE, "restore"}:
                 raise ValueError("invalid maintenance option")
             result["execute"] = "--execute" in seen
+            result["force"] = "--force" in seen
         else:
             raise ValueError("unknown option")
     if (("--dry-run" in seen and "--execute" in seen)
-            or ("--force" in seen and "--execute" not in seen)):
+            or (action in _MAINTENANCE and "--force" in seen and "--execute" not in seen)):
         raise ValueError("conflicting maintenance options")
     CheckpointInventory._arguments(result["project"], result["limit"])
     return result
@@ -65,6 +83,13 @@ def _query(principal: Principal, query: dict) -> dict:
     from .environments.local_transport import default_roots
 
     scope = FileScope([*FileScope.from_env().roots, *default_roots()])
+    if query["action"] in {"diff", "restore"}:
+        selection = CheckpointSelection(SnapshotStore(), scope)
+        kwargs = {"project": query["project"]}
+        if query["action"] == "diff":
+            return selection.diff(principal, query["identifier"], **kwargs)
+        return selection.plan(principal, query["identifier"], paths=query["paths"],
+                              force=query["force"], **kwargs)
     inventory = CheckpointInventory(
         SnapshotStore(), scope,
         terminal_enabled=env_flag("JARVIS_TERMINAL_CHECKPOINTS"),
@@ -91,10 +116,14 @@ async def checkpoint_command(ctx: CommandContext) -> str:
     except ValueError:
         return _notice("checkpoint.refused", "Invalid checkpoint command. Use /checkpoints "
                        "status|list [--project ROOT] [--limit 1..500], or "
-                       "prune|clear|clear-legacy --dry-run.")
-    if query["action"] == "restore_unavailable" or query["execute"]:
-        return _notice("checkpoint.unavailable", "Checkpoint restore/maintenance execution "
-                       "is unavailable until its approved executor is connected; nothing changed.")
+                       "diff ID, restore ID [--path REL] [--force] [--dry-run|--execute], "
+                       "or prune|clear|clear-legacy --dry-run|--execute.")
+    if query["execute"]:
+        from .checkpoint_controller import CheckpointController
+        result = await CheckpointController(ctx.orch).request(ctx.principal, query)
+        code = "checkpoint.queued" if result.get("status") == "queued" else (
+            "checkpoint.unavailable" if result.get("status") == "unavailable" else "checkpoint.refused")
+        return _notice(code, json.dumps(result, ensure_ascii=False, allow_nan=False))
     try:
         result = await asyncio.to_thread(_query, ctx.principal, query)
         text = json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False)
@@ -106,5 +135,6 @@ async def checkpoint_command(ctx: CommandContext) -> str:
         text = json.dumps({"ok": False, "truncated": True, "reason": "response_too_large",
                            "hint": "Use a smaller --limit or --project."})
         complete = False
-    code = ("checkpoint.preview" if query["action"] in _MAINTENANCE else "checkpoint.complete")
+    code = ("checkpoint.preview" if query["action"] in {*_MAINTENANCE, "restore"}
+            else "checkpoint.complete")
     return _notice(code if complete else "checkpoint.partial", text)
