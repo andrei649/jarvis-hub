@@ -186,7 +186,8 @@ async def test_owner_rejection_finishes_same_invocation_without_dispatch(
         await channel._handle_update({'callback_query': _callback(cards, 'r')})
         await asyncio.wait_for(invocation, 2)
         await asyncio.gather(*tuple(channel._owner_once_fast.values()))
-        assert answers[0]['ok'] is False and answers[0]['reason'] == 'guardian_denied'
+        assert answers[0]['ok'] is False and answers[0]['reason'] == 'owner_denied'
+        assert answers[0]['approval_outcome'] == 'denied'
         assert answers[0]['guardian']['consecutive_denials'] == 1
         task = queue.get(answers[0]['task_id'])
         assert task.status == 'rejected' and task.human_decision['action'] == 'reject'

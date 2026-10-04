@@ -315,8 +315,10 @@ async def test_actual_smart_deny_keeps_owner_once_controls_and_never_reusable(
         }})
         await asyncio.wait_for(h.finished.wait(), 2)
         assert len(judge_requests) == 1 and h.effects == []
-        assert h.replies[0]['ok'] is False and h.replies[0]['reason'] == 'guardian_denied'
+        assert h.replies[0]['ok'] is False and h.replies[0]['reason'] == 'owner_denied'
+        assert h.replies[0]['approval_outcome'] == 'denied'
         assert runtime.q.get(task.id).status == 'rejected'
+        assert runtime.q.get(task.id).human_decision['action'] == 'reject'
         assert runtime.q._conn.execute('SELECT COUNT(*) FROM h487_consent_decisions').fetchone()[0] == 0
     finally:
         await h.channel.stop()

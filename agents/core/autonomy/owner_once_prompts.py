@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import json
 import threading
 import time
@@ -16,7 +17,7 @@ from ..approval_outcomes import ApprovalTurnContext, current_approval_turn
 from ..native_human_wait import native_human_wait_window
 from ..owner_once_context import OwnerReplySource, current_owner_reply_source
 from .inbox import build_owner_once_card, parse_owner_once_callback_data
-from .owner_once import OwnerOnceClaim, OwnerOnceOffer, OwnerOnceOwner
+from .owner_once import OwnerOnceClaim, OwnerOnceOffer, OwnerOnceOwner, OwnerOnceWaitOutcome
 
 
 @dataclass(eq=False)
@@ -29,6 +30,8 @@ class _Prompt:
     request_task: asyncio.Task
     message_id: int | None = None
     active: bool = True
+    committed: OwnerOnceClaim | OwnerOnceWaitOutcome | None = None
+    handoff_failed: bool = False
 
 
 @dataclass(eq=False)
@@ -52,6 +55,7 @@ class OwnerOncePrompts:
         self.queue = self.worker.queue
         self._pending: dict[str, _Prompt] = {}
         self._claims: dict[int, tuple[OwnerOnceClaim, _Prompt]] = {}
+        self._observed: dict[int, tuple[OwnerOnceWaitOutcome, _Prompt]] = {}
         self._origins: dict[int, _Invocation] = {}
         self._lock = threading.RLock()
         # Stable registration identities, including across copied contexts.
@@ -136,6 +140,71 @@ class OwnerOncePrompts:
     def release_invocation(self, task_id: int) -> None:
         with self._lock:
             self._origins.pop(task_id, None)
+            self._observed.pop(task_id, None)
+
+    def _observe(self, prompt: _Prompt, state: str, decision_id: str = ''
+                 ) -> OwnerOnceWaitOutcome:
+        outcome = OwnerOnceWaitOutcome(state, prompt.offer.task_id, prompt.offer.nonce,
+                                       decision_id)
+        with self._lock:
+            self._observed[prompt.offer.task_id] = (outcome, prompt)
+        return outcome
+
+    def consume_outcome(self, outcome: OwnerOnceWaitOutcome, task) -> str | None:
+        """Validate one process-local observation; durable owner denial is mandatory."""
+        if type(outcome) is not OwnerOnceWaitOutcome or task is None:
+            return None
+        with self._lock:
+            bound = self._observed.get(outcome.task_id)
+            if (bound is None or bound[0] is not outcome or bound[1].offer.task_id != task.id
+                    or bound[1].offer.nonce != outcome.nonce):
+                return None
+            self._observed.pop(outcome.task_id, None)
+        prompt = bound[1]
+        if outcome.state in {'timeout', 'withdrawn', 'denied'}:
+            decision_id = self._durable_owner_denial(prompt, task)
+            if decision_id is not None:
+                return ('denied' if outcome.state != 'denied'
+                        or outcome.decision_id == decision_id else None)
+            if outcome.state == 'denied':
+                return None
+        return outcome.state if outcome.state in {'timeout', 'withdrawn', 'denied', 'held'} else None
+
+    def _durable_owner_denial(self, prompt: _Prompt, task) -> str | None:
+        """Read the exact delivered offer and human CAS, including during publication lag."""
+        try:
+            offer = prompt.offer
+            with self.queue._lock:
+                binding = self.queue._conn.execute(
+                    'SELECT * FROM task_owner_once WHERE task_id=?', (offer.task_id,),
+                ).fetchone()
+                row = self.queue._conn.execute(
+                    'SELECT created_at,status,decided_by,decision,human_decision '
+                    'FROM tasks WHERE id=?', (offer.task_id,),
+                ).fetchone()
+            if (binding is None or row is None or task.created_at != row['created_at']
+                    or binding['task_birth'] != row['created_at']
+                    or binding['offer_nonce_sha256'] != hashlib.sha256(
+                        offer.nonce.encode()).hexdigest()
+                    or binding['deadline_at'] != offer.deadline_at
+                    or binding['state'] != 'revoked'
+                    or binding['origin_id'] != prompt.turn.turn_id
+                    or binding['principal_key'] != prompt.turn.principal_key
+                    or binding['chat_id'] != prompt.source.chat_id
+                    or binding['user_id'] != prompt.source.user_id
+                    or binding['message_id'] != prompt.message_id
+                    or binding['generation'] != prompt.source.generation
+                    or row['status'] != 'rejected' or row['decided_by'] != 'owner_once'
+                    or row['decision'] != 'owner-deny'):
+                return None
+            human = json.loads(row['human_decision'])
+            if (type(human) is not dict or human.get('action') != 'reject'
+                    or human.get('by') != 'owner_once' or type(human.get('id')) is not str
+                    or human['id'] != binding['owner_decision_id']):
+                return None
+            return human['id']
+        except Exception:
+            return None
 
     def _live(self, prompt: _Prompt) -> bool:
         try:
@@ -183,7 +252,7 @@ class OwnerOncePrompts:
         return await asyncio.wrap_future(sent)
 
     async def request(self, task_id: int, snapshot_sha256: str, *, check,
-                      timeout: float = 120) -> OwnerOnceClaim | None:
+                      timeout: float = 120) -> OwnerOnceClaim | OwnerOnceWaitOutcome | None:
         """Wait for one exact committed reply, revoking on any interrupted wait."""
         if not self.can_reply():
             return None
@@ -199,6 +268,7 @@ class OwnerOncePrompts:
         prompt = _Prompt(offer, source, turn, check, asyncio.get_running_loop().create_future(),
                          asyncio.current_task())
         transferred = False
+        delivered = False
         with self._lock:
             self._pending[offer.nonce] = prompt
         try:
@@ -215,26 +285,50 @@ class OwnerOncePrompts:
                 return None
             with self._lock:
                 prompt.message_id = message_id
+                delivered = True
             remaining = (datetime.fromisoformat(offer.deadline_at) - datetime.now(UTC)).total_seconds()
             if remaining <= 0:
-                return None
+                return self._observe(prompt, 'timeout')
             # Only the delivered, exact native owner wait pauses execution clocks.
             with native_human_wait_window(
                 deadline=time.monotonic() + remaining,
                 current=lambda: self._live(prompt) and self._request_live(prompt),
             ):
-                result = await asyncio.wait_for(prompt.future, remaining)
-            if type(result) is OwnerOnceClaim and self._live(prompt):
-                with self._lock:
-                    self._claims[task_id] = (result, prompt)
-                transferred = True
-                return result
-            return None
+                while True:
+                    with self._lock:
+                        committed, handoff_failed = prompt.committed, prompt.handoff_failed
+                    if type(committed) is OwnerOnceWaitOutcome and committed.state == 'denied':
+                        with self._lock:
+                            self._observed[task_id] = (committed, prompt)
+                        return committed
+                    if prompt.future.done():
+                        result = prompt.future.result()
+                        if (type(result) is OwnerOnceClaim and result is committed
+                                and not handoff_failed and self._live(prompt)):
+                            with self._lock:
+                                self._claims[task_id] = (result, prompt)
+                            transferred = True
+                            return result
+                        if type(committed) is OwnerOnceClaim:
+                            return self._observe(prompt, 'held', committed.decision_id)
+                    remaining = (datetime.fromisoformat(offer.deadline_at)
+                                 - datetime.now(UTC)).total_seconds()
+                    if remaining <= 0:
+                        return (self._observe(prompt, 'held', committed.decision_id)
+                                if type(committed) is OwnerOnceClaim else
+                                self._observe(prompt, 'timeout'))
+                    if not self._live(prompt) or not self._request_live(prompt):
+                        return (self._observe(prompt, 'held', committed.decision_id)
+                                if type(committed) is OwnerOnceClaim else
+                                self._observe(prompt, 'withdrawn'))
+                    await asyncio.wait({prompt.future}, timeout=min(0.05, remaining))
         except asyncio.CancelledError:
             raise
+        except TimeoutError:
+            return self._observe(prompt, 'timeout') if delivered else None
         except Exception:
-            # Failed delivery, unavailable store and expiry grant no authority.
-            return None
+            # A delivered prompt can end without authority even if its waiter fails.
+            return self._observe(prompt, 'withdrawn') if delivered else None
         finally:
             with self._lock:
                 prompt.active = False
@@ -279,20 +373,34 @@ class OwnerOncePrompts:
                 if not self.queue.reject_owner_once(prompt.offer, nonce, authenticated_owner=owner,
                                                      live_check=current):
                     return None
-                result = None
+                task = self.queue.get(prompt.offer.task_id)
+                human = task.human_decision if task is not None else None
+                if (task is None or task.status != 'rejected' or task.decided_by != 'owner_once'
+                        or task.decision != 'owner-deny' or type(human) is not dict
+                        or human.get('action') != 'reject' or human.get('by') != 'owner_once'
+                        or type(human.get('id')) is not str):
+                    return None
+                result = OwnerOnceWaitOutcome('denied', prompt.offer.task_id,
+                                              prompt.offer.nonce, human['id'])
             else:
                 result = self.queue.decide_owner_once(
                     prompt.offer, nonce, choice, authenticated_owner=owner, live_check=current,
                 )
                 if type(result) is not OwnerOnceClaim:
                     return None
+            with self._lock:
+                prompt.committed = result
             if (not self._request_live(prompt) or not await asyncio.wait_for(
                     asyncio.wrap_future(self._wake(prompt, result)), timeout=1)):
+                with self._lock:
+                    prompt.handoff_failed = True
                 self.queue.revoke_owner_once(prompt.offer, reason='owner-waiter-unavailable')
                 self._wake(prompt, None)
                 return None
             return 'accepted' if choice == 'once' else 'rejected'
         except BaseException:
+            with self._lock:
+                prompt.handoff_failed = True
             self.queue.revoke_owner_once(prompt.offer, reason='owner-reply-interrupted')
             self._wake(prompt, None)
             raise

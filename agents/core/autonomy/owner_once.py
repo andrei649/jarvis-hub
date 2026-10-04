@@ -7,7 +7,7 @@ The durable queue independently verifies every bound byte before use.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from agents.core.approval_outcomes import ApprovalTurnContext
@@ -44,4 +44,14 @@ class OwnerOnceClaim:
     _queue_key: object = field(repr=False, compare=False)
 
 
-__all__ = ["OwnerOnceOwner", "OwnerOnceOffer", "OwnerOnceClaim"]
+@dataclass(frozen=True, slots=True)
+class OwnerOnceWaitOutcome:
+    """An observed delivered wait ending; never a queue or execution capability."""
+
+    state: Literal['timeout', 'withdrawn', 'denied', 'held']
+    task_id: int
+    nonce: str = field(repr=False)
+    decision_id: str = field(default='', repr=False)
+
+
+__all__ = ["OwnerOnceOwner", "OwnerOnceOffer", "OwnerOnceClaim", "OwnerOnceWaitOutcome"]

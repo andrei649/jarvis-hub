@@ -103,7 +103,7 @@ async def test_wrong_owner_or_delivery_cannot_consume_prompt(queue, field, value
                                       message_id=cb['message']['message_id']) is None
         assert queue.get(task_id).status == 'blocked'
         await channel.stop()
-        assert await asyncio.wait_for(pending, 1) is None
+        assert (await asyncio.wait_for(pending, 1)).state == 'withdrawn'
         assert queue.get(task_id).status == 'rejected'
 
 
@@ -142,7 +142,7 @@ async def test_revocation_after_delivery_invalidates_reply_and_stop_settles_wait
         assert await prompts.callback(cb['data'].split(':')[1], 'once', chat_id=99,
                                       user_id=99, message_id=17) is None
         await channel.stop()
-        assert await asyncio.wait_for(pending, 1) is None
+        assert (await asyncio.wait_for(pending, 1)).state == 'withdrawn'
         assert queue.get(task_id).status == 'rejected'
 
 
@@ -152,7 +152,7 @@ async def test_owner_reject_wakes_only_after_exact_committed_decision(queue):
         await asyncio.wait_for(sent.wait(), 1)
         cb = _callback(cards, choice='r')
         await channel._handle_update({'callback_query': cb})
-        assert await asyncio.wait_for(pending, 1) is None
+        assert (await asyncio.wait_for(pending, 1)).state == 'denied'
         task = queue.get(task_id)
         assert task.status == 'rejected'
         assert task.human_decision['action'] == 'reject'
@@ -173,7 +173,7 @@ async def test_cancelling_origin_wait_revokes_offer_before_late_reply(queue):
 
 async def test_deadline_without_owner_reply_is_a_refusal(queue):
     async with _runtime(queue) as (prompts, channel, task_id, digest, sent, cards, _acks, _auth):
-        assert await prompts.request(task_id, digest, check=lambda: True, timeout=0.02) is None
+        assert (await prompts.request(task_id, digest, check=lambda: True, timeout=0.02)).state == 'timeout'
         assert sent.is_set()
         assert queue.get(task_id).status == 'rejected'
         assert not channel.owner_once_pending(_callback(cards))
@@ -268,4 +268,4 @@ async def test_failed_waiter_delivery_revokes_accepted_grant_without_success_ack
                                       user_id=99, message_id=17) is None
         assert queue.get(task_id).status == 'rejected'
         assert not queue.verify_owner_once_terminal_approval(task_id, check=lambda _receipt: True)
-        assert await asyncio.wait_for(pending, 1) is None
+        assert (await asyncio.wait_for(pending, 1)).state == 'held'

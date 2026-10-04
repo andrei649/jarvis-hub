@@ -12,6 +12,7 @@ from ..approval_outcomes import (
     current_approval_turn,
     record_invocation_outcome,
 )
+from .owner_once import OwnerOnceClaim, OwnerOnceWaitOutcome
 from .smart_approvals import smart_policy, terminal_args
 from .task_approval_judge import TaskApprovalJudge
 
@@ -186,7 +187,22 @@ async def _review_smart_terminal_task(worker, *, actor: str, args: dict, task_id
                     and current())
 
         claim = await prompts.request(task_id, digest, check=reply_live)
+        if type(claim) is OwnerOnceWaitOutcome:
+            state = prompts.consume_outcome(claim, queue.get(task_id))
+            observed = {
+                'timeout': ('approval_timed_out', 'expired_unanswered'),
+                'withdrawn': ('approval_withdrawn', 'withdrawn'),
+                'denied': ('owner_denied', 'denied'),
+                'held': ('terminal_execution_held', 'approved'),
+            }.get(state)
+            if observed is not None:
+                return {**reply, 'reason': observed[0], 'approval_outcome': observed[1]}
+            queue.reject_smart_terminal_denial(task_id, digest, check=reply_live)
+            return reply
         if claim is None:
+            queue.reject_smart_terminal_denial(task_id, digest, check=reply_live)
+            return reply
+        if type(claim) is not OwnerOnceClaim:
             queue.reject_smart_terminal_denial(task_id, digest, check=reply_live)
             return reply
         completed = False
