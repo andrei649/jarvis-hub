@@ -33,11 +33,11 @@ def delegate_scope():
         _DELEGATED.reset(token)
 
 
-def offer_allowed(name: str, posture: str, enabled: bool) -> bool:
+def offer_allowed(name: str, posture: str, enabled: bool, *, network_enabled: bool = False) -> bool:
     if _DELEGATED.get():
         return False
-    if name == "kanban_attach_url":
-        return False  # No approved network transport bound yet.
+    if name == "kanban_attach_url" and network_enabled is not True:
+        return False
     context = current_context()
     if context is not None:
         return (context.can_mutate and not context.delegated
@@ -66,8 +66,6 @@ def _validate_scope(context, name, args):
                     or task.current_run_id != context.run_id
                     or task.status not in {"running", "review"}):
                 raise PermissionError("worker no longer owns the current run")
-    if name == "kanban_attach_url":
-        raise ValueError("network attachment adapter is not bound")
     if name == "kanban_create" and any(args.get(key) is not None for key in
             ("workspace_kind", "workspace_path", "project", "project_id")):
         raise ValueError("workspace/project adapter is not bound")
@@ -76,7 +74,7 @@ def _validate_scope(context, name, args):
 
 
 def register_kanban_tools(server, *, home, enabled, principal, session_id=lambda: None,
-                          profiles=lambda: ("jarvis",)):
+                          profiles=lambda: ("jarvis",), network=lambda: None):
     from . import tools  # noqa: F401 -- registers the pinned schemas/handlers locally
     from .tool_compat import profiles_scope, registry
 
@@ -88,6 +86,11 @@ def register_kanban_tools(server, *, home, enabled, principal, session_id=lambda
                 context = current_context()
                 if context is not None:
                     _validate_scope(context, _name, args)
+                    if _name == "kanban_attach_url":
+                        adapter = network()
+                        if adapter is None:
+                            raise ValueError("network attachment adapter is not bound")
+                        return adapter.submit(args)
                     return json.loads(_spec["handler"](args))
                 if (scope_is_bound() or enabled() is not True
                         or classify_turn(principal()).key != "operator/owner"):
@@ -96,6 +99,11 @@ def register_kanban_tools(server, *, home, enabled, principal, session_id=lambda
                                         can_mutate=True, session_id=session_id())
                 with kanban_scope(context):
                     _validate_scope(context, _name, args)
+                    if _name == "kanban_attach_url":
+                        adapter = network()
+                        if adapter is None:
+                            raise ValueError("network attachment adapter is not bound")
+                        return adapter.submit(args)
                     return json.loads(_spec["handler"](args))
             except (PermissionError, ValueError) as exc:
                 return {"ok": False, "reason": "kanban_refused", "error": str(exc)}

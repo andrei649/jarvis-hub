@@ -29,7 +29,10 @@ and coordinator with a separate default-off dispatch flag; approvals use the
 existing inbox. The coordinator runs approved workers concurrently within total
 and per-agent caps. Dedicated board/worker controls remain required Hermes work;
 the library/tool port alone does not close those rows. Workspace/project, goal
-judging and network-attachment adapters refuse explicitly until integrated.
+judging adapters refuse explicitly until integrated. URL attachments now propose
+separate signed egress approvals behind `llm.kanban_network_attachments`; each
+redirect requires another approval. The chat tool uses the existing Decision
+Inbox, but the dedicated attachment drawer and board controls remain absent.
 
 H011 checkpoints (2026-10-04): authenticated owner status/list and exact
 maintenance previews now use typed `/checkpoints` and bare `/rollback` through

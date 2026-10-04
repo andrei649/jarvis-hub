@@ -5,7 +5,7 @@ import uuid
 
 import pytest
 
-from agents.core.autonomy.queue import TaskQueue, TaskStatus
+from agents.core.autonomy.queue import TaskQueue, TaskQueueError, TaskStatus
 from agents.core.autonomy.worker import AutonomyWorker
 from agents.core.kanban.context import current_context
 from agents.core.kanban.dispatcher import KanbanDispatcher
@@ -119,7 +119,8 @@ async def test_parallel_night_tier_and_global_halt_preserve_approvals(tmp_path, 
 @pytest.mark.asyncio
 async def test_cancelling_parallel_tick_awaits_all_board_cleanup(tmp_path, monkeypatch):
     c, orch, _, _, _ = fixture_runtime(tmp_path, monkeypatch)
-    tids, _ = await approve_cards(c, orch, "jarvis", "reviewer")
+    original = c.runner
+    tids, qids = await approve_cards(c, orch, "jarvis", "reviewer")
     both = asyncio.Event()
     started, exited = set(), set()
 
@@ -143,7 +144,69 @@ async def test_cancelling_parallel_tick_awaits_all_board_cleanup(tmp_path, monke
         await task
     assert exited == {"jarvis", "reviewer"}
     assert all(read(c, tid).claim_lock is None for tid in tids)
+    assert all(orch.autonomy_queue.get(qid).status == "failed" for qid in qids)
+    assert all(
+        orch.autonomy_queue.get(qid).result == {"error": "kanban_worker_cancelled"}
+        for qid in qids
+    )
     assert current_context() is None
+    c.runner = original
+    _, next_qids = await approve_cards(c, orch, "jarvis", "reviewer")
+    assert (await orch.autonomy.tick(**parallel_options()))["done"] == 2
+    assert all(orch.autonomy_queue.get(qid).status == "done" for qid in next_qids)
+
+
+@pytest.mark.asyncio
+async def test_queue_settlement_rejects_another_execution_atomically(tmp_path, monkeypatch):
+    c, orch, _, _, _ = fixture_runtime(tmp_path, monkeypatch)
+    _, qids = await approve_cards(c, orch, "jarvis")
+    queue = orch.autonomy_queue
+    before = queue.get(qids[0])
+    claimed = queue.claim_mediated(qids[0], execution_id=str(uuid.uuid4()))
+    assert claimed is not None
+    with pytest.raises(TaskQueueError, match="execution changed"):
+        queue.transition(
+            claimed.id, TaskStatus.FAILED, expected_status=TaskStatus.RUNNING,
+            expected_execution_sha256=TaskQueue.execution_fingerprint(before),
+        )
+    assert queue.get(claimed.id).status == "running"
+    assert queue.get(claimed.id).result is None
+    settled = queue.transition(
+        claimed.id, TaskStatus.FAILED, expected_status=TaskStatus.RUNNING,
+        expected_execution_sha256=TaskQueue.execution_fingerprint(claimed),
+    )
+    assert settled.status == "failed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("settled_elsewhere", [True, False])
+async def test_cancellation_preserves_external_settlement_or_storage_failure(
+    tmp_path, monkeypatch, settled_elsewhere
+):
+    c, orch, _, _, _ = fixture_runtime(tmp_path, monkeypatch)
+    tids, qids = await approve_cards(c, orch, "jarvis")
+    entered = asyncio.Event()
+
+    async def runner(*args, **kwargs):
+        entered.set()
+        await asyncio.Event().wait()
+
+    c.runner = runner
+    task = asyncio.create_task(orch.autonomy.tick(**parallel_options(1, 1)))
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    if settled_elsewhere:
+        orch.autonomy_queue.transition(qids[0], TaskStatus.DONE, result={"external": True})
+    else:
+        def unavailable(*args, **kwargs):
+            raise OSError("synthetic unavailable queue storage")
+        monkeypatch.setattr(orch.autonomy_queue, "transition", unavailable)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert read(c, tids[0]).claim_lock is None
+    row = orch.autonomy_queue.get(qids[0])
+    assert row.status == ("done" if settled_elsewhere else "running")
+    assert row.result == ({"external": True} if settled_elsewhere else None)
 
 
 @pytest.mark.asyncio

@@ -74,6 +74,7 @@
   "plugin:google-calendar": "wired",
   "plugin:homebridge": "wired",
   "plugin:iot-control": "wired",
+  "plugin:kanban-attachments": "wired",
   "plugin:meta-ads": "wired",
   "plugin:n8n": "wired",
   "plugin:news": "wired",

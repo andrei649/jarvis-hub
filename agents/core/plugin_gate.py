@@ -300,6 +300,15 @@ BUILTIN_PLUGINS = {
         data_scope=DataScope.PROCESSED,
         agents_served=["all"],
     ),
+    "kanban-attachments": PluginManifest(
+        id="kanban-attachments",
+        name="Kanban URL Attachments",
+        version="0.1.0",
+        description="Fetch one separately approved public URL into a Kanban task attachment",
+        network_access=NetworkAccess.FULL,
+        data_scope=DataScope.PROCESSED,
+        agents_served=["all"],
+    ),
     "osint_enrich": PluginManifest(
         id="osint_enrich",
         name="OSINT Pivot Enrichment",

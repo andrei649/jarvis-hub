@@ -234,7 +234,10 @@ def resolve_tools(
         allowed = allows(name) and _posture_allows(posture, tool, settings, guest_names)
         if allowed and name.startswith("kanban_"):
             from .kanban.runtime import offer_allowed
-            allowed = offer_allowed(name, posture.key, _flag(settings, "llm.kanban"))
+            allowed = offer_allowed(
+                name, posture.key, _flag(settings, "llm.kanban"),
+                network_enabled=_flag(settings, "llm.kanban_network_attachments"),
+            )
         if allowed and owners_only and name in SESSION_SCOPED_TOOLS:
             allowed = False
         if allowed and name in OWNER_OPERATOR_TOOLS and posture.key != f"{SURFACE_OPERATOR}/{PRINCIPAL_OWNER}":

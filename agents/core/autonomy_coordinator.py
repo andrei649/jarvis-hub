@@ -153,6 +153,7 @@ class AutonomyCoordinator:
     def __init__(self, orchestrator):
         self._orch = orchestrator
         self._kanban_dispatcher = None
+        self._kanban_network_adapter = None
         self._reason_windows = {}
         self._reason_prompts = {}
         self._reason_clock = time.monotonic
@@ -167,6 +168,17 @@ class AutonomyCoordinator:
 
             self._kanban_dispatcher = KanbanDispatcher(self._orch)
         return self._kanban_dispatcher
+
+    def kanban_network(self):
+        """Share the URL approval adapter between ToolRPC and queued execution."""
+        if self._kanban_network_adapter is None:
+            from .kanban.network import NetworkAttachmentAdapter
+            from .paths import data_path
+
+            self._kanban_network_adapter = NetworkAttachmentAdapter(
+                self._orch, home=data_path("kanban")
+            )
+        return self._kanban_network_adapter
 
     async def _drain_workflow_pending(self) -> None:
         """Drain due durable workflow runs once per tick (0.34 wiring).
@@ -1457,6 +1469,7 @@ class AutonomyCoordinator:
             principal=_turn_principal,
             session_id=lambda: str(getattr(self._orch, "session_id", "") or "") or None,
             profiles=lambda: tuple(getattr(self._orch, "agents", {}) or {}),
+            network=self.kanban_network,
         )
 
         def _agent_tool_patterns(agent_id):
@@ -1793,6 +1806,30 @@ class AutonomyCoordinator:
         executor.register('plugin.egress', execute)
         bind_external_orchestrator_attribute(self._orch, "cloud_images", runtime)
 
+    def _wire_kanban_network(self, executor):
+        """Compose the attachment domain without bypassing other egress guards."""
+        redact = getattr(getattr(self._orch, "secret_broker", None), "redact", None)
+        if getattr(self._orch, "autonomy", None) is None or not callable(redact):
+            return
+        adapter = self.kanban_network()
+        previous_guard = executor.execution_guard
+        previous_execute = executor.resolve("plugin.egress")
+
+        def guard(task):
+            if adapter.matches(task):
+                return adapter.guard(task)
+            return callable(previous_guard) and previous_guard(task)
+
+        async def execute(task):
+            if adapter.matches(task):
+                return await adapter.execute(task)
+            if callable(previous_execute):
+                return await previous_execute(task)
+            return {"status": "refused", "reason": "unsupported egress operation"}
+
+        executor.execution_guard = guard
+        executor.register("plugin.egress", execute)
+
     def build_executor(self) -> TaskExecutor:
         """Wire task kinds to real capabilities, degrading gracefully."""
 
@@ -1850,6 +1887,7 @@ class AutonomyCoordinator:
         executor.register(KanbanDispatcher.KIND, _kanban_worker)
         self._wire_url_monitor(executor)
         self._wire_cloud_image(executor)
+        self._wire_kanban_network(executor)
         for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):

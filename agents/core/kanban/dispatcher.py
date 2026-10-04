@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import Counter
 from pathlib import Path
 
-from agents.core.autonomy.queue import TaskQueue, TaskQueueError
+from agents.core.autonomy.queue import TaskQueue, TaskQueueError, TaskStatus
 from agents.core.kernel import kernel_enabled
 from agents.core.paths import data_path
 from agents.core.tool_profiles import classify_turn
@@ -20,6 +21,7 @@ from .upstream import kanban_db_dispatch as kbd
 _ACTIVE_QUEUE_STATES = frozenset({"proposed", "approved", "blocked", "deferred", "running"})
 _LOCKS: dict[str, asyncio.Lock] = {}
 _APPROVED_LOCKS: dict[str, asyncio.Lock] = {}
+logger = logging.getLogger(__name__)
 
 
 class KanbanExecutionRefused(RuntimeError):
@@ -373,18 +375,38 @@ class KanbanDispatcher:
                         "output": output,
                     }
                 except BaseException as exc:
-                    with kb.connect_closing(board=board) as conn:
-                        kbd._record_task_failure(
-                            conn,
-                            claimed.id,
-                            type(exc).__name__,
-                            outcome="nerva_worker_failed",
-                            release_claim=True,
-                            end_run=True,
-                            expected_run_id=claimed.current_run_id,
-                        )
-                        store.finish(conn, sid, state="interrupted", error=type(exc).__name__)
+                    try:
+                        with kb.connect_closing(board=board) as conn:
+                            kbd._record_task_failure(
+                                conn,
+                                claimed.id,
+                                type(exc).__name__,
+                                outcome="nerva_worker_failed",
+                                release_claim=True,
+                                end_run=True,
+                                expected_run_id=claimed.current_run_id,
+                            )
+                            store.finish(conn, sid, state="interrupted", error=type(exc).__name__)
+                    except Exception:
+                        if not isinstance(exc, asyncio.CancelledError):
+                            raise
+                        logger.warning("Cancelled Kanban board cleanup unavailable")
                     if isinstance(exc, asyncio.CancelledError):
+                        # Status plus execution identity are compared in the queue's
+                        # write transaction; a replacement/settled run is untouched.
+                        fingerprint = TaskQueue.execution_fingerprint(task)
+                        if fingerprint is not None:
+                            try:
+                                queue.transition(
+                                    task.id, TaskStatus.FAILED,
+                                    result={"error": "kanban_worker_cancelled"},
+                                    expected_status=TaskStatus.RUNNING,
+                                    expected_execution_sha256=fingerprint,
+                                )
+                            except Exception:
+                                # Storage failure retains the existing crash reaper;
+                                # it must never suppress the caller's cancellation.
+                                logger.warning("Cancelled Kanban queue settlement unavailable")
                         raise
                     if not isinstance(exc, Exception):
                         raise

@@ -1,0 +1,136 @@
+{
+  "generated_at": "2026-10-04T17:02:23.257177+00:00",
+  "base_head": "44d3cd819f3864c1110ae116d55f777a059f9296",
+  "unit": "Kanban approved URL attachments and exact cancellation settlement",
+  "scope": "Local progress toward all 697 Hermes capabilities; goal remains active.",
+  "behavior": [
+    "Owner/owned-worker ToolRPC proposes an exact signed URL approval; each redirect requires separate approval.",
+    "Strict DNS-pinned public HTTP(S), identity bytes, 25 MiB cap, 30-second deadline, current kernel/config/plugin/halt/run checks.",
+    "Owned publication keeps board validation and metadata/events in one donor-compatible write transaction.",
+    "Cancelled board workers atomically settle only the same RUNNING queue execution as FAILED; cancellation propagates; successor/terminal rows are preserved."
+  ],
+  "implementer": {
+    "model": "gpt-6-sol",
+    "reasoning": "high",
+    "owned_files": [
+      "agents/core/kanban/network.py",
+      "agents/core/kanban/runtime.py",
+      "agents/core/kanban/tools.py",
+      "tests/test_hermes_kanban_network.py"
+    ],
+    "root": "Shared interfaces, queue cancellation, integration, security review and verification."
+  },
+  "verification": {
+    "focused_final": {
+      "tests": 76,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "authority_queue_core": {
+      "tests": 216,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "consumers": {
+      "tests": 115,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "integration_initial": {
+      "tests": 4010,
+      "failures": 4,
+      "errors": 0,
+      "skipped": 1
+    },
+    "integration_initial_failure_resolution": "Four failures were intentional plugin-count/snapshot drift. Static 78-record proof assertions and generated readiness snapshot reconciled; no probe or production guard removed.",
+    "catalog_reconciled": {
+      "tests": 77,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "full_backend": {
+      "tests": 23379,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 23344,
+      "ordinary_skips": 34,
+      "existing_xfail": 1,
+      "expected_failure_cases": [
+        "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+      ],
+      "junit_sha256": "565b2d5a7dc31b1b0188421084b4ec45275f00597f8fdadb37d9ab6eb9202eb1",
+      "log_sha256": "14ce79a11075dc063bcd041bab97510f2fc0058e378ebadca461a46c53066e1b"
+    },
+    "full_command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests",
+      "-n",
+      "3",
+      "--dist",
+      "loadfile",
+      "--timeout=90",
+      "-q",
+      "--tb=short",
+      "--junitxml=/tmp/nerva-kanban-network-cancel-full-backend-20261004.xml"
+    ],
+    "frozen_paths": 3177,
+    "frozen_drift": [],
+    "full_handle": "/tmp/nerva-kanban-network-cancel-full-backend-20261004-handle.json",
+    "frontend": "Unchanged; no rerun. Previous 1892-result count retained.",
+    "mobile": "No native changes or device acceptance; count 185 retained.",
+    "ruff": "Whole agents/scripts/tests passed.",
+    "bandit": "Whole agents/scripts passed with unchanged .bandit-baseline.json.",
+    "graft": {
+      "ok": true,
+      "nodes": 51148,
+      "changed_count": 0,
+      "context_missing": "Expected: no graft init or instruction-file edits."
+    }
+  },
+  "changed_path_sha256_before_receipt": {
+    "GO_LIVE_PLAN.md": "64154f32e753f91f18e35c163140286d751e5c0c403c92f0cae8cf19424c8d0c",
+    "HERMES_STATUS.md": "fdebef3f0524eb02938a119b58a07891cb15e5a48b410162ee46f30b25db1519",
+    "NERVA.md": "e5afee8b2d3d70049e4bd5c1b3894b1e4db5a8047d8e27d72f240a2f88eb5d37",
+    "README.md": "142406eab8e59acee9119fb383e6fe20140f4dd5650896c1e2747b3f1cf34664",
+    "STATUS.md": "4c12d40fd6d42a084548b45279cfe1944dea28ec8bc48d9ce9dff84dc8a81f85",
+    "agents/core/autonomy/queue.py": "fda9bac5f80d6ea0e140dbf4c3966e4079ead8a6d6382a8796f38dab79e454ea",
+    "agents/core/autonomy_coordinator.py": "3178b417783f2eeb7014e4729664561ce466e5eb5f61e6cd14a43a3cd85bff88",
+    "agents/core/kanban/README.md": "72f8bcacdd1d13415bda1f0b78a8c36f7ac9d4d67cb26a07276e7581a6d36b9c",
+    "agents/core/kanban/dispatcher.py": "7231a65b0c2ed8f30e3cd33ac5cef8ea7355f0cfc8c24d7fd60ab8903841d52a",
+    "agents/core/kanban/network.py": "bfad1071a17938bcfac9a3d6dcb060099c81cb9ae884f4d98fc8d0f5118c22b8",
+    "agents/core/kanban/runtime.py": "3a272e754af80a0fd8320d7fe12682f04bbbfaa1533b554a829dcfd511ddd2f4",
+    "agents/core/kanban/tools.py": "5a7efb932e445bad5ff3292f82ebef681e18c9662283cc4c4d7a9be2680cc04b",
+    "agents/core/orchestrator_bindings.py": "9f7d03a744f671441cc6bc51241fe1bdc0150e015a7efe2559c89c99db9fdebd",
+    "agents/core/plugin_gate.py": "3a2f568cfc62c37ce938ad5723e27ea99666bd412ed4cd30ebe0e31d1c314ca9",
+    "agents/core/safe_mode.py": "4d5eb093994b8dcf189d17f2c8e886e33d1636b27e5e4c6b5e879da5660dce02",
+    "agents/core/settings_db.py": "871d6bd6001239da38d7b8476296889d73209bf3a78de7082a44c6bea558ddb6",
+    "agents/core/tool_profiles.py": "4905dcd9c1502885b8933237622973d18a5a3b2b3071e8118234d46cbe29c334",
+    "docs/HERMES_CAPABILITIES.md": "ee32780166aa286fc159d3b7f6836de39567728310a21f9be2ba0bb5629fc0dd",
+    "docs/design/HUD_V2_REMAINING.md": "e38bc3a173878fcab1a154f761c866f2f7dc15fd109190d0a25ea00e3b295b57",
+    "docs/hermes/assessment.json": "26779a58eafb72699d2d3c891fdecc93bb18fa6f3c2f13ac942aa0a1bd8c14ca",
+    "docs/hermes/kanban-network-cancel-plan-2026-10-04.md": "5d24ee7b095a3f2c2bfbdcea67557173d338580d61f24a4b677b677e1af0659d",
+    "mobile/PARITY.md": "1289c1831c4a0958807ddad258887cc56663e48cb69115bea3a7ae5e9d876254",
+    "project-status.json": "37f6d972c63599edb89d495d24567b7efe148fc6be21c43f67cd683955be8003",
+    "tests/_snapshots/capability_readiness.json": "b35b92377235877c05cc8147e3bf1b22aa230adbb1baa32fb671b8fe64a64b52",
+    "tests/test_h27_capability_verification.py": "94ef3da357f43e769afc5e79b1862e14166f6ed7897090d23f73945e590b961b",
+    "tests/test_hermes_kanban_network.py": "8ce97682718651167b00adf7e59c22a34c6b56dfce384419a16586404ee91541",
+    "tests/test_hermes_kanban_network_wiring.py": "cdaef852eb0f292db86cba2afc0a344fc38e49b86ed7d727e0205a7287bcd21a",
+    "tests/test_hermes_kanban_parallel.py": "f3e93ef0d658fced33eca814b3a0452c7d214f879126cecbe42229a523fcb204",
+    "tests/test_reality_harness.py": "1026e1c32c316e2b5e5f34b614e4b6524815a88f9fac63b8bb241bb20bc33398"
+  },
+  "remaining": [
+    "Full CLI/chat commands, dedicated board/task drawer/Triage/WebSocket/native controls.",
+    "FileScope scratch/dir/worktree and project integration, multi-board/event watchers, tenants, goal judging and channel/artifact delivery.",
+    "Physical crash, real provider/worker and live-service acceptance; unavailable queue storage uses the existing recovery fallback.",
+    "All other Hermes rows and H277 full-goal audit remain required; no equivalence promotion from this partial batch."
+  ],
+  "next_source_map": "/tmp/nerva-kanban-next-unit-source-map-20261004.md",
+  "remote_actions": "None: no push, merge, deployment or live/payed provider action."
+}

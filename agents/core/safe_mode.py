@@ -99,6 +99,7 @@ FORCED_SETTINGS: dict[str, object] = {
     "llm.tool_loop_enabled": _ON_LOOSENS,
     "llm.kanban": _ON_LOOSENS,
     "llm.kanban_dispatch": _ON_LOOSENS,
+    "llm.kanban_network_attachments": _ON_LOOSENS,
     "llm.kanban_max_workers": _MORE_LOOSENS,
     "llm.kanban_max_workers_per_agent": _MORE_LOOSENS,
     "autonomy.earned_autonomy_enabled": _ON_LOOSENS,

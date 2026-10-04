@@ -1981,11 +1981,13 @@ class TaskQueue:
         decision: str = None, result: dict = None,
         human_reason: str | None | object = _HUMAN_REASON_UNSET,
         expected_status: TaskStatus | None = None,
+        expected_execution_sha256: str | None = None,
     ) -> Task:
         task, _group_id = self.transition_with_group(
             task_id, new_status, decided_by=decided_by, decision=decision,
             result=result, human_reason=human_reason,
             expected_status=expected_status,
+            expected_execution_sha256=expected_execution_sha256,
         )
         return task
 
@@ -1999,6 +2001,7 @@ class TaskQueue:
         result: dict = None,
         human_reason: str | None | object = _HUMAN_REASON_UNSET,
         expected_status: TaskStatus | None = None,
+        expected_execution_sha256: str | None = None,
     ) -> tuple[Task, str | None]:
         """Settle and capture private promotion identity, including a singleton, atomically."""
         # Execution passes result only; a successful human decision explicitly
@@ -2021,6 +2024,11 @@ class TaskQueue:
                     reopening=cur_status == TaskStatus.DEFERRED and new_status == TaskStatus.BLOCKED)
                 if expected_status is not None and cur_status != TaskStatus(expected_status):
                     raise TaskQueueError(f'unexpected task status {cur_status.value} (task {task_id})')
+                if expected_execution_sha256 is not None and (
+                    type(expected_execution_sha256) is not str
+                    or self.execution_fingerprint(task) != expected_execution_sha256
+                ):
+                    raise TaskQueueError(f'task execution changed (task {task_id})')
                 if new_status not in _TRANSITIONS.get(cur_status, set()):
                     raise TaskQueueError(
                         f"illegal transition {cur_status.value} → {new_status.value} (task {task_id})"

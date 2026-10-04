@@ -8,7 +8,12 @@ in `upstream/LICENSE`; the copied tools and schemas carry that notice too.
 `llm.kanban` is a boolean setting, default false. With the agent tool loop
 enabled, the owner on the operator surface can edit board metadata through the
 existing chat/ToolRPC surface. The fourteen pinned schemas are registered;
-network attachments are withheld until an approved network adapter is bound.
+URL attachments require the separate default-off
+`llm.kanban_network_attachments` flag. The tool proposes a signed network
+approval; it does not fetch in the caller's turn. Each redirect requires a new
+approval. Approved requests use DNS-pinned public HTTP(S), credential-free URLs,
+identity bytes, the donor's 25 MiB cap and a 30-second deadline. Revoked settings,
+kernel denial or changed worker ownership prevent publication.
 The database lives under Nerva's private `data_path('kanban')`, never `~/.hermes`.
 Handlers use the real caller identity and session, not model-provided identity
 or ambient `HERMES_*` values. A worker needs a live scoped task/run; it cannot
@@ -35,11 +40,15 @@ durable running queue rows; excess approvals wait. A strict host worker lock
 prevents overlapping dispatcher batches. Ordinary kinds retain serial execution.
 A zero total or per-agent budget withholds board execution and new proposals
 rather than substituting a larger default. Safe mode disables both
-opt-ins and clamps these budgets to the stricter shipped value.
+board, dispatch and network opt-ins and clamps these budgets to the stricter
+shipped value. Cancelling a live board worker releases its owned board claim
+and atomically settles the same running queue execution as failed, so new work
+does not wait for crash recovery. A successor or externally settled queue row
+is preserved; unavailable storage retains the existing crash-reaper fallback.
 
 This is an integration in progress. Full multi-board/event watchers,
 FileScope workspaces/projects, goal judging,
-network attachment transport, channel delivery and the board/dashboard/native
+channel delivery and the board/dashboard/native
 consumers still need their Nerva bindings. Unsupported effects return errors;
 the private upstream launcher/Git implementations are not activated. Dead
 launcher bodies after explicit unresolved seams were removed; the pinned

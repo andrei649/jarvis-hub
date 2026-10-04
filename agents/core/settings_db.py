@@ -192,6 +192,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="tool_loop_enabled", value=False,                  label="Agent tool loop (experimental)", kind="toggle"),
     dict(category="llm", key="kanban", value=False, label="Owner Kanban board tools; worker dispatch has a separate opt-in setting", kind="toggle"),
     dict(category="llm", key="kanban_dispatch", value=False, label="Governed Kanban worker dispatch (also requires board tools and agent tool loop)", kind="toggle"),
+    dict(category="llm", key="kanban_network_attachments", value=False, label="Kanban URL attachments (requires separate approval for each URL and redirect)", kind="toggle"),
     dict(category="llm", key="kanban_max_workers", value=2, label="Maximum concurrent Kanban workers across all agents", kind="number"),
     dict(category="llm", key="kanban_max_workers_per_agent", value=1, label="Maximum concurrent Kanban workers per agent", kind="number"),
     dict(category="llm", key="operating_guidance", value={"enabled": True, "flags": {}, "platform_overrides": {}, "agents": {}},

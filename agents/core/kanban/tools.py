@@ -884,24 +884,8 @@ def _download_url_with_cap(url: str, max_bytes: int) -> tuple[bytes, str | None]
 
 @_kanban_handler("kanban_attach_url")
 def _handle_attach_url(args: dict, **kw) -> str:
-    """Attach a file fetched server-side from an http(s) URL (shared size cap)."""
-    from .upstream import kanban_db as kb
-    tid = _worker_guard("kanban_attach_url", args)
-    url = str(_require_text(args, "url")).strip()
-    filename = args.get("filename") or args.get("title")
-    if not filename or not str(filename).strip():
-        # Derive a name from the URL path's leaf component.
-        from urllib.parse import unquote, urlparse
-        filename = unquote(urlparse(url).path.rsplit("/", 1)[-1]).strip() or "download"
-    try:
-        data, fetched_ct = _download_url_with_cap(url, kb.KANBAN_ATTACHMENT_MAX_BYTES)
-    except ValueError as e:
-        return tool_error(f"kanban_attach_url: {e}")
-    except Exception as e:
-        logger.exception("kanban_attach_url download failed")
-        return tool_error(f"kanban_attach_url: failed to fetch {url}: {e}")
-    return _store_attachment(
-        args.get("board"), tid, filename, data, args.get("content_type") or fetched_ct)
+    """Direct donor calls have no network authority; Nerva runtime supplies it."""
+    return tool_error("kanban_attach_url: approved network adapter required")
 
 
 @_kanban_handler("kanban_attachments")
