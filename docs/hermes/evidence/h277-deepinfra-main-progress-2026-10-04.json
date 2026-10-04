@@ -1,0 +1,184 @@
+{
+  "generated_at": "2026-10-04T03:23:26.320010+00:00",
+  "goal": "All697 pinned Hermes capabilities; selected-main DeepInfra dependency",
+  "base_sha": "9bfa085c2caa4d82ec5efe20082904052c5aae85",
+  "state": "Integrated root RED/GREEN and affected regressions; later full milestone pending",
+  "prototype_patch_sha256": "61025d505ced5d9a1cd9d621332e199f9c5edbddd9f357dafa7913559b59916b",
+  "source_sha256": {
+    "agents/core/llm/deepinfra.py": "d1e2c830bc74e7db7dc6be778c8c9bee80409c75cc2eee6c1a6582ccf4e93cc6",
+    "agents/core/llm/hybrid_router.py": "407a823d44acb2dc4985485fad4d2174d2912e523fcc73882a3b9cd62dd34595",
+    "agents/core/llm/providers/__init__.py": "ece9ff566f1be1f05fe3ad634a162418587fe0f82e0269c194fb2e6a322a2174",
+    "agents/core/llm/vision_main.py": "3c3dd0eb678fea4240e43e7571cd05329f7ba25583106ff9e37229831d243073",
+    "agents/core/settings_db.py": "38cfbd29879cc32215376c696eae5ccb62878e891fd290f7ece31fd10ae29ccc",
+    "tests/test_h277_deepinfra_main.py": "93bb0f67bfe2a6f17a81e55cd32d4ec801d53f05fd56ce60b5479ddfac092f5d",
+    "tests/test_h277_deepinfra_vision_roles.py": "ace9d232665032190f86302cb757b79187b380ed6281e51eba34498e3f69403c"
+  },
+  "root_verification": {
+    "red": {
+      "tests": 50,
+      "failures": 46,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "3f977fea43cb4c58613b8c365cb7b3dcecdf52f59b7736a349bd374aafadea16"
+    },
+    "green": {
+      "tests": 59,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "c0292eac762986daa479715c20af9862b6c81a967180031e00697efdf036f533"
+    },
+    "broad": {
+      "tests": 477,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "32b524b7a0549242de97a7ab4f923947be27e468e04182dc8b019f4d8d2c060b"
+    }
+  },
+  "broad_modules": 20,
+  "review_correction": "Initial same-origin arbitrary-path acceptance reproduced in separate prototype RED15/18; shared exact canonical base validation now normalized and physically rechecked",
+  "prototype_verification": {
+    "base_head": "31a1d193f07577c716f20252d4d9317dd28a3fa9",
+    "canonical_deepinfra_base": "Only https://api.deepinfra.com/v1/openai, optional trailing slash or explicit :443, normalized; all other selected-main paths refused",
+    "incomplete_explicit_deepinfra": "cloud selection fails closed despite Gemini credential",
+    "native_stream": "incremental SSE, bounded total time/bytes, no retry, filtered reasoning, completed usage/finish, cancellation closes",
+    "patch_sha256": "61025d505ced5d9a1cd9d621332e199f9c5edbddd9f357dafa7913559b59916b",
+    "real_checkout_modified": false,
+    "ruff": "passed",
+    "runs": {
+      "baseline.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 110
+      },
+      "final-broad-canonical.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 365
+      },
+      "final-broad-stream.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 345
+      },
+      "final-broad.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 334
+      },
+      "final-deepinfra-canonical.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 50
+      },
+      "final-deepinfra-stream.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 30
+      },
+      "green-canonical.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 18
+      },
+      "green-deepinfra.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 30
+      },
+      "green-stream.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 7
+      },
+      "green2.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 19
+      },
+      "green3.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 21
+      },
+      "green4.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 18
+      },
+      "profile-consumers-canonical.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 112
+      },
+      "profile-consumers-stream.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 112
+      },
+      "profile-consumers.xml": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 112
+      },
+      "red-canonical.xml": {
+        "errors": 0,
+        "failures": 15,
+        "skipped": 0,
+        "tests": 18
+      },
+      "red-stream.xml": {
+        "errors": 0,
+        "failures": 6,
+        "skipped": 0,
+        "tests": 7
+      },
+      "red.xml": {
+        "errors": 0,
+        "failures": 10,
+        "skipped": 0,
+        "tests": 10
+      },
+      "red2.xml": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 2
+      },
+      "red3.xml": {
+        "errors": 0,
+        "failures": 1,
+        "skipped": 0,
+        "tests": 1
+      }
+    },
+    "syntax": "passed"
+  },
+  "ruff": "All seven integrated Python source/test paths pass",
+  "bandit": "agents/scripts baseline-aware scan exit0",
+  "limits": [
+    "No full H277 equivalent credit",
+    "Prior full22465 excludes this subsequent source/test unit",
+    "No live DeepInfra/provider acceptance; no paid requests or activation",
+    "Explicit main model required; default model discovery and catalog picker remain",
+    "Separate DeepInfra vision-role custom URLs and generic custom providers unchanged",
+    "No push, merge or deploy"
+  ],
+  "next_action": "Integrate reviewed legacy Docker unit, update claim-specific records and counts, rebuild Graft and run serial next full milestone"
+}

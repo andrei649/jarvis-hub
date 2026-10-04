@@ -20,14 +20,14 @@ def _env(**overrides: str) -> dict[str, str]:
     }
 
 
-def test_profile_only_claims_vision_catalog_and_cloud():
+def test_profile_claims_reviewed_chat_vision_catalog_and_cloud():
     profile = get_profile("deepinfra")
-    assert profile.backend_kind == "deepinfra-vision"
+    assert profile.backend_kind == "openai-compatible"
     assert profile.auth_type == "bearer"
     assert profile.auth_env == "DEEPINFRA_API_KEY"
     assert profile.default_base_url == "https://api.deepinfra.com/v1/openai"
     assert profile.base_url_env == "DEEPINFRA_BASE_URL"
-    assert profile.capabilities == frozenset({"vision", "model-catalog", "cloud"})
+    assert profile.capabilities == frozenset({"chat", "vision", "model-catalog", "cloud"})
     assert profile.fallback_models == ()
     assert profile.data_policy == "unknown"
 

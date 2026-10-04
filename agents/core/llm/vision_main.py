@@ -147,6 +147,24 @@ def selected_main_config(backend: object, model: str, route: str) -> VLMConfig |
             backend="lmstudio", base_url=f"{parts.scheme}://{parts.netloc}/v1",
             model=selected_model, api_key="", is_local=True, route_source="auto:main",
         )
+    from .deepinfra import DeepInfraBackend, validated_main_base
+    if type(backend) is DeepInfraBackend:
+        if route != "cloud-compatible":
+            raise VLMNotConfigured("vlm_route_invalid")
+        selected_model = _model(model)
+        try:
+            base = validated_main_base(getattr(backend, "base_url", None))
+        except ValueError:
+            raise VLMNotConfigured("vlm_url_invalid") from None
+        if getattr(getattr(backend, "profile", None), "id", None) != "deepinfra":
+            raise VLMNotConfigured("vlm_profile_unsupported")
+        key = getattr(backend, "api_key", None)
+        if not isinstance(key, str) or not key:
+            raise VLMNotConfigured("vlm_key_unset")
+        if len(key) > 4096 or any(ord(char) < 33 or ord(char) > 126 for char in key):
+            raise VLMNotConfigured("vlm_key_invalid")
+        return VLMConfig(backend="deepinfra", base_url=base, model=selected_model,
+                         api_key=key, is_local=False, route_source="auto:main")
     if isinstance(backend, OpenRouterBackend):
         profile_id = getattr(getattr(backend, "profile", None), "id", None)
         if profile_id not in {"openrouter", "openai-compatible"}:
