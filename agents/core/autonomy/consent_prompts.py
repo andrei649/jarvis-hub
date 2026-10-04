@@ -17,7 +17,7 @@ from ..channels.outbound import _owner_chat_id
 from ..native_human_wait import native_human_wait_window
 from ..owner_once_context import OwnerReplySource, current_owner_reply_source
 from .consent_authority import make_telegram_consent_actor
-from .consent_types import ConsentDecisionResult, ConsentOffer
+from .consent_types import ConsentDecisionResult, ConsentOffer, ConsentWaitOutcome
 from .inbox import build_consent_card, parse_consent_callback_data
 
 _MAX_PENDING = 32
@@ -52,6 +52,7 @@ class _Prompt:
     message_id: int | None = None
     active: bool = True
     inflight: bool = False
+    settled_result: ConsentDecisionResult | None = None
 
 
 class ConsentPrompts:
@@ -219,8 +220,47 @@ class ConsentPrompts:
         return (task is not None and self._identity(task) == prompt.identity
                 and offer == prompt.offer)
 
+    def decision_committed(self, task_id: int, revision: str,
+                           result: ConsentDecisionResult) -> None:
+        """Report a committed cross-surface choice to its exact live native wait.
+
+        This is an observation, never an execution capability. The worker calls
+        it only after queue CAS; the invoking tool still verifies durable state
+        and its own private physical-dispatch proof.
+        """
+        if (type(task_id) is not int or type(revision) is not str
+                or type(result) is not ConsentDecisionResult):
+            return
+        tasks = {task.id: task for task in result.tasks}
+        if task_id not in tasks or len(tasks) != len(result.tasks):
+            return
+        with self._lock:
+            prompts = tuple(self._pending.values())
+        for prompt in prompts:
+            if (prompt.offer.revision != revision or task_id not in prompt.offer.member_ids
+                    or set(tasks) != set(prompt.offer.member_ids)
+                    or type(prompt.message_id) is not int or prompt.message_id <= 0
+                    or not self._transport_live(prompt) or not self._request_live(prompt)):
+                continue
+            settled = tasks.get(prompt.offer.task_id)
+            durable = self.queue.get(prompt.offer.task_id)
+            if (settled is None or durable is None
+                    or self._identity(settled) != prompt.identity
+                    or self._identity(durable) != prompt.identity
+                    or durable.status not in {'approved', 'rejected'}
+                    or durable.status != settled.status
+                    or type(durable.human_decision) is not dict
+                    or durable.human_decision != settled.human_decision
+                    or durable.human_decision.get('action') not in {'session', 'always', 'deny'}):
+                continue
+            self._retire(prompt, result)
+
     def _retire(self, prompt: _Prompt, result=None) -> None:
         with self._lock:
+            if result is not None:
+                # Publish the receipt before deactivation, even when the future
+                # must be woken on a different event loop.
+                prompt.settled_result = result
             prompt.active = False
             if self._pending.get(prompt.nonce) is prompt:
                 self._pending.pop(prompt.nonce, None)
@@ -247,6 +287,32 @@ class ConsentPrompts:
                     )
             except RuntimeError:
                 pass
+
+    def _committed_reply(self, prompt: _Prompt) -> ConsentDecisionResult | None:
+        with self._lock:
+            if prompt.settled_result is not None:
+                return prompt.settled_result
+        if not self._transport_live(prompt) or not self._request_live(prompt):
+            return None
+        tasks = tuple(self.queue.get(task_id) for task_id in prompt.offer.member_ids)
+        primary = next((task for task in tasks if task is not None
+                        and task.id == prompt.offer.task_id), None)
+        if primary is None or self._identity(primary) != prompt.identity:
+            return None
+        human = getattr(primary, 'human_decision', None)
+        choice = human.get('action') if type(human) is dict else None
+        if choice not in {'session', 'always', 'deny'}:
+            return None
+        for task in tasks:
+            human = task.human_decision if task is not None else None
+            if (type(human) is not dict or human.get('offer_revision') != prompt.offer.revision
+                    or human.get('action') != choice or task.decision != f'consent-{choice}'
+                    or task.status not in ({'rejected'} if choice == 'deny'
+                                           else {'approved', 'running', 'done', 'failed'})):
+                return None
+        # A delayed/lost observer notification must not erase a queue-CAS choice
+        # on the same displayed revision. Execution still needs its private proof.
+        return ConsentDecisionResult(tasks)
 
     def _prune_dead(self) -> None:
         with self._lock:
@@ -324,7 +390,8 @@ class ConsentPrompts:
             return await asyncio.wrap_future(sent)
         return await prompt.channel.send_consent_card(prompt.chat_id, card)
 
-    async def request(self, task_id: int, *, check) -> ConsentDecisionResult | None:
+    async def request(self, task_id: int, *, check
+                      ) -> ConsentDecisionResult | ConsentWaitOutcome | None:
         source, turn = current_owner_reply_source(), current_approval_turn()
         with self._lock:
             origin = self._origins.get(task_id)
@@ -344,6 +411,7 @@ class ConsentPrompts:
         )
         if prompt is None or not self._place(prompt, same_chat=True):
             return None
+        delivered = False
         try:
             if not self._transport_live(prompt) or not self._offer_current(prompt):
                 return None
@@ -357,9 +425,10 @@ class ConsentPrompts:
                     return None
                 prompt.message_id = message_id
                 prompt.delivery.set_result(True)
+                delivered = True
             remaining = prompt.deadline - time.monotonic()
             if remaining <= 0:
-                return None
+                return ConsentWaitOutcome('timeout', prompt.offer.revision)
             # Verified delivery, exact request registration and current offer own
             # this wait. Sending a card and arbitrary handler residency earn no credit.
             with native_human_wait_window(
@@ -367,9 +436,25 @@ class ConsentPrompts:
                 current=lambda: self._transport_live(prompt) and self._origin_live(origin)
                 and self._offer_current(prompt),
             ):
-                return await asyncio.wait_for(prompt.future, remaining)
+                while not prompt.future.done():
+                    committed = self._committed_reply(prompt)
+                    if committed is not None:
+                        return committed
+                    remaining = prompt.deadline - time.monotonic()
+                    if remaining <= 0:
+                        return ConsentWaitOutcome('timeout', prompt.offer.revision)
+                    if (not self._transport_live(prompt) or not self._request_live(prompt)
+                            or not self._offer_current(prompt)):
+                        return ConsentWaitOutcome('withdrawn', prompt.offer.revision)
+                    # Source/transport withdrawal must settle without waiting
+                    # for the original hard deadline. Polling earns no authority.
+                    await asyncio.wait({prompt.future}, timeout=min(0.05, remaining))
+                return (self._committed_reply(prompt) or prompt.future.result()
+                        or ConsentWaitOutcome('withdrawn', prompt.offer.revision))
         except asyncio.CancelledError:
             raise
+        except TimeoutError:
+            return ConsentWaitOutcome('timeout', prompt.offer.revision) if delivered else None
         except Exception:
             return None
         finally:

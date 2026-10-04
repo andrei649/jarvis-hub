@@ -1,5 +1,16 @@
 # Sprint: echivalarea funcțiilor Hermes
 
+> Local progress 2026-10-04: exact reusable inline choices now wake native waits
+> across approval surfaces. Timeout, withdrawal and denial remain distinct;
+> matching decisions observed after the wait ends cannot revive execution.
+> Signed Smart promotion audits now identify the actual committed judge model.
+> The integrated H277/H485/H487 regression passes 2,989 cases across 134 modules;
+> the frozen backend run finished with 22,360 passes, 34 ordinary skips, one
+> existing expected failure and zero failures/errors. H487 and H277 remain partial.
+> See [full backend evidence](hermes/evidence/h487-h277-inline-full-2026-10-04.json),
+> [inline outcomes](hermes/evidence/h487-inline-outcomes-progress-2026-10-04.json)
+> and [promotion audit](hermes/evidence/h277-smart-promotion-audit-progress-2026-10-04.json).
+
 > Local milestone 2026-09-27: H487 reasons/expiry/owner-registration grouping and H513
 > routed provider consent are integrated and verified. Backend 18,765 passed/35 skipped;
 > frontend 1,802 passed; legacy HUD 233 passed. Both rows remain partial. See

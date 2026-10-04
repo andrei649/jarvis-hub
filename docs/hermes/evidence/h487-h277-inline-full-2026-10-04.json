@@ -1,0 +1,53 @@
+{
+  "generated_at": "2026-10-04T01:35:19.541607+00:00",
+  "goal": "All697 pinned Hermes capabilities; H487 inline outcomes and H277 promotion audit integrated checkpoint",
+  "base_sha": "6b9422ed56bd45c0823e818db123266b854496ec",
+  "state": "Successful terminal frozen full backend run; local only",
+  "full_backend": {
+    "exit_code": 0,
+    "tests": 22395,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 35,
+    "passed": 22360,
+    "ordinary_skips": 34,
+    "existing_xfail": 1,
+    "expected_failure_cases": [
+      "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+    ],
+    "junit_sha256": "344b8083145bb0c163798238ac3158bce66c2fe173d4b83b751e401bf01592a7",
+    "log_sha256": "cee0ebd58de0dc20d5ffb2911a5c5a63bf3fd23f7eb5f5eec7f78030f3cc4c2c",
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests",
+      "--timeout=90",
+      "-q",
+      "--tb=short",
+      "--junitxml=/tmp/nerva-h487-h277-batch-full-20261004.xml"
+    ]
+  },
+  "frozen_inputs": {
+    "paths": 2994,
+    "drift": 0,
+    "manifest_sha256": "118f53d371903af7721323b870f4f114254e7d5f39dae5be95a1f9540d5fe3e5"
+  },
+  "source_sha256": {
+    "agents/core/autonomy/consent_prompts.py": "8044d18ac757ea5ef2fa675abf60540321b2a4f6d5483630df4c9c0f481b2ce8",
+    "agents/core/autonomy/consent_types.py": "7b571fd164719fde99276fa900b31eac122b53e42191e468fce0ad188a9e9dfb",
+    "agents/core/autonomy/queue.py": "0f6135a982eb3d156228b6fe14ab174215a06395e30a6869c201e4d11d1d0838",
+    "agents/core/autonomy/task_approval_judge.py": "9bf79d754ded10c31c809e39444197c0458c2cb1733f8d1497d34ddc7b387d9f",
+    "agents/core/autonomy/terminal_review.py": "b7e67df4b8be68e60572ebd1056bfc578e01269ef4b633f5afe31e66abbc6afc",
+    "agents/core/autonomy/worker.py": "8d75da3f695b7ecf97257d71f6a58396233ca8d344a6092b226e37ee46bf7b25",
+    "tests/test_h277_smart_promotion_audit.py": "ed4b06a90c2110001c118910eea58279870f4f6c0eb9f2851e9355cf10cb095c",
+    "tests/test_h487_inline_consent_outcomes.py": "9ed08f31bfea81d7e5d77d4e117d8a04c24d2cc49272470e9bcbb888219b5dc2"
+  },
+  "limits": [
+    "34 ordinary skips and1 existing xfail, not100% test coverage",
+    "Existing blocked-outbound-socket, HTTPX-deprecation and AsyncMock warnings remain",
+    "No live provider/transport/device acceptance or equivalent H277/H487 credit",
+    "No push, merge, deploy or provider activation",
+    "Later source/test edits require their own verification; record edits are checked separately"
+  ]
+}

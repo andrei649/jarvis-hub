@@ -2213,6 +2213,13 @@ class AutonomyWorker:
             return None
         if result is None:
             return None
+        prompts = getattr(self, '_consent_prompts', None)
+        notify = getattr(prompts, 'decision_committed', None)
+        if callable(notify):
+            try:
+                notify(task_id, revision, result)
+            except Exception:
+                logger.warning('Committed consent native notification failed', exc_info=True)
         for task in result.tasks:
             if self.approval_judge is not None:
                 self.approval_judge.clear_pending(task.id)

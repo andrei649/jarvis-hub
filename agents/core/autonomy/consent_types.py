@@ -47,6 +47,14 @@ class ConsentDecisionResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ConsentWaitOutcome:
+    """A native wait ended without a human decision; it conveys no authority."""
+
+    state: Literal['timeout', 'withdrawn']
+    revision: str
+
+
+@dataclass(frozen=True, slots=True)
 class ConsentClaim:
     task_id: int
     nonce: str

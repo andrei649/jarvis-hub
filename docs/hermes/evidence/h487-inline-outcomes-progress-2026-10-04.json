@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-10-04T01:04:26.621895+00:00",
+  "goal": "All 697 pinned Hermes capabilities; local development only",
+  "base_sha": "6b9422ed56bd45c0823e818db123266b854496ec",
+  "state": "Focused and frozen full backend verification completed; local only",
+  "coordinator_verification": {
+    "command": "JARVIS_TESTING=1 python -m pytest tests/test_h487_inline_consent_outcomes.py tests/test_h277_smart_promotion_audit.py tests/test_h277_smart_terminal_queue.py tests/test_h277_task_judge.py tests/test_h277_smart_terminal_integration.py --timeout=90 -q --tb=short",
+    "tests": 121,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "6d9b2e7f2cc90e9e68256e0ef77500c1e8e3fd40a097e55b8e9bb202038ede93"
+  },
+  "limits": [
+    "No full H277 or H487 equivalent credit",
+    "No live device, transport or provider acceptance",
+    "Earlier full backend receipt verifies the prior native timing checkpoint, not this batch",
+    "No push, merge, deploy, paid providers or real terminal effects"
+  ],
+  "new_cases": 44,
+  "behavior_checked": [
+    "Actual HTTP session/always/deny wakes exact live native request",
+    "Lost or delayed observer cannot mask matching durable queue-CAS choice",
+    "Timeout and withdrawal distinct from denial",
+    "Bounded validated denial text returned verbatim, including Unicode",
+    "Late approvals held without reviving execution authority",
+    "Forged notifications and refused HTTP decisions cannot settle an offer"
+  ],
+  "source_sha256": {
+    "agents/core/autonomy/consent_prompts.py": "8044d18ac757ea5ef2fa675abf60540321b2a4f6d5483630df4c9c0f481b2ce8",
+    "agents/core/autonomy/consent_types.py": "7b571fd164719fde99276fa900b31eac122b53e42191e468fce0ad188a9e9dfb",
+    "agents/core/autonomy/queue.py": "0f6135a982eb3d156228b6fe14ab174215a06395e30a6869c201e4d11d1d0838",
+    "agents/core/autonomy/terminal_review.py": "b7e67df4b8be68e60572ebd1056bfc578e01269ef4b633f5afe31e66abbc6afc",
+    "agents/core/autonomy/worker.py": "8d75da3f695b7ecf97257d71f6a58396233ca8d344a6092b226e37ee46bf7b25",
+    "tests/test_h487_inline_consent_outcomes.py": "9ed08f31bfea81d7e5d77d4e117d8a04c24d2cc49272470e9bcbb888219b5dc2",
+    "docs/hermes/h487-inline-outcomes-plan-2026-10-04.md": "a9c181db608e6a031dbcc35e4e900fffec9553f42bccdfa1e9511e302dc2c2e8"
+  },
+  "broader_integration": {
+    "scope": "134 H277/H485/H487 and native-human-wait modules; overlapping with the focused run, not additive",
+    "tests": 2989,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "a7bc45ddc81d747fff4230d1bf465e31d9ac5ab6229b29d726bb65cd661f073a",
+    "module_list_sha256": "05648bf0a454d2b2331292a394d924d83973e8ad14f7359097897efb616b0ad2",
+    "log_sha256": "f39747d04469e2958ead410dff98f0327b55477769b385761ae36341636e0e0f",
+    "warnings": "Existing HTTPX deprecation and outbound connect attempts blocked by pytest socket guards; not live-provider verification"
+  },
+  "record_and_surface_gates": {
+    "tests": 151,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "587fc876bf9470f40b8e7f53219cde26ef62e00f582003a2f1c29760f9134e32",
+    "scope": "Doc references, Hermes status, orchestrator bindings, generated status, route auth/parity, OpenAPI and lifespan smoke"
+  },
+  "source_checks": {
+    "ruff": "Eight changed/new Python modules checked, exit0",
+    "bandit": "agents and scripts with existing .bandit-baseline.json, exit0; existing nosec warnings",
+    "diff_check": "exit0",
+    "graft": "Explicit local graph rebuild/check, graph fresh with zero added/removed/changed/stale; optional deep context absent and global MCP unavailable"
+  },
+  "full_backend_receipt": "docs/hermes/evidence/h487-h277-inline-full-2026-10-04.json"
+}

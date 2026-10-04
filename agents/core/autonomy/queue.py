@@ -3172,7 +3172,11 @@ class TaskQueue:
                         return None
                     human = {'id': uuid.uuid4().hex, 'action': choice,
                              'reason': normalized, 'by': actor.decided_by,
-                             'at': now, 'first_at': now}
+                             'at': now, 'first_at': now, 'offer_revision': revision}
+                    if choice == 'deny' and normalized is not None:
+                        # Keep the display-normalized reason, and separately
+                        # retain the validated human text for verbatim tool reply.
+                        human['reply_reason'] = reason
                     if decider_principal is not None:
                         human['principal_key'] = decider_principal
                     marker = f'consent-{choice}'

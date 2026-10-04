@@ -50,8 +50,8 @@ async def review_terminal_task(worker, *, actor: str, args: dict, task_id: int,
         return (current() and task is not None
                 and tuple(getattr(task, field) for field in fields) == identity)
 
-    def answer(reason):
-        return {'ok': False, 'reason': reason, 'tool': 'terminal_run', 'task_id': task_id}
+    def answer(reason, **extra):
+        return {'ok': False, 'reason': reason, 'tool': 'terminal_run', 'task_id': task_id, **extra}
 
     if not live(original):
         return answer('terminal_review_changed')
@@ -68,8 +68,25 @@ async def review_terminal_task(worker, *, actor: str, args: dict, task_id: int,
         task = queue.get(task_id)
         if not live(task):
             return answer('terminal_review_changed')
+        from .consent_types import ConsentWaitOutcome
+
+        if type(result) is ConsentWaitOutcome:
+            human = task.human_decision or {}
+            if human.get('offer_revision') == result.revision and human.get('action') in {'session', 'always', 'deny'}:
+                if task.status != 'rejected' or human.get('action') != 'deny':
+                    # Report a real choice without reviving an expired/withdrawn
+                    # execution wait or minting an invocation capability.
+                    return answer('terminal_execution_held', approval_outcome='approved')
+            else:
+                return answer('approval_timed_out' if result.state == 'timeout' else 'approval_withdrawn',
+                              approval_outcome=result.state)
         if task.status == 'rejected':
-            return answer('owner_denied')
+            human = task.human_decision or {}
+            reason = human.get('reply_reason', human.get('reason'))
+            extra = {'approval_outcome': 'denied'}
+            if type(reason) is str and 0 < len(reason) <= 280:
+                extra['denial_reason'] = reason
+            return answer('owner_denied', **extra)
     if not queue.consent_task_marker(task_id):
         return None
     if task.status == 'approved':
