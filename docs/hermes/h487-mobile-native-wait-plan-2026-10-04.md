@@ -84,3 +84,14 @@ authority constraints control the design; this plan is provisional where real
 regressions reveal a stronger requirement. Each unit remains independently
 reviewable and revertible; retain the Telegram/CLI commit. Next action: dispatch
 mobile API task, establish real runtime RED, then finalize timer interface.
+
+## Delivered milestone and next action
+
+Mobile is independently committed as ce96e6ae. Native timing passes133 connected
+regressions and the broader2,811-pass/1-skip selection. The terminal full backend
+run passes22,312 with34 skips and1 existing expected failure, zero failures/errors;
+all2,982 frozen paths remain unchanged before the final records. The separate
+`docs/hermes/evidence/h487-native-wait-full-2026-10-04.json` preserves this result
+without rewriting the earlier focused receipt. H487 remains partial and all697
+remain the accepted goal. Next action: source-bound cross-surface inline decisions,
+explicit timeout/withdrawal outcomes and denial reason handback, with RED/GREEN.

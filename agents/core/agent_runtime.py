@@ -33,6 +33,7 @@ import logging
 import math
 import re
 import secrets
+import time
 from collections.abc import Callable, Coroutine, Iterable, Mapping
 from contextlib import suppress
 from functools import partial
@@ -50,6 +51,7 @@ from .llm.tool_protocol import (
     ToolSpec,
     ToolTurn,
 )
+from .native_human_wait import current_human_wait_scope, runtime_human_wait_scope
 from .security.quarantine import (
     fence_tool_result,
     injection_flag_names,
@@ -368,12 +370,13 @@ class AgentToolRuntime:
         # what the model sent in this turn from what an earlier turn or a script wrote.
         turn = bind_tool_turn(secrets.token_hex(8))
         try:
-            return await self._run_turn(
-                agent_id=agent_id, backend=backend, model=model, prompt=prompt, system=system,
-                max_tokens=max_tokens, temperature=temperature, event_sink=event_sink,
-                wall_seconds=wall_seconds, usage_sink=usage_sink, effective_window=effective_window,
-                before_model_call=before_model_call,
-            )
+            with runtime_human_wait_scope():
+                return await self._run_turn(
+                    agent_id=agent_id, backend=backend, model=model, prompt=prompt, system=system,
+                    max_tokens=max_tokens, temperature=temperature, event_sink=event_sink,
+                    wall_seconds=wall_seconds, usage_sink=usage_sink, effective_window=effective_window,
+                    before_model_call=before_model_call,
+                )
         finally:
             reset_tool_turn(turn)
 
@@ -432,6 +435,7 @@ class AgentToolRuntime:
             try:
                 return await self._await_owned(
                     loop, timeout=effective_wall_seconds, context=turn_context,
+                    exclude_human_wait=True,
                 )
             except _OwnedTimeout:
                 return _DEADLINE_REPLY
@@ -1311,6 +1315,7 @@ class AgentToolRuntime:
                     actor=agent_id,
                 ),
                 timeout=self._tool_timeout_seconds,
+                exclude_human_wait=True,
             )
         except _OwnedTimeout:
             raw_result = {
@@ -1544,10 +1549,25 @@ class AgentToolRuntime:
         *,
         timeout: float,
         context: contextvars.Context | None = None,
+        exclude_human_wait: bool = False,
     ) -> Any:
+        scope = current_human_wait_scope() if exclude_human_wait else None
+        baseline = scope.seconds() if scope is not None else 0.0
+        deadline = time.monotonic() + timeout
         task = asyncio.create_task(coroutine, context=context)
         try:
-            done, _ = await asyncio.wait({task}, timeout=timeout)
+            if scope is None:
+                done, _ = await asyncio.wait({task}, timeout=timeout)
+            else:
+                # Only this deadline excludes credit earned after its own start.
+                # Poll while a native prompt is pending so a newly opened window
+                # can extend the deadline before the original timeout fires.
+                while True:
+                    credited = max(0.0, scope.seconds() - baseline)
+                    remaining = deadline + credited - time.monotonic()
+                    done, _ = await asyncio.wait({task}, timeout=max(0.0, min(0.02, remaining)))
+                    if task in done or remaining <= 0:
+                        break
         except BaseException:
             self._detach(task)
             raise

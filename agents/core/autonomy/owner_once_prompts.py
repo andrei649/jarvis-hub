@@ -6,12 +6,14 @@ import asyncio
 import copy
 import json
 import threading
+import time
 from collections.abc import Callable
 from concurrent.futures import Future
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from ..approval_outcomes import ApprovalTurnContext, current_approval_turn
+from ..native_human_wait import native_human_wait_window
 from ..owner_once_context import OwnerReplySource, current_owner_reply_source
 from .inbox import build_owner_once_card, parse_owner_once_callback_data
 from .owner_once import OwnerOnceClaim, OwnerOnceOffer, OwnerOnceOwner
@@ -216,7 +218,12 @@ class OwnerOncePrompts:
             remaining = (datetime.fromisoformat(offer.deadline_at) - datetime.now(UTC)).total_seconds()
             if remaining <= 0:
                 return None
-            result = await asyncio.wait_for(prompt.future, remaining)
+            # Only the delivered, exact native owner wait pauses execution clocks.
+            with native_human_wait_window(
+                deadline=time.monotonic() + remaining,
+                current=lambda: self._live(prompt) and self._request_live(prompt),
+            ):
+                result = await asyncio.wait_for(prompt.future, remaining)
             if type(result) is OwnerOnceClaim and self._live(prompt):
                 with self._lock:
                     self._claims[task_id] = (result, prompt)

@@ -14,6 +14,18 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-10-04 H487 live native wait continuation: actual delivered reusable and
+  owner-once Telegram prompts now credit the per-run union of human wait time
+  to model wall/tool execution budgets. Expiry, authority loss and cancellation
+  stop accrual; event-sink and ordinary hang limits remain unchanged. Exact real
+  tool/wall owner-wait RED/GREEN cases pass. Affected-row regressions pass2,811
+  with1 skip (2,812 total); final connected133 cases pass. The frozen full
+  backend run passes22,312 cases with34 skips and1 existing expected failure
+  (22,347 total), zero failures/errors and no drift across2,982 frozen paths.
+  No new equivalent or live credit. See focused and full receipts:
+  `docs/hermes/evidence/h487-native-wait-progress-2026-10-04.json` and
+  `docs/hermes/evidence/h487-native-wait-full-2026-10-04.json`.
+
 - 2026-10-04 H487 native mobile continuation: validated current offers expose
   session / always / deny with exact revision and optional280-code-point reasons.
   Synchronous busy exclusion, strict <=64 distinct committed-task confirmation

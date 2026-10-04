@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 
 from ..approval_outcomes import ApprovalTurnContext, current_approval_turn
 from ..channels.outbound import _owner_chat_id
+from ..native_human_wait import native_human_wait_window
 from ..owner_once_context import OwnerReplySource, current_owner_reply_source
 from .consent_authority import make_telegram_consent_actor
 from .consent_types import ConsentDecisionResult, ConsentOffer
@@ -357,7 +358,16 @@ class ConsentPrompts:
                 prompt.message_id = message_id
                 prompt.delivery.set_result(True)
             remaining = prompt.deadline - time.monotonic()
-            return await asyncio.wait_for(prompt.future, remaining) if remaining > 0 else None
+            if remaining <= 0:
+                return None
+            # Verified delivery, exact request registration and current offer own
+            # this wait. Sending a card and arbitrary handler residency earn no credit.
+            with native_human_wait_window(
+                deadline=prompt.deadline,
+                current=lambda: self._transport_live(prompt) and self._origin_live(origin)
+                and self._offer_current(prompt),
+            ):
+                return await asyncio.wait_for(prompt.future, remaining)
         except asyncio.CancelledError:
             raise
         except Exception:

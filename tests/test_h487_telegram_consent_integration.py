@@ -19,9 +19,11 @@ from agents.core.commands import Principal
 from tests.test_h487_consent_runtime_integration import _Process, ask, consent_runtime  # noqa: F401
 
 
-async def _telegram(runtime, monkeypatch, *, via_model=False):
+async def _telegram(runtime, monkeypatch, *, via_model=False, model_options=None):
     cards, answers, effects, replies = [], [], [], []
     card_ready, finished = asyncio.Event(), asyncio.Event()
+    model_answers = []
+    model_events = []
     settings = {'autonomy.owner_chat_id': '-500', 'autonomy.owner_user_ids': [42]}
 
     def transport(request):
@@ -49,15 +51,35 @@ async def _telegram(runtime, monkeypatch, *, via_model=False):
             args = {'target': 'local-host', 'command': 'git reset --hard'}
             if via_model:
                 from agents.core.agent_runtime import AgentToolRuntime
-                from agents.core.llm.tool_protocol import ToolCall
+                from agents.core.llm.tool_protocol import ToolCall, ToolTurn
 
-                model_runtime = AgentToolRuntime(runtime.orch.tool_rpc)
-                observations = await model_runtime._execute_turn_calls(
-                    (ToolCall(id='owner-terminal', name='terminal_run',
-                              raw_arguments=json.dumps(args), arguments=args),),
-                    agent_id='jarvis', gated_tools={'terminal_run': True}, event_sink=None,
-                )
-                replies.append(observations[0][0])
+                model_runtime = AgentToolRuntime(runtime.orch.tool_rpc, **(model_options or {}))
+                call = ToolCall(id='owner-terminal', name='terminal_run',
+                                raw_arguments=json.dumps(args), arguments=args)
+                if model_options is not None:
+                    class Backend:
+                        supports_tools = True
+                        calls = 0
+
+                        async def generate_tool_turn(self, **kwargs):
+                            self.calls += 1
+                            if self.calls == 1:
+                                return ToolTurn(tool_calls=(call,))
+                            tool_message = next(m for m in reversed(kwargs['messages'])
+                                                if m['role'] == 'tool')
+                            replies.append(json.loads(tool_message['content']))
+                            return ToolTurn(content='Synthetic tool turn complete.')
+
+                    model_answers.append(await model_runtime.run(
+                        agent_id='jarvis', backend=Backend(), model='synthetic-local-model',
+                        prompt='Synthetic owner request', max_tokens=256,
+                        event_sink=lambda event: model_events.append(event),
+                    ))
+                else:
+                    observations = await model_runtime._execute_turn_calls(
+                        (call,), agent_id='jarvis', gated_tools={'terminal_run': True}, event_sink=None,
+                    )
+                    replies.append(observations[0][0])
             else:
                 replies.append(await runtime.orch.tool_rpc.handle(
                     {'tool': 'terminal_run', 'args': args}, actor='jarvis',
@@ -78,7 +100,8 @@ async def _telegram(runtime, monkeypatch, *, via_model=False):
     runtime.coordinator.wire()
     monkeypatch.setattr(asyncio, 'create_subprocess_exec', spawn)
     return SimpleNamespace(channel=channel, cards=cards, answers=answers, effects=effects,
-                           replies=replies, ready=card_ready, finished=finished, settings=settings)
+                           replies=replies, ready=card_ready, finished=finished, settings=settings,
+                           model_answers=model_answers, model_events=model_events)
 
 
 def _tap(card, choice, *, message_id=17, user_id=42, callback_id='actual-owner-tap'):
