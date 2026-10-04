@@ -23,3 +23,7 @@
 ## 2026-04-05 - Frame-throttling MutationObserver Layout Measurements in HUD Overlays
 **Learning:** `MutationObserver` watching `document.body` for subtree changes (such as in `PointerView` in `frontend/src/pointer.tsx`) fires synchronously on microtask DOM updates. Calling `elementFromPoint()` or `getBoundingClientRect()` directly inside the mutation callback forces synchronous layout recalculations (layout thrashing) on every DOM mutation burst.
 **Action:** Frame-throttle DOM layout measurement callbacks triggered by `MutationObserver` using `requestAnimationFrame` to collapse mutation bursts into at most one layout measurement per animation frame.
+
+## 2026-04-06 - In-place Array Pruning in Canvas Animation Loops
+**Learning:** Updating dynamic array states via `arr = arr.filter(...)` inside Canvas 2D `requestAnimationFrame` loops (e.g. `st.particles` and `st.rings` in `NeuralMesh` in `frontend/src/mesh.tsx`) creates new array instances on every frame (~3,600 allocations/min).
+**Action:** Use a single write-index `for` loop to mutate and prune active elements in-place (`arr[writeIdx++] = item; arr.length = writeIdx`) during frame rendering to avoid per-frame array allocations.
