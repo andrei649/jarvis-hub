@@ -264,14 +264,18 @@ class TelegramChannel(ChannelAdapter):
         self._poll_task = None
         self._owner_once_generation: str | None = None
         self._owner_once_fast: dict[str, asyncio.Task] = {}
+        self._owner_once_denial_fast: dict[tuple[int, int], asyncio.Task] = {}
         self._consent_fast: dict[str, asyncio.Task] = {}
         self._consent_denial_fast: dict[tuple[int, int], asyncio.Task] = {}
         # Registration-owned hooks; the channel does not decide owner identity.
         self.owner_once_pending: Optional[Callable] = None
         self.on_owner_once_callback: Optional[Callable] = None
+        self.owner_once_denial_pending: Optional[Callable] = None
+        self.on_owner_once_denial_reply: Optional[Callable] = None
         self.on_owner_once_stop: Optional[Callable] = None
         self.consent_pending: Optional[Callable] = None
         self.on_consent_callback: Optional[Callable] = None
+        self.consent_denial_pending: Optional[Callable] = None
         self.on_consent_denial_reply: Optional[Callable] = None
         self.on_consent_stop: Optional[Callable] = None
         # H677: while the poll loop runs, each chat's turns go to that chat's lane, so
@@ -372,6 +376,7 @@ class TelegramChannel(ChannelAdapter):
             except Exception:
                 logger.warning("Reusable-consent stop hook failed", exc_info=True)
         fast = tuple(getattr(self, "_owner_once_fast", {}).values())
+        fast += tuple(getattr(self, "_owner_once_denial_fast", {}).values())
         fast += tuple(getattr(self, "_consent_fast", {}).values())
         fast += tuple(getattr(self, "_consent_denial_fast", {}).values())
         for task in fast:
@@ -380,6 +385,8 @@ class TelegramChannel(ChannelAdapter):
             await asyncio.wait(fast, timeout=LANE_DRAIN_BUDGET)
         if hasattr(self, "_owner_once_fast"):
             self._owner_once_fast.clear()
+        if hasattr(self, "_owner_once_denial_fast"):
+            self._owner_once_denial_fast.clear()
         if hasattr(self, "_consent_fast"):
             self._consent_fast.clear()
         if hasattr(self, "_consent_denial_fast"):
@@ -547,8 +554,21 @@ class TelegramChannel(ChannelAdapter):
         return (
             self._owner_once_live(generation) and registry is not None
             and hook is getattr(registry, "_denial_hook", None)
+            and self.consent_denial_pending is getattr(registry, "_denial_pending_hook", None)
             and self.consent_pending is getattr(registry, "_pending_hook", None)
             and self.on_consent_stop is getattr(registry, "_stop_hook", None)
+        )
+
+    def _owner_once_denial_hook_live(self, generation: str | None,
+                                      hook: Callable | None) -> bool:
+        registry = getattr(self.on_owner_once_callback, "__self__", None)
+        return (
+            self._owner_once_live(generation) and registry is not None
+            and hook is getattr(registry, "_denial_hook", None)
+            and self.owner_once_denial_pending is getattr(
+                registry, "_denial_pending_hook", None)
+            and self.owner_once_pending is getattr(registry, "_pending_hook", None)
+            and self.on_owner_once_stop is getattr(registry, "_stop_hook", None)
         )
 
     @staticmethod
@@ -785,7 +805,7 @@ class TelegramChannel(ChannelAdapter):
         # the orchestrator, echoed, or logged as message text.
         if await self._maybe_pair_deeplink(text, uid, chat_id):
             return
-        # A native consent denial is a direct reply to one delivered card. Dispatch it
+        # A native denial is a direct reply to one delivered card. Dispatch it
         # outside the chat lane: that lane may contain the very tool turn waiting for it.
         # Consume every exact /deny command, including stale or malformed attempts, so
         # an old card reply cannot become a model turn.
@@ -794,7 +814,6 @@ class TelegramChannel(ChannelAdapter):
             reply_id = (msg.get("reply_to_message") or {}).get("message_id")
             message_id = msg.get("message_id")
             generation = self._owner_once_generation
-            hook = self.on_consent_denial_reply
             key = (chat_id, message_id)
             if (up.get("message") is None or attachment is not None
                     or any(msg.get(field) for field in (
@@ -804,20 +823,45 @@ class TelegramChannel(ChannelAdapter):
                     or type(chat_id) is not int or type(uid) is not int
                     or type(message_id) is not int or message_id <= 0
                     or type(reply_id) is not int or reply_id <= 0
-                    or not self._consent_denial_hook_live(generation, hook)
-                    or key in self._consent_denial_fast
-                    or len(self._consent_denial_fast) >= 32):
+                    or not self._owner_once_live(generation)):
+                await self._consent_denial_ack(chat_id, "Not applied.")
+                return
+            consent_hook = self.on_consent_denial_reply
+            owner_hook = self.on_owner_once_denial_reply
+            try:
+                consent = (self._consent_denial_hook_live(generation, consent_hook)
+                           and self.consent_denial_pending(
+                               chat_id=chat_id, user_id=uid,
+                               reply_to_message_id=reply_id,
+                           ) is True)
+                owner = (self._owner_once_denial_hook_live(generation, owner_hook)
+                         and self.owner_once_denial_pending(
+                             chat_id=chat_id, user_id=uid,
+                             reply_to_message_id=reply_id,
+                         ) is True)
+            except Exception:
+                consent = owner = False
+            # No current card, or an impossible duplicate ID across registries,
+            # never selects an offer. Both still stay out of model turns.
+            if consent == owner:
                 await self._consent_denial_ack(chat_id, "Not applied.")
                 return
             reason = text[5:].lstrip() or None
             received_at = page.native_at if page is not None else time.monotonic()
-            task = asyncio.create_task(self._handle_consent_denial_reply(
+            fast = self._consent_denial_fast if consent else self._owner_once_denial_fast
+            if key in fast or len(fast) >= 32:
+                await self._consent_denial_ack(chat_id, "Not applied.")
+                return
+            hook = consent_hook if consent else owner_hook
+            handler = (self._handle_consent_denial_reply if consent
+                       else self._handle_owner_once_denial_reply)
+            task = asyncio.create_task(handler(
                 reason, chat_id, uid, message_id, reply_id, received_at, generation, hook,
             ))
-            self._consent_denial_fast[key] = task
+            fast[key] = task
             task.add_done_callback(
-                lambda done, k=key: self._consent_denial_fast.get(k) is done
-                and self._consent_denial_fast.pop(k, None)
+                lambda done, k=key, tasks=fast: tasks.get(k) is done
+                and tasks.pop(k, None)
             )
             return
         # Only a fresh, directly authored reply can explain a decision. Edited,
@@ -1171,6 +1215,30 @@ class TelegramChannel(ChannelAdapter):
             raise
         except Exception:
             logger.warning("Reusable-consent denial dispatch failed")
+            answer = "Not applied."
+        await self._consent_denial_ack(chat_id, answer)
+
+    async def _handle_owner_once_denial_reply(
+        self, reason: str | None, chat_id: int, user_id: int, message_id: int,
+        reply_id: int, received_at: float | None, generation: str, hook: Callable,
+    ) -> None:
+        try:
+            if (not self._owner_once_denial_hook_live(generation, hook)
+                    or self.on_owner_once_denial_reply is not hook):
+                result = None
+            else:
+                result = await hook(
+                    reason, chat_id=chat_id, user_id=user_id,
+                    message_id=message_id, reply_to_message_id=reply_id,
+                    received_at=received_at,
+                )
+            answer = ("Denied." if result == "accepted" else
+                      "Use a reason of at most 280 characters." if result == "invalid_reason"
+                      else "Not applied.")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("Owner-once denial dispatch failed")
             answer = "Not applied."
         await self._consent_denial_ack(chat_id, answer)
 

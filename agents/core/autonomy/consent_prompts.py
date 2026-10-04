@@ -75,12 +75,14 @@ class ConsentPrompts:
         self._lock = threading.RLock()
         self._pending_hook = self.pending
         self._callback_hook = self.callback
+        self._denial_pending_hook = self.denial_pending
         self._denial_hook = self.denial_reply
         self._stop_hook = self.stop
 
     def install(self, channel) -> None:
         channel.consent_pending = self._pending_hook
         channel.on_consent_callback = self._callback_hook
+        channel.consent_denial_pending = self._denial_pending_hook
         channel.on_consent_denial_reply = self._denial_hook
         channel.on_consent_stop = self._stop_hook
 
@@ -113,6 +115,7 @@ class ConsentPrompts:
                 and orch.channels.get("telegram") is channel
                 and channel.consent_pending is self._pending_hook
                 and channel.on_consent_callback is self._callback_hook
+                and channel.consent_denial_pending is self._denial_pending_hook
                 and channel.on_consent_denial_reply is self._denial_hook
                 and channel.on_consent_stop is self._stop_hook
                 and channel._owner_once_live(generation)
@@ -540,6 +543,21 @@ class ConsentPrompts:
                 message_id=message.get("message_id")) is not None)
         except Exception:
             return False
+
+    def denial_pending(self, *, chat_id, user_id, reply_to_message_id) -> bool:
+        """Select one current delivered card without mutating its offer."""
+        if (type(chat_id) is not int or type(user_id) is not int
+                or type(reply_to_message_id) is not int or reply_to_message_id <= 0):
+            return False
+        with self._lock:
+            matches = tuple(prompt for prompt in self._pending.values()
+                            if prompt.chat_id == chat_id
+                            and prompt.message_id == reply_to_message_id
+                            and prompt.delivered_at is not None)
+        return (len(matches) == 1 and self._matched(
+            matches[0].nonce, chat_id=chat_id, user_id=user_id,
+            message_id=reply_to_message_id,
+        ) is matches[0])
 
     async def callback(self, nonce, choice, *, chat_id, user_id, message_id) -> str | None:
         if choice not in {"session", "always", "deny"}:

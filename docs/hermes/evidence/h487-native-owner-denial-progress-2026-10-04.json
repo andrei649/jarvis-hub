@@ -1,0 +1,112 @@
+{
+  "generated_at": "2026-10-04T04:31:18.747405+00:00",
+  "goal": "All697 pinned Hermes capabilities; native owner-once denial dependency",
+  "base_sha": "220052441ca2befdd5a839dc98a937486e0b1cb6",
+  "state": "Root meaningful occupied-lane RED/GREEN and 25-module adjacent verification; combined/full pending",
+  "prototype_patch_sha256": "3364b2e7d8e64b2948c6de642c1e22750ea4870c90452513b4e33bb2808c103f",
+  "source_sha256": {
+    "agents/core/autonomy/consent_prompts.py": "a9a9374fa2944a86b4d628e96ed5defc8f1fcfe678981a507f5127f0748ef19c",
+    "agents/core/autonomy/owner_once_prompts.py": "868b7cf1eb338a83326291c9b2c486ecb463345f266ac90856013524555448d8",
+    "agents/core/autonomy/queue.py": "439c735c4ee14c45cc3e56c90528750a00a06994e992c7277caa001b00367470",
+    "agents/core/autonomy/terminal_review.py": "217c8be2323c0f0f2bf7d6b052c8a03e17a367714f83ab45dbd941cad99d10f2",
+    "agents/core/channels/telegram.py": "2a7f5e392f04d11a6e7072bbe5d6900a3efa091e1902a0c63ea2f359c7064b1e",
+    "tests/test_h487_telegram_owner_once_denial.py": "0daca5bbeab787980926504d72ab1d7211680c82b921756956ea0feb8a03d026"
+  },
+  "root_verification": {
+    "red": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "e6c15e0f40577b886ecfada60ca905c155f91c1c7b6e48ed93e747f16dda5368",
+      "log_sha256": "c1510e603191a22141de94bbc70b3ba5494a873688655b1a5710622f74f0e7f0"
+    },
+    "green": {
+      "tests": 39,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "ed58caf7afeb7d5c3baf154278a52c0280631badcafc515bc95025e5d2c0a2ae",
+      "log_sha256": "07c2eef926162e0090994bc913805aa08a8b2cbb5b21d2c933b937a10300713f"
+    },
+    "broad": {
+      "tests": 518,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "2b8641df8834644f000828e6b59eb00815f883e291e83f82f61c2a4d8ba0a286",
+      "log_sha256": "9aaee1025545e5762ded54534e1f3ccc4f55eb3921fb3e09550edcd13256297a"
+    }
+  },
+  "broad_files": [
+    "tests/test_h485_owner_once_actuation.py",
+    "tests/test_h485_owner_once_completion.py",
+    "tests/test_h485_owner_once_context.py",
+    "tests/test_h485_owner_once_continuation.py",
+    "tests/test_h485_owner_once_kernel.py",
+    "tests/test_h485_owner_once_prompts.py",
+    "tests/test_h485_owner_once_queue.py",
+    "tests/test_h485_owner_once_telegram.py",
+    "tests/test_h485_owner_once_transport.py",
+    "tests/test_h485_owner_once_worker.py",
+    "tests/test_h485_telegram_callback_ack.py",
+    "tests/test_h485_telegram_owner_identity.py",
+    "tests/test_h487_consent_owner_runtime.py",
+    "tests/test_h487_human_wait_budget.py",
+    "tests/test_h487_human_wait_integration.py",
+    "tests/test_h487_native_runtime_human_wait.py",
+    "tests/test_h487_owner_once_outcomes.py",
+    "tests/test_h487_telegram_consent_authority.py",
+    "tests/test_h487_telegram_consent_denial.py",
+    "tests/test_h487_telegram_consent_integration.py",
+    "tests/test_h487_telegram_consent_prompts.py",
+    "tests/test_h487_telegram_consent_transport.py",
+    "tests/test_h487_telegram_lanes.py",
+    "tests/test_h487_telegram_owner_once_denial.py",
+    "tests/test_h487_telegram_reasons.py"
+  ],
+  "review": {
+    "original_patch_finding": "Coherent post-CAS normalized/raw reason mutation with the same decision ID falsely attributed text to owner",
+    "repair": "Denial-specific domain-separated MAC bound to exact human metadata and original durable task/denial/offer/origin/card, in the same CAS",
+    "prototype_meaningful_red": {
+      "forged_reason": {
+        "tests": 2,
+        "failures": 2,
+        "errors": 0
+      },
+      "post_cas_policy_drift": {
+        "tests": 2,
+        "failures": 1,
+        "errors": 0
+      }
+    },
+    "root_review": "Read exact final five production deltas, full new test module and signer; rehashed all baseline/proposed files; real root tamper/migration/currentness/accepted-execution regressions passed"
+  },
+  "ruff": "Six changed Python paths passed",
+  "bandit": {
+    "command": "python -m bandit -r agents scripts -q -b .bandit-baseline.json",
+    "exit_code": 0,
+    "log_sha256": "0ecd458ebe063aeeb3fa9c37727c478804b1d817e1da1a40fbc422aeca484146"
+  },
+  "edge_cases": [
+    "280 accepted/281 refused; raw/normalized reason bound",
+    "Wrong/edited/forwarded/attached/stale/ambiguous card commands do not become model turns",
+    "Current owner/source/deadline/generation/hook/task checks at CAS",
+    "Monotonic page arrival independent of Telegram date or reason clock",
+    "Text/button race commits at most one decision; accepted action still at most one simulated spawn",
+    "Post-CAS timeout/policy drift reconciles committed original denial",
+    "Missing/malformed/forged MAC and coherent forged text refused",
+    "Legacy nullable-column migration preserves task data; unavailable signer refuses new text denial"
+  ],
+  "warnings": [
+    "Existing Starlette TestClient/httpx deprecation"
+  ],
+  "limits": [
+    "H487 remains partial; no new equivalence credit",
+    "Prior full22465 excludes this unit and later provider/Docker/denial changes",
+    "No accepted claim/proof/grant source changes; additive column may remain inert on rollback",
+    "No live Telegram/provider/device acceptance or real terminal effects",
+    "No push, merge, deploy, activation or paid calls"
+  ],
+  "next_action": "Independent judge-recovery root integration; shared counts/architecture and exact claim-specific collateral review; frozen serial full milestone"
+}

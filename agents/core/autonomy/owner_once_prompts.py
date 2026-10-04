@@ -6,18 +6,21 @@ import asyncio
 import copy
 import hashlib
 import json
+import math
 import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import Future
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from ..approval_outcomes import ApprovalTurnContext, current_approval_turn
 from ..native_human_wait import native_human_wait_window
 from ..owner_once_context import OwnerReplySource, current_owner_reply_source
+from .decision_reasons import normalize_reason
 from .inbox import build_owner_once_card, parse_owner_once_callback_data
 from .owner_once import OwnerOnceClaim, OwnerOnceOffer, OwnerOnceOwner, OwnerOnceWaitOutcome
+from .queue import _row_to_task
 
 
 @dataclass(eq=False)
@@ -29,6 +32,8 @@ class _Prompt:
     future: asyncio.Future
     request_task: asyncio.Task
     message_id: int | None = None
+    delivered_at: float | None = None
+    native_deadline: float | None = None
     active: bool = True
     committed: OwnerOnceClaim | OwnerOnceWaitOutcome | None = None
     handoff_failed: bool = False
@@ -61,11 +66,15 @@ class OwnerOncePrompts:
         # Stable registration identities, including across copied contexts.
         self._pending_hook = self.pending
         self._callback_hook = self.callback
+        self._denial_pending_hook = self.denial_pending
+        self._denial_hook = self.denial_reply
         self._stop_hook = self.stop
 
     def install(self, channel) -> None:
         channel.owner_once_pending = self._pending_hook
         channel.on_owner_once_callback = self._callback_hook
+        channel.owner_once_denial_pending = self._denial_pending_hook
+        channel.on_owner_once_denial_reply = self._denial_hook
         channel.on_owner_once_stop = self._stop_hook
 
     def _source_live(self, source, turn) -> bool:
@@ -77,6 +86,8 @@ class OwnerOncePrompts:
                     and orch.channels.get('telegram') is channel
                     and channel.owner_once_pending is self._pending_hook
                     and channel.on_owner_once_callback is self._callback_hook
+                    and channel.owner_once_denial_pending is self._denial_pending_hook
+                    and channel.on_owner_once_denial_reply is self._denial_hook
                     and channel.on_owner_once_stop is self._stop_hook
                     and self.coordinator._callback_is_owner(source.chat_id, source.user_id) is True
                     and turn.principal_key == json.dumps(
@@ -152,25 +163,33 @@ class OwnerOncePrompts:
 
     def consume_outcome(self, outcome: OwnerOnceWaitOutcome, task) -> str | None:
         """Validate one process-local observation; durable owner denial is mandatory."""
+        return self.consume_outcome_detail(outcome, task)[0]
+
+    def consume_outcome_detail(self, outcome: OwnerOnceWaitOutcome,
+                               task) -> tuple[str | None, str | None]:
+        """Consume the same observation once; reason comes only from durable CAS."""
         if type(outcome) is not OwnerOnceWaitOutcome or task is None:
-            return None
+            return None, None
         with self._lock:
             bound = self._observed.get(outcome.task_id)
             if (bound is None or bound[0] is not outcome or bound[1].offer.task_id != task.id
                     or bound[1].offer.nonce != outcome.nonce):
-                return None
+                return None, None
             self._observed.pop(outcome.task_id, None)
         prompt = bound[1]
         if outcome.state in {'timeout', 'withdrawn', 'denied'}:
-            decision_id = self._durable_owner_denial(prompt, task)
-            if decision_id is not None:
-                return ('denied' if outcome.state != 'denied'
-                        or outcome.decision_id == decision_id else None)
+            durable = self._durable_owner_denial(prompt, task)
+            if durable is not None:
+                decision_id, reason = durable
+                return (('denied', reason) if outcome.state != 'denied'
+                        or outcome.decision_id == decision_id else (None, None))
             if outcome.state == 'denied':
-                return None
-        return outcome.state if outcome.state in {'timeout', 'withdrawn', 'denied', 'held'} else None
+                return None, None
+        return (outcome.state, None) if outcome.state in {
+            'timeout', 'withdrawn', 'denied', 'held',
+        } else (None, None)
 
-    def _durable_owner_denial(self, prompt: _Prompt, task) -> str | None:
+    def _durable_owner_denial(self, prompt: _Prompt, task) -> tuple[str, str | None] | None:
         """Read the exact delivered offer and human CAS, including during publication lag."""
         try:
             offer = prompt.offer
@@ -179,30 +198,49 @@ class OwnerOncePrompts:
                     'SELECT * FROM task_owner_once WHERE task_id=?', (offer.task_id,),
                 ).fetchone()
                 row = self.queue._conn.execute(
-                    'SELECT created_at,status,decided_by,decision,human_decision '
-                    'FROM tasks WHERE id=?', (offer.task_id,),
+                    'SELECT * FROM tasks WHERE id=?', (offer.task_id,),
                 ).fetchone()
-            if (binding is None or row is None or task.created_at != row['created_at']
-                    or binding['task_birth'] != row['created_at']
+                durable = _row_to_task(row) if row is not None else None
+                denial = self.queue._conn.execute(
+                    'SELECT * FROM task_smart_approvals WHERE task_id=?', (offer.task_id,),
+                ).fetchone()
+                if (binding is None or durable is None or denial is None
+                        or task.created_at != durable.created_at
+                        or binding['task_birth'] != durable.created_at
+                        or durable.status != 'rejected' or durable.decided_by != 'owner_once'
+                        or durable.decision != 'owner-deny'
+                        or binding['denial_snapshot_sha256'] != denial['snapshot_sha256']
+                        or binding['denial_annotation_sha256'] != hashlib.sha256(
+                            denial['annotation'].encode()).hexdigest()
+                        or self.queue._unsigned_smart_hold_verdict(denial) != 'deny'
+                        or self.queue._approval_snapshot_digest_locked(replace(
+                            durable, status='blocked', decided_by='policy',
+                            decision='needs-approval', human_decision=None,
+                        )) != binding['denial_snapshot_sha256']):
+                    return None
+            if (binding['task_birth'] != task.created_at
                     or binding['offer_nonce_sha256'] != hashlib.sha256(
                         offer.nonce.encode()).hexdigest()
                     or binding['deadline_at'] != offer.deadline_at
                     or binding['state'] != 'revoked'
                     or binding['origin_id'] != prompt.turn.turn_id
+                    or binding['session_id'] != prompt.turn.session_id
+                    or binding['session_instance'] != prompt.turn.session_instance
                     or binding['principal_key'] != prompt.turn.principal_key
                     or binding['chat_id'] != prompt.source.chat_id
                     or binding['user_id'] != prompt.source.user_id
                     or binding['message_id'] != prompt.message_id
                     or binding['generation'] != prompt.source.generation
-                    or row['status'] != 'rejected' or row['decided_by'] != 'owner_once'
-                    or row['decision'] != 'owner-deny'):
+                    or binding['approval_receipt'] is not None
+                    or binding['signature'] is not None):
                 return None
-            human = json.loads(row['human_decision'])
-            if (type(human) is not dict or human.get('action') != 'reject'
-                    or human.get('by') != 'owner_once' or type(human.get('id')) is not str
-                    or human['id'] != binding['owner_decision_id']):
+            human = durable.human_decision
+            if not self.queue._owner_once_denial_metadata_valid_locked(
+                offer.task_id, human, binding,
+            ):
                 return None
-            return human['id']
+            _valid, reason = self.queue._owner_once_denial_metadata(human)
+            return human['id'], reason
         except Exception:
             return None
 
@@ -267,6 +305,9 @@ class OwnerOncePrompts:
             return None
         prompt = _Prompt(offer, source, turn, check, asyncio.get_running_loop().create_future(),
                          asyncio.current_task())
+        prompt.native_deadline = time.monotonic() + max(0.0, (
+            datetime.fromisoformat(offer.deadline_at) - datetime.now(UTC)
+        ).total_seconds())
         transferred = False
         delivered = False
         with self._lock:
@@ -284,6 +325,7 @@ class OwnerOncePrompts:
                         live_check=lambda: self._live(prompt))):
                 return None
             with self._lock:
+                prompt.delivered_at = time.monotonic()
                 prompt.message_id = message_id
                 delivered = True
             remaining = (datetime.fromisoformat(offer.deadline_at) - datetime.now(UTC)).total_seconds()
@@ -358,6 +400,97 @@ class OwnerOncePrompts:
                 message_id=message.get('message_id')) is not None)
         except Exception:
             return False
+
+    def denial_pending(self, *, chat_id, user_id, reply_to_message_id) -> bool:
+        """Side-effect-free exact-card selector; the queue still decides authority."""
+        if (type(chat_id) is not int or type(user_id) is not int
+                or type(reply_to_message_id) is not int or reply_to_message_id <= 0):
+            return False
+        with self._lock:
+            matches = tuple(prompt for prompt in self._pending.values()
+                            if prompt.source.chat_id == chat_id
+                            and prompt.message_id == reply_to_message_id
+                            and prompt.delivered_at is not None)
+        return (len(matches) == 1 and matches[0].native_deadline is not None
+                and time.monotonic() < matches[0].native_deadline
+                and self._matched(matches[0].offer.nonce, chat_id=chat_id,
+                                  user_id=user_id,
+                                  message_id=reply_to_message_id) is matches[0])
+
+    async def denial_reply(self, reason: str | None, *, chat_id, user_id,
+                           message_id, reply_to_message_id, received_at) -> str | None:
+        """Apply text only as metadata to a delivered owner's exact rejection CAS."""
+        dispatch_task = asyncio.current_task()
+        channel = self.coordinator._orch.channels.get('telegram')
+        if (type(chat_id) is not int or type(user_id) is not int
+                or type(message_id) is not int or message_id <= 0
+                or type(reply_to_message_id) is not int or reply_to_message_id <= 0
+                or type(received_at) not in (int, float) or not math.isfinite(received_at)
+                or channel is None
+                or channel._owner_once_denial_fast.get((chat_id, message_id)) is not dispatch_task):
+            return None
+        try:
+            normalize_reason(reason)
+        except ValueError:
+            return 'invalid_reason'
+        with self._lock:
+            matches = tuple(prompt for prompt in self._pending.values()
+                            if prompt.source.channel is channel
+                            and prompt.source.chat_id == chat_id
+                            and prompt.message_id == reply_to_message_id
+                            and prompt.delivered_at is not None)
+        if len(matches) != 1:
+            return None
+        prompt = matches[0]
+        if (prompt.native_deadline is None
+                or received_at < prompt.delivered_at
+                or received_at >= prompt.native_deadline
+                or not self.denial_pending(chat_id=chat_id, user_id=user_id,
+                                           reply_to_message_id=reply_to_message_id)):
+            return None
+        owner = OwnerOnceOwner(prompt.turn.principal_key, 'telegram', chat_id, user_id,
+                               reply_to_message_id, prompt.source.generation)
+
+        def current() -> bool:
+            return (
+                asyncio.current_task() is dispatch_task
+                and channel._owner_once_denial_fast.get((chat_id, message_id)) is dispatch_task
+                and channel.on_owner_once_denial_reply is self._denial_hook
+                and prompt.native_deadline is not None
+                and time.monotonic() < prompt.native_deadline
+                and self._request_live(prompt) and self._live(prompt)
+                and chat_id == prompt.source.chat_id and user_id == prompt.source.user_id
+                and reply_to_message_id == prompt.message_id
+            )
+
+        try:
+            if not self.queue.reject_owner_once(
+                prompt.offer, prompt.offer.nonce, authenticated_owner=owner,
+                live_check=current, reason=reason,
+            ):
+                return None
+            task = self.queue.get(prompt.offer.task_id)
+            durable = self._durable_owner_denial(prompt, task)
+            if durable is None:
+                return None
+            result = OwnerOnceWaitOutcome('denied', prompt.offer.task_id,
+                                          prompt.offer.nonce, durable[0])
+            with self._lock:
+                prompt.committed = result
+            if (not self._request_live(prompt) or not await asyncio.wait_for(
+                    asyncio.wrap_future(self._wake(prompt, result)), timeout=1)):
+                with self._lock:
+                    prompt.handoff_failed = True
+                self.queue.revoke_owner_once(prompt.offer, reason='owner-waiter-unavailable')
+                self._wake(prompt, None)
+                return None
+            return 'accepted'
+        except BaseException:
+            with self._lock:
+                prompt.handoff_failed = True
+            self.queue.revoke_owner_once(prompt.offer, reason='owner-reply-interrupted')
+            self._wake(prompt, None)
+            raise
 
     async def callback(self, nonce, choice, *, chat_id, user_id, message_id) -> str | None:
         prompt = self._matched(nonce, chat_id=chat_id, user_id=user_id, message_id=message_id)

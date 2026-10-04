@@ -520,8 +520,13 @@ class TaskQueue:
             deadline_at TEXT NOT NULL, state TEXT NOT NULL,
             chat_id INTEGER, user_id INTEGER, message_id INTEGER, generation TEXT,
             owner_decision_id TEXT, approval_receipt TEXT, signature TEXT,
+            denial_metadata_mac TEXT,
             mediation_execution_id TEXT, claimed_at TEXT, dispatch_at TEXT
         )""")
+        owner_columns = {row['name'] for row in self._conn.execute(
+            'PRAGMA table_info(task_owner_once)')}
+        if 'denial_metadata_mac' not in owner_columns:
+            self._conn.execute('ALTER TABLE task_owner_once ADD COLUMN denial_metadata_mac TEXT')
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS task_approval_group_state (
                 key TEXT PRIMARY KEY, value TEXT NOT NULL
@@ -4086,6 +4091,63 @@ class TaskQueue:
             return None
         return task, denial
 
+    @staticmethod
+    def _owner_once_denial_metadata(human: object) -> tuple[bool, str | None]:
+        """Validate only the two exact human-rejection shapes; return raw text as data."""
+        base = {'id', 'action', 'reason', 'by', 'at', 'first_at'}
+        if (type(human) is not dict or set(human) not in (base, base | {'reply_reason'})
+                or not TaskQueue._owner_once_nonce(human.get('id'))
+                or human.get('action') != 'reject' or human.get('by') != 'owner_once'
+                or type(human.get('at')) is not str
+                or human['at'] != human.get('first_at')):
+            return False, None
+        if 'reply_reason' not in human:
+            return human.get('reason') is None, None
+        raw = human['reply_reason']
+        if type(raw) is not str:
+            return False, None
+        try:
+            normalized = normalize_reason(raw)
+        except ValueError:
+            return False, None
+        return (normalized is not None and human.get('reason') == normalized,
+                raw if normalized is not None else None)
+
+    @staticmethod
+    def _owner_once_denial_metadata_body(task_id: int, human: dict,
+                                         bound: sqlite3.Row) -> bytes:
+        """Domain-separated exact human rejection and delivered-offer binding."""
+        return canonical_json({
+            'purpose': 'h487-owner-once-denial-metadata', 'version': 1,
+            'task_id': task_id, 'task_birth': bound['task_birth'],
+            'denial_snapshot_sha256': bound['denial_snapshot_sha256'],
+            'denial_annotation_sha256': bound['denial_annotation_sha256'],
+            'origin_id': bound['origin_id'], 'session_id': bound['session_id'],
+            'session_instance': bound['session_instance'],
+            'principal_key': bound['principal_key'],
+            'intent_sha256': bound['intent_sha256'],
+            'offer_nonce_sha256': bound['offer_nonce_sha256'],
+            'deadline_at': bound['deadline_at'],
+            'chat_id': bound['chat_id'], 'user_id': bound['user_id'],
+            'message_id': bound['message_id'], 'generation': bound['generation'],
+            'owner_decision_id': human['id'], 'human_decision': human,
+        })
+
+    def _owner_once_denial_metadata_valid_locked(self, task_id: int, human: object,
+                                                 bound: sqlite3.Row) -> bool:
+        valid, raw = self._owner_once_denial_metadata(human)
+        if not valid or human['id'] != bound['owner_decision_id']:
+            return False
+        mac = bound['denial_metadata_mac']
+        if raw is None:
+            return mac is None
+        try:
+            return self._mediation_signer.verify(
+                self._owner_once_denial_metadata_body(task_id, human, bound), mac,
+            )
+        except (TypeError, ValueError, KeyError):
+            return False
+
     def offer_owner_once(self, task_id: int, snapshot_sha256: str, *, turn,
                          live_check: Callable[[], bool], timeout: float = 120) -> OwnerOnceOffer | None:
         """Offer one exact current DENY to its live interactive origin."""
@@ -4281,13 +4343,8 @@ class TaskQueue:
                     if (bound is None or bound['state'] != 'revoked'
                             or bound['task_birth'] != task.created_at
                             or bound['denial_snapshot_sha256'] != snapshot_sha256
-                            or bound['owner_decision_id'] != human.get('id')
-                            or not self._owner_once_nonce(human.get('id'))
-                            or set(human) != {'id', 'action', 'reason', 'by', 'at', 'first_at'}
-                            or human['action'] != 'reject' or human['by'] != 'owner_once'
-                            or human['reason'] is not None
-                            or type(human['at']) is not str
-                            or human['at'] != human['first_at']
+                            or not self._owner_once_denial_metadata_valid_locked(
+                                task_id, human, bound)
                             or bound['message_id'] is None
                             or bound['approval_receipt'] is not None
                             or bound['signature'] is not None):
@@ -4531,10 +4588,15 @@ class TaskQueue:
 
     def reject_owner_once(self, offer: OwnerOnceOffer, nonce: str, *,
                           authenticated_owner: OwnerOnceOwner,
-                          live_check: Callable[[], bool]) -> bool:
+                          live_check: Callable[[], bool],
+                          reason: str | None = None) -> bool:
         """Return true only when an exact delivered owner's rejection commits."""
         if (type(offer) is not OwnerOnceOffer or type(nonce) is not str
                 or nonce != offer.nonce):
+            return False
+        try:
+            normalized = normalize_reason(reason)
+        except ValueError:
             return False
         with self._lock:
             try:
@@ -4551,7 +4613,16 @@ class TaskQueue:
                     return False
                 task, _denial = current
                 at = _now()
-                human = self._human_decision_record('reject', 'owner_once', None, at)
+                human = self._human_decision_record('reject', 'owner_once', normalized, at)
+                if normalized is not None:
+                    human['reply_reason'] = reason
+                denial_mac = None
+                if normalized is not None:
+                    denial_mac = self._mediation_signer.sign(
+                        self._owner_once_denial_metadata_body(task.id, human, bound))
+                    if denial_mac is None:
+                        self._conn.rollback()
+                        return False
                 changed = self._conn.execute('''UPDATE tasks SET status='rejected',
                     decided_by='owner_once',decision='owner-deny',human_decision=?,updated_at=?
                     WHERE id=? AND status='blocked' AND decided_by='policy'
@@ -4561,8 +4632,9 @@ class TaskQueue:
                     self._conn.rollback()
                     return False
                 changed = self._conn.execute('''UPDATE task_owner_once SET state='revoked',
-                    owner_decision_id=? WHERE task_id=? AND state='offered' ''',
-                    (human['id'], task.id))
+                    owner_decision_id=?,denial_metadata_mac=?
+                    WHERE task_id=? AND state='offered' ''',
+                    (human['id'], denial_mac, task.id))
                 if changed.rowcount != 1:
                     self._conn.rollback()
                     return False
