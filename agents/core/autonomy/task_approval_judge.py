@@ -176,9 +176,54 @@ class TaskApprovalJudge(AdvisoryJudgements):
         task = self.queue.get(snapshot['task_id'])
         if worker is None or task is None or task.decision != 'smart-approve':
             return
-        worker._audit('autonomy.smart_approve', task, 'one operation approved by the configured guardian')
+        detail = 'one operation approved by the configured guardian'
+        identity = self._committed_promotion_judge(task, snapshot, annotation)
+        if identity is None:
+            # A missing/mismatched receipt is no basis for an attributed audit.
+            # Keep the pre-existing generic event and leave execution authority to
+            # the queue's separate receipt checks.
+            worker._audit('autonomy.smart_approve', task, detail)
+        elif worker.audit is not None:
+            try:
+                worker.audit.log('autonomy.smart_approve', {
+                    'task_id': task.id, 'agent': task.agent, 'kind': task.kind,
+                    'detail': detail, 'judge': identity,
+                })
+            except Exception:
+                logger.warning("Autonomy audit log failed for event '%s' task #%s",
+                               'autonomy.smart_approve', task.id, exc_info=True)
         worker._reconcile_waiting_run(task)
         await worker._push_promoted_group(group_id)
+
+    def _committed_promotion_judge(self, task, snapshot: dict, annotation: dict) -> dict | None:
+        """Attribute an approval only to its signed, exact committed receipt."""
+        identity = None
+
+        def matching(receipt):
+            nonlocal identity
+            judge = receipt.get('judge')
+            if (receipt.get('task_id') != task.id
+                    or receipt.get('preapproval_sha256') != snapshot.get('snapshot_sha256')
+                    or receipt.get('judge_revision') != annotation.get('judge_revision')
+                    or receipt.get('policy_revision') != annotation.get('policy_revision')
+                    or receipt.get('at') != annotation.get('at')
+                    or judge != annotation.get('judge')
+                    or type(judge) is not dict
+                    or set(judge) != {'provider', 'model', 'local'}
+                    or type(judge['provider']) is not str or not judge['provider']
+                    or type(judge['model']) is not str or not judge['model']
+                    or type(judge['local']) is not bool):
+                return False
+            identity = dict(judge)
+            return True
+
+        try:
+            if self.queue.verify_smart_terminal_approval(task.id, check=matching) is True:
+                return identity
+        except Exception:
+            logger.debug('smart promotion audit receipt unavailable for task #%s', task.id,
+                         exc_info=True)
+        return None
 
     def project(self, task) -> dict:
         """Add public review fields; the persisted Task schema stays untouched."""

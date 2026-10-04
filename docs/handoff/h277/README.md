@@ -189,3 +189,21 @@ restoration. The six named source/test fingerprints match local milestone
 cc4618a1. This updates the named handoff regressions only; H277 provider/routing,
 other accepted dependencies and live acceptance remain unfinished. Historical
 receipts retain their original source scope and are not rewritten.
+
+
+## Original prepared49 current-source verification — 2026-10-04
+
+The [current-source campaign](prepared49-current-2026-10-04.md) and
+[structured result](prepared49-current-2026-10-04.json) preserve all original49
+cases:41 assertion kills,6 behavioral exception kills and2 survivors. Python
+350/350 and browser40/40 baselines and final runs passed. All3,003 snapshot inputs
+were restored. The remote-URL survivor retains an independent sanitizer; the
+late-annotation survivor exposes missing direct-API test coverage, while current
+source already refuses it. Its proposed regression passed baseline and killed
+that fault in the disposable snapshot; integration remains a separate step.
+
+The separate [integrated backend receipt](../../hermes/evidence/h487-h277-inline-full-2026-10-04.json)
+records22,360 passes,34 ordinary skips,1 existing xfail and zero failures/errors
+for the inline-outcome and promotion-audit source checkpoint. New provider work
+and broader H277 acceptance remain unfinished. The earlier handoff instructions
+above are historical; the owner's later local/kernel authorization applies.

@@ -1,0 +1,58 @@
+{
+  "generated_at": "2026-10-04T01:04:26.621895+00:00",
+  "goal": "All 697 pinned Hermes capabilities; local development only",
+  "base_sha": "6b9422ed56bd45c0823e818db123266b854496ec",
+  "state": "Focused and frozen full backend verification completed; local only",
+  "coordinator_verification": {
+    "command": "JARVIS_TESTING=1 python -m pytest tests/test_h487_inline_consent_outcomes.py tests/test_h277_smart_promotion_audit.py tests/test_h277_smart_terminal_queue.py tests/test_h277_task_judge.py tests/test_h277_smart_terminal_integration.py --timeout=90 -q --tb=short",
+    "tests": 121,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "6d9b2e7f2cc90e9e68256e0ef77500c1e8e3fd40a097e55b8e9bb202038ede93"
+  },
+  "limits": [
+    "No full H277 or H487 equivalent credit",
+    "No live device, transport or provider acceptance",
+    "Earlier full backend receipt verifies the prior native timing checkpoint, not this batch",
+    "No push, merge, deploy, paid providers or real terminal effects"
+  ],
+  "new_cases": 4,
+  "behavior_checked": [
+    "Signed promotion audit identifies the actually committed provider/model/local identity",
+    "Active alias retains committed identity after loaded-model change",
+    "Invalid signature or mismatched observation preserves generic event without invented identity"
+  ],
+  "source_sha256": {
+    "agents/core/autonomy/task_approval_judge.py": "9bf79d754ded10c31c809e39444197c0458c2cb1733f8d1497d34ddc7b387d9f",
+    "tests/test_h277_smart_promotion_audit.py": "ed4b06a90c2110001c118910eea58279870f4f6c0eb9f2851e9355cf10cb095c",
+    "docs/hermes/h277-smart-promotion-audit-plan-2026-10-04.md": "7b6d7fb12a846c2d87f333656adb50a90f48c4bd16d7aea3b0c456de8bc2f494"
+  },
+  "broader_integration": {
+    "scope": "134 H277/H485/H487 and native-human-wait modules; overlapping with the focused run, not additive",
+    "tests": 2989,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "a7bc45ddc81d747fff4230d1bf465e31d9ac5ab6229b29d726bb65cd661f073a",
+    "module_list_sha256": "05648bf0a454d2b2331292a394d924d83973e8ad14f7359097897efb616b0ad2",
+    "log_sha256": "f39747d04469e2958ead410dff98f0327b55477769b385761ae36341636e0e0f",
+    "warnings": "Existing HTTPX deprecation and outbound connect attempts blocked by pytest socket guards; not live-provider verification"
+  },
+  "record_and_surface_gates": {
+    "tests": 151,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "587fc876bf9470f40b8e7f53219cde26ef62e00f582003a2f1c29760f9134e32",
+    "scope": "Doc references, Hermes status, orchestrator bindings, generated status, route auth/parity, OpenAPI and lifespan smoke"
+  },
+  "source_checks": {
+    "ruff": "Eight changed/new Python modules checked, exit0",
+    "bandit": "agents and scripts with existing .bandit-baseline.json, exit0; existing nosec warnings",
+    "diff_check": "exit0",
+    "graft": "Explicit local graph rebuild/check, graph fresh with zero added/removed/changed/stale; optional deep context absent and global MCP unavailable"
+  },
+  "full_backend_receipt": "docs/hermes/evidence/h487-h277-inline-full-2026-10-04.json",
+  "audit_mutation_receipt": "docs/hermes/evidence/h277-smart-promotion-audit-mutations-2026-10-04.json"
+}
