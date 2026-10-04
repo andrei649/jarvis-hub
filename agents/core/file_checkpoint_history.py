@@ -1,4 +1,4 @@
-"""Private, scoped checkpoint index over FileTools' existing SnapshotStore blobs.
+"""Private checkpoint index over owned payloads and bounded legacy snapshots.
 
 This is a storage/effect primitive, not an owner-facing authorization route. Callers
 must retain their existing file.write kernel and durable approval mediation.
@@ -9,6 +9,8 @@ from __future__ import annotations
 import contextlib
 import difflib
 import hashlib
+import json
+import math
 import os
 import secrets
 import sqlite3
@@ -101,29 +103,63 @@ def _locked(directory: Path):
     if not HISTORY_SUPPORTED:
         raise CheckpointRefusal("history_unsupported_platform")
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    key = str(directory.resolve())
-    held = getattr(_lock_state, "held", None)
-    if held is None:
-        held = {}
-        _lock_state.held = held
-    if key in held:
-        held[key] += 1
+    directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY
+                           | getattr(os, "O_NOFOLLOW", 0))
+    identity = os.fstat(directory_fd)
+    path_key = str(directory.absolute())
+    key = (path_key, identity.st_dev, identity.st_ino)
+    fd = None
+    acquired = False
+    try:
+        held = getattr(_lock_state, "held", None)
+        if held is None:
+            held = {}
+            _lock_state.held = held
+        if any(other[0] == path_key and other != key for other in held):
+            raise CheckpointRefusal("history_store_changed")
+        if key in held:
+            current = os.stat(directory, follow_symlinks=False)
+            if (not stat.S_ISDIR(current.st_mode)
+                    or (current.st_dev, current.st_ino) != key[1:]):
+                raise CheckpointRefusal("history_store_changed")
+            held[key] += 1
+            try:
+                yield
+            finally:
+                held[key] -= 1
+            return
+        # Anchor the stable lock to the opened root; a swapped path must never
+        # create history.lock in an unrelated directory through a symlink.
+        flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        try:
+            fd = os.open("history.lock", flags | os.O_CREAT | os.O_EXCL,
+                         0o600, dir_fd=directory_fd)
+        except FileExistsError:
+            # Separate exclusive creation from opening the existing file: macOS
+            # openat(O_CREAT) may report ENOENT during concurrent first creation.
+            fd = os.open("history.lock", flags, dir_fd=directory_fd)
+        lock_info = os.fstat(fd)
+        if not stat.S_ISREG(lock_info.st_mode) or lock_info.st_nlink != 1:
+            raise CheckpointRefusal("history_lock_invalid")
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        acquired = True
+        current = os.stat(directory, follow_symlinks=False)
+        named_lock = os.stat("history.lock", dir_fd=directory_fd, follow_symlinks=False)
+        if (not stat.S_ISDIR(current.st_mode)
+                or (current.st_dev, current.st_ino) != key[1:]
+                or (named_lock.st_dev, named_lock.st_ino) != (lock_info.st_dev, lock_info.st_ino)):
+            raise CheckpointRefusal("history_store_changed")
+        held[key] = 1
         try:
             yield
         finally:
-            held[key] -= 1
-        return
-    # The lock survives index pruning and is never part of its garbage collection.
-    fd = os.open(directory / "history.lock", os.O_RDWR | os.O_CREAT
-                 | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        held[key] = 1
-        yield
+            held.pop(key, None)
     finally:
-        held.pop(key, None)
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
+        if acquired:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        if fd is not None:
+            os.close(fd)
+        os.close(directory_fd)
 
 
 @contextlib.contextmanager
@@ -213,7 +249,10 @@ class FileCheckpointHistory:
     """One index for actual FileTools mutations, backed by SnapshotStore refs."""
 
     def __init__(self, snapshots: SnapshotStore, scope: FileScope) -> None:
+        from .checkpoint_payloads import CheckpointPayloadStore
+
         self.snapshots = snapshots
+        self.payloads = CheckpointPayloadStore(snapshots)
         self.scope = scope
         self._db = snapshots.directory / "history.sqlite3"
 
@@ -270,32 +309,117 @@ class FileCheckpointHistory:
             connection.close()
 
     def _put_blob(self, data: bytes) -> str:
-        from .file_tools import _atomic_write
+        from .checkpoint_payloads import PayloadRefusal
 
-        sha = _sha(data)
-        blob = self.snapshots.directory / "blobs" / sha
-        blob.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if not blob.exists():
-            _atomic_write(blob, data, mode=0o600)
-        return sha
+        try:
+            return self.payloads.put_blob(data)
+        except PayloadRefusal as exc:
+            raise CheckpointRefusal("snapshot_changed") from exc
+
+    def _take_checkpoint(self, target: Path, *, existed: bool, data: bytes,
+                         mode: int, now: float | None = None) -> Snapshot:
+        from .checkpoint_payloads import PayloadRefusal
+
+        try:
+            return self.payloads.take_captured(target, existed=existed, data=data,
+                                               mode=mode, now=now)
+        except PayloadRefusal as exc:
+            raise CheckpointRefusal("snapshot_changed") from exc
+
+    def load_snapshot(self, ref: str) -> Snapshot | None:
+        """Read checkpoint metadata, including bounded pre-upgrade records."""
+        from .checkpoint_payloads import PayloadRefusal
+
+        try:
+            owned = self.payloads.load(ref)
+        except PayloadRefusal:
+            return None
+        return owned if owned is not None else self._legacy_load_snapshot(ref)
+
+    def _legacy_load_snapshot(self, ref: str) -> Snapshot | None:
+        """Absence-only compatibility reader; corrupt owned data never reaches it."""
+        from .file_tools import Snapshot, _is_ref
+
+        if not _is_ref(ref):
+            return None
+        directory = record = None
+        try:
+            directory = os.open(self.snapshots.directory, os.O_RDONLY | os.O_DIRECTORY
+                                | getattr(os, "O_NOFOLLOW", 0))
+            record = os.open(f"{ref}.json", os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                             | getattr(os, "O_NONBLOCK", 0), dir_fd=directory)
+            before = os.fstat(record)
+            if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+                    or before.st_size > 65536):
+                return None
+            with os.fdopen(os.dup(record), "rb") as stream:
+                data = stream.read(65537)
+            after = os.fstat(record)
+            if (len(data) > 65536 or (before.st_dev, before.st_ino, before.st_size,
+                                    before.st_mtime_ns) !=
+                    (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)):
+                return None
+            raw = json.loads(data)
+            if (not isinstance(raw, dict)
+                    or set(raw) != {"path", "existed", "blob_sha", "size", "mode", "created_at"}
+                    or not isinstance(raw["path"], str) or len(raw["path"]) > 4096
+                    or not Path(raw["path"]).is_absolute()
+                    or str(Path(raw["path"])) != raw["path"]
+                    or ".." in Path(raw["path"]).parts
+                    or any(ord(c) < 32 or ord(c) == 127 for c in raw["path"])
+                    or type(raw["existed"]) is not bool or not _is_ref(raw["blob_sha"])
+                    or type(raw["size"]) is not int or not 0 <= raw["size"] <= MAX_CAPTURE_BYTES
+                    or type(raw["mode"]) is not int or not 0 <= raw["mode"] <= 0o7777
+                    or type(raw["created_at"]) not in (int, float)
+                    or not math.isfinite(raw["created_at"]) or raw["created_at"] < 0
+                    or (not raw["existed"] and (raw["blob_sha"], raw["size"], raw["mode"])
+                        != (_sha(b""), 0, 0))):
+                return None
+            snap = Snapshot(**{**raw, "created_at": float(raw["created_at"])})
+            return snap if snap.ref == ref else None
+        except (OSError, ValueError, TypeError, OverflowError):
+            return None
+        finally:
+            if record is not None:
+                os.close(record)
+            if directory is not None:
+                os.close(directory)
+
+    def snapshot_blob(self, snap: Snapshot) -> bytes | None:
+        """Read an indexed preimage or undo through the bounded history reader."""
+        return self._blob_bytes(snap.blob_sha, snap.size)
 
     def _blob_bytes(self, sha: object, size: object) -> bytes | None:
+        from .checkpoint_payloads import PayloadRefusal
+
+        try:
+            owned = self.payloads.blob(sha, size)
+        except PayloadRefusal:
+            return None
+        return owned if owned is not None else self._legacy_blob_bytes(sha, size)
+
+    def _legacy_blob_bytes(self, sha: object, size: object) -> bytes | None:
         """Verify a bounded regular blob without following a corrupted store path."""
         from .file_tools import _is_ref
 
         if not _is_ref(sha) or type(size) is not int or not 0 <= size <= MAX_CAPTURE_BYTES:
             return None
-        parent = None
+        directory = parent = None
         try:
-            parent = os.open(self.snapshots.directory / "blobs", os.O_RDONLY
-                             | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0))
-            exists, actual_sha, actual_size, _, data = _state(parent, sha, max_bytes=size)
+            directory = os.open(self.snapshots.directory, os.O_RDONLY | os.O_DIRECTORY
+                                | getattr(os, "O_NOFOLLOW", 0))
+            parent = os.open("blobs", os.O_RDONLY | os.O_DIRECTORY
+                             | getattr(os, "O_NOFOLLOW", 0), dir_fd=directory)
+            exists, actual_sha, actual_size, _, data = _state(
+                parent, sha, max_bytes=size, single_link=True)
             return data if exists and actual_sha == sha and actual_size == size else None
         except (OSError, CheckpointRefusal):
             return None
         finally:
             if parent is not None:
                 os.close(parent)
+            if directory is not None:
+                os.close(directory)
 
     @staticmethod
     def _group_root(root: Path) -> tuple[Path, tuple[int, int]]:
@@ -475,7 +599,7 @@ class FileCheckpointHistory:
             try:
                 observed, excluded_paths = self._scan_group(root, identity)
                 for rel, (_, _, mode, data) in observed.items():
-                    snap = self.snapshots.take_captured(
+                    snap = self._take_checkpoint(
                         root / rel, existed=True, data=data, mode=mode
                     )
                     db.execute("""INSERT INTO group_files
@@ -583,7 +707,7 @@ class FileCheckpointHistory:
                                 (sha, size, mode, group_id, rel))
                             created += 1
                         continue
-                    snap = self.snapshots.load(item["pre_ref"])
+                    snap = self.load_snapshot(item["pre_ref"])
                     if snap is None or snap.path != str(root / rel):
                         raise CheckpointRefusal("snapshot_changed")
                     if post is None:
@@ -764,7 +888,7 @@ class FileCheckpointHistory:
             planned_paths = []
             current_fingerprints = {}
             for item in selected:
-                snap = self.snapshots.load(item["pre_ref"]) if item["pre_ref"] else None
+                snap = self.load_snapshot(item["pre_ref"]) if item["pre_ref"] else None
                 before = self._blob_bytes(snap.blob_sha, snap.size) if snap else None
                 after = self._blob_bytes(item["post_sha"], item["post_size"])
                 valid_pre = (not item["pre_existed"] or
@@ -820,7 +944,7 @@ class FileCheckpointHistory:
                 return {"ok": False, "reason": "scope_changed"}
             chunks = []
             for item in self._group_targets(db, group_id):
-                snap = self.snapshots.load(item["pre_ref"]) if item["pre_ref"] else None
+                snap = self.load_snapshot(item["pre_ref"]) if item["pre_ref"] else None
                 before = self._blob_bytes(snap.blob_sha, snap.size) if snap else b""
                 after = self._blob_bytes(item["post_sha"], item["post_size"])
                 if before is None or after is None:
@@ -905,7 +1029,7 @@ class FileCheckpointHistory:
                         return {"ok": False, "reason": "private_scope"}
                     skipped += 1
                     continue
-                snap = self.snapshots.load(item["pre_ref"]) if item["pre_ref"] else None
+                snap = self.load_snapshot(item["pre_ref"]) if item["pre_ref"] else None
                 before = self._blob_bytes(snap.blob_sha, snap.size) if snap else b""
                 if ((item["pre_existed"] and (snap is None or before is None
                      or snap.path != str(target)))
@@ -940,7 +1064,7 @@ class FileCheckpointHistory:
             for item, before, pre_mode, current in candidates:
                 target = root / item["path"]
                 try:
-                    undo = self.snapshots.take_captured(
+                    undo = self._take_checkpoint(
                         target, existed=current[0], data=current[4], mode=current[3]
                     )
                     if self._blob_bytes(undo.blob_sha, undo.size) is None:
@@ -1092,8 +1216,15 @@ class FileCheckpointHistory:
                 raise CheckpointRefusal("root_changed")
             if self.scope.resolve(str(target)) != target:
                 raise CheckpointRefusal("path_changed")
-            expected = self._blob_bytes(snap.blob_sha, snap.size)
-            if expected is None or snap.path != str(target) or len(expected) != snap.size:
+            expected = self._legacy_blob_bytes(snap.blob_sha, snap.size)
+            if (expected is None or snap.path != str(target) or len(expected) != snap.size
+                    or self._legacy_load_snapshot(snap.ref) != snap):
+                raise CheckpointRefusal("snapshot_changed")
+            # FileTools captured this generic undo before authorization. Import
+            # only on this authorized, serialized effect path, preserving its ref.
+            owned = self._take_checkpoint(target, existed=snap.existed, data=expected,
+                                          mode=snap.mode, now=snap.created_at)
+            if owned.ref != snap.ref:
                 raise CheckpointRefusal("snapshot_changed")
             post_sha = self._put_blob(data if op == "write" else b"")
             cursor = db.execute("""INSERT INTO entries
@@ -1196,7 +1327,7 @@ class FileCheckpointHistory:
                 return {"ok": False, "reason": "unknown_checkpoint"}
             if not self._valid_scope(row):
                 return {"ok": False, "reason": "scope_changed"}
-            snap = self.snapshots.load(row["pre_ref"])
+            snap = self.load_snapshot(row["pre_ref"])
             if (snap is None or snap.path != row["path"]
                     or self._blob_bytes(snap.blob_sha, snap.size) is None):
                 return {"ok": False, "reason": "snapshot_changed"}
@@ -1231,7 +1362,7 @@ class FileCheckpointHistory:
             row = self._row(db, entry_id)
             if row is None or not self._valid_scope(row) or row["status"] != "applied":
                 return {"ok": False, "reason": "unknown_checkpoint"}
-            snap = self.snapshots.load(row["pre_ref"])
+            snap = self.load_snapshot(row["pre_ref"])
             if snap is None or snap.path != row["path"]:
                 return {"ok": False, "reason": "snapshot_changed"}
             before = self._blob_bytes(snap.blob_sha, snap.size)
@@ -1288,7 +1419,7 @@ class FileCheckpointHistory:
                 return {"ok": False, "reason": "unknown_checkpoint"}
             if not self._valid_scope(row):
                 return {"ok": False, "reason": "scope_changed"}
-            snap = self.snapshots.load(row["pre_ref"])
+            snap = self.load_snapshot(row["pre_ref"])
             if snap is None or snap.path != row["path"]:
                 return {"ok": False, "reason": "snapshot_changed"}
             before = self._blob_bytes(snap.blob_sha, snap.size)
@@ -1311,7 +1442,7 @@ class FileCheckpointHistory:
                                 else "changed_since_checkpoint"}
                     if force and exists and b"\x00" in current_data[:4096]:
                         return {"ok": False, "reason": "binary_current_excluded"}
-                    undo = self.snapshots.take_captured(
+                    undo = self._take_checkpoint(
                         target, existed=exists, data=current_data, mode=mode
                     )
                     if self._blob_bytes(undo.blob_sha, undo.size) is None:

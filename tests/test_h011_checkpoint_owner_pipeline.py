@@ -175,7 +175,9 @@ async def test_revocation_between_approval_and_tick_never_restores_or_rewinds(pi
 async def test_maintenance_requires_real_human_task_and_preserves_files_chat_and_shared_blobs(pipeline):
     orch, root, snapshots, sid = pipeline
     note, identifier = await checkpoint(root, snapshots, group=True)
-    blob_dir = snapshots.directory / "blobs"
+    # Index-only maintenance continues to retain payloads until its approved GC
+    # lane is implemented. A terminal group now writes in the owned namespace.
+    blob_dir = snapshots.directory / "checkpoint_payloads-v1" / "blobs"
     blobs = {p.name: p.read_bytes() for p in blob_dir.iterdir()}
     before = await orch.memory.get_history(sid)
     task_id = await request(orch, "/checkpoints clear --execute")
@@ -221,8 +223,9 @@ async def test_force_requires_exact_accepted_current_bytes_and_retains_preundo(p
     else:
         assert result["status"] == "ok", result
         assert note.read_text() == "before"
-        undo = snapshots.load(result["filesystem"]["undo_snapshot_ref"])
-        assert snapshots._blob_path(undo.blob_sha).read_text() == "owner overwrite"
+        history = FileCheckpointHistory(snapshots, FileScope([root]))
+        undo = history.load_snapshot(result["filesystem"]["undo_snapshot_ref"])
+        assert undo is not None and history.snapshot_blob(undo) == b"owner overwrite"
 
 
 @pytest.mark.asyncio

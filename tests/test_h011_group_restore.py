@@ -39,7 +39,7 @@ def test_group_restore_skips_later_user_edit_and_keeps_pre_undo(tmp_path):
     assert not created.exists()
     assert len(result["undo_group_id"]) == 32
     assert len(result["undo_snapshot_refs"]) == 2
-    assert all(history.snapshots.load(ref) is not None for ref in result["undo_snapshot_refs"])
+    assert all(history.load_snapshot(ref) is not None for ref in result["undo_snapshot_refs"])
 
 
 def test_group_restore_refuses_replaced_root_even_with_same_bytes(tmp_path):
@@ -82,7 +82,7 @@ def test_unknown_group_and_corrupt_postblob_cannot_restore(tmp_path):
     with rows as db:
         post_sha = db.execute("""SELECT post_sha FROM group_files
             WHERE group_id=? AND path='note.txt'""", (capture["id"],)).fetchone()[0]
-    (history.snapshots.directory / "blobs" / post_sha).write_bytes(b"forged")
+    (history.payloads.directory / "blobs" / post_sha).write_bytes(b"forged")
     plan = history.plan_group_restore(capture["id"])
     assert plan["eligible"] == 0 and plan["skipped"] == 1
     result = history.restore_group(capture["id"])

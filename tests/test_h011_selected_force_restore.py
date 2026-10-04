@@ -36,8 +36,8 @@ async def test_real_filetools_safe_skip_and_force_exact_edited_preundo(tmp_path)
                                      expected_current=plan["current"],
                                      effect_check=lambda: True)
     assert restored["ok"] is True and target.read_text() == "owner before"
-    undo = tools.snapshots.load(restored["undo_snapshot_ref"])
-    assert undo is not None and tools.snapshots.blob(undo) == b"later owner edit"
+    undo = tools.history.load_snapshot(restored["undo_snapshot_ref"])
+    assert undo is not None and tools.history.snapshot_blob(undo) == b"later owner edit"
 
 
 def test_group_selection_force_then_remaining_preserves_prior_undo(tmp_path):
@@ -60,14 +60,14 @@ def test_group_selection_force_then_remaining_preserves_prior_undo(tmp_path):
     assert first["ok"] is True and first["status"] == "partial"
     assert first["remaining"] == 2 and modified.read_text() == "old"
     first_ref = first["undo_snapshot_refs"][0]
-    assert history.snapshots.blob(history.snapshots.load(first_ref)) == b"owner-edited"
+    assert history.snapshot_blob(history.load_snapshot(first_ref)) == b"owner-edited"
     assert deleted.exists() is False and created.read_text() == "agent-created"
     assert history.restore_group(capture["id"], paths=["modified.txt"])["ok"] is False
     second = history.restore_group(capture["id"], paths=["deleted.txt", "created.txt"])
     assert second["ok"] is True and second["status"] == "restored"
     assert second["remaining"] == 0 and second["restored"] == 2
     assert deleted.read_text() == "recover" and not created.exists()
-    assert history.snapshots.blob(history.snapshots.load(first_ref)) == b"owner-edited"
+    assert history.snapshot_blob(history.load_snapshot(first_ref)) == b"owner-edited"
 
 
 @pytest.mark.parametrize("selection", [
@@ -218,9 +218,9 @@ def test_force_accepts_bounded_larger_owner_edit_and_preserves_mode(tmp_path):
                                      expected_current=plan["current"], effect_check=lambda: True)
     assert restored["ok"] is True and note.read_text() == "before"
     assert note.stat().st_mode & 0o777 == 0o600
-    undo = history.snapshots.load(restored["undo_snapshot_refs"][0])
+    undo = history.load_snapshot(restored["undo_snapshot_refs"][0])
     assert undo is not None and undo.mode == 0o700
-    assert history.snapshots.blob(undo) == owner_bytes
+    assert history.snapshot_blob(undo) == owner_bytes
 
 
 @pytest.mark.asyncio

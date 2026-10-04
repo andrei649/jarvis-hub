@@ -1,0 +1,81 @@
+{
+  "goal": "All697 pinned Hermes capabilities; this is an H011 storage prerequisite, not full parity.",
+  "generated_at": "2026-10-04T10:20:21.826381+00:00",
+  "base_sha": "da88a13919c65a0893cbbceb96c9f2005ebae49d",
+  "state": "verified local owned payload integration; H011 remains partial",
+  "source_inputs": {
+    "agents/core/checkpoint_payloads.py": "e3df7be919a29ca74f5d63fb801d7a275f064e84607aea643bd61405e18afe82",
+    "agents/core/file_checkpoint_history.py": "d44ccd1e1ccc5c58660b10a803a8e9b2def023252b8b29dd78197d7884b2e586",
+    "tests/test_h011_checkpoint_payloads.py": "98de180c0364c7da765d5b81c9b0693d7b4e820980e5dbb5037893b9e25de88e",
+    "tests/test_h011_owned_history_integration.py": "fd8457a958218b7a5565501096317ea12c5c23c757037376bf9957f5fb384663",
+    "tests/test_h011_checkpoint_owner_pipeline.py": "d8f11c3685dd3455cba1f5f7011d28aec52a21ef61155c8dca438f09503c4f17",
+    "tests/test_h011_file_checkpoint_history.py": "d28ee42c0d6dfb7eb1ca38f76ac84aed5fe4d98fc997a14938775855cbb36b23",
+    "tests/test_h011_file_checkpoint_maintenance.py": "7b32626a0a39acf63fd1e172e85c4fa59419be03c6e55d55c27e11bc0ac9f5ff",
+    "tests/test_h011_file_checkpoint_restore.py": "24b0332c008dc132fa5e59531a25d51aacf1c4008209532c90bafe2bdf552081",
+    "tests/test_h011_group_restore.py": "7fdf008846845c8a9e5fb2ae23a73e99ab83c3917d34f772f23c43d8c9bd2b4b",
+    "tests/test_h011_selected_force_restore.py": "d13a9959d32b63f049121e0142b9536c46bef03159ec7706f61c1b71919529fe"
+  },
+  "delivered": [
+    "New authorized file history preimages/postimages and terminal/restore undo use checkpoint_payloads-v1/records and blobs.",
+    "Generic FileTools preauthorization capture/returned undo refs stay compatible and are never collected by the owned namespace.",
+    "Owned corrupt metadata/blobs cannot be masked by valid generic copies; legacy history is bounded and readonly until effect.",
+    "History lock is dirfd anchored, no-follow, reentrant, inode checked; concurrent first creation and root substitution regressions pass."
+  ],
+  "verification": {
+    "affected_modules": 31,
+    "affected": {
+      "tests": 604,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "xml": "/tmp/nerva-h011-owned-payload-acceptance-final-20261004.xml",
+    "xml_sha256": "3a5628071eae85f877642e90b21be2e1a2ccf0b8b3aecc9a21edb7e9277375bf",
+    "log": "/tmp/nerva-h011-owned-payload-acceptance-final-20261004.log",
+    "log_sha256": "ceb814ed79f2d26bacf3549c7192cb0f5bdc07a9ff976e8f67e84fe837aa7ec3",
+    "ruff": {
+      "command": "ruff check .",
+      "exit_code": 0,
+      "log": "/tmp/nerva-h011-owned-payload-ruff-final-20261004.log"
+    },
+    "bandit": {
+      "command": "python -m bandit -r agents scripts -q -b .bandit-baseline.json",
+      "exit_code": 0,
+      "log": "/tmp/nerva-h011-owned-payload-bandit-final-20261004.log"
+    }
+  },
+  "red_followup": [
+    "Initial ownership/legacy integration RED preserved in /tmp/nerva-h011-owned-history-integration-red-20261004.xml. One terminal fixture used a nonexistent ok field; corrected to existing status=ready, not counted as behavior proof.",
+    "Owned corruption/roundtrip behavior then33 passed; negative capture/stored time and oversized-int validation initially failed, now covered. A missing json test import was repaired before meaningful record-timestamp RED.",
+    "Initial31-module integration603 cases had6 failures: old generic-storage assertions plus deterministic concurrent first lock creation failure. Legacy-GC tests now explicitly persist the original layout and retain their original reclaim assertions; new owned index-only retention is tested separately.",
+    "Root-swap lock RED and existing concurrent prepare RED preserved; final604 includes both GREEN."
+  ],
+  "prototypes": {
+    "payload_patch": {
+      "path": "/tmp/nerva-h011-owned-payload-proto-20261004/implementation.patch",
+      "sha256": "6cdd304c68327818a333d355669e3e6e078dae4e4d44634272e4882db7915238",
+      "model": "gpt-6-sol",
+      "reasoning": "high",
+      "root_adaptation": "Integrated actual history, timestamp bounds, explicit refusals and root-lock fences."
+    },
+    "retention_patch": {
+      "path": "/tmp/nerva-h011-retention-proto-20261004/implementation.patch",
+      "sha256": "2c69bdc66ca58ae71f0ce2c21b1f13ce5b493262f7f5c7742c76c82309de28f0",
+      "focused_passed": 47,
+      "state": "external prepared only; not integrated or exposed as deletion"
+    }
+  },
+  "reference_alignment": {
+    "hermes_pin": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+    "source": "tools/checkpoint_manager.py, tools/checkpoint_pruning.py, tools/checkpoint_maintenance.py",
+    "difference": "Hermes uses shadow Git refs/GC; Nerva existing SQLite index and generic undo require a payload adapter. Reuse upstream logic/text/tests where contracts match; avoid unrelated rebuilds."
+  },
+  "remaining": [
+    "Actual retention/cap/per-project deduplicated accounting and exact approved physical GC/clear remain unimplemented. Current signed maintenance remains index-only.",
+    "Windows checkpoint implementation remains unsupported. Dedicated HUD/mobile UX belongs to its own surface gap records; do not invent those as H011 original CLI contract requirements.",
+    "No full backend/client suites rerun on this new source; prior frozen full milestone stays historical, not current-source acceptance.",
+    "Downgrade requires the owned-aware reader or an export; do not discard new payloads/journals.",
+    "H011 and all697 remain unfinished; no push, merge, deployment, provider/device operation or 100 percent coverage claim."
+  ],
+  "next_action": "Finish original H011 status/list/prune/clear/clear-legacy contract with reference-based adaptation, and integrate H388 upstream guidance adapter; no parity credit for prototypes."
+}

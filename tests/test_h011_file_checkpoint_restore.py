@@ -31,8 +31,8 @@ async def test_restore_real_write_captures_preundo_and_skips_later_edit(tmp_path
     restored = tools.history.restore(entry_id)
     assert restored["ok"] is True
     assert target.read_text(encoding="utf-8") == "original"
-    undo = tools.snapshots.load(restored["undo_snapshot_ref"])
-    assert undo is not None and tools.snapshots.blob(undo) == b"agent"
+    undo = tools.history.load_snapshot(restored["undo_snapshot_ref"])
+    assert undo is not None and tools.history.snapshot_blob(undo) == b"agent"
 
 
 @pytest.mark.asyncio

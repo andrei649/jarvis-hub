@@ -49,8 +49,8 @@ async def test_diff_rejects_oversized_stored_blob_before_bulk_read(tmp_path, mon
     tools = FileTools(FileScope([root]), snapshots=SnapshotStore(tmp_path / "snapshots"))
     assert (await tools.write_file({"path": str(target), "content": "after"}, approved=True))["ok"]
     row = tools.history.list_entries()[0]
-    sha = tools.snapshots.load(row["pre_ref"]).blob_sha if image == "before" else row["post_sha"]
-    blob = tools.snapshots.directory / "blobs" / sha
+    sha = tools.history.load_snapshot(row["pre_ref"]).blob_sha if image == "before" else row["post_sha"]
+    blob = tools.history.payloads.directory / "blobs" / sha
     with blob.open("wb") as stream:
         stream.truncate(64 * 1024 * 1024)
     original = Path.read_bytes

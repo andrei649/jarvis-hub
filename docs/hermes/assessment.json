@@ -171,8 +171,8 @@
       "id": "H011",
       "row_sha256": "0b4bb66ca1a465a07d3b7fa45a4645417bba7e6a6cf9b1d095d5e95afbbc8eb7",
       "status": "partial",
-      "summary": "Owner checkpoint status/list, typed/ordinal diff and selected/force restore now cross the existing CLI/chat preappend ADMIN command path without model or command transcript mutation. The real producer persists an exact intent and shallow approval preview, always asks an ordinary human, and binds the signed enforce-mode task to a private at-most-once journal. Worker/controller execution verifies the authenticated current RUNNING task, exact intent, queue/configuration, kernel and original session lease. Physical fences use read-only durable session/clock/history identity, original memory manager, current root and force fingerprints before every file effect. Only complete filesystem success commits the current-last-user conversation rewind; partial file/chat failure retains history/undo and reports the split. Signed index maintenance rechecks exact generation/rows and live authority inside its write transaction; shared generic blobs/records remain retained. Real CLI-to-web-to-worker synthetic filesystem and durable conversation restart acceptance is covered. Final root affected run: 2,273 passed, 3 optional skips across 93 modules; whole-repository Ruff and agents/scripts Bandit passed. H011 remains partial, with no native, live-device/provider or full-suite acceptance claim. See docs/hermes/evidence/h011-owner-effect-integration-2026-10-04.json. Frozen full follow-up: the first23120-case backend exposed two old-signature persistence fakes and three stale readiness/harness counts. The fixes preserve production rewind fences, use real synthetic per-turn durable writes, and include the two checkpoint kinds as WIRED only.200 affected cases pass; all frozen clients pass (1889 HUD V2,185 mobile,233 legacy). Second full backend remains pending; no full success or new parity credit. Frozen local milestone b9d4d22d: all23121 backend cases completed,23086 passed,34 ordinary skips,one existing xfail,zero failures/errors and3109 unchanged inputs. Separately verified serial HUD1889/mobile185/legacy233 source inputs remain unchanged. H011/H277 stay partial; no full functional parity, native/live or publication claim. See docs/hermes/evidence/h011-h277-reconciled-full-2026-10-04.json.",
-      "remaining": "Retention/size/per-project/orphan controls and complete checkpoint-owned payload cleanup remain open; approved maintenance removes only selected index rows and retains shared blobs. Dedicated HUD/mobile checkpoint controls and native acceptance remain open. POSIX checkpoint storage leaves Windows capture/restore unsupported. General process/network/outside-root effects are not reversible. Deeper crash/power-loss verification remains required; the local frozen full milestone is now verified.",
+      "summary": "Owner checkpoint status/list, typed/ordinal diff and selected/force restore now cross the existing CLI/chat preappend ADMIN command path without model or command transcript mutation. The real producer persists an exact intent and shallow approval preview, always asks an ordinary human, and binds the signed enforce-mode task to a private at-most-once journal. Worker/controller execution verifies the authenticated current RUNNING task, exact intent, queue/configuration, kernel and original session lease. Physical fences use read-only durable session/clock/history identity, original memory manager, current root and force fingerprints before every file effect. Only complete filesystem success commits the current-last-user conversation rewind; partial file/chat failure retains history/undo and reports the split. Signed index maintenance rechecks exact generation/rows and live authority inside its write transaction; shared generic blobs/records remain retained. Real CLI-to-web-to-worker synthetic filesystem and durable conversation restart acceptance is covered. Final root affected run: 2,273 passed, 3 optional skips across 93 modules; whole-repository Ruff and agents/scripts Bandit passed. H011 remains partial, with no native, live-device/provider or full-suite acceptance claim. See docs/hermes/evidence/h011-owner-effect-integration-2026-10-04.json. Frozen full follow-up: the first23120-case backend exposed two old-signature persistence fakes and three stale readiness/harness counts. The fixes preserve production rewind fences, use real synthetic per-turn durable writes, and include the two checkpoint kinds as WIRED only.200 affected cases pass; all frozen clients pass (1889 HUD V2,185 mobile,233 legacy). Second full backend remains pending; no full success or new parity credit. Frozen local milestone b9d4d22d: all23121 backend cases completed,23086 passed,34 ordinary skips,one existing xfail,zero failures/errors and3109 unchanged inputs. Separately verified serial HUD1889/mobile185/legacy233 source inputs remain unchanged. H011/H277 stay partial; no full functional parity, native/live or publication claim. See docs/hermes/evidence/h011-h277-reconciled-full-2026-10-04.json. Owned storage follow-up (2026-10-04): authorized history now writes checkpoint-owned payloads while ordinary FileTools undo stays generic. Bounded absence-only legacy readers, corrupt-owned refusal, and anchored/concurrent history locks pass604 affected cases across31 modules; whole Ruff and production Bandit pass. Retention/physical GC remain open; previous frozen full suites are historical. See docs/hermes/evidence/h011-owned-payload-integration-2026-10-04.json.",
+      "remaining": "Original H011 CLI contract: retention/size/per-project accounting/orphan selection and complete checkpoint-owned GC for prune/clear remain open; current approved maintenance removes index rows only. No recognized Nerva legacy archive format exists, so clear-legacy remains an explicit no-op. Windows capture/restore remains unsupported. Dedicated HUD/mobile enhancements are separate surface gaps, not invented H011 CLI closure criteria. Current-source full milestone remains pending; prior b9d4d22d full milestone stays historical.",
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
@@ -244,7 +244,7 @@
         },
         {
           "path": "agents/core/file_checkpoint_history.py",
-          "sha256": "7fea56380d56a1b8981a2567d358990da7c6cbbfd2aa33636adec3908055aa43"
+          "sha256": "d44ccd1e1ccc5c58660b10a803a8e9b2def023252b8b29dd78197d7884b2e586"
         },
         {
           "path": "agents/core/file_tools.py",
@@ -340,7 +340,7 @@
         },
         {
           "path": "tests/test_h011_checkpoint_owner_pipeline.py",
-          "sha256": "b0e7d16431440056da3bd35f79ae1c3906aa05372f8e72b3b2d684c521899d6b"
+          "sha256": "d8f11c3685dd3455cba1f5f7011d28aec52a21ef61155c8dca438f09503c4f17"
         },
         {
           "path": "tests/test_h011_checkpoint_selection.py",
@@ -352,19 +352,19 @@
         },
         {
           "path": "tests/test_h011_file_checkpoint_history.py",
-          "sha256": "00c9e2f34253d60f655bf91d4cee64bfbe68b13ecabd591ed9eafee099e56dd3"
+          "sha256": "d28ee42c0d6dfb7eb1ca38f76ac84aed5fe4d98fc997a14938775855cbb36b23"
         },
         {
           "path": "tests/test_h011_file_checkpoint_maintenance.py",
-          "sha256": "0b51a56203b65268844818082028cf3366e69205aedcf7ff54f53a955d7a8e40"
+          "sha256": "7b32626a0a39acf63fd1e172e85c4fa59419be03c6e55d55c27e11bc0ac9f5ff"
         },
         {
           "path": "tests/test_h011_file_checkpoint_restore.py",
-          "sha256": "f14987fe28d14e13bf43b561f5993f208c9f6a1045438041a2f5b0ab6dc72457"
+          "sha256": "24b0332c008dc132fa5e59531a25d51aacf1c4008209532c90bafe2bdf552081"
         },
         {
           "path": "tests/test_h011_group_restore.py",
-          "sha256": "a3e0fd906aa98baad9f54591d1fa375ddfd625108a489c8d1d4cf92c314499e8"
+          "sha256": "7fdf008846845c8a9e5fb2ae23a73e99ab83c3917d34f772f23c43d8c9bd2b4b"
         },
         {
           "path": "tests/test_h011_manual_host_kernel.py",
@@ -400,7 +400,7 @@
         },
         {
           "path": "tests/test_h011_selected_force_restore.py",
-          "sha256": "66baf1c563c7dca5c4d963ced96f8b41a05e43d8fdc2411649009950d86cc7de"
+          "sha256": "d13a9959d32b63f049121e0142b9536c46bef03159ec7706f61c1b71919529fe"
         },
         {
           "path": "tests/test_h011_terminal_group_checkpoint.py",
@@ -425,6 +425,22 @@
         {
           "path": "docs/hermes/evidence/h011-h277-reconciled-full-2026-10-04.json",
           "sha256": "be17b018950daa8a30e4dfea9069f7ef99b09e1b8bd1d1a418586b74d8a96f8b"
+        },
+        {
+          "path": "agents/core/checkpoint_payloads.py",
+          "sha256": "e3df7be919a29ca74f5d63fb801d7a275f064e84607aea643bd61405e18afe82"
+        },
+        {
+          "path": "tests/test_h011_checkpoint_payloads.py",
+          "sha256": "98de180c0364c7da765d5b81c9b0693d7b4e820980e5dbb5037893b9e25de88e"
+        },
+        {
+          "path": "tests/test_h011_owned_history_integration.py",
+          "sha256": "fd8457a958218b7a5565501096317ea12c5c23c757037376bf9957f5fb384663"
+        },
+        {
+          "path": "docs/hermes/evidence/h011-owned-payload-integration-2026-10-04.json",
+          "sha256": "8a67439268b51f7c86824139f05db54d4cb55c15deced8a3b52269f5235045f4"
         }
       ]
     },
