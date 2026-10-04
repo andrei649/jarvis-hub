@@ -207,3 +207,13 @@ records22,360 passes,34 ordinary skips,1 existing xfail and zero failures/errors
 for the inline-outcome and promotion-audit source checkpoint. New provider work
 and broader H277 acceptance remain unfinished. The earlier handoff instructions
 above are historical; the owner's later local/kernel authorization applies.
+
+
+## Direct late-annotation coverage integrated — 2026-10-04
+
+The separately [integrated regression](late-annotation-regression-2026-10-04.json)
+now covers the direct action-queue API:178 current judge/regression cases pass,
+and removing only the decided-item guard causes its new assertion to fail. The
+disposable3,003-input snapshot was fully restored. Production source is unchanged.
+The original49 campaign and earlier full22395 checkpoint retain their scope;
+the generated backend count is now22396, pending the next integrated full run.
