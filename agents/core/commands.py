@@ -33,6 +33,15 @@ _COMMAND_RE = re.compile(r"^/([A-Za-z][A-Za-z0-9_]*)(?:@\w+)?(?:\s+(.*))?$", re.
 _MAX_ARGS = 2_000
 
 
+def checkpoint_command_name(text: str) -> str | None:
+    """Identify only raw checkpoint commands; recognition grants no authority."""
+    if not isinstance(text, str):
+        return None
+    match = _COMMAND_RE.fullmatch(text.strip())
+    name = match.group(1).lower() if match else None
+    return name if name in {"rollback", "checkpoints"} else None
+
+
 @dataclass(frozen=True)
 class Principal:
     """Who is speaking in this turn, as far as the channel could establish."""
@@ -123,6 +132,10 @@ class CommandRegistry:
 
     async def dispatch(self, text: str, *, orch: Any, principal: Principal) -> CommandOutcome | None:
         """Answer a slash command, or return None when *text* is not one."""
+        checkpoint_name = checkpoint_command_name(text)
+        if checkpoint_name and len(text.strip()) > _MAX_ARGS:
+            return self._observed(CommandOutcome(checkpoint_name, "refused",
+                                  "Checkpoint command is too long; nothing changed."))
         parsed = self.parse(text)
         if parsed is None:
             return None
@@ -401,6 +414,8 @@ async def _recap(ctx: CommandContext) -> str:
 
 
 def build_default_registry() -> CommandRegistry:
+    from .checkpoint_commands import checkpoint_command
+
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
     registry.register(SlashCommand("status", "backend, agents, autonomy mode, e-stop", _status))
@@ -414,4 +429,9 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("remind", "arm a reminder: /remind <when> | <message>", _remind, tier=ADMIN, usage="<when> | <message>"))
     registry.register(SlashCommand("voice", "spoken replies in this chat: off, voice-for-voice, or always", _voice, usage="[off|voice|always]"))
     registry.register(SlashCommand("refine", "review this conversation now for memories and skill changes", _refine, tier=ADMIN, usage="[focus]"))
+    registry.register(SlashCommand("checkpoints", "checkpoint inventory and maintenance preview",
+                                   checkpoint_command, tier=ADMIN,
+                                   usage="[status|list|prune|clear|clear-legacy]"))
+    registry.register(SlashCommand("rollback", "list checkpoints or request an approved restore",
+                                   checkpoint_command, tier=ADMIN, usage="[checkpoint]"))
     return registry

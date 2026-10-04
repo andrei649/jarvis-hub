@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 import time
 from collections.abc import Callable, Mapping
@@ -186,6 +187,22 @@ def build_parser() -> argparse.ArgumentParser:
     consent.add_argument("--revision", required=True, help="the exact 64-character offer revision from approvals list")
     consent.add_argument("--reason", help="optional human decision reason (at most 280 characters)")
     consent.add_argument("--json", action="store_true")
+
+    checkpoints = verbs.add_parser("checkpoints", help="owner checkpoint inventory and maintenance")
+    checkpoint_verbs = checkpoints.add_subparsers(dest="action", metavar="action")
+    for action in ("status", "list"):
+        query = checkpoint_verbs.add_parser(action, help="show checkpoint storage and projects")
+        query.add_argument("--project", metavar="ROOT")
+        query.add_argument("--limit", type=int, metavar="N")
+    for action in ("prune", "clear", "clear-legacy"):
+        change = checkpoint_verbs.add_parser(action, help="preview or request owner approval")
+        if action == "prune":
+            change.add_argument("--project", metavar="ROOT")
+        mode = change.add_mutually_exclusive_group()
+        mode.add_argument("--dry-run", action="store_true", help="preview only (default)")
+        mode.add_argument("--execute", action="store_true", help="request governed approval")
+        change.add_argument("--force", action="store_true",
+                            help="forward force intent; never bypass owner approval")
 
     kernel = verbs.add_parser("kernel", help="the Action Kernel")
     kernel_verbs = kernel.add_subparsers(dest="action", required=True, metavar="action")
@@ -1222,6 +1239,90 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
     task = (reply or {}).get("task") or {}
     ctx.say(f"#{ns.task_id} {ns.action}ed → {task.get('status', 'done')}")
     return EXIT_OK
+
+
+_CHECKPOINT_NOTICE_CODES = frozenset({
+    "checkpoint.complete", "checkpoint.preview", "checkpoint.queued",
+    "checkpoint.refused", "checkpoint.unavailable", "checkpoint.partial",
+})
+_CHECKPOINT_SUCCESS_CODES = frozenset({"checkpoint.complete", "checkpoint.preview"})
+
+
+def cmd_checkpoints(ns: argparse.Namespace, ctx: Context) -> int:
+    """Forward a fixed owner command; only the hub's checkpoint notice decides success."""
+    action = ns.action or "status"
+    project = getattr(ns, "project", None)
+    if project is not None and (
+        not isinstance(project, str) or not project.strip() or len(project) > 4096
+        or any(ord(ch) < 32 or 127 <= ord(ch) <= 159 for ch in project)
+    ):
+        ctx.err.write("project must be nonempty, at most 4096 characters, without controls\n")
+        return EXIT_USAGE
+    limit = getattr(ns, "limit", None)
+    if limit is not None and not 1 <= limit <= 500:
+        ctx.err.write("limit must be between 1 and 500\n")
+        return EXIT_USAGE
+    execute = bool(getattr(ns, "execute", False))
+    force = bool(getattr(ns, "force", False))
+    if force and not execute:
+        ctx.err.write("--force requires --execute and does not bypass approval\n")
+        return EXIT_USAGE
+
+    tokens = ["/checkpoints", action]
+    if project is not None:
+        tokens.extend(("--project", project))
+    if limit is not None:
+        tokens.extend(("--limit", str(limit)))
+    if action in {"prune", "clear", "clear-legacy"}:
+        tokens.append("--execute" if execute else "--dry-run")
+    if force:
+        tokens.append("--force")
+    command = " ".join(shlex.quote(token) for token in tokens)
+    reply = ctx.client().post("/chat", {"message": command})
+    if not isinstance(reply, Mapping):
+        ctx.err.write("checkpoint result unavailable: malformed hub reply\n")
+        return EXIT_FAILED
+
+    pending = reply.get("pending_approvals", [])
+    if not isinstance(pending, (list, tuple)):
+        ctx.err.write("checkpoint result unavailable: approval IDs unreadable; run `nerva approvals list`\n")
+        return EXIT_FAILED
+    valid_ids = [value for value in pending if type(value) is int and value > 0]
+    if pending:
+        ids = ", ".join(f"#{value}" for value in dict.fromkeys(valid_ids))
+        malformed = len(valid_ids) != len(pending) or len(set(valid_ids)) != len(valid_ids)
+        detail = f" ({ids})" if ids else ""
+        suffix = "; approval IDs partly unreadable" if malformed else ""
+        ctx.err.write(f"checkpoint request queued for approval{detail}{suffix}; "
+                      "run `nerva approvals list`\n")
+        return EXIT_FAILED
+
+    notices = reply.get("notices")
+    if not isinstance(notices, list):
+        ctx.err.write("checkpoint result unavailable: no status notice\n")
+        return EXIT_FAILED
+    checkpoint_notices = [item for item in notices if isinstance(item, Mapping)
+                          and isinstance(item.get("code"), str)
+                          and item["code"].startswith("checkpoint.")]
+    if len(checkpoint_notices) != 1:
+        ctx.err.write("checkpoint result unavailable: missing or ambiguous status notice\n")
+        return EXIT_FAILED
+    notice = checkpoint_notices[0]
+    code = notice["code"]
+    raw_text = notice.get("text")
+    if (code not in _CHECKPOINT_NOTICE_CODES or not isinstance(raw_text, str)
+            or not raw_text.strip() or len(raw_text) > 16_000):
+        ctx.err.write("checkpoint result unavailable: malformed status notice\n")
+        return EXIT_FAILED
+    message = _answer_text(raw_text).strip()
+    if not message:
+        ctx.err.write("checkpoint result unavailable: empty status notice\n")
+        return EXIT_FAILED
+    if code in _CHECKPOINT_SUCCESS_CODES:
+        _write_answer(ctx, message)
+        return EXIT_OK
+    ctx.err.write(message + "\n")
+    return EXIT_FAILED
 
 
 def explain_action(
@@ -3047,6 +3148,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "status": cmd_status,
     "config": cmd_config,
     "approvals": cmd_approvals,
+    "checkpoints": cmd_checkpoints,
     "kernel": cmd_kernel,
     "tools": cmd_tools,
     "inspect": cmd_inspect,

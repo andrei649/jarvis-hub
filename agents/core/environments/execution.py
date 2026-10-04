@@ -212,9 +212,12 @@ class GovernedTargetRunner:
         owner_marked = self._is_owner_approval(approved_task_id)
         consent_marked = self._is_consent_approval(approved_task_id)
         smart_marked = self._is_smart_approval(approved_task_id)
-        legacy_manual = (decision.backend == "docker"
-                         and type(approved_task_id) is int and approved_task_id > 0
-                         and not (smart_marked or owner_marked or consent_marked))
+        legacy_manual = (type(approved_task_id) is int and approved_task_id > 0
+                         and not (smart_marked or owner_marked or consent_marked)
+                         and (decision.backend == "docker"
+                              or (decision.backend in {"local", "ssh"}
+                                  and self._request_check is not None
+                                  and self._legacy_kernel_check is not None)))
         if decision.outcome not in {APPROVAL_REQUIRED, ALLOW}:
             return {"ok": False, "reason": decision.reason, **base}
         if owner_marked and consent_marked:
@@ -381,6 +384,7 @@ class GovernedTargetRunner:
                 request=request,
                 owner_marked=owner_marked,
                 consent_marked=consent_marked,
+                legacy_manual=legacy_manual,
                 expected_decision=decision,
             )
         if decision.backend == "ssh":
@@ -396,6 +400,7 @@ class GovernedTargetRunner:
                 request=request,
                 owner_marked=owner_marked,
                 consent_marked=consent_marked,
+                legacy_manual=legacy_manual,
                 expected_decision=decision,
             )
         return {"ok": False, "reason": "backend_unknown", **base}
@@ -514,6 +519,7 @@ class GovernedTargetRunner:
         request: dict,
         owner_marked: bool = False,
         consent_marked: bool = False,
+        legacy_manual: bool = False,
         expected_decision: TargetDecision | None = None,
     ) -> dict:
         argv, refusal = parse_argv(command)
@@ -528,12 +534,14 @@ class GovernedTargetRunner:
             except (ValueError, OSError):
                 return {"ok": False, "reason": "local_transport_unavailable", **base}
             self._local_transport = transport
-        if owner_marked or consent_marked:
+        if owner_marked or consent_marked or legacy_manual:
             from .local_transport import LocalHostTransport
 
             if type(transport) is not LocalHostTransport:
-                return {"ok": False, "reason": "consent_transport_unsupported" if consent_marked
-                        else "owner_transport_unsupported", **base}
+                reason = ("consent_transport_unsupported" if consent_marked else
+                          "owner_transport_unsupported" if owner_marked else
+                          "legacy_transport_unsupported")
+                return {"ok": False, "reason": reason, **base}
 
         bounded = transport.bound_timeout(timeout)
         if bounded is None:
@@ -541,6 +549,12 @@ class GovernedTargetRunner:
         workdir = transport.resolve_cwd(cwd)
         if workdir is None:
             return {"ok": False, "reason": "cwd_outside_roots", **base}
+        if legacy_manual:
+            try:
+                root_stat = os.stat(workdir, follow_symlinks=False)
+                root_identity = (root_stat.st_dev, root_stat.st_ino)
+            except OSError:
+                return {"ok": False, "reason": "cwd_missing", **base}
 
         payload = terminal_exec_payload(
             target=base["target"],
@@ -558,10 +572,12 @@ class GovernedTargetRunner:
 
         owner_kernel_rechecks: list[Callable[[], bool]] = []
         consent_kernel_rechecks: list[Callable[[], bool]] = []
+        legacy_kernel_rechecks: list[Callable[[], bool]] = []
         kernel_refusal = await self._kernel_grant(
             agent, payload, request=request,
             owner_rechecks=owner_kernel_rechecks if owner_marked else None,
             consent_rechecks=consent_kernel_rechecks if consent_marked else None,
+            legacy_rechecks=legacy_kernel_rechecks if legacy_manual else None,
         )
         if kernel_refusal is not None:
             return {"ok": False, **kernel_refusal, **base}
@@ -612,6 +628,43 @@ class GovernedTargetRunner:
                 bounded, transport, dict(request), current,
             )
             context = bind_owner_once_dispatch(scope)
+            checkpoint_current = current
+        elif legacy_manual:
+            from .legacy_terminal_dispatch import (
+                LegacyTerminalDispatchScope,
+                bind_legacy_terminal_dispatch,
+            )
+
+            expected_roots = transport.roots
+            expected_transport = (transport.default_timeout, transport.max_timeout,
+                                  transport.max_output, transport._spawn,
+                                  transport._env_source)
+
+            def current():
+                try:
+                    info = os.stat(workdir, follow_symlinks=False)
+                    same_root = (info.st_dev, info.st_ino) == root_identity
+                except OSError:
+                    same_root = False
+                return (self._manual_current(approved_task_id, request)
+                        and expected_decision is not None
+                        and self._policy_current(expected_decision)
+                        and len(legacy_kernel_rechecks) == 1
+                        and legacy_kernel_rechecks[0]()
+                        and self._kernel_live() and env_flag(LOCAL_HOST_FLAG)
+                        and transport.roots == expected_roots
+                        and (transport.default_timeout, transport.max_timeout,
+                             transport.max_output, transport._spawn,
+                             transport._env_source) == expected_transport
+                        and transport.resolve_cwd(cwd) == workdir and same_root)
+
+            if not current():
+                return {"ok": False, "reason": "legacy_terminal_dispatch_unavailable", **base}
+            scope = LegacyTerminalDispatchScope(
+                approved_task_id, "local", base["target"], tuple(argv), str(workdir),
+                bounded, transport, dict(request), current,
+            )
+            context = bind_legacy_terminal_dispatch(scope)
             checkpoint_current = current
         else:
             context = nullcontext()
@@ -699,6 +752,7 @@ class GovernedTargetRunner:
         request: dict,
         owner_marked: bool = False,
         consent_marked: bool = False,
+        legacy_manual: bool = False,
         expected_decision: TargetDecision | None = None,
     ) -> dict:
         """Same gate order as the local host; only the wire at the end differs."""
@@ -714,12 +768,14 @@ class GovernedTargetRunner:
             except (ValueError, OSError):
                 return {"ok": False, "reason": "ssh_transport_unavailable", **base}
             self._ssh_transport = transport
-        if owner_marked or consent_marked:
+        if owner_marked or consent_marked or legacy_manual:
             from .ssh_transport import SshTransport
 
             if type(transport) is not SshTransport:
-                return {"ok": False, "reason": "consent_transport_unsupported" if consent_marked
-                        else "owner_transport_unsupported", **base}
+                reason = ("consent_transport_unsupported" if consent_marked else
+                          "owner_transport_unsupported" if owner_marked else
+                          "legacy_transport_unsupported")
+                return {"ok": False, "reason": reason, **base}
 
         host = transport.host_for(base["target"])
         if host is None:
@@ -747,10 +803,12 @@ class GovernedTargetRunner:
 
         owner_kernel_rechecks: list[Callable[[], bool]] = []
         consent_kernel_rechecks: list[Callable[[], bool]] = []
+        legacy_kernel_rechecks: list[Callable[[], bool]] = []
         kernel_refusal = await self._kernel_grant(
             agent, payload, request=request,
             owner_rechecks=owner_kernel_rechecks if owner_marked else None,
             consent_rechecks=consent_kernel_rechecks if consent_marked else None,
+            legacy_rechecks=legacy_kernel_rechecks if legacy_manual else None,
         )
         if kernel_refusal is not None:
             return {"ok": False, **kernel_refusal, **base}
@@ -810,6 +868,54 @@ class GovernedTargetRunner:
                 bounded, transport, dict(request), current,
             )
             context = bind_owner_once_dispatch(scope)
+        elif legacy_manual:
+            from .legacy_terminal_dispatch import (
+                LegacyTerminalDispatchScope,
+                bind_legacy_terminal_dispatch,
+            )
+
+            expected_known_hosts = transport._known_hosts
+            expected_ssh_path = transport.ssh_path
+            expected_connect_timeout = transport.connect_timeout
+            expected_transport = (transport.default_timeout, transport.max_timeout,
+                                  transport.max_output, transport._spawn)
+
+            def file_identity(path):
+                if not path:
+                    return None
+                try:
+                    info = os.stat(path)
+                    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+                except OSError:
+                    return None
+
+            expected_known_hosts_identity = file_identity(expected_known_hosts)
+            expected_identity_file = file_identity(host.identity_file)
+
+            def current():
+                return (self._manual_current(approved_task_id, request)
+                        and expected_decision is not None
+                        and self._policy_current(expected_decision)
+                        and len(legacy_kernel_rechecks) == 1
+                        and legacy_kernel_rechecks[0]()
+                        and self._kernel_live() and env_flag(SSH_HOST_FLAG)
+                        and transport.host_for(host.target) == host
+                        and transport._known_hosts == expected_known_hosts
+                        and file_identity(transport._known_hosts) == expected_known_hosts_identity
+                        and file_identity(host.identity_file) == expected_identity_file
+                        and transport.ssh_path == expected_ssh_path
+                        and transport.connect_timeout == expected_connect_timeout
+                        and (transport.default_timeout, transport.max_timeout,
+                             transport.max_output, transport._spawn) == expected_transport
+                        and transport.resolve_cwd(host.target, cwd) == workdir)
+
+            if not current():
+                return {"ok": False, "reason": "legacy_terminal_dispatch_unavailable", **base}
+            scope = LegacyTerminalDispatchScope(
+                approved_task_id, "ssh", base["target"], tuple(argv), workdir,
+                bounded, transport, dict(request), current,
+            )
+            context = bind_legacy_terminal_dispatch(scope)
         else:
             context = nullcontext()
         with context:

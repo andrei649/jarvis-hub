@@ -312,6 +312,16 @@ class LocalHostTransport:
                                         run_id=checkpoint["run_id"])
             return {"ok": False, "reason": "owner_once_dispatch_unavailable",
                     "argv_sha256": fingerprint}
+        from .legacy_terminal_dispatch import physical_gate as legacy_physical_gate
+
+        if legacy_physical_gate(self, backend="local", argv=tuple(argv_list),
+                                cwd=str(workdir), timeout=bounded) is False:
+            if checkpoint is not None:
+                await asyncio.to_thread(checkpoint_intent.history.mark_scope_no_process,
+                                        checkpoint["id"], reason="legacy_terminal_dispatch_unavailable",
+                                        run_id=checkpoint["run_id"])
+            return {"ok": False, "reason": "legacy_terminal_dispatch_unavailable",
+                    "argv_sha256": fingerprint}
         if not same_checkpoint_root():
             await asyncio.to_thread(checkpoint_intent.history.mark_scope_no_process,
                                     checkpoint["id"], reason="root_changed_before_spawn",

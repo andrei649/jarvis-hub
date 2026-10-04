@@ -1,4 +1,4 @@
-"""Private, one-use physical fence for a manually approved Docker terminal call.
+"""Private, one-use physical fence for a manually approved terminal call.
 
 The scope grants nothing: its current check must revalidate durable approval,
 the exact request and Action Kernel at the spawn boundary.

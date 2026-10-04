@@ -48,7 +48,7 @@ from .action_origin import (
 )
 from .turn_approvals import bind_turn_approvals, reset_turn_approvals
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
-from .commands import Principal, build_default_registry
+from .commands import ADMIN, CommandOutcome, Principal, build_default_registry, checkpoint_command_name
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
 
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
@@ -1660,6 +1660,36 @@ class Orchestrator:
             logger.warning("slash command dispatch failed closed", exc_info=True)
             return None
 
+    async def _dispatch_preappend_checkpoint_command(self, text: str):
+        """Keep owner checkpoint operations outside the exchange they address."""
+        name = checkpoint_command_name(text)
+        if name is None:
+            return None
+        from .turn_notices import record_turn_notice
+
+        if not current_principal().admin:
+            outcome = CommandOutcome(name, "refused", f"/{name} is an owner command — "
+                                     "send it from the owner's channel or with an admin token.")
+            record_turn_notice("checkpoint.refused", outcome.reply)
+            return outcome
+        if len(text.strip()) > 2_000:
+            outcome = CommandOutcome(name, "refused", "Checkpoint command is too long; nothing changed.")
+            record_turn_notice("checkpoint.refused", outcome.reply)
+            return outcome
+        registry = getattr(self, "commands", None)
+        get = getattr(registry, "get", None)
+        command = get(name) if callable(get) else None
+        if command is None or command.tier != ADMIN:
+            outcome = CommandOutcome(name, "failed", "Checkpoint commands are unavailable; nothing changed.")
+        else:
+            outcome = await self._dispatch_command(text)
+            if outcome is None:
+                outcome = CommandOutcome(name, "failed", "Checkpoint command failed; check the hub log.")
+        if outcome.status != "answered":
+            record_turn_notice("checkpoint.refused" if outcome.status == "refused"
+                               else "checkpoint.unavailable", outcome.reply)
+        return outcome
+
     async def _channel_turn(
         self, text: str, channel: str, *, observe_only: bool, draft=None,
     ) -> Optional[str]:
@@ -2026,6 +2056,10 @@ class Orchestrator:
         # single-shared-session behavior (or to honor a session a caller like
         # `channel_handler` already pinned in this context).
         self._resolve_session(session_id)
+        outcome = await self._dispatch_preappend_checkpoint_command(text)
+        if outcome is not None:
+            self.last_cognition = self._command_cognition(outcome)
+            return outcome.reply
         from .session_continuation import prepare_continuation_turn
 
         await prepare_continuation_turn(self, self.session_id)
@@ -2228,6 +2262,14 @@ class Orchestrator:
         # BUG-5: see handle_input — pin this turn to its own session so it can
         # never read or write another concurrent request's conversation.
         self._resolve_session(session_id)
+        outcome = await self._dispatch_preappend_checkpoint_command(text)
+        if outcome is not None:
+            if on_token:
+                emitted = on_token(outcome.reply)
+                if inspect.isawaitable(emitted):
+                    await emitted
+            self.last_cognition = self._command_cognition(outcome)
+            return outcome.reply
         from .session_continuation import prepare_continuation_turn
 
         await prepare_continuation_turn(self, self.session_id)

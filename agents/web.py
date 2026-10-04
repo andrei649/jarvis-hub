@@ -1231,11 +1231,14 @@ async def chat(req: ChatRequest, request: Request):
         # H579: @file:path references in the owner's own message are attached for this turn:
         # the model reads them after the message, which itself goes on as typed.
         from agents.core import context_refs
-        expansion = await asyncio.to_thread(context_refs.expand, req.message)
+        from agents.core.commands import checkpoint_command_name
+
+        checkpoint_command = checkpoint_command_name(req.message) is not None
+        expansion = None if checkpoint_command else await asyncio.to_thread(context_refs.expand, req.message)
         # H10.21: inject the active session's notes as persistent context.
         message = req.message
         notes = getattr(orch, "notes", None)
-        if notes is not None:
+        if notes is not None and not checkpoint_command:
             prefix = notes.context_for(req.session_id or getattr(orch, "session_id", "web"))
             if prefix:
                 message = prefix + message
@@ -1396,13 +1399,16 @@ async def chat_stream(req: ChatRequest, request: Request):
     agent_override = req.agent if req.agent != "jarvis" else None
     # H579: @file:path references are attached for the turn here too, as on /chat.
     from agents.core import context_refs
-    expansion = await asyncio.to_thread(context_refs.expand, req.message)
+    from agents.core.commands import checkpoint_command_name
+
+    checkpoint_command = checkpoint_command_name(req.message) is not None
+    expansion = None if checkpoint_command else await asyncio.to_thread(context_refs.expand, req.message)
     # H10.21 parity (Q2): the stream path injects the session's notes block the
     # same way /chat does — before this, persistent notes silently stopped
     # applying the moment the cockpit switched to streaming.
     message = req.message
     notes = getattr(orch, "notes", None)
-    if notes is not None:
+    if notes is not None and not checkpoint_command:
         prefix = notes.context_for(req.session_id or getattr(orch, "session_id", "web"))
         if prefix:
             message = prefix + message

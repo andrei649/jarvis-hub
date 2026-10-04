@@ -398,6 +398,11 @@ class SshTransport:
         if physical_gate(self, backend="ssh", argv=tuple(argv_list),
                          cwd=workdir, timeout=bounded) is False:
             return {"ok": False, "reason": "owner_once_dispatch_unavailable", **base}
+        from .legacy_terminal_dispatch import physical_gate as legacy_physical_gate
+
+        if legacy_physical_gate(self, backend="ssh", argv=tuple(argv_list),
+                                cwd=workdir, timeout=bounded) is False:
+            return {"ok": False, "reason": "legacy_terminal_dispatch_unavailable", **base}
         try:
             proc = await self._spawn(
                 *self.ssh_argv(host, remote),

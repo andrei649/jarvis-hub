@@ -16,8 +16,9 @@ import stat
 import sys
 import threading
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -63,6 +64,36 @@ class CapturedPreimage:
 
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _fingerprint(state: tuple[bool, str, int, int, bytes]) -> list:
+    return [*state[:4]]
+
+
+def _valid_expected(value: object) -> bool:
+    if not isinstance(value, (tuple, list)) or len(value) != 4:
+        return False
+    exists, sha, size, mode = value
+    return (type(exists) is bool and isinstance(sha, str) and len(sha) == 64
+            and all(c in "0123456789abcdef" for c in sha)
+            and type(size) is int and 0 <= size <= MAX_CAPTURE_BYTES
+            and type(mode) is int and 0 <= mode <= 0o7777
+            and (exists or (sha, size, mode) == (_sha(b""), 0, 0)))
+
+
+def _canonical_selection(paths: object) -> bool:
+    if not isinstance(paths, (list, tuple)) or not 1 <= len(paths) <= 500:
+        return False
+    seen: set[str] = set()
+    for path in paths:
+        if (not isinstance(path, str) or not path or len(path) > 4096
+                or path in seen or "\\" in path
+                or any(ord(c) < 32 or ord(c) == 127 for c in path)
+                or path.startswith("/") or PurePosixPath(path).as_posix() != path
+                or any(part in ("", ".", "..") for part in path.split("/"))):
+            return False
+        seen.add(path)
+    return True
 
 
 @contextlib.contextmanager
@@ -664,7 +695,8 @@ class FileCheckpointHistory:
             ORDER BY path""", (group_id,))]
 
     def _group_current(self, root: Path, identity: tuple[int, int], item: dict,
-                       *, pre: bool = False) -> tuple[bool, str, int, int, bytes]:
+                       *, pre: bool = False, force: bool = False
+                       ) -> tuple[bool, str, int, int, bytes]:
         path = root / item["path"]
         if any(item["path"] == prefix or item["path"].startswith(prefix + "/")
                for prefix in self._protected_scope_paths(root)):
@@ -673,19 +705,50 @@ class FileCheckpointHistory:
             raise CheckpointRefusal("scope_changed")
         with _parent_fd(root, path, identity, create=False) as (parent, name):
             return _state(parent, name, max_bytes=(
-                MAX_CAPTURE_BYTES if pre else item["post_size"]
-            ))
+                MAX_CAPTURE_BYTES if pre or force else item["post_size"]
+            ), expected_dev=identity[0], single_link=True)
 
-    def plan_group_restore(self, group_id: str) -> dict:
+    def _selected_group_targets(self, db: sqlite3.Connection, group_id: str,
+                                paths: list[str] | tuple[str, ...] | None
+                                ) -> tuple[list[dict], str | None]:
+        targets = self._group_targets(db, group_id)
+        pending = {item["path"]: item for item in targets
+                   if item["restore_status"] != "restored"}
+        if paths is None:
+            return list(pending.values()), None
+        if not _canonical_selection(paths):
+            return [], "invalid_selection"
+        if any(path not in pending for path in paths):
+            return [], "unknown_or_restored_path"
+        return [pending[path] for path in paths], None
+
+    def _group_coverage(self, db: sqlite3.Connection, group_id: str,
+                        excluded: int) -> dict:
+        covered, restored = db.execute("""SELECT COUNT(*),
+            COALESCE(SUM(CASE WHEN restore_status='restored' THEN 1 ELSE 0 END), 0)
+            FROM group_files WHERE group_id=?
+            AND change_kind IN ('modified', 'created', 'deleted')""",
+            (group_id,)).fetchone()
+        remaining = covered - restored
+        return {"covered": covered, "restored_total": restored,
+                "remaining": remaining, "complete": remaining == 0 and excluded == 0}
+
+    def plan_group_restore(self, group_id: str, *, paths: list[str] | tuple[str, ...] | None = None,
+                           force: bool = False) -> dict:
         """Read-only currentness; a future caller supplies reversible-tier authority."""
+        if type(force) is not bool:
+            return {"ok": False, "reason": "invalid_force"}
         if not self._db.exists():
             return {"ok": False, "reason": "unknown_checkpoint"}
         with _locked(self.snapshots.directory), self._connection() as db:
             row = self._group_row(db, group_id)
-            if row is None or row["status"] != "finished":
+            if row is None or row["status"] not in {"finished", "partial"}:
                 return {"ok": False, "reason": "unknown_checkpoint"}
             if row["note"] == "non_composable_overlap":
                 return {"ok": False, "reason": "overlapping_scope"}
+            if db.execute("""SELECT 1 FROM group_files WHERE group_id=?
+                AND restore_status='prepared' LIMIT 1""", (group_id,)).fetchone():
+                return {"ok": False, "reason": "uncertain_restore"}
             root = Path(row["root"])
             try:
                 if (self._group_root(root)[1] != (row["root_dev"], row["root_ino"])
@@ -694,9 +757,13 @@ class FileCheckpointHistory:
             except (OSError, CheckpointRefusal):
                 return {"ok": False, "reason": "scope_changed"}
             identity = row["root_dev"], row["root_ino"]
+            selected, selection_error = self._selected_group_targets(db, group_id, paths)
+            if selection_error:
+                return {"ok": False, "reason": selection_error}
             eligible = skipped = 0
-            paths = []
-            for item in self._group_targets(db, group_id):
+            planned_paths = []
+            current_fingerprints = {}
+            for item in selected:
                 snap = self.snapshots.load(item["pre_ref"]) if item["pre_ref"] else None
                 before = self._blob_bytes(snap.blob_sha, snap.size) if snap else None
                 after = self._blob_bytes(item["post_sha"], item["post_size"])
@@ -704,11 +771,13 @@ class FileCheckpointHistory:
                              (snap is not None and snap.path == str(root / item["path"])
                               and before is not None))
                 try:
-                    current = self._group_current(root, identity, item)
-                    current_ok = current[:4] == (
+                    current = self._group_current(root, identity, item, force=force)
+                    current_ok = force or current[:4] == (
                         bool(item["post_existed"]), item["post_sha"],
                         item["post_size"], item["post_mode"]
                     )
+                    if force and current[0] and b"\x00" in current[4][:4096]:
+                        current_ok = False
                 except (OSError, CheckpointRefusal, ValueError):
                     current_ok = False
                 reason = "ready" if valid_pre and after is not None and current_ok else (
@@ -717,11 +786,15 @@ class FileCheckpointHistory:
                 )
                 eligible += reason == "ready"
                 skipped += reason != "ready"
-                paths.append({"path": item["path"], "change": item["change_kind"],
-                              "reason": reason})
+                planned_paths.append({"path": item["path"], "change": item["change_kind"],
+                                      "reason": reason})
+                if force and reason == "ready":
+                    current_fingerprints[item["path"]] = _fingerprint(current)
             return {"ok": True, "id": group_id, "root": str(root),
                     "eligible": eligible, "skipped": skipped,
-                    "excluded": row["excluded"], "paths": paths,
+                    "excluded": row["excluded"], "paths": planned_paths,
+                    **({"current": current_fingerprints} if force else {}),
+                    **self._group_coverage(db, group_id, row["excluded"]),
                     "requires_authority": True,
                     "coverage": "scoped_observation_not_command_causality"}
 
@@ -780,29 +853,56 @@ class FileCheckpointHistory:
                     "truncated": len(encoded) > max_bytes,
                     "excluded": row["excluded"]}
 
-    def restore_group(self, group_id: str) -> dict:
+    def restore_group(self, group_id: str, *,
+                      paths: list[str] | tuple[str, ...] | None = None,
+                      force: bool = False, expected_current: Mapping[str, object] | None = None,
+                      effect_check: Callable[[], bool] | None = None) -> dict:
         """Trusted effect primitive; caller must mediate each intended restore."""
-        preview = self.plan_group_restore(group_id)
+        preview = self.plan_group_restore(group_id, paths=paths, force=force)
         if not preview.get("ok"):
             return preview
+        if effect_check is not None and not callable(effect_check):
+            return {"ok": False, "reason": "invalid_effect_check"}
+        selected_paths = [item["path"] for item in preview["paths"]]
+        if force:
+            if expected_current is None:
+                return {"ok": False, "reason": "expected_current_required"}
+            if (type(expected_current) is not dict
+                    or set(expected_current) != set(selected_paths)
+                    or any(not _valid_expected(value)
+                           for value in expected_current.values())
+                    or any(list(expected_current[path]) != preview["current"].get(path)
+                           for path in selected_paths)):
+                return {"ok": False, "reason": "expected_current_mismatch"}
+            bound_current = {path: tuple(expected_current[path]) for path in selected_paths}
+        elif expected_current is not None:
+            return {"ok": False, "reason": "unexpected_current"}
+        else:
+            bound_current = {}
         with _locked(self.snapshots.directory), self._connection() as db:
             row = self._group_row(db, group_id)
-            if row is None or row["status"] != "finished":
+            if row is None or row["status"] not in {"finished", "partial"}:
                 return {"ok": False, "reason": "unknown_checkpoint"}
             root = Path(row["root"])
             identity = row["root_dev"], row["root_ino"]
             try:
+                if (self._group_root(root)[1] != identity
+                        or self.scope.roots != (root,)):
+                    raise CheckpointRefusal("scope_changed")
                 protected = self._protected_scope_paths(root)
-            except CheckpointRefusal as exc:
-                return {"ok": False, "reason": exc.reason}
-            restored = skipped = 0
-            prepared: list[tuple[dict, bytes, int, str]] = []
-            # Persist every eligible postimage as an undo ref before the first
-            # restore effect. A crash can then be diagnosed from prepared rows.
-            for item in self._group_targets(db, group_id):
+            except (OSError, CheckpointRefusal) as exc:
+                return {"ok": False, "reason": getattr(exc, "reason", "scope_changed")}
+            selected, selection_error = self._selected_group_targets(db, group_id, paths)
+            if selection_error or [item["path"] for item in selected] != selected_paths:
+                return {"ok": False, "reason": selection_error or "selection_changed"}
+            skipped = 0
+            candidates: list[tuple[dict, bytes, int, tuple]] = []
+            for item in selected:
                 target = root / item["path"]
                 if any(item["path"] == prefix or item["path"].startswith(prefix + "/")
                        for prefix in protected):
+                    if force:
+                        return {"ok": False, "reason": "private_scope"}
                     skipped += 1
                     continue
                 snap = self.snapshots.load(item["pre_ref"]) if item["pre_ref"] else None
@@ -810,43 +910,72 @@ class FileCheckpointHistory:
                 if ((item["pre_existed"] and (snap is None or before is None
                      or snap.path != str(target)))
                         or self._blob_bytes(item["post_sha"], item["post_size"]) is None):
+                    if force:
+                        return {"ok": False, "reason": "snapshot_changed"}
                     skipped += 1
                     continue
                 try:
                     if self._group_root(root)[1] != identity:
                         raise CheckpointRefusal("root_changed")
-                    if any(item["path"] == prefix or item["path"].startswith(prefix + "/")
-                           for prefix in self._protected_scope_paths(root)):
-                        raise CheckpointRefusal("private_scope")
                     if self.scope.resolve(str(target)) != target:
                         raise CheckpointRefusal("scope_changed")
                     with _parent_fd(root, target, identity, create=False) as (parent, name):
-                        current = _state(parent, name, max_bytes=item["post_size"])
-                        if current[:4] != (
-                            bool(item["post_existed"]), item["post_sha"],
-                            item["post_size"], item["post_mode"]
-                        ):
-                            skipped += 1
-                            continue
-                        undo = self.snapshots.take_captured(
-                            target, existed=current[0], data=current[4], mode=current[3]
-                        )
-                        if self._blob_bytes(undo.blob_sha, undo.size) is None:
-                            skipped += 1
-                            continue
-                        db.execute("""UPDATE group_files SET undo_ref=?, restore_status='prepared'
-                            WHERE group_id=? AND path=?""", (undo.ref, group_id, item["path"]))
-                        prepared.append((item, before, snap.mode if snap else 0, undo.ref))
-                except (OSError, CheckpointRefusal, ValueError, sqlite3.Error):
+                        current = _state(parent, name, max_bytes=(
+                            MAX_CAPTURE_BYTES if force else item["post_size"]
+                        ), expected_dev=identity[0], single_link=True)
+                    expected = (bound_current[item["path"]] if force else
+                                (bool(item["post_existed"]), item["post_sha"],
+                                 item["post_size"], item["post_mode"]))
+                    if current[:4] != expected or (force and current[0]
+                                                   and b"\x00" in current[4][:4096]):
+                        raise CheckpointRefusal("changed_since_plan" if force
+                                                else "changed_since_checkpoint")
+                    candidates.append((item, before, snap.mode if snap else 0, current))
+                except (OSError, CheckpointRefusal, ValueError) as exc:
+                    if force:
+                        return {"ok": False, "reason": getattr(exc, "reason", "path_changed")}
+                    skipped += 1
+
+            prepared: list[tuple[dict, bytes, int, str]] = []
+            for item, before, pre_mode, current in candidates:
+                target = root / item["path"]
+                try:
+                    undo = self.snapshots.take_captured(
+                        target, existed=current[0], data=current[4], mode=current[3]
+                    )
+                    if self._blob_bytes(undo.blob_sha, undo.size) is None:
+                        raise CheckpointRefusal("snapshot_changed")
+                    db.execute("""UPDATE group_files SET undo_ref=?, restore_status='prepared'
+                        WHERE group_id=? AND path=?""", (undo.ref, group_id, item["path"]))
+                    prepared.append((item, before, pre_mode, undo.ref))
+                except (OSError, CheckpointRefusal, sqlite3.Error) as exc:
+                    if force:
+                        db.rollback()
+                        return {"ok": False, "reason": getattr(exc, "reason", "snapshot_changed")}
                     skipped += 1
             undo_group_id = secrets.token_hex(16) if prepared else None
             if prepared:
                 db.execute("""UPDATE groups SET status='restore_incomplete',
                     undo_group_id=? WHERE id=?""", (undo_group_id, group_id))
                 db.commit()
+            restored = 0
             undo_refs: list[str] = []
+
+            def close_partial(reason: str) -> dict:
+                db.execute("""UPDATE group_files SET restore_status='skipped'
+                    WHERE group_id=? AND restore_status='prepared'""", (group_id,))
+                coverage = self._group_coverage(db, group_id, row["excluded"])
+                db.execute("UPDATE groups SET status='partial' WHERE id=?", (group_id,))
+                db.commit()
+                return {"ok": False, "reason": reason, "status": "partial",
+                        "restored": restored, "skipped": skipped,
+                        "excluded": row["excluded"], **coverage,
+                        "undo_group_id": undo_group_id,
+                        "undo_snapshot_refs": undo_refs}
+
             for item, before, pre_mode, undo_ref in prepared:
                 target = root / item["path"]
+                physical_started = False
                 try:
                     if self._group_root(root)[1] != identity:
                         raise CheckpointRefusal("root_changed")
@@ -856,36 +985,50 @@ class FileCheckpointHistory:
                     if self.scope.resolve(str(target)) != target:
                         raise CheckpointRefusal("scope_changed")
                     with _parent_fd(root, target, identity, create=False) as (parent, name):
-                        current = _state(parent, name, max_bytes=item["post_size"])
-                        if current[:4] != (
-                            bool(item["post_existed"]), item["post_sha"],
-                            item["post_size"], item["post_mode"]
-                        ):
-                            skipped += 1
-                            db.execute("""UPDATE group_files SET restore_status='skipped'
-                                WHERE group_id=? AND path=?""", (group_id, item["path"]))
-                            db.commit()
-                            continue
+                        current = _state(parent, name, max_bytes=(
+                            MAX_CAPTURE_BYTES if force else item["post_size"]
+                        ), expected_dev=identity[0], single_link=True)
+                        expected = (bound_current[item["path"]] if force else
+                                    (bool(item["post_existed"]), item["post_sha"],
+                                     item["post_size"], item["post_mode"]))
+                        if current[:4] != expected or (force and current[0]
+                                                       and b"\x00" in current[4][:4096]):
+                            raise CheckpointRefusal("changed_since_plan" if force
+                                                    else "changed_since_checkpoint")
+                        will_effect = bool(item["pre_existed"] or current[0])
+                        if will_effect and effect_check is not None:
+                            try:
+                                permitted = effect_check()
+                            except Exception:
+                                permitted = False
+                            if permitted is not True:
+                                raise CheckpointRefusal("effect_check_failed")
                         if item["pre_existed"]:
+                            physical_started = True
                             _replace(parent, name, before, pre_mode or 0o644)
                         elif current[0]:
+                            physical_started = True
                             os.unlink(name, dir_fd=parent)
                             os.fsync(parent)
-                        db.execute("""UPDATE group_files SET restore_status='restored'
-                            WHERE group_id=? AND path=?""", (group_id, item["path"]))
-                        db.commit()
-                        restored += 1
-                        undo_refs.append(undo_ref)
-                except (OSError, CheckpointRefusal, ValueError, sqlite3.Error):
+                    db.execute("""UPDATE group_files SET restore_status='restored'
+                        WHERE group_id=? AND path=?""", (group_id, item["path"]))
+                    db.commit()
+                    restored += 1
+                    undo_refs.append(undo_ref)
+                except (OSError, CheckpointRefusal, ValueError, sqlite3.Error) as exc:
+                    if not physical_started:
+                        skipped += 1
+                        return close_partial(getattr(exc, "reason", "path_changed"))
                     return {"ok": False, "reason": "effect_state_incomplete",
                             "restored": restored, "skipped": skipped + 1,
                             "undo_group_id": undo_group_id,
                             "undo_snapshot_refs": undo_refs}
-            status = "restored" if skipped == 0 and row["excluded"] == 0 else "partial"
+            coverage = self._group_coverage(db, group_id, row["excluded"])
+            status = "restored" if coverage["complete"] else "partial"
             db.execute("UPDATE groups SET status=? WHERE id=?", (status, group_id))
             db.commit()
             return {"ok": True, "status": status, "restored": restored,
-                    "skipped": skipped, "excluded": row["excluded"],
+                    "skipped": skipped, "excluded": row["excluded"], **coverage,
                     "undo_group_id": undo_group_id,
                     "undo_snapshot_refs": undo_refs}
 
@@ -1041,8 +1184,10 @@ class FileCheckpointHistory:
                     "incomplete": counts.get("prepared", 0)
                     + counts.get("restore_incomplete", 0)}
 
-    def plan_restore(self, entry_id: int) -> dict:
+    def plan_restore(self, entry_id: int, *, force: bool = False) -> dict:
         """Read-only currentness preview for a future mediated restore caller."""
+        if type(force) is not bool:
+            return {"ok": False, "reason": "invalid_force"}
         if not self._db.exists():
             return {"ok": False, "reason": "unknown_checkpoint"}
         with _locked(self.snapshots.directory), self._connection() as db:
@@ -1058,19 +1203,24 @@ class FileCheckpointHistory:
             try:
                 with _parent_fd(Path(row["root"]), Path(row["path"]),
                                 (row["root_dev"], row["root_ino"]), create=False) as (parent, name):
-                    exists, sha, size, mode, _ = _state(parent, name,
-                                                       max_bytes=row["post_size"])
+                    exists, sha, size, mode, data = _state(
+                        parent, name, max_bytes=(MAX_CAPTURE_BYTES if force else row["post_size"]),
+                        expected_dev=row["root_dev"], single_link=True,
+                    )
             except CheckpointRefusal as exc:
                 return {"ok": False, "reason": exc.reason}
             except OSError:
                 return {"ok": False, "reason": "path_changed"}
-            if (exists, sha, size, mode) != (
+            if not force and (exists, sha, size, mode) != (
                 bool(row["post_existed"]), row["post_sha"],
                 row["post_size"], row["post_mode"]
             ):
                 return {"ok": False, "reason": "changed_since_checkpoint"}
+            if force and exists and b"\x00" in data[:4096]:
+                return {"ok": False, "reason": "binary_current_excluded"}
             return {"ok": True, "path": row["path"], "op": row["op"],
                     "pre_ref": row["pre_ref"], "post_sha": row["post_sha"],
+                    **({"current": [exists, sha, size, mode]} if force else {}),
                     "requires_authority": True}
 
     def diff(self, entry_id: int, *, max_bytes: int = 65536) -> dict:
@@ -1115,8 +1265,21 @@ class FileCheckpointHistory:
                     "diff": encoded[:max_bytes].decode("utf-8", errors="ignore"),
                     "truncated": len(encoded) > max_bytes}
 
-    def restore(self, entry_id: int) -> dict:
+    def restore(self, entry_id: int, *, force: bool = False,
+                expected_current: tuple | list | None = None,
+                effect_check: Callable[[], bool] | None = None) -> dict:
         """Trusted primitive only; authority must be enforced by a future caller."""
+        if type(force) is not bool:
+            return {"ok": False, "reason": "invalid_force"}
+        if effect_check is not None and not callable(effect_check):
+            return {"ok": False, "reason": "invalid_effect_check"}
+        if force and expected_current is None:
+            return {"ok": False, "reason": "expected_current_required"}
+        if force and not _valid_expected(expected_current):
+            return {"ok": False, "reason": "expected_current_mismatch"}
+        if not force and expected_current is not None:
+            return {"ok": False, "reason": "unexpected_current"}
+        bound_current = tuple(expected_current) if force else None
         if not self._db.exists():
             return {"ok": False, "reason": "unknown_checkpoint"}
         with _locked(self.snapshots.directory), self._connection() as db:
@@ -1137,13 +1300,17 @@ class FileCheckpointHistory:
             try:
                 with _parent_fd(root, target, identity, create=False) as (parent, name):
                     exists, sha, size, mode, current_data = _state(
-                        parent, name, max_bytes=row["post_size"]
+                        parent, name, max_bytes=(MAX_CAPTURE_BYTES if force else row["post_size"]),
+                        expected_dev=identity[0], single_link=True,
                     )
-                    if (exists, sha, size, mode) != (
-                        bool(row["post_existed"]), row["post_sha"],
-                        row["post_size"], row["post_mode"]
-                    ):
-                        return {"ok": False, "reason": "changed_since_checkpoint"}
+                    expected = (bound_current if force else
+                                (bool(row["post_existed"]), row["post_sha"],
+                                 row["post_size"], row["post_mode"]))
+                    if (exists, sha, size, mode) != expected:
+                        return {"ok": False, "reason": "changed_since_plan" if force
+                                else "changed_since_checkpoint"}
+                    if force and exists and b"\x00" in current_data[:4096]:
+                        return {"ok": False, "reason": "binary_current_excluded"}
                     undo = self.snapshots.take_captured(
                         target, existed=exists, data=current_data, mode=mode
                     )
@@ -1154,6 +1321,16 @@ class FileCheckpointHistory:
                                (undo.ref, entry_id))
                     db.commit()
                     armed = True
+                    if (snap.existed or exists) and effect_check is not None:
+                        try:
+                            permitted = effect_check()
+                        except Exception:
+                            permitted = False
+                        if permitted is not True:
+                            db.execute("UPDATE entries SET status='applied' WHERE id=?",
+                                       (entry_id,))
+                            db.commit()
+                            return {"ok": False, "reason": "effect_check_failed"}
                     if snap.existed:
                         _replace(parent, name, before, snap.mode or 0o644)
                     elif exists:

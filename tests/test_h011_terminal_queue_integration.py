@@ -13,7 +13,7 @@ from agents.core.commands import Principal
 from agents.core.environments.local_transport import LocalHostTransport
 from agents.core.file_checkpoint_history import FileCheckpointHistory
 from agents.core.file_tools import FileScope, SnapshotStore
-from tests.test_h277_smart_terminal_integration import runtime  # noqa: F401
+from tests.test_h277_smart_terminal_integration import runtime, use_real_kernel  # noqa: F401
 
 
 @pytest.mark.asyncio
@@ -50,6 +50,9 @@ async def test_actual_queue_origin_reaches_checkpoint_without_grant(
 
     monkeypatch.setattr(LocalHostTransport, "from_env", classmethod(
         lambda cls, **kwargs: cls([root], spawn=spawn)))
+    # A real physical host hop needs the worker's current kernel revalidator;
+    # a GRANT-only fixture proves provenance but cannot authorize dispatch.
+    use_real_kernel(runtime)
     turn = open_approval_turn(session_id="chat", session_instance="instance",
                              principal=Principal(channel="web", admin=True),
                              session_is_live=lambda *_: True)

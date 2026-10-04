@@ -87,7 +87,7 @@ def test_the_command_tree_is_discoverable_and_complete():
     tree = command_tree(build_parser())
     assert set(tree) == {
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
-        "prompt-size", "desktop", "security", "todo", "skills", "company", "auth",
+        "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints",
     }
     # S2 added the two owner acts an extension needs: agree to what a descriptor
     # declares, and prove it in the sandbox. `doctor` and `list` stay read-only.
@@ -96,6 +96,7 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["security"] == ["audit"]
     assert tree["config"] == ["check", "get", "list", "set"]
     assert tree["approvals"] == ["accept", "consent", "defer", "edit", "list", "reject"]
+    assert tree["checkpoints"] == ["clear", "clear-legacy", "list", "prune", "status"]
     assert tree["kernel"] == ["explain"]
     assert tree["estop"] == ["engage", "resume", "status"]
     # H350: the linter reads files and reports; it never writes a skill.
