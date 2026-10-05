@@ -16,13 +16,14 @@ Governance (MOONSHOT §5 — capability growth only through approval):
 * **Applying** a grant happens only from the approved task's execution
   (``apply_grant`` is the executor handler for kind ``permission.grant``). It
   refuses any task that was not decided by a human (``decided_by`` missing or a
-  machine decider such as ``policy``), or whose decision is not accept/edit.
+  machine decider such as ``policy``), whose decision is not accept/edit, or whose
+  recorded human decision does not match that action and decider.
 * **Narrowing** (``revoke``) needs no approval. ``never`` rows — the default-deny
   list and owner-set denials — are immutable: they can neither be requested nor
   revoked.
 * ``session`` grants die with the process: a new ledger instance expires every
   session grant recorded under a previous boot id.
-* ``once`` grants are consumed by exactly one ``check()`` that answers ``allow``.
+* ``once`` grants are consumed by exactly one required check that answers ``allow``.
 * ``os_input`` grants mint a *restore token* kept in the SecretStore (never in the
   SQLite row), so an input driver can re-arm consent after a restart only with the
   token the owner's approval minted.
@@ -30,6 +31,7 @@ Governance (MOONSHOT §5 — capability growth only through approval):
 Runtime flag: ``JARVIS_PERMISSION_LEDGER`` (default off). Off → ``check()`` answers
 ``allow`` for legacy callers and records nothing; on → first contact answers
 ``ask`` until a grant exists.
+``check_required()`` always consults grants for consumers that require consent.
 
 Persistence: SQLite WAL at ``data_path('permissions.db')`` (never CWD), one
 ``threading.Lock`` per store, a strict status transition table, schema versioned
@@ -66,7 +68,7 @@ logger = logging.getLogger("jarvis.permissions")
 KIND = "permission.grant"
 FLAG = "JARVIS_PERMISSION_LEDGER"
 
-SURFACES = ("app", "site", "os_input", "file_root", "terminal_target")
+SURFACES = ("app", "site", "os_input", "file_root", "terminal_target", "session_command")
 SCOPES = ("once", "session", "always", "never")
 REQUESTABLE_SCOPES = ("once", "session", "always")
 
@@ -218,8 +220,10 @@ for _surface in SURFACES:
 def normalize_key(surface: str, key: Any) -> str:
     """Canonical key for ``surface``: lowercase host (port/scheme/path stripped)
     for sites, lowercase basename without ``.exe/.app`` for apps, ``~``/slash
-    normalised path for file roots, stripped lowercase text otherwise. Empty or
-    over-long keys come back as ``""`` (the contract rejects them)."""
+    normalised path for file roots, exact lowercase SHA-256 hex for session
+    commands, stripped lowercase text otherwise. Invalid keys return ``""``."""
+    if surface == "session_command":
+        return key if isinstance(key, str) and re.fullmatch(r"[0-9a-f]{64}", key) else ""
     text = str(key or "").strip()
     if not text or len(text) > _MAX_KEY:
         return ""
@@ -309,7 +313,8 @@ def _permission_grant_contract() -> ContractTemplate:
             ),
             predicate(
                 "scope-requestable",
-                lambda view, _now: view.get("scope") in REQUESTABLE_SCOPES,
+                lambda view, _now: view.get("scope") in REQUESTABLE_SCOPES
+                and (view.get("surface") != "session_command" or view.get("scope") == "always"),
                 reason="scope_not_requestable",
             ),
             predicate(
@@ -621,6 +626,15 @@ class PermissionLedger:
         """
         if not self.enabled:
             return "allow"
+        return self.check_required(surface, key, now=now)
+
+    def check_required(self, surface: str, key: Any, now: float | None = None) -> str:
+        """Consult real grants even when the legacy ledger flag is disabled.
+
+        Used by consumers whose default is ``ask``. Denials and invalid keys
+        return ``deny``; active grants retain the same fingerprint, boot and
+        one-use rules as ``check()`` when enabled.
+        """
         if surface not in SURFACES:
             return "deny"
         norm = normalize_key(surface, key)
@@ -722,6 +736,7 @@ class PermissionLedger:
         decision inbox. The task is never transitioned here.
         """
         norm = normalize_key(surface, key)
+        finalized_title = title or f"Allow {scope} access to {surface} {norm}"
         payload = {
             "kind": KIND,
             "surface": surface,
@@ -742,14 +757,14 @@ class PermissionLedger:
             from agents.core.kernel import Action, Verdict
 
             verdict = self._authorizer(
-                Action(kind=KIND, agent=agent, title=title or f"grant {surface}:{norm}", payload=payload)
+                Action(kind=KIND, agent=agent, title=finalized_title, payload=payload)
             )
             if getattr(verdict, "verdict", None) is Verdict.DENY:
                 raise PermissionRequestError(f"kernel_denied:{getattr(verdict, 'reason', '') or 'denied'}")
         task_id = govern_enqueue(
             agent=agent,
             kind=KIND,
-            title=title or f"Allow {scope} access to {surface} {norm}",
+            title=finalized_title,
             payload=payload,
             risk_tier=int(RiskTier.EXTERNAL),
             autonomy_level=ASK,
@@ -782,6 +797,12 @@ class PermissionLedger:
             return {"status": "refused", "reason": "human_decision_required"}
         if decision_word not in HUMAN_DECISIONS:
             return {"status": "refused", "reason": "decision_not_approval"}
+        human_decision = getattr(task, "human_decision", None)
+        if (not isinstance(human_decision, Mapping)
+                or human_decision.get("action") != decision_word
+                or not isinstance(human_decision.get("by"), str)
+                or human_decision["by"].strip().lower() != decided_by):
+            return {"status": "refused", "reason": "human_decision_required"}
         payload = getattr(task, "payload", None)
         if not isinstance(payload, Mapping):
             return {"status": "refused", "reason": "payload_required"}

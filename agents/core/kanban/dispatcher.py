@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections import Counter
 from pathlib import Path
 
 from agents.core.autonomy.queue import TaskQueue, TaskQueueError, TaskStatus
 from agents.core.commands import CommandContext
-from agents.core.kernel import kernel_enabled
+from agents.core.kernel import Action, Decision, Verdict, kernel_enabled
 from agents.core.paths import data_path
 from agents.core.tool_profiles import classify_turn
 
+from . import child_resume, child_store
 from . import dispatch_store as store
 from .context import KanbanContext, kanban_scope, require_mutation
 from .upstream import kanban_db as kb
 from .upstream import kanban_db_connect as kbc
 from .upstream import kanban_db_dispatch as kbd
+from .workspace_context import workspace_scope
+from .workspaces import cleanup_workspace, materialize_workspace
 
 _ACTIVE_QUEUE_STATES = frozenset({"proposed", "approved", "blocked", "deferred", "running"})
 _LOCKS: dict[str, asyncio.Lock] = {}
@@ -69,6 +73,7 @@ class KanbanDispatcher:
             or queue.mediation_mode != "enforce"
             or queue.classify_mediation(self.KIND) is not True
             or getattr(worker, "_mediation_kernel", None) is None
+            or not callable(getattr(worker, "kernel_gate", None))
             or not callable(getattr(worker, "govern_enqueue", None))
         ):
             return None, None
@@ -166,7 +171,10 @@ class KanbanDispatcher:
     def _dispatch_locked(self, worker, queue, board, limit):
         with kb.connect_closing(board=board) as conn:
             store.initialize(conn)
+            child_resume.initialize(conn)
+            child_store.reconcile(conn, queue)
             kb.recompute_ready(conn)
+            resumes = child_resume.candidates(conn, queue)
             pending = {}
             for record in store.submissions(conn):
                 if record["state"] == "prepared" and record["queue_id"] is None:
@@ -224,20 +232,20 @@ class KanbanDispatcher:
                 and not t.claim_lock
                 and (t.id in pending or counts[t.assignee] < agent_cap)
             ]
-            tasks = available[:1] + ready + available[1:]
+            continuations = [task for task in kb.list_tasks(conn, status="blocked") if task.id in resumes]
+            tasks = available[:1] + continuations + ready + available[1:]
             queued = []
             for task in tasks:
                 if len(queued) >= limit:
                     break
                 if task.assignee not in profiles or task.claim_lock is not None:
                     continue
-                if task.workspace_path or task.project_id:
-                    continue  # The approved workspace adapter remains separate.
                 previous = pending.get(task.id)
                 if previous is not None:
                     if (
                         previous["state"] != "queued"
-                        or store.digest(store.input_snapshot(conn, task.id))
+                        or store.digest({**store.input_snapshot(conn, task.id),
+                                         **({"resume": resumes[task.id]} if task.id in resumes else {})})
                         != previous["input_sha"]
                     ):
                         continue
@@ -253,7 +261,9 @@ class KanbanDispatcher:
                     continue
                 if kbd.check_respawn_guard(conn, task.id, lane=task.status) is not None:
                     continue
-                record = store.prepare(conn, task)
+                resume = resumes.get(task.id)
+                record = (child_resume.prepare(conn, task, resume, queue)
+                          if resume is not None else store.prepare(conn, task))
                 q = queue.find_submission_task(self.KIND, record["id"])
                 if q is None:
                     payload = {
@@ -263,9 +273,23 @@ class KanbanDispatcher:
                         "input_sha256": record["input_sha"],
                         "prompt": record["prompt"],
                         "prompt_sha256": record["prompt_sha"],
+                        "workspace_spec": json.loads(record["workspace_json"])["spec"],
+                        "workspace_binding_sha256": store.digest(json.loads(record["workspace_json"])),
                         "risk_tier": 2,
+                        **({"resume": resume} if resume is not None else {}),
                     }
                     try:
+                        # This is a new producer intake, independent of any
+                        # physical child check left in the caller's context.
+                        # Governed enqueue consumes this exact typed decision;
+                        # the bridge's mismatch guard remains intact.
+                        decision = worker.kernel_gate(Action(
+                            kind=self.KIND, agent=record["profile"],
+                            title=("Kanban " + record["title"])[:512],
+                            payload=payload, origin="generated",
+                        ))
+                        if not isinstance(decision, Decision) or decision.verdict is Verdict.DENY:
+                            raise TaskQueueError("worker intake kernel refused")
                         qid = worker.govern_enqueue(
                             agent=record["profile"],
                             kind=self.KIND,
@@ -326,6 +350,48 @@ class KanbanDispatcher:
                 ):
                     raise KanbanExecutionRefused("worker lost its queue or board run")
 
+    def _workspace_is_current(self, claimed, task, worker, queue, record, binding, *, terminal=False):
+        """Prove both the consumed queue permit and live exact board/path inputs."""
+        runtime_worker, runtime_queue = self._runtime()
+        if (runtime_worker is not worker or runtime_queue is not queue
+                or not self._execution_is_current(task, worker, queue)):
+            return False
+        try:
+            context = require_mutation()
+            if (context.home.resolve() != self.home.resolve()
+                    or context.board != binding["spec"]["board"]
+                    or context.task_id != claimed.id or context.run_id != claimed.current_run_id
+                    or context.profile != task.agent):
+                return False
+            with kb.connect_closing(board=context.board) as conn:
+                live = store.get(conn, record["id"])
+                current = kb.get_task(conn, claimed.id)
+                run = kb.get_run(conn, claimed.current_run_id)
+                if current is None or run is None:
+                    return False
+                if terminal:
+                    latest = conn.execute("SELECT MAX(id) FROM task_runs WHERE task_id=?", (claimed.id,)).fetchone()[0]
+                    run_current = (latest == claimed.current_run_id
+                                   and current.current_run_id in (None, claimed.current_run_id)
+                                   and current.status != "running" and run.status != "running"
+                                   and run.ended_at is not None)
+                else:
+                    run_current = (current.status == "running"
+                                   and current.current_run_id == claimed.current_run_id
+                                   and current.claim_lock == "nerva:" + record["id"]
+                                   and run.status == "running" and run.ended_at is None)
+                return bool(
+                    live is not None and live["state"] == "running"
+                    and live["run_id"] == claimed.current_run_id
+                    and live["queue_id"] == task.id
+                    and live["enqueue_id"] == task.mediation_enqueue_id
+                    and live["workspace_json"] == record["workspace_json"]
+                    and run.task_id == claimed.id and run.profile == task.agent and run_current
+                    and store.digest(store.workspace_snapshot(conn, claimed.id)) == store.digest(binding)
+                )
+        except (OSError, ValueError, PermissionError, TaskQueueError):
+            return False
+
     async def execute(self, task):
         worker, queue = self._runtime()
         if worker is None or not self._execution_is_current(task, worker, queue):
@@ -346,9 +412,19 @@ class KanbanDispatcher:
                         or payload.get("prompt") != record["prompt"]
                         or payload.get("prompt_sha256") != record["prompt_sha"]
                         or store.digest(record["prompt"]) != record["prompt_sha"]
+                        or not record["workspace_json"]
+                        or store.digest(json.loads(record["workspace_json"]))
+                        != payload.get("workspace_binding_sha256")
+                        or store.digest(json.loads(record["workspace_json"])["spec"])
+                        != store.digest(payload.get("workspace_spec"))
                     ):
                         raise ValueError("submission input binding changed")
-                    claimed = store.claim(conn, record, task, ttl_seconds=3600)
+                    binding = json.loads(record["workspace_json"])
+                    resume = payload.get("resume")
+                    claimed = store.claim(
+                        conn, record, task, ttl_seconds=3600, resume=resume,
+                        validate_resume=lambda: child_resume.validate_bound(conn, record, task, queue),
+                    )
                 worker_session = "kanban::" + sid
                 from .worker_runner import run_worker_turn
 
@@ -364,20 +440,29 @@ class KanbanDispatcher:
                 )
                 try:
                     with kanban_scope(owned):
-                        async with asyncio.timeout(claimed.max_runtime_seconds or 1800):
-                            async with asyncio.TaskGroup() as group:
-                                heartbeat = group.create_task(
-                                    self._heartbeat(claimed, task, worker, queue, board)
-                                )
-                                try:
-                                    output = await run(
-                                        self.orch,
-                                        prompt=record["prompt"],
-                                        agent_id=task.agent,
-                                        session_id=worker_session,
+                        def still_current():
+                            return self._workspace_is_current(
+                                claimed, task, worker, queue, record, binding
+                            )
+                        cwd = materialize_workspace(binding["spec"], still_current=still_current,
+                                                    expected_run_id=claimed.current_run_id)
+                        project_root = binding["spec"].get("project_root")
+                        with workspace_scope(cwd, still_current=still_current,
+                                             project_root=Path(project_root) if project_root else None):
+                            async with asyncio.timeout(claimed.max_runtime_seconds or 1800):
+                                async with asyncio.TaskGroup() as group:
+                                    heartbeat = group.create_task(
+                                        self._heartbeat(claimed, task, worker, queue, board)
                                     )
-                                finally:
-                                    heartbeat.cancel()
+                                    try:
+                                        output = await run(
+                                            self.orch,
+                                            prompt=record["prompt"],
+                                            agent_id=task.agent,
+                                            session_id=worker_session,
+                                        )
+                                    finally:
+                                        heartbeat.cancel()
                     with kb.connect_closing(board=board) as conn:
                         ended = kb.get_run(conn, claimed.current_run_id)
                         if (
@@ -387,13 +472,26 @@ class KanbanDispatcher:
                             not in {"completed", "review_requested", "blocked", "changes_requested"}
                         ):
                             raise ValueError("worker returned without a terminal board transition")
-                    with kb.connect_closing(board=board) as conn:
+                    with kanban_scope(owned), kb.connect_closing(board=board) as conn:
+                        def cleanup_current():
+                            return self._workspace_is_current(
+                                claimed, task, worker, queue, record, binding, terminal=True
+                            )
+
+                        try:
+                            cleanup = cleanup_workspace(
+                                conn, claimed.id, expected_run_id=claimed.current_run_id,
+                                still_current=cleanup_current, workspace_spec=binding["spec"],
+                            )
+                        except (OSError, PermissionError, ValueError):
+                            cleanup = {"removed": False, "reason": "scope_changed", "path": str(cwd)}
                         store.finish(conn, sid, state="finished")
                     return {
                         "status": "ok",
                         "task_id": claimed.id,
                         "run_id": claimed.current_run_id,
                         "output": output,
+                        "workspace_cleanup": cleanup,
                     }
                 except BaseException as exc:
                     try:

@@ -519,10 +519,14 @@ def _kernels(tmp_path, **kwargs):
 
 
 def _session_tool(tmp_path, *, on=True, authorizer=None, **kwargs):
+    from agents.core.kernel import Decision, Verdict
+
     settings = _settings(**{code_tools.SESSION_SETTING: on})
     server, tool = _tool(tmp_path, settings=settings, **kwargs)
     tool._kernels = _kernels(tmp_path)
-    tool._authorizer = authorizer
+    # This helper's host worker is a test seam, with an explicit synthetic grant.
+    # Production composition supplies action_kernel; absence is tested separately.
+    tool._authorizer = authorizer if authorizer is not None else lambda _action: Decision(Verdict.GRANT)
     return server, tool
 
 

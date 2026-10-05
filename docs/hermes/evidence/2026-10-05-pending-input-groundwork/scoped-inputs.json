@@ -1,0 +1,74 @@
+[
+  {
+    "path": "agents/core/channels/pending_input.py",
+    "sha256": "7b817572d22637de63f3bb6216f03905b1abc4a7cce000790ad01c52f1c25a0e"
+  },
+  {
+    "path": "agents/core/channels/pending_input_runtime.py",
+    "sha256": "28e06d65b6ec98585fab0a3c0aa4cd08674d1ba52556f2096ed64315d711f3d6"
+  },
+  {
+    "path": "agents/core/channels/ephemeral.py",
+    "sha256": "d4a0b6ba6b349c9438aa18f1db388c3fc566511cd741086a98ca2bd498e33f68"
+  },
+  {
+    "path": "agents/core/channels/telegram.py",
+    "sha256": "b1eb0a640f3b4a2d7c725620c6d01890c6e3145a001122ed6c605955555fbce3"
+  },
+  {
+    "path": "agents/core/permission_ledger.py",
+    "sha256": "238de69a517704acd5ae94d74fc0e81b889bb17606975cf7bb2ceeb01b3b2308"
+  },
+  {
+    "path": "agents/core/memory/session_undo.py",
+    "sha256": "70bcee0e2398db9a422bf5a40d0af2b7f77dd07c61fbc20966d51e0fd0dba6f1"
+  },
+  {
+    "path": "agents/core/orchestrator.py",
+    "sha256": "7ca01e59b679bd52d9fd0198779119eeed4af24873ba8e798f607ea8b631949e"
+  },
+  {
+    "path": "agents/core/autonomy_coordinator.py",
+    "sha256": "157ef58da0f2f2ba2e431d4226b4867d068babff2f7540e8052fabf04d5c6d21"
+  },
+  {
+    "path": "agents/core/orchestrator_bindings.py",
+    "sha256": "557e81cf6e5c7435a9baa92f041e08c6ba5291c1427b1f51b5b0abb20af870ef"
+  },
+  {
+    "path": "agents/core/settings_db.py",
+    "sha256": "e3a2a087409879db861c9d803b31ab76959d631474742f965cb8d57fdf3f3792"
+  },
+  {
+    "path": "tests/test_pending_input.py",
+    "sha256": "94222359748577e6ba3ef6c51f03f06805072b070f6ee3bbb118f45e769d2317"
+  },
+  {
+    "path": "tests/test_pending_input_runtime.py",
+    "sha256": "6f614cfda819dab7728894e87e7c006103886be1a1e9f3b06ff610a075531d69"
+  },
+  {
+    "path": "tests/test_ephemeral_reply.py",
+    "sha256": "286b71884243fb0414547e07498ed9de9d2a8f913c942e129ec3f5b5e9baab71"
+  },
+  {
+    "path": "tests/test_session_command_permission.py",
+    "sha256": "ee49e9be42d13848c94e90d0615731b3e522e0bd1c48db18dd6b32ae45893e65"
+  },
+  {
+    "path": "tests/test_permission_ledger.py",
+    "sha256": "e6b3efb7a47876446f29533222727118bf7123e0815d1666a09fb0de023316c5"
+  },
+  {
+    "path": "tests/test_session_undo.py",
+    "sha256": "bf8f04820f151b2804c4fe2e3273ad1bd4244a99c2f743ac7eacf45680d9a10a"
+  },
+  {
+    "path": "docs/hermes/pending-input-plan-2026-10-05.md",
+    "sha256": "6966a4cae14b552040db931dc29f843e97e3b0e8b27b4ae3373f9bcd774eba10"
+  },
+  {
+    "path": "docs/hermes/licenses/hermes-pending-input-MIT.txt",
+    "sha256": "265e0b6d67ad524a33dd9c211b04c47b18da0b1b36086fe28ee77c52c957fa69"
+  }
+]

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.405" timestamp="2026-10-04T23:54:53.527029+03:00" hostname="Macmini"><testcase classname="tests.test_h277_model_roles" name="test_doctor_model_roles_row_warns_on_a_bad_provider" time="1.167"><failure message="AssertionError: assert 'ok' == 'warn'&#10;  &#10;  - warn&#10;  + ok">tests/test_h277_model_roles.py:400: in test_doctor_model_roles_row_warns_on_a_bad_provider
+    assert check.status == doctor.WARN
+E   AssertionError: assert 'ok' == 'warn'
+E     
+E     - warn
+E     + ok</failure></testcase></testsuite></testsuites>

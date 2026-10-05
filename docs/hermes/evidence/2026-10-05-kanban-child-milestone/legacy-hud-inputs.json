@@ -1,0 +1,259 @@
+{
+  "source_root": "/Users/andrei649/Projects/nerva-pr-worktrees/consent",
+  "snapshot_root": "/tmp/nerva-current-legacy-hud-coverage-20261005",
+  "versions_exact_lock": {
+    "vitest": "5.0.2",
+    "jsdom": "30.1.1",
+    "nyc": "18.0.0",
+    "istanbul-lib-instrument": "6.0.3"
+  },
+  "inputs": [
+    {
+      "path": "agents/web/static/admin.css",
+      "sha256": "9c9f70e1278f6f97ada8f88a8e798333f0a50b417520cd8aa159262f4d0403cc"
+    },
+    {
+      "path": "agents/web/static/admin.js",
+      "sha256": "da81fa75d22c1922762bdb020ba259afb8e978f29449afbfd8816e062ad5917e"
+    },
+    {
+      "path": "agents/web/static/app.js",
+      "sha256": "48843178a9d04c9c94fa04b554040a9f6d91386129681c40eb6e067cc8b549df"
+    },
+    {
+      "path": "agents/web/static/auth.js",
+      "sha256": "701658c53f45c3d9e6856416a90520a96946fb0fc5693a6730f3b3ac0f8885eb"
+    },
+    {
+      "path": "agents/web/static/cognition.js",
+      "sha256": "188a1013d7cd73ee2ffe48d66bc85156be905d6f32bf1b750da1de928844970b"
+    },
+    {
+      "path": "agents/web/static/components.js",
+      "sha256": "19c0702876d7e7eb0e4a9e92e8901b9dde532e5d8f6cbe16fd5ffa8c963d9ce9"
+    },
+    {
+      "path": "agents/web/static/console.js",
+      "sha256": "2fba20be08a38c7ef1360f114bf6423d94453fda7dc89d408bda265e356e5705"
+    },
+    {
+      "path": "agents/web/static/data.js",
+      "sha256": "38b3e4bf6d8227a98c7ab99d4872bfd1bba3a8365f4b9fc64d9a5a57aa96c42d"
+    },
+    {
+      "path": "agents/web/static/dossier-modal.js",
+      "sha256": "27b94b2b547e4a22145dba2f1b5f5cb65d96c02aa438850fc817ee46ec243b42"
+    },
+    {
+      "path": "agents/web/static/enhancements.js",
+      "sha256": "0f1bd499baae0f9cf2847ec6d4167438e08862a560e30fc02148ca464414f6e2"
+    },
+    {
+      "path": "agents/web/static/favicon.svg",
+      "sha256": "b461f5ebc9bc78e2b7ec9fc4e84b17069f14c32a74da1b0e7146c03b02493ad4"
+    },
+    {
+      "path": "agents/web/static/fonts.css",
+      "sha256": "b330416a97d4b6f51169c83da27b94a1d403b64c0cf0c68bb5d681bc7e8704a5"
+    },
+    {
+      "path": "agents/web/static/fonts/font0.woff2",
+      "sha256": "66138a5f497822acf2bf9a735db38b90fa36d182b6aa5e2f2c488b3a365e18e9"
+    },
+    {
+      "path": "agents/web/static/fonts/font1.woff2",
+      "sha256": "b47f37d67877becd66794516601cce5703d182857945ec9d1e7137a1ead38192"
+    },
+    {
+      "path": "agents/web/static/fonts/font2.woff2",
+      "sha256": "d9b823830add55511fb4381f43a752b7a682af0df7542931d89c0c10c86af087"
+    },
+    {
+      "path": "agents/web/static/fonts/font3.woff2",
+      "sha256": "a3b66800e9aa36bd8f3cc59f29024c9e063a2ac607d955dd27e149c29cac8410"
+    },
+    {
+      "path": "agents/web/static/fonts/font30.woff2",
+      "sha256": "41e6b9f297f7d9a2df2aaa274092f76d2f72711a15ca455f7f4f4f92caf16b72"
+    },
+    {
+      "path": "agents/web/static/fonts/font4.woff2",
+      "sha256": "4a259dde317e08aa5d37e6eb684e222ae833516b2a0fccba36ee5e36224f16be"
+    },
+    {
+      "path": "agents/web/static/i18n.js",
+      "sha256": "43891c889b4a2241d61f3daea2032cb4b06cfc888f344b7a8a53ade27ca8559f"
+    },
+    {
+      "path": "agents/web/static/manifest.json",
+      "sha256": "5e47283be8d66dcae8e8cc8fb91ff76258246e7b0eb0b0c6857ea85f6e4fe88d"
+    },
+    {
+      "path": "agents/web/static/network.js",
+      "sha256": "a633c73f9ef1def4eda13e719e184a6a8366b822907cece6b827c4fa4cd6326e"
+    },
+    {
+      "path": "agents/web/static/observability.js",
+      "sha256": "2f6317d023118bba7fb8f1842831593db074de4fc5c7ff16c1bef86d4ab5b98e"
+    },
+    {
+      "path": "agents/web/static/react-dom.production.min.js",
+      "sha256": "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d"
+    },
+    {
+      "path": "agents/web/static/react.production.min.js",
+      "sha256": "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd"
+    },
+    {
+      "path": "agents/web/static/style.css",
+      "sha256": "5423871d39a00a83bad69fc101a01a4504c206b683fad1f4a945f6e32925a8ad"
+    },
+    {
+      "path": "agents/web/static/sw.js",
+      "sha256": "5cb480b6bae6b5b55e467233dbbbaa858fe983f9e970edb1cf79f36d83a75edf"
+    },
+    {
+      "path": "agents/web/static/systems.css",
+      "sha256": "ba4678fb84d3c06858148130b8e24aa50e134a3c285800296bb7621b0036d4eb"
+    },
+    {
+      "path": "agents/web/static/systems.js",
+      "sha256": "df2965794dcc249e6b73e8ddd3e6b3bccd39f5d93be86e429523538b0e1ff95f"
+    },
+    {
+      "path": "agents/web/static/tools.js",
+      "sha256": "45c4536ecd983d7871a3f313bd1f216062ea72f7cec50810b31c2ae9e7357ccb"
+    },
+    {
+      "path": "agents/web/static/workflows.js",
+      "sha256": "f48c8e5a00fa896d9b6fec1a8c12146a1e34d60b62dfe3b75af88dc0e149cd1c"
+    },
+    {
+      "path": "tests/frontend/README.md",
+      "sha256": "cb0f15a6f2495bf1b6fb1dd5768ff537f58df53767b5305c3dd9898ed0186613"
+    },
+    {
+      "path": "tests/frontend/admin-app.test.js",
+      "sha256": "32a402516f5d940ff6f15ae62dd821d01b47beb9f6068cbf644208036d9dace1"
+    },
+    {
+      "path": "tests/frontend/admin-lm-status.test.js",
+      "sha256": "e591691ff9851797c2961bc32ae1da05766bcedc1a42d6b7f666ce9dc76021b9"
+    },
+    {
+      "path": "tests/frontend/admin-model-picker.test.js",
+      "sha256": "bdfecc93b93b8b312a2cad3ddee2296ba346840ff9fff050af74cfb06f3c75a3"
+    },
+    {
+      "path": "tests/frontend/admin-retention.test.js",
+      "sha256": "d49c8d0dafc2c03870e449c1a5919436c502319c48d7672e63f1c8720c9c0f5d"
+    },
+    {
+      "path": "tests/frontend/admin-rows.test.js",
+      "sha256": "acc2f35676147c4100fcd71122ceccf0498bd2a236284ba4d2803278a9a514eb"
+    },
+    {
+      "path": "tests/frontend/app-flows.test.js",
+      "sha256": "262fe9b06d82d1d1f931bd62bfd5cbb17f2d27a175584c5ccb15c22fdbfe124f"
+    },
+    {
+      "path": "tests/frontend/app.test.js",
+      "sha256": "f51b20a739fd07385c952214d50b2f0f9dc6ad93a49b4d6d82088a75478d5e93"
+    },
+    {
+      "path": "tests/frontend/auth.test.js",
+      "sha256": "c23d5ff82598d299797b3e16a967ddbf97563832c0c1fb847165a4780c20b458"
+    },
+    {
+      "path": "tests/frontend/cognition.test.js",
+      "sha256": "d04065e603f54f2e47e890bd74ca3aad594c33a1e8bc8b42edef6a322595bb2c"
+    },
+    {
+      "path": "tests/frontend/components-extra.test.js",
+      "sha256": "c56715d966d2806615570f681bbd9c71b2afb513cb179559dcd3d73bd29d712e"
+    },
+    {
+      "path": "tests/frontend/components-more.test.js",
+      "sha256": "5b25e6f39f3fd02c6ca8d65e0808b9b1e27128901a33bcc944ad0fe8fabb14be"
+    },
+    {
+      "path": "tests/frontend/components.test.js",
+      "sha256": "ec66dcb004f5c6fddc5dffd34e0bde1a929486435479e37e49ed5aed2632782d"
+    },
+    {
+      "path": "tests/frontend/console.test.js",
+      "sha256": "a99498de2b8cdc9f69d33768811006343329f379af07686dd4b570c72a37f5e4"
+    },
+    {
+      "path": "tests/frontend/coverage-badge.svg",
+      "sha256": "5dc761f3df8fb5b4c42eb38a70281b8f6f8c09b3618b3388cf614ca2391e2887"
+    },
+    {
+      "path": "tests/frontend/coverage.mjs",
+      "sha256": "f08d880e4c137c82fc5fca3f451d4b0f39fadc8e2f669854f9c220dc47605950"
+    },
+    {
+      "path": "tests/frontend/data.test.js",
+      "sha256": "015a13fabc55c967db266f1e440c1f8c1b72bdf8974dcaf6380e3f9ffcd8fc5d"
+    },
+    {
+      "path": "tests/frontend/dossier.test.js",
+      "sha256": "59f04a26546c5c70666530e27a90ebba6ec164fe01d9cffc9e103f3e6a7d9a5d"
+    },
+    {
+      "path": "tests/frontend/enhancements.test.js",
+      "sha256": "eff7e2856aaa145bb2e51c232b29aad4b67a240759768dc890174975770b5622"
+    },
+    {
+      "path": "tests/frontend/harness.js",
+      "sha256": "9918aa388e32a2314bc207bd4621b7d0570ffcc1fa83904df27806e05a3bf20a"
+    },
+    {
+      "path": "tests/frontend/helpers.test.js",
+      "sha256": "7faea7535cd72fc2f30094adb8139e0cfc3f6e3eeb8755fcef60ec7aa06bbd6c"
+    },
+    {
+      "path": "tests/frontend/i18n.test.js",
+      "sha256": "88fac842e791838d72ce7dd5916b098098104daf3808f7fbf5b1cd1fe9ce610e"
+    },
+    {
+      "path": "tests/frontend/network.test.js",
+      "sha256": "5f8e1d73a4685e01be6fdea321b9a337e840757f091fbed362ddc768658dd5db"
+    },
+    {
+      "path": "tests/frontend/no-fabricated-telemetry.test.js",
+      "sha256": "96e0e940ca3d509fcb46a681ce68b07b4dd6b279ebd969d01466ad092082d51a"
+    },
+    {
+      "path": "tests/frontend/observability.test.js",
+      "sha256": "f38ac9498ebe8526dea0e56d6500373db27fb695d308bed255ebfbe55001ae4c"
+    },
+    {
+      "path": "tests/frontend/panels.test.js",
+      "sha256": "462ae17604a6ee03b33283f7d3b230d011b90e88195b21162c63dd99e5ef16bc"
+    },
+    {
+      "path": "tests/frontend/resilience.test.js",
+      "sha256": "1a885438a93468935096fbf1403adb5f5c45a8bc0c8edf481f120feb4badd865"
+    },
+    {
+      "path": "tests/frontend/systems-tabs.test.js",
+      "sha256": "d51c468e62a834a5104d495ee4435c8f79da7de13327933d079acba16afaa760"
+    },
+    {
+      "path": "tests/frontend/systems.test.js",
+      "sha256": "55bd0e8950307527e27ff6d677cbedea398a83960a9dade5960dd144e01b0bdb"
+    },
+    {
+      "path": "tests/frontend/tools.test.js",
+      "sha256": "5fd583e9a2e9b2e2676fe75313f6a4ca5f2e5d10f704ec3584da893f07fddb1c"
+    },
+    {
+      "path": "tests/frontend/workflows.test.js",
+      "sha256": "37c958400d018cdd3428e0e89558cc29d3e9491fc94b9f0bfe0c3cc2e6e8026c"
+    }
+  ],
+  "state": "prepared_only; do not run concurrently with full backend",
+  "coverage_badge_mutation": "External snapshot only; do not copy generated badge into dirty repository without reviewing.",
+  "archival_format": "Path/hash entries normalized to a list; exact input identities and SHA256 values preserved."
+}

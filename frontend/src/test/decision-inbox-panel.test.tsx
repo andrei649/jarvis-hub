@@ -17,6 +17,25 @@ function mockFetch(payload) {
   return fn;
 }
 
+it.each([true, false])('previews complete pending questions or explains a lost binding: %s', async available => {
+  const text = 'Full question ' + 'x'.repeat(17000);
+  mockFetch({ tasks: [{ id: 75, title: 'Native question', kind: 'channel.reply', status: 'blocked' }],
+    prompt: available ? { available: true, text, choices: ['First option', '<script>plain text</script>'] }
+      : { available: false } });
+  render(<DecisionInboxPanel />);
+  fireEvent.click(await screen.findByTitle('dry-run preview'));
+  if (available) {
+    const content = await screen.findByLabelText('Complete pending question');
+    expect(content.textContent).toBe(text);
+    expect(screen.getByText('First option')).toBeTruthy();
+    expect(screen.getByText('<script>plain text</script>')).toBeTruthy();
+    expect(document.querySelector('script')).toBeNull();
+  } else {
+    expect(await screen.findByText('This question has expired or its live delivery is unavailable.')).toBeTruthy();
+    expect(screen.queryByLabelText('Complete pending question')).toBeNull();
+  }
+});
+
 it('shows reusable terminal choices and sends only the exact offer revision', async () => {
   const revision = 'a'.repeat(64);
   const fn = mockFetch({ tasks: [{ id: 73, title: 'Reviewed terminal request',
@@ -295,6 +314,153 @@ it('shows exact paid cloud proposal and immutable task return link',async()=>{
     expect(screen.getByRole('link',{name:'Watch image task'}).getAttribute('href')).toBe('/nerva/v2/console/images?image_task=17');
     expect(screen.getByTitle('accept')).toBeTruthy();expect(screen.getByTitle('reject')).toBeTruthy();expect(screen.getByTitle('defer')).toBeTruthy();
   } finally {window.__NERVA_BASE_PATH__='';}
+});
+
+it.each([
+  ['cloud-image-fal', 'https://fal.run/fal-ai/flux-2/klein/9b/edit', 'FAL', 'fal-ai/flux-2/klein/9b', {endpoint:'fal-ai/flux-2/klein/9b/edit',references:['https://fal.media/input.png']}],
+  ['cloud-image-codex', 'https://chatgpt.com/backend-api/codex/images/edits', 'Codex OAuth', 'gpt-image-2-medium', {references:['a'.repeat(32)]}],
+  ['cloud-image', 'https://api.openai.com/v1/images/edits', 'OpenAI', 'gpt-image-2', {selected_model:'gpt-image-2-high',quality:'high',references:['a'.repeat(32)]}],
+])('shows %s generation/edit as an immutable image approval with its actual provider and references',async(plugin,url,label,model,extra)=>{
+  window.__NERVA_BASE_PATH__='';
+  mockFetch({tasks:[{id:19,kind:'plugin.egress',title:'Image edit',payload:{plugin,method:'POST',url,
+    image:{body:{model,prompt:'exact provider edit',size:'1024x1024',...extra},generation:'PRIVATE',nonce:'PRIVATE'}}}]});
+  render(<DecisionInboxPanel/>);
+  await screen.findByText('exact provider edit');
+  expect(screen.getByText(new RegExp(label+'.*'+(extra.selected_model||model)))).toBeTruthy();
+  expect(screen.getByText(new RegExp(extra.references[0].replace(/[.*+?^${}()|[\]\\]/g,'\\$&')))).toBeTruthy();
+  expect(screen.queryByTitle('edit')).toBeNull();
+  expect(screen.queryByTitle('dry-run preview')).toBeNull();
+  expect(document.body.textContent).not.toContain('PRIVATE');
+  expect(screen.getByRole('link',{name:'Watch image task'}).getAttribute('href')).toBe('/v2/console/images?image_task=19');
+});
+
+it.each([
+  ['cloud-image-openrouter', 'https://openrouter.ai/api/v1/chat/completions', 'OpenRouter', 'openai/gpt-5.4-image-2'],
+  ['cloud-image-openrouter', 'https://openrouter.ai/api/v1/images', 'OpenRouter', 'openai/gpt-image-2'],
+])('recognizes only the fixed %s surface and shows its immutable artifact reference', async(plugin,url,label,model) => {
+  mockFetch({tasks:[{id:21,kind:'plugin.egress',title:'Image',payload:{plugin,method:'POST',url,
+    image:{body:{model,prompt:'exact OpenRouter prompt',size:'1024x1024',references:['a'.repeat(32)]},nonce:'PRIVATE'}}}]});
+  render(<DecisionInboxPanel/>);
+  await screen.findByText('exact OpenRouter prompt');
+  expect(screen.getByText(new RegExp(label+'.*'+model.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')))).toBeTruthy();
+  expect(screen.getByText(/References.*a{32}/)).toBeTruthy();
+  expect(screen.queryByTitle('edit')).toBeNull();
+  expect(document.body.textContent).not.toContain('PRIVATE');
+  expect(screen.getByRole('link',{name:'Watch image task'})).toBeTruthy();
+});
+
+it('shows Krea style-guided URLs and strengths from the canonical bound JSON without offering edit or Enhance', async()=>{
+  mockFetch({tasks:[{id:22,kind:'plugin.egress',title:'Style-guided image',payload:{plugin:'cloud-image-krea',method:'POST',
+    url:'https://api.krea.ai/generate/image/krea/krea-2/medium',image:{body:{model:'krea-2-medium',prompt:'exact Krea prompt',
+      size:'1536x1024',creativity:'high',modality:'style_guided_generation',
+      style_references_json:'[{"url":"https://images.example.com/style.png","strength":0.6}]'},nonce:'PRIVATE'}}}]});
+  render(<DecisionInboxPanel/>);
+  await screen.findByText('exact Krea prompt');
+  expect(screen.getByText(/Krea.*krea-2-medium.*1536x1024/)).toBeTruthy();
+  expect(screen.getByText(/Style-guided generation/)).toBeTruthy();
+  expect(screen.getByText(/https:\/\/images.example.com\/style.png.*0.6/)).toBeTruthy();
+  expect(screen.queryByTitle('edit')).toBeNull();
+  expect(document.body.textContent).not.toContain('PRIVATE');
+});
+
+it('shows the exact Krea Enhance source and warning as an immutable paid approval',async()=>{
+  mockFetch({tasks:[{id:31,kind:'plugin.egress',title:'Krea Enhance',payload:{plugin:'cloud-image-krea',method:'POST',
+    url:'https://api.krea.ai/generate/enhance/krea/enhance',image:{body:{model:'krea-2-medium',prompt:'source prompt',
+      size:'1024x1024',operation:'enhance',image_url:'https://images.example.com/source.png',image_scaling_factor:2},
+      enhance:{task_id:17,nonce:'a'.repeat(32),binding:'b'.repeat(64),artifact_id:'c'.repeat(32),sha256:'d'.repeat(64)}}}}]});
+  render(<DecisionInboxPanel/>);
+  await screen.findByText('source prompt');
+  expect(screen.getByText(/Krea.*krea-2-medium.*1024x1024/)).toBeTruthy();
+  expect(screen.getByText(/Enhance 2× may alter detail/)).toBeTruthy();
+  expect(screen.getByText(/Source image task 17.*c{32}/)).toBeTruthy();
+  expect(screen.getByText(/https:\/\/images.example.com\/source.png/)).toBeTruthy();
+  expect(screen.queryByTitle('edit')).toBeNull();
+  expect(screen.queryByTitle('dry-run preview')).toBeNull();
+  expect(document.body.textContent).not.toContain('b'.repeat(64));
+  expect(screen.getByRole('link',{name:'Watch image task'}).getAttribute('href')).toBe('/v2/console/images?image_task=31');
+});
+
+it('keeps a resumed Enhance job tied to its source and rejects an unrelated Enhance origin',async()=>{
+  const body={model:'krea-2-large',prompt:'bound source prompt',size:'1536x1024',operation:'enhance',
+    image_url:'https://images.example.com/bound.png',image_scaling_factor:2};
+  const enhance={task_id:41,nonce:'a'.repeat(32),binding:'b'.repeat(64),artifact_id:'c'.repeat(32),sha256:'d'.repeat(64)};
+  mockFetch({tasks:[
+    {id:42,kind:'plugin.egress',title:'Enhance continuation',payload:{plugin:'cloud-image-krea',method:'GET',
+      url:'https://api.krea.ai/jobs/job_42',image:{body,enhance,resume:{task_id:41,nonce:'e'.repeat(32),job_id:'job_42',binding:'f'.repeat(64)}}}},
+    {id:43,kind:'plugin.egress',title:'Wrong Enhance origin',payload:{plugin:'cloud-image-krea',method:'POST',
+      url:'https://evil.invalid/generate/enhance/krea/enhance',image:{body,enhance}}},
+  ]});
+  render(<DecisionInboxPanel/>);
+  await screen.findByText('bound source prompt');
+  expect(screen.getByText(/Enhance 2× may alter detail/)).toBeTruthy();
+  expect(screen.getByText(/Source image task 41.*c{32}/)).toBeTruthy();
+  expect(screen.getAllByRole('link',{name:'Watch image task'})).toHaveLength(1);
+  expect(screen.getByTitle('edit')).toBeTruthy();
+});
+
+it.each([[1024,true],[1025,false]])('recognizes Krea Enhance only within the provider image URL cap (%s chars)',async(length,recognized)=>{
+  const prefix='https://gen.krea.ai/images/';
+  const imageUrl=prefix+'a'.repeat(length-prefix.length);
+  expect(imageUrl).toHaveLength(length);
+  mockFetch({tasks:[{id:44,kind:'plugin.egress',title:'Bound Krea Enhance',payload:{plugin:'cloud-image-krea',method:'POST',
+    url:'https://api.krea.ai/generate/enhance/krea/enhance',image:{body:{model:'krea-2-medium',prompt:'bound prompt',
+      size:'1024x1024',operation:'enhance',image_url:imageUrl,image_scaling_factor:2},
+      enhance:{task_id:17,nonce:'a'.repeat(32),binding:'b'.repeat(64),artifact_id:'c'.repeat(32),sha256:'d'.repeat(64)}}}}]});
+  render(<DecisionInboxPanel/>);
+  await screen.findByText('Bound Krea Enhance');
+  expect(screen.queryByRole('link',{name:'Watch image task'})!==null).toBe(recognized);
+  expect(screen.queryByTitle('edit')!==null).toBe(!recognized);
+});
+
+it('shows fixed xAI and DeepInfra generation surfaces as immutable approvals',async()=>{
+  mockFetch({tasks:[
+    {id:27,kind:'plugin.egress',title:'xAI edit',payload:{plugin:'cloud-image-xai',method:'POST',url:'https://api.x.ai/v1/images/edits',
+      image:{body:{model:'grok-imagine-image-2.0',prompt:'xAI exact prompt',size:'1024x1024',quality:'medium',references:['a'.repeat(32)]}}}},
+    {id:28,kind:'plugin.egress',title:'DeepInfra image',payload:{plugin:'cloud-image-deepinfra',method:'POST',url:'https://api.deepinfra.com/v1/openai/images/generations',
+      image:{body:{model:'owner/model',prompt:'DeepInfra exact prompt',size:'1024x1024'}}}},
+  ]});
+  render(<DecisionInboxPanel/>);
+  await screen.findByText('xAI exact prompt');
+  expect(screen.getByText(/xAI.*grok-imagine-image-2.0.*medium/)).toBeTruthy();
+  expect(screen.getByText(/DeepInfra.*owner\/model/)).toBeTruthy();
+  expect(screen.queryByTitle('edit')).toBeNull();
+  expect(screen.queryByTitle('dry-run preview')).toBeNull();
+});
+
+it('distinguishes a bound Krea job GET from generation and a DeepInfra catalog GET from an image task',async()=>{
+  mockFetch({tasks:[
+    {id:29,kind:'plugin.egress',title:'Krea continuation',payload:{plugin:'cloud-image-krea',method:'GET',url:'https://api.krea.ai/jobs/job_23',
+      image:{body:{model:'krea-2-medium',prompt:'original Krea prompt',size:'1024x1024',modality:'style_guided_generation',
+        style_references_json:'[{"url":"https://images.example.com/style.png","strength":0.6}]'},
+        resume:{task_id:22,nonce:'SECRET_NONCE',job_id:'job_23',binding:'SECRET_BINDING'}}}},
+    {id:30,kind:'plugin.egress',title:'DeepInfra refresh',payload:{plugin:'cloud-image-deepinfra',method:'GET',
+      url:'https://api.deepinfra.com/v1/openai/models?filter=true&sort_by=hermes',image:{body:{operation:'catalog_refresh',prompt:''}}}},
+  ]});
+  render(<DecisionInboxPanel/>);
+  await screen.findByText('original Krea prompt');
+  expect(screen.getByText(/Resume saved Krea job job_23 from image task 22/)).toBeTruthy();
+  expect(screen.getByText(/saved job status GET after approval; no generation POST/)).toBeTruthy();
+  expect(screen.getByText(/DeepInfra catalog refresh.*GET/)).toBeTruthy();
+  expect(screen.getByText(/does not submit paid image generation/)).toBeTruthy();
+  expect(screen.getAllByRole('link',{name:'Watch image task'})).toHaveLength(1);
+  expect(document.body.textContent).not.toContain('SECRET_NONCE');
+  expect(document.body.textContent).not.toContain('SECRET_BINDING');
+  expect(screen.queryByTitle('edit')).toBeNull();
+});
+
+it('does not recognize arbitrary OpenRouter or Krea egress origins as image approvals', async()=>{
+  mockFetch({tasks:[{id:23,kind:'plugin.egress',title:'Other egress',payload:{plugin:'cloud-image-krea',method:'POST',
+    url:'https://evil.invalid/generate/image/krea/krea-2/medium',image:{body:{prompt:'untrusted target',model:'krea-2-medium'}}}}]});
+  render(<DecisionInboxPanel/>);await screen.findByText('Other egress');
+  expect(screen.queryByRole('link',{name:'Watch image task'})).toBeNull();
+  expect(screen.getByTitle('edit')).toBeTruthy();
+});
+
+it('does not recognize an arbitrary token-bearing egress URL as a Codex image proposal',async()=>{
+  mockFetch({tasks:[{id:20,kind:'plugin.egress',title:'Other egress',payload:{plugin:'cloud-image-codex',method:'POST',url:'https://evil.invalid/images/generations',image:{body:{prompt:'untrusted target',model:'gpt-image-2-medium'}}}}]});
+  render(<DecisionInboxPanel/>);await screen.findByText('Other egress');
+  expect(screen.queryByRole('link',{name:'Watch image task'})).toBeNull();
+  expect(screen.getByTitle('edit')).toBeTruthy();
 });
 
 it('keeps a visible image return link after accepted task leaves inbox',async()=>{

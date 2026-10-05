@@ -1,0 +1,453 @@
+{
+  "refreshed": [
+    {
+      "id": "H063",
+      "status_preserved": "equivalent",
+      "refreshed_exact_preimage": [
+        "agents/core/orchestrator_bindings.py"
+      ]
+    },
+    {
+      "id": "H075",
+      "status_preserved": "partial",
+      "refreshed_exact_preimage": [
+        "agents/core/orchestrator_bindings.py"
+      ]
+    },
+    {
+      "id": "H277",
+      "status_preserved": "partial",
+      "refreshed_exact_preimage": [
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py",
+        "agents/core/detached_kernel.py"
+      ]
+    },
+    {
+      "id": "H287",
+      "status_preserved": "partial",
+      "refreshed_exact_preimage": [
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py"
+      ]
+    },
+    {
+      "id": "H298",
+      "status_preserved": "equivalent",
+      "refreshed_exact_preimage": [
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py"
+      ]
+    },
+    {
+      "id": "H305",
+      "status_preserved": "partial",
+      "refreshed_exact_preimage": [
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py"
+      ]
+    },
+    {
+      "id": "H315",
+      "status_preserved": "equivalent",
+      "refreshed_exact_preimage": [
+        "agents/core/session_kernels.py",
+        "agents/core/code_tools.py"
+      ]
+    },
+    {
+      "id": "H318",
+      "status_preserved": "equivalent",
+      "refreshed_exact_preimage": [
+        "agents/core/skills/tools.py"
+      ]
+    },
+    {
+      "id": "H326",
+      "status_preserved": "partial",
+      "refreshed_exact_preimage": [
+        "agents/core/skills/tools.py"
+      ]
+    },
+    {
+      "id": "H328",
+      "status_preserved": "equivalent",
+      "refreshed_exact_preimage": [
+        "agents/core/skills/tools.py"
+      ]
+    },
+    {
+      "id": "H340",
+      "status_preserved": "equivalent",
+      "refreshed_exact_preimage": [
+        "agents/core/skills/tools.py"
+      ]
+    },
+    {
+      "id": "H350",
+      "status_preserved": "equivalent",
+      "refreshed_exact_preimage": [
+        "agents/core/skills/tools.py"
+      ]
+    },
+    {
+      "id": "H351",
+      "status_preserved": "equivalent",
+      "refreshed_exact_preimage": [
+        "agents/core/skills/tools.py"
+      ]
+    },
+    {
+      "id": "H485",
+      "status_preserved": "partial",
+      "refreshed_exact_preimage": [
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py",
+        "agents/core/detached_kernel.py"
+      ]
+    },
+    {
+      "id": "H507",
+      "status_preserved": "equivalent",
+      "refreshed_exact_preimage": [
+        "agents/core/skills/tools.py"
+      ]
+    },
+    {
+      "id": "H515",
+      "status_preserved": "partial",
+      "refreshed_exact_preimage": [
+        "agents/core/autonomy_coordinator.py",
+        "agents/core/orchestrator_bindings.py"
+      ]
+    },
+    {
+      "id": "H581",
+      "status_preserved": "partial",
+      "refreshed_exact_preimage": [
+        "agents/core/orchestrator_bindings.py"
+      ]
+    },
+    {
+      "id": "H595",
+      "status_preserved": "partial",
+      "refreshed_exact_preimage": [
+        "agents/core/autonomy_coordinator.py",
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py",
+        "docs/hermes/code-execution-guide.md"
+      ]
+    },
+    {
+      "id": "H660",
+      "status_preserved": "partial",
+      "refreshed_exact_preimage": [
+        "agents/core/autonomy_coordinator.py",
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py",
+        "agents/core/detached_kernel.py",
+        "docs/hermes/code-execution-guide.md"
+      ]
+    },
+    {
+      "id": "H661",
+      "status_preserved": "equivalent",
+      "refreshed_exact_preimage": [
+        "agents/core/code_tools.py"
+      ]
+    },
+    {
+      "id": "H067",
+      "status_preserved": "equivalent",
+      "refreshed_exact_preimage": [
+        "agents/core/autonomy_coordinator.py",
+        "agents/core/orchestrator_bindings.py"
+      ]
+    },
+    {
+      "id": "H078",
+      "status_preserved": "equivalent",
+      "refreshed_exact_preimage": [
+        "agents/core/autonomy_coordinator.py"
+      ]
+    }
+  ],
+  "prior_stale_preserved": [
+    {
+      "id": "H011",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H075",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H262",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H277",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H277",
+      "path": "agents/core/orchestrator_bindings.py"
+    },
+    {
+      "id": "H287",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H288",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H296",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H298",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H305",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H309",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H313",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H314",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H315",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H317",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H318",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H358",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H388",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H435",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H436",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H437",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H453",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H456",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H485",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H485",
+      "path": "agents/core/orchestrator_bindings.py"
+    },
+    {
+      "id": "H487",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H581",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H594",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H661",
+      "path": "agents/core/autonomy_coordinator.py"
+    },
+    {
+      "id": "H681",
+      "path": "agents/core/autonomy_coordinator.py"
+    }
+  ],
+  "coordinate_only_repairs": [
+    {
+      "attribute": "acquisition",
+      "before": [
+        1546,
+        8
+      ],
+      "after": [
+        1558,
+        8
+      ]
+    },
+    {
+      "attribute": "session_kernels",
+      "before": [
+        1620,
+        8
+      ],
+      "after": [
+        1645,
+        8
+      ]
+    },
+    {
+      "attribute": "tool_rpc",
+      "before": [
+        1749,
+        8
+      ],
+      "after": [
+        1776,
+        8
+      ]
+    },
+    {
+      "attribute": "agent_tool_runtime",
+      "before": [
+        1750,
+        8
+      ],
+      "after": [
+        1777,
+        8
+      ]
+    },
+    {
+      "attribute": "cloud_images",
+      "before": [
+        1908,
+        8
+      ],
+      "after": [
+        1938,
+        8
+      ]
+    },
+    {
+      "attribute": "writeback",
+      "before": [
+        2057,
+        8
+      ],
+      "after": [
+        2087,
+        8
+      ]
+    },
+    {
+      "attribute": "social",
+      "before": [
+        2079,
+        8
+      ],
+      "after": [
+        2109,
+        8
+      ]
+    },
+    {
+      "attribute": "channel_replies",
+      "before": [
+        2100,
+        8
+      ],
+      "after": [
+        2130,
+        8
+      ]
+    },
+    {
+      "attribute": "call_broker",
+      "before": [
+        2120,
+        8
+      ],
+      "after": [
+        2151,
+        8
+      ]
+    },
+    {
+      "attribute": "node_mesh",
+      "before": [
+        2140,
+        8
+      ],
+      "after": [
+        2171,
+        8
+      ]
+    },
+    {
+      "attribute": "subagents",
+      "before": [
+        2311,
+        8
+      ],
+      "after": [
+        2342,
+        8
+      ]
+    },
+    {
+      "attribute": "task_executor",
+      "before": [
+        2331,
+        8
+      ],
+      "after": [
+        2362,
+        8
+      ]
+    },
+    {
+      "attribute": "permission_ledger",
+      "before": [
+        2193,
+        12
+      ],
+      "after": [
+        2224,
+        12
+      ]
+    },
+    {
+      "attribute": "work_runs",
+      "before": [
+        2214,
+        12
+      ],
+      "after": [
+        2245,
+        12
+      ]
+    }
+  ]
+}

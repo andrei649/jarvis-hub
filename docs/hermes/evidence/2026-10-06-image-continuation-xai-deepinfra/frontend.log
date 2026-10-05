@@ -1,0 +1,8 @@
+
+> nerva-hud@0.0.0 test
+> vitest run --reporter=json --outputFile=/Users/andrei649/Projects/nerva-pr-worktrees/consent/docs/hermes/evidence/2026-10-06-image-continuation-xai-deepinfra/frontend-result.json
+
+Not implemented: Window's prompt() method
+Not implemented: Window's prompt() method
+Not implemented: navigation to another Document
+JSON report written to /Users/andrei649/Projects/nerva-pr-worktrees/consent/docs/hermes/evidence/2026-10-06-image-continuation-xai-deepinfra/frontend-result.json

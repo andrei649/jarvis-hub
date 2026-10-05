@@ -1,0 +1,522 @@
+{
+  "goal": "Current-snapshot verification of all49 original H277 prepared faults; broader H277/all697 remain incomplete.",
+  "generated_at": "2026-10-04T20:58:13Z",
+  "base_head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "dirty_snapshot": true,
+  "donor_sha": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "original_mutants_sha256": "35b3fe792debc2fc4c32c60cf7f352e7ae5253cc0932d1e19b7f0639bf8db928",
+  "original_cases": 49,
+  "snapshot_inputs": 993,
+  "baseline_python": {
+    "tests": 360,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "post_python": {
+    "tests": 360,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "baseline_hud": {
+    "numTotalTests": 40,
+    "numPassedTests": 40,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true
+  },
+  "post_hud": {
+    "numTotalTests": 40,
+    "numPassedTests": 40,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true
+  },
+  "outcomes": {
+    "killed_assertion": 43,
+    "killed_behavioral_exception": 6
+  },
+  "survivors": 0,
+  "setup_errors": 0,
+  "timeouts": 0,
+  "invalid_or_unmappable": 0,
+  "all_inputs_restored_after_each_mutant": true,
+  "source_drift": [],
+  "snapshot_drift": [],
+  "post_source_drift": [],
+  "post_snapshot_drift": [],
+  "production_modified_by_campaign": false,
+  "meaning": "Entire original49 campaign rerun against current993 input snapshot, not combined historical detections. Fault23 now directly uses the already accepted public-route witness; same original mutation/file/semantic fault. Six exception kills are test-body KeyError/RoleConfigError, not collection/setup. Local only; no provider/native/live acceptance or full-backend green claim.",
+  "full_backend_round1": {
+    "tests": 23521,
+    "passed": 23480,
+    "failures": 6,
+    "errors": 0,
+    "skipped_or_xfail": 35,
+    "frozen_paths": 3210,
+    "drift": []
+  },
+  "corrective_union": {
+    "tests": 270,
+    "passed": 269,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1
+  },
+  "human_wait_isolated_repeat": {
+    "rounds": 3,
+    "tests": 24,
+    "failures": 0,
+    "production_and_test_deadlines_unchanged": true
+  },
+  "next_action": "Integrate independent signed worker file/terminal approvals and donor HUD, then dependent gates and serial frozen full milestone; do not re-run full while implementation is changing. All697 scope remains active.",
+  "publication": false,
+  "evidence_sha256": [
+    {
+      "path": "input-manifest.json",
+      "sha256": "766a50dafe81aee6a5bd5967f39f523b7cc5c09bb32c5423a2def4de6b5f77be"
+    },
+    {
+      "path": "baseline-hud.log",
+      "sha256": "8fec96712a2bbf22355b3e3134ab53dd383c1c3c09aa0310f02663d2e1735ec0"
+    },
+    {
+      "path": "runner.py.txt",
+      "sha256": "331ae01017c533dc4f765d4ecb83e5516248f57a7d144060a03f1850b1455e1a"
+    },
+    {
+      "path": "post-baseline-hud.json",
+      "sha256": "2b49759d802b011a4f5efa3b02a9eac7607281ec346193090694d9fadbf96b56"
+    },
+    {
+      "path": "baseline.xml",
+      "sha256": "459524eb95b03b86a5c5fac6dd067e664285796b10e143f3537c26fdfa35dc03"
+    },
+    {
+      "path": "results.json",
+      "sha256": "c4fb0e4c5321177a02a499468936dba4a3cfe73d87e4fc5008491fa7839dc9c6"
+    },
+    {
+      "path": "baseline-hud.json",
+      "sha256": "aebf354c1217912859be5a6c34120187654dae669ea264e996e727f3f522f837"
+    },
+    {
+      "path": "baseline-python.log",
+      "sha256": "7dc7e4a328647b1bbf2b86e1c49584185aed84cf2c098de46cd9c6e90a5e20d7"
+    },
+    {
+      "path": "post-hud.log",
+      "sha256": "9c5ce892048932943f3fb3ae6c7519c6dbb29f368db487200c4fda93da206629"
+    },
+    {
+      "path": "mapping.json",
+      "sha256": "e1159385f3e10cc1e8b3cbc2e8a2507dd7eeda57deaff50161be6f85a1795ead"
+    },
+    {
+      "path": "post-python.log",
+      "sha256": "4ff77305176acdf37915b644067105e8a8f5684893e001cbde16d96166cd8d44"
+    },
+    {
+      "path": "post-baseline.xml",
+      "sha256": "911b50fb4aa3d1ff35e031d452f593abeed968445ca8ba0c76bdb4052252c656"
+    },
+    {
+      "path": "xml/roles_vision_lmstudio_default_url_dropped.xml",
+      "sha256": "b3ffb575b68fefcfe05c95cb238dc876e9a3291673a3c9f7e5de012d89566656"
+    },
+    {
+      "path": "xml/roles_main_becomes_env_selectable.xml",
+      "sha256": "bc56acf2baad2812d1815dcaad1091a6bad189088481d447140f5a9aac67d134"
+    },
+    {
+      "path": "xml/queue_annotate_after_decision.xml",
+      "sha256": "66f229f2b3f691b86c22b0af002227b0788c31943d84c256bc1fe274f051a72d"
+    },
+    {
+      "path": "xml/queue_annotate_second_answer_overwrites.xml",
+      "sha256": "ab7d4218e3e3311f509ecbcc8fa8e404bfe5ae1b62f9333c87ccd9ea9d34663b"
+    },
+    {
+      "path": "xml/judge_protocol_refusal_dropped.xml",
+      "sha256": "e7cd03405db99228553ff8be879bebf7ff78cd973a5b7b4eaf3fb518c06cc201"
+    },
+    {
+      "path": "xml/judge_wants_local_agent_sent_remote.xml",
+      "sha256": "62e95032577cdbda29543169a9f3602b118dd687a366b471feb1097c9f4126e7"
+    },
+    {
+      "path": "xml/judge_parse_fractional_risk_allowed.xml",
+      "sha256": "a8077113a97bd7fda62c16b3b333a5127c338826c8a018ab51fe49c67e2d3a44"
+    },
+    {
+      "path": "xml/judge_strict_local_ignored.xml",
+      "sha256": "9d179e7a8828a1a90ce96fde8a1a47836dbff69c63662e5cd4ca4afc6c75a01a"
+    },
+    {
+      "path": "xml/queue_judged_audit_drops_judge_identity.xml",
+      "sha256": "5e18283501e51191373ef0a620d5d41640cc8f1ccbf6915bc3d8ee7164ecdf29"
+    },
+    {
+      "path": "xml/roles_env_role_default_provider_ollama.xml",
+      "sha256": "a433e901ace9b323a27398170765673fa2a17e83503aa5ae17d1f7f607405ffb"
+    },
+    {
+      "path": "xml/route_pending_drops_judge_key.xml",
+      "sha256": "e2fe385cbbdc6da9c3eaf6943029634b862608f2619f020f8562e9e8479d2278"
+    },
+    {
+      "path": "xml/judge_cloud_fallback_never_ignored.xml",
+      "sha256": "390df79a003b3e313a0b6dd275ab696d6d9b4fa3e1c66ade6427acfa2fc13e8f"
+    },
+    {
+      "path": "xml/judge_rationale_fence_markers_kept.xml",
+      "sha256": "0c5280271ce3df08f69150c324ad433a72b436122ee7a494969eed4cbf08288d"
+    },
+    {
+      "path": "xml/judge_selection_pin_check_inverted.xml",
+      "sha256": "957400092b59282ad7d5423644fb79798d09eaa39410600c206d5f52dc2d1431"
+    },
+    {
+      "path": "xml/judge_wants_tainted_sent_remote.xml",
+      "sha256": "3017105390088a74e6a4324f79b160d47d4c315dfa2ce4c0dcd917fb078ec80d"
+    },
+    {
+      "path": "xml/judge_h378_findings_ignored.xml",
+      "sha256": "b3a9528d0f0b518610127f9c64a7ad500095c5eb8055fdae34f0f66cd25926a0"
+    },
+    {
+      "path": "xml/judge_safe_mode_check_dropped.xml",
+      "sha256": "aafa6007635ab8a7c6d662e9f4f9894961fb78f58afc6ac527b91e4f4a672abb"
+    },
+    {
+      "path": "xml/judge_parse_extra_keys_allowed.xml",
+      "sha256": "3f540526403a0729b7e7b2b6b1f74aa2f13cca0cf7255fe5a314b1cc5167e546"
+    },
+    {
+      "path": "xml/roles_describe_catches_wrong_error.xml",
+      "sha256": "bfb564d384ce6db2f8dc990f82fa4b075917a4ad03cee3f7320a9347510cf73f"
+    },
+    {
+      "path": "xml/judge_remote_gate_applies_to_local.xml",
+      "sha256": "d60d1528ac56e3faaa51ce6062a0b60cf3884f6967e370249a05bd727f391310"
+    },
+    {
+      "path": "xml/roles_vision_view_provider_not_validated.xml",
+      "sha256": "9fbc8abc04d6287044eb97732e861415af4eabf31e57f1cb3a95c6917b91b43c"
+    },
+    {
+      "path": "xml/judge_wants_unconfigured_guard_dropped.xml",
+      "sha256": "37c79e22f5693b3fa8c24a6de812db4a47eaacb96f375cbf469d5bcfe3bc77e2"
+    },
+    {
+      "path": "xml/judge_public_leaks_remote_base_url.xml",
+      "sha256": "483bb9676916434197a42517b9a9127c34fc8cf3f354e1f3ec256604ed3f897a"
+    },
+    {
+      "path": "xml/roles_validate_supported_set_check_dropped.xml",
+      "sha256": "57fb9055915a8a4ed1d2194db582b35f8980e2586e380d0de77b33b033b68317"
+    },
+    {
+      "path": "xml/queue_snapshot_is_stored_item.xml",
+      "sha256": "e226edf3d0c1fd091eadcbfe6ca16c2a43998bb27b926a0e29e4b736245423c6"
+    },
+    {
+      "path": "xml/judge_clamp_upper_bound_raised.xml",
+      "sha256": "310838e270d3243ae423865aaa1bdc6f3353c882b691b1a8b6b71f7bb4fe62e3"
+    },
+    {
+      "path": "xml/judge_parse_empty_why_allowed.xml",
+      "sha256": "4cd1f44f8c39aa61a717811ee82bd7ecc369e339e24ef127442efea34c4fd31c"
+    },
+    {
+      "path": "xml/queue_short_lived_loop_not_judged_on_hub.xml",
+      "sha256": "d8d74bf279d06f9839336abea39bd0a570a6d6528c1bc3d8f6ca2abbef8db4d7"
+    },
+    {
+      "path": "xml/queue_annotate_low_score_auto_approves.xml",
+      "sha256": "4c080f0913eb839b267c975141656cc55386940ca118786e665fc158c12c4e46"
+    },
+    {
+      "path": "xml/judge_parse_code_fence_unanchored.xml",
+      "sha256": "97ea278826bfa07fbfaec5eb359f47d4275da6280e0208214874cb57b628ed77"
+    },
+    {
+      "path": "xml/vlm_role_error_reason_masked.xml",
+      "sha256": "d3d8b274451c5b3028031c62669a6ec1666c0be934945216d964919dfc32e44a"
+    },
+    {
+      "path": "xml/roles_pick_legacy_wins_over_role_name.xml",
+      "sha256": "22c84a66e0f6e1bdbf55156d2dcb1253d1b4f761dbb51092fec8ca3ae8afb09f"
+    },
+    {
+      "path": "xml/queue_decided_audit_drops_judge_identity.xml",
+      "sha256": "5c7569f9269992a63b14dc2d3540c6c5d5eafd3d3afe76ea3a1607bcd6f71d04"
+    },
+    {
+      "path": "xml/doctor_model_roles_ignored_not_flagged.xml",
+      "sha256": "544c64775f5c4e5a5651ec55e32bacfe262cfde5faf32c591d6fb6c783f1bf14"
+    },
+    {
+      "path": "xml/judge_wants_skill_card_judged.xml",
+      "sha256": "2b85285d6aace895e0a40c51cee61927a1df334b5ef8db5993315453a6a2cdeb"
+    },
+    {
+      "path": "xml/roles_locality_or_instead_of_and.xml",
+      "sha256": "6cd87841a83d09d5b53291ac43b3f13d22745839a3cee223ac2aa40e83c6bd3c"
+    },
+    {
+      "path": "xml/queue_judge_inherits_caller_context.xml",
+      "sha256": "95f7db5f358c3e9e21d7f909034e78815cefd3ad62d51d1c1f2c34937b669023"
+    },
+    {
+      "path": "xml/roles_pick_shadowed_legacy_not_reported.xml",
+      "sha256": "9d8be05076612f476de1c683f5f07edb926ff5300c4af8d82e39ac9019283903"
+    },
+    {
+      "path": "xml/judge_prompt_not_fenced.xml",
+      "sha256": "77410d7084239e98d765d16439595f8a3ca055ec609e22b07a681fb6b014d6db"
+    },
+    {
+      "path": "xml/roles_env_role_unset_model_guard_dropped.xml",
+      "sha256": "fed94aa8b87f356b6979e6bbcf5f7b5b0a7c8d3237c49ac6b82b213a75b2fc08"
+    },
+    {
+      "path": "xml/roles_vision_view_legacy_url_wins.xml",
+      "sha256": "8741c248fa3fe33e72610b378edb1ee96194140f7df77baf24ede2d1aa955303"
+    },
+    {
+      "path": "xml/judge_allow_remote_inverted.xml",
+      "sha256": "f19675bd3699bbdffe871a68f8a937343095639efc774775748676ce4140cbf6"
+    },
+    {
+      "path": "xml/judge_timeout_floor_dropped.xml",
+      "sha256": "61e7404672b765782c739db6605f427e5eadabcc757c513b1c4598aa8253a60f"
+    },
+    {
+      "path": "xml/model_config_override_flag_inverted.xml",
+      "sha256": "a0077c4baff0b1a43896688813939b03c3f408874d934bdd8e3036f84b158791"
+    },
+    {
+      "path": "xml/roles_pick_legacy_fallback_dropped.xml",
+      "sha256": "792f765fd0c6d65274a7aecf9f928ce082e46e081c7a6128b976443021cb1aa3"
+    },
+    {
+      "path": "xml/doctor_model_roles_attention_ignored.xml",
+      "sha256": "ee6b0a1b8731145ec98e74167c6404558759a179132dcecf4d0dacce624106f2"
+    },
+    {
+      "path": "logs/queue_judge_inherits_caller_context.log",
+      "sha256": "2d6737b35cc56d1c9a6bdcf7cf204768e6c867c3a40dfaff180fa1f3cc9e36a0"
+    },
+    {
+      "path": "logs/judge_prompt_not_fenced.log",
+      "sha256": "98f487bf1de42981918925c4b3c4f8093b514b5d31c82bea9d1d12f8713fadc6"
+    },
+    {
+      "path": "logs/roles_pick_shadowed_legacy_not_reported.log",
+      "sha256": "028de7145200460f2ef25ada1dde5d90dd4443bd7a15c9ff9d7513081e82fd41"
+    },
+    {
+      "path": "logs/roles_env_role_unset_model_guard_dropped.log",
+      "sha256": "fcdf15cbcdc1c094803d323a1c78cb2638297d7ae701fd6f47c315eaedbda961"
+    },
+    {
+      "path": "logs/roles_vision_view_legacy_url_wins.log",
+      "sha256": "c5bc6afbc1630a6aac8e50a5d7d7e77ff139f7e8718d551b59845b8f32a6d9a5"
+    },
+    {
+      "path": "logs/judge_allow_remote_inverted.log",
+      "sha256": "760bd585c17351e391e6e35ba9d6665796409f85bd909e980f9df57f0a26c46b"
+    },
+    {
+      "path": "logs/hud_opinion_advisory_label_dropped.log",
+      "sha256": "f39950ea1a154ef1a36190554faafc985d7e5986c74156e331c328ead9bffdb2"
+    },
+    {
+      "path": "logs/judge_timeout_floor_dropped.log",
+      "sha256": "788dd4f4eef808bedcc4617c71f17c4717a8b3cc7ca470e36980ec2442b0e243"
+    },
+    {
+      "path": "logs/model_config_override_flag_inverted.log",
+      "sha256": "4f2460d6bd991e5b7fef1f56e47c0bec2e90e35c924f07a4f2d306a04dfa8d90"
+    },
+    {
+      "path": "logs/roles_pick_legacy_fallback_dropped.log",
+      "sha256": "a1584b87da75055953b0f54f773fd5044c13eb7c267ce21e7a3d849214e2ab61"
+    },
+    {
+      "path": "logs/hud_repoll_never_stops.log",
+      "sha256": "72fdec1b3fe91f6107b5010b17c84b68176acdd4a178ab9ef03570bd947099fd"
+    },
+    {
+      "path": "logs/doctor_model_roles_attention_ignored.log",
+      "sha256": "41a93be8eacd1461bf5c27b85b1f6f4d2fd6ae18b88a0d65872f0ba2d09e4f4d"
+    },
+    {
+      "path": "logs/roles_vision_view_provider_not_validated.log",
+      "sha256": "04e31d2dc54159e75cf8471a8e01b9fa0289f3f3d972525c01df53e0d6bb26f2"
+    },
+    {
+      "path": "logs/judge_wants_unconfigured_guard_dropped.log",
+      "sha256": "6567f2cff2d0f6f842dbf665d45dcd313840405783260a89b46368550b8d14b3"
+    },
+    {
+      "path": "logs/roles_validate_supported_set_check_dropped.log",
+      "sha256": "74e3818048929c27a65d9c47f60c63cb4fe27336d53a8cffdda408591030c8c9"
+    },
+    {
+      "path": "logs/judge_public_leaks_remote_base_url.log",
+      "sha256": "dac089b9400f90f2f14a3c3a39297593755688fd354695d1369e63b06c944239"
+    },
+    {
+      "path": "logs/judge_clamp_upper_bound_raised.log",
+      "sha256": "1335c4b549b7838e33d586ff0beba936d7128f39575aa68bc0393b0b5fd5915c"
+    },
+    {
+      "path": "logs/queue_snapshot_is_stored_item.log",
+      "sha256": "bb2940d535a30ff56369e835adaeb068c42456e28030af0b86d68c89c3464129"
+    },
+    {
+      "path": "logs/queue_annotate_low_score_auto_approves.log",
+      "sha256": "f59200cd730aad0deb1f6473ab408525dcd28e7ba327987315ba47182449993a"
+    },
+    {
+      "path": "logs/judge_parse_empty_why_allowed.log",
+      "sha256": "5490e5285c9869e1b7d29899aa101ea1b4b2abe9cc6c679d20a15b93b9761762"
+    },
+    {
+      "path": "logs/queue_short_lived_loop_not_judged_on_hub.log",
+      "sha256": "768c0d658b4e1906a2d0f313ac630334e8c45a22be4e8280e5d5dd45f6f8415a"
+    },
+    {
+      "path": "logs/judge_parse_code_fence_unanchored.log",
+      "sha256": "b8a12f933ab7ae4509e5e8e9c08ca42e8b3caa2ff7cd35a921153154549b89ee"
+    },
+    {
+      "path": "logs/vlm_role_error_reason_masked.log",
+      "sha256": "34d021b02e7b120495193c5e80459aa944f5f5e54bf30781804d6e83344a63e0"
+    },
+    {
+      "path": "logs/queue_decided_audit_drops_judge_identity.log",
+      "sha256": "32005a7cee650b18fe5bac531bf077f29635429e5ac0accc0a38a983f0a74473"
+    },
+    {
+      "path": "logs/roles_pick_legacy_wins_over_role_name.log",
+      "sha256": "4de0f5c48d8b4083e7994c2db3d23a810ec2dfdf0b74f215e6c24b68a8e194b3"
+    },
+    {
+      "path": "logs/doctor_model_roles_ignored_not_flagged.log",
+      "sha256": "262ab6f005b5f4d9181f2f0d3faa6b3e4046ab5bfef97d564888e4c73b274187"
+    },
+    {
+      "path": "logs/roles_locality_or_instead_of_and.log",
+      "sha256": "e4ee6faf176eb3369934435a117418fef824c6eb490b511b8c2ea11b60b422d9"
+    },
+    {
+      "path": "logs/judge_wants_skill_card_judged.log",
+      "sha256": "8b5665dcd1201de0e883641641d67ea2effbf2830ede7bc493bf3b37dea9821d"
+    },
+    {
+      "path": "logs/judge_wants_tainted_sent_remote.log",
+      "sha256": "65a8d9cc04b2e30f7146ab22de098277d4b8a100680d4cca690059791df922af"
+    },
+    {
+      "path": "logs/hud_opinion_shown_on_skill_card.log",
+      "sha256": "e50891ea6a892f72d65862f3365648ab489bcfe8cb5a3a6ec166e3c32a639f3c"
+    },
+    {
+      "path": "logs/judge_h378_findings_ignored.log",
+      "sha256": "99a0bdd968d34a3206e7df60c6a81b417a36d23efbcad26cc40dbdde74bdd09a"
+    },
+    {
+      "path": "logs/judge_safe_mode_check_dropped.log",
+      "sha256": "1b1b609cff98c1ce90f8fbb8ccb761a40182f16f20c5ef3e5331c792b2041330"
+    },
+    {
+      "path": "logs/judge_parse_extra_keys_allowed.log",
+      "sha256": "f883d15188655e3e2b055a43b207a9fb37ed679291e746224cb1937d06528d3c"
+    },
+    {
+      "path": "logs/roles_describe_catches_wrong_error.log",
+      "sha256": "0e115c7c194fef6eb815c09e7327467814f73057227ee20f2f37b2490b6c1dbb"
+    },
+    {
+      "path": "logs/judge_remote_gate_applies_to_local.log",
+      "sha256": "b8d44a1d9d2264fbc3002fc105eea27706d6e7fd9f15ffac30d9c0e99e0389c0"
+    },
+    {
+      "path": "logs/roles_vision_lmstudio_default_url_dropped.log",
+      "sha256": "f97a74fe03011664eb7e7753a3dc213a63fe381772939ac4ca723140c35770dd"
+    },
+    {
+      "path": "logs/queue_annotate_after_decision.log",
+      "sha256": "f74c31e7eb8130631f515cacdd50044b983c32b3befb7fea804af377b9b40198"
+    },
+    {
+      "path": "logs/roles_main_becomes_env_selectable.log",
+      "sha256": "1f27276b7808d9669e52c1ea76f979e96b92e1f5c72d3a8c778873cbb28f3e91"
+    },
+    {
+      "path": "logs/queue_annotate_second_answer_overwrites.log",
+      "sha256": "a9d5d245f1bfb999c08bd018fca10fd214dbb3833349d07ff052b0708d215d86"
+    },
+    {
+      "path": "logs/judge_protocol_refusal_dropped.log",
+      "sha256": "918b9743bb1ea48fbafa11effeeed336ca02b02d1bf56c9a043be4be2fd7960b"
+    },
+    {
+      "path": "logs/judge_wants_local_agent_sent_remote.log",
+      "sha256": "a8d47279994bf0eb9b3813949e1b2bc393cbb21350595632509b0c028e04aafe"
+    },
+    {
+      "path": "logs/judge_parse_fractional_risk_allowed.log",
+      "sha256": "6c427cde7b8783226f02c298cc176f1c5d039861796b1acef63d9c1a88088b09"
+    },
+    {
+      "path": "logs/judge_strict_local_ignored.log",
+      "sha256": "e42fcef4ede1341d19c3dfe9946ce4145fbae158b8bc83959e04ef5dd8af9908"
+    },
+    {
+      "path": "logs/roles_env_role_default_provider_ollama.log",
+      "sha256": "2a2ae5f1ceccad8f7372ae48b1df7124af072e62740d9bdecfb98a7bb7a2523b"
+    },
+    {
+      "path": "logs/queue_judged_audit_drops_judge_identity.log",
+      "sha256": "632f4cb869ae165a07bc9d3bb077dcf5f961f39b9662f4169f1fd090142a1b73"
+    },
+    {
+      "path": "logs/judge_rationale_fence_markers_kept.log",
+      "sha256": "9656b14a1843db0bc0ce5239a4b935fc062809059d0d68948cd521761af061d9"
+    },
+    {
+      "path": "logs/route_pending_drops_judge_key.log",
+      "sha256": "ae00529bf0f6b0174b1cd8204640b1dbb4242436090c0d85c8df65611d789323"
+    },
+    {
+      "path": "logs/judge_cloud_fallback_never_ignored.log",
+      "sha256": "bece3bc547b698d4b26829cd675fd9592a6302f8aa99390a0286270830d2d7c5"
+    },
+    {
+      "path": "logs/judge_selection_pin_check_inverted.log",
+      "sha256": "21ed0f9ed34e7d56d71a57dcdbbd716a24027a0b7211778d8187d5279597b966"
+    },
+    {
+      "path": "secret-scan-config.toml",
+      "sha256": "27630a96d6c55755cc37620f3933d5cab94b1eb78a726a32e11212972525d76e"
+    },
+    {
+      "path": "secret-scan.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    }
+  ],
+  "manifest_serialization": "Archive manifest uses explicit path/sha256 rows to avoid treating secret-named source filenames as assigned credentials; all993 original input digests preserved.",
+  "secret_scan": {
+    "rules": "Gitleaks defaults without repository documentation-path exemption",
+    "exit_code": 0,
+    "scanned_bytes": 574483,
+    "findings": 0,
+    "initial_manifest_false_positives": 26,
+    "resolution": "All initial findings verified as path-to-SHA256 entries; explicit path/sha256 row serialization preserves every original digest without scanner exemptions."
+  }
+}

@@ -18,6 +18,8 @@ class ImageTaskView(BaseModel):
     task_id: int
     state: Literal["awaiting_approval", "queued", "generating", "ready", "rejected", "deferred", "refused", "uncertain"]
     artifact: ImageArtifactView | None = None
+    resume_available: bool = False
+    enhance_available: bool = False
 
 
 def project_image_task(task) -> ImageTaskView:

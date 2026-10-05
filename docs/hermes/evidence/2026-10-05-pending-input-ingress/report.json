@@ -1,0 +1,127 @@
+{
+  "generated_at": "2026-10-05T04:00:56.079618+00:00",
+  "goal": "All original 697 pinned Hermes capabilities; objective remains active.",
+  "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "reference": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "phase": "telegram_poll_and_rate_ingress_partial",
+  "accepted_complete": false,
+  "tests": {
+    "affected": {
+      "cases": 850,
+      "passed": 850,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "raw_xml_sha256": "248e35733a6b9130b8befa2a7becaaff4bc7dec43b7f16c8671ae215b72d44ba",
+    "red_regressions": [
+      {
+        "phase": "red",
+        "sha256": "bc98bd0612f53c1f99a5783b8ca69c907d628a464961be1682550733d2ffb22b",
+        "failures": 2
+      },
+      {
+        "phase": "direct-red",
+        "sha256": "b61951568f564160774f7d6032d3151553c1d41f74a0d2168489ec1f718496dc",
+        "failures": 3
+      },
+      {
+        "phase": "review-red",
+        "sha256": "8a8c69fa4ac18ed75afb6aa18f35908c2434a179ea81ecd3912c6d7915707dc7",
+        "failures": 3
+      }
+    ],
+    "metadata": {
+      "cases": 195,
+      "passed": 195,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "raw_xml_sha256": "9a6d9915009bd69209de23601c3301cc2b52d1f9b670fc9177268773d1b84a22"
+    }
+  },
+  "frozen_python_contract_inputs": 2037,
+  "frozen_drift": 0,
+  "scoped_inputs": [
+    {
+      "path": "agents/core/channels/gateway.py",
+      "sha256": "77e3ba9de50b8ef7e2a83a056440d9a55325d18ac3eae0d8a1ab70df4365ef13"
+    },
+    {
+      "path": "agents/core/channels/telegram.py",
+      "sha256": "ea4aa0a2f64fe47fe25507e3751521d7605b648cf8df7aae2425b451e9315718"
+    },
+    {
+      "path": "agents/core/channels/pending_input_runtime.py",
+      "sha256": "29050a1ac129e48e0e74f1928b27ffb12b866abed5d91de187a9e436ce069dce"
+    },
+    {
+      "path": "agents/core/orchestrator.py",
+      "sha256": "dae7e7f830b8c9840a79a40b1e9e22e1ca34fcafa4b410cdcb2bf34bfe8980b6"
+    },
+    {
+      "path": "agents/web.py",
+      "sha256": "b2ab4e431a019499e3eb43f7ec426da2deee81191c54528c0190c642c36c3eb1"
+    },
+    {
+      "path": "tests/test_pending_input_ingress.py",
+      "sha256": "dd4dd5f6a83e25943ddb42a7b6322568185bf4952464400c53c5c6d04749f045"
+    },
+    {
+      "path": "tests/test_telegram_pairing_shared_store.py",
+      "sha256": "476ce1183c4a66a2240480a6c5ea8d4c9f89eae2f8fa46a2b9525c7c8acd99b6"
+    },
+    {
+      "path": "docs/hermes/pending-input-plan-2026-10-05.md",
+      "sha256": "9b39dafed9a9dc65a316df58fa7031f8eb19390dab0937227af484a252e1d9c1"
+    }
+  ],
+  "review": {
+    "model": "gpt-6-sol",
+    "effort": "high",
+    "read_only": true,
+    "findings": 3,
+    "all_reproduced_then_fixed": true,
+    "bounded_correction_review": "no unresolved issue in the three corrections; reviewer did not run tests"
+  },
+  "gates": {
+    "ruff": "passed seven scoped Python files",
+    "bandit": "passed five production paths against unchanged repository baseline",
+    "strict_source_gitleaks": {
+      "exit_code": 0,
+      "findings": 0,
+      "files": 8,
+      "redacted": true,
+      "allow_comments_ignored": true,
+      "new_exceptions": false
+    }
+  },
+  "collateral_pins": {
+    "immediate_preimages_refreshed": 7,
+    "inherited_stale_preserved": 105
+  },
+  "delivered": [
+    "Actual Telegram polling pages resolve the exact delivered ToolRPC waiter outside its occupied chat lane.",
+    "Exact answers/retries bypass shared new-model-message rate admission; ordinary traffic retains rate/batching/order.",
+    "Fresh pairing, group policy, sender/topic and inbound origin/principal checked before resolution.",
+    "Edited/forwarded/attachment input stays ineligible after ordinary fallback and across mixed batches.",
+    "Rate-rejected prose preserves the delivered question; admitted model input still owns fallthrough cancellation.",
+    "Claimed Decision Inbox reason replies retain precedence over free-text clarification.",
+    "Production lifespan explicitly wires both pending-only hooks to the live gateway/orchestrator."
+  ],
+  "limits": [
+    "Local stub model, fake getUpdates pages and controlled transport; no live Telegram/provider acceptance.",
+    "Default-off preview remains; restart needed for ToolRPC registration.",
+    "No new full backend or serial frontend acceptance; H063 full-suite snapshot predates this change.",
+    "An invalid-selection retry still awaits bounded transport send in the poll loop; no claim of asynchronous retry delivery.",
+    "Same-instance stop/start investigation remains open."
+  ],
+  "remaining": [
+    "Native Telegram/Slack/Discord cards and fenced callbacks, clarify Other/multi-select/batch runtime.",
+    "Destructive new/reset/undo generation/owner/session-lease confirmation and governed persistent Always via real human queue/kernel/executor.",
+    "CLI/HUD/other channels, governed workspace delivery receipts and memory-bypassing ephemeral command outcomes.",
+    "Full integrated H067 suites and fresh H277 original49 campaign/kernel/provider gaps.",
+    "All other remaining original697 capabilities."
+  ],
+  "published": false
+}

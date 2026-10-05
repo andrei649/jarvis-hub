@@ -123,9 +123,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     from .nous_auth import configure_parser as configure_nous_auth
     configure_nous_auth(verbs)
+    from .secrets import register_parser as configure_secrets
+    configure_secrets(verbs)
 
     from agents.core.kanban.cli_parser import build_parser as configure_kanban
     configure_kanban(verbs)
+    from agents.core.kanban.cli_upstream.projects_commands import build_parser as configure_projects
+    configure_projects(verbs)
 
     doctor = verbs.add_parser("doctor", help="install check-up, one named reason per check (offline)")
     doctor.add_argument("--json", action="store_true")
@@ -3204,6 +3208,11 @@ def cmd_auth(ns: argparse.Namespace, ctx: Context) -> int:
     return run(ns, ctx)
 
 
+def cmd_secrets(ns: argparse.Namespace, ctx: Context) -> int:
+    from .secrets import cmd_secrets as run
+    return run(ns, ctx)
+
+
 def cmd_kanban(ns: argparse.Namespace, ctx: Context) -> int:
     result = ctx.client().post("/api/kanban/command", {"argv": ns._kanban_argv})
     if not isinstance(result, dict) or type(result.get("exit_code")) is not int:
@@ -3215,8 +3224,21 @@ def cmd_kanban(ns: argparse.Namespace, ctx: Context) -> int:
     return code if 0 <= code <= 255 and (code != 0 or result.get("ok") is True) else EXIT_FAILED
 
 
+def cmd_project(ns: argparse.Namespace, ctx: Context) -> int:
+    result = ctx.client().post("/api/kanban/projects/command", {"argv": ns._project_argv})
+    if not isinstance(result, dict) or type(result.get("exit_code")) is not int:
+        ctx.err.write("Project returned an invalid command result\n")
+        return EXIT_FAILED
+    if result.get("output"):
+        ctx.say(str(result["output"]))
+    code = result["exit_code"]
+    return code if 0 <= code <= 255 and (code != 0 or result.get("ok") is True) else EXIT_FAILED
+
+
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
+    "secrets": cmd_secrets,
     "kanban": cmd_kanban,
+    "project": cmd_project,
     "auth": cmd_auth,
     "doctor": cmd_doctor,
     "prompt-size": cmd_prompt_size,
@@ -3253,6 +3275,8 @@ def main(argv: list[str] | None = None, *, context: Context | None = None) -> in
     ctx = context or Context(environ=os.environ)
     if ns.verb == "kanban":
         ns._kanban_argv = raw[1:]
+    elif ns.verb == "project":
+        ns._project_argv = raw[1:]
     try:
         return _VERBS[ns.verb](ns, ctx)
     except HubUnavailable as exc:

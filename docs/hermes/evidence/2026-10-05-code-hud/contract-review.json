@@ -1,0 +1,135 @@
+{
+  "id": "H595",
+  "frozen_row_index": 594,
+  "frozen_contract": "docs/research/hermes-inventory-v2026.8.31/35-docs-features.md:2240-2380",
+  "decision": "equivalent",
+  "generated_at": "2026-10-05T20:51:20.633847+00:00",
+  "reviewers": [
+    "coordinator direct source/contract review",
+    "gpt-6-luna medium read-only requirement audit"
+  ],
+  "requirements": [
+    {
+      "entry": 1,
+      "requirement": "Programmatic execute_code",
+      "verdict": "implemented",
+      "source_evidence": [
+        "agents/core/code_tools.py",
+        "agents/core/tool_rpc_runtime.py",
+        "tests/test_h595_model_context.py"
+      ]
+    },
+    {
+      "entry": 2,
+      "requirement": "When to use it",
+      "verdict": "implemented",
+      "source_evidence": [
+        "docs/hermes/code-execution-guide.md"
+      ]
+    },
+    {
+      "entry": 3,
+      "requirement": "Four practical examples",
+      "verdict": "implemented",
+      "source_evidence": [
+        "docs/hermes/code-execution-guide.md"
+      ]
+    },
+    {
+      "entry": 4,
+      "requirement": "Project and strict mode",
+      "verdict": "implemented",
+      "source_evidence": [
+        "agents/core/code_context.py",
+        "tests/test_h595_context_integration.py",
+        "tests/test_h595_oneshot_context.py"
+      ]
+    },
+    {
+      "entry": 5,
+      "requirement": "Resource limits",
+      "verdict": "implemented",
+      "source_evidence": [
+        "agents/core/code_tools.py",
+        "agents/core/environments/output_limits.py",
+        "tests/test_code_tools.py"
+      ]
+    },
+    {
+      "entry": 6,
+      "requirement": "RPC mechanics",
+      "verdict": "implemented",
+      "source_evidence": [
+        "agents/core/tool_rpc_runtime.py",
+        "tests/test_tool_rpc_runtime.py"
+      ]
+    },
+    {
+      "entry": 7,
+      "requirement": "Errors, timeout and new-message interruption",
+      "verdict": "implemented",
+      "source_evidence": [
+        "agents/core/code_interruptions.py",
+        "tests/test_h595_product_interrupt.py",
+        "frontend/src/test/h595-chat-followup.test.tsx"
+      ]
+    },
+    {
+      "entry": 8,
+      "requirement": "Environment scrubbing",
+      "verdict": "implemented",
+      "source_evidence": [
+        "agents/core/code_env.py",
+        "tests/test_h595_code_env.py"
+      ]
+    },
+    {
+      "entry": 9,
+      "requirement": "Scoped skill/config passthrough",
+      "verdict": "implemented",
+      "source_evidence": [
+        "agents/core/code_env.py",
+        "tests/test_h595_context_integration.py"
+      ]
+    },
+    {
+      "entry": 10,
+      "requirement": "Exact operational variables and owner allowances",
+      "verdict": "implemented",
+      "source_evidence": [
+        "agents/core/code_env.py",
+        "tests/test_h595_code_env.py"
+      ]
+    },
+    {
+      "entry": 11,
+      "requirement": "Code versus terminal guidance",
+      "verdict": "implemented",
+      "source_evidence": [
+        "docs/hermes/code-execution-guide.md"
+      ]
+    },
+    {
+      "entry": 12,
+      "requirement": "Platform support adaptation and notes",
+      "verdict": "implemented",
+      "source_evidence": [
+        "agents/core/environments/file_rpc.py",
+        "docs/hermes/code-execution-guide.md"
+      ]
+    }
+  ],
+  "verification": [
+    "Registered model and real local worker/context/import/RPC regressions recorded in dated code evidence",
+    "297 integration cases passed before final parent-taint correction; 109 affected cases passed after correction; counts overlap",
+    "Complete frontend suite 1926 passed including rendered composer follow-up regression; typecheck/build passed"
+  ],
+  "limitations": [
+    "No fresh live Docker/Windows/Linux runtime acceptance; local native workers and synthetic transport distinguish from actual containment",
+    "Contextual WASM explicitly refuses unsupported context",
+    "Remote SSH/Modal/TLS provisioning and automatic approved RPC resume remain H660 work, not additional H595 gates",
+    "Native mobile interruption producer not established by responsive HUD tests"
+  ],
+  "publication": false,
+  "full697_complete": false
+}

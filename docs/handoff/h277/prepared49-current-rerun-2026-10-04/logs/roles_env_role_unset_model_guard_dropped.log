@@ -1,0 +1,11 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/roles_env_role_unset_model_guard_dropped.xml", "tests/test_h277_model_roles.py::test_doctor_model_roles_row_ok_by_default"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________________ test_doctor_model_roles_row_ok_by_default ___________________
+tests/test_h277_model_roles.py:392: in test_doctor_model_roles_row_ok_by_default
+    assert "approval_judge: off" in check.detail
+E   AssertionError: assert 'approval_judge: off' in 'main: settings llm.* (not env-selectable); deep: router/deepseek-r1-distill-qwen-32b (local backend) [default]; visio...default]; may load a second model next to the main one (JARVIS_ROLE_APPROVAL_JUDGE_MODEL=active reuses the loaded one)'
+E    +  where 'main: settings llm.* (not env-selectable); deep: router/deepseek-r1-distill-qwen-32b (local backend) [default]; visio...default]; may load a second model next to the main one (JARVIS_ROLE_APPROVAL_JUDGE_MODEL=active reuses the loaded one)' = Check(name='model_roles', status='ok', reason='roles_ok', detail='main: settings llm.* (not env-selectable); deep: rou...may load a second model next to the main one (JARVIS_ROLE_APPROVAL_JUDGE_MODEL=active reuses the loaded one)', data={}).detail
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_doctor_model_roles_row_ok_by_default
+1 failed in 1.39s

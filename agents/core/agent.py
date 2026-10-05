@@ -922,10 +922,24 @@ class Agent:
                                 temperature, on_token=None, wall_seconds=None,
                                 usage_sink=None, session_id=None, effective_window=None,
                                 clock_snapshot=CLOCK_UNSET) -> str:
+        from .channels.session_lifecycle import session_activity_callback
         from .conversation_clock import capture_clock, clock_scope
         from .llm.request_context import current_session, session_scope
         from .llm.usage_context import current_observer, observer_scope, text_usage_scope
         from .operating_prompt import clocked_prompt
+
+        activity = session_activity_callback()
+        if activity is not None:
+            deliver_token = on_token
+
+            async def observed_token(piece):
+                activity()
+                if deliver_token is not None:
+                    emitted = deliver_token(piece)
+                    if inspect.isawaitable(emitted):
+                        await emitted
+
+            on_token = observed_token
 
         sid = session_id or current_session()
         manager = self._checkpoint_manager

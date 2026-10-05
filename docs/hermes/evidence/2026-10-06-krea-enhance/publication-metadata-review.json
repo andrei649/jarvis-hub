@@ -1,0 +1,239 @@
+{
+  "changed_paths": [
+    "docs/hermes/evidence/2026-10-05-direct-ports/initial-scoped-inputs.json",
+    "docs/hermes/evidence/2026-10-05-direct-ports/scoped-inputs.json",
+    "docs/hermes/evidence/2026-10-05-pending-input-completion/http-poll-scoped-inputs.json",
+    "docs/hermes/evidence/2026-10-05-pending-input-completion/integration-scoped-inputs.json",
+    "docs/hermes/evidence/2026-10-05-pending-input-completion/scoped-inputs.json",
+    "agents/core/settings_db.py"
+  ],
+  "matched_pins": [
+    {
+      "id": "H063",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H067",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H067",
+      "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/scoped-inputs.json"
+    },
+    {
+      "id": "H067",
+      "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/http-poll-scoped-inputs.json"
+    },
+    {
+      "id": "H034",
+      "path": "docs/hermes/evidence/2026-10-05-direct-ports/scoped-inputs.json"
+    },
+    {
+      "id": "H078",
+      "path": "docs/hermes/evidence/2026-10-05-direct-ports/scoped-inputs.json"
+    },
+    {
+      "id": "H256",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H256",
+      "path": "docs/hermes/evidence/2026-10-05-direct-ports/scoped-inputs.json"
+    }
+  ],
+  "held_stale_pins": [
+    {
+      "id": "H075",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H135",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H153",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H157",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H218",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H247",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H257",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H259",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H262",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H269",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H270",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H273",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H277",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H284",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H285",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H288",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H315",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H318",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H329",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H340",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H358",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H363",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H364",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H378",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H388",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H413",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H427",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H428",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H433",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H441",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H465",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H485",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H507",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H513",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H517",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H523",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H579",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H581",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H583",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H613",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H667",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H671",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H673",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H674",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H677",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H679",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H681",
+      "path": "agents/core/settings_db.py"
+    },
+    {
+      "id": "H687",
+      "path": "agents/core/settings_db.py"
+    }
+  ],
+  "settings_AST_identical": true
+}

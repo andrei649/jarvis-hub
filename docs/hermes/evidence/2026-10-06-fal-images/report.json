@@ -1,0 +1,74 @@
+{
+  "generated_at": "2026-10-05T21:04:04.238637+00:00",
+  "head_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "goal_scope": "all697",
+  "publication": false,
+  "status": {
+    "H515": "partial"
+  },
+  "implemented": [
+    "Reused pinned donor FAL model catalog with equivalent values and translated generation/edit payload families",
+    "Registered image_generate ToolRPC plus authenticated media API route into same single signed approval and composed worker",
+    "Separate default-off FAL manifest and credential epoch; exact catalog endpoint and signed inputs, deterministic wire payload",
+    "Bounded POST and credential-free media GET, public pinned DNS, no redirects or automatic replay, pixel-only local PNG/catalog publication",
+    "Catalog-specific reference capacity up to16 reaches API/model tool, preserving local four-artifact cap",
+    "Server untrusted provenance marker remains signed and accepted after explicit approval for FAL and existing OpenAI"
+  ],
+  "verification": {
+    "runs": {
+      "focused": {
+        "path": "docs/hermes/evidence/2026-10-06-fal-images/focused-result.xml",
+        "tests": 72,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "integration": {
+        "path": "docs/hermes/evidence/2026-10-06-fal-images/integration-result.xml",
+        "tests": 564,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "records": {
+        "path": "docs/hermes/evidence/2026-10-06-fal-images/records-result.xml",
+        "tests": 104,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "counts_overlap": true,
+    "valid_red": [
+      "Registered model producer refused FAL before adaptation",
+      "Approved inbound FAL/OpenAI task refused server-added taint_source before localized fix"
+    ],
+    "ruff": {
+      "passed": true,
+      "paths": 9
+    },
+    "bandit": {
+      "findings": 0,
+      "errors": 0,
+      "scanned_lines": 2199
+    },
+    "python_runtime": "/Users/andrei649/Projects/nerva-hub/.venv/bin/python (3.12.14); temporary runtime became incomplete before broad run, no packages installed",
+    "providers": "Synthetic responses only; no live or paid FAL/OpenAI call",
+    "donor_catalog_semantic_equality": true,
+    "corrections": [
+      "Updated historical assertion that H595 must remain partial after actual twelve-entry contract closure; H515/H598/H566/H660 assertions remain partial"
+    ]
+  },
+  "remaining": [
+    "FAL local artifact-reference upload, Clarity, HUD/native model provider picker",
+    "OpenAI gpt-image-2 tiers, Codex OAuth, Krea, OpenRouter, xAI, DeepInfra and managed Nous remaining contracts",
+    "Existing ComfyUI unload/restore and governance architecture requirements remain per H515 record",
+    "Direct synchronous180s transport; no donor asynchronous queue polling/recovery adaptation in this batch"
+  ],
+  "official_transport_reference": "https://fal.ai/docs/documentation/model-apis/inference/synchronous",
+  "source_manifest": "docs/hermes/evidence/2026-10-06-fal-images/scoped-inputs.json",
+  "accounting": {
+    "new_equivalent_H515": 0,
+    "H595_contract_closed_separately": true
+  }
+}

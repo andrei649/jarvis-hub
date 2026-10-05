@@ -1,0 +1,39 @@
+[
+  {
+    "artifact": "nerva-h515-provider-hud-red-20261006.json",
+    "passed": 6,
+    "failed": 11,
+    "failures": [
+      "reads all offered providers without a legacy cloud status or local generator",
+      "submits selected fal provider and default model through the actual API adapter",
+      "submits selected openai-codex provider and default model through the actual API adapter",
+      "selects an OpenAI Image2 tier and derives quality from the model instead of posting a conflicting control",
+      "edits a Codex image using opaque saved artifact IDs and no local strength",
+      "edits FAL with catalog-limited media URLs and clears references when switching to a generate-only model",
+      "sends the selected FAL edit references to the approval API",
+      "blocks a FAL edit above the advertised model capacity",
+      "keeps disabled Codex visible and cannot activate or submit it from the image panel",
+      "does not infer edit support from a model name when status metadata is missing",
+      "holds a lost cloud response without automatically resubmitting"
+    ]
+  },
+  {
+    "artifact": "nerva-h515-image-approvals-red-20261006.json",
+    "passed": 39,
+    "failed": 3,
+    "failures": [
+      "shows cloud-image-fal generation/edit as an immutable image approval with its actual provider and references",
+      "shows cloud-image-codex generation/edit as an immutable image approval with its actual provider and references",
+      "shows cloud-image generation/edit as an immutable image approval with its actual provider and references"
+    ]
+  },
+  {
+    "artifact": "nerva-h515-provider-no-fallback-red-20261006.json",
+    "passed": 0,
+    "failed": 2,
+    "failures": [
+      "never falls back to OpenAI if refreshed metadata loses the selected Codex provider (whole catalog lost: false)",
+      "never falls back to OpenAI if refreshed metadata loses the selected Codex provider (whole catalog lost: true)"
+    ]
+  }
+]

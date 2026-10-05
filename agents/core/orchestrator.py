@@ -87,7 +87,7 @@ from .errors import (
 )
 from .channels.base import ChannelAdapter
 from .channels.manager import ChannelManager
-from .channels.session import DeliveryRouter, SessionSource, build_session_key
+from .channels.session import DeliveryRouter, SessionSource
 from .settings_db import get_all as _get_settings
 from datetime import UTC
 # Live-plugin classes + oauth helpers moved with the registry to PluginManager (CLN-2).
@@ -381,8 +381,14 @@ async def _begin_project_context(orch) -> None:
     except AttributeError:
         session = "default"
     workdir = getter("llm.project_dir", "") if callable(getter) and on else ""   # H218
+    from .kanban.workspace_context import current_workspace
+
+    workspace = current_workspace()
+    scope = workspace.file_scope() if workspace is not None else None
+    if workspace is not None:
+        workdir = str(workspace.cwd)
     state = await asyncio.to_thread(project_context.build_turn, session, setting=lambda _k, _d: on,
-                                    workdir=workdir)
+                                    scope=scope, workdir=workdir)
     project_context.set_turn(state)
     if state is not None and state.block:
         from .security.recall_taint import mark_turn_recall_tainted
@@ -499,6 +505,11 @@ class Orchestrator:
     _delivery_router = DeliveryRouter()
 
     def __init__(self, config: JarvisConfig):
+        from .settings_db import ensure_initialized
+
+        # Every hub entry point shares this constructor. Validate persisted
+        # policy before constructing routers, services or provider clients.
+        ensure_initialized()
         self.config = config
         self.agents: dict[str, Agent] = {}
         self.router = IntentRouter(config)
@@ -564,7 +575,9 @@ class Orchestrator:
             from .security.secret_broker import SecretBroker
             try:
                 from .secrets import SecretStore
-                return SecretBroker(SecretStore())
+                from .security.secret_sources import ExternalSecretSources
+                store = SecretStore()
+                return SecretBroker(store, sources=ExternalSecretSources(store))
             except Exception:
                 return SecretBroker()   # in-memory fallback
 
@@ -721,6 +734,8 @@ class Orchestrator:
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
         self._channel_sessions: dict[str, str] = {}
+        self._channel_lifecycle = None
+        self._pending_inputs = None
         self._turn_leases: dict[str, asyncio.Lock] = {}
         self._turn_lease_max_wait: float = _TURN_LEASE_MAX_WAIT_SECONDS
         self.commands = build_default_registry()
@@ -1364,6 +1379,10 @@ class Orchestrator:
                     scan_output=flat.get("security.scan_output"),
                 )
         except Exception as e:
+            # A failed initial policy read must never turn inline defaults into
+            # authority, even when the storage layer raised a raw I/O error.
+            if not self._runtime_settings:
+                raise
             log_error(logger, E_INTERNAL_UNEXPECTED, component="settings_db", detail=str(e))
 
     def get_setting(self, key: str, default=None):
@@ -1422,6 +1441,11 @@ class Orchestrator:
         self.channel_manager.register(channel)
 
     async def start_channels(self):
+        self._pending_inputs_stopped = False
+        prior_lifecycle = self.__dict__.get("_channel_lifecycle")
+        if prior_lifecycle is not None and prior_lifecycle.closed:
+            # Reopen the persisted route index; retain transcript/session IDs.
+            self._channel_lifecycle = None
         await self.channel_manager.start_all()
         self.heartbeat_scheduler.start(self)
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
@@ -1470,8 +1494,15 @@ class Orchestrator:
             setattr(self, name, None)
 
     async def stop_channels(self):
-        await self.channel_manager.stop_all()
+        self._pending_inputs_stopped = True
         self.heartbeat_scheduler.stop()
+        pending = self.__dict__.get("_pending_inputs")
+        if pending is not None:
+            pending.close()
+        lifecycle = self.__dict__.get("_channel_lifecycle")
+        if lifecycle is not None:
+            await lifecycle.close()
+        await self.channel_manager.stop_all()
         # Every long-lived loop started in start_channels(). The autonomy worker and
         # the learning loop were previously never cancelled at all — they kept
         # ticking after shutdown, against a hub that had closed its backends. The
@@ -1508,6 +1539,9 @@ class Orchestrator:
         logger.info("Channels stopped")
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
+        from contextlib import ExitStack
+
+        pending_scope = ExitStack()
         action_origin = kwargs.pop("origin", origin_for_channel(channel))
         kwargs.pop("_inbound_meta", None)
         inbox_message_id = kwargs.pop("_inbox_message_id", "")
@@ -1524,10 +1558,17 @@ class Orchestrator:
         # session key and the delivery decision.
         thread_id = (kwargs.get("chat_id") or kwargs.get("slack_channel")
                      or kwargs.get("room_id") or kwargs.get("conversation") or kwargs.get("space"))
+        chat_type = kwargs.get("chat_type")
+        if channel == "telegram" and kwargs.get("message_thread_id"):
+            thread_id = f"{thread_id}:topic:{kwargs['message_thread_id']}"
+            chat_type = "thread"
         if channel == "slack":
             thread_id = kwargs.get("slack_channel")
             if thread_id and kwargs.get("thread_ts"):
                 thread_id = f"{thread_id}:{kwargs['thread_ts']}"
+                chat_type = "thread"
+            elif not chat_type:
+                chat_type = "private" if str(thread_id or "").startswith("D") else "group"
         elif channel == "discord":
             thread_id = kwargs.get("channel_id")
         source = SessionSource(
@@ -1535,8 +1576,32 @@ class Orchestrator:
             sender=kwargs.get("sender"),
             thread_id=thread_id,
             client_id=kwargs.get("client_id"),
+            chat_type=chat_type,
         )
         try:
+            pending = self._pending_input_service()
+            if pending is not None and not observe_only:
+                pending_scope.enter_context(pending.bind(
+                    source, {**kwargs, "_inbox_message_id": inbox_message_id}))
+                intercepted = (pending.intercept(source, text)
+                               if kwargs.get("pending_input_eligible", True) is True else None)
+                if intercepted is not None:
+                    if intercepted:
+                        if channel in {"slack", "discord", "ntfy"}:
+                            self._queue_workspace_reply(channel, inbox_message_id, intercepted)
+                        else:
+                            await self.channel_manager.send(channel, intercepted, **kwargs)
+                    return intercepted
+                command_reply = await pending.command(source, text, kwargs)
+                if command_reply is not None:
+                    if channel in {"slack", "discord"}:
+                        self._queue_workspace_reply(channel, inbox_message_id, command_reply)
+                    else:
+                        delivery = {key: kwargs[key] for key in ("chat_id", "message_thread_id")
+                                    if key in kwargs}
+                        await self.channel_manager.send(channel, command_reply, **delivery,
+                                                        voice=False, plain=True)
+                    return command_reply
             # H3.3: cross-channel context is opt-in. When enabled, every channel
             # shares self.session_id (web<->telegram continuity). When off (default),
             # any channel turn that carries a real identity (a thread, a sender or a
@@ -1548,47 +1613,13 @@ class Orchestrator:
             # written in place as it is produced. The draft exists only when the router
             # would deliver to this source at all, and it sends nothing until the first
             # token, so a silent turn leaves no placeholder behind.
-            draft = None if observe_only else self._begin_channel_draft(channel, source, kwargs)
             cross_channel = self.get_setting("memory.cross_channel_sessions", False)
-            if not cross_channel and (source.thread_id or source.sender or source.client_id):
-                key = build_session_key(source)
-                if key not in self._channel_sessions:
-                    # RESUME BEFORE CREATE. `_channel_sessions` is per-process, so this
-                    # branch is taken on the first turn after every restart — and
-                    # `new_session(key)` seeds an EMPTY turn list without touching disk
-                    # (memory/conversation.py:81-88; only `resume_session` calls
-                    # `load_memory`). Pairing a now-DETERMINISTIC key with new_session
-                    # would therefore reopen the same session id with no history and
-                    # overwrite the persisted transcript on the next save — the stable
-                    # key turning into data loss, which is strictly worse than the old
-                    # per-boot random id it replaces. Resume first, create only when
-                    # there is genuinely nothing on disk to resume.
-                    if await self.memory.resume_session(key):
-                        self._channel_sessions[key] = key
-                    else:
-                        self._channel_sessions[key] = await self.memory.new_session(key)
-                # BUG-5: bind this channel conversation's session into the per-request
-                # async context instead of mutating shared `self.session_id` and
-                # restoring it in a finally. The old save/restore-on-self clobbered
-                # concurrent turns (the finally reset the *shared* attribute another
-                # in-flight request was reading). Here we set a *context-local* token
-                # and reset it in finally, so the binding is scoped to this request's
-                # async context only and never touches the shared default.
-                # `_resolve_session` inside handle_input keeps the value we set here.
-                channel_session = self._channel_sessions[key]
-                token = _active_session.set(channel_session)
-                shared_token = _session_is_shared.set(channel_session == self._session_id_default)
-                try:
-                    response = await self._channel_turn(
-                        text, channel, observe_only=observe_only, draft=draft
-                    )
-                finally:
-                    _session_is_shared.reset(shared_token)
-                    _active_session.reset(token)
-            else:
-                response = await self._channel_turn(
-                    text, channel, observe_only=observe_only, draft=draft
-                )
+            from . import code_interruptions
+            if not observe_only and code_interruptions.is_admitted_channel(channel):
+                self._interrupt_for_channel_source(source, cross_channel=cross_channel)
+            draft = None if observe_only else self._begin_channel_draft(channel, source, kwargs)
+            response = await self._session_channel_input(
+                source, text, cross_channel=cross_channel, observe_only=observe_only, draft=draft)
             if observe_only:
                 return None
             if draft is not None and draft.started:
@@ -1602,14 +1633,156 @@ class Orchestrator:
             # ChannelManager.send's contract gate (_SUPPORTED_SEND_CHANNELS).
             decision = self._delivery_router.resolve(source, text=response or "")
             if decision.send and decision.target:
-                if channel in {"slack", "discord"}:
+                if channel in {"slack", "discord", "ntfy"}:
                     self._queue_workspace_reply(channel, inbox_message_id, response)
                 else:
                     await self.channel_manager.send(decision.target.channel, response, **kwargs)
             return response
         finally:
+            pending_scope.close()
             reset_turn_principal(principal_token)
             reset_action_origin(origin_token)
+
+    def interrupt_channel_message(self, *, channel: str, sender: str,
+                                  chat_id=None, message_thread_id=None) -> bool:
+        """Trusted adapter hook, before its chat lane occupies the turn queue."""
+        thread_id = str(chat_id) if chat_id is not None else None
+        if channel == "telegram" and message_thread_id:
+            thread_id = f"{thread_id}:topic:{message_thread_id}"
+        source = SessionSource(channel=channel, sender=sender, thread_id=thread_id)
+        return self._interrupt_for_channel_source(
+            source, cross_channel=self.get_setting("memory.cross_channel_sessions", False))
+
+    def _interrupt_for_channel_source(self, source: SessionSource, *, cross_channel: bool) -> bool:
+        from . import code_interruptions
+        from .channels.session import build_session_key
+
+        base = (self._session_id_default if cross_channel
+                or not (source.thread_id or source.sender or source.client_id)
+                else build_session_key(source))
+        selected = self.__dict__.get("_channel_sessions", {}).get(base)
+        if selected is None and base == self._session_id_default:
+            selected = base
+        return code_interruptions.interrupt(str(selected or ""))
+
+    async def channel_pending_handler(self, text: str, channel: str = "telegram", **kwargs) -> bool:
+        """Pending-only ingress; never enter a conversation lease or model turn."""
+        pending = self.__dict__.get("_pending_inputs")
+        if (channel not in {"telegram", "slack", "discord", "ntfy"} or kwargs.get("observe_only") or pending is None
+                or kwargs.get("pending_input_eligible", True) is not True):
+            return False
+        thread_id = kwargs.get("chat_id")
+        chat_type = kwargs.get("chat_type")
+        if channel == "telegram" and kwargs.get("message_thread_id"):
+            thread_id = f"{thread_id}:topic:{kwargs['message_thread_id']}"
+            chat_type = "thread"
+        elif channel == "slack":
+            thread_id = kwargs.get("slack_channel")
+            if thread_id and kwargs.get("thread_ts"):
+                thread_id = f"{thread_id}:{kwargs['thread_ts']}"
+                chat_type = "thread"
+            elif not chat_type:
+                chat_type = "private" if str(thread_id or "").startswith("D") else "group"
+        elif channel == "discord":
+            thread_id = kwargs.get("channel_id")
+        source = SessionSource(channel=channel, sender=kwargs.get("sender"),
+                               thread_id=thread_id, chat_type=chat_type,
+                               client_id=kwargs.get("client_id"))
+        origin_token = bind_action_origin(origin_for_channel(channel))
+        principal_token = bind_turn_principal(
+            self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"))
+        )
+        try:
+            from .channels.pending_input_runtime import pending_key
+
+            key = pending_key(source)
+            prompt = pending.inputs.pending(key) if key is not None else None
+            binding = pending._delivered.get(prompt.id) if prompt is not None else None
+            intercepted = pending.intercept(source, text, pending_only=True)
+            if intercepted is None:
+                return False
+            if intercepted:
+                if channel in {"slack", "discord", "ntfy"}:
+                    if binding is not None:
+                        self._queue_workspace_reply(
+                            channel, binding.delivery.get("_inbox_message_id", ""), intercepted)
+                    return True
+                delivery = {key: kwargs[key] for key in ("chat_id", "message_thread_id")
+                            if key in kwargs}
+                try:
+                    await self.channel_manager.send(channel, intercepted, **delivery,
+                                                    voice=False, plain=True)
+                except Exception:
+                    logger.warning("Pending reply consumed; retry notice delivery failed")
+            return True
+        finally:
+            reset_turn_principal(principal_token)
+            reset_action_origin(origin_token)
+
+    async def channel_pending_callback(self, callback: dict, channel: str = "telegram"):
+        """Button resolution under the verified inbound principal and origin."""
+        from .channels.ephemeral import EphemeralReply
+
+        pending = self.__dict__.get("_pending_inputs")
+        if pending is None or not isinstance(callback, dict):
+            return None
+        if channel in {"slack", "discord"}:
+            from .channels.pending_input_workspace import valid_callback
+
+            if not valid_callback(callback, channel):
+                return None
+            origin_token = bind_action_origin(origin_for_channel(channel))
+            principal_token = bind_turn_principal(
+                self._channel_principal(channel, callback["sender"], None))
+            try:
+                result = pending.cards.handle_workspace(callback)
+                if result.applied and result.status == "awaiting_text":
+                    binding = pending._delivered.get(result.prompt_id)
+                    if binding is not None:
+                        self._queue_workspace_reply(
+                            channel, binding.delivery.get("_inbox_message_id", ""),
+                            EphemeralReply("Type your answer."))
+                return result
+            finally:
+                reset_turn_principal(principal_token)
+                reset_action_origin(origin_token)
+        if channel != "telegram":
+            return None
+        sender, message = callback.get("from"), callback.get("message")
+        if not isinstance(sender, dict) or not isinstance(message, dict):
+            return None
+        chat = message.get("chat")
+        if (not isinstance(chat, dict) or type(sender.get("id")) is not int
+                or sender["id"] <= 0 or type(chat.get("id")) is not int or chat["id"] == 0):
+            return None
+        origin_token = bind_action_origin(origin_for_channel("telegram"))
+        principal_token = bind_turn_principal(
+            self._channel_principal("telegram", str(sender["id"]), chat["id"]))
+        try:
+            result = pending.cards.handle(callback)
+            if result.applied and result.status == "awaiting_text":
+                binding = pending._delivered.get(result.prompt_id)
+                if binding is not None:
+                    try:
+                        await self.channel_manager.send("telegram", EphemeralReply("Type your answer."),
+                                                       **binding.delivery, voice=False, plain=True)
+                    except Exception:
+                        logger.warning("Other choice applied; text instruction could not be sent")
+            return result
+        finally:
+            reset_turn_principal(principal_token)
+            reset_action_origin(origin_token)
+
+    def _pending_input_service(self):
+        if (self.__dict__.get("_pending_inputs_stopped", False)
+                or self.get_setting("channels.pending_inputs_enabled", False) is not True):
+            return None
+        service = self.__dict__.get("_pending_inputs")
+        if service is None or service.closed:
+            from .channels.pending_input_runtime import ChannelPendingRuntime
+
+            service = self._pending_inputs = ChannelPendingRuntime(self)
+        return service
 
     def _queue_workspace_reply(self, channel: str, message_id: str, response: str) -> None:
         """Workspace replies share the inbox's Action Kernel/approval boundary."""
@@ -1627,7 +1800,7 @@ class Orchestrator:
             logger.warning("Workspace reply request failed closed", exc_info=True)
 
     def _channel_principal(self, channel: str, sender, chat_id) -> Principal:
-        """Bind Telegram admin authority to a sender, with an exact private-owner fallback."""
+        """Bind admin authority to an explicit current owner identity."""
         sender_text = None if sender is None else str(sender)
         admin = False
         if channel == "telegram":
@@ -1644,6 +1817,23 @@ class Orchestrator:
                     allowed_user_ids=getattr(adapter, "allowed_users", None),
                 ),
             )
+        elif channel in {"slack", "discord", "ntfy"}:
+            configured = self.get_setting("channels.owner_senders", {})
+            owners = configured.get(channel) if type(configured) is dict else None
+            pattern = (r"T[A-Z0-9]{1,63}:[UW][A-Z0-9]{1,63}" if channel == "slack"
+                       else r"[A-Za-z0-9_-]{1,64}" if channel == "ntfy" else r"[1-9][0-9]{0,19}")
+            adapter = (getattr(self, "channels", None) or {}).get(channel)
+            pairing = getattr(adapter, "pairing", None) or getattr(adapter, "_pairing", None)
+            if (type(owners) is list and len(owners) <= 64
+                    and all(type(owner) is str and re.fullmatch(pattern, owner) for owner in owners)
+                    and sender_text in owners and getattr(adapter, "_running", False)
+                    and pairing is not None
+                    and (channel != "ntfy" or (getattr(adapter, "inbound", False)
+                                                and sender_text == getattr(adapter, "topic", None)))):
+                try:
+                    admin = pairing.is_allowed(channel, sender_text) is True
+                except Exception:
+                    admin = False
         return Principal(
             channel=channel, sender=sender_text, admin=admin,
             chat=None if chat_id is None else str(chat_id),
@@ -1704,16 +1894,64 @@ class Orchestrator:
 
             if WARMUP.warming:   # H677: named, so a slow first reply is not a mystery
                 logger.info("%s turn served while the local model is still warming up", channel)
-            if draft is not None:
-                return await self.handle_input_stream(text, channel, on_token=draft.push)
-            return await self.handle_input(text, channel)
+            from .channels.session_lifecycle import note_session_activity
+            from . import code_interruptions
+            note_session_activity()
+            conversation_token = code_interruptions.bind_conversation(str(self.session_id or ""))
+            try:
+                if draft is not None:
+                    async def push(token):
+                        note_session_activity()
+                        await draft.push(token)
+                    return await self.handle_input_stream(text, channel, on_token=push)
+                return await self.handle_input(text, channel)
+            finally:
+                code_interruptions.reset_conversation(conversation_token)
+
+    async def _run_channel_session_turn(self, session_id, text, channel, *, observe_only, draft):
+        # BUG-5: request-local binding never mutates the owner's default session.
+        token = _active_session.set(session_id)
+        shared_token = _session_is_shared.set(session_id == self._session_id_default)
+        try:
+            return await self._channel_turn(text, channel, observe_only=observe_only, draft=draft)
+        finally:
+            _session_is_shared.reset(shared_token)
+            _active_session.reset(token)
+
+    async def _session_channel_input(self, source, text, *, cross_channel, observe_only, draft):
+        from .channels.session import session_type
+        from .channels.session_lifecycle import UNAVAILABLE, lifecycle
+        from .channels.session_reset import SessionResetError, resolve_policy
+
+        try:
+            service = lifecycle(self)
+            if service.closed:
+                raise SessionResetError("Session lifecycle is closed")
+            if not cross_channel and (source.thread_id or source.sender or source.client_id):
+                return await service.run(source, text, observe_only=observe_only, draft=draft)
+            policy = resolve_policy(self.get_setting, source.channel, session_type(source))
+            if ((not observe_only and service.reset_requested(text)) or policy.mode != "none"
+                    or self._session_id_default in self._channel_sessions
+                    or service.store.state(self._session_id_default).active
+                    or service.store.state(self._session_id_default).generation > 0):
+                return await service.run(source, text, observe_only=observe_only, draft=draft, shared=True)
+            if observe_only:
+                return await self._channel_turn(text, source.channel, observe_only=True, draft=draft)
+            async with self.turn_lease() as acquired:
+                if not acquired:
+                    return TURN_BUSY_REPLY
+                with service.track(self._session_id_default):
+                    return await self._channel_turn(text, source.channel, observe_only=False, draft=draft)
+        except (SessionResetError, OverflowError, OSError):
+            logger.warning("channel session lifecycle unavailable")
+            return UNAVAILABLE
 
     def _begin_channel_draft(self, channel: str, source, kwargs: dict):
         """A streaming draft for this turn, or None when the channel cannot edit, the
         owner turned streaming off, or the router would not deliver to this source."""
         # Full workspace replies are approved through channel.reply. An editable
         # transport alone is not authority to publish tokens before that decision.
-        if channel in {"slack", "discord"}:
+        if channel in {"slack", "discord", "ntfy"}:
             return None
         try:
             if self.get_setting("channels.streaming_replies", True) is not True:

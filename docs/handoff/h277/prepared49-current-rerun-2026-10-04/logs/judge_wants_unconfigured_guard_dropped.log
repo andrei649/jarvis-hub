@@ -1,0 +1,13 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/judge_wants_unconfigured_guard_dropped.xml", "tests/test_h277_approval_judge.py::test_attached_but_unconfigured_judge_is_never_called"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_attached_but_unconfigured_judge_is_never_called _____________
+tests/test_h277_approval_judge.py:204: in test_attached_but_unconfigured_judge_is_never_called
+    assert judge.wants(dict(ACTION)) is False
+E   AssertionError: assert True is False
+E    +  where True = wants({'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', 'summary': 'write notes/a.md'})
+E    +    where wants = <agents.core.autonomy.approval_judge.ApprovalJudge object at 0x109d79a30>.wants
+E    +    and   {'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', 'summary': 'write notes/a.md'} = dict({'tool': 'write_file', 'args': {'path': 'notes/a.md', 'text': 'hello'}, 'agent': 'pepper', 'summary': 'write notes/a.md'})
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_attached_but_unconfigured_judge_is_never_called
+1 failed in 1.44s

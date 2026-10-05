@@ -1,0 +1,104 @@
+{
+  "generated_at": "2026-10-05T14:56:48.345895+00:00",
+  "base_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "publication": "none; local uncommitted changes preserved",
+  "donor": "NousResearch/hermes-agent 59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e (MIT)",
+  "accepted_capabilities": [
+    "H034",
+    "H078",
+    "H256"
+  ],
+  "runs": [
+    {
+      "path": "docs/hermes/evidence/2026-10-05-direct-ports/integration-result.xml",
+      "phase": "initial affected modules; one observed regression, subsequently corrected",
+      "tests": 615,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "source_snapshot": "earlier in this same local batch"
+    },
+    {
+      "path": "docs/hermes/evidence/2026-10-05-direct-ports/ledger-impact-result.xml",
+      "phase": "unchanged lifecycle/ntfy contract impact",
+      "tests": 248,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "source_snapshot": "earlier in this same local batch"
+    },
+    {
+      "path": "docs/hermes/evidence/2026-10-05-direct-ports/final-corrections-result.xml",
+      "phase": "final correction probes and affected entry points",
+      "tests": 207,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "source_snapshot": "final"
+    }
+  ],
+  "counts_are_not_additive": true,
+  "current_source_manifest": "docs/hermes/evidence/2026-10-05-direct-ports/scoped-inputs.json",
+  "security": {
+    "bandit_raw_findings": [
+      {
+        "path": "./agents/cli/secrets.py",
+        "line": 12,
+        "rule": "B404",
+        "severity": "LOW"
+      },
+      {
+        "path": "agents/core/security/secret_sources/base.py",
+        "line": 10,
+        "rule": "B404",
+        "severity": "LOW"
+      },
+      {
+        "path": "agents/core/security/secret_sources/bitwarden.py",
+        "line": 10,
+        "rule": "B404",
+        "severity": "LOW"
+      },
+      {
+        "path": "agents/core/security/secret_sources/install.py",
+        "line": 49,
+        "rule": "B310",
+        "severity": "MEDIUM"
+      },
+      {
+        "path": "agents/core/security/secret_sources/onepassword.py",
+        "line": 8,
+        "rule": "B404",
+        "severity": "LOW"
+      },
+      {
+        "path": "agents/core/security/secret_sources/registry.py",
+        "line": 10,
+        "rule": "B404",
+        "severity": "LOW"
+      },
+      {
+        "path": "agents/core/security/secret_sources/registry.py",
+        "line": 22,
+        "rule": "B105",
+        "severity": "LOW"
+      }
+    ],
+    "bandit_review": "Six LOW declarations/imports; one MEDIUM urlopen on a fixed HTTPS GitHub release URL, with pinned archive SHA256 checked before installation. Baseline not changed.",
+    "gitleaks_raw_findings": [
+      {
+        "path": "/tmp/nerva-direct-ports-scan-20261005/agents/core/settings_db.py",
+        "line": 384,
+        "rule": "generic-api-key"
+      }
+    ],
+    "gitleaks_review": "Inherited settings_db stark_ga4_property_id declaration: AST value is an empty string, not a credential; immediate preimage contains the same line. No suppression or global scanner rule change.",
+    "proof_scan": "Six generic-api-key matches are public SHA256 source digests in scoped-inputs.json and initial-scoped-inputs.json. Values verified as the recorded source hashes, not credentials."
+  },
+  "boundaries": [
+    "Secret-manager subprocess responses and download archives are synthetic; no live vault/installer download.",
+    "Quick command tests execute /bin/pwd and synthetic printf through real signed approval, kernel, durable queue and terminal worker.",
+    "No fresh full backend/frontend or H277 mutation claim for this final source snapshot.",
+    "H515/H660 remain partial; only terminal-handler impact reviewed."
+  ]
+}

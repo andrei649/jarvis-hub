@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.384" timestamp="2026-10-04T23:53:36.536870+03:00" hostname="Macmini"><testcase classname="tests.test_h277_model_roles" name="test_judge_role_uses_the_provider_profile_base_url" time="1.150"><failure message="AssertionError: assert ('ollama' == 'lm-studio'&#10;  &#10;  - lm-studio&#10;  + ollama)">tests/test_h277_model_roles.py:333: in test_judge_role_uses_the_provider_profile_base_url
+    assert role.provider_id == "lm-studio" and role.source["provider"] == "default"
+E   AssertionError: assert ('ollama' == 'lm-studio'
+E     
+E     - lm-studio
+E     + ollama)</failure></testcase></testsuite></testsuites>

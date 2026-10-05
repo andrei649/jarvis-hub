@@ -116,6 +116,10 @@ def _is_managed_scratch_path(p: Path) -> bool:
 
 def _cleanup_workspace(conn: sqlite3.Connection, task_id: str) -> None:
     """Workspace cleanup is deferred until Nerva FileScope owns the lifecycle."""
+    from agents.core.kanban.workspace_context import workspace_lifecycle_is_bound
+
+    if workspace_lifecycle_is_bound(task_id):
+        return  # Never reclaim files while their owning worker is still running.
     row = conn.execute("SELECT workspace_path FROM tasks WHERE id = ?", (task_id,)).fetchone()
     if row and row["workspace_path"]:
         from .compat import require_workspace_path, unresolved

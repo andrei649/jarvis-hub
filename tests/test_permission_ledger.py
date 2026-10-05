@@ -66,6 +66,7 @@ def _task(payload, *, decided_by="owner", decision="accept", kind=pl.KIND, task_
     return SimpleNamespace(
         id=task_id, kind=kind, payload=payload, decided_by=decided_by, decision=decision,
         status="running",
+        human_decision={"action": decision, "by": decided_by},
     )
 
 
@@ -311,6 +312,18 @@ async def test_apply_grant_refuses_non_approval_decisions(ledger, decision):
     payload = {"surface": "site", "key": "example.com", "scope": "always", "requested_by": "x"}
     out = await ledger.apply_grant(_task(payload, decision=decision))
     assert out["status"] == "refused" and out["reason"] == "decision_not_approval"
+    assert ledger.check("site", "example.com") == "ask"
+
+
+@pytest.mark.parametrize("record", [None, {}, "accept", {"action": "accept", "by": "other"},
+                                    {"action": "edit", "by": "owner"}])
+async def test_apply_grant_requires_matching_recorded_human_decision(ledger, record):
+    payload = {"surface": "site", "key": "example.com", "scope": "always", "requested_by": "x"}
+    task = _task(payload)
+    task.human_decision = record
+    result = await ledger.apply_grant(task)
+    assert result == {"status": "refused", "reason": "human_decision_required"}
+    assert ledger.list_grants() == []
     assert ledger.check("site", "example.com") == "ask"
 
 
@@ -665,7 +678,14 @@ def test_contract_shape_for_the_manifest():
     decision = pl.PERMISSION_GRANT_CONTRACT.evaluate(view, now=0.0)
     assert decision.admissible and decision.requires_approval
     assert pl.KIND == "permission.grant"
-    assert pl.SURFACES == ("app", "site", "os_input", "file_root", "terminal_target")
+    assert pl.SURFACES == (
+        "app",
+        "site",
+        "os_input",
+        "file_root",
+        "terminal_target",
+        "session_command",
+    )
 
 
 # ── routes ───────────────────────────────────────────────────────────────────

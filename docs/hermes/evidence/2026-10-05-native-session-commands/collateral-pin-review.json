@@ -1,0 +1,793 @@
+{
+  "refreshed": [
+    {
+      "id": "H011",
+      "path": "agents/core/memory/manager.py",
+      "preimage_match": true,
+      "old_sha256": "37430eae474cb7bdffa6278e663ff29fb8721f9a51ae65a7d504d21ac05828ca",
+      "new_sha256": "ac60aaee4e3e7f43898e55feed438dcb5a64e193b1e6c13b5a3624dbfe470c52"
+    },
+    {
+      "id": "H063",
+      "path": "agents/core/channels/session_lifecycle.py",
+      "preimage_match": true,
+      "old_sha256": "53af443824bb5fbb333dc5c97821b8917d16573ae0b3a2ed315efdae08948dfd",
+      "new_sha256": "01ee9f3fc93b69c170b4ac6f73025538c15ca5645b41ff14a756a270ba3d7bbb"
+    },
+    {
+      "id": "H063",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": true,
+      "old_sha256": "ea4aa0a2f64fe47fe25507e3751521d7605b648cf8df7aae2425b451e9315718",
+      "new_sha256": "d133bd504ac1726b7ae18f24dc10c4f6665b99e4ad92a66c5d3a9fa4261f169a"
+    },
+    {
+      "id": "H063",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": true,
+      "old_sha256": "dae7e7f830b8c9840a79a40b1e9e22e1ca34fcafa4b410cdcb2bf34bfe8980b6",
+      "new_sha256": "bb1f3804310c1460c8818c30100f5354bda6cfb3f1806bd03ea6b134ef25ab87"
+    },
+    {
+      "id": "H063",
+      "path": "tests/test_h490_safe_mode_posture.py",
+      "preimage_match": true,
+      "old_sha256": "36a19fe4c41b90bc5c285ff392a7a0133f4ec92165f3a3aeb39832165a1d9f5f",
+      "new_sha256": "f448d33f9853a67830ac3244fa2b9376a6fae6d92ffe4931621138ae3504895b"
+    },
+    {
+      "id": "H075",
+      "path": "agents/web.py",
+      "preimage_match": true,
+      "old_sha256": "b2ab4e431a019499e3eb43f7ec426da2deee81191c54528c0190c642c36c3eb1",
+      "new_sha256": "ba44869c3ec73ff040d54168defbcaccfe8ecdf06f70927c96b2fd07f342e505"
+    },
+    {
+      "id": "H099",
+      "path": "agents/core/channels/gateway.py",
+      "preimage_match": true,
+      "old_sha256": "77e3ba9de50b8ef7e2a83a056440d9a55325d18ac3eae0d8a1ab70df4365ef13",
+      "new_sha256": "f0392f28b03d7e39388bb5379020ec418c29232c777943d9c60092c30b11cd23"
+    },
+    {
+      "id": "H099",
+      "path": "agents/core/channels/manager.py",
+      "preimage_match": true,
+      "old_sha256": "fb0004e9769febf7162265a474665054c4d08462650688a101fcb1a36ea9b429",
+      "new_sha256": "02222d28c28443048e05f55717235137b91dabb92a5c9979b5e7cc32cd2d5a30"
+    },
+    {
+      "id": "H099",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": true,
+      "old_sha256": "dae7e7f830b8c9840a79a40b1e9e22e1ca34fcafa4b410cdcb2bf34bfe8980b6",
+      "new_sha256": "bb1f3804310c1460c8818c30100f5354bda6cfb3f1806bd03ea6b134ef25ab87"
+    },
+    {
+      "id": "H099",
+      "path": "agents/web.py",
+      "preimage_match": true,
+      "old_sha256": "b2ab4e431a019499e3eb43f7ec426da2deee81191c54528c0190c642c36c3eb1",
+      "new_sha256": "ba44869c3ec73ff040d54168defbcaccfe8ecdf06f70927c96b2fd07f342e505"
+    },
+    {
+      "id": "H153",
+      "path": "agents/core/channels/manager.py",
+      "preimage_match": true,
+      "old_sha256": "fb0004e9769febf7162265a474665054c4d08462650688a101fcb1a36ea9b429",
+      "new_sha256": "02222d28c28443048e05f55717235137b91dabb92a5c9979b5e7cc32cd2d5a30"
+    },
+    {
+      "id": "H581",
+      "path": "agents/web.py",
+      "preimage_match": true,
+      "old_sha256": "b2ab4e431a019499e3eb43f7ec426da2deee81191c54528c0190c642c36c3eb1",
+      "new_sha256": "ba44869c3ec73ff040d54168defbcaccfe8ecdf06f70927c96b2fd07f342e505"
+    }
+  ],
+  "preserved_inherited_stale": [
+    {
+      "id": "H011",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "ed8f76769a1ae7c25e46a3ad10f761c50d43c8e5d86eb4299f4bae1ba6b4ec6a"
+    },
+    {
+      "id": "H011",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "c849fd048c7bb90bab1a9e6d0566d39a46dc11beb1b6f0d5edb249352efe798f"
+    },
+    {
+      "id": "H060",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H060",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H061",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H061",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H068",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "b6a42f132fbd39e866763f4282a800a3caf1508048eb6fe939f6e3bb3661d196"
+    },
+    {
+      "id": "H068",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H071",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "b28a725e621b177ae0ccf20c0ab856bc4f45b892c7803575c0e1de1b175de770"
+    },
+    {
+      "id": "H075",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "75e984186228f6e28a77a3e654b15ea9a0a5994fc9745c820a0aa0bb7ea0f122"
+    },
+    {
+      "id": "H104",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "b6a42f132fbd39e866763f4282a800a3caf1508048eb6fe939f6e3bb3661d196"
+    },
+    {
+      "id": "H104",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H108",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "b28a725e621b177ae0ccf20c0ab856bc4f45b892c7803575c0e1de1b175de770"
+    },
+    {
+      "id": "H114",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H117",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "2a7f5e392f04d11a6e7072bbe5d6900a3efa091e1902a0c63ea2f359c7064b1e"
+    },
+    {
+      "id": "H117",
+      "path": "agents/core/channels/gateway.py",
+      "preimage_match": false,
+      "old_sha256": "7a0b65fb1f65e8f88576caa2a9348d899795221d9394cf4851435db2c86aaf33"
+    },
+    {
+      "id": "H130",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H135",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H139",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H139",
+      "path": "agents/core/memory/manager.py",
+      "preimage_match": false,
+      "old_sha256": "74f294f311c4c426277c0303b8b526d236b1dd4c226c2da3e000b47024f5b6f0"
+    },
+    {
+      "id": "H146",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H146",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "b6a42f132fbd39e866763f4282a800a3caf1508048eb6fe939f6e3bb3661d196"
+    },
+    {
+      "id": "H153",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "2a7f5e392f04d11a6e7072bbe5d6900a3efa091e1902a0c63ea2f359c7064b1e"
+    },
+    {
+      "id": "H161",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H165",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H182",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H182",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H218",
+      "path": "agents/core/memory/manager.py",
+      "preimage_match": false,
+      "old_sha256": "bd95baced0a5ffcbc7e68cea7e60318cab8f96ef0cc967c011e39d15610afcc0"
+    },
+    {
+      "id": "H220",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H227",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "c9cce192ad37d10660535845ebd0d438275a1d6247d7d293efc1350796dc3104"
+    },
+    {
+      "id": "H262",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H273",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H275",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H277",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "75e984186228f6e28a77a3e654b15ea9a0a5994fc9745c820a0aa0bb7ea0f122"
+    },
+    {
+      "id": "H277",
+      "path": "agents/core/memory/manager.py",
+      "preimage_match": false,
+      "old_sha256": "74f294f311c4c426277c0303b8b526d236b1dd4c226c2da3e000b47024f5b6f0"
+    },
+    {
+      "id": "H277",
+      "path": "agents/core/orchestrator_bindings.py",
+      "preimage_match": false,
+      "old_sha256": "bab74088e0bdd12031727a726227aead7854a08c5570af97dcca39b7b7627f46"
+    },
+    {
+      "id": "H277",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "dc912227af58a922ad97021c650b7c75fdb516a9b6450fab3d3a48f6dd3ec0bb"
+    },
+    {
+      "id": "H283",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H285",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H298",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H315",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H326",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H328",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H329",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H358",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "01c68adbc08911d3312f28c84a81d81997c939d1f686c5023e15abba29debfe1"
+    },
+    {
+      "id": "H363",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H364",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H364",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H388",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "c9cce192ad37d10660535845ebd0d438275a1d6247d7d293efc1350796dc3104"
+    },
+    {
+      "id": "H388",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "01c68adbc08911d3312f28c84a81d81997c939d1f686c5023e15abba29debfe1"
+    },
+    {
+      "id": "H396",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H396",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H398",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H413",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H413",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H416",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H425",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H427",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H428",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H428",
+      "path": "agents/core/memory/manager.py",
+      "preimage_match": false,
+      "old_sha256": "bd95baced0a5ffcbc7e68cea7e60318cab8f96ef0cc967c011e39d15610afcc0"
+    },
+    {
+      "id": "H433",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H440",
+      "path": "agents/core/memory/manager.py",
+      "preimage_match": false,
+      "old_sha256": "74f294f311c4c426277c0303b8b526d236b1dd4c226c2da3e000b47024f5b6f0"
+    },
+    {
+      "id": "H441",
+      "path": "agents/core/memory/manager.py",
+      "preimage_match": false,
+      "old_sha256": "bd95baced0a5ffcbc7e68cea7e60318cab8f96ef0cc967c011e39d15610afcc0"
+    },
+    {
+      "id": "H441",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H449",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H449",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "b6a42f132fbd39e866763f4282a800a3caf1508048eb6fe939f6e3bb3661d196"
+    },
+    {
+      "id": "H456",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H461",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H465",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H477",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H485",
+      "path": "agents/core/orchestrator_bindings.py",
+      "preimage_match": false,
+      "old_sha256": "bab74088e0bdd12031727a726227aead7854a08c5570af97dcca39b7b7627f46"
+    },
+    {
+      "id": "H485",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "aa7633c2ce4e56edeb4a8c5975ae8f032b7a4445c6cee6a4cb378ce17f69feb6"
+    },
+    {
+      "id": "H485",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "dc912227af58a922ad97021c650b7c75fdb516a9b6450fab3d3a48f6dd3ec0bb"
+    },
+    {
+      "id": "H487",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "2a7f5e392f04d11a6e7072bbe5d6900a3efa091e1902a0c63ea2f359c7064b1e"
+    },
+    {
+      "id": "H487",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H490",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H490",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H490",
+      "path": "tests/test_h490_safe_mode_posture.py",
+      "preimage_match": false,
+      "old_sha256": "6192e68c044caeab19bbd50e08166197fc812873fcd7cd100e9e31bb4d2b8ed4"
+    },
+    {
+      "id": "H497",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "b28a725e621b177ae0ccf20c0ab856bc4f45b892c7803575c0e1de1b175de770"
+    },
+    {
+      "id": "H497",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H497",
+      "path": "agents/core/channels/gateway.py",
+      "preimage_match": false,
+      "old_sha256": "7a0b65fb1f65e8f88576caa2a9348d899795221d9394cf4851435db2c86aaf33"
+    },
+    {
+      "id": "H497",
+      "path": "tests/test_telegram_pairing_shared_store.py",
+      "preimage_match": false,
+      "old_sha256": "f88b859e5da25267681bff7c0b3f4a32fa72516a1cbefee40ee7e58e72e2b0a2"
+    },
+    {
+      "id": "H501",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H504",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H510",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H512",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H513",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "11cad8a205bd064bbcab21563f7b4a4cb6e76cbf8ac8ea4f182728dc0d911660"
+    },
+    {
+      "id": "H523",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "b6a42f132fbd39e866763f4282a800a3caf1508048eb6fe939f6e3bb3661d196"
+    },
+    {
+      "id": "H557",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H557",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H579",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H579",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H581",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "75e984186228f6e28a77a3e654b15ea9a0a5994fc9745c820a0aa0bb7ea0f122"
+    },
+    {
+      "id": "H586",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H594",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H659",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H667",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H670",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H671",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H671",
+      "path": "agents/core/memory/manager.py",
+      "preimage_match": false,
+      "old_sha256": "bd95baced0a5ffcbc7e68cea7e60318cab8f96ef0cc967c011e39d15610afcc0"
+    },
+    {
+      "id": "H671",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H672",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H673",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H674",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H674",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H677",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "2a7f5e392f04d11a6e7072bbe5d6900a3efa091e1902a0c63ea2f359c7064b1e"
+    },
+    {
+      "id": "H677",
+      "path": "agents/core/channels/manager.py",
+      "preimage_match": false,
+      "old_sha256": "af36baf51801cf78f721e6a555969bcb8b528633cb13cd768d9493d7cedb72b3"
+    },
+    {
+      "id": "H677",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H677",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H679",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H681",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "9ae3ad389a246dff2dc46e41fe1f4322f7e5c096f83615db6739ba45e47bdf90"
+    },
+    {
+      "id": "H683",
+      "path": "agents/core/channels/telegram.py",
+      "preimage_match": false,
+      "old_sha256": "b6a42f132fbd39e866763f4282a800a3caf1508048eb6fe939f6e3bb3661d196"
+    },
+    {
+      "id": "H683",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H686",
+      "path": "agents/core/orchestrator.py",
+      "preimage_match": false,
+      "old_sha256": "8a42d3c696f1da207cea917b03c89f1ab6c8658e4808084c5b93eb3774c91e96"
+    },
+    {
+      "id": "H686",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H689",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    },
+    {
+      "id": "H691",
+      "path": "agents/web.py",
+      "preimage_match": false,
+      "old_sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+    }
+  ],
+  "basis": "Immediate preimages only; each refreshed path was read for bounded changes and its cited Python test suites ran in the 109-file affected integration. No verdict upgrades."
+}

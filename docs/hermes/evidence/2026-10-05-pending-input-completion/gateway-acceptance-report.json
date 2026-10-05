@@ -1,0 +1,112 @@
+{
+  "generated_at": "2026-10-05T18:06:25.123774+00:00",
+  "goal_scope": "all697",
+  "capability": "H067",
+  "status": "equivalent",
+  "row_sha256": "f452b1857771c1273f8ba0df165f5253134369e7a95bfb4c27d7ad3972ad60bd",
+  "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
+  "base_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "publication": false,
+  "contract": "The gateway holds per-chat pending states and interprets the *next* message as the answer: a clarify question answered by number, by option text, by a comma/space list for multi-select, or free-form prose; a slash-confirm answered by Approve Once / Always Approve / Cancel (native buttons where available, typed keywords everywhere else, `!always` and `!cancel` tolerated); a destructive-command confirm before `/new` `/reset` `/undo` discard history, with a persistent opt-out. `EphemeralReply` renders a system notice that deletes itself so it does not clutter the transcript. 8 entries.",
+  "scope_resolution": "Pinned row is gateway pending-input interception. Completion-batch plan already explicitly separates CLI/HUD capabilities. Subsequent partial notes incorrectly added CLI/email, ordinary busy prose and full697 milestone as completion gates for this row. They remain all697 work, not additional H067 requirements.",
+  "acceptance": [
+    {
+      "behavior": "Clarification by numeric answer, decorated option label, multiselect list and free prose",
+      "evidence": [
+        "tests/test_pending_input_runtime.py",
+        "tests/test_pending_input_workspace_runtime.py",
+        "tests/test_pending_input_completion_h067.py",
+        "tests/test_pending_input_ntfy.py"
+      ]
+    },
+    {
+      "behavior": "Native/typed Once, Always, Cancel including !always/!cancel; next-message interception before occupied model lanes",
+      "evidence": [
+        "tests/test_pending_input.py",
+        "tests/test_pending_input_cards.py",
+        "tests/test_pending_input_ingress.py",
+        "tests/test_pending_input_native_transport.py",
+        "tests/test_pending_input_cancel.py"
+      ]
+    },
+    {
+      "behavior": "Destructive /new,/reset,/undo require current explicit owner; preserve saved history and support durable opt-out only through governed permission.grant",
+      "evidence": [
+        "tests/test_session_command_runtime.py",
+        "tests/test_session_command_kernel.py",
+        "tests/test_session_command_consent.py",
+        "tests/test_session_command_permission.py",
+        "tests/test_pending_input_completion_h067.py"
+      ]
+    },
+    {
+      "behavior": "Ephemeral notices retain TTL through signed delivery and delete only exact acknowledged bot-owned messages; unsupported deletion retains notice, as adapted transport behavior",
+      "evidence": [
+        "tests/test_ephemeral_reply.py",
+        "tests/test_pending_input_completion_h067.py"
+      ]
+    },
+    {
+      "behavior": "Pairing/owner revocation, transport changes, shutdown/restart, expiry, replay and concurrent prompt retirement fail closed",
+      "evidence": [
+        "tests/test_session_lifecycle_integration.py",
+        "tests/test_pending_input_workspace_broker.py",
+        "tests/test_pending_input_slack_transport.py",
+        "tests/test_pending_input_discord_transport.py",
+        "tests/test_pending_input_http_poll.py"
+      ]
+    }
+  ],
+  "verification": {
+    "runs": [
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/http-poll-affected-result.xml",
+        "tests": 354,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/gateway-contract-result.xml",
+        "tests": 173,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/http-poll-gates-result.xml",
+        "tests": 54,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "counts_overlap_with_historical_runs": true,
+    "live_accounts": false,
+    "full697_or_whole_suite": false,
+    "graft_graph_current": true,
+    "final_metadata": [
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/http-poll-final-metadata-result.xml",
+        "tests": 211,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/gateway-final-records-result.xml",
+        "tests": 60,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "counts_overlap": true
+  },
+  "reused": "Pinned Hermes clarify normalization/parsing semantics and PendingInputs adaptation; Nerva async ToolRPC, signed reply queue/kernel, exact receipts and durable permission ledger remain in place.",
+  "other_work": [
+    "CLI/email capabilities and native mobile interaction remain unaccepted separately",
+    "H660/H515/H595 started residuals and rest of697 inventory",
+    "Live/provider and final integrated milestone; no CI/publication claim"
+  ]
+}

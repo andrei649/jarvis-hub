@@ -1,0 +1,246 @@
+{
+  "generated_at": "2026-10-04T22:33:37Z",
+  "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "rows": [
+    {
+      "id": "H156",
+      "prior_verdict": "equivalent",
+      "unchanged_evidence_paths": [
+        "agents/core/soul_edit.py",
+        "agents/core/routers/agents_api.py",
+        "agents/core/routers/admin.py",
+        "frontend/src/soul-edit.tsx",
+        "frontend/src/modes.tsx",
+        "tests/test_soul_edit_route.py",
+        "frontend/src/test/soul-edit.test.tsx",
+        "tests/test_h277_soul_description_auxiliary.py"
+      ],
+      "changed_paths": [
+        "frontend/src/gap.tsx"
+      ],
+      "semantic_review": "The complete diff is one KanbanView import and one ProjectsMode mount. Soul editing/versioning, common confirmation/Markdown/schema primitives, and gallery browse/search/export implementations and consumers are outside both hunks. This supports preserving prior scope after current required tests; no new equivalence implementation is claimed."
+    },
+    {
+      "id": "H168",
+      "prior_verdict": "equivalent",
+      "unchanged_evidence_paths": [
+        "frontend/src/confirm.tsx",
+        "frontend/src/markdown.tsx",
+        "frontend/src/cockpit.tsx",
+        "frontend/src/shell.tsx",
+        "frontend/src/artifacts.tsx",
+        "frontend/src/panels/trust-ops.tsx",
+        "frontend/src/panels/marketplace-admin.tsx",
+        "frontend/src/panels/webhooks.tsx",
+        "frontend/src/modes3.tsx",
+        "agents/core/autonomy/policy.py",
+        "tests/test_confirm_tiers.py",
+        "frontend/src/test/confirm.test.tsx",
+        "frontend/src/test/markdown-adoption.test.tsx"
+      ],
+      "changed_paths": [
+        "frontend/src/gap.tsx"
+      ],
+      "semantic_review": "The complete diff is one KanbanView import and one ProjectsMode mount. Soul editing/versioning, common confirmation/Markdown/schema primitives, and gallery browse/search/export implementations and consumers are outside both hunks. This supports preserving prior scope after current required tests; no new equivalence implementation is claimed."
+    },
+    {
+      "id": "H518",
+      "prior_verdict": "equivalent",
+      "unchanged_evidence_paths": [
+        "agents/core/media_backends/comfyui.py",
+        "agents/core/image_generation_runtime.py",
+        "agents/core/media_library.py",
+        "agents/core/routers/artifact_store.py",
+        "frontend/src/panels/images.tsx",
+        "tests/test_image_options_extended.py",
+        "tests/test_media_library.py",
+        "frontend/src/media-gallery.ts",
+        "tests/test_media_gallery_pagination.py",
+        "frontend/src/test/media-gallery-panel.test.tsx",
+        "frontend/e2e/media-gallery.spec.ts",
+        "frontend/docs/h518-gallery-pagination.md",
+        "frontend/src/panels/binary-artifacts.tsx",
+        "frontend/src/test/attachment-preview-lifecycle.test.tsx",
+        "frontend/docs/h12-attachment-preview-lifecycle.md",
+        "docs/hermes/h518-gallery-contract.md",
+        "agents/core/cloud_image_runtime.py",
+        "agents/core/media_backends/openai_image.py",
+        "agents/core/media_catalog.py",
+        "agents/core/routers/multimodal.py",
+        "tests/test_cloud_image.py",
+        "docs/cloud-image-generation.md"
+      ],
+      "changed_paths": [
+        "frontend/src/gap.tsx"
+      ],
+      "semantic_review": "The complete diff is one KanbanView import and one ProjectsMode mount. Soul editing/versioning, common confirmation/Markdown/schema primitives, and gallery browse/search/export implementations and consumers are outside both hunks. This supports preserving prior scope after current required tests; no new equivalence implementation is claimed."
+    }
+  ],
+  "diff": "diff --git a/frontend/src/gap.tsx b/frontend/src/gap.tsx\nindex 522a4755..7f9a3cbf 100644\n--- a/frontend/src/gap.tsx\n+++ b/frontend/src/gap.tsx\n@@ -33,6 +33,7 @@ import { CodeIntelPanel } from './panels/codeintel';\n import { CreativePanel } from './panels/creative';\n import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';\n import { ImagesPanel } from './panels/images';\n+import { KanbanView } from './panels/kanban/KanbanView';\n import { OsintPanel } from './panels/osint';\n import { MarketplaceAdminPanel } from './panels/marketplace-admin';\n import { SecuritySkillsMapPanel } from './panels/security-skills-map';\n@@ -3032,6 +3033,7 @@ export function ActivityTimelinePanel() {\n export function ProjectsMode(_props: any) {\n   return <div style={{ padding: '16px 20px', maxWidth: 1440, margin: '0 auto' }}>\n     <div style={{ ...mono, fontSize: 11, letterSpacing: '.16em', color: 'var(--ink-3)', marginBottom: 12 }}>PROJECTS · rooms = topic threads with history · missions = governed workspaces · sessions = reopen a past chat</div>\n+    <KanbanView />\n     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>\n       <RoomsPanel />\n       <MissionsPanel />\n",
+  "state": "Terminal local frozen backend, drift-free prior full frontend and current legacy HUD coverage support preserving these three prior local-code verdicts. No new capability implementation, live provider call or publication is claimed.",
+  "frontend_result": "/tmp/nerva-kanban-hud-full-frontend-20261005.json",
+  "new_gap_sha256": "17d4e2fee69ea9d154b007dfc393c57e4ee64ddbd6e9ea8283199487111fa438",
+  "backend": {
+    "generated_at": "2026-10-04T22:09:03Z",
+    "state": "terminal_review_required",
+    "pid": 38468,
+    "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests",
+      "-n",
+      "1",
+      "--dist",
+      "loadfile",
+      "--timeout=90",
+      "-q",
+      "--tb=short",
+      "--junitxml=/tmp/nerva-kanban-child-full-backend-20261005.xml"
+    ],
+    "log": "/tmp/nerva-kanban-child-full-backend-20261005.log",
+    "xml": "/tmp/nerva-kanban-child-full-backend-20261005.xml",
+    "freeze": "/tmp/nerva-kanban-child-full-backend-20261005-frozen.json",
+    "frozen_paths": 4200,
+    "expected_cases": 23567,
+    "next_action": "Observe this exact process; no restart on observation timeout. At terminal inspect JUnit and exact frozen rehash. No push/merge/deploy.",
+    "exit_code": 0,
+    "verified_at": "2026-10-04T22:31:00Z",
+    "drift": [],
+    "full_backend": {
+      "tests": 23567,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 35,
+      "passed": 23532
+    }
+  },
+  "frontend": {
+    "result": "frontend-result.json",
+    "frozen_inputs": "frontend-frozen-inputs.json",
+    "tests": 1912,
+    "passed": 1912,
+    "failures": 0,
+    "input_drift": []
+  },
+  "legacy_hud": {
+    "tests": 233,
+    "passed": 233,
+    "exit_code": 0,
+    "coverage": {
+      "lines": {
+        "total": 2136,
+        "covered": 1490,
+        "skipped": 0,
+        "pct": 69.75
+      },
+      "statements": {
+        "total": 3088,
+        "covered": 2073,
+        "skipped": 0,
+        "pct": 67.13
+      },
+      "functions": {
+        "total": 1022,
+        "covered": 574,
+        "skipped": 0,
+        "pct": 56.16
+      },
+      "branches": {
+        "total": 2337,
+        "covered": 1331,
+        "skipped": 0,
+        "pct": 56.95
+      },
+      "branchesTrue": {
+        "total": 0,
+        "covered": 0,
+        "skipped": 0,
+        "pct": "Unknown"
+      }
+    },
+    "thresholds": {
+      "lines": 60,
+      "statements": 60,
+      "functions": 50,
+      "branches": 50
+    },
+    "snapshot": "legacy-hud-inputs.json",
+    "boundary": "Legacy static HUD coverage; not React-v2/native coverage."
+  },
+  "remaining": [
+    "Separately governed worker resume is planned but not implemented.",
+    "Crash/orphan reconciliation and remote worker tool adapters remain unfinished.",
+    "Original49 H277 proof predates21 changed/missing inputs; rerun on coherent next source milestone.",
+    "34 backend cases were skipped and1 was expected xfail; platform/Docker/live-service validation remains separate.",
+    "All697 Hermes capabilities remain the active scope; this is a verified partial local integration milestone."
+  ],
+  "artifacts": [
+    {
+      "path": "README.md",
+      "sha256": "440f8bfcd387233e56f09d6d94f14cec9d737c3816c2b466b838a03b468f49cf"
+    },
+    {
+      "path": "backend-frozen-inputs.json",
+      "sha256": "f8cdbb9e6d5e8638b3fa4b6db3a6cb640f339da29e2ce527df9fbbd16b8ec000"
+    },
+    {
+      "path": "backend-junit.xml",
+      "sha256": "e8692ba3d35b2deb36622023637e7a0cca3565e4a112294c8f3244348c962153"
+    },
+    {
+      "path": "backend-run.json",
+      "sha256": "bc9b83fab574c93c83426ef7eed48982c2c42523cda214f16f13b8190e751f60"
+    },
+    {
+      "path": "frontend-frozen-inputs.json",
+      "sha256": "da3dbadc54ee68c09d194ad3189e1be03a50747a42aee26ec653e6923f626022"
+    },
+    {
+      "path": "frontend-result.json",
+      "sha256": "e9e678d8d26069cf88e33148d6f543b2a6e9b1f258a1925c3f8008e090e1b16f"
+    },
+    {
+      "path": "h277-snapshot-drift.json",
+      "sha256": "c4ca33c997b3ce8a14952fda68e513f71f8bb7c5e9f4e790a0a8cc38b332933b"
+    },
+    {
+      "path": "legacy-hud-coverage.json",
+      "sha256": "86d547aabb03ae00658e0364a1cbccaa6e2fe752df4b4aa92364e3ecbd797db0"
+    },
+    {
+      "path": "legacy-hud-inputs.json",
+      "sha256": "3b328103c5ca524448f9dc88aaca9e15bde449a393a33af0cd65b6daa420544f"
+    },
+    {
+      "path": "secret-scan-config.toml",
+      "sha256": "27630a96d6c55755cc37620f3933d5cab94b1eb78a726a32e11212972525d76e"
+    },
+    {
+      "path": "secret-scan.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "skip-audit.json",
+      "sha256": "96c405ce75040cae1425739b086bd18c6ca07b6bdee29b1ae1dac839be96ce28"
+    }
+  ],
+  "archival_transformations": {
+    "normalized_manifests": [
+      "backend-frozen-inputs.json",
+      "frontend-frozen-inputs.json",
+      "legacy-hud-inputs.json"
+    ],
+    "junit_parameterized_names_redacted": 9025,
+    "raw_junit_sha256": "4f50f7f1a766f99ee47124b4bca00f47c1333cb95f7d84ae725423f6d0be0c39",
+    "raw_junit_local": "/tmp/nerva-kanban-child-full-backend-20261005.xml",
+    "effect": "Counts, failures, errors, skipped/xfail, timings and test-method names preserved; parameter values replaced with deterministic case fingerprints. This is a sanitized derivative, not the byte-identical raw JUnit."
+  },
+  "strict_secret_scan": {
+    "result": "secret-scan.json",
+    "config": "secret-scan-config.toml",
+    "findings": 0,
+    "scope": "Sanitized archive, default rules without documentation exemptions. Initial map/hash and parameter-value findings were resolved by documented archival transformations; raw local result is unchanged."
+  }
+}

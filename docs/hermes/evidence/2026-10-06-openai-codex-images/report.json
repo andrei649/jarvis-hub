@@ -1,0 +1,136 @@
+{
+  "generated_at": "2026-10-05T21:36:05.068453+00:00",
+  "goal_scope": "all697",
+  "head_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "publication": false,
+  "status": {
+    "H515": "partial"
+  },
+  "implemented": [
+    "OpenAI Image2 three tier IDs map to native generation and multipart edit requests; legacy1.5 default retained",
+    "Distinct default-off Codex native generation/edit adapter with explicit paired owner OAuth source and fixed official base",
+    "Registered image tool, authenticated API and same signed approval/worker/local artifacts compose for both new backends",
+    "Edit artifact IDs and actual upload hashes remain bound to approval, with credential/configuration/authorization rechecks and no ambiguous replay",
+    "Additive unprobed provider/model/reference-capability status for OpenAI, Codex and FAL",
+    "Rendered Images HUD uses actual API adapter for provider/model/size/reference selection; no inferred edit support or automatic activation",
+    "Loss of a selected provider after refresh disables submission instead of silently falling back to OpenAI",
+    "Decision Inbox shows actual provider/model/prompt/reference values and retains immutable task return links",
+    "Existing OpenAI/FAL180s deadlines retained; Codex300s only; code digest binds shared tier source"
+  ],
+  "verification": {
+    "backend_integration": {
+      "result": "integration-result.xml",
+      "tests": 585,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "final_producer": {
+      "result": "producer-result.xml",
+      "tests": 48,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "note": "After final model-tool schema descriptions"
+    },
+    "frontend_affected": {
+      "result": "frontend-focused-result.json",
+      "tests": 190,
+      "passed": 190,
+      "failed": 0
+    },
+    "frontend_complete": {
+      "result": "frontend-result.json",
+      "tests": 1949,
+      "passed": 1949,
+      "failed": 0,
+      "pending": 0
+    },
+    "counts_overlap": true,
+    "typecheck": true,
+    "build": true,
+    "build_warning": "Existing Vite chunks exceed500kB",
+    "ruff": "passed9paths; import-only corrections localized",
+    "bandit": {
+      "result": "bandit-result.json",
+      "paths": 6,
+      "loc": 2060,
+      "findings": 0,
+      "errors": 0
+    },
+    "graft": {
+      "graph": {
+        "ok": true,
+        "missing": false,
+        "added": [],
+        "removed": [],
+        "changed": [],
+        "stale": [],
+        "pending": 53294
+      },
+      "context_missing": true
+    },
+    "review": "contract-review.json",
+    "red": "red-witnesses.json",
+    "providers": "Synthetic transport only; no live/paid/subscription call",
+    "records": {
+      "result": "records-result.xml",
+      "tests": 104,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "secret_scan": {
+      "result": "secret-scan-result.json",
+      "strict": true,
+      "baseline": false,
+      "inline_allow": false,
+      "findings": 0,
+      "correction": "A filename-keyed source checksum triggered generic-api-key; path/hash records preserve identical digests without detector exceptions."
+    }
+  },
+  "verification_history": {
+    "first_final_frontend": {
+      "result": "frontend-first-final-result.json",
+      "tests": 1949,
+      "passed": 1948,
+      "failed": 1,
+      "failure": "HousePanel explains selected fresh presence; implementation unchanged by image batch"
+    },
+    "isolated_house_recheck": {
+      "result": "house-recheck-result.json",
+      "tests": 13,
+      "passed": 13,
+      "failed": 0
+    },
+    "confirmation": "Entire unchanged final frontend rerun passed1949; intermittent existing HousePanel timing remains a follow-up risk"
+  },
+  "remaining": [
+    "Krea, OpenRouter dedicated images, xAI, DeepInfra images, managed Nous FAL",
+    "Clarity upscaling and local artifact upload to FAL",
+    "Product-managed Codex OAuth sign-in/refresh and live subscription endpoint acceptance",
+    "Native-mobile interaction and fresh live/provider/ComfyUI acceptance",
+    "Existing local ComfyUI VRAM lease/unload-restore and authority-kind requirements remain per H515"
+  ],
+  "source_manifest": "scoped-inputs.json",
+  "accounting": {
+    "new_equivalent_H515": 0,
+    "inventory_total": 697,
+    "verified_metrics": {
+      "total": 697,
+      "accepted": 697,
+      "counts": {
+        "equivalent": 130,
+        "partial": 227,
+        "missing": 56,
+        "excluded": 0,
+        "needs_review": 284
+      },
+      "all_percent": 18.7,
+      "accepted_percent": 18.7,
+      "reviewed": 57,
+      "reviewed_equivalent": 22,
+      "inherited_equivalent": 108
+    }
+  }
+}

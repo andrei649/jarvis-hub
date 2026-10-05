@@ -1,0 +1,2 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.473" timestamp="2026-10-05T02:11:21.393478+03:00" hostname="Macmini"><testcase classname="tests.test_h277_approval_judge" name="test_the_first_annotation_wins" time="1.018"><failure message="Diagnostic retained locally; sha256=6b3b68a91d96cb61cb8d9c44ff18646ef10403fb0d26306f7eb0ecd74c0197ae">Raw local failure diagnostic omitted from shareable derivative.</failure></testcase></testsuite></testsuites>

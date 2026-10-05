@@ -30,6 +30,7 @@ class SessionSource:
     explicit_session_id: str | None = None
     local_only: bool = False
     silent: bool = False
+    chat_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,16 @@ def build_session_key(source: SessionSource) -> str:
     return f"ch_{hashlib.sha256(key.encode('utf-8')).hexdigest()[:32]}"
 
 
+def session_type(source: SessionSource) -> str:
+    """A transport conversation ID is not itself proof of a threaded chat."""
+    kind = str(source.chat_type or "").lower()
+    if kind in {"thread", "topic"}:
+        return "thread"
+    if kind in {"group", "supergroup", "guild", "channel"}:
+        return "group"
+    return "dm"
+
+
 class DeliveryRouter:
     """Pure reply-target resolver for channel sessions."""
 
@@ -116,4 +127,5 @@ __all__ = [
     "DeliveryTarget",
     "SessionSource",
     "build_session_key",
+    "session_type",
 ]

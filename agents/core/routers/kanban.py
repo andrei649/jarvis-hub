@@ -17,6 +17,7 @@ from agents.core.kanban import dashboard_api
 from agents.core.kanban.cli import execute_command
 from agents.core.kanban.cli_upstream.board_selection import selected_board
 from agents.core.kanban.context import KanbanContext, kanban_scope
+from agents.core.kanban.projects_cli import execute_command as execute_project_command
 from agents.core.paths import data_path
 
 from ._deps import admin_guard
@@ -57,6 +58,11 @@ class CommandBody(BaseModel):
 @http_router.post("/command")
 async def command(body: CommandBody):
     return await execute_command(get_orch(), body.argv, Principal(channel="web", admin=True))
+
+
+@http_router.post("/projects/command")
+async def project_command(body: CommandBody):
+    return await execute_project_command(get_orch(), body.argv, Principal(channel="web", admin=True))
 
 
 router.include_router(http_router)

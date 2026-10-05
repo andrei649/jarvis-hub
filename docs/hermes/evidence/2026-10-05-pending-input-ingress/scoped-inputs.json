@@ -1,0 +1,34 @@
+[
+  {
+    "path": "agents/core/channels/gateway.py",
+    "sha256": "77e3ba9de50b8ef7e2a83a056440d9a55325d18ac3eae0d8a1ab70df4365ef13"
+  },
+  {
+    "path": "agents/core/channels/telegram.py",
+    "sha256": "ea4aa0a2f64fe47fe25507e3751521d7605b648cf8df7aae2425b451e9315718"
+  },
+  {
+    "path": "agents/core/channels/pending_input_runtime.py",
+    "sha256": "29050a1ac129e48e0e74f1928b27ffb12b866abed5d91de187a9e436ce069dce"
+  },
+  {
+    "path": "agents/core/orchestrator.py",
+    "sha256": "dae7e7f830b8c9840a79a40b1e9e22e1ca34fcafa4b410cdcb2bf34bfe8980b6"
+  },
+  {
+    "path": "agents/web.py",
+    "sha256": "b2ab4e431a019499e3eb43f7ec426da2deee81191c54528c0190c642c36c3eb1"
+  },
+  {
+    "path": "tests/test_pending_input_ingress.py",
+    "sha256": "dd4dd5f6a83e25943ddb42a7b6322568185bf4952464400c53c5c6d04749f045"
+  },
+  {
+    "path": "tests/test_telegram_pairing_shared_store.py",
+    "sha256": "476ce1183c4a66a2240480a6c5ea8d4c9f89eae2f8fa46a2b9525c7c8acd99b6"
+  },
+  {
+    "path": "docs/hermes/pending-input-plan-2026-10-05.md",
+    "sha256": "9b39dafed9a9dc65a316df58fa7031f8eb19390dab0937227af484a252e1d9c1"
+  }
+]

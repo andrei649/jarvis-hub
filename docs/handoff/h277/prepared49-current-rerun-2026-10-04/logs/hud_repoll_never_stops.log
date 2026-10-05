@@ -1,0 +1,35 @@
+COMMAND ["/Users/andrei649/.local/bin/node", "node_modules/vitest/vitest.mjs", "run", "tests/frontend/tools.test.js", "-t", "does not poll when a throttled timer wakes after its hard deadline"]
+
+ RUN  v5.0.1 /privatedocs/handoff/h277/prepared49-current-rerun-2026-10-04/snapshot
+
+ ❯ tests/frontend/tools.test.js (40 tests | 1 failed | 39 skipped) 111ms
+   ❯ Action Approvals — model opinion (H277) (14)
+     × does not poll when a throttled timer wakes after its hard deadline 110ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend/tools.test.js > Action Approvals — model opinion (H277) > does not poll when a throttled timer wakes after its hard deadline
+AssertionError: expected 3 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 3
+
+ ❯ tests/frontend/tools.test.js:671:27
+    669|     const before = calls.pending;
+    670|     await polls.fireDelayed(30000);
+    671|     expect(calls.pending).toBe(before);
+       |                           ^
+    672|     expect(polls.active()).toBe(0);
+    673|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 39 skipped (40)
+   Start at  23:54:58
+   Duration  546ms (import 70%, tests 23%, transform 6%)
+

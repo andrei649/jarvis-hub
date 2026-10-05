@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-10-05T16:59:27.459823+00:00",
+  "goal": "all697",
+  "capability": "H067",
+  "status": "partial",
+  "base_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "publication": false,
+  "implemented": "Whole /cancel and !cancel release exactly the delivered clarification before occupied transport lanes. Existing identity/pairing, active binding, transport configuration/generation and delivery checks run first. No model turn or rate debit; ordinary prose/unknown commands and three-way confirmations are unchanged.",
+  "verification": {
+    "result": "docs/hermes/evidence/2026-10-05-pending-input-completion/cancel-result.xml",
+    "tests": 261,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "new_cases": 6,
+    "red": "Five actual RPC/transport cases fail before the localized fix; the sixth protects a choice literally named Cancel. Harness-only approval-call mistake was corrected before recording the behavioral RED.",
+    "edge_cases": [
+      "Another sender/topic cannot cancel",
+      "Only whole slash/bang commands cancel",
+      "Cancellation preserves FIFO neighbour",
+      "A choice named Cancel still answers",
+      "Native cards retire through existing cleanup",
+      "Saturated new-turn budget does not obstruct cancellation"
+    ],
+    "actual_path": "Telegram chat ingress, actual SDK Slack/Discord signed queue/RPC path, HTTPX synthetic ntfy subscription and signed delivery. No live accounts.",
+    "ruff": "passed",
+    "diff_check": "passed",
+    "bandit": "0 findings/errors on changed production module",
+    "strict_gitleaks": "0 findings on two changed source/test files; default rules, no baseline/config/inline suppression.",
+    "source_inputs": "docs/hermes/evidence/2026-10-05-pending-input-completion/cancel-scoped-inputs.json",
+    "graft": {
+      "graph_ok": true,
+      "added": 0,
+      "removed": 0,
+      "changed": 0,
+      "stale": 0,
+      "context": "not initialized; graph only used"
+    },
+    "status_checks": {
+      "tests": 184,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/cancel-status-result.xml"
+    }
+  },
+  "shared_impact": "Only H067 pins the immediate matching source preimage. Other source modules and prior dirty work are untouched.",
+  "remaining": [
+    "HUD/web/email/CLI producers and answer entry points",
+    "Ordinary prose and other commands at busy ingress",
+    "Integrated acceptance milestone and remaining Hermes inventory"
+  ],
+  "next_action": "Integrate actual authenticated /chat/stream producer and HUD answer UI using PendingInputs and existing session/principal checks; do not use an unverified WebClient id as owner identity.",
+  "files_modified": {
+    "agents/core/channels/pending_input_runtime.py": "Exact delivered clarification cancellation before occupied ingress; preserves identity/configuration/generation gates and FIFO neighbours.",
+    "tests/test_pending_input_cancel.py": "Six actual-path cancellation and choice-label behavior cases.",
+    "docs/hermes/pending-input-plan-2026-10-05.md": "Bounded plan and rollback/source preimage contract.",
+    "docs/hermes/evidence/2026-10-05-pending-input-completion/": "Source manifests, behavior proof, strict-scan and test-result reports.",
+    "docs/hermes/assessment.json": "Current H067 partial review and exact evidence pins; no equivalent increment.",
+    "HERMES_STATUS.md": "Generated current697 report.",
+    "docs/HERMES_CAPABILITIES.md": "Generated current capability report.",
+    "docs/hermes/autonomous-development-objective.md": "Resumable local checkpoint and actual authenticated HTTP next-entry map."
+  }
+}

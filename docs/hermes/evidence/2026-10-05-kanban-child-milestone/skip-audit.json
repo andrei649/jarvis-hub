@@ -1,0 +1,28 @@
+{
+  "skip_types": {
+    "pytest.skip": 34,
+    "pytest.xfail": 1
+  },
+  "skip_reasons": {
+    "rustc is not installed": 2,
+    "this file system refuses a name that is not UTF-8": 1,
+    "no /proc": 1,
+    "could not import 'slack_sdk.socket_mode': No module named 'slack_sdk'": 1,
+    "live GitHub smoke; set NERVA_HERMES_LIVE=1 (schedule-only CI lane)": 1,
+    "abstract sockets are Linux only": 1,
+    "this box has an IPv6 stack; EAFNOSUPPORT is not reproducible here": 1,
+    "not root: no privilege to drop, so EACCES cannot be staged": 1,
+    "counts open fds through /proc": 1,
+    "integrator registration pending in autonomy_coordinator: {'tool:browser_run'}": 1,
+    "live Neo4j lane \u2014 set JARVIS_NEO4J_LIVE=1 with a real server reachable at NEO4J_URL": 7,
+    "fish is not installed; generated script still has parser tests": 3,
+    "sandbox containment runs only in the dedicated Docker CI lane (set RUN_SANDBOX_ISOLATION=1)": 7,
+    "Orchestrator not initialized in test environment": 1,
+    "Docker not available on this runner": 1,
+    "owner-live Home Assistant opt-in (JARVIS_H30_HA_LIVE) is not set": 3,
+    "the H32 S2 proof runs only in the dedicated real-Docker CI lane": 1,
+    "acquisition containment runs only in the dedicated Docker CI lane": 1
+  },
+  "frontend_frozen_inputs": 344,
+  "frontend_drift": []
+}

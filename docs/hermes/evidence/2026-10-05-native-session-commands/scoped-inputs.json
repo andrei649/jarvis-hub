@@ -1,0 +1,82 @@
+[
+  {
+    "path": "agents/core/channels/pending_input_runtime.py",
+    "sha256": "b308f0bae412dbbeb4ad38a7761f8b5a2bab48d3f2ba62c65aa2100a934f16ba"
+  },
+  {
+    "path": "agents/core/channels/pending_input_cards.py",
+    "sha256": "42b389c1492fdb2d39cb0e7f8067456771cd937a5a69a9c33f5cd8a411848d8e"
+  },
+  {
+    "path": "agents/core/channels/session_command_consent.py",
+    "sha256": "96130a8bd22de5d3c45fed9ec595b8533b3b06b856ac8dba9257282828226701"
+  },
+  {
+    "path": "agents/core/channels/session_command_runtime.py",
+    "sha256": "a8dbf21ba76e05dfb6cf4e006c394edd1347f7b31e46a1555a0a99ccc9014eea"
+  },
+  {
+    "path": "agents/core/channels/telegram.py",
+    "sha256": "d133bd504ac1726b7ae18f24dc10c4f6665b99e4ad92a66c5d3a9fa4261f169a"
+  },
+  {
+    "path": "agents/core/channels/gateway.py",
+    "sha256": "f0392f28b03d7e39388bb5379020ec418c29232c777943d9c60092c30b11cd23"
+  },
+  {
+    "path": "agents/core/channels/manager.py",
+    "sha256": "02222d28c28443048e05f55717235137b91dabb92a5c9979b5e7cc32cd2d5a30"
+  },
+  {
+    "path": "agents/core/channels/session_lifecycle.py",
+    "sha256": "01ee9f3fc93b69c170b4ac6f73025538c15ca5645b41ff14a756a270ba3d7bbb"
+  },
+  {
+    "path": "agents/core/memory/session_undo.py",
+    "sha256": "98aeb2268519e40593bbd1af59e172e71a437a2ee465ff46b084207f54790743"
+  },
+  {
+    "path": "agents/core/memory/manager.py",
+    "sha256": "ac60aaee4e3e7f43898e55feed438dcb5a64e193b1e6c13b5a3624dbfe470c52"
+  },
+  {
+    "path": "agents/core/orchestrator.py",
+    "sha256": "bb1f3804310c1460c8818c30100f5354bda6cfb3f1806bd03ea6b134ef25ab87"
+  },
+  {
+    "path": "agents/web.py",
+    "sha256": "ba44869c3ec73ff040d54168defbcaccfe8ecdf06f70927c96b2fd07f342e505"
+  },
+  {
+    "path": "tests/test_pending_input_native_transport.py",
+    "sha256": "54799372586f3322abb23ee60d94868a935316d73325fac7ad14975c5e257015"
+  },
+  {
+    "path": "tests/test_session_command_runtime.py",
+    "sha256": "ef325176371df0b90081b99889e7b36fcd2a519c95ad3e8dc8bb48a8dd877c40"
+  },
+  {
+    "path": "tests/test_session_command_consent.py",
+    "sha256": "3346c66581ceaca1bfe8586de40cb00665174b88e75ac62f3d32ed883fccea6c"
+  },
+  {
+    "path": "tests/test_pending_input_cards.py",
+    "sha256": "fff0d63882238ed1eaf72fb2a6648f7ceedc87a7a5a134d6b4a12c2137753310"
+  },
+  {
+    "path": "tests/test_session_undo.py",
+    "sha256": "ccbb4e6548d20937b2320d064e21d348aaabc32766639e739c36846f5323f710"
+  },
+  {
+    "path": "tests/test_telegram_pairing_shared_store.py",
+    "sha256": "f673226938f478fbbc220dd0ea212abcd4c766066b0f1be7f45896529c509fd7"
+  },
+  {
+    "path": "docs/hermes/pending-input-plan-2026-10-05.md",
+    "sha256": "2ffda58c4ad4ada0edfe265e2c62b9f52bb5f801e87f7c1dff8c685e59edfe95"
+  },
+  {
+    "path": "tests/test_h490_safe_mode_posture.py",
+    "sha256": "f448d33f9853a67830ac3244fa2b9376a6fae6d92ffe4931621138ae3504895b"
+  }
+]

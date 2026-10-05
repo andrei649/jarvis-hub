@@ -1,5 +1,6 @@
 """One path-free gallery and bounded reader for generated media and local cache."""
 import hashlib
+import json
 import os
 import re
 import stat
@@ -93,13 +94,69 @@ def _mime_hint(data):
     raise ValueError('unsupported_media')
 
 
+def _enhance_catalog_png(root, row, path, data):
+    """Admit a generated 4K PNG only through its durable private Enhance proof.
+
+    Portable export uses the saved execution proof, without a credential, HTTP
+    request or live worker. Ordinary uploads/cache and edit readers keep 2K bounds.
+    """
+    from .media_backends.comfyui import validate_png
+
+    folder = root / 'media' / 'cloud-image'
+
+    def record(name):
+        candidate = folder / name
+        if any(p.is_symlink() for p in (candidate, *candidate.parents)):
+            raise ValueError('artifact_not_found')
+        value = json.loads(_read_bytes(candidate, 8192)[0])
+        if not isinstance(value, dict):
+            raise ValueError('artifact_not_found')
+        return value
+
+    proof = record(path.stem + '.artifact')
+    if (set(proof) != {'task_id', 'nonce', 'binding', 'sha256', 'max_dimension', 'execution_fingerprint'}
+            or type(proof['task_id']) is not int or not 1 <= proof['task_id'] < 2**63
+            or type(proof['max_dimension']) is not int or proof['max_dimension'] != 4096
+            or not isinstance(proof['nonce'], str) or not re.fullmatch('[a-f0-9]{32}', proof['nonce'])
+            or any(not isinstance(proof[key], str) or not re.fullmatch('[a-f0-9]{64}', proof[key])
+                   for key in ('binding', 'sha256', 'execution_fingerprint'))
+            or not isinstance(row.get('backend'), str) or not row['backend'].startswith('krea:')
+            or not isinstance(row.get('meta'), dict)
+            or type(row['meta'].get('task_id')) is not int or row['meta']['task_id'] != proof['task_id']
+            or row['meta'].get('sha256') != proof['sha256']):
+        raise ValueError('artifact_not_found')
+    nonce, binding = proof['nonce'], proof['binding']
+    done, job = record(nonce + '.complete'), record(nonce + '.job')
+    artifact = done.get('artifact')
+    if (not isinstance(artifact, dict) or done.get('binding') != binding
+            or artifact.get('artifact_id') != path.stem or artifact.get('bytes') != len(data)
+            or (artifact.get('width'), artifact.get('height')) != validate_png(data, max_dimension=4096)
+            or done.get('sha256') != proof['sha256'] or hashlib.sha256(data).hexdigest() != proof['sha256']
+            or job.get('binding') != binding or job.get('result_sha256') != proof['sha256']
+            or job.get('execution_fingerprint') != proof['execution_fingerprint']
+            or not isinstance(done.get('job_id'), str) or done['job_id'] != job.get('job_id')
+            or not isinstance(done.get('provider_result_url'), str)
+            or done['provider_result_url'] != job.get('provider_result_url')
+            or record(nonce + '.proposal') != {'binding': binding}
+            or record(nonce + '.attempt') != {'binding': binding}):
+        raise ValueError('artifact_not_found')
+    return 'image/png'
+
+
 def read_catalog_blob(item_id, root=None, *, records=None, max_bytes=MAX_UPLOAD):
     root = Path(root) if root is not None else data_root()
+    if records is None:
+        records, _ = catalog_snapshot(root)
     path = catalog_path(item_id, root, records=records)
     try:
         data, _ = _read_bytes(path, min(MAX_UPLOAD, max_bytes))
-        mime = sniff(data)
-    except (OSError, ValueError):
+        proof = root / 'media' / 'cloud-image' / (path.stem + '.artifact')
+        if (path.parent == root / 'media' / 'generated' and re.fullmatch('[a-f0-9]{32}', path.stem)
+                and path.suffix == '.png' and (proof.exists() or proof.is_symlink())):
+            mime = _enhance_catalog_png(root, records[item_id], path, data)
+        else:
+            mime = sniff(data)
+    except (OSError, ValueError, KeyError, TypeError):
         raise ValueError('artifact_not_found') from None
     return {'id': item_id, 'mime': mime, 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()}, data
 

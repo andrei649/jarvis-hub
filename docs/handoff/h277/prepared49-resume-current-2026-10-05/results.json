@@ -1,0 +1,1476 @@
+{
+  "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "results": [
+    {
+      "index": 1,
+      "label": "roles_pick_legacy_wins_over_role_name",
+      "file": "agents/core/llm/model_roles.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Comment was added before return; mutate the current precedence condition.",
+      "focused_target": "tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable",
+        "returncode": 1,
+        "seconds": 1.98,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/roles_pick_legacy_wins_over_role_name.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_pick_legacy_wins_over_role_name.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable",
+            "type": "",
+            "message_sha256": "b08b62854f1ee6b2294ad3dea1b72382ecd17c3a85aeb3b8ff097aae203d8d20"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 2,
+      "label": "roles_pick_shadowed_legacy_not_reported",
+      "file": "agents/core/llm/model_roles.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Round2 now compares case-sensitive values; drop the equivalent ignored-legacy report.",
+      "focused_target": "tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable",
+        "returncode": 1,
+        "seconds": 1.89,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/roles_pick_shadowed_legacy_not_reported.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_pick_shadowed_legacy_not_reported.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable",
+            "type": "",
+            "message_sha256": "058ab02e62f12a085aba9e0d3d4da5dcb8ebeb9c796eca2f2e20f0951551f78c"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 3,
+      "label": "roles_pick_legacy_fallback_dropped",
+      "file": "agents/core/llm/model_roles.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_model_roles.py::test_vision_role_falls_back_to_jarvis_vlm_model",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_vision_role_falls_back_to_jarvis_vlm_model",
+        "returncode": 1,
+        "seconds": 1.98,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/roles_pick_legacy_fallback_dropped.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_pick_legacy_fallback_dropped.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_vision_role_falls_back_to_jarvis_vlm_model",
+            "type": "",
+            "message_sha256": "6f8896146384df00d22af0b1fb54e76edb676a1dabae32a8c08e921527f9ce2c"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 4,
+      "label": "roles_vision_view_legacy_url_wins",
+      "file": "agents/core/llm/model_roles.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Round2 extracts URL variables; invert the equivalent precedence.",
+      "focused_target": "tests/test_h277_model_roles.py::test_the_legacy_vlm_key_never_goes_to_a_foreign_role_base_url",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_the_legacy_vlm_key_never_goes_to_a_foreign_role_base_url",
+        "returncode": 1,
+        "seconds": 1.93,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/roles_vision_view_legacy_url_wins.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_vision_view_legacy_url_wins.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_the_legacy_vlm_key_never_goes_to_a_foreign_role_base_url",
+            "type": "",
+            "message_sha256": "f2dc32e5e62e95262c49a99ed44c73f54e1e7c55476b0377ff9026d786ad1f17"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 5,
+      "label": "roles_vision_view_provider_not_validated",
+      "file": "agents/core/llm/model_roles.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_model_roles.py::test_unknown_vision_provider_is_rejected",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_unknown_vision_provider_is_rejected",
+        "returncode": 1,
+        "seconds": 1.87,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/roles_vision_view_provider_not_validated.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_vision_view_provider_not_validated.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_unknown_vision_provider_is_rejected",
+            "type": "",
+            "message_sha256": "f6695171bdfad7634d9683654936146c7375982fdb52037802a822c01791215d"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 6,
+      "label": "roles_validate_supported_set_check_dropped",
+      "file": "agents/core/llm/model_roles.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_model_roles.py::test_a_real_provider_the_vision_path_cannot_speak_is_unsupported",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_a_real_provider_the_vision_path_cannot_speak_is_unsupported",
+        "returncode": 1,
+        "seconds": 1.92,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/roles_validate_supported_set_check_dropped.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_validate_supported_set_check_dropped.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_a_real_provider_the_vision_path_cannot_speak_is_unsupported",
+            "type": "",
+            "message_sha256": "a96931fa5dbdd95a370cd992da49a75f203f26a635ddfb83704a7d4754f648c9"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 0,
+        "behavioral_failures": 1,
+        "classification": "killed_behavioral_exception"
+      },
+      "classification": "killed_behavioral_exception",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 7,
+      "label": "roles_main_becomes_env_selectable",
+      "file": "agents/core/llm/model_roles.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_model_roles.py::test_main_role_is_not_env_selectable",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_main_role_is_not_env_selectable",
+        "returncode": 1,
+        "seconds": 1.92,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/roles_main_becomes_env_selectable.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_main_becomes_env_selectable.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_main_role_is_not_env_selectable",
+            "type": "",
+            "message_sha256": "448ec527d5c3f547c364b7a6bdbd36329ac36029cb464ef9e813dbe6f7b4f813"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 0,
+        "behavioral_failures": 1,
+        "classification": "killed_behavioral_exception"
+      },
+      "classification": "killed_behavioral_exception",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 8,
+      "label": "roles_env_role_default_provider_ollama",
+      "file": "agents/core/llm/model_roles.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_model_roles.py::test_judge_role_uses_the_provider_profile_base_url",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_judge_role_uses_the_provider_profile_base_url",
+        "returncode": 1,
+        "seconds": 1.95,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/roles_env_role_default_provider_ollama.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_env_role_default_provider_ollama.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_judge_role_uses_the_provider_profile_base_url",
+            "type": "",
+            "message_sha256": "40b53ef6c47caf6569c71fe7aaff6fa626b656abb1b8860c65e132b4a7531274"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 9,
+      "label": "roles_env_role_unset_model_guard_dropped",
+      "file": "agents/core/llm/model_roles.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_model_roles.py::test_doctor_model_roles_row_ok_by_default",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_doctor_model_roles_row_ok_by_default",
+        "returncode": 1,
+        "seconds": 1.91,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/roles_env_role_unset_model_guard_dropped.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_env_role_unset_model_guard_dropped.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_doctor_model_roles_row_ok_by_default",
+            "type": "",
+            "message_sha256": "c066cdc4e61bee11339afbdc1d75bf327222b02008025ef9001f4e15d066c0e7"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 10,
+      "label": "roles_locality_or_instead_of_and",
+      "file": "agents/core/llm/model_roles.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_model_roles.py::test_judge_role_uses_the_provider_profile_base_url",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_judge_role_uses_the_provider_profile_base_url",
+        "returncode": 1,
+        "seconds": 1.92,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/roles_locality_or_instead_of_and.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_locality_or_instead_of_and.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_judge_role_uses_the_provider_profile_base_url",
+            "type": "",
+            "message_sha256": "7ec49603636f9ebe4916b01ceb422c22fd4d842570a19883ac1f1aa43da41557"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 11,
+      "label": "roles_vision_lmstudio_default_url_dropped",
+      "file": "agents/core/llm/vlm.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Default URL now belongs to resolve_vlm_config in vlm.py; remove that default at the current consumer.",
+      "focused_target": "tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping",
+        "returncode": 1,
+        "seconds": 1.94,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/roles_vision_lmstudio_default_url_dropped.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_vision_lmstudio_default_url_dropped.xml",
+        "case_count": 16,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping[case-e3af8e6049a5b522]",
+            "type": "",
+            "message_sha256": "9c89055850e0abf73fc2714cd1f354db9e1c61aac83a9623719fbdf32508971a"
+          },
+          {
+            "case": "tests.test_h277_model_roles::test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping[case-19bc116a0b26b9c0]",
+            "type": "",
+            "message_sha256": "ba5f246ea55b59ca630e04715f76680085436a07efbc2332df6cc6a58096bcc0"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 2,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 12,
+      "label": "roles_describe_catches_wrong_error",
+      "file": "agents/core/llm/model_roles.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_model_roles.py::test_describe_never_raises_and_reports_a_bad_role",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_describe_never_raises_and_reports_a_bad_role",
+        "returncode": 1,
+        "seconds": 1.88,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/roles_describe_catches_wrong_error.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_describe_catches_wrong_error.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_describe_never_raises_and_reports_a_bad_role",
+            "type": "",
+            "message_sha256": "831edf5754dc17f6276ad7d3957d83f99b81dfe639fa7e6fcbdef302fb1c2ee6"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 0,
+        "behavioral_failures": 1,
+        "classification": "killed_behavioral_exception"
+      },
+      "classification": "killed_behavioral_exception",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 13,
+      "label": "vlm_role_error_reason_masked",
+      "file": "agents/core/llm/vlm.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_model_roles.py::test_unknown_vision_provider_is_rejected",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_unknown_vision_provider_is_rejected",
+        "returncode": 1,
+        "seconds": 1.94,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/vlm_role_error_reason_masked.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/vlm_role_error_reason_masked.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_unknown_vision_provider_is_rejected",
+            "type": "",
+            "message_sha256": "f6695171bdfad7634d9683654936146c7375982fdb52037802a822c01791215d"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 14,
+      "label": "model_config_override_flag_inverted",
+      "file": "agents/core/llm/model_config.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_model_roles.py::test_deep_role_defaults_and_is_not_pinned",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_deep_role_defaults_and_is_not_pinned",
+        "returncode": 1,
+        "seconds": 1.9,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/model_config_override_flag_inverted.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/model_config_override_flag_inverted.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_deep_role_defaults_and_is_not_pinned",
+            "type": "",
+            "message_sha256": "14a6b25fcb3568cac086f4782aa03d97ecb7e73de77ad44ba13bf324d6e7d345"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 15,
+      "label": "judge_safe_mode_check_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+        "returncode": 1,
+        "seconds": 2.03,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_safe_mode_check_dropped.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_safe_mode_check_dropped.xml",
+        "case_count": 9,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_egress_rules_keep_the_judge_off[case-4d90f1b77bb8ccbd]",
+            "type": "",
+            "message_sha256": "f10798d80fe413bc78b695d684167f60d8e2c3f25e5d5e8766d8a5dd8f5ca864"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 16,
+      "label": "judge_protocol_refusal_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+        "returncode": 1,
+        "seconds": 2.16,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_protocol_refusal_dropped.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_protocol_refusal_dropped.xml",
+        "case_count": 9,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_egress_rules_keep_the_judge_off[case-a0f0c8c5b5513dfd]",
+            "type": "",
+            "message_sha256": "2600b2a33eddc88645059f14f3ad70dfac772992279f40a1b23a5442f60692bb"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 17,
+      "label": "judge_h378_findings_ignored",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+        "returncode": 1,
+        "seconds": 2.1,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_h378_findings_ignored.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_h378_findings_ignored.xml",
+        "case_count": 9,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_egress_rules_keep_the_judge_off[case-b64b60e4ee9892ce]",
+            "type": "",
+            "message_sha256": "c5dccfa4edc11060c7ad204b8681586b7f05aa458f713a83eb5461aded194e0d"
+          },
+          {
+            "case": "tests.test_h277_approval_judge::test_egress_rules_keep_the_judge_off[case-b4512d497f5dae27]",
+            "type": "",
+            "message_sha256": "7dd51b30ae35ee16c7e0f6a463586c0a137043b0fd419be5c012c9bc5a70ab73"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 2,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 18,
+      "label": "judge_remote_gate_applies_to_local",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_configured_judge_annotates_the_item_and_changes_nothing_else",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_configured_judge_annotates_the_item_and_changes_nothing_else",
+        "returncode": 1,
+        "seconds": 1.93,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_remote_gate_applies_to_local.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_remote_gate_applies_to_local.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_configured_judge_annotates_the_item_and_changes_nothing_else",
+            "type": "",
+            "message_sha256": "4a8704a1bba87391035cc5c41bf78ac4f54dfb0db548dfa2bb7e47fe4d793d09"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 0,
+        "behavioral_failures": 1,
+        "classification": "killed_behavioral_exception"
+      },
+      "classification": "killed_behavioral_exception",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 19,
+      "label": "judge_allow_remote_inverted",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+        "returncode": 1,
+        "seconds": 2.07,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_allow_remote_inverted.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_allow_remote_inverted.xml",
+        "case_count": 9,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_egress_rules_keep_the_judge_off[case-16b8dc9361d572fe]",
+            "type": "",
+            "message_sha256": "f10798d80fe413bc78b695d684167f60d8e2c3f25e5d5e8766d8a5dd8f5ca864"
+          },
+          {
+            "case": "tests.test_h277_approval_judge::test_egress_rules_keep_the_judge_off[case-0cbc22f48c4a9960]",
+            "type": "",
+            "message_sha256": "3f6deba94a777cec305baa4bfdcf5d354e2e1856e732d01657c3307083f258cb"
+          },
+          {
+            "case": "tests.test_h277_approval_judge::test_egress_rules_keep_the_judge_off[case-1d1b55a50dc2007e]",
+            "type": "",
+            "message_sha256": "aa958609019982502555e9339b118bbeeaacca3bef3ff029deb05d0a4a97f71d"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 3,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 20,
+      "label": "judge_strict_local_ignored",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+        "returncode": 1,
+        "seconds": 2.07,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_strict_local_ignored.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_strict_local_ignored.xml",
+        "case_count": 9,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_egress_rules_keep_the_judge_off[case-0cbc22f48c4a9960]",
+            "type": "",
+            "message_sha256": "f10798d80fe413bc78b695d684167f60d8e2c3f25e5d5e8766d8a5dd8f5ca864"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 21,
+      "label": "judge_cloud_fallback_never_ignored",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off",
+        "returncode": 1,
+        "seconds": 2.06,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_cloud_fallback_never_ignored.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_cloud_fallback_never_ignored.xml",
+        "case_count": 9,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_egress_rules_keep_the_judge_off[case-1d1b55a50dc2007e]",
+            "type": "",
+            "message_sha256": "f10798d80fe413bc78b695d684167f60d8e2c3f25e5d5e8766d8a5dd8f5ca864"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 22,
+      "label": "judge_timeout_floor_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_the_default_timeout_is_bounded",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_the_default_timeout_is_bounded",
+        "returncode": 1,
+        "seconds": 1.95,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_timeout_floor_dropped.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_timeout_floor_dropped.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_the_default_timeout_is_bounded",
+            "type": "",
+            "message_sha256": "a89f9dea8b237454912b346eb2fd7f9d8cea5db3106b78efbfd9e74a2466b405"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 23,
+      "label": "judge_public_leaks_remote_base_url",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change. Current accepted public route regression witnesses original fault23 directly; exact original mutation retained.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_nonlocal_loopback_custom_judge_keeps_origin_out_of_pending_route",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_nonlocal_loopback_custom_judge_keeps_origin_out_of_pending_route",
+        "returncode": 1,
+        "seconds": 1.96,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_public_leaks_remote_base_url.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_public_leaks_remote_base_url.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_nonlocal_loopback_custom_judge_keeps_origin_out_of_pending_route",
+            "type": "",
+            "message_sha256": "cc3845c53d2a2c44a8aa9aa5b2a90a50222d88c02e5ae6b40e93dd5280fb2638"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 24,
+      "label": "judge_prompt_not_fenced",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_prompt_fences_untrusted_arguments_and_flags_injection",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_prompt_fences_untrusted_arguments_and_flags_injection",
+        "returncode": 1,
+        "seconds": 1.98,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_prompt_not_fenced.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_prompt_not_fenced.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_prompt_fences_untrusted_arguments_and_flags_injection",
+            "type": "",
+            "message_sha256": "5dcfba7b4d40ea05f06bc3334b073bad819b9d24a8e590ad43fcf005c90c7fbc"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 25,
+      "label": "judge_parse_extra_keys_allowed",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_parse_verdict_rejects",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_parse_verdict_rejects",
+        "returncode": 1,
+        "seconds": 2.02,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_parse_extra_keys_allowed.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_parse_extra_keys_allowed.xml",
+        "case_count": 12,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_parse_verdict_rejects[case-b330ade26fb6adf9]",
+            "type": "",
+            "message_sha256": "2e0a1dbf2f9047d5bb81b428aa9312c61ba74fc9f94949f0cec6c3130072aa73"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 26,
+      "label": "judge_parse_fractional_risk_allowed",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_parse_verdict_rejects",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_parse_verdict_rejects",
+        "returncode": 1,
+        "seconds": 2.05,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_parse_fractional_risk_allowed.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_parse_fractional_risk_allowed.xml",
+        "case_count": 12,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_parse_verdict_rejects[case-889f92f355aa8733]",
+            "type": "",
+            "message_sha256": "cd7add01ca6e913baaba458f6534eaf94ed6c0d81f80ca41aa37920c2229f96f"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 27,
+      "label": "judge_parse_empty_why_allowed",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_parse_verdict_rejects",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_parse_verdict_rejects",
+        "returncode": 1,
+        "seconds": 1.98,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_parse_empty_why_allowed.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_parse_empty_why_allowed.xml",
+        "case_count": 12,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_parse_verdict_rejects[case-1d7fdefaf43fff63]",
+            "type": "",
+            "message_sha256": "f60d476de7dd6c7a6ceb67842200770028918c746e2da8620adeb39e7cceacd3"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 28,
+      "label": "judge_parse_code_fence_unanchored",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_parse_verdict_rejects",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_parse_verdict_rejects",
+        "returncode": 1,
+        "seconds": 2.0,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_parse_code_fence_unanchored.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_parse_code_fence_unanchored.xml",
+        "case_count": 12,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_parse_verdict_rejects[case-4b0f10b1411dc218]",
+            "type": "",
+            "message_sha256": "8e343c1d6c5abe4f2db5440c4ad078e54fde925de3fe86f7c111209cbab0364f"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 29,
+      "label": "judge_clamp_upper_bound_raised",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_parse_verdict_clamps",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_parse_verdict_clamps",
+        "returncode": 1,
+        "seconds": 1.93,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_clamp_upper_bound_raised.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_clamp_upper_bound_raised.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_parse_verdict_clamps",
+            "type": "",
+            "message_sha256": "295b6df0c1426429cdab7a8ea88503bed7b9cc6e07b9e2983c6d4f8d0c59b113"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 30,
+      "label": "judge_rationale_fence_markers_kept",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_parse_verdict_sanitises_the_rationale",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_parse_verdict_sanitises_the_rationale",
+        "returncode": 1,
+        "seconds": 1.96,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_rationale_fence_markers_kept.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_rationale_fence_markers_kept.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_parse_verdict_sanitises_the_rationale",
+            "type": "",
+            "message_sha256": "09a08916e55f2a5a1f6b3df4c6ba4c4fd58a266d29b45e28b61c0ed6a3db7ba5"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 31,
+      "label": "judge_wants_unconfigured_guard_dropped",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_attached_but_unconfigured_judge_is_never_called",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_attached_but_unconfigured_judge_is_never_called",
+        "returncode": 1,
+        "seconds": 1.97,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_wants_unconfigured_guard_dropped.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_wants_unconfigured_guard_dropped.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_attached_but_unconfigured_judge_is_never_called",
+            "type": "",
+            "message_sha256": "03062605da5dbbc479f1495392f2b1a8c3765e2a73363513384b88b9bbae5b65"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 32,
+      "label": "judge_wants_skill_card_judged",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_a_skill_change_card_is_never_judged",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_a_skill_change_card_is_never_judged",
+        "returncode": 1,
+        "seconds": 1.98,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_wants_skill_card_judged.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_wants_skill_card_judged.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_a_skill_change_card_is_never_judged",
+            "type": "",
+            "message_sha256": "3dec94527bf2c64bc508f523f4f85c6662cc887bf45c4babb4f687da1696b6e2"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 33,
+      "label": "judge_wants_local_agent_sent_remote",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_a_remote_judge_never_sees_local_or_tainted_items",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_a_remote_judge_never_sees_local_or_tainted_items",
+        "returncode": 1,
+        "seconds": 2.03,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_wants_local_agent_sent_remote.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_wants_local_agent_sent_remote.xml",
+        "case_count": 3,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_a_remote_judge_never_sees_local_or_tainted_items[case-dd9242e84918e863]",
+            "type": "",
+            "message_sha256": "3dec94527bf2c64bc508f523f4f85c6662cc887bf45c4babb4f687da1696b6e2"
+          },
+          {
+            "case": "tests.test_h277_approval_judge::test_a_remote_judge_never_sees_local_or_tainted_items[case-cf6d07f6a2d6b0a8]",
+            "type": "",
+            "message_sha256": "3dec94527bf2c64bc508f523f4f85c6662cc887bf45c4babb4f687da1696b6e2"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 2,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 34,
+      "label": "judge_wants_tainted_sent_remote",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Round2 replaced shallow args taint with deep args taint; remove current equivalent gate.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_a_remote_judge_never_sees_local_or_tainted_items",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_a_remote_judge_never_sees_local_or_tainted_items",
+        "returncode": 1,
+        "seconds": 2.12,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_wants_tainted_sent_remote.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_wants_tainted_sent_remote.xml",
+        "case_count": 3,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_a_remote_judge_never_sees_local_or_tainted_items[case-7d090d3d6acab840]",
+            "type": "",
+            "message_sha256": "3dec94527bf2c64bc508f523f4f85c6662cc887bf45c4babb4f687da1696b6e2"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 35,
+      "label": "judge_selection_pin_check_inverted",
+      "file": "agents/core/autonomy/approval_judge.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Only score() entry guard is inverted; present code has three guard occurrences, so scope mutation to one unique score path.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_configured_judge_annotates_the_item_and_changes_nothing_else",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_configured_judge_annotates_the_item_and_changes_nothing_else",
+        "returncode": 1,
+        "seconds": 2.0,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/judge_selection_pin_check_inverted.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_selection_pin_check_inverted.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_configured_judge_annotates_the_item_and_changes_nothing_else",
+            "type": "",
+            "message_sha256": "4a8704a1bba87391035cc5c41bf78ac4f54dfb0db548dfa2bb7e47fe4d793d09"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 0,
+        "behavioral_failures": 1,
+        "classification": "killed_behavioral_exception"
+      },
+      "classification": "killed_behavioral_exception",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 36,
+      "label": "queue_annotate_after_decision",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "mapping_review": "Exact original late-annotation guard removal on current annotate() API; current production direct-call regression now exercises the decided-item path.",
+      "focused_target": "tests/test_h277_annotate_after_decision_regression.py::test_annotate_rejects_decided_item_even_without_active_judge",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_annotate_after_decision_regression.py::test_annotate_rejects_decided_item_even_without_active_judge",
+        "returncode": 1,
+        "seconds": 1.87,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/queue_annotate_after_decision.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_annotate_after_decision.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_annotate_after_decision_regression::test_annotate_rejects_decided_item_even_without_active_judge",
+            "type": "",
+            "message_sha256": "75ef7dfb59a5df3c150f6f720f981ebd6d38ceccf64bb2427e66b0ca41432ece"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 37,
+      "label": "queue_annotate_second_answer_overwrites",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_the_first_annotation_wins",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_the_first_annotation_wins",
+        "returncode": 1,
+        "seconds": 2.01,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/queue_annotate_second_answer_overwrites.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_annotate_second_answer_overwrites.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_the_first_annotation_wins",
+            "type": "",
+            "message_sha256": "f49d6459f5ef544e4e8760d9a0196bdc990dfc3ee8e8c5bef2e7eb6978359a4d"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 38,
+      "label": "queue_annotate_low_score_auto_approves",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_a_judge_that_says_approve_changes_nothing",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_a_judge_that_says_approve_changes_nothing",
+        "returncode": 1,
+        "seconds": 2.11,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/queue_annotate_low_score_auto_approves.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_annotate_low_score_auto_approves.xml",
+        "case_count": 3,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_a_judge_that_says_approve_changes_nothing[case-a40be927bb722b7b]",
+            "type": "",
+            "message_sha256": "cd33d2f470eb0bb4208b8a13cef3ea872dd6a4afa07a5f01e259663b222a68cd"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 39,
+      "label": "queue_snapshot_is_stored_item",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Runner moved to shared advisory_judgements; bypass normalization to alias live item.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_the_judge_never_holds_the_stored_args",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_the_judge_never_holds_the_stored_args",
+        "returncode": 1,
+        "seconds": 1.99,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/queue_snapshot_is_stored_item.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_snapshot_is_stored_item.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_the_judge_never_holds_the_stored_args",
+            "type": "",
+            "message_sha256": "ee80e2175b24204c36913d1b45f28e76b053ec325388dd41eea9504a03578a77"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 40,
+      "label": "queue_judge_inherits_caller_context",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Runner moved to shared advisory_judgements and gained attempt argument; pass caller context.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_the_judge_runs_outside_a_childs_selection_and_overrides",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_the_judge_runs_outside_a_childs_selection_and_overrides",
+        "returncode": 1,
+        "seconds": 2.01,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/queue_judge_inherits_caller_context.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_judge_inherits_caller_context.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_the_judge_runs_outside_a_childs_selection_and_overrides",
+            "type": "",
+            "message_sha256": "a81944fc53734baf31228862f44539372bd181bd9ab621211415dc5383b1bf4d"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 41,
+      "label": "queue_short_lived_loop_not_judged_on_hub",
+      "file": "agents/core/autonomy/advisory_judgements.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Runner moved to shared advisory_judgements; short-lived loop is used instead of hub loop.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop",
+        "returncode": 1,
+        "seconds": 1.98,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/queue_short_lived_loop_not_judged_on_hub.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_short_lived_loop_not_judged_on_hub.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop",
+            "type": "",
+            "message_sha256": "4190b77ab85463cf26bb692fa7230cdc63942cc72e63f019cbc8b25187a76939"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 42,
+      "label": "queue_decided_audit_drops_judge_identity",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Decision audit gained adjacent metadata; drop only judge identity field.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity",
+        "returncode": 1,
+        "seconds": 1.99,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/queue_decided_audit_drops_judge_identity.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_decided_audit_drops_judge_identity.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_audit_rows_carry_the_judge_identity",
+            "type": "",
+            "message_sha256": "62d52536bb6aa888074546a9435f06e8149720b276f83f0ad42fe05b8c7b22e1"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 43,
+      "label": "queue_judged_audit_drops_judge_identity",
+      "file": "agents/core/autonomy/action_approvals.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity",
+        "returncode": 1,
+        "seconds": 1.99,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/queue_judged_audit_drops_judge_identity.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_judged_audit_drops_judge_identity.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_audit_rows_carry_the_judge_identity",
+            "type": "",
+            "message_sha256": "62d52536bb6aa888074546a9435f06e8149720b276f83f0ad42fe05b8c7b22e1"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 44,
+      "label": "route_pending_drops_judge_key",
+      "file": "agents/core/routers/actions.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Pending route gained group projection; remove only judge key, retaining groups.",
+      "focused_target": "tests/test_h277_approval_judge.py::test_pending_route_carries_the_judge_status_and_no_secret",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_approval_judge.py::test_pending_route_carries_the_judge_status_and_no_secret",
+        "returncode": 1,
+        "seconds": 2.0,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/route_pending_drops_judge_key.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/route_pending_drops_judge_key.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_approval_judge::test_pending_route_carries_the_judge_status_and_no_secret",
+            "type": "",
+            "message_sha256": "4a8704a1bba87391035cc5c41bf78ac4f54dfb0db548dfa2bb7e47fe4d793d09"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 0,
+        "behavioral_failures": 1,
+        "classification": "killed_behavioral_exception"
+      },
+      "classification": "killed_behavioral_exception",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 45,
+      "label": "doctor_model_roles_attention_ignored",
+      "file": "scripts/doctor.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_a_bad_provider",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_a_bad_provider",
+        "returncode": 1,
+        "seconds": 1.92,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/doctor_model_roles_attention_ignored.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/doctor_model_roles_attention_ignored.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_doctor_model_roles_row_warns_on_a_bad_provider",
+            "type": "",
+            "message_sha256": "e2ee39efdec73760e463351dd166407614a4006f7d7ff48a6461ee6dac7045a4"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 46,
+      "label": "doctor_model_roles_ignored_not_flagged",
+      "file": "scripts/doctor.py",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_an_ignored_main_variable",
+      "syntax": "valid_ast",
+      "focused": {
+        "target": "tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_an_ignored_main_variable",
+        "returncode": 1,
+        "seconds": 1.96,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/doctor_model_roles_ignored_not_flagged.log",
+        "xml": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/doctor_model_roles_ignored_not_flagged.xml",
+        "case_count": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_model_roles::test_doctor_model_roles_row_warns_on_an_ignored_main_variable",
+            "type": "",
+            "message_sha256": "54411318cfda892752eda8b00b5e8758066495498b50337dcf5c9f01b301106d"
+          }
+        ],
+        "errors": [],
+        "assertion_failures": 1,
+        "behavioral_failures": 0,
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 47,
+      "label": "hud_opinion_shown_on_skill_card",
+      "file": "agents/web/static/tools.js",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Original fault anchor remains present with the same semantic change.",
+      "focused_target": "never shows an opinion line on a skill-change card",
+      "syntax": "valid_node_check",
+      "focused": {
+        "target": "never shows an opinion line on a skill-change card",
+        "returncode": 1,
+        "seconds": 1.06,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/hud_opinion_shown_on_skill_card.log",
+        "failures": [
+          "tests/frontend/tools.test.js > Action Approvals \u2014 model opinion (H277) > never shows an opinion line on a skill-change card"
+        ],
+        "summary": "1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af",
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 48,
+      "label": "hud_repoll_never_stops",
+      "file": "agents/web/static/tools.js",
+      "mapping_review": "Unique present anchor; original semantic fault retained. Round2 replaced poll-count cap with wall-clock deadlines; bypass final timer deadline guard.",
+      "focused_target": "does not poll when a throttled timer wakes after its hard deadline",
+      "syntax": "valid_node_check",
+      "focused": {
+        "target": "does not poll when a throttled timer wakes after its hard deadline",
+        "returncode": 1,
+        "seconds": 0.77,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/hud_repoll_never_stops.log",
+        "failures": [
+          "tests/frontend/tools.test.js > Action Approvals \u2014 model opinion (H277) > does not poll when a throttled timer wakes after its hard deadline"
+        ],
+        "summary": "1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af",
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    },
+    {
+      "index": 49,
+      "label": "hud_opinion_advisory_label_dropped",
+      "file": "agents/web/static/tools.js",
+      "mapping_review": "Unique present anchor; original semantic fault retained. HUD now uses typographic closing quote; remove the same advisory label.",
+      "focused_target": "shows the score as a labelled, advisory model opinion under the summary",
+      "syntax": "valid_node_check",
+      "focused": {
+        "target": "shows the score as a labelled, advisory model opinion under the summary",
+        "returncode": 1,
+        "seconds": 0.78,
+        "log": "/tmp/nerva-h277-prepared49-resume-current-20261005/logs/hud_opinion_advisory_label_dropped.log",
+        "failures": [
+          "tests/frontend/tools.test.js > Action Approvals \u2014 model opinion (H277) > shows the score as a labelled, advisory model opinion under the summary"
+        ],
+        "summary": "1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af",
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_inputs": 997,
+      "restoration_ok": true
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.620" timestamp="2026-10-04T23:54:40.541812+03:00" hostname="Macmini"><testcase classname="tests.test_h277_approval_judge" name="test_the_judge_never_holds_the_stored_args" time="1.116"><failure message="assert 'changed after request' not in '&lt;&lt;UNTRUSTED... UNTRUSTED&gt;&gt;'&#10;  &#10;  'changed after request' is contained here:&#10;    &quot;: {&quot;k&quot;: &quot;changed after request&quot;}}}&#10;    &lt;&lt;END UNTRUSTED&gt;&gt;">tests/test_h277_approval_judge.py:395: in test_the_judge_never_holds_the_stored_args
+    assert "changed after request" not in seen["prompt"]
+E   assert 'changed after request' not in '&lt;&lt;UNTRUSTED... UNTRUSTED&gt;&gt;'
+E     
+E     'changed after request' is contained here:
+E       ": {"k": "changed after request"}}}
+E       &lt;&lt;END UNTRUSTED&gt;&gt;</failure></testcase></testsuite></testsuites>

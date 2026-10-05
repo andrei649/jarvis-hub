@@ -1,0 +1,85 @@
+[
+  {
+    "id": "H063",
+    "paths": [
+      "docs/design/HUD_V2_REMAINING.md",
+      "mobile/PARITY.md"
+    ]
+  },
+  {
+    "id": "H075",
+    "paths": [
+      "agents/core/plugin_gate.py"
+    ]
+  },
+  {
+    "id": "H099",
+    "paths": [
+      "agents/core/plugin_gate.py"
+    ]
+  },
+  {
+    "id": "H277",
+    "paths": [
+      "agents/core/routers/multimodal.py"
+    ]
+  },
+  {
+    "id": "H285",
+    "paths": [
+      "agents/core/cloud_image_runtime.py"
+    ]
+  },
+  {
+    "id": "H513",
+    "paths": [
+      "agents/core/routers/multimodal.py"
+    ]
+  },
+  {
+    "id": "H515",
+    "paths": [
+      "agents/core/cloud_image_runtime.py",
+      "agents/core/routers/multimodal.py",
+      "agents/core/image_tool_dispatcher.py",
+      "agents/core/plugin_gate.py"
+    ]
+  },
+  {
+    "id": "H518",
+    "paths": [
+      "agents/core/cloud_image_runtime.py",
+      "agents/core/routers/multimodal.py"
+    ]
+  },
+  {
+    "id": "H523",
+    "paths": [
+      "agents/core/routers/multimodal.py"
+    ]
+  },
+  {
+    "id": "H581",
+    "paths": [
+      "agents/core/plugin_gate.py"
+    ]
+  },
+  {
+    "id": "H595",
+    "paths": [
+      "agents/core/plugin_gate.py"
+    ]
+  },
+  {
+    "id": "H598",
+    "paths": [
+      "agents/core/routers/multimodal.py"
+    ]
+  },
+  {
+    "id": "H660",
+    "paths": [
+      "agents/core/plugin_gate.py"
+    ]
+  }
+]

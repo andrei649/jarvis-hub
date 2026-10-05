@@ -505,6 +505,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Pending */
+        get: operations["list_pending_chat_pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat/pending/{prompt_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer Pending */
+        post: operations["answer_pending_chat_pending__prompt_id__answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/help/docs": {
         parameters: {
             query?: never;
@@ -5416,6 +5450,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/kanban/projects/command": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Project Command */
+        post: operations["project_command_api_kanban_projects_command_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/missions": {
         parameters: {
             query?: never;
@@ -9092,9 +9143,9 @@ export interface paths {
          * Media Generated Artifact
          * @description Read a generated PNG by opaque id; never accept a host path or backend URL.
          *
-         *     Shares one reader with the edit path (`comfyui.artifact_bytes`), so an artifact
-         *     is reachable as an edit's reference on exactly the terms it is downloadable —
-         *     there is no second, laxer resolution of an id anywhere in the hub.
+         *     Normal artifacts share the bounded edit reader. A completed Krea Enhance
+         *     execution may admit a 4K download through its private, exact-pixel proof;
+         *     that exception does not broaden generation or edit-reference limits.
          */
         get: operations["media_generated_artifact_api_media_generated__artifact_id__get"];
         put?: never;
@@ -12115,6 +12166,13 @@ export interface components {
             /** Height */
             height: number;
         };
+        /** ImageStyleReference */
+        ImageStyleReference: {
+            /** Url */
+            url: string;
+            /** Strength */
+            strength: number;
+        };
         /** ImageTaskView */
         ImageTaskView: {
             /** Task Id */
@@ -12125,6 +12183,16 @@ export interface components {
              */
             state: "awaiting_approval" | "queued" | "generating" | "ready" | "rejected" | "deferred" | "refused" | "uncertain";
             artifact?: components["schemas"]["ImageArtifactView"] | null;
+            /**
+             * Resume Available
+             * @default false
+             */
+            resume_available: boolean;
+            /**
+             * Enhance Available
+             * @default false
+             */
+            enhance_available: boolean;
         };
         /** ImportBoardBody */
         ImportBoardBody: {
@@ -12328,7 +12396,29 @@ export interface components {
             /** Size */
             size?: ("1024x1024" | "1536x1024" | "1024x1536") | null;
             /** Quality */
-            quality?: ("low" | "medium" | "high") | null;
+            quality?: ("auto" | "low" | "medium" | "high") | null;
+            /** Aspect Ratio Exact */
+            aspect_ratio_exact?: string | null;
+            /** Resolution */
+            resolution?: ("512" | "1K" | "2K" | "1k" | "2k") | null;
+            /** Background */
+            background?: ("auto" | "opaque" | "transparent") | null;
+            /** Output Compression */
+            output_compression?: number | null;
+            /** N */
+            n?: number | null;
+            /** Aspect Ratio */
+            aspect_ratio?: ("square" | "landscape" | "portrait") | null;
+            /** Creativity */
+            creativity?: ("raw" | "low" | "medium" | "high") | null;
+            /** Resume Task Id */
+            resume_task_id?: number | null;
+            /** Enhance Task Id */
+            enhance_task_id?: number | null;
+            /** Refresh Catalog */
+            refresh_catalog?: boolean | null;
+            /** Image Style References */
+            image_style_references?: (string | components["schemas"]["ImageStyleReference"])[] | null;
             /** Seed */
             seed?: number | null;
             /** Width */
@@ -12567,6 +12657,24 @@ export interface components {
              * @default
              */
             name: string;
+        };
+        /** PendingAnswer */
+        PendingAnswer: {
+            /**
+             * Answer
+             * @description Nonempty answer or up to four selected labels/numbers; 16384 characters total. Omit when cancelling.
+             */
+            answer?: string | string[] | null;
+            /**
+             * Other
+             * @default false
+             */
+            other: boolean;
+            /**
+             * Cancel
+             * @default false
+             */
+            cancel: boolean;
         };
         /** PlaybookBody */
         PlaybookBody: {
@@ -14042,6 +14150,74 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AppearancePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_pending_chat_pending_get: {
+        parameters: {
+            query?: {
+                session_id?: string | null;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_pending_chat_pending__prompt_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                prompt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PendingAnswer"];
             };
         };
         responses: {
@@ -22104,6 +22280,39 @@ export interface operations {
         };
     };
     command_api_kanban_command_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommandBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_command_api_kanban_projects_command_post: {
         parameters: {
             query?: never;
             header?: never;

@@ -42,6 +42,7 @@ class SchedulerService:
         self.schedule_daily_budget_reset()
         self.schedule_worldview_kg_sync()
         self.schedule_retention()
+        self.schedule_session_lifecycle()
         self.schedule_exec_cache_prune()
         self.schedule_memory_maintenance()
         self.schedule_tech_scout()
@@ -201,6 +202,34 @@ class SchedulerService:
                         "retention.min_interval_hours (no-op unless archiving or retention is on)")
         except Exception as e:
             logger.warning(f"Failed to schedule retention sweep: {e}")
+
+    def schedule_session_lifecycle(self):
+        """H063: index/reset maintenance and genuine-progress stall notices."""
+        sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
+        if sched is None:
+            return
+        sched.add_job(self.run_session_expiry, "interval", seconds=300,
+                      id="channel-session-expiry", replace_existing=True)
+        sched.add_job(self.run_session_stalls, "interval", seconds=30,
+                      id="channel-session-stalls", replace_existing=True)
+
+    async def run_session_expiry(self):
+        from .channels.session_lifecycle import lifecycle
+
+        try:
+            return await lifecycle(self._orch).expire()
+        except Exception:
+            logger.warning("Session route maintenance failed")
+            return {"_scheduler_status": "failed"}
+
+    async def run_session_stalls(self):
+        from .channels.session_lifecycle import lifecycle
+
+        try:
+            return {"notified": await lifecycle(self._orch).check_stalls()}
+        except Exception:
+            logger.warning("Session stall check failed")
+            return {"_scheduler_status": "failed"}
 
     def schedule_exec_cache_prune(self):
         """Hourly prune of the sandbox's managed run-directory cache (H667).

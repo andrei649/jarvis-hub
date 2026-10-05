@@ -1,0 +1,110 @@
+[
+  {
+    "path": "agents/core/channels/session.py",
+    "sha256": "fa40880ba66047ddab9f7bee9b06b92e70a56725e5cc4470a658bb8ac825a773"
+  },
+  {
+    "path": "agents/core/channels/session_reset.py",
+    "sha256": "99d1e0a6039519125b1ea9b9fa5d547707fbb8235b084d52be1ca85cd8d83692"
+  },
+  {
+    "path": "agents/core/channels/session_stall.py",
+    "sha256": "9eab44e1afa569bf8316ccb8e4f8d9983888c90eda1b4e0cdf6e797819cc4e88"
+  },
+  {
+    "path": "agents/core/channels/session_lifecycle.py",
+    "sha256": "53af443824bb5fbb333dc5c97821b8917d16573ae0b3a2ed315efdae08948dfd"
+  },
+  {
+    "path": "agents/core/channels/telegram.py",
+    "sha256": "bd4ab5b2a62fa5d47e5add22d01dcfe08bfc7c5ae14c5bd7a5148120edc25cdd"
+  },
+  {
+    "path": "agents/core/channels/discord.py",
+    "sha256": "112a30c6a152b7b1f1a3c5c947c75f0176491c9fe94f5930755fba030f603f56"
+  },
+  {
+    "path": "agents/core/orchestrator.py",
+    "sha256": "86c835d3ec4e8c36515e80325c55f356304a57a149ae90ebb03920e22c0ed051"
+  },
+  {
+    "path": "agents/core/agent.py",
+    "sha256": "7187d35f13259afcd01b6ccedbe4cf257844a380709f8eb7cbe3ba6958c7cc8f"
+  },
+  {
+    "path": "agents/core/agent_runtime.py",
+    "sha256": "8cb5280030c7915dfffdaff3ed3d5527136e15613df47463756390e8e029f804"
+  },
+  {
+    "path": "agents/core/scheduler_service.py",
+    "sha256": "9e7600822b5e6469cc60cc6ebd78e18055eb21c21c1f0deceb671db1408656fb"
+  },
+  {
+    "path": "agents/core/settings_db.py",
+    "sha256": "cb678830b11642c93328140f5e2d0c9b57d291c3ca610baee2240049538d64c2"
+  },
+  {
+    "path": "tests/test_session_lifecycle_integration.py",
+    "sha256": "51c7c4c09cd9ddadf9bb60c4a18cb12a6d09b6fe85fe4b28136ef2c23dddc962"
+  },
+  {
+    "path": "tests/test_session_reset_policy.py",
+    "sha256": "6c4203f382e40f1d72aa0402de8d66e5525e278b2bcde18e45f0e02cfb6eb4f8"
+  },
+  {
+    "path": "tests/test_stall_watcher.py",
+    "sha256": "6fa47a9aca3e64a8d4cc3c9edfc025d960016a8b8f9535ffe53c6c31d935dcbb"
+  },
+  {
+    "path": "tests/test_telegram_group_gate.py",
+    "sha256": "f3a83e850481240da1dda737b2c502c42a90dc904e0fd8130b144cf1e49034de"
+  },
+  {
+    "path": "tests/test_h117_message_batching.py",
+    "sha256": "86f5008f559a1ca6270e4897d6094062a4dc22117acd3cfb6cfa9f6e68549913"
+  },
+  {
+    "path": "docs/hermes/session-lifecycle-plan-2026-10-05.md",
+    "sha256": "f2e8e0d301e4a04c1cf5a10d3c530f0f07ca1958ad1fc638b66d76f32befef18"
+  },
+  {
+    "path": "docs/hermes/licenses/hermes-session-lifecycle-MIT.txt",
+    "sha256": "4e860a9d0fe81f04aca9abf3d06ce09325977d48b752f4abf0ea2b5c12612e8b"
+  },
+  {
+    "path": "agents/core/orchestrator_bindings.py",
+    "sha256": "9d4a54b537c4e454b468189a6fddc15b2e4fab8b738191bae2c596c26196a6eb"
+  },
+  {
+    "path": "tests/test_default_deny_front_door.py",
+    "sha256": "8849b32910f203043e98924fa1a91765797b7c6ca652906ff5526e3d15d3cec3"
+  },
+  {
+    "path": "tests/test_h490_safe_mode_posture.py",
+    "sha256": "36a19fe4c41b90bc5c285ff392a7a0133f4ec92165f3a3aeb39832165a1d9f5f"
+  },
+  {
+    "path": "tests/test_m12_origin_threading.py",
+    "sha256": "48b813eb7969c2dd43a9b1745248647f1420c8a11b2bd0da53a739fc7e5e66c5"
+  },
+  {
+    "path": "tests/test_turn_lease.py",
+    "sha256": "f5a2f9ce420ccda151c45759e5a99ecee9253711099e0f1af46f33c082cad10d"
+  },
+  {
+    "path": "tests/test_h487_native_runtime_human_wait.py",
+    "sha256": "b7e8eb6fac2e5f34be81379f2c501f5d52580709ee25404d86cbb97cc687d628"
+  },
+  {
+    "path": "docs/ARCHITECTURE.md",
+    "sha256": "53606eea188e84ce2ac5d5b6a63c3402dc9e789ebf59f5e2f3333167e365f6eb"
+  },
+  {
+    "path": "docs/design/HUD_V2_REMAINING.md",
+    "sha256": "1b3be9a99535c81492ce3ce56e8e0aafb7b846f7ea24e53090e7249a168c5c43"
+  },
+  {
+    "path": "mobile/PARITY.md",
+    "sha256": "24c7dde8255d3964f714791137438b1fbe39da03314c448e78e1af8b1db29383"
+  }
+]

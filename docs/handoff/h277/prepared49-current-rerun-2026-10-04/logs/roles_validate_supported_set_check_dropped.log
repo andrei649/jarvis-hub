@@ -1,0 +1,22 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/roles_validate_supported_set_check_dropped.xml", "tests/test_h277_model_roles.py::test_a_real_provider_the_vision_path_cannot_speak_is_unsupported"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_a_real_provider_the_vision_path_cannot_speak_is_unsupported _______
+tests/test_h277_model_roles.py:192: in test_a_real_provider_the_vision_path_cannot_speak_is_unsupported
+    model_roles.resolve("vision")
+agents/core/llm/model_roles.py:583: in resolve
+    return _resolve_vision(read, spec, env)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:423: in _resolve_vision
+    config = resolve_vlm_config(env=env)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/vlm.py:230: in resolve_vlm_config
+    backend, url, model, api_key, preset_name = model_roles.vision_env_view(env)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:269: in vision_env_view
+    backend = (_VISION_BACKEND_OF[_validate(spec, role_provider)] if role_provider
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'anthropic'
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_a_real_provider_the_vision_path_cannot_speak_is_unsupported
+1 failed in 1.43s

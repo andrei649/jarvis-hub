@@ -1,5 +1,60 @@
 # Handoff — H277 in progress on PR #1207 (2026-09-27)
 
+## Local H063 gateway milestone — 2026-10-05
+
+The [session lifecycle proof](../../hermes/evidence/2026-10-05-session-lifecycle/README.md)
+closes H063 locally: reset policies/triggers, generation-fenced routing-index
+expiry without deleting transcripts, real-progress stall notices, and forum-aware
+channel integration. Final backend: 23,680 passed, 34 ordinary skips and one
+existing xfail; serial frontend: 1,912 passed. Zero failures/errors and zero drift
+across 4,807 inputs at both terminals before final records. Both failed backend
+attempts and the credit-disabled assertion control are retained. The H487 test
+clock correction changes no production deadline or consent authority.
+
+Documented local code equivalence is now 125/697 (17.9%); the goal remains all697.
+H277 and other partial capabilities remain open. The original49 campaigns below
+retain their dated snapshots; this batch changed shared agent/channel sources and
+did not rerun that campaign. Recheck its source freshness before any new mutation
+acceptance claim. Next gateway audit is H067 pending-input interception. No
+stage, commit, push, merge, deployment or live provider/device acceptance.
+
+## Original49 after child resume integration — 2026-10-05
+
+The [new current-source rerun](prepared49-resume-current-2026-10-05/REPORT.md)
+detects all49 original prepared faults:43 assertion kills and6 test-body
+exception kills, with no survivors, setup errors, invalid cases or timeouts.
+Baseline and restored checks pass360 Python and40 legacy HUD tests. All997
+copied regular input hashes match after each fault and at the end, with no
+root-source drift. Mapping and runner sources, sanitized XML derivatives and
+their raw local hashes are included. Strict default-rule secret scanning passes.
+
+The [resume/recovery checkpoint](../../hermes/kanban-child-resume-recovery-plan-2026-10-05.md)
+adds separately approved continuations and conservative interruption recovery.
+The [new frozen full milestone](../../hermes/evidence/2026-10-05-kanban-resume-full/README.md)
+passes23,557 backend cases with34 ordinary skips and one existing xfail,
+zero failures/errors, then1,912/1,912 frontend tests. All4,684 source/test/metadata
+inputs match at both terminals. The older full proofs below retain their dated
+snapshots. H277 remains partial; no full functional, native, live-provider or
+publication acceptance is claimed.
+
+## Kanban child milestone and H277 freshness — 2026-10-05
+
+The [local milestone proof](../../hermes/evidence/2026-10-05-kanban-child-milestone/README.md) records a terminal full backend run (23,532 passes,34 skips,one expected xfail;zero failures/errors;4,200 inputs unchanged), drift-free prior full frontend1,912 passes, and current legacy HUD233 passes with coverage thresholds met. This verifies the current partial local integration; it does not close H277 or any remaining Kanban requirement.
+
+The original49 campaign below remains evidence for its2026-10-04 snapshot. The [exact freshness comparison](../../hermes/evidence/2026-10-05-kanban-child-milestone/h277-snapshot-drift.json) finds21 changed/missing inputs among993, including shared coordinator/queue/file/ToolRPC and rebuilt HUD paths. Do not present it as current-source mutation acceptance. Resume/crash recovery is still required, followed by a new coherent original49 rerun and full acceptance checks. No publication or live/provider activation occurred.
+
+
+## Full original49 current-snapshot rerun (2026-10-04)
+
+The [complete current rerun](prepared49-current-rerun-2026-10-04/REPORT.md)
+detects all49 original prepared faults:43 assertion kills and6 test-body
+exception kills, with no survivors, setup errors, invalid cases or timeouts.
+Baseline and post-restoration checks pass360 Python and40 HUD tests; all993
+current input hashes are restored after each case and at the end. This is a
+whole49 rerun using the accepted fault23 public-route regression, rather than
+the combined historical evidence below. H277 remains partial; the latest full
+backend still requires a new green milestone after compatibility corrections.
+
 
 ## Prepared49 current-source follow-up (2026-10-04)
 

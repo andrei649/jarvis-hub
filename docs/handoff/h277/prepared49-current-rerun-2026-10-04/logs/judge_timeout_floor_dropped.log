@@ -1,0 +1,14 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/judge_timeout_floor_dropped.xml", "tests/test_h277_approval_judge.py::test_the_default_timeout_is_bounded"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________________ test_the_default_timeout_is_bounded ______________________
+tests/test_h277_approval_judge.py:451: in test_the_default_timeout_is_bounded
+    assert aj.approval_judge_status(settings=settings_of()).timeout == 20.0
+E   AssertionError: assert 0.001 == 20.0
+E    +  where 0.001 = JudgeStatus(configured=True, reason='', provider='lm-studio', model='judge-m', base_url='http://localhost:1234', local=True, data_policy='local', timeout=0.001).timeout
+E    +    where JudgeStatus(configured=True, reason='', provider='lm-studio', model='judge-m', base_url='http://localhost:1234', local=True, data_policy='local', timeout=0.001) = <function approval_judge_status at 0x10717df80>(settings=<function settings_of.<locals>._get at 0x10a17c540>)
+E    +      where <function approval_judge_status at 0x10717df80> = aj.approval_judge_status
+E    +      and   <function settings_of.<locals>._get at 0x10a17c540> = settings_of()
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_the_default_timeout_is_bounded
+1 failed in 1.45s

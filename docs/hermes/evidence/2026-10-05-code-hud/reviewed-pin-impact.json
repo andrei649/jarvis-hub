@@ -1,0 +1,99 @@
+[
+  {
+    "id": "H063",
+    "paths": [
+      "docs/design/HUD_V2_REMAINING.md",
+      "mobile/PARITY.md"
+    ]
+  },
+  {
+    "id": "H129",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  },
+  {
+    "id": "H130",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  },
+  {
+    "id": "H135",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  },
+  {
+    "id": "H139",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  },
+  {
+    "id": "H146",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  },
+  {
+    "id": "H161",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  },
+  {
+    "id": "H209",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  },
+  {
+    "id": "H220",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  },
+  {
+    "id": "H309",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  },
+  {
+    "id": "H449",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  },
+  {
+    "id": "H522",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  },
+  {
+    "id": "H586",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  },
+  {
+    "id": "H595",
+    "paths": [
+      "docs/hermes/code-execution-guide.md"
+    ]
+  },
+  {
+    "id": "H660",
+    "paths": [
+      "docs/hermes/code-execution-guide.md"
+    ]
+  },
+  {
+    "id": "H674",
+    "paths": [
+      "frontend/src/app.tsx"
+    ]
+  }
+]

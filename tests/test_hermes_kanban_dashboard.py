@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from agents.core.kanban import dashboard_api
 from agents.core.kanban.context import KanbanContext, kanban_scope
 from agents.core.kanban.upstream import kanban_db as kb
+from agents.core.kanban.upstream import projects_db as pdb
 
 
 def _client(home: Path, *, board: str = "default", mutate: bool = True):
@@ -67,7 +68,7 @@ def test_upload_cap_and_forged_path_refused(tmp_path):
 def test_unbound_effects_and_scope(tmp_path):
     client = _client(tmp_path)
     task_id = client.post("/api/kanban/tasks", json={"title": "safe", "triage": True}).json()["task"]["id"]
-    assert client.post("/api/kanban/tasks", json={"title": "unsafe", "workspace_kind": "worktree"}).status_code == 503
+    assert client.post("/api/kanban/tasks", json={"title": "unsafe", "workspace_kind": "worktree"}).status_code == 400
     assert client.post("/api/kanban/tasks", json={"title": "goal", "goal_mode": True}).status_code == 503
     assert client.post(f"/api/kanban/tasks/{task_id}/specify", json={}).status_code == 503
     assert client.post(f"/api/kanban/tasks/{task_id}/reclaim", json={}).status_code == 503
@@ -154,3 +155,63 @@ def test_worker_scope_cannot_use_dashboard(tmp_path):
     client = TestClient(app)
     assert client.get("/api/kanban/board").status_code == 403
     assert client.post("/api/kanban/tasks", json={"title": "unauthorized"}).status_code == 403
+    assert client.get("/api/kanban/projects").status_code == 403
+
+
+def test_dashboard_projects_uses_live_store_and_keeps_homes_separate(tmp_path, monkeypatch):
+    root = tmp_path / "repos"
+    root.mkdir()
+    folder = root / "alpha"
+    folder.mkdir()
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(root))
+    home = tmp_path / "home"
+    with kanban_scope(KanbanContext(home=home, profile="owner", can_mutate=True)), pdb.connect_closing() as conn:
+        pid = pdb.create_project(conn, name="Alpha", folders=[str(folder)])
+        archived = pdb.create_project(conn, name="Archived")
+        pdb.archive_project(conn, archived)
+
+    client = _client(home, mutate=False)
+    response = client.get("/api/kanban/projects")
+    assert response.status_code == 200, response.text
+    rows = response.json()["projects"]
+    assert [row["id"] for row in rows] == [pid]
+    assert rows[0]["primary_path"] == str(folder)
+    assert rows[0]["folders"][0]["is_primary"] is True
+    with kanban_scope(KanbanContext(home=home, profile="owner", can_mutate=True)), pdb.connect_closing() as conn:
+        pdb.update_project(conn, pid, name="Renamed")
+    assert client.get("/api/kanban/projects").json()["projects"][0]["name"] == "Renamed"
+
+    other = tmp_path / "other-home"
+    response = _client(other, mutate=False).get("/api/kanban/projects")
+    assert response.status_code == 200, response.text
+    assert response.json() == {"projects": []}
+    assert not (other / "projects.db").exists()
+
+
+def test_dashboard_projects_rejects_revoked_roots_and_symlink_drift(tmp_path, monkeypatch):
+    root = tmp_path / "repos"
+    root.mkdir()
+    folder = root / "alpha"
+    folder.mkdir()
+    replacement = root / "replacement"
+    replacement.mkdir()
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(root))
+    home = tmp_path / "home"
+    with kanban_scope(KanbanContext(home=home, profile="owner", can_mutate=True)), pdb.connect_closing() as conn:
+        pdb.create_project(conn, name="Alpha", primary_path=str(folder))
+    client = _client(home)
+    folder.rmdir()
+    folder.symlink_to(replacement, target_is_directory=True)
+    response = client.get("/api/kanban/projects")
+    assert response.status_code == 403, response.text
+    folder.unlink()
+    folder.mkdir()
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(tmp_path / "revoked"))
+    response = client.get("/api/kanban/projects")
+    assert response.status_code == 403, response.text
+
+
+def test_dashboard_projects_requires_owner_request_scope(tmp_path):
+    app = FastAPI()
+    app.include_router(dashboard_api.router, prefix="/api/kanban")
+    assert TestClient(app).get("/api/kanban/projects").status_code == 403

@@ -1,0 +1,46 @@
+{
+  "strict_scan_paths": [
+    "agents/core/channels/pending_input_runtime.py",
+    "agents/core/routers/chat_pending.py",
+    "agents/web.py",
+    "tests/test_pending_input_http_poll.py",
+    "frontend/src/api/schema.gen.ts"
+  ],
+  "web_changed_functions": [
+    "chat"
+  ],
+  "source_entries": [
+    {
+      "path": "agents/core/channels/pending_input_runtime.py",
+      "sha256": "1e92b1e6c36a77726680d478343528b3701ba8e70d65e8b7c35fd5f43e787ba2"
+    },
+    {
+      "path": "agents/core/routers/chat_pending.py",
+      "sha256": "6e2656d47ec62c3d2bb8d25d472d89e54f090aa98ea38820d9e43c4c0e2e33d5"
+    },
+    {
+      "path": "agents/web.py",
+      "sha256": "b25a12175115026a3fb207abd10409deb7e586aa2fdeaa4e3d39b368a22d1cd9"
+    },
+    {
+      "path": "tests/test_pending_input_http_poll.py",
+      "sha256": "f5d1594eb01dbf3586406bafc6d8c7e3df5e48199e2562fea3a7d83d433cbdc1"
+    },
+    {
+      "path": "frontend/src/api/schema.gen.ts",
+      "sha256": "c443176c0d462290e5cc96642776c7bc5b02ebd90df781578e6f27ff8a703487"
+    },
+    {
+      "path": "tests/_snapshots/route_auth.json",
+      "sha256": "6491e304d297fb2ccd1db319971d6b5bd7a0a25ed87c50c2730703a7d02cfdd6"
+    },
+    {
+      "path": "tests/_snapshots/route_surface.json",
+      "sha256": "5b412dbc46218c33b7f7e1c8aee8688317c76c47089157586091c12c1eb86090"
+    },
+    {
+      "path": "tests/_snapshots/openapi_surface.json",
+      "sha256": "8e264e042168418b382c972f738e84f34b39f70d9eab3d8a2cf3f427b7363937"
+    }
+  ]
+}

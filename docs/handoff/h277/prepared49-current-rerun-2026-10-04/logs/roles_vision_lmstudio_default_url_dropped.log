@@ -1,0 +1,21 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/roles_vision_lmstudio_default_url_dropped.xml", "tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping"]
+..........F...F.                                                         [100%]
+=================================== FAILURES ===================================
+___ test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping[10] ___
+tests/test_h277_model_roles.py:102: in test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping
+    assert _outcome(lambda e: resolve_vlm_config(env=e), env) == _outcome(_old_resolve_vlm_config, env)
+E   AssertionError: assert ('ok', VLMCon...ng_effort='')) == ('ok', VLMCon...ng_effort=''))
+E     
+E     At index 1 diff: VLMConfig(backend='lmstudio', base_url='', model='qwen3-vl-8b', api_key='', is_local=False, preset='', convention='absolute', wire_mode='chat_completions', route_source='', prompt_cache_retention='in_memory', reasoning_effort='') != VLMConfig(backend='lmstudio', base_url='http://localhost:1234/v1', model='qwen3-vl-8b', api_key='', is_local=True, preset='', convention='absolute', wire_mode='chat_completions', route_source='', prompt_cache_retention='in_memory', reasoning_effort='')
+E     Use -v to get more diff
+___ test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping[14] ___
+tests/test_h277_model_roles.py:102: in test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping
+    assert _outcome(lambda e: resolve_vlm_config(env=e), env) == _outcome(_old_resolve_vlm_config, env)
+E   AssertionError: assert ('ok', VLMCon...ng_effort='')) == ('ok', VLMCon...ng_effort=''))
+E     
+E     At index 1 diff: VLMConfig(backend='lmstudio', base_url='', model='qwen/qwen3-vl-8b', api_key='', is_local=False, preset='qwen3-vl-8b', convention='relative_1000', wire_mode='chat_completions', route_source='', prompt_cache_retention='in_memory', reasoning_effort='') != VLMConfig(backend='lmstudio', base_url='http://localhost:1234/v1', model='qwen/qwen3-vl-8b', api_key='', is_local=True, preset='qwen3-vl-8b', convention='relative_1000', wire_mode='chat_completions', route_source='', prompt_cache_retention='in_memory', reasoning_effort='')
+E     Use -v to get more diff
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping[10]
+FAILED tests/test_h277_model_roles.py::test_legacy_vlm_env_resolves_byte_identically_through_an_env_mapping[14]
+2 failed, 14 passed in 1.42s

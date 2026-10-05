@@ -23,6 +23,11 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 Camera parity is read/search parity over the same bounded metadata API. Admin ONVIF onboarding is
 intentionally owner-HUD-only; native clients expose no discovery, frame, stream, or private URL.
 
+H063 gateway reset/index/stall policies are host/channel behavior, with no new
+mobile endpoint or lifecycle controls. Mobile HTTP chat keeps its existing
+lifecycle. Native configuration and device acceptance are not claimed by the
+gateway implementation.
+
 ## Parity matrix
 
 | Surface | API (agents/web.py) | Browser | Mobile | Task |
@@ -33,7 +38,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Chat history persistence | — (client-side) | ✅ | ✅ | H18.2 |
 | Agent selection | `GET /api/agents`, `agent` param | ✅ | ✅ | H18.3 |
 | Runtime Inspector (H227) | Existing admin inspector route | ✅ model/route resolution, unresolved/legacy/withheld states and fixed empty-turn limits | ⬜ dedicated native inspector; intentional owner administration gap | H18.26 / H227 |
-| Durable Kanban and approved workers (H075/H581, partial) | Owner `/kanban` and `nerva kanban`, scoped admin `/api/kanban` metadata/file APIs and authenticated board event WebSocket; signed dispatch, bounded parallel workers, cancellation and separately approved URL attachments; flags default off | 🟡 API/chat/CLI and existing approval queue; no board panel, stream consumer or attachment drawer | ⬜ native board/worker controls and attachments | H18.30 / H075 / H581 |
+| Durable Kanban and approved workers (H075/H581, partial) | Owner `/kanban` and `nerva kanban`, scoped admin `/api/kanban` board/task/file APIs and authenticated board event WebSocket; signed dispatch queue, bounded parallel workers, cancellation and separately approved URL attachments; flags default off | 🟡 ProjectsMode board and task drawer: board/task CRUD, bulk changes, comments, local attachment upload/download, project/profile/orchestration reads, explicit dispatch request, event refresh with reconnect and poll; existing approval queue. Advanced profile/orchestration/log/model/transfer and worker/recovery actions remain open; file-mutation callback prerequisite is not wired | ⬜ native board/worker controls and attachments | H18.30 / H075 / H581; no full Hermes parity or native acceptance claimed |
 | Markdown rendering | — (client-side) | ✅ | ✅ | H18.4 |
 | Status / telemetry | `GET /status` | ✅ | ✅ | H18.1 |
 | Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ✅ | H18.5 |
@@ -362,3 +367,45 @@ transient. Explicit standalone and auxiliary image descriptions still use the
 separate transient route. Native mobile has no image composer, reviewed
 destination flow, or equivalent history rendering. This gap remains under
 H18.10 pending a native client request; the web behavior is not native parity.
+# H595 code interruption checkpoint (2026-10-05)
+
+The existing authenticated chat endpoints accept a same-session new message while
+code runs and return the prior tool's interrupted result after teardown. No route
+or mobile schema was added. Native mobile producer/interaction acceptance is not
+verified in this batch. The responsive HUD now submits typed follow-ups during a text stream and keeps
+separate reply ownership and cancellation. This browser behavior does not
+establish native-mobile producer or interaction parity.
+
+
+## FAL image provider (2026-10-06)
+
+The existing authenticated media generation route and registered image tool now
+accept `cloud=true, backend=fal`. Generation and model-bounded edits from FAL
+media URLs produce the same opaque local artifacts after approval. Native mobile
+has no FAL configuration, model picker or reference URL entry UI; this backend
+addition does not establish native interaction parity.
+
+
+## OpenAI/Codex image providers (2026-10-06)
+
+The shared authenticated media API now supports approved OpenAI Image2 tiers and
+native Codex image generation/edit from saved artifact IDs. The desktop Images
+HUD selects OpenAI, Codex and FAL models/references. Native mobile has no equivalent
+provider/model/reference controls or managed Codex OAuth flow; these remain gaps.
+No mobile device or live subscription generation was validated.
+
+## Additional image providers and Krea continuation (2026-10-06)
+
+Krea Enhance now has an additive authenticated `enhance_task_id` operation and
+`enhance_available` task field. The responsive HUD proposes a separate 2x pass,
+keeps the original preview, displays the bound source in Decision Inbox and
+resumes interrupted Enhance jobs through a fresh GET approval. Validated 4K
+Enhance pixels have proof-bound download/gallery/export admission. Native mobile
+generation/gallery/Enhance producer parity and device acceptance remain open.
+
+The existing authenticated media API supports OpenRouter, Krea, xAI and dynamic
+DeepInfra catalogs through separate approved tasks. Krea recovery queues a fresh
+GET for an existing job; DeepInfra discovery queues a catalog GET before image
+generation becomes available. The responsive Images HUD exposes these controls.
+Native mobile has no equivalent provider/catalog/continuation interface. No
+native-device or live-provider acceptance is claimed.

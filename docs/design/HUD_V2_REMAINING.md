@@ -16,68 +16,76 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
+H063 (2026-10-05): channel reset/index/stall policies run on the host through
+existing settings and channel ingress. No dedicated lifecycle configuration panel
+was added. HUD/API chat paths retain their current lifecycle; gateway validation
+does not claim new browser or native controls, live adapter acceptance, or mobile
+device verification.
+
 H227 inspector (2026-10-04): the existing Inspector panel now shows the resolved
 model/route and distinguishes unresolved base, legacy and withheld previews.
 Refresh replaces stale route/prompt details. Its estimate is a fixed empty-turn
 preview; history, user input, tool schemas and active cache state are omitted.
 
-H075/H581 Kanban (2026-10-04, partial): the pinned durable SQLite state and local
+H075/H581 Kanban (2026-10-05, partial): the pinned durable SQLite state and local
 tool handlers are registered behind `llm.kanban` (default off) in the existing
 owner ToolRPC/chat path. The adapted Hermes CLI is available as `nerva kanban`
 and the typed owner `/kanban` command. The 46 donor HTTP method/path pairs and
 command endpoint are mounted under `/api/kanban` with admin authentication;
 the separate event WebSocket checks host, origin, current admin authority and
-board scope. CLI/API board selection is shared and persistent. There is no
-HUD board panel, task drawer, event-stream consumer or tenant UI yet.
+board scope. CLI/API board selection is shared and persistent. ProjectsMode now
+mounts a Kanban board and task drawer. The panel reads scoped board, project,
+profile and orchestration data; supports board/task CRUD, bulk task changes,
+comments, local attachment upload/download and an explicit dispatch request;
+it refreshes on the authenticated board event WebSocket, reconnects and polls.
+There is no tenant configuration UI yet.
 Approved worker intake is available through the existing admin API
 and coordinator with a separate default-off dispatch flag; approvals use the
 existing inbox. The coordinator runs approved workers concurrently within total
 and per-agent caps. Explicit owner chat dispatch uses the same signed queue;
 the ordinary inbound model-tool restriction is unchanged.
-Dedicated board/worker controls remain required Hermes work;
-the library/tool port alone does not close those rows. Workspace/project, goal
-judging adapters refuse explicitly until integrated. URL attachments now propose
+Advanced worker controls remain required Hermes work. Owner project CRUD is now
+reachable through `nerva project`, typed `/project` and its authenticated command
+transport; the project inventory reads the real scoped store. Workspace proposals
+bind board/project/owner roots before approval, and registered file reads and
+project conventions use the claimed worker's isolated workspace. Registered file
+mutations and local-host terminal commands now create independent signed child
+approvals and atomically park the parent as `needs_input`. Execution opens a fresh
+scope at the persisted cwd, checks the exact source run and directory identity,
+and refuses revoked roots or board inputs. Cleanup preserves active child approvals.
+Automatic governed resume, crash reconciliation of incomplete intake, scoped remote
+terminal targets and goal judging remain unfinished integration. URL attachments now propose
 separate signed egress approvals behind `llm.kanban_network_attachments`; each
 redirect requires another approval. The chat tool uses the existing Decision
-Inbox, but the dedicated attachment drawer and board controls remain absent.
+Inbox. The drawer handles local files; URL attachment review and advanced
+worker/recovery actions are still missing from it. Profile editing,
+orchestration settings, model selection, run inspection/termination and native
+board/worker controls remain open. This is not full Hermes parity.
 
 Kanban client route gaps: the following server contracts still need their
-HUD/native consumers. Host CLI/chat and API bindings above are local progress;
+HUD consumers. Native Kanban controls remain open even for the routes consumed
+by the browser. Host CLI/chat and API bindings above are local progress;
 registered but unbound effects retain explicit failures until their adapters land.
 
 - `/api/kanban/assignees`
-- `/api/kanban/attachments/{attachment_id}`
-- `/api/kanban/board`
-- `/api/kanban/boards`
 - `/api/kanban/boards/import`
-- `/api/kanban/boards/{slug}`
 - `/api/kanban/boards/{slug}/export`
 - `/api/kanban/boards/{slug}/switch`
 - `/api/kanban/config`
 - `/api/kanban/diagnostics`
-- `/api/kanban/dispatch`
 - `/api/kanban/estimate`
 - `/api/kanban/home-channels`
 - `/api/kanban/links`
 - `/api/kanban/model-options`
-- `/api/kanban/orchestration`
-- `/api/kanban/profiles`
 - `/api/kanban/profiles/{profile_name}`
 - `/api/kanban/profiles/{profile_name}/describe-auto`
-- `/api/kanban/projects`
 - `/api/kanban/runs/{run_id}`
 - `/api/kanban/runs/{run_id}/inspect`
 - `/api/kanban/runs/{run_id}/terminate`
 - `/api/kanban/stats`
-- `/api/kanban/tasks`
-- `/api/kanban/tasks/bulk`
-- `/api/kanban/tasks/{task_id}`
-- `/api/kanban/tasks/{task_id}/attachments`
-- `/api/kanban/tasks/{task_id}/comments`
 - `/api/kanban/tasks/{task_id}/decompose`
 - `/api/kanban/tasks/{task_id}/estimate`
 - `/api/kanban/tasks/{task_id}/home-subscribe/{platform}`
-- `/api/kanban/tasks/{task_id}/log`
 - `/api/kanban/tasks/{task_id}/reassign`
 - `/api/kanban/tasks/{task_id}/reclaim`
 - `/api/kanban/tasks/{task_id}/specify`
@@ -555,3 +563,71 @@ physical destination guard. The HUD restores the answer from `GET /memory`
 using bounded image provenance. Standalone and auxiliary image descriptions
 remain transient; native mobile image intake and live-provider acceptance are
 still open.
+
+H067 HUD stream continuation (2026-10-05): the actual /chat/stream emits live
+clarification questions. The HUD offers choices, multiple selection, Other,
+free text and cancellation, using the guarded /chat/pending/{prompt_id}/answer
+route to resume the same model call. Only the original currently authorized
+credential/role can answer; disconnect, expiry or credential revocation retire
+the wait. Enable the existing Chat clarification preview and restart to use it.
+Question delivery is acknowledged by the SSE generator before human-wait credit.
+Rejected or failed answers remain visible for retry. Stop cancels the stream.
+This closes the streaming HUD producer slice only; nonstream HTTP, email, CLI
+and busy prose/other commands remain open under partial H067.
+
+H067 nonstream HTTP continuation (2026-10-05): /chat uses the same authenticated
+pending runtime. Concurrent GET /chat/pending (optional session_id, bounded
+offset/limit) returns only the caller's live questions; the existing answer route
+continues the original request. Delivery acknowledgement follows the discovery
+response body, so failed sends cannot permit answers or human-wait credit.
+The responsive HUD continues to use SSE. Native mobile has no pending question
+picker/poller or answer UI; this API addition does not establish mobile parity.
+CLI/email producers and busy prose/other commands remain open under partial H067.
+
+Final inventory assessment (2026-10-05): H067's canonical gateway contract is
+accepted as equivalent. The HTTP/HUD adapters above remain implemented. CLI,
+email and ordinary busy-message improvements belong to their own contracts;
+they were mistakenly treated as additional H067 gates in earlier checkpoints.
+Native mobile interaction and full697/live acceptance remain open separately.
+
+H660 resident execution continuation (2026-10-05): once code execution is enabled
+and a pinned isolated image is configured, the existing kernel panel reports the
+resident mode without a second opt-in. Explicit sessions=false remains an owner
+override. Code cells and model-requested reset require an explicit GRANT; policy
+is rechecked after the interpreter lock. No HUD/API schema or native-mobile
+control is added. SSH/Modal/remote TLS and full integrated acceptance remain open.
+# H595 new-message interruption — 2026-10-05
+
+Backend HTTP/SSE and admitted channel routing now interrupt same-session code and
+preserve bounded partial output/count/duration after teardown. The responsive HUD now sends intentional typed follow-ups during a text stream.
+Each stream owns its reply bubble, controller and completion; Stop/unmount abort
+and settle all pending streams. Pending answers retain their original controller,
+and delayed callbacks cannot overwrite another reply. Vision remains exclusive
+and voice does not open overlapping voice requests.
+No new endpoint or fresh Docker/native-mobile acceptance is claimed here.
+
+
+## FAL image provider (2026-10-06)
+
+The registered image tool and media API dispatch approved FAL generation/edits
+through the common worker. `/api/media` returns unprobed FAL configuration and
+catalog IDs. The Images HUD now offers FAL, OpenAI and Codex provider/model
+selection with capability-based reference entry, size and legacy OpenAI quality.
+Decision Inbox cards show the actual provider and edit references; lost provider
+metadata blocks a proposal instead of falling back to another provider.
+Local artifact-reference upload to FAL, Clarity and managed OAuth setup remain open.
+See `docs/hermes/openai-codex-image-guide.md`; no live provider acceptance is claimed.
+
+## Image provider continuation (2026-10-06)
+
+Images now offers OpenRouter, Krea, xAI and DeepInfra with explicit model controls
+and provider-specific options. A saved inactive Krea job can queue a fresh GET
+approval without another generation POST. DeepInfra's catalog refresh is an
+approved GET with a local cache; it is not watched as an image task. Decision
+Inbox shows the fixed endpoint, selected model or catalog operation, and immutable
+Krea source job. Pending or rejected continuations cannot inherit ready artifacts.
+See `docs/hermes/openrouter-krea-image-guide.md`. Explicit Krea Enhance is now
+connected through a separate immutable source approval, 4K pixel/proof-bound
+download/gallery/export and GET-only job continuation; original preview cleanup
+and ambiguous submission are covered locally. Other donor
+catalogs, FAL upload/Clarity, managed OAuth and native/mobile acceptance remain open.

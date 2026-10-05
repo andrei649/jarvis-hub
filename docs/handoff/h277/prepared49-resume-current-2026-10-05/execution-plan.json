@@ -1,0 +1,44 @@
+{
+  "goal": "Refresh all49 original H277 handoff faults against current exact dirty snapshot; retain original697 full objective.",
+  "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "baseline_py_command": [
+    "/tmp/nerva-pr-python-20261001/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-p",
+    "no:cacheprovider",
+    "--tb=short",
+    "--junitxml=/tmp/nerva-h277-prepared49-resume-current-20261005/baseline.xml",
+    "tests/test_action_approvals_persist.py",
+    "tests/test_doctor.py",
+    "tests/test_h277_annotate_after_decision_regression.py",
+    "tests/test_h277_approval_judge.py",
+    "tests/test_h277_model_roles.py",
+    "tests/test_llm_model_config.py",
+    "tests/test_model_config.py"
+  ],
+  "baseline_js_command": [
+    "/Users/andrei649/.local/bin/node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "tests/frontend/tools.test.js",
+    "--reporter=json",
+    "--outputFile=/tmp/nerva-h277-prepared49-resume-current-20261005/baseline-hud.json"
+  ],
+  "run_command": [
+    "/tmp/nerva-pr-python-20261001/bin/python",
+    "/tmp/nerva-h277-prepared49-resume-current-20261005/run_mutants.py"
+  ],
+  "cwd": "/tmp/nerva-h277-prepared49-resume-current-20261005/snapshot",
+  "environment": {
+    "JARVIS_TESTING": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONPATH": "/tmp/nerva-h277-prepared49-resume-current-20261005/snapshot",
+    "TMPDIR": "/tmp/nerva-h277-prepared49-resume-current-20261005/tmp",
+    "VITE_CONFIG_NATIVE_IGNORE_WARNING": "true"
+  },
+  "next_action": "Run original49 in disposable current-source copy, baseline first and restore/rehash after every fault; full backend runs serially afterward. Never restart a live handle solely on observation timeout.",
+  "mutation_equivalence": "Same original49 file/a/b semantic faults; only fault23 selected test changed to accepted public-route witness.",
+  "restoration": "All 997 copied inputs restored after each fault; source and snapshot hashes compared before and after."
+}

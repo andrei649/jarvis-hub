@@ -14,7 +14,7 @@ import sqlite3
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, suppress
 from contextvars import copy_context
 from dataclasses import asdict
 from email import policy
@@ -28,11 +28,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agents.core.app_state import get_orch
 from agents.core.commands import Principal
+from agents.core.file_tools import FileScope, FileScopeError
 
+from . import projects
 from .cli_upstream.board_selection import select_board
 from .context import require_context, require_mutation
+from .task_creation import create_task as create_scoped_task
 from .upstream import kanban_db as kb
 from .upstream import kanban_diagnostics as kd
+from .workspaces import _git_root
 
 router = APIRouter()
 COLUMNS = ("triage", "todo", "scheduled", "ready", "running", "blocked", "review", "done")
@@ -284,16 +288,12 @@ class CreateTaskBody(StrictBody):
 @router.post("/tasks")
 def create_task(payload: CreateTaskBody, board: str | None = None):
     context = _scope(mutate=True)
-    if payload.workspace_kind not in (None, "scratch") or payload.workspace_path or payload.project_id:
-        _unavailable("workspace/project creation")
     if payload.goal_mode or payload.goal_max_turns is not None:
         _unavailable("goal judging")
     with _conn(board, mutate=True) as (slug, conn):
-        if kb.read_board_metadata(slug).get("project_id"):
-            _unavailable("project-scoped creation")
         try:
-            task_id = kb.create_task(conn, created_by=context.profile, session_id=context.session_id,
-                                     board=slug, **payload.model_dump())
+            task_id = create_scoped_task(conn, created_by=context.profile, session_id=context.session_id,
+                                         board=slug, **payload.model_dump())
         except ValueError as exc:
             raise _error(400, str(exc)) from exc
         task = kb.get_task(conn, task_id)
@@ -651,6 +651,66 @@ def _board_counts(slug: str):
         return {r["status"]: r["n"] for r in conn.execute("SELECT status, COUNT(*) n FROM tasks GROUP BY status")}
 
 
+def _board_workspace_path(raw: str) -> str:
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError("board workdir requires an absolute directory")
+    path = FileScope.from_env().resolve(str(candidate))
+    if not path.is_dir():
+        raise ValueError("board workdir must be an existing directory")
+    return str(path)
+
+
+def _annotate_board(meta: dict) -> dict:
+    """Project/workspace projection uses the same current roots as task creation."""
+    try:
+        primary = None
+        project_name = None
+        if meta.get("project_id"):
+            # An unavailable legacy link remains visible; task creation still
+            # refuses it rather than silently choosing another project.
+            with suppress(ValueError):
+                _, project_name, primary = projects.resolve_project(meta["project_id"])
+        workdir = meta.get("default_workdir") or primary
+        kind = "scratch"
+        if workdir:
+            path = Path(_board_workspace_path(str(workdir)))
+            kind = "worktree" if _git_root(FileScope.from_env(), path) else "dir"
+        return {**meta, "default_workspace_kind": kind, "project_name": project_name}
+    except (FileScopeError, PermissionError) as exc:
+        raise _error(403, str(exc)) from exc
+    except (ValueError, OSError) as exc:
+        raise _error(400, str(exc)) from exc
+
+
+def _board_workspace_updates(payload, current: dict) -> dict:
+    """Validate the complete prospective metadata before any board write."""
+    changes = {}
+    try:
+        if "project_id" in payload.model_fields_set:
+            requested = (payload.project_id or "").strip()
+            project_id, _, primary = projects.resolve_project(requested)
+            changes["project_id"] = project_id or ""
+            if "default_workdir" not in payload.model_fields_set:
+                old_primary = None
+                if current.get("project_id"):
+                    with suppress(ValueError):
+                        _, _, old_primary = projects.resolve_project(current["project_id"])
+                previous = current.get("default_workdir")
+                if not previous or previous == old_primary:
+                    changes["default_workdir"] = primary or ""
+        if "default_workdir" in payload.model_fields_set:
+            raw = (payload.default_workdir or "").strip()
+            changes["default_workdir"] = _board_workspace_path(raw) if raw else ""
+        prospective = {**current, **{k: v or None for k, v in changes.items()}}
+        _annotate_board(prospective)
+        return changes
+    except (FileScopeError, PermissionError) as exc:
+        raise _error(403, str(exc)) from exc
+    except ValueError as exc:
+        raise _error(400, str(exc)) from exc
+
+
 @router.get("/boards")
 def list_boards(include_archived: bool = False):
     _scope()
@@ -659,38 +719,35 @@ def list_boards(include_archived: bool = False):
         slug = _managed_board(meta["slug"])
         counts = _board_counts(slug)
         meta.update(is_current=(slug == _board(None)), counts=counts,
-                    total=sum(n for status, n in counts.items() if status != "archived"),
-                    default_workspace_kind="scratch", project_name=None)
-        boards.append(meta)
+                    total=sum(n for status, n in counts.items() if status != "archived"))
+        boards.append(_annotate_board(meta))
     return {"boards": boards, "current": _board(None)}
 
 
 @router.post("/boards")
 def create_board(payload: CreateBoardBody):
     _scope(mutate=True)
-    if payload.default_workdir or payload.project_id:
-        _unavailable("workspace/project board metadata")
     slug = _managed_board(payload.slug)
+    updates = _board_workspace_updates(payload, kb.read_board_metadata(slug))
     try:
         meta = kb.create_board(slug, name=payload.name, description=payload.description,
-                               icon=payload.icon, color=payload.color)
+                               icon=payload.icon, color=payload.color, **updates)
     except ValueError as exc:
         raise _error(400, str(exc)) from exc
     if payload.switch:
         select_board(slug)
-    return {"board": {**meta, "default_workspace_kind": "scratch", "project_name": None},
+    return {"board": _annotate_board(meta),
             "current": slug if payload.switch else _board(None)}
 
 
 @router.patch("/boards/{slug}")
 def rename_board(slug: str, payload: RenameBoardBody):
     _scope(mutate=True)
-    if payload.default_workdir is not None or payload.project_id is not None:
-        _unavailable("workspace/project board metadata")
     slug = _board(slug)
+    updates = _board_workspace_updates(payload, kb.read_board_metadata(slug))
     meta = kb.write_board_metadata(slug, name=payload.name, description=payload.description,
-                                   icon=payload.icon, color=payload.color)
-    return {"board": {**meta, "default_workspace_kind": "scratch", "project_name": None}}
+                                   icon=payload.icon, color=payload.color, **updates)
+    return {"board": _annotate_board(meta)}
 
 
 @router.delete("/boards/{slug}")
@@ -802,7 +859,10 @@ def model_options():
 @router.get("/projects")
 def list_projects():
     _scope()
-    _unavailable("project inventory")
+    try:
+        return {"projects": projects.list_projects()}
+    except PermissionError as exc:
+        raise _error(403, str(exc)) from exc
 
 
 @router.get("/home-channels")

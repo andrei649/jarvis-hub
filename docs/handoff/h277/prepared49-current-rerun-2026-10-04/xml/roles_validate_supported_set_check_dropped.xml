@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.434" timestamp="2026-10-04T23:53:32.593486+03:00" hostname="Macmini"><testcase classname="tests.test_h277_model_roles" name="test_a_real_provider_the_vision_path_cannot_speak_is_unsupported" time="1.183"><failure message="KeyError: 'anthropic'">tests/test_h277_model_roles.py:192: in test_a_real_provider_the_vision_path_cannot_speak_is_unsupported
+    model_roles.resolve("vision")
+agents/core/llm/model_roles.py:583: in resolve
+    return _resolve_vision(read, spec, env)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:423: in _resolve_vision
+    config = resolve_vlm_config(env=env)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/vlm.py:230: in resolve_vlm_config
+    backend, url, model, api_key, preset_name = model_roles.vision_env_view(env)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:269: in vision_env_view
+    backend = (_VISION_BACKEND_OF[_validate(spec, role_provider)] if role_provider
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'anthropic'</failure></testcase></testsuite></testsuites>

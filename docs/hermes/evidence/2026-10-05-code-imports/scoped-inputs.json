@@ -1,0 +1,56 @@
+{
+  "source_hashes": {
+    "agents/core/code_tools.py": "c805f221ab2934f7fd842b698cedb5b47530f15628903c5fa3cbe0fab2403906",
+    "agents/core/session_kernels.py": "bde6dcf03ffad134799ec29204a5806dd96205117b097e36aaa7f0ffbabbe45c",
+    "agents/core/tool_rpc_runtime.py": "394cc1aca8351e6c075c65657bfa087b20237740bc94ded5ad168683fb1e76c1",
+    "agents/core/tool_rpc_stubs.py": "49b02f5a264b2569048b425b9ed539c5add06e31ecbbb0c2539641aa4563ffe8",
+    "tests/test_h595_import_lifecycle.py": "8b2d7ed03215b8a4fd5a27ace6a3140c6034ba18f2ee27f6d912bcbc5f46a083",
+    "docs/hermes/h595-import-lifecycle-plan-2026-10-05.md": "64d574ab75a2f804d361842152b0b08ceed215c0f5452aa8f4f9f51c9fc021da",
+    "docs/hermes/code-execution-guide.md": "30ab67dc19364efddd73cede790ab13a2d8f6ed6667fcdb40ba1022616a8cf8e",
+    "docs/hermes/licenses/hermes-code-execution-MIT.txt": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6"
+  },
+  "ast_impact": {
+    "agents/core/code_tools.py": {
+      "changed": [
+        "CodeExecutionTool._session_cell"
+      ],
+      "added": []
+    },
+    "agents/core/session_kernels.py": {
+      "changed": [
+        "SessionKernelManager.run"
+      ],
+      "added": []
+    },
+    "agents/core/tool_rpc_runtime.py": {
+      "changed": [
+        "ToolRPCSandboxRuntime.run_python"
+      ],
+      "added": []
+    }
+  },
+  "strict_scan_paths": [
+    "agents/core/code_tools.py",
+    "agents/core/session_kernels.py",
+    "agents/core/tool_rpc_runtime.py",
+    "agents/core/tool_rpc_stubs.py",
+    "tests/test_h595_import_lifecycle.py",
+    "docs/hermes/h595-import-lifecycle-plan-2026-10-05.md",
+    "docs/hermes/code-execution-guide.md",
+    "docs/hermes/licenses/hermes-code-execution-MIT.txt"
+  ],
+  "existing_tests_changed": false,
+  "module_contracts_changed": {
+    "agents/core/code_tools.py": [
+      "DESCRIPTION advertises imported tools"
+    ],
+    "agents/core/tool_rpc_stubs.py": [
+      "new donor-style schema stub generator; no new authority or transport"
+    ]
+  },
+  "preimage_source_hashes": {
+    "agents/core/session_kernels.py": "7fe339082403730a777733a2bee95fb492eff1f70f15e5c58d910b79e5a9c22e",
+    "agents/core/code_tools.py": "b45d41d76b282080e0604876da7ec40da4844cee5088fe8a798207f0c61bd798",
+    "agents/core/tool_rpc_runtime.py": "652ee5d6bfaa2331b7fd3d3db0a2fd9c2e8f83190ba26ccbc4e9e4bbd1ab9feb"
+  }
+}

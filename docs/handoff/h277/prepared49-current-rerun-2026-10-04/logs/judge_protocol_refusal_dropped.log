@@ -1,0 +1,10 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/judge_protocol_refusal_dropped.xml", "tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off"]
+........F                                                                [100%]
+=================================== FAILURES ===================================
+____ test_egress_rules_keep_the_judge_off[protocol-judge_protocol_refused] _____
+tests/test_h277_approval_judge.py:564: in test_egress_rules_keep_the_judge_off
+    assert status["configured"] is False and status["reason"] == reason
+E   assert (True is False)
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_egress_rules_keep_the_judge_off[protocol-judge_protocol_refused]
+1 failed, 8 passed in 1.55s

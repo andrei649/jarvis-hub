@@ -1,0 +1,86 @@
+{
+  "source_hashes": {
+    "agents/core/code_tools.py": "b45d41d76b282080e0604876da7ec40da4844cee5088fe8a798207f0c61bd798",
+    "agents/core/session_kernels.py": "7fe339082403730a777733a2bee95fb492eff1f70f15e5c58d910b79e5a9c22e",
+    "agents/core/autonomy_coordinator.py": "076fbf0367c56b72ff5886202bc7f886af2fe8c1d47999875e3f03000a7697b2",
+    "agents/core/routers/skills.py": "4abb3392bf00c532c6d77e2a5c0428ea5b20f83a7e5d4e726f04817f30680910",
+    "tests/test_code_tools.py": "72029fb7ca55b632fa49312552b39fd8fe36af60e0ead7eb6a266bbbae134ddc",
+    "tests/test_session_kernel_routes.py": "56df1fca024e2f61dd95c5a312e88f8689592ae5ca5e942dbf113d9f93b8504a",
+    "tests/test_h660_cell_grants.py": "1e8a02b4bdadc9009cc5b92179aeb2a2185c82ffe847abb1736ca03bcaa77369",
+    "tests/test_h660_default_sessions.py": "17ccf4f29337c8091ff900871c7857bc898d5a274fe8c63b5cd32a0768fc6981",
+    "tests/test_h315c_todo_review.py": "18f2b205123371d203b6d79b63bc570637f15936100a23e8a6a95bbc136aa75e",
+    "tests/test_h315d_todo_review.py": "6756c2ce7c40a61d4344ee9be9c197c510a69b8a2b5baca5853c5e6fb00001f1",
+    "docs/FLAGS.md": "c70472640aef4a6abaf517c9c2dbae558d63c5c7622955cca0a65ac833e5088c",
+    "docs/design/HUD_V2_REMAINING.md": "5f505d8b43086de63a71e002caf88b0f1806df116013d7342758b0661fdeebb7",
+    "docs/hermes/h660-cell-grants-plan-2026-10-05.md": "e53474c194610ebc6ace64cc131bcbd1d1b44f5d07adbfae6326d67d47966f17"
+  },
+  "strict_scan_paths": [
+    "agents/core/code_tools.py",
+    "agents/core/session_kernels.py",
+    "agents/core/autonomy_coordinator.py",
+    "agents/core/routers/skills.py",
+    "tests/test_code_tools.py",
+    "tests/test_session_kernel_routes.py",
+    "tests/test_h660_cell_grants.py",
+    "tests/test_h660_default_sessions.py",
+    "tests/test_h315c_todo_review.py",
+    "tests/test_h315d_todo_review.py"
+  ],
+  "ast_impact": {
+    "agents/core/code_tools.py": {
+      "changed": [
+        "CodeExecutionTool.sessions_on",
+        "CodeExecutionTool._session_cell",
+        "CodeExecutionTool._authorize_fallback",
+        "CodeExecutionTool._authorize_cell"
+      ],
+      "added": []
+    },
+    "agents/core/session_kernels.py": {
+      "changed": [
+        "SessionKernelManager.run"
+      ],
+      "added": [
+        "SessionKernelManager._authorization_refusal"
+      ]
+    },
+    "agents/core/autonomy_coordinator.py": {
+      "changed": [
+        "AutonomyCoordinator._session_kernels"
+      ],
+      "added": []
+    },
+    "agents/core/routers/skills.py": {
+      "changed": [
+        "_kernel_mode"
+      ],
+      "added": []
+    },
+    "tests/test_code_tools.py": {
+      "changed": [
+        "_session_tool"
+      ],
+      "added": []
+    },
+    "tests/test_session_kernel_routes.py": {
+      "changed": [
+        "test_the_mode_names_the_switch_to_change_not_the_symptom",
+        "test_reset_with_sessions_off_names_the_switch_rather_than_claiming_success"
+      ],
+      "added": []
+    },
+    "tests/test_h315c_todo_review.py": {
+      "changed": [
+        "_kernel_tool"
+      ],
+      "added": []
+    },
+    "tests/test_h315d_todo_review.py": {
+      "changed": [
+        "_k2"
+      ],
+      "added": []
+    }
+  },
+  "existing_test_assertions": "byte-equivalent AST; fixture grants/explicit opt-out only"
+}

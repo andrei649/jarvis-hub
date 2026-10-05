@@ -1,0 +1,562 @@
+[
+  {
+    "id": "H011",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H011",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H060",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H060",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H061",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H061",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H063",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": true
+  },
+  {
+    "id": "H063",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": true
+  },
+  {
+    "id": "H068",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H068",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H071",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H075",
+    "path": "agents/web.py",
+    "preimage_match": true
+  },
+  {
+    "id": "H075",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H099",
+    "path": "agents/core/channels/gateway.py",
+    "preimage_match": true
+  },
+  {
+    "id": "H099",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": true
+  },
+  {
+    "id": "H099",
+    "path": "agents/web.py",
+    "preimage_match": true
+  },
+  {
+    "id": "H104",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H104",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H108",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H114",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H117",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H117",
+    "path": "agents/core/channels/gateway.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H130",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H135",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H139",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H146",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H146",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H153",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H161",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H165",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H182",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H182",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H220",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H227",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H262",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H273",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H275",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H277",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H277",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H283",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H285",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H298",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H315",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H326",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H328",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H329",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H358",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H363",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H364",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H364",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H388",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H388",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H396",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H396",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H398",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H413",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H413",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H416",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H425",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H427",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H428",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H433",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H441",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H449",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H449",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H456",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H461",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H465",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H477",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H485",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H485",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H487",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H487",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H490",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H490",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H497",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H497",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H497",
+    "path": "agents/core/channels/gateway.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H501",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H504",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H510",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H512",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H513",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H523",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H557",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H557",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H579",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H579",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H581",
+    "path": "agents/web.py",
+    "preimage_match": true
+  },
+  {
+    "id": "H581",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H586",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H594",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H659",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H667",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H670",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H671",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H671",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H672",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H673",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H674",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H674",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H677",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H677",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H677",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H679",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H681",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H683",
+    "path": "agents/core/channels/telegram.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H683",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H686",
+    "path": "agents/core/orchestrator.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H686",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H689",
+    "path": "agents/web.py",
+    "preimage_match": false
+  },
+  {
+    "id": "H691",
+    "path": "agents/web.py",
+    "preimage_match": false
+  }
+]

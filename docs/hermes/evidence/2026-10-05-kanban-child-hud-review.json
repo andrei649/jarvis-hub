@@ -1,0 +1,188 @@
+{
+  "goal": "All697 accepted Hermes capabilities, local only; this unit is partial integration, not full parity.",
+  "generated_at": "2026-10-04T21:59:50.188648+00:00",
+  "base_head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "dirty_snapshot": true,
+  "publication": "none",
+  "requirements_verified": [
+    "ProjectsMode mounts actual board/Triage/drawer and scoped events; board metadata persists real project/workdir.",
+    "Registered file producer creates exact signed typed ASK with H506/H507 labels and instruction notice; enforced file execution requires an independently consumed worker permit.",
+    "Worker file write/delete and local-host terminal create a durable exact-parent child binding and atomically park needs_input before returning.",
+    "Child execution uses a fresh expiring workspace scope and independently consumed signed queue permit; stale board/project/roots/cwd/run and replay are refused.",
+    "Real /bin/pwd process runs at signed cwd; root revocation at the physical terminal hop refuses spawn.",
+    "Checkpoint persistence revocation is rechecked before physical file effects; pending child rows defer managed workspace cleanup."
+  ],
+  "remaining": [
+    "Automatic separately governed resume after child success.",
+    "Crash reconciliation of prepared or executing child records, including queue/board birth gaps; uncertain effects remain inert.",
+    "Scoped SSH/Docker terminal worker adapters and multi-board gateway/watch/tenant controls.",
+    "Goal judging, advanced profile/orchestration/provider/swarm/native controls and remaining original697 requirements.",
+    "Canonical mediation still has inherited16384-character strings and byte-envelope limits; larger file proposals need a signed-content-reference design.",
+    "Full backend rerun pending; prior round1 had6 failures, focused corrective suites passed but do not establish full green.",
+    "H277 original49 campaign is verified against its archived993-input snapshot; broader H277 source evidence remains stale and is not restamped here."
+  ],
+  "focused_runs": [
+    {
+      "path": "/tmp/nerva-kanban-child-broad-focused-20261005.xml",
+      "sha256": "b4de984591e31885f910c58c94861b6c8c88327fc5b9c6c42850c77bfbc03d50",
+      "tests": 1170,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "/tmp/nerva-child-intake-image-collateral-20261005.xml",
+      "sha256": "c10a48787a10cab2060524f7133d529557612b03f21e46219859bdc98fc4ee8e",
+      "tests": 77,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "/tmp/nerva-child-code-cli-collateral-20261005.xml",
+      "sha256": "19dbceee5ca7a398f90125273b88fa98ffb1955193aa0417d4a92ce238c4d89b",
+      "tests": 240,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "frontend_full": {
+    "path": "/tmp/nerva-kanban-hud-full-frontend-20261005.json",
+    "sha256": "e9e678d8d26069cf88e33148d6f543b2a6e9b1f258a1925c3f8008e090e1b16f",
+    "tests": 1912,
+    "passed": 1912,
+    "failures": 0,
+    "frozen_inputs": 344,
+    "drift": []
+  },
+  "source_and_tests": [
+    {
+      "path": "agents/core/autonomy/queue.py",
+      "sha256": "22a89230649a554b4d4e2e63746feb0cfb66bf35910e92f42dbb4af3baec2fb1"
+    },
+    {
+      "path": "agents/core/autonomy_coordinator.py",
+      "sha256": "54613302e9a0f0a4d306bee188823fc3f1d4fbe2af50bf05c5a33ccdf37cd748"
+    },
+    {
+      "path": "agents/core/file_checkpoint_history.py",
+      "sha256": "7cd1bdb15c0626678e325814c07b7627181bd9dd00ab892038c7fd6c76435bac"
+    },
+    {
+      "path": "agents/core/file_tools.py",
+      "sha256": "c357bb49c285178bcc37acffb264639ef624092f6de02ce4e3e35b95e066c954"
+    },
+    {
+      "path": "agents/core/tool_rpc.py",
+      "sha256": "fa9c1e4285cf8ca856aa58c04d576b2e68e68c1968c6cda2f2f1cb5527f2185d"
+    },
+    {
+      "path": "agents/core/orchestrator_bindings.py",
+      "sha256": "5dc3524d1f37f6c99b16ff1e79ac3f95537b5cca2c7e0f4a7381d5740a1a8ba8"
+    },
+    {
+      "path": "agents/core/kanban/child_tools.py",
+      "sha256": "fdebded34e58fe7245ba806322c5744836253ab8ada2cf320893c989a1acfd96"
+    },
+    {
+      "path": "agents/core/kanban/child_store.py",
+      "sha256": "95bc84373675aab3fd40e11dc52ba3cbb3af61553d6c72a7530d7b04ce0a59f9"
+    },
+    {
+      "path": "agents/core/kanban/workspaces.py",
+      "sha256": "69072a7f5d519f16c109239060f2065af8a3d8f8d3f6d1182b71a2113ac3d3de"
+    },
+    {
+      "path": "agents/core/kanban/upstream/kanban_db.py",
+      "sha256": "583ea341cdd4863b0e8c06f432d79c27a54187b9258f152fa6daf5f11a1ce7ed"
+    },
+    {
+      "path": "agents/core/kanban/dashboard_api.py",
+      "sha256": "24f124f8d685be3196bc8e190bc159c40d7b5511825df75d9ce56c8c595405ee"
+    },
+    {
+      "path": "frontend/src/gap.tsx",
+      "sha256": "17d4e2fee69ea9d154b007dfc393c57e4ee64ddbd6e9ea8283199487111fa438"
+    },
+    {
+      "path": "frontend/src/panels/kanban/KanbanView.tsx",
+      "sha256": "734dbb64539c326bf4dd59c3fef94a8ff642b89e18ba05dcd90342ccf643afe3"
+    },
+    {
+      "path": "frontend/src/panels/kanban/api.ts",
+      "sha256": "d8afdc7f53603dc1da2f2311b18b836e1362590562fcfd9aea1be330d57f629d"
+    },
+    {
+      "path": "frontend/src/panels/kanban/board-switcher.tsx",
+      "sha256": "26991dd4bcf5b61a0134c83e42039486d0d1c35c72b1be1479e83c7346059d8b"
+    },
+    {
+      "path": "frontend/src/panels/kanban/board.tsx",
+      "sha256": "10458fcf738315ff33500f866f610e3444e9cab6b1f3f5da7c070c3cb6d29d72"
+    },
+    {
+      "path": "frontend/src/panels/kanban/drawer.tsx",
+      "sha256": "793bd0ce27cdb19e9983bfd61ba3b6ef995b32d0760adcd3e455d40ae9905555"
+    },
+    {
+      "path": "frontend/src/panels/kanban/i18n.ts",
+      "sha256": "49f2bce2289fb75abaea89ee928b6ebaed56ff46d1d4ee73ea433dc0baf43acc"
+    },
+    {
+      "path": "frontend/src/panels/kanban/kanban.css",
+      "sha256": "121ba1901cea1904a545ea0d30c71728b5a933743fbaefb12831e40f68964e8a"
+    },
+    {
+      "path": "frontend/src/panels/kanban/types.ts",
+      "sha256": "bb4c36ce7ea2648ced0ea33744618f9c681610712bd175cc38ae72205c7c74c4"
+    },
+    {
+      "path": "tests/test_hermes_file_coordinator_intake.py",
+      "sha256": "a6398ddc35ae6cd32011161b92a6a8fbd4a83cba72b8843a22eea2910b34cd48"
+    },
+    {
+      "path": "tests/test_hermes_kanban_child_effects.py",
+      "sha256": "817f09311c1d982e56e30ea2d66bb8de12ad82166062bb3379f4b649d3647be6"
+    },
+    {
+      "path": "tests/test_hermes_kanban_child_store.py",
+      "sha256": "5f8d20515c94d18ced80a9b0c4a73bff9f032b3d3cb1075cab9b68b2488c6eb0"
+    },
+    {
+      "path": "tests/test_hermes_kanban_child_cleanup.py",
+      "sha256": "bf96852c0fd92fdd58d54b4e1364c84b5cbeeadca000bd26e33aa0a8991f5926"
+    },
+    {
+      "path": "tests/test_hermes_file_mutation_intake.py",
+      "sha256": "301f1d617c006fe2263b50d36bb7ca0cd99ab58d8e0c12c95b465698ebc96494"
+    },
+    {
+      "path": "tests/test_hermes_kanban_board_projects.py",
+      "sha256": "0e5a6d6ed4235898d785d9c270cc44abe254db58a067941cd9bfbb26dced28f6"
+    },
+    {
+      "path": "tests/test_hud_v2_parity.py",
+      "sha256": "1e40e91030ad9298370160f7c193bd4fea793a3c0578c994f43f6ba11a321ccc"
+    },
+    {
+      "path": "frontend/src/kanban-api.test.tsx",
+      "sha256": "a963179c1c6f3f19e2a9cb99b71498484aed21f1ed3050cdc37012cac5fdcf1a"
+    },
+    {
+      "path": "frontend/src/kanban-board.test.tsx",
+      "sha256": "1721a8398e8ce0265401e5398acc77610fbaea05ad87315525cc4e002911a3c3"
+    },
+    {
+      "path": "frontend/src/kanban-drawer.test.tsx",
+      "sha256": "8b006f9203797d87c96fdad227bec1b9cf4918f550bdc78b9a1c8caea51134eb"
+    },
+    {
+      "path": "frontend/src/test/projects-kanban-host.test.tsx",
+      "sha256": "4f09368b9504e8c529080337b6dc00583de6ef3959e09805499c42b426154650"
+    }
+  ],
+  "collateral_review": "H515/H595/H660 retain partial status. ProjectsMode adds Kanban mount; image/code registration bodies and provider transports are unchanged. Shared trusted execution adds only exact file-kind consumed-permit validation and routes server-owned child payloads; image/code/CLI focused regressions pass. No new live image/native/provider acceptance.",
+  "graft": "Source build and check terminal; graph freshness verified separately. Context generation intentionally disabled.",
+  "validation": "Ruff and git diff --check terminal0; backend scoped proofs pass. Counts are not summed because selected suites overlap."
+}

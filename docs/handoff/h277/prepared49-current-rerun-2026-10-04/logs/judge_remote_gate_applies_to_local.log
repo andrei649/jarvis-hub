@@ -1,0 +1,11 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/judge_remote_gate_applies_to_local.xml", "tests/test_h277_approval_judge.py::test_configured_judge_annotates_the_item_and_changes_nothing_else"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_configured_judge_annotates_the_item_and_changes_nothing_else _______
+tests/test_h277_approval_judge.py:222: in test_configured_judge_annotates_the_item_and_changes_nothing_else
+    judge = got["judge"]
+            ^^^^^^^^^^^^
+E   KeyError: 'judge'
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_configured_judge_annotates_the_item_and_changes_nothing_else
+1 failed in 1.51s

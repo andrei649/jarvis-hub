@@ -1238,6 +1238,11 @@ class FileCheckpointHistory:
             db.commit()
             effect_started = False
             try:
+                # Durable checkpoint I/O may outlive the authority checked at
+                # entry. Recheck before creating directories and again at the
+                # actual byte mutation, including a parked worker's live scope.
+                if self.scope.resolve(str(target)) != target:
+                    raise CheckpointRefusal("path_changed")
                 with _parent_fd(root, target, identity, create=op == "write") as (parent, name):
                     try:
                         exists, sha, size, mode, _ = _state(parent, name,
@@ -1250,6 +1255,8 @@ class FileCheckpointHistory:
                         snap.existed, snap.blob_sha, snap.size, snap.mode
                     ):
                         raise CheckpointRefusal("changed_since_snapshot")
+                    if self.scope.resolve(str(target)) != target:
+                        raise CheckpointRefusal("path_changed")
                     effect_started = True
                     if op == "delete":
                         os.unlink(name, dir_fd=parent)

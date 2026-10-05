@@ -1145,7 +1145,26 @@ A call already in flight is refused on its next tool call.
 
 ### `llm.execute_code_sessions` (+ `llm.execute_code_image`, `llm.execute_code_max_kernels`, `llm.execute_code_idle_ttl`)
 
-**Defaults: OFF · unset · `4` · `900`s.** Runtime settings, read at composition.
+**Execution context (H595):** `llm.execute_code_mode` accepts `project`
+(default) or `strict`. `llm.execute_code_project_root` optionally names an owner
+project staged as a bounded read-only snapshot; actual writes use approved file tools.
+`llm.execute_code_env_passthrough` optionally lists exact third-party environment
+names. Successful owner-vouched main skill views can declare the same names for
+their exact actor/principal/session. Managed provider credentials and loader/control
+variables remain blocked. Context changes discard the old interpreter, with current
+policy rechecked before startup values are sent and after waiting for a cell lock.
+One-shot Docker execution and safe resident-startup fallback preserve the same
+context, with a private read-only project mount and startup stdin. Contextual WASM
+and production host fallback refuse with `context_backend_unsupported`.
+See `docs/hermes/code-execution-guide.md` for snapshot bounds and backend-local Python.
+An admitted new message in the same conversation interrupts active code; the tool
+returns an explicit interrupted result after backend cleanup. Pending replies and
+background jobs retain their existing routing. Resident state is lost on interruption.
+
+**Defaults: ON when code execution is enabled · unset · `4` · `900`s.** Runtime settings,
+read at composition. `llm.execute_code` itself remains OFF by default. With code
+enabled and a pinned isolated image configured, no second opt-in is needed.
+An explicitly stored `llm.execute_code_sessions=false` remains an owner opt-out.
 
 **OFF:** every `execute_code` call is the K1 one-shot — a container per call, nothing
 kept. The tool's schema has no `reset` and its description promises no persistence, so
@@ -1165,7 +1184,7 @@ reviewed, cell 400 is not. So *state* persists and *permission* does not.
 | every cell | what happens |
 |---|---|
 | binds fresh | a new K0 `SandboxInvocation` from the live principal — a variable created while a tool was offered is still just a variable once it is not |
-| crosses the kernel | the cell is a `tool.rpc` action; a DENY (halted kill-switch, over budget, runaway loop) refuses it **before** a byte reaches the interpreter. No new action kind |
+| crosses the kernel | the cell is a `tool.rpc` action and needs an explicit GRANT, rechecked after its interpreter lock. DENY, QUEUE and missing/malformed decisions refuse it **before** a byte reaches the interpreter; a refused reset preserves its variables. No new action kind |
 | gets its own mailbox | tool calls go to a directory created for that cell and removed after, serviced under that cell's authority; a `jarvis_tool_call` captured ten cells ago writes where nobody is reading |
 | checks the stop | ESTOP is read before every cell, and an engaged stop **tears every kernel down** rather than leaving processes alive to resume |
 
@@ -1222,7 +1241,7 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers (`X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`) believed only from these networks; XFF walked right-to-left; uvicorn's own proxy-header layer is off under `serve.py` | A listed peer can name any client address — list only proxies you run; a malformed list, or a `FORWARDED_ALLOW_IPS` wider than it, refuses boot | Unset + restart: headers ignored, fail closed |
 | `JARVIS_ALLOWED_HOSTS` | unset (`host_policy.py`) | Extra `Host` names accepted by the rebinding guard | A listed name is reachable from any page that can resolve it to the box — list only names you own; `*` refuses boot | Unset + restart: only loopback names, IP literals and the bind/server address pass |
 | `llm.execute_code` *(runtime setting)* | off (`code_tools.py`) | Registers ungated `execute_code`: one model-written Python script per call, running in the sandbox, calling tools over file-RPC | Arbitrary code inside the container; inner calls bypass the tool loop's per-tool caps and repeated-call detector (bounded instead by `security.sandbox_max_tool_calls` and the sandbox timeout). Reach is K0-bound to the turn's own offered set, gated tools still only enqueue, and no isolated backend means `sandbox_not_isolated` rather than a host run | Set `false` + restart: `register_code_tools` is a no-op, nothing on the allowlist |
-| `llm.execute_code_sessions` *(runtime setting)* | off · needs `llm.execute_code_image` pinned by digest (`session_kernels.py`) | A resident interpreter per agent×principal×session×data-scope: variables, imports and loaded data persist between `execute_code` calls | A long-lived process per active session. Every cell still re-binds K0 authority, crosses the Action Kernel, gets its own tool-call mailbox and re-reads ESTOP — so state persists and permission does not; every loss of state is named on the next cell | Set `false` + restart: back to the K1 one-shot, kernels destroyed |
+| `llm.execute_code_sessions` *(runtime setting)* | on when code enabled · needs `llm.execute_code_image` pinned by digest (`session_kernels.py`) | A resident interpreter per agent×principal×session×data-scope: variables, imports and loaded data persist between `execute_code` calls | A long-lived process per active session. Every cell still re-binds K0 authority, requires a current Action Kernel GRANT after its interpreter lock, gets its own tool-call mailbox and re-reads ESTOP — so state persists and permission does not; every loss of state is named on the next cell | Explicitly set `false` + restart: back to the K1 one-shot, kernels destroyed |
 | `llm.tool_result_thresholds` *(runtime setting)* | `{}` (`tool_result_store.py`) | Per-tool byte ceilings for what a result may put in the context window, as `{tool: bytes}`. Beats the tool's own declaration and the `mcp_` family default; loses to a pinned tool (`file_read` is pinned to no limit, because it is how a spilled result is read back) | Raising one lets that tool fill more of the window; lowering it sends more of its output to disk. Nothing is lost either way — over the ceiling the full result is spilled and the model gets a preview naming the file | Set `{}` (no restart): back to the window-scaled default |
 | `llm.tool_result_context_window` *(runtime setting)* | `0` = auto (`agent_runtime.py`) | The context window the per-result (15 %) and per-turn (30 %) budgets scale against, with 8 KB / 16 KB floors. `0` reads the window of the model the turn is actually running on | Setting it wrong-large lets a turn overfill a small window; wrong-small spills results that would have fit. Distinct from `llm.tool_loop_context_tokens`, which is the *transcript* budget compaction folds against | Set `0` (no restart): the model's own window again |
 | `llm.tool_result_retention_seconds` · `llm.tool_result_max_files` *(runtime settings)* | `86400` · `512` (`tool_result_store.py`) | How long a spilled result stays readable under `data/workspace/tool_results/`, and how many are kept. Swept on every write, oldest first, never the file just written | Longer retention keeps more tool output on disk; shorter can retire a spill the model has not read back yet | Set back (no restart): the next write sweeps to the new limits |

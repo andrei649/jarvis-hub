@@ -33,6 +33,7 @@ import { CodeIntelPanel } from './panels/codeintel';
 import { CreativePanel } from './panels/creative';
 import { BinaryCard, downloadMediaBundle } from './panels/binary-artifacts';
 import { ImagesPanel } from './panels/images';
+import { KanbanView } from './panels/kanban/KanbanView';
 import { OsintPanel } from './panels/osint';
 import { MarketplaceAdminPanel } from './panels/marketplace-admin';
 import { SecuritySkillsMapPanel } from './panels/security-skills-map';
@@ -3032,6 +3033,7 @@ export function ActivityTimelinePanel() {
 export function ProjectsMode(_props: any) {
   return <div style={{ padding: '16px 20px', maxWidth: 1440, margin: '0 auto' }}>
     <div style={{ ...mono, fontSize: 11, letterSpacing: '.16em', color: 'var(--ink-3)', marginBottom: 12 }}>PROJECTS · rooms = topic threads with history · missions = governed workspaces · sessions = reopen a past chat</div>
+    <KanbanView />
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
       <RoomsPanel />
       <MissionsPanel />
@@ -3279,7 +3281,7 @@ export function DecisionInboxPanel() {
     }, err => setGroupError(err?.body?.error || err?.message || 'Group decision refused; reload and review.'));
   };
   const decide = (id, action, payload?) => {
-    const image = pending.some(t=>t.id===id && isImageProposal(t));
+    const image = pending.some(t=>t.id===id && isImageProposal(t) && !isCatalogRefreshProposal(t));
     const reason = (decisionReasons[id] || '').trim();
     return actA('/autonomy/tasks/' + id + '/decision',
       { action, ...(payload !== undefined ? { payload } : {}), ...(reason ? { reason } : {}) }, () => {
@@ -3300,9 +3302,82 @@ export function DecisionInboxPanel() {
       .catch(() => setPreview({ id, data: { error: 'preview unavailable' } }));
   };
   const tierColor = (n) => n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-3)';
-  const isCloudImageProposal = (task) => task.kind === 'plugin.egress'
-    && task.payload?.plugin === 'cloud-image' && task.payload?.method === 'POST'
-    && task.payload?.url === 'https://api.openai.com/v1/images/generations';
+  const isCatalogRefreshProposal = (task) => task.kind === 'plugin.egress'
+    && task.payload?.plugin === 'cloud-image-deepinfra' && task.payload?.method === 'GET'
+    && task.payload?.url === 'https://api.deepinfra.com/v1/openai/models?filter=true&sort_by=hermes'
+    && task.payload?.image?.body?.operation === 'catalog_refresh'
+    && task.payload?.image?.body?.prompt === '';
+  const kreaEnhanceDetails = (task) => {
+    if (task.kind !== 'plugin.egress' || task.payload?.plugin !== 'cloud-image-krea'
+      || !task.payload?.image?.body || !task.payload?.image?.enhance) return null;
+    const {body,enhance} = task.payload.image;
+    if (Object.keys(body).sort().join(',') !== 'image_scaling_factor,image_url,model,operation,prompt,size'
+      || Object.keys(enhance).sort().join(',') !== 'artifact_id,binding,nonce,sha256,task_id'
+      || body.operation !== 'enhance' || body.image_scaling_factor !== 2
+      || !['krea-2-medium','krea-2-large','krea-2-medium-turbo'].includes(body.model)
+      || typeof body.prompt !== 'string' || !body.prompt.trim() || body.prompt.length > 4000
+      || !['1024x1024','1536x1024','1024x1536'].includes(body.size)
+      || typeof body.image_url !== 'string' || body.image_url.length > 1024
+      || !Number.isSafeInteger(enhance.task_id) || enhance.task_id < 1
+      || typeof enhance.nonce !== 'string' || !/^[a-f0-9]{16,128}$/i.test(enhance.nonce)
+      || typeof enhance.binding !== 'string' || !enhance.binding || enhance.binding.length > 256
+      || typeof enhance.artifact_id !== 'string' || !/^[a-f0-9]{32}$/.test(enhance.artifact_id)
+      || typeof enhance.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(enhance.sha256)) return null;
+    try {
+      const url = new URL(body.image_url);
+      if (url.protocol !== 'https:' || !url.hostname || url.username || url.password || url.hash) return null;
+    } catch { return null; }
+    return {body,enhance};
+  };
+  const isKreaEnhanceProposal = (task) => task.payload?.method === 'POST'
+    && task.payload?.url === 'https://api.krea.ai/generate/enhance/krea/enhance'
+    && kreaEnhanceDetails(task) !== null;
+  const isKreaResumeProposal = (task) => {
+    if (task.kind !== 'plugin.egress' || task.payload?.plugin !== 'cloud-image-krea'
+      || task.payload?.method !== 'GET' || !task.payload?.image?.body) return false;
+    const resume = task.payload.image.resume;
+    return Number.isSafeInteger(resume?.task_id) && resume.task_id > 0
+      && typeof resume.nonce === 'string' && typeof resume.binding === 'string'
+      && typeof resume.job_id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(resume.job_id)
+      && (task.payload.image.body.operation !== 'enhance' || kreaEnhanceDetails(task) !== null)
+      && task.payload.url === 'https://api.krea.ai/jobs/' + resume.job_id;
+  };
+  const isCloudImageProposal = (task) => {
+    if (isCatalogRefreshProposal(task) || isKreaResumeProposal(task) || isKreaEnhanceProposal(task)) return true;
+    if (task.kind !== 'plugin.egress' || task.payload?.method !== 'POST' || !task.payload?.image?.body) return false;
+    const {plugin,url,image} = task.payload;
+    if (plugin === 'cloud-image') return ['https://api.openai.com/v1/images/generations', 'https://api.openai.com/v1/images/edits'].includes(url);
+    if (plugin === 'cloud-image-codex') return ['https://chatgpt.com/backend-api/codex/images/generations', 'https://chatgpt.com/backend-api/codex/images/edits'].includes(url);
+    if (plugin === 'cloud-image-openrouter') return ['https://openrouter.ai/api/v1/images',
+      'https://openrouter.ai/api/v1/chat/completions'].includes(url);
+    if (plugin === 'cloud-image-xai') return ['https://api.x.ai/v1/images/generations', 'https://api.x.ai/v1/images/edits'].includes(url);
+    if (plugin === 'cloud-image-deepinfra') return url === 'https://api.deepinfra.com/v1/openai/images/generations';
+    if (plugin === 'cloud-image-krea') return ({
+      'krea-2-medium': 'https://api.krea.ai/generate/image/krea/krea-2/medium',
+      'krea-2-large': 'https://api.krea.ai/generate/image/krea/krea-2/large',
+      'krea-2-medium-turbo': 'https://api.krea.ai/generate/image/krea/krea-2/medium-turbo',
+    })[image.body.model] === url;
+    return plugin === 'cloud-image-fal' && typeof image.body.endpoint === 'string'
+      && /^fal-ai\/[A-Za-z0-9_./-]{1,160}$/.test(image.body.endpoint) && url === 'https://fal.run/' + image.body.endpoint;
+  };
+  const cloudImageLabel = (task) => ({'cloud-image':'OpenAI', 'cloud-image-codex':'Codex OAuth',
+    'cloud-image-fal':'FAL', 'cloud-image-openrouter':'OpenRouter', 'cloud-image-krea':'Krea',
+    'cloud-image-xai':'xAI', 'cloud-image-deepinfra':'DeepInfra'}[task.payload?.plugin]);
+  const kreaStyleLines = (raw) => {
+    if (typeof raw !== 'string' || raw.length > 22000) return [];
+    try {
+      const rows = JSON.parse(raw);
+      if (!Array.isArray(rows) || rows.length < 1 || rows.length > 10) return [];
+      return rows.map(row => {
+        if (!row || typeof row !== 'object' || Array.isArray(row)
+          || Object.keys(row).sort().join(',') !== 'strength,url'
+          || typeof row.url !== 'string' || row.url.length > 2048 || !row.url.startsWith('https://')
+          || typeof row.strength !== 'number' || !Number.isFinite(row.strength)
+          || row.strength < -2 || row.strength > 2) throw new Error('invalid style reference');
+        return `${row.url} · strength ${row.strength}`;
+      });
+    } catch { return []; }
+  };
   const isImageProposal = (task) => isCloudImageProposal(task) || (task.payload?.tool === 'image_generate'
     && (task.kind === 'toolrpc.image_generate'
       || (task.kind === 'tool.rpc' && task.payload?.target === 'image_generate')));
@@ -3381,11 +3456,39 @@ export function DecisionInboxPanel() {
               : (judgeExpired.has(t.id) ? 'Advisory model opinion is taking longer · refresh to check again; you can decide now.' : 'Advisory model opinion pending · you can decide now.')}
           </div>}
           {isImageProposal(t) && <div style={{ fontSize: 12, margin: '6px 0' }}>
+            {isCatalogRefreshProposal(t) ? <>
+              <p>DeepInfra catalog refresh · GET {t.payload.url}</p>
+              <p>This reads the provider catalog after approval. It does not submit paid image generation.</p>
+              {Number.isSafeInteger(t.id) && t.id > 0 && <p>Decision Inbox task {t.id} · check Images configuration after approval.</p>}
+            </> : <>
             <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{typeof (isCloudImageProposal(t) ? t.payload?.image?.body?.prompt : t.payload?.args?.prompt) === 'string' ? (isCloudImageProposal(t) ? t.payload.image.body.prompt : t.payload.args.prompt).slice(0,4000) : 'Image prompt unavailable.'}</p>
-            {isCloudImageProposal(t) ? <p>OpenAI · {String(t.payload?.image?.body?.model || 'unavailable')} · {String(t.payload?.image?.body?.size || 'unavailable')} · {String(t.payload?.image?.body?.quality || 'unavailable')} · potentially paid after approval.</p> : <p>Local image · {Number.isInteger(t.payload?.args?.width) ? t.payload.args.width : 512} × {Number.isInteger(t.payload?.args?.height) ? t.payload.args.height : 512}
+            {isCloudImageProposal(t) ? <>
+              <p>{cloudImageLabel(t)} · {String(t.payload.image.body.selected_model || t.payload.image.body.model || 'unavailable')} · {String(t.payload.image.body.size || 'unavailable')}
+                {t.payload.image.body.quality && <> · {String(t.payload.image.body.quality)}</>}
+                {t.payload.image.body.resolution && <> · {String(t.payload.image.body.resolution)}</>}
+                {' · '}{isKreaResumeProposal(t) ? 'saved job status GET after approval; no generation POST.'
+                  : isKreaEnhanceProposal(t) ? 'Enhance 2× potentially paid after approval.'
+                  : t.payload.plugin === 'cloud-image-codex' ? 'configured Codex account after approval.' : 'potentially paid after approval.'}</p>
+              {isKreaResumeProposal(t) && <p>Resume saved Krea job {t.payload.image.resume.job_id} from image task {t.payload.image.resume.task_id}.</p>}
+              {kreaEnhanceDetails(t) && <>
+                <p>Enhance 2× may alter detail. Source image task {t.payload.image.enhance.task_id} · artifact {t.payload.image.enhance.artifact_id}.</p>
+                <p style={{overflowWrap:'anywhere'}}>Source image URL · {t.payload.image.body.image_url}</p>
+              </>}
+              {t.payload.plugin === 'cloud-image-krea' && <>
+                {!kreaEnhanceDetails(t) && <p>{t.payload.image.body.modality === 'style_guided_generation' ? 'Style-guided generation' : 'Text-to-image generation'}
+                  {t.payload.image.body.creativity && <> · creativity {String(t.payload.image.body.creativity)}</>}</p>}
+                {t.payload.image.body.modality === 'style_guided_generation' && <p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>
+                  Style references · {kreaStyleLines(t.payload.image.body.style_references_json).join('\n') || 'unavailable'}
+                </p>}
+              </>}
+              {Array.isArray(t.payload.image.body.references) && t.payload.image.body.references.length > 0 && <p style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>
+                References · {t.payload.image.body.references.slice(0,16).map(ref=>typeof ref === 'string' ? ref.slice(0,2048) : 'unavailable').join('\n')}
+              </p>}
+            </> : <p>Local image · {Number.isInteger(t.payload?.args?.width) ? t.payload.args.width : 512} × {Number.isInteger(t.payload?.args?.height) ? t.payload.args.height : 512}
               {' · '}{Number.isInteger(t.payload?.args?.steps) ? t.payload.args.steps : 20} steps</p>}
             <p>Changes require a fresh proposal in Images. Reject this proposal before replacing it.</p>
             {Number.isSafeInteger(t.id) && t.id > 0 && <a href={internalLink("/v2/console/images?image_task=" + t.id)}>Watch image task</a>}
+            </>}
           </div>}
           {t.kind === RETENTION_KIND && <RetentionCard task={t} />}
           {t.kind === VOICE_COMMAND_KIND && <VoiceCommandCard task={t} />}
@@ -3400,6 +3503,17 @@ export function DecisionInboxPanel() {
                 : (
                   <>
                     <div style={{ color: 'var(--ink-2)' }}>{preview.data.summary || preview.data.title || 'dry run'}</div>
+                    {preview.data.prompt && (preview.data.prompt.available === true
+                      ? <div style={{ maxHeight: 320, overflow: 'auto', marginTop: 6 }}>
+                        <div aria-label="Complete pending question" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                          {preview.data.prompt.text}
+                        </div>
+                        <ol>{(preview.data.prompt.choices || []).map((choice, k) =>
+                          <li key={k} style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{choice}</li>)}</ol>
+                      </div>
+                      : <div style={{ color: 'var(--amber)', marginTop: 6 }}>
+                        This question has expired or its live delivery is unavailable.
+                      </div>)}
                     <div style={{ display: 'flex', gap: 5, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
                       {preview.data.irreversible && <Tag c="var(--red)">irreversible</Tag>}
                       <Tag c={preview.data.would_execute ? 'var(--green)' : 'var(--ink-3)'}>{preview.data.would_execute ? 'would execute' : 'would queue'}</Tag>

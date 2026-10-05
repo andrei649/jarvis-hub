@@ -1,0 +1,98 @@
+{
+  "generated_at": "2026-10-05T16:33:51.969226+00:00",
+  "capability": "H067",
+  "status": "partial",
+  "publication": false,
+  "implemented": [
+    "Actual ntfy subscription keeps reading while one serial model dispatcher waits.128-message ordinary queue stays bounded; pending answers bypass that queue.",
+    "Typed prompts use the original signed channel.reply task and full-content reference. All HTTP chunks must be accepted before delivered human-wait credit starts.",
+    "Exact original ntfy configuration and live prompt are rechecked after DNS/policy waits, before chunks, on typed response and before reset/undo effects.",
+    "Paired topics become owners only through explicit owner_senders. Once/Always/Cancel preserve durable history; Always crosses the physical signed permission.grant executor.",
+    "Persistent ntfy consent is scoped to server URL plus receive/publish topics; token/epoch changes retain consent, another server cannot inherit it.",
+    "Hermes text-only clarification maps option numbers/labels first and accepts own answers without an unavailable Other button. Native-choice behavior stays unchanged."
+  ],
+  "donor": "NousResearch Hermes59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e MIT; gateway/platforms/base.py send_clarify and tools/clarify_gateway.py text coercion adapted to existing async Nerva state/queue.",
+  "verification": {
+    "runs": [
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/ntfy-affected-result.xml",
+        "tests": 619,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/ntfy-final-result.xml",
+        "tests": 126,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/ntfy-settings-result.xml",
+        "tests": 16,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "overlap": true,
+    "new_cases": 19,
+    "earlier_affected_stage": "619 cases before the localized consent-scope and own-answer corrections; retained as dated evidence. The final126 probes cover both corrections and unchanged native SDK/RPC behavior.",
+    "actual_path": "HTTPX synthetic subscription, actual Gateway, ToolRPC, physical kernel/signed queue/worker, HTTPX synthetic posts and durable memory/permission stores.",
+    "human_credit": "Controlled monotonic clock and actual runtime budget sampling verify0 seconds before delivery and5 live delivered seconds after it.",
+    "ruff": "passed",
+    "diff_check": "passed",
+    "bandit": "0 findings/errors; eight initial production files and both final corrected files verified.",
+    "strict_gitleaks": {
+      "files": 10,
+      "findings": 1,
+      "rule": "generic-api-key",
+      "path": "agents/core/settings_db.py",
+      "line": 385,
+      "review": "Inherited empty stark_ga4_property_id setting declaration; AST value is empty and scan line is identical to preserved preimage. No rules, baseline or inline suppression used."
+    }
+  },
+  "shared_impact": {
+    "orchestrator_methods_changed": [
+      "channel_pending_handler",
+      "_channel_principal"
+    ],
+    "retained_reviews": [
+      "H063",
+      "H099",
+      "H034",
+      "H256"
+    ],
+    "method": "Immediate matching preimage hashes only after semantic impact review and affected/final probes. Startup, external secret provider and corrupt-config methods are AST-identical; native owner/interception regressions pass. Existing unrelated stale pins remain.",
+    "settings": "Exact lexical diff is one user-visible label replacement; no defaults, validation or runtime behavior changed."
+  },
+  "corrected_red_probes": [
+    "Original actual ntfy model did not queue pending questions.",
+    "Standing grant on the same short topic incorrectly survived a change of server.",
+    "Own typed answer deadlocked behind its waiting model; corrected to pinned Hermes text-only fallback."
+  ],
+  "remaining": [
+    "HUD/web/email/CLI pending producers and answer entry points remain unintegrated.",
+    "Full integrated acceptance and broad H277/full697 parity remain unfinished; no live server or account validation.",
+    "Ordinary burst messages beyond128 queued items are rejected with a diagnostic while pending answers remain readable."
+  ],
+  "files_modified": {
+    "agents/core/channel_reply.py": "Strict signed text-prompt variant and exact live execution/review using existing content reference.",
+    "agents/core/channels/manager.py": "Governed ntfy text transport with a live callback.",
+    "agents/core/channels/ntfy.py": "Bounded serial dispatcher, pending-only stream ingress and post-DNS/chunk authorization rechecks.",
+    "agents/core/channels/gateway.py": "Paired ntfy pending-only routing.",
+    "agents/core/channels/pending_input_runtime.py": "Typed producer, exact config/generation fences and donor own-answer behavior.",
+    "agents/core/channels/session_command_runtime.py": "Typed confirmations and endpoint-scoped permanent consent.",
+    "agents/core/orchestrator.py": "Explicit ntfy owner identity and governed pending notices.",
+    "agents/web.py": "Wire the real subscription to the pending-only gateway.",
+    "tests/test_pending_input_ntfy.py": "19 offline actual-path behavior cases.",
+    "docs/hermes/pending-input-plan-2026-10-05.md": "Observed blockers, short design and donor corrections.",
+    "agents/core/settings_db.py": "Existing owner-senders label explains ntfy topic syntax; defaults/category/key/kind unchanged.",
+    "docs/hermes/assessment.json": "H067 partial update and exact verified collateral pins.",
+    "HERMES_STATUS.md": "Generated697 status.",
+    "docs/HERMES_CAPABILITIES.md": "Generated capability status.",
+    "docs/hermes/autonomous-development-objective.md": "Resumable local checkpoint."
+  },
+  "graft": "Explicit frozen-source build/check passed; graph current, no added/removed/changed/stale source files."
+}

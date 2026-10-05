@@ -50,6 +50,8 @@ def fixture_runtime(tmp_path, monkeypatch, verdict=Verdict.QUEUE):
     worker = AutonomyWorker(
         queue, policy=AutonomyPolicy(mode="auto"), kernel=kernel, mediation_signer=signer
     )
+    # Production binds the one-shot intake bridge through the coordinator.
+    worker.bind_mediation(kernel, signer)
     settings = {"llm.kanban": True, "llm.kanban_dispatch": True, "llm.tool_loop_enabled": True}
     orch = SimpleNamespace(
         autonomy=worker,

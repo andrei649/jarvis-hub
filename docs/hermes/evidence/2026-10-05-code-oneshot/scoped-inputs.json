@@ -1,0 +1,10 @@
+{
+  "source_hashes": {
+    "agents/core/sandbox.py": "71d85fbbdfb846ccbf6a6f90f7a0c61ea97c4f40d3793db186a7b8c6845f118a",
+    "agents/core/tool_rpc_runtime.py": "1a2c246a4689fd330ee4e8d8e9bed22e8931557c62920864e1fa789e86d746d7",
+    "agents/core/code_tools.py": "ad7f9c785fa95acfcd3fffa6c465451e77b9fbabd3fc605f8440fd177ea9d932",
+    "tests/test_h595_oneshot_context.py": "c12ce9316f5dacb461f50a27717afdcf711ed9563cddbf60ad795abbd05c19c8",
+    "tests/test_h595_model_context.py": "f47a0cb2a85f7ed746c6e88a02b303fe1b64da87c1d32f1496ccf3d64c607d08"
+  },
+  "note": "Frozen one-shot inputs before subsequent product-interruption edits; that later batch requires its own verification."
+}

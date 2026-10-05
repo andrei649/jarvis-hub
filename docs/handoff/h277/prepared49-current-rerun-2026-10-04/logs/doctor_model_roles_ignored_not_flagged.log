@@ -1,0 +1,13 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/doctor_model_roles_ignored_not_flagged.xml", "tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_an_ignored_main_variable"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_doctor_model_roles_row_warns_on_an_ignored_main_variable _________
+tests/test_h277_model_roles.py:408: in test_doctor_model_roles_row_warns_on_an_ignored_main_variable
+    assert check.status == doctor.WARN and "JARVIS_ROLE_MAIN_MODEL" in check.detail
+E   AssertionError: assert ('ok' == 'warn'
+E     
+E     - warn
+E     + ok)
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_doctor_model_roles_row_warns_on_an_ignored_main_variable
+1 failed in 1.41s

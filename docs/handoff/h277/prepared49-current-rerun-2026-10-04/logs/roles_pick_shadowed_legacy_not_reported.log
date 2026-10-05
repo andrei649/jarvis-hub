@@ -1,0 +1,11 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/roles_pick_shadowed_legacy_not_reported.xml", "tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable __
+tests/test_h277_model_roles.py:143: in test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable
+    assert "JARVIS_VLM_MODEL" in role.ignored
+E   AssertionError: assert 'JARVIS_VLM_MODEL' in ()
+E    +  where () = ResolvedRole(role='vision', configured=True, provider_id='lm-studio', model='new-vl', base_url='http://localhost:1234/...'JARVIS_ROLE_VISION_MODEL', 'provider': 'JARVIS_VLM_BACKEND'}), local=True, data_policy='local', reason='', ignored=()).ignored
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable
+1 failed in 1.37s

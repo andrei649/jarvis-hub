@@ -1,0 +1,166 @@
+{
+  "generated_at": "2026-10-05T04:58:45.592143+00:00",
+  "goal": "Complete local parity for all697 pinned Hermes capabilities; this checkpoint does not narrow the goal.",
+  "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "reference": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "phase": "validated_partial",
+  "accepted_complete": false,
+  "tests": {
+    "affected": {
+      "cases": 2394,
+      "passed": 2394,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "raw_xml_sha256": "2150c08c33a43716a15ab5e5ace9df1860b631ae52c234c4bfed22323f6fbd0b",
+    "red_regressions": [
+      {
+        "phase": "native-transport",
+        "raw_xml_sha256": "dcca4a91aa8a913b154e77700ce27be4da951656f006a2eb3e1cafe929ba2b37",
+        "results": {
+          "cases": 7,
+          "passed": 0,
+          "failures": 7,
+          "errors": 0,
+          "skipped": 0
+        },
+        "fixture_correction": "Polling fixture also required zero batch interval, matching the existing occupied-lane polling harness; no claim that its initial timeout alone proved missing callback behavior."
+      },
+      {
+        "phase": "Other-instruction",
+        "raw_xml_sha256": "74ad030fb049be0373b3b0fc98cd4504e8b318fc7d6344305ba17ac6c0cb1579",
+        "results": {
+          "cases": 15,
+          "passed": 14,
+          "failures": 1,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "phase": "undo-lock-authority",
+        "raw_xml_sha256": "a8d73c6e59996e20c2fa02aa821f71927414aa6a8960e89db551679694e71c4b",
+        "results": {
+          "cases": 1,
+          "passed": 0,
+          "failures": 1,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "phase": "late-fallback-authority",
+        "raw_xml_sha256": "bc5e0d6a9561149726902789a8d57f5925d518497108503c9e102a2000fad813",
+        "results": {
+          "cases": 1,
+          "passed": 0,
+          "failures": 1,
+          "errors": 0,
+          "skipped": 0
+        }
+      }
+    ],
+    "metadata": {
+      "cases": 195,
+      "passed": 195,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "raw_xml_sha256": "ae5edf837e9720a79255c9daf239e7e570eaf6bcc923970ebb21eb1b3cbb1e18"
+    },
+    "interrupted_attempt": {
+      "phase": "interrupted-not-acceptance",
+      "tool_exit": 130,
+      "reason": "Stop source-frozen broad run to correct newly found per-message snapshot defect; one seeded TTL review-list failure also identified",
+      "collected_completed_counts": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "1792",
+          "time": "141.136",
+          "timestamp": "2026-10-05T07:41:26.508341+03:00",
+          "hostname": "Macmini"
+        }
+      ],
+      "raw_xml_sha256": "c940fc5581c60174bff5db3b9ba98a27c1631718e638abbe89d514d7574f4a35",
+      "failure_tests": [
+        {
+          "classname": "tests.test_h490_safe_mode_posture",
+          "name": "test_every_seeded_number_is_forced_or_reviewed",
+          "time": "0.006"
+        }
+      ]
+    }
+  },
+  "frozen_python_contract_inputs": 2044,
+  "frozen_drift": 0,
+  "scoped_inputs": 20,
+  "review": {
+    "model": "gpt-6-sol",
+    "effort": "high",
+    "read_only": true,
+    "material_findings": 1,
+    "fixed": "undo authority rechecked after async commit locks; RED then GREEN",
+    "additional_corrections": [
+      "real conversation revisions fence ordinary new turns, four agent RED/GREEN cases plus first-route case",
+      "new text fallback cannot start after pairing/runtime loss during native acknowledgement"
+    ],
+    "deferred_minor": "Other acknowledgement remains Applied if both UI editing and instruction delivery fail"
+  },
+  "gates": {
+    "ruff": "passed nineteen scoped Python paths",
+    "bandit": "passed twelve production paths against unchanged repository baseline",
+    "strict_source_gitleaks": {
+      "exit_code": 0,
+      "findings": 0,
+      "files": 20,
+      "allow_comments_ignored": true,
+      "new_exceptions": false
+    },
+    "graft": {
+      "graph_ok": true,
+      "nodes": 52547,
+      "context_missing": true,
+      "cache_external": true,
+      "extensions": [
+        ".py",
+        ".ts",
+        ".tsx",
+        ".rs"
+      ],
+      "generated_js_bundles_excluded": true
+    }
+  },
+  "collateral_pins": {
+    "refreshed": 12,
+    "rows": [
+      "H011",
+      "H063",
+      "H075",
+      "H099",
+      "H153",
+      "H581"
+    ],
+    "preserved_inherited_stale": 117,
+    "verdict_upgrades": 0
+  },
+  "delivered": [
+    "Native Telegram ToolRPC clarify choices/Other/multiselect and typed fallback",
+    "Actual native reset/new/undo once/cancel/Always choice routing with real-memory preservation tests",
+    "Real worker/queue/executor standing-grant and revoke path, no direct grant minting",
+    "Transport receipt/topic/identity/revision/generation fences, owned bounded callback shutdown",
+    "Fresh owner/pairing and exact conversation state before reset or durable undo"
+  ],
+  "limits": [
+    "Local synthetic model, MockTransport Bot API and fake polling pages; no live provider/channel acceptance",
+    "Default-off preview retained; no CLI/HUD/Slack/Discord equivalence claimed",
+    "No new full backend/frontend or fresh H277 mutation run; historical snapshots remain historical",
+    "Signed physical kernel acceptance for the new permission surface remains separate from worker/executor tests",
+    "Prior dirty work and head preserved; no stage, commit, push, merge, deploy or paid provider activation"
+  ],
+  "remaining": "Native Slack/Discord cards and callbacks, governed workspace delivery receipts before human-wait credit, CLI/HUD/web/other chat producers and pending interception. Physical signed enforce-kernel session_command grant/revoke acceptance beyond the real worker/queue/executor tests. Full donor batch-question/validation/timeout acceptance; preserve ephemeral outcomes across all command/response paths without memory append and extend deletion transports. Same-instance orchestrator stop/start investigation and invalid-retry asynchronous delivery. If both Other keyboard edit and text instruction fail, callback still reports Applied with old buttons (typed fallback works). General model-reply egress after pairing revocation is not covered by the prompt-only guard. Full integrated H067 backend/serial frontend acceptance, fresh H277 original49 mutations and remaining H277 kernel/provider requirements. All697 scope unchanged. Cold-start undo with a persisted but not-yet-loaded transcript still needs direct acceptance coverage.",
+  "published": false
+}

@@ -39,9 +39,16 @@ chose to print, so the tool loop fences it as DATA and raises the turn's taint.
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import hmac
+import json
 import logging
+import os
 from collections.abc import Callable, Mapping, Sequence
+from time import monotonic
 
+from . import code_interruptions
 from .action_origin import current_action_origin
 from .environments.output_limits import (
     MAX_LINE_LENGTH,
@@ -105,7 +112,9 @@ ONESHOT_SCHEMA = {
 DESCRIPTION = (
     "Run one Python script in the isolated sandbox. Inside it, "
     "jarvis_tool_call(name, args) reaches the same tools this turn was offered, so "
-    "many calls can be filtered and combined without returning here between them."
+    "many calls can be filtered and combined without returning here between them. "
+    "Import offered tools with from jarvis_tools import tool_name; functions accept "
+    "the tool schema's arguments and return the same RPC envelope."
 )
 SESSION_DESCRIPTION = DESCRIPTION + (
     " Variables, imports and loaded data persist between calls in this session; the "
@@ -169,6 +178,17 @@ def _cap(text: str, limit: int, label: str, binding: bool) -> TruncatedText:
         original_bytes=original,
         omitted_bytes=max(0, original - len(capped.text.encode("utf-8"))),
     )
+
+
+def _interrupted_preview(text: str, limit: int, marker: str = "") -> tuple[str, bool]:
+    """Keep partial bytes within the normal per-stream budget, reserving the marker."""
+    shaped = cap_lines(text, max_lines=MAX_OUTPUT_LINES, max_line_length=MAX_LINE_LENGTH)
+    raw = shaped.text.encode("utf-8")
+    marker_bytes = len(marker.encode("utf-8"))
+    budget = max(0, limit - marker_bytes - (1 if marker and raw else 0))
+    kept = raw[:budget].decode("utf-8", errors="ignore")
+    body = f"{kept}\n{marker}" if kept and marker else kept or marker
+    return body, shaped.capped or len(raw) > budget
 
 
 def _int_setting(settings: Callable[[str, object], object], key: str, default: int) -> int:
@@ -293,6 +313,9 @@ class CodeExecutionTool:
         authorizer: Callable[..., object] | None = None,
         result_store=None,
         shared_session: Callable[[], bool] | None = None,
+        environment_registry=None,
+        environment_source=None,
+        project_redactor=None,
     ) -> None:
         self._server = server
         self._sandbox = sandbox
@@ -309,6 +332,62 @@ class CodeExecutionTool:
         # H305/H595. Absent, and an over-long stream is truncated as before; the
         # feature adds a complete copy, it never becomes a dependency.
         self._result_store = result_store
+        self._environment_registry = environment_registry
+        self._environment_source = os.environ if environment_source is None else environment_source
+        self._project_redactor = project_redactor
+        self._context_key = os.urandom(32)
+
+    def _execution_context(self, invocation):
+        from .code_context import normalize_mode
+        from .code_env import prepare_code_env
+
+        owner = invocation.principal == "owner"
+        mode = normalize_mode(self._settings("llm.execute_code_mode", None))
+        root = self._settings("llm.execute_code_project_root", "") if owner else ""
+        if not isinstance(root, str):
+            raise ValueError("invalid_project_root")
+        env = {}
+        interpreter_env = {}
+        if owner and self._environment_registry is not None:
+            names = self._environment_registry.resolve_names(
+                agent=invocation.agent, principal=invocation.principal,
+                session_id=invocation.session_id,
+                machine_allowlist=lambda: self._settings("llm.execute_code_env_passthrough", ()))
+            env = prepare_code_env(self._environment_source, allowed_names=names)
+            for name in ("VIRTUAL_ENV", "CONDA_PREFIX"):
+                value = (self._environment_source(name) if callable(self._environment_source)
+                         else self._environment_source.get(name))
+                if isinstance(value, str) and "\x00" not in value:
+                    interpreter_env[name] = value
+        explicit = mode == "strict" or bool(root) or bool(env) or bool(interpreter_env)
+        if not explicit:
+            return None, ""
+        context = {"mode": mode, "project_root": root, "env": env,
+                   "interpreter_env": interpreter_env}
+        # A public hash of a low-entropy credential would reveal its value. Use a
+        # process-private keyed revision instead; only this opaque id enters keys.
+        revision = hmac.new(self._context_key, json.dumps(context, sort_keys=True).encode(),
+                            hashlib.sha256).hexdigest()
+        context["redact"] = self._project_redactor
+        return context, revision
+
+    def _context_requires_grant(self, invocation):
+        from .code_context import normalize_mode
+
+        mode = normalize_mode(self._settings("llm.execute_code_mode", None))
+        owner = invocation.principal == "owner"
+        return mode == "strict" or (owner and (
+            self._environment_registry is not None
+            or bool(self._settings("llm.execute_code_project_root", ""))))
+
+    def _revalidate_context(self, invocation, revision):
+        self._authorize_cell(invocation, revalidate=True)
+        try:
+            _current, current_revision = self._execution_context(invocation)
+        except (ValueError, TypeError):
+            raise ToolRPCValidationError("code_context_changed") from None
+        if current_revision != revision:
+            raise ToolRPCValidationError("code_context_changed")
 
     # ── authority ────────────────────────────────────────────────────────────
 
@@ -366,11 +445,11 @@ class CodeExecutionTool:
     # ── the arguments ────────────────────────────────────────────────────────
 
     def sessions_on(self) -> bool:
-        """K2 is a second switch, not a consequence of the first."""
+        """Use the resident manager by default; retain an explicit owner opt-out."""
         if self._kernels is None:
             return False
         try:
-            return self._settings(SESSION_SETTING, False) is True
+            return self._settings(SESSION_SETTING, True) is True
         except Exception:
             logger.warning("session-kernel setting unreadable; leaving it off",
                            exc_info=True)
@@ -428,25 +507,105 @@ class CodeExecutionTool:
             logger.warning("execute_code authority binding failed", exc_info=True)
             return {"ok": False, "reason": AUTHORITY_UNAVAILABLE}
 
+        capture = code_interruptions.PartialOutput()
+
+        async def run_bound():
+            token = code_interruptions.capture_scope(capture)
+            try:
+                return await self._execute_bound(invocation, args, sandbox)
+            finally:
+                code_interruptions.reset_capture(token)
+
+        child = asyncio.create_task(run_bound(), name="execute-code-cell")
+        active = (code_interruptions.register(invocation.session_id, child, capture)
+                  if code_interruptions.is_conversation(invocation.session_id) else None)
+        started = monotonic()
+        try:
+            result = await child
+        except asyncio.CancelledError:
+            # A disconnected request cancels the parent task too. Only a trusted
+            # new-message signal may turn the child's cancellation into a result.
+            if (active is None or not active.interrupted
+                    or asyncio.current_task().cancelling()):
+                raise
+            limit, _binding = _output_ceiling(sandbox)
+            stdout, out_truncated = _interrupted_preview(
+                capture.stdout, limit, code_interruptions.MARKER)
+            stderr, err_truncated = _interrupted_preview(capture.stderr, limit)
+            result = {
+                "ok": False, "status": "interrupted",
+                "stdout": stdout,
+                "stderr": stderr,
+                "tool_calls": capture.tool_calls, "tool_calls_made": capture.tool_calls,
+                "duration": monotonic() - started,
+                "duration_seconds": monotonic() - started,
+                "state_lost": True,
+                "session": self.sessions_on(),
+                "truncated": capture.truncated or out_truncated or err_truncated,
+                "output_limit": limit,
+                "tainted": bool(capture.stdout or capture.stderr),
+            }
+        finally:
+            code_interruptions.unregister(active)
+        if "status" not in result and ("stdout" in result or "stderr" in result):
+            result["status"] = ("timeout" if result.get("timed_out")
+                                or result.get("reason") == "timed_out" else
+                                "success" if result.get("ok") else "error")
+        if "status" in result:
+            stdout, stderr = str(result.get("stdout") or ""), str(result.get("stderr") or "")
+            result.setdefault("output", f"{stdout}\n{stderr}" if stdout and stderr else stdout or stderr)
+            result.setdefault("tool_calls_made", result.get("tool_calls", 0))
+            result.setdefault("duration_seconds", result.get("duration", monotonic() - started))
+        if result.get("tainted") is True:
+            # The code handler runs in its own child task so ingress can cancel
+            # only that child. ContextVar origin changes inside it do not flow
+            # back to the awaiting model turn; carry the result's taint across.
+            from .security.recall_taint import mark_turn_recall_tainted
+            mark_turn_recall_tainted()
+        return result
+
+    async def _execute_bound(self, invocation, args: Mapping[str, object], sandbox) -> dict:
+
         code = str(args.get("code") or "")
         max_calls = max(0, _int_setting(
             self._settings, MAX_TOOL_CALLS_SETTING, DEFAULT_MAX_TOOL_CALLS))
         if self.sessions_on():
             return await self._session_cell(
                 invocation, code, reset=bool(args.get("reset")), sandbox=sandbox)
-        return await self._oneshot(invocation, code, sandbox, max_calls=max_calls)
+        try:
+            requires_grant = self._context_requires_grant(invocation)
+            if requires_grant:
+                self._authorize_cell(invocation)
+            context, revision = self._execution_context(invocation)
+        except ToolRPCValidationError as refusal:
+            return {"ok": False, "reason": refusal.reason}
+        except (ValueError, TypeError):
+            return {"ok": False, "reason": "code_context_invalid"}
+        if context is not None:
+            context["check_current"] = lambda: self._revalidate_context(invocation, revision)
+        try:
+            return await self._oneshot(invocation, code, sandbox, max_calls=max_calls,
+                execution_context=context,
+                before_execute=(lambda: self._revalidate_context(invocation, revision))
+                    if requires_grant else None)
+        except ToolRPCValidationError as refusal:
+            return {"ok": False, "reason": refusal.reason}
 
-    async def _oneshot(self, invocation, code, sandbox, *, max_calls, before_execute=None):
+    async def _oneshot(self, invocation, code, sandbox, *, max_calls, before_execute=None,
+                       execution_context=None):
         from .tool_rpc_runtime import ToolRPCSandboxRuntime
         # Opened before the run because that is the only moment it can be: the
         # sandbox's reader discards the middle of a long stream as it goes, so a
         # spill taken afterwards would be a copy of the truncation. Whether either
         # is worth keeping is decided after, by `_stream_fields`.
         out_spill, err_spill, sinks = self._open_stream_spills()
+        capture = code_interruptions.current_capture()
         try:
             run = await ToolRPCSandboxRuntime(
                 self._server, sandbox, invocation=invocation, max_tool_calls=max_calls,
             ).run_python(code, sinks=sinks,
+                         **({"on_tool_call": capture.tool_called} if capture is not None else {}),
+                         **({"execution_context": execution_context} if execution_context is not None else {}),
                          **({"before_execute": before_execute} if before_execute else {}))
         except BaseException:
             self._abandon_stream_spills(out_spill, err_spill)
@@ -472,6 +631,10 @@ class CodeExecutionTool:
             "max_tool_calls": max_calls,
             "timed_out": run.timed_out,
             "offered_tools": sorted(invocation.offered),
+            **({"execution_context": run.result.execution_context}
+               if getattr(run.result, "execution_context", None) else {}),
+            **({"reason": run.result.refusal_reason}
+               if getattr(run.result, "refusal_reason", "") else {}),
             **_run_taint(stdout.text, stderr.text,
                          read_untrusted=is_untrusted_source(current_action_origin())),
         }
@@ -484,15 +647,21 @@ class CodeExecutionTool:
         call site reads as one step rather than three.
         """
         store = self._result_store
-        if store is None:
+        capture = code_interruptions.current_capture()
+        out = store.open_stream(tool=_STREAM_TOOLS["STDOUT"]) if store is not None else None
+        err = store.open_stream(tool=_STREAM_TOOLS["STDERR"]) if store is not None else None
+        if out is None and err is None and capture is None:
             return None, None, None
-        out = store.open_stream(tool=_STREAM_TOOLS["STDOUT"])
-        err = store.open_stream(tool=_STREAM_TOOLS["STDERR"])
-        if out is None and err is None:
-            return None, None, None
+
+        def write(chunk, spill, sink):
+            if spill is not None:
+                spill.write(chunk)
+            if sink is not None:
+                sink(chunk)
+
         return out, err, StreamSinks(
-            stdout=out.write if out is not None else None,
-            stderr=err.write if err is not None else None,
+            stdout=lambda chunk: write(chunk, out, capture.stdout_sink if capture else None),
+            stderr=lambda chunk: write(chunk, err, capture.stderr_sink if capture else None),
         )
 
     @staticmethod
@@ -519,16 +688,60 @@ class CodeExecutionTool:
         cell here rather than at whatever it would have done next.
         """
         from .tool_rpc_runtime import ToolCallBroker
+        from .tool_rpc_stubs import tool_import_source
+
+        capture = code_interruptions.current_capture()
+
+        class CountingBroker(ToolCallBroker):
+            async def call(self, tool, args):
+                result = await super().call(tool, args)
+                if capture is not None:
+                    capture.tool_called()
+                return result
+
+        granted = False
+
+        def authorize_cell(_cell):
+            nonlocal granted
+            self._authorize_cell(invocation, revalidate=granted)
+            granted = True
+
+        # One consuming grant per invocation; lock/startup checks only validate
+        # that grant against live policy, using the kernel's existing contract.
+        authorize_cell.revalidate = lambda _cell: self._authorize_cell(invocation, revalidate=True)
+
+        try:
+            # Resolve project files and environment values only after a GRANT.
+            authorize_cell(code)
+            execution_context, revision = self._execution_context(invocation)
+        except ToolRPCValidationError as refusal:
+            return {"ok": False, "reason": refusal.reason, "session": True}
+        except (ValueError, TypeError):
+            return {"ok": False, "reason": "code_context_invalid", "session": True}
+
+        def revalidate_context(_cell):
+            self._revalidate_context(invocation, revision)
+
+        authorize_cell.revalidate = revalidate_context
+        if execution_context is not None:
+            execution_context["check_current"] = lambda: revalidate_context(code)
 
         if reset:
+            try:
+                authorize_cell(code)
+            except ToolRPCValidationError as refusal:
+                return {"ok": False, "reason": refusal.reason, "session": True}
             await self._kernels.reset(invocation)
         out_spill, err_spill, sinks = self._open_stream_spills()
         try:
             outcome = await self._kernels.run(
                 invocation, code,
-                authorize=lambda cell: self._authorize_cell(invocation),
-                broker=ToolCallBroker(self._server, invocation),
+                authorize=authorize_cell,
+                broker=CountingBroker(self._server, invocation),
                 sinks=sinks,
+                prelude=tool_import_source(self._server.tools(), invocation.offered),
+                **({"execution_context": execution_context, "context_id": revision}
+                   if execution_context is not None or revision else {}),
             )
         except BaseException:
             self._abandon_stream_spills(out_spill, err_spill)
@@ -539,7 +752,8 @@ class CodeExecutionTool:
             try:
                 result = await self._oneshot(invocation, code, sandbox, max_calls=max(0,
                     _int_setting(self._settings, MAX_TOOL_CALLS_SETTING, DEFAULT_MAX_TOOL_CALLS)),
-                    before_execute=lambda: self._authorize_fallback(invocation))
+                    execution_context=execution_context,
+                    before_execute=lambda: self._authorize_fallback(invocation, revalidate=granted))
             except (KernelRefused, ToolRPCValidationError) as refusal:
                 return {"ok": False, "reason": refusal.reason, "session": False,
                         "state_lost": outcome.state_lost, "continuity": outcome.continuity}
@@ -566,17 +780,17 @@ class CodeExecutionTool:
             **_run_taint(stdout.text, stderr.text, read_untrusted=outcome.tainted),
         }
 
-    def _authorize_fallback(self, invocation):
+    def _authorize_fallback(self, invocation, *, revalidate=False):
         from .session_kernels import KernelRefused
         reason = self._kernels.dispatch_refusal(invocation)
         if reason:
             raise KernelRefused(reason)
-        self._authorize_cell(invocation)
+        self._authorize_cell(invocation, revalidate=revalidate)
         reason = self._kernels.dispatch_refusal(invocation)
         if reason:
             raise KernelRefused(reason)
 
-    def _authorize_cell(self, invocation) -> None:
+    def _authorize_cell(self, invocation, *, revalidate=False) -> None:
         """Cross the Action Kernel for this cell, or refuse it.
 
         A resident interpreter authorized once and then fed arbitrary later code is a
@@ -584,11 +798,13 @@ class CodeExecutionTool:
         effect, the same boundary the one-shot path already sits behind.
         """
         if self._authorizer is None:
-            return
+            raise ToolRPCValidationError(SESSION_DENIED)
         from .kernel import Action, Verdict
 
         try:
-            decision = self._authorizer(Action(
+            checker = (getattr(self._authorizer, "revalidate", self._authorizer)
+                       if revalidate else self._authorizer)
+            decision = checker(Action(
                 kind="tool.rpc", agent=invocation.agent,
                 title="Run one code cell in the session kernel",
                 payload={"tool": TOOL, "target": TOOL, "session": invocation.session_id},
@@ -597,7 +813,7 @@ class CodeExecutionTool:
         except Exception:
             logger.warning("session cell authorization failed", exc_info=True)
             raise ToolRPCValidationError(SESSION_DENIED) from None
-        if getattr(decision, "verdict", None) is Verdict.DENY:
+        if getattr(decision, "verdict", None) is not Verdict.GRANT:
             raise ToolRPCValidationError(SESSION_DENIED)
 
 
@@ -624,6 +840,9 @@ def register_code_tools(
     authorizer: Callable[..., object] | None = None,
     result_store=None,
     shared_session: Callable[[], bool] | None = None,
+    environment_registry=None,
+    environment_source=None,
+    project_redactor=None,
 ) -> list[str]:
     """Register ``execute_code`` when the owner has switched it on, else nothing.
 
@@ -642,6 +861,8 @@ def register_code_tools(
         server, sandbox=sandbox, settings=settings, agent_patterns=agent_patterns,
         principal=principal, session_id=session_id, kernels=kernels,
         authorizer=authorizer, result_store=result_store, shared_session=shared_session,
+        environment_registry=environment_registry, environment_source=environment_source,
+        project_redactor=project_redactor,
     )
     sessions = tool.sessions_on()
     server.register_tool(

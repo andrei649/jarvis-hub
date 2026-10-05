@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-10-05T20:49:28.450418+00:00",
+  "head_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "goal_scope": "all697",
+  "publication": false,
+  "implemented": [
+    "Actual HUD typed composer sends follow-up during pending text stream through existing authenticated SSE seam",
+    "Separate reply identity, controller and completion for every text stream; pending answers keep original controller",
+    "Stop/unmount abort and settle every stream; late events cannot replace another reply",
+    "Voice overlap remains guarded; vision exclusive; rapid identical typed submissions rejected; EOF releases ownership"
+  ],
+  "verification": {
+    "red": "Rendered composer second submission produced one request instead of two before localized change",
+    "full_frontend": {
+      "tests": 1926,
+      "passed": 1926,
+      "failed": 0,
+      "pending": 0,
+      "test_files": 213,
+      "path": "docs/hermes/evidence/2026-10-05-code-hud/frontend-result.json"
+    },
+    "agent_affected_tests": 34,
+    "counts_overlap": true,
+    "typecheck": true,
+    "build": true,
+    "build_warning": "Existing Vite chunks exceed 500 kB; no build error",
+    "records": {
+      "tests": 104,
+      "passed": 104,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "path": "docs/hermes/evidence/2026-10-05-code-hud/records-result.xml"
+    }
+  },
+  "remaining": [
+    "No live browser/backend combined acceptance performed",
+    "No fresh live Docker or cross-OS execution acceptance",
+    "Native-mobile interruption producer and separate H660 work remain open"
+  ],
+  "source_manifest": "docs/hermes/evidence/2026-10-05-code-hud/scoped-inputs.json",
+  "accounting": {
+    "H595": "equivalent",
+    "total_goal": 697,
+    "new_equivalent_in_batch": 1
+  },
+  "contract_review": "docs/hermes/evidence/2026-10-05-code-hud/contract-review.json"
+}

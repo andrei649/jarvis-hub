@@ -1,0 +1,11 @@
+# H277 original49: current-snapshot complete rerun
+
+Generated: 2026-10-04T20:58:13Z. Base/head: `a7ffad6676cfb28e7ac374d495b4a5889e5f4646`, explicitly dirty workspace/project snapshot. Goal: finish original H277 verification within all697 Hermes capabilities; no remote publication. Changed paths: only this proof bundle, the handoff link and truthful partial review; campaign made no production edits. Next action: actual signed child file/terminal approval/resume and donor HUD integration, then next frozen full milestone.
+
+All49 original prepared faults were rerun serially in a disposable copy of993 current inputs. **43 assertion kills,6 behavioral-exception kills,0 survivors**, with zero setup/import errors, invalid/unmappable cases or timeouts. Baseline and post-restoration checks both pass360 Python and40 legacy HUD tests, without skips/errors/failures. Every993 hash matched after every mutant and at the end; original source inputs also match, with no campaign edits.
+
+The nine mutated production files retain the exact original semantic faults and unique anchors. Fault23 now selects the already accepted nonlocal-custom-loopback public-route regression directly. This is a complete current49 campaign, replacing the previous *combined*48 detections plus one witness as current evidence; the older report remains dated history. The six exceptions are KeyError/RoleConfigError in test bodies (indices6,7,12,18,35,44), not harness/setup failures.
+
+[Verification summary](verification.json), [current input hashes](input-manifest.json), [exact mappings](mapping.json), [case results](results.json) and per-case logs/XML provide the evidence. The runner is preserved as `runner.py.txt` so documentation proof does not add executable test collection/import surface.
+
+The latest full backend snapshot completed23521 cases:23480 passed,6 failed,35 ordinary skips/xfail, zero frozen drift. Three reproducible compatibility defects were then corrected and269/270 corrective tests passed with one ordinary skip. The eight human-wait cases passed three additional isolated rounds with deadlines unchanged; the earlier full-run timing failure remains a concern for the next full milestone. This report makes **no green full-backend, full H277/provider/native/live or all697 parity claim**. H277 remains partial and its broader remaining requirements are preserved.

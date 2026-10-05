@@ -332,7 +332,10 @@ def test_current_images_and_sdk_are_not_mistaken_for_full_inventory_parity():
     # not done either: the remote kernel and K3's operator controls are unwritten, and
     # no container has been proven. The pin moves with the evidence, never past it.
     assert rows["H660"]["status"] == "partial"
-    assert rows["H595"]["status"] == "partial"
+    # H595's twelve-entry programmatic-code contract now has its own registered
+    # worker/context/interruption and rendered HUD evidence. That closure does
+    # not imply H660 remote backend breadth or the unfinished image providers.
+    assert rows["H595"]["status"] == "equivalent"
 
 
 def test_json_summary_and_bounded_listing(sample, capsys):

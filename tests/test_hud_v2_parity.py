@@ -476,6 +476,7 @@ _CLIENT_GLOBS = (
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
     "/api/kanban/command": "owner host CLI bridge, used by nerva kanban; board UI uses dedicated REST routes",
+    "/api/kanban/projects/command": "owner host CLI bridge, used by nerva project; project inventory uses the dedicated REST route",
     "/api/vlm/composer/status":
         "legacy vision preview read by `nerva chat --image`; the web composer uses "
         "prompt-bound /api/vlm/composer/prepare instead",
@@ -542,42 +543,28 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
-    # H075/H581: scoped server/API consumers exist; dedicated HUD/native board,
-    # task drawer, attachments and configuration controls remain unfinished.
+    # H075/H581: ProjectsMode now consumes the core board, drawer, attachment,
+    # metadata and dispatch routes. Remaining advanced HUD/native controls follow.
     # Each exact path is also recorded in docs/design/HUD_V2_REMAINING.md.
     "/api/kanban/assignees",
-    "/api/kanban/attachments/{attachment_id}",
-    "/api/kanban/board",
-    "/api/kanban/boards",
     "/api/kanban/boards/import",
-    "/api/kanban/boards/{slug}",
     "/api/kanban/boards/{slug}/export",
     "/api/kanban/boards/{slug}/switch",
     "/api/kanban/config",
     "/api/kanban/diagnostics",
-    "/api/kanban/dispatch",
     "/api/kanban/estimate",
     "/api/kanban/home-channels",
     "/api/kanban/links",
     "/api/kanban/model-options",
-    "/api/kanban/orchestration",
-    "/api/kanban/profiles",
     "/api/kanban/profiles/{profile_name}",
     "/api/kanban/profiles/{profile_name}/describe-auto",
-    "/api/kanban/projects",
     "/api/kanban/runs/{run_id}",
     "/api/kanban/runs/{run_id}/inspect",
     "/api/kanban/runs/{run_id}/terminate",
     "/api/kanban/stats",
-    "/api/kanban/tasks",
-    "/api/kanban/tasks/bulk",
-    "/api/kanban/tasks/{task_id}",
-    "/api/kanban/tasks/{task_id}/attachments",
-    "/api/kanban/tasks/{task_id}/comments",
     "/api/kanban/tasks/{task_id}/decompose",
     "/api/kanban/tasks/{task_id}/estimate",
     "/api/kanban/tasks/{task_id}/home-subscribe/{platform}",
-    "/api/kanban/tasks/{task_id}/log",
     "/api/kanban/tasks/{task_id}/reassign",
     "/api/kanban/tasks/{task_id}/reclaim",
     "/api/kanban/tasks/{task_id}/specify",
@@ -657,6 +644,56 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/worldview/status",
 ])
 
+
+# ProjectsMode mounts KanbanView, which calls these transport functions. Its API
+# composes paths from `root` and `scopedPath`, so the literal-route matcher above
+# cannot discover them. Keep transport expressions and mounted consumers here so
+# a removed button/read or changed route cannot silently count as a HUD caller.
+KANBAN_HTTP_CONSUMERS: dict[str, tuple[str, str, str]] = {
+    "/api/kanban/attachments/{attachment_id}": ("scopedPath(`/attachments/${id}`, slug)", "downloadAttachment", "drawer.tsx"),
+    "/api/kanban/board": ("root + '/board'", "fetchBoard", "KanbanView.tsx"),
+    "/api/kanban/boards": ("root + '/boards'", "fetchBoards", "KanbanView.tsx"),
+    "/api/kanban/boards/{slug}": ("`${root}/boards/${encodeURIComponent(slug)}`", "updateBoard", "board-switcher.tsx"),
+    "/api/kanban/dispatch": ("scopedPath('/dispatch', slug)", "dispatch", "KanbanView.tsx"),
+    "/api/kanban/orchestration": ("root + '/orchestration'", "fetchOrchestration", "KanbanView.tsx"),
+    "/api/kanban/profiles": ("root + '/profiles'", "fetchProfiles", "KanbanView.tsx"),
+    "/api/kanban/projects": ("root + '/projects'", "fetchProjects", "KanbanView.tsx"),
+    "/api/kanban/tasks": ("scopedPath('/tasks', slug)", "createTask", "board.tsx"),
+    "/api/kanban/tasks/bulk": ("scopedPath('/tasks/bulk', slug)", "bulkTasks", "KanbanView.tsx"),
+    "/api/kanban/tasks/{task_id}": ("scopedPath(`/tasks/${encodeURIComponent(id)}`, slug)", "fetchTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/attachments": ("scopedPath(`/tasks/${encodeURIComponent(id)}/attachments`, slug)", "uploadAttachment", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/comments": ("scopedPath(`/tasks/${encodeURIComponent(id)}/comments`, slug)", "addComment", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/log": ("scopedPath(`/tasks/${encodeURIComponent(id)}/log`, slug)", "fetchLog", "drawer.tsx"),
+}
+
+
+def test_mounted_kanban_composed_callers_are_accounted_for():
+    files = _client_files()
+    transport = files["frontend/src/panels/kanban/api.ts"]
+    host = files["frontend/src/gap.tsx"]
+    view = files["frontend/src/panels/kanban/KanbanView.tsx"]
+    assert "<KanbanView />" in host and "createKanbanSocket(" in view
+    assert "const root = '/api/kanban'" in transport
+    assert "root + '/events'" in transport and "new WebSocket(kanbanEventsUrl" in transport
+    routes = set(_snapshot_routes())
+    blob = _client_blob()
+    for path, (expression, function, consumer) in KANBAN_HTTP_CONSUMERS.items():
+        client = files[f"frontend/src/panels/kanban/{consumer}"]
+        assert path in routes, f"{path} is no longer a server route"
+        assert expression in transport, f"{path} transport expression changed"
+        assert re.search(rf"\b{re.escape(function)}\(", client), f"{path} lost its mounted UI call"
+        assert not _has_caller(path, blob), f"{path} became literal; remove computed classification"
+        assert path in COMPUTED_URL_CALLERS, f"{path} is absent from computed callers"
+        assert path not in UNCALLED_BACKLOG, f"{path} still claims no client caller"
+
+
+def test_kanban_route_gap_document_matches_the_uncalled_routes():
+    remaining = (REPO / "docs/design/HUD_V2_REMAINING.md").read_text(encoding="utf-8")
+    section = remaining.split("Kanban client route gaps:", 1)[1].split("\n\nH011 checkpoints", 1)[0]
+    documented = set(re.findall(r"^- `(/api/kanban/[^`]+)`$", section, flags=re.MULTILINE))
+    uncalled = {path for path in UNCALLED_BACKLOG if path.startswith("/api/kanban/")}
+    assert documented == uncalled
+
 # Routes whose client call is BUILT rather than written: the last segment comes from a
 # variable (`'/api/missions/' + id + '/' + action`), so no literal template exists for the
 # matcher above to find. Each entry names the client file that builds it, and
@@ -666,6 +703,9 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
 # NOT unfinished work: putting them on the punch list would record a false statement and
 # send a future reader to build controls that already exist.
 COMPUTED_URL_CALLERS: dict[str, str] = {
+    # Kanban transport composes the shared root and scoped task paths in api.ts.
+    # The test above verifies each expression and its mounted UI consumer.
+    **dict.fromkeys(KANBAN_HTTP_CONSUMERS, "frontend/src/panels/kanban/api.ts"),
     # JobsPanel builds the accepted receipt polling URL from JOBS_PATH and both IDs.
     "/api/jobs/{job_id}/requests/{request_id}": "frontend/src/panels/jobs.tsx",
     # AcquisitionPanel: apiPost(`/api/acquisition/${…}/${action}`), action from the buttons
@@ -811,6 +851,9 @@ def test_computed_url_callers_stay_real():
             problems.append(f"{path}: no longer a route")
         elif source is None:
             problems.append(f"{path}: {client} is not in the client corpus")
+        elif path in KANBAN_HTTP_CONSUMERS:
+            # The dedicated gate checks the composed URL and its mounted caller.
+            continue
         elif stem not in source:
             problems.append(f"{path}: {client} never mentions {stem}")
         elif any(not re.search(rf"\b{re.escape(w)}\b", source) for w in words):

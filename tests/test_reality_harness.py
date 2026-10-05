@@ -45,8 +45,9 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
     out = await rh.run_reality(cases, promote=False)
     results = {item["capability_id"]: item["passed"] for item in out["results"]}
 
-    # URL attachments add one governed plugin to the previous 77 boot records.
-    assert len(cases) == len(records) == 78
+    # URL attachments and ntfy add governed plugins to the previous 77 records.
+    assert len(cases) == len(records) == 79
+    assert results["plugin:ntfy"] is True
     assert {capability_id for capability_id, passed in results.items() if not passed} == {
         capability_id for capability_id, record in records.items() if record.state == cr.SEAM
     }

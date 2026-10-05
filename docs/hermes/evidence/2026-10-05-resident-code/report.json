@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-10-05T18:41:22.829662+00:00",
+  "goal_scope": "all697",
+  "base_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "capabilities": {
+    "H595": "partial",
+    "H660": "partial"
+  },
+  "publication": false,
+  "behavior": [
+    "Resident sessions are the default when execute_code is enabled with a composed pinned isolated backend; explicit sessions=false is retained. No process starts during composition.",
+    "Model-facing cells require exact GRANT; absent, QUEUE, malformed and denied decisions cannot start or mutate the resident worker.",
+    "A refused reset preserves prior interpreter variables. Each call owns one consuming cell grant; startup, lock and safe fallback checks reuse the existing bound kernel.revalidate API. No grant crosses invocations.",
+    "Live policy is checked after acquiring the interpreter lock. Revocation during the wait refuses before cell input; pure callbacks without revalidate conservatively repeat authorization."
+  ],
+  "reused": "Existing Nerva resident worker, sandbox invocation, detached Docker mailbox, host ToolCallBroker and bound kernel non-consuming revalidate. No new dependency, backend, API schema or provider spend.",
+  "verification": {
+    "runs": [
+      {
+        "path": "docs/hermes/evidence/2026-10-05-resident-code/affected-result.xml",
+        "tests": 526,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-resident-code/shared-impact-result.xml",
+        "tests": 553,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-resident-code/gates-result.xml",
+        "tests": 54,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-resident-code/hud-result.xml",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "counts_overlap": true,
+    "affected_source_state": "Final production correction; 525 passed and 1 platform skip.",
+    "shared_gate_hud_source_state": "Earlier stage of the same batch, before final code_tools/session_kernels revalidation correction. Coordinator, route, schema and frontend unchanged since those runs; final resident/RPC regression rerun covers changed authorization.",
+    "skip": "test_h315h_todo_review.py requires Linux /proc descriptor inventory unavailable on macOS.",
+    "ruff": "10 scoped source/test paths passed",
+    "bandit": {
+      "paths": 4,
+      "findings": 0,
+      "errors": 0
+    },
+    "strict_gitleaks": {
+      "paths": 10,
+      "findings": 0,
+      "baseline": false,
+      "inline_allow": false
+    },
+    "manifest": "docs/hermes/evidence/2026-10-05-resident-code/scoped-inputs.json",
+    "impact": "docs/hermes/evidence/2026-10-05-resident-code/reviewed-pin-impact.json",
+    "existing_test_assertions_unchanged": true,
+    "graft_graph": {
+      "ok": true,
+      "added": 0,
+      "removed": 0,
+      "changed": 0,
+      "stale": 0,
+      "context_missing": true
+    },
+    "live_docker_or_remote": false,
+    "whole_suite_or_full697": false
+  },
+  "remaining": [
+    "H660 detached SSH/Modal and governed remote Docker transport; production/runtime acceptance remains separate.",
+    "H595 complete pinned 12-entry contract comparison and integration acceptance, including environment hardening and scoped tool reach. Current generic remote/native-output/resume notes need mapping to exact frozen requirements before changing the verdict.",
+    "H515 image integration and remaining697 contracts."
+  ],
+  "accounting": {
+    "equivalent": 129,
+    "total": 697,
+    "percent": 18.5,
+    "reviewed_equivalent": 21,
+    "inherited_equivalent": 108,
+    "new_equivalent_in_this_batch": 0
+  }
+}

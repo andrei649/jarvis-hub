@@ -189,11 +189,13 @@ def _canonical_mediation_classification(kind: str) -> bool | None:
     try:
         from agents.core.kernel.registry import Mediation, classify
 
-        # The registered ToolRPC terminal producer persists its queue task as
-        # toolrpc.terminal_run, while the physical Action Kernel owns
-        # terminal.exec. Only this exact producer kind uses that contract;
-        # other toolrpc kinds remain unclassified by the kernel registry.
-        registry_kind = "terminal.exec" if kind == "toolrpc.terminal_run" else kind
+        # Exact registered producers retain their typed queue identity while
+        # sharing the physical effect's canonical mediation contract.
+        registry_kind = {
+            "toolrpc.terminal_run": "terminal.exec",
+            "toolrpc.file_write": "file.write",
+            "toolrpc.file_delete": "file.write",
+        }.get(kind, kind)
         mediation = classify(registry_kind)
         if mediation is Mediation.KERNEL:
             return True

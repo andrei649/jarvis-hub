@@ -787,6 +787,19 @@ class AutonomyCoordinator:
             persisted = queue.get(task_id)
             if persisted is None:
                 return False
+            if persisted.kind in {'toolrpc.file_write', 'toolrpc.file_delete'} and queue.mediation_mode != 'off':
+                worker = getattr(self._orch, 'autonomy', None)
+                if queue.mediation_mode != 'enforce' or getattr(worker, 'queue', None) is not queue:
+                    return False
+                try:
+                    permit = worker._execution_context.get()
+                    fingerprint = queue.execution_fingerprint(task)
+                    if (permit is None or not permit.consumed or not fingerprint
+                            or getattr(permit, '_fingerprint', None) != fingerprint
+                            or not queue.validate_mediated_execution(task, fingerprint)):
+                        return False
+                except Exception:
+                    return False
             if is_video_task(persisted):
                 if queue.mediation_mode != "enforce":
                     return False
@@ -852,6 +865,9 @@ class AutonomyCoordinator:
             kernel=action_kernel,
             execution_context_check=_approved_execution_context,
         )
+        from .channels.pending_input_runtime import register_clarify_tool
+
+        register_clarify_tool(server, self._orch)
         server.register_tool(
             "image_generate", image_dispatcher.execute, gated=True,
             description="Propose one image: local ComfyUI by default, or explicit paid OpenAI cloud generation; human approval required.",
@@ -1070,6 +1086,16 @@ class AutonomyCoordinator:
                     return False
 
             def current_request(task_id, request):
+                if approved is not None and isinstance(approved.payload, dict) and 'kanban_child' in approved.payload:
+                    from .kanban.workspace_context import current_workspace
+
+                    try:
+                        binding = current_workspace()
+                        if binding is None or str(binding.cwd) != approved.payload['kanban_child']['cwd']:
+                            return False
+                        binding.check()
+                    except Exception:
+                        return False
                 return (self._orch.autonomy is worker
                         and self._orch.tool_rpc is server
                         and terminal_spec is not None
@@ -1100,9 +1126,20 @@ class AutonomyCoordinator:
                 except Exception:
                     return None
 
+            child_transport = None
+            if approved is not None and isinstance(approved.payload, dict) and 'kanban_child' in approved.payload:
+                from .environments.local_transport import LocalHostTransport, default_timeout
+                from .kanban.workspace_context import current_workspace
+
+                binding = current_workspace()
+                if binding is None or args.get('target') != 'local-host' or args.get('cwd') != str(binding.cwd):
+                    return {'ok': False, 'reason': 'kanban_terminal_execution_unbound'}
+                child_transport = LocalHostTransport([binding.cwd], default_timeout=default_timeout())
+
             runner = GovernedTargetRunner(
                 self._target_registry(),
                 getattr(self._orch, "sandbox", None),
+                local_transport=child_transport,
                 authorizer=action_kernel,
                 approval_check=_durable_terminal_approval,
                 request_check=current_request,
@@ -1125,6 +1162,18 @@ class AutonomyCoordinator:
                 )
             finally:
                 reset_action_origin(origin_token)
+            from .security.log_redaction import SecretRedactionFilter
+
+            output_redactor = SecretRedactionFilter()
+            for stream in ("stdout", "stderr"):
+                if isinstance(result.get(stream), str):
+                    # The transport already exposes this validated directory as
+                    # metadata. Do not mistake its exact pwd echo for a secret;
+                    # broker redaction still applies before ToolRPC returns it.
+                    if (stream == "stdout" and result.get("cwd")
+                            and result[stream].rstrip("\r\n") == result["cwd"]):
+                        continue
+                    result[stream] = output_redactor.redact_text(result[stream])
             from . import project_context   # H594: the terminal moved into a project directory
 
             if approved_task_id is not None and args.get("cwd"):
@@ -1133,6 +1182,20 @@ class AutonomyCoordinator:
 
         def _terminal_intake(actor, args):
             """Finalize the typed terminal task before its kernel/intake decision."""
+            from .kanban.context import current_context, scope_is_bound
+
+            board_scope = current_context()
+            from .kanban.child_tools import ChildToolAdapter
+
+            child_adapter = ChildToolAdapter(self.kanban_dispatcher())
+            if scope_is_bound() and (board_scope is None or board_scope.task_id is not None
+                                     or board_scope.run_id is not None):
+                try:
+                    child = child_adapter.prepare(actor, 'terminal_run', args, {})
+                except ToolRPCValidationError as exc:
+                    raise ToolRPCValidationError('kanban_terminal_execution_unbound') from exc
+            else:
+                child = None
             from .approval_outcomes import tool_approval_scope
             from .autonomy.approval_grouping import model_request_scope
             from .autonomy.consent_registration import trusted_registration_key
@@ -1144,7 +1207,8 @@ class AutonomyCoordinator:
             self._wire_owner_once_prompts()
             self._wire_consent_prompts()
             title = "Tool 'terminal_run' via RPC"
-            payload = {'tool': 'terminal_run', 'target': 'terminal_run', 'args': dict(args)}
+            payload = {'tool': 'terminal_run', 'target': 'terminal_run', 'args': dict(args),
+                       **child_adapter.payload(child)}
             # Production worker intake owns the bridge and creates one exact
             # typed Action; do not leave a broad tool.rpc decision for that CAS.
             if action_kernel is not None and kernel_enabled():
@@ -1166,6 +1230,7 @@ class AutonomyCoordinator:
                 task_id = worker.govern_enqueue(actor, 'toolrpc.terminal_run', title,
                                                 payload=payload, risk_tier=3,
                                                 autonomy_level='ask', origin='generated')
+            child_adapter.bind(child, task_id)
             prompts = getattr(worker, '_owner_once_prompts', None)
             if prompts is not None:
                 prompts.register_invocation(
@@ -1412,7 +1477,48 @@ class AutonomyCoordinator:
             audit=getattr(self._orch, "intent_log", None),
             spill_dirs=(spill_root(),),
         )
-        register_file_tools(server, file_tools)
+        def _file_mutation_intake(actor, name, args, labels):
+            """Queue the registered, finalized file operation under its exact kind."""
+            from .kanban.child_tools import ChildToolAdapter
+            from .kernel import Action, Decision, Verdict, kernel_enabled
+            from .approval_outcomes import tool_approval_scope
+
+            child_adapter = ChildToolAdapter(self.kanban_dispatcher())
+            child = child_adapter.prepare(actor, name, args, labels)
+            worker = getattr(self._orch, 'autonomy', None)
+            if name not in {'file_write', 'file_delete'} or not callable(getattr(worker, 'govern_enqueue', None)):
+                raise ToolRPCValidationError('file_intake_unavailable')
+            title = f"Tool '{name}' via RPC"
+            notice = (labels or {}).get('notice')
+            if isinstance(notice, str) and notice:
+                title += f" — {notice}"
+            payload = {'tool': name, 'target': name, 'args': dict(args),
+                       **dict(labels or {}), **child_adapter.payload(child)}
+            if action_kernel is not None and kernel_enabled():
+                decision = action_kernel(Action(kind='toolrpc.' + name, agent=actor,
+                                                title=title, payload=payload))
+                if not isinstance(decision, Decision) or decision.verdict is Verdict.DENY:
+                    raise ToolRPCValidationError('kernel_denied')
+            from .autonomy.approval_grouping import model_request_scope
+            from .autonomy.consent_registration import trusted_registration_key
+
+            spec = server._tools.get(name)
+            with tool_approval_scope(name), model_request_scope(
+                actor=actor, tool=name, args=args,
+                epoch=spec.get('_grouping_epoch') if spec else None,
+                registration_is_live=lambda: server._tools.get(name) is spec,
+                registration_key=spec.get('_consent_registration_key') if spec else None,
+                registration_key_is_live=lambda candidate: (
+                    server._tools.get(name) is spec and trusted_registration_key(name, spec) == candidate
+                ),
+            ):
+                task_id = worker.govern_enqueue(actor, 'toolrpc.' + name, title,
+                                               payload=payload, risk_tier=3,
+                                               autonomy_level='ask', origin='generated')
+            child_adapter.bind(child, task_id)
+            return task_id
+
+        register_file_tools(server, file_tools, mutation_intake=_file_mutation_intake)
 
         def _spill_readable(path: str) -> bool:
             # H661 — a spill notice names `file_read(path=…)` only when that call would
@@ -1491,6 +1597,17 @@ class AutonomyCoordinator:
         # them itself so the authority it binds (K0) comes from the host, never from an
         # argument.
         from .code_tools import register_code_tools
+        from .code_env import CodeEnvRegistry
+
+        code_environment = CodeEnvRegistry()
+
+        def _redact_code_project(text):
+            # Secret sources may be initialized lazily after tool composition.
+            redact = getattr(getattr(self._orch, "secret_broker", None), "redact", None)
+            if not callable(redact):
+                from .code_context import ProjectSnapshotError
+                raise ProjectSnapshotError("redactor_unavailable")
+            return redact(text)
 
         kernels = self._session_kernels(_get_setting)
         register_code_tools(
@@ -1508,6 +1625,8 @@ class AutonomyCoordinator:
             # moving tag is a different program tomorrow.
             kernels=kernels,
             authorizer=action_kernel,
+            environment_registry=code_environment,
+            project_redactor=_redact_code_project,
             # H305/H595 — a run's stdout over the ceiling is spooled to disk as it
             # arrives and the result names the file, instead of the bytes being
             # dropped. Same store and same retention as a spilled tool result.
@@ -1572,6 +1691,8 @@ class AutonomyCoordinator:
             session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
             posture=lambda: tool_profile.posture().key,
             settings=_get_setting,
+            environment_registry=code_environment,
+            principal=_turn_principal,
         )
         # H309 — the model points at the owner's HUD (a tip, or a short tour) through
         # the canvas; ungated, named anchors only, marked when an untrusted turn wrote it.
@@ -1666,6 +1787,13 @@ class AutonomyCoordinator:
             # model-facing schema. Reset in `finally` so nothing leaks to the next turn.
             token = _APPROVED_TASK.set(task)
             try:
+                if isinstance(task.payload, dict) and 'kanban_child' in task.payload:
+                    from .kanban.child_tools import ChildToolAdapter
+
+                    async def invoke(child):
+                        return await server.execute(child, execution_context=execution_token)
+
+                    return await ChildToolAdapter(self.kanban_dispatcher()).execute(task, invoke)
                 return await server.execute(task, execution_context=execution_token)
             finally:
                 _APPROVED_TASK.reset(token)
@@ -1687,11 +1815,14 @@ class AutonomyCoordinator:
     def _session_kernels(self, get_setting):
         """Compose the K2 kernel manager, or None when it cannot be real.
 
-        None is the honest answer whenever the pinned image is missing or the switch
-        is off: `code_tools` then stays on the K1 one-shot path and says so, rather
+        None is the honest answer whenever code execution is off, the owner opts
+        out or the pinned image is missing: `code_tools` stays on K1 and says so,
         than advertising persistence it cannot keep.
         """
-        if get_setting(CODE_SESSIONS_SETTING, False) is not True:
+        from .code_tools import SETTING
+
+        if (get_setting(SETTING, False) is not True
+                or get_setting(CODE_SESSIONS_SETTING, True) is not True):
             return None
         image = str(get_setting("llm.execute_code_image", "") or "").strip()
         if "@sha256:" not in image:
@@ -2005,6 +2136,7 @@ class AutonomyCoordinator:
                 channel_manager=getattr(self._orch, "channel_manager", None),
                 audit=getattr(self._orch, "audit", None),
                 kernel=_broker_kernel,
+                task_reader=getattr(getattr(self._orch, "autonomy_queue", None), "get", None),
             ),
         )
         executor.register("channel.reply", self._orch.channel_replies.execute)

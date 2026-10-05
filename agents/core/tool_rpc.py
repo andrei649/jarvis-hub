@@ -524,6 +524,11 @@ class ToolRPCServer:
             # gate and governed enqueue; call data cannot select this callback.
             intake = spec.get("gated_intake")
             if intake is not None:
+                labels, denial = self._classify(spec, args)
+                if denial is not None:
+                    self._record(
+                        "toolrpc.classify_failed", f"{name}: {denial}", agent=effective_actor)
+                    return {"ok": False, "reason": denial, "tool": name}
                 review = spec.get("gated_review")
                 if review is not None:
                     try:
@@ -565,7 +570,9 @@ class ToolRPCServer:
                 # the id is noted here too — where it is known — for the collector the
                 # turn holds. Reporting only: the row stays proposed either way.
                 record_pending_approval(task_id)
-                return {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
+                answer = {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
+                answer.update({key: labels[key] for key in _ANSWER_LABEL_KEYS if key in labels})
+                return answer
 
             # ORIZONT-24 K1 wave-3: mediate the gated tool through the Action Kernel
             # first (default-off). A DENY (halted kill-switch / over-budget / runaway

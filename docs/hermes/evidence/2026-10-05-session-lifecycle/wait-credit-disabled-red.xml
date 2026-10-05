@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests">
+  <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.644" timestamp="2026-10-05T05:20:36.084365+03:00">
+    <testcase classname="tests.test_h487_native_runtime_human_wait" name="test_delivered_owner_wait_does_not_consume_real_model_execution_budget[parameter-sha256:7f1898dcca9e006d]" time="1.200">
+      <failure message="See raw report hash; failure retained">Raw traceback omitted; use the local raw XML hash in xml-provenance.json.</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

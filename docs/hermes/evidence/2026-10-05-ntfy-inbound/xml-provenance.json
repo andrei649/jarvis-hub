@@ -1,0 +1,23 @@
+{
+  "backend-result.xml": {
+    "raw_local_path": "/tmp/nerva-ntfy-full-backend-r2-20261005/result.xml",
+    "raw_sha256": "b9eba0d6d67cd930dc7c865f5c8f2826debc7039dd382e653eada0fa342aeaf3",
+    "derivative_sha256": "26c0e45f376c5ccbeb295705b2863f85ed993c4ca667d86c509f0c46b16dca63",
+    "names_transformed": 9057,
+    "transformation": "Parameterized testcase suffixes replaced by deterministic hashes; method/class/outcome/type/timing unchanged."
+  },
+  "backend-attempt1-result.xml": {
+    "raw_local_path": "/tmp/nerva-ntfy-full-backend-20261005/result.xml",
+    "raw_sha256": "3eb24c6cd365ab9a6a6fc87dd4c84adafe85a3d5915c6eaa3a94d872746fd98c",
+    "derivative_sha256": "339095dbee32a7b278fc141e9a27fe609038940e5a7b80f674b9de24391ce8af",
+    "names_transformed": 9057,
+    "transformation": "Parameterized testcase suffixes replaced by deterministic hashes; method/class/outcome/type/timing unchanged."
+  },
+  "round2-result.xml": {
+    "raw_local_path": "/tmp/nerva-ntfy-round2-green-20261005.xml",
+    "raw_sha256": "846ca8cf15990281dbc1ec69b781243db21bfd382583976bed4b70208ddbfe9c",
+    "derivative_sha256": "c627a455940070d09d8833e27ef367e1d47d175a2a3a1993e996bf6a19840c5d",
+    "names_transformed": 17,
+    "transformation": "Parameterized testcase suffixes replaced by deterministic hashes; method/class/outcome/type/timing unchanged."
+  }
+}

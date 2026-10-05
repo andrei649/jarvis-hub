@@ -1,0 +1,79 @@
+{
+  "generated_at": "2026-10-05T06:00:07.371425+00:00",
+  "goal": "All 697 pinned Hermes capabilities; H067 remains partial.",
+  "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "phase": "validated_partial",
+  "accepted_complete": false,
+  "published": false,
+  "tests": {
+    "integration": {
+      "tests": 513,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "workspace_rpc_cases": 12,
+    "impact": {
+      "tests": 288,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "scope": {
+    "source_paths": [
+      "agents/core/channel_reply.py",
+      "agents/core/autonomy_coordinator.py",
+      "agents/core/orchestrator.py",
+      "agents/web.py",
+      "agents/core/channels/gateway.py",
+      "agents/core/channels/manager.py",
+      "agents/core/channels/pending_input_workspace.py",
+      "agents/core/channels/pending_input_cards.py",
+      "agents/core/channels/pending_input_runtime.py",
+      "agents/core/channels/slack.py",
+      "agents/core/channels/discord.py",
+      "tests/test_pending_input_workspace.py",
+      "tests/test_pending_input_workspace_broker.py",
+      "tests/test_pending_input_workspace_runtime.py",
+      "tests/test_pending_input_slack_transport.py",
+      "tests/test_pending_input_discord_transport.py"
+    ],
+    "offline": true,
+    "live_provider_calls": false,
+    "actual_sdk_versions": {
+      "slack-sdk": "3.45.0",
+      "discord.py": "2.7.1"
+    },
+    "sdk_installation": "Isolated optional SDK target; repository dependency manifests unchanged."
+  },
+  "corrections": [
+    "Wire canonical workspace callbacks and typed pending ingress through gateway/orchestrator and production channel construction.",
+    "Native clarify delivery requires real inbox/coordinator/enforce-mode kernel/signed approval/worker and strict final-message receipt.",
+    "Other text instructions use the existing approval queue and exact persisted inbound message.",
+    "Reject typed answers and stop human-wait credit when workspace transport generation changes.",
+    "Number workspace choices before provider display-label clipping; preserve Telegram labels."
+  ],
+  "checks": {
+    "ruff": "16 scoped Python paths passed",
+    "bandit": "One low-severity B107 on existing empty Slack token defaults; no medium/high findings; baseline unchanged.",
+    "strict_gitleaks_source_findings": 0,
+    "graft_fresh": true,
+    "graft_nodes": 52719,
+    "strict_gitleaks_proof_findings": 0
+  },
+  "remaining": [
+    "H067 CLI/HUD/web and other producers, donor batch-question acceptance, full H067 integration.",
+    "Signed canonical payload size limits still reject oversized prompts; no global guard weakened.",
+    "Fresh full backend, serial frontend and H277 original49 mutation verification at milestone.",
+    "No live Slack/Discord account, network delivery or owner-authentication proof.",
+    "Last published/generated equivalence ledger remains 125/697; this checkpoint adds no equivalence credit."
+  ],
+  "evidence_refresh_scope": [
+    "H063",
+    "H099",
+    "H515",
+    "H067"
+  ],
+  "evidence_refresh_basis": "Compare immediate local preimages; refresh only matching pins after scope/behavior review and 288 additional affected tests. Preserve inherited stale rows and original statuses."
+}

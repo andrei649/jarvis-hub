@@ -1,0 +1,301 @@
+{
+  "updated_matching_preimages": [
+    {
+      "id": "H075",
+      "path": "agents/core/plugin_gate.py"
+    },
+    {
+      "id": "H099",
+      "path": "agents/core/plugin_gate.py"
+    },
+    {
+      "id": "H156",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H168",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H277",
+      "path": "agents/core/routers/multimodal.py"
+    },
+    {
+      "id": "H285",
+      "path": "agents/core/cloud_image_runtime.py"
+    },
+    {
+      "id": "H513",
+      "path": "agents/core/routers/multimodal.py"
+    },
+    {
+      "id": "H515",
+      "path": "frontend/src/panels/images.tsx"
+    },
+    {
+      "id": "H515",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H515",
+      "path": "agents/core/cloud_image_runtime.py"
+    },
+    {
+      "id": "H515",
+      "path": "agents/core/routers/multimodal.py"
+    },
+    {
+      "id": "H515",
+      "path": "frontend/src/api/images.ts"
+    },
+    {
+      "id": "H515",
+      "path": "frontend/src/test/decision-inbox-panel.test.tsx"
+    },
+    {
+      "id": "H515",
+      "path": "agents/core/image_tool_dispatcher.py"
+    },
+    {
+      "id": "H515",
+      "path": "agents/core/plugin_gate.py"
+    },
+    {
+      "id": "H515",
+      "path": "tests/test_cloud_image_codex.py"
+    },
+    {
+      "id": "H515",
+      "path": "frontend/src/test/images-provider-flow.test.tsx"
+    },
+    {
+      "id": "H517",
+      "path": "frontend/src/api/images.ts"
+    },
+    {
+      "id": "H517",
+      "path": "frontend/src/panels/images.tsx"
+    },
+    {
+      "id": "H518",
+      "path": "frontend/src/panels/images.tsx"
+    },
+    {
+      "id": "H518",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H518",
+      "path": "agents/core/cloud_image_runtime.py"
+    },
+    {
+      "id": "H518",
+      "path": "agents/core/routers/multimodal.py"
+    },
+    {
+      "id": "H523",
+      "path": "agents/core/routers/multimodal.py"
+    },
+    {
+      "id": "H581",
+      "path": "agents/core/plugin_gate.py"
+    },
+    {
+      "id": "H595",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H595",
+      "path": "agents/core/plugin_gate.py"
+    },
+    {
+      "id": "H598",
+      "path": "agents/core/routers/multimodal.py"
+    },
+    {
+      "id": "H598",
+      "path": "frontend/src/panels/images.tsx"
+    },
+    {
+      "id": "H660",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H660",
+      "path": "agents/core/plugin_gate.py"
+    },
+    {
+      "id": "H067",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H067",
+      "path": "frontend/src/test/decision-inbox-panel.test.tsx"
+    }
+  ],
+  "updated_review_ids": [
+    "H067",
+    "H075",
+    "H099",
+    "H156",
+    "H168",
+    "H277",
+    "H285",
+    "H513",
+    "H515",
+    "H517",
+    "H518",
+    "H523",
+    "H581",
+    "H595",
+    "H598",
+    "H660"
+  ],
+  "older_stale_pins_held": [
+    {
+      "id": "H075",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H129",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H145",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H157",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H165",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H174",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H200",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H204",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H220",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H243",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H259",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H275",
+      "path": "agents/core/plugin_gate.py"
+    },
+    {
+      "id": "H277",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H277",
+      "path": "frontend/src/test/decision-inbox-panel.test.tsx"
+    },
+    {
+      "id": "H285",
+      "path": "agents/core/plugin_gate.py"
+    },
+    {
+      "id": "H305",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H312",
+      "path": "agents/core/routers/multimodal.py"
+    },
+    {
+      "id": "H315",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H318",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H340",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H358",
+      "path": "agents/core/plugin_gate.py"
+    },
+    {
+      "id": "H378",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H388",
+      "path": "agents/core/plugin_gate.py"
+    },
+    {
+      "id": "H425",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H440",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H441",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H478",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H485",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H487",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H487",
+      "path": "frontend/src/test/decision-inbox-panel.test.tsx"
+    },
+    {
+      "id": "H490",
+      "path": "agents/core/plugin_gate.py"
+    },
+    {
+      "id": "H513",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H581",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H596",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H613",
+      "path": "frontend/src/gap.tsx"
+    },
+    {
+      "id": "H681",
+      "path": "frontend/src/gap.tsx"
+    }
+  ],
+  "old_statuses_preserved": true
+}

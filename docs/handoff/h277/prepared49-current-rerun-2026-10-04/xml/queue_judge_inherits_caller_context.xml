@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.772" timestamp="2026-10-04T23:54:42.836114+03:00" hostname="Macmini"><testcase classname="tests.test_h277_approval_judge" name="test_the_judge_runs_outside_a_childs_selection_and_overrides" time="1.100"><failure message="AssertionError: assert {} == {'selection':...rrides': None}&#10;  &#10;  Right contains 2 more items:&#10;  {'overrides': None, 'selection': None}&#10;  Use -v to get more diff">tests/test_h277_approval_judge.py:644: in test_the_judge_runs_outside_a_childs_selection_and_overrides
+    assert seen == {"selection": None, "overrides": None}
+E   AssertionError: assert {} == {'selection':...rrides': None}
+E     
+E     Right contains 2 more items:
+E     {'overrides': None, 'selection': None}
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

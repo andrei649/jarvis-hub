@@ -1,0 +1,15 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/roles_vision_view_legacy_url_wins.xml", "tests/test_h277_model_roles.py::test_the_legacy_vlm_key_never_goes_to_a_foreign_role_base_url"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_the_legacy_vlm_key_never_goes_to_a_foreign_role_base_url _________
+tests/test_h277_model_roles.py:524: in test_the_legacy_vlm_key_never_goes_to_a_foreign_role_base_url
+    assert config.base_url == "https://b.example/v1" and config.api_key == ""
+E   AssertionError: assert ('https://a.example/v1' == 'https://b.example/v1'
+E     
+E     - https://b.example/v1
+E     ?         ^
+E     + https://a.example/v1
+E     ?         ^)
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_the_legacy_vlm_key_never_goes_to_a_foreign_role_base_url
+1 failed in 1.38s

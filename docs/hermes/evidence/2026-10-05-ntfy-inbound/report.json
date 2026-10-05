@@ -1,0 +1,197 @@
+{
+  "goal": "All original697 pinned Hermes capabilities; H099 ntfy inbound implementation",
+  "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "dirty_local_snapshot": true,
+  "generated_at": "2026-10-05T00:37:10Z",
+  "implementation": "Opt-in topic-bound stream, bounded dedup and reconnect, shared pairing/inbox, signed approval replies, live destination checks after DNS waits, private restart epoch, restricted pinned egress, Basic auth/publish topic/Markdown, UTF-8 byte chunks, scoped HTTPX topic redaction and executable ntfy registry verification",
+  "tests": {
+    "focused": 82,
+    "affected": 300,
+    "webhook_collateral": 307,
+    "backend_full": {
+      "cases": 23629,
+      "passed": 23594,
+      "ordinary_skips": 34,
+      "expected_xfails": 1,
+      "failures": 0,
+      "errors": 0
+    },
+    "round2_regressions": 86,
+    "backend_attempt1": {
+      "tests": 23628,
+      "passed": 23584,
+      "failed": 9,
+      "errors": 0,
+      "skipped": 34,
+      "xfail": 1,
+      "frozen_inputs": 4689,
+      "drift": 0,
+      "result_sha256": "3eb24c6cd365ab9a6a6fc87dd4c84adafe85a3d5915c6eaa3a94d872746fd98c"
+    },
+    "frontend_full": {
+      "numTotalTests": 1912,
+      "numPassedTests": 1912,
+      "numFailedTests": 0,
+      "numPendingTests": 0,
+      "success": true
+    },
+    "round2_status": 48
+  },
+  "evidence": [
+    {
+      "path": "agents/core/channels/ntfy.py",
+      "sha256": "eb0e77477d92aa02954fc0f2e1641e74ff2b4846757e9bbaac6fe084a19c6a93"
+    },
+    {
+      "path": "agents/core/channels/gateway.py",
+      "sha256": "d517969c4e03a48c8bfa8b718c9521a09c4892873165b4e7cda6457b085d2d85"
+    },
+    {
+      "path": "agents/core/channels/manager.py",
+      "sha256": "fb0004e9769febf7162265a474665054c4d08462650688a101fcb1a36ea9b429"
+    },
+    {
+      "path": "agents/core/channel_inbox.py",
+      "sha256": "7f1b91e3ae9f2fa16ca5b680f86a5ce849bbfd2323e44b767c4270750992b800"
+    },
+    {
+      "path": "agents/core/channel_reply.py",
+      "sha256": "fa1fb28480bda567dba47d93e1dec9f2d998742e34af37559688e6d45e62e4bc"
+    },
+    {
+      "path": "agents/core/plugin_gate.py",
+      "sha256": "dbdb60bba89909dea68219b137a5d1f5477202bfadf2a9937890af8608904e62"
+    },
+    {
+      "path": "agents/core/orchestrator.py",
+      "sha256": "75e984186228f6e28a77a3e654b15ea9a0a5994fc9745c820a0aa0bb7ea0f122"
+    },
+    {
+      "path": "agents/web.py",
+      "sha256": "5aee86f4b607c10c38f02495bd6ac097350b24083cd070dc9144625d787349a4"
+    },
+    {
+      "path": "tests/test_ntfy_inbound.py",
+      "sha256": "ac0c7fb9cecc3aaf390b3ad732056632a8a8c1a6965cd8e0625bb2929f70fb1f"
+    },
+    {
+      "path": "tests/test_ntfy_approval_integration.py",
+      "sha256": "30847ad2c39de1a335074cecd24e03ad374df9c6a99bc6c9849e5d35198d9d11"
+    },
+    {
+      "path": "docs/hermes/ntfy-inbound-plan-2026-10-05.md",
+      "sha256": "3928ff5ab699f776b15b30bac2f1bceb14064313fc26dda2bf538bc4ac89dad9"
+    },
+    {
+      "path": ".env.example",
+      "sha256": "af1b202b096be0bd10cb859efd910bec324dab867c2b1c3b85b0e62418aef3bd"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "sha256": "bb12ca6a5406448ee89a680b152579c3e4b0df5c3306018cabfe9186824b3fcf"
+    },
+    {
+      "path": "tests/test_h27_capability_verification.py",
+      "sha256": "9e4490e611f0ea39127d5f838da41403d7b5a9f0daff67e22663fcb16c3545e3"
+    },
+    {
+      "path": "tests/test_reality_harness.py",
+      "sha256": "ed5f7bb43f870aa163518a0cff214167b629d7a05d155b8501bce21e9a50d1ad"
+    },
+    {
+      "path": "tests/_snapshots/capability_readiness.json",
+      "sha256": "115a96ee1fe5cd190d9eef4dc93cc75752b83d9b68a2ea5effa2f0c81e6ac28c"
+    },
+    {
+      "path": "docs/hermes/licenses/hermes-ntfy-MIT.txt",
+      "sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6"
+    }
+  ],
+  "red_regressions": [
+    "Explicit receiving absent in original adapter",
+    "Receiving API absent in original adapter",
+    "DNS-wait revocation allowed a POST",
+    "Hermes server alias not accepted",
+    "Changed open subscription gained new identity",
+    "Same-instance restart retained old reply context",
+    "UTF-8 body exceeded 4096 bytes",
+    {
+      "description": "HTTPX INFO leaked configured ntfy topic; four valid assertion failures before scoped log redaction",
+      "xml_sha256": "2c1a0f548044a516267750732d7d0f8ff884cc3bab7036ddc0496ae9cc0f1a3c"
+    }
+  ],
+  "boundaries": [
+    "No live ntfy server/phone/provider or native acceptance",
+    "No push, merge, deploy or live worker activation",
+    "H277 original49 remains the prior milestone; no new mutation campaign claimed here"
+  ],
+  "completed_at": "2026-10-05T00:37:10Z",
+  "frozen_inputs": 4689,
+  "terminal_input_drift": [],
+  "after_serial_frontend_input_drift": [],
+  "source_snapshot_note": "Source/test inputs were unchanged throughout backend and serial frontend. Final acceptance records and documentation were updated only afterwards.",
+  "xml_provenance": {
+    "backend-result.xml": {
+      "raw_local_path": "/tmp/nerva-ntfy-full-backend-r2-20261005/result.xml",
+      "raw_sha256": "b9eba0d6d67cd930dc7c865f5c8f2826debc7039dd382e653eada0fa342aeaf3",
+      "derivative_sha256": "26c0e45f376c5ccbeb295705b2863f85ed993c4ca667d86c509f0c46b16dca63",
+      "names_transformed": 9057,
+      "transformation": "Parameterized testcase suffixes replaced by deterministic hashes; method/class/outcome/type/timing unchanged."
+    },
+    "backend-attempt1-result.xml": {
+      "raw_local_path": "/tmp/nerva-ntfy-full-backend-20261005/result.xml",
+      "raw_sha256": "3eb24c6cd365ab9a6a6fc87dd4c84adafe85a3d5915c6eaa3a94d872746fd98c",
+      "derivative_sha256": "339095dbee32a7b278fc141e9a27fe609038940e5a7b80f674b9de24391ce8af",
+      "names_transformed": 9057,
+      "transformation": "Parameterized testcase suffixes replaced by deterministic hashes; method/class/outcome/type/timing unchanged."
+    },
+    "round2-result.xml": {
+      "raw_local_path": "/tmp/nerva-ntfy-round2-green-20261005.xml",
+      "raw_sha256": "846ca8cf15990281dbc1ec69b781243db21bfd382583976bed4b70208ddbfe9c",
+      "derivative_sha256": "c627a455940070d09d8833e27ef367e1d47d175a2a3a1993e996bf6a19840c5d",
+      "names_transformed": 17,
+      "transformation": "Parameterized testcase suffixes replaced by deterministic hashes; method/class/outcome/type/timing unchanged."
+    }
+  },
+  "checks": {
+    "scoped_ruff": "passed",
+    "scoped_bandit": "passed with unchanged baseline",
+    "strict_source_scan_files": 16,
+    "strict_source_scan_findings": 0,
+    "strict_derivative_scan_findings": 0,
+    "backend_count": "23629 in sync",
+    "frontend_count": "1912 in sync",
+    "graft_graph_current": true,
+    "graft_pending_context_nodes": 52059
+  },
+  "collateral_reviews": {
+    "H515/H595/H660": "Only ntfy manifest added; existing image and execution manifests untouched. Partial verdicts preserved.",
+    "H075/H581": "Only shared ntfy branch and executable registry/snapshot additions rehashed; Kanban partial verdicts and remaining gaps preserved.",
+    "H277": "Only ntfy orchestration integration pin refreshed; inherited unrelated stale evidence and partial verdict preserved. No new original49 mutation claim.",
+    "H153": "Only ntfy/manager integration pins refreshed after307 webhook regressions and full suites. Inherited settings_db evidence was already stale and remains explicitly unreviewed."
+  },
+  "skip_audit": {
+    "ordinary_reasons": {
+      "rustc is not installed": 2,
+      "this file system refuses a name that is not UTF-8": 1,
+      "no /proc": 1,
+      "could not import 'slack_sdk.socket_mode': No module named 'slack_sdk'": 1,
+      "live GitHub smoke; set NERVA_HERMES_LIVE=1 (schedule-only CI lane)": 1,
+      "abstract sockets are Linux only": 1,
+      "this box has an IPv6 stack; EAFNOSUPPORT is not reproducible here": 1,
+      "not root: no privilege to drop, so EACCES cannot be staged": 1,
+      "counts open fds through /proc": 1,
+      "live Neo4j lane — set JARVIS_NEO4J_LIVE=1 with a real server reachable at NEO4J_URL": 7,
+      "fish is not installed; generated script still has parser tests": 3,
+      "sandbox containment runs only in the dedicated Docker CI lane (set RUN_SANDBOX_ISOLATION=1)": 7,
+      "Orchestrator not initialized in test environment": 1,
+      "Docker not available on this runner": 1,
+      "owner-live Home Assistant opt-in (JARVIS_H30_HA_LIVE) is not set": 3,
+      "the H32 S2 proof runs only in the dedicated real-Docker CI lane": 1,
+      "acquisition containment runs only in the dedicated Docker CI lane": 1
+    },
+    "existing_xfails": [
+      "test_tool_backed_ids_match_the_real_toolrpc_registrations"
+    ]
+  }
+}

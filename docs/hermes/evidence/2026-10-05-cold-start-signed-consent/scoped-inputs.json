@@ -1,0 +1,26 @@
+[
+  {
+    "path": "agents/core/permission_ledger.py",
+    "sha256": "6823356a2461c54258001dab85946b5ba405200bacc277fbe4ebb4fcb1e806a0"
+  },
+  {
+    "path": "agents/core/channels/session_command_runtime.py",
+    "sha256": "5c9a960f96d7011ecf625ebe5bb38a0002bc2d2552a7d38dd9b5b1a2e4abd949"
+  },
+  {
+    "path": "tests/test_permission_ledger.py",
+    "sha256": "02b1438795935ae9fbd7a148ad6c2835b243e53af6a4abe804e8ba65d1c6d196"
+  },
+  {
+    "path": "tests/test_session_command_permission.py",
+    "sha256": "4b9f6da16c06a4ae36f2ba61c9ad70b8ed3cd4a264893801cc8763689eb0b882"
+  },
+  {
+    "path": "tests/test_session_command_runtime.py",
+    "sha256": "35ed574781f372421be099f6bf14bc383e02243f059ac155eb9592b96c8538d5"
+  },
+  {
+    "path": "tests/test_session_command_kernel.py",
+    "sha256": "24e6e7e4546da884cfae63408b41c2a55e0dfb5416020a003bae2ce3949f7257"
+  }
+]

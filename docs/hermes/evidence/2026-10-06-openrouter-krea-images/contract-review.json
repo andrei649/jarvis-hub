@@ -1,0 +1,11 @@
+{
+  "scope": "Shared provider runtime delta and polling boundary",
+  "independent_review": "h515_fal_integration",
+  "finding": "Krea governance withdrawal during DNS was misclassified as invalid provider response",
+  "red_witness": "red-review-race.log",
+  "fix": "Recheck live governance after unexpected poll transport callback exception; retain safe detail and durable job id after the paid POST",
+  "verified": "Final affected backend705 passes; independent focused re-review confirms no GET and no replay",
+  "remaining_findings": 0,
+  "endpoint_drift": "Official current OpenRouter /api/v1/images replaces stale donor /images/generations",
+  "source": "https://openrouter.ai/docs/guides/overview/multimodal/image-generation"
+}

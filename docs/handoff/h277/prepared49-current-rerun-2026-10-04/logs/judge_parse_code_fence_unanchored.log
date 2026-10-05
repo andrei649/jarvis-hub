@@ -1,0 +1,11 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/judge_parse_code_fence_unanchored.xml", "tests/test_h277_approval_judge.py::test_parse_verdict_rejects"]
+...........F                                                             [100%]
+=================================== FAILURES ===================================
+_ test_parse_verdict_rejects[```json\n{"risk": 1, "why": "a"}\n```\n```json\n{"risk": 1, "why": "b"}\n```] _
+tests/test_h277_approval_judge.py:327: in test_parse_verdict_rejects
+    assert parse_verdict(text) is None
+E   assert Verdict(score=1, rationale='a') is None
+E    +  where Verdict(score=1, rationale='a') = parse_verdict('```json\n{"risk": 1, "why": "a"}\n```\n```json\n{"risk": 1, "why": "b"}\n```')
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_parse_verdict_rejects[```json\n{"risk": 1, "why": "a"}\n```\n```json\n{"risk": 1, "why": "b"}\n```]
+1 failed, 11 passed in 1.48s

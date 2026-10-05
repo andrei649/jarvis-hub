@@ -87,7 +87,7 @@ def test_the_command_tree_is_discoverable_and_complete():
     tree = command_tree(build_parser())
     assert set(tree) == {
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
-        "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban",
+        "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets",
     }
     # S2 added the two owner acts an extension needs: agree to what a descriptor
     # declares, and prove it in the sandbox. `doctor` and `list` stay read-only.
@@ -105,6 +105,10 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["skills"] == ["lint", "list", "off", "on"]
     # H464: read the runs, and let a parked one go. Nothing here starts a run.
     assert tree["company"] == ["clear-wait", "list"]
+    assert tree["project"] == [
+        "add-folder", "archive", "bind-board", "create", "list", "ls", "remove-folder",
+        "rename", "restore", "set-primary", "show", "use",
+    ]
 
 
 @pytest.mark.parametrize("report,expected", [

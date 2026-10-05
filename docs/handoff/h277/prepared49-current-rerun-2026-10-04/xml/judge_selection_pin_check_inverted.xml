@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.441" timestamp="2026-10-04T23:54:31.682241+03:00" hostname="Macmini"><testcase classname="tests.test_h277_approval_judge" name="test_configured_judge_annotates_the_item_and_changes_nothing_else" time="0.988"><failure message="KeyError: 'judge'">tests/test_h277_approval_judge.py:222: in test_configured_judge_annotates_the_item_and_changes_nothing_else
+    judge = got["judge"]
+            ^^^^^^^^^^^^
+E   KeyError: 'judge'</failure></testcase></testsuite></testsuites>

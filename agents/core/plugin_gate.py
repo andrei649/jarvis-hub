@@ -82,6 +82,45 @@ BUILTIN_PLUGINS = {
         network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
         allowed_domains=["api.openai.com"], agents_served=["jarvis"],
     ),
+    "cloud-image-fal": PluginManifest(
+        id="cloud-image-fal", name="Approved FAL image generation", version="0.1.0",
+        description="One explicitly approved FAL image POST and bounded media download",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["fal.run", "fal.media"], agents_served=["jarvis"], enabled=False,
+    ),
+    "cloud-image-codex": PluginManifest(
+        id="cloud-image-codex", name="Approved Codex OAuth image generation", version="0.1.0",
+        description="One explicitly approved native Codex image POST; validated local artifact",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["chatgpt.com"], agents_served=["jarvis"], enabled=False,
+    ),
+    "cloud-image-openrouter": PluginManifest(
+        id="cloud-image-openrouter", name="Approved OpenRouter image generation", version="0.1.0",
+        description="One selected-model image POST and admitted credential-free result download",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["openrouter.ai"], agents_served=["jarvis"], enabled=False,
+    ),
+    "cloud-image-krea": PluginManifest(
+        id="cloud-image-krea", name="Approved Krea image generation", version="0.1.0",
+        description="One image POST, bounded job polling and admitted credential-free result download",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        # Current Krea API examples return gen.krea.ai/images/...; never infer
+        # additional CDN domains from a provider response or donor fixture.
+        allowed_domains=["api.krea.ai", "gen.krea.ai"], agents_served=["jarvis"], enabled=False,
+    ),
+    "cloud-image-xai": PluginManifest(
+        id="cloud-image-xai", name="Approved xAI image generation", version="0.1.0",
+        description="One selected-model generation or owned-artifact edit and local completion",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        # The provider REST reference documents imgen.x.ai generation/edit results.
+        allowed_domains=["api.x.ai", "imgen.x.ai"], agents_served=["jarvis"], enabled=False,
+    ),
+    "cloud-image-deepinfra": PluginManifest(
+        id="cloud-image-deepinfra", name="Approved DeepInfra image generation", version="0.1.0",
+        description="Approved catalog GET and separate single-image generation POST",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["api.deepinfra.com"], agents_served=["jarvis"], enabled=False,
+    ),
     "cloud-llm": PluginManifest(
         id="cloud-llm",
         name="Cloud LLM Fallback",
@@ -91,6 +130,15 @@ BUILTIN_PLUGINS = {
         data_scope=DataScope.TRANSMITTED,
         allowed_domains=["api.anthropic.com", "api.openai.com", "generativelanguage.googleapis.com"],
         agents_served=["jarvis", "athena", "stark", "vision", "veronica"],
+    ),
+    "ntfy": PluginManifest(
+        id="ntfy",
+        name="ntfy notifications",
+        version="0.1.0",
+        description="Owner-configured ntfy subscription and governed reply transport",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        agents_served=["jarvis", "veronica"],
     ),
     "telegram": PluginManifest(
         id="telegram",

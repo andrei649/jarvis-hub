@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.430" timestamp="2026-10-04T23:53:22.709733+03:00" hostname="Macmini"><testcase classname="tests.test_h277_model_roles" name="test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable" time="1.184"><failure message="AssertionError: assert ('new-vl' == 'new-vl'&#10;  &#10;    new-vl and 'JARVIS_VLM_MODEL' == 'JARVIS_ROLE_VISION_MODEL'&#10;  &#10;  - JARVIS_ROLE_VISION_MODEL&#10;  + JARVIS_VLM_MODEL)">tests/test_h277_model_roles.py:142: in test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable
+    assert role.model == "new-vl" and role.source["model"] == "JARVIS_ROLE_VISION_MODEL"
+E   AssertionError: assert ('new-vl' == 'new-vl'
+E     
+E       new-vl and 'JARVIS_VLM_MODEL' == 'JARVIS_ROLE_VISION_MODEL'
+E     
+E     - JARVIS_ROLE_VISION_MODEL
+E     + JARVIS_VLM_MODEL)</failure></testcase></testsuite></testsuites>

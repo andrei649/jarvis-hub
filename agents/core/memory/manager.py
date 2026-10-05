@@ -383,11 +383,16 @@ class MemoryManager:
             del self._rollback_tickets[ticket.nonce]
             return True
 
-    async def commit_rollback_rewind(self, ticket: RollbackRewindTicket) -> RollbackRewindResult:
-        """Commit a prepared suffix only after the filesystem restore succeeded."""
+    async def commit_rollback_rewind(self, ticket: RollbackRewindTicket, *, authorize=None) -> RollbackRewindResult:
+        """Commit a prepared suffix, rechecking optional authority after async locks."""
         from ..session_continuation import history_identity, identity
 
         async with self._lock, self.conversation._lock:
+            # A caller's earlier approval may have been revoked while either
+            # lock was occupied. This synchronous check precedes every write,
+            # outside the checkpoint's non-reentrant lock (the guard may read it).
+            if authorize is not None and authorize() is not True:
+                raise RewindRefused("Undo authority changed")
             if (type(ticket) is not RollbackRewindTicket
                     or self._rollback_tickets.pop(ticket.nonce, None) is not ticket):
                 raise RewindRefused("conversation rewind ticket unavailable")

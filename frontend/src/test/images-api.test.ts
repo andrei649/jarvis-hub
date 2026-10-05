@@ -130,7 +130,7 @@ describe('owner image transport', () => {
   });
   it('only exposes validated task fields', async () => {
     vi.mocked(fetch).mockResolvedValue(reply({ task_id: 17, state: 'ready', artifact: { ...artifact, path: 'PRIVATE' }, payload: 'PRIVATE' }));
-    expect(await imageTask(17)).toEqual({ task_id: 17, state: 'ready', artifact });
+    expect(await imageTask(17)).toEqual({ task_id: 17, state: 'ready', artifact, enhance_available: false });
   });
 });
 

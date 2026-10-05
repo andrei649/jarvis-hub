@@ -1,0 +1,2 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.072" timestamp="2026-10-05T04:22:15.179830+03:00"><testcase classname="tests.test_session_lifecycle_integration" name="test_batched_voice_mark_and_transcript_echo_do_not_cross_forum_topics" time="0.534"><failure message="Synthetic regression reproduced; raw diagnostic retained locally">Raw synthetic traceback is retained in the local /tmp run log.</failure></testcase></testsuite></testsuites>

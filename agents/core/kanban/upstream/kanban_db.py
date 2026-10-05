@@ -20,7 +20,7 @@ import secrets
 import sqlite3
 import sys
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from pathlib import Path
@@ -1078,8 +1078,29 @@ def _resolve_project_link(
     project_id = (str(project_id).strip() or None) if project_id is not None else None
     if not project_id:
         return None, None, None, workspace_kind
-    from .compat import unresolved
-    unresolved("project database and branch naming")
+    from . import projects_db as _pdb
+
+    project_repo = None
+    try:
+        with _pdb.connect_closing() as project_conn:
+            project_obj = _pdb.get_project(project_conn, project_id)
+    except FileNotFoundError:
+        project_obj = None
+    if project_obj is None and project_source_task_id:
+        project_obj, project_repo = _project_from_source_task(
+            conn, _pdb, project_id, str(project_source_task_id),
+        )
+        if project_repo:
+            _pdb._validate_stored_path(project_repo)
+        if project_obj is not None and workspace_kind == "scratch":
+            workspace_kind = "worktree"
+    if project_obj is None or project_obj.archived:
+        raise ValueError("unknown or archived project")
+    if workspace_kind == "scratch" and project_obj.primary_path:
+        workspace_kind = "worktree"
+    if workspace_kind == "worktree" and workspace_path is None and project_obj.primary_path:
+        project_repo = str(project_obj.primary_path)
+    return project_obj.id, project_obj, project_repo, workspace_kind
 
 
 def _project_from_source_task(
@@ -1346,8 +1367,9 @@ def _board_meta_for(board: str | None) -> dict:
 
 
 def _project_branch_name(project_obj: Any, task_id: str, title: str | None) -> str | None:
-    from .compat import unresolved
-    unresolved("project database and branch naming")
+    from .projects_db import branch_name_for
+
+    return branch_name_for(project_obj, task_id, title=title or "")
 
 
 def _link(conn: sqlite3.Connection, parent_id: str, child_id: str) -> None:
@@ -2635,6 +2657,11 @@ def _require_workspace_cleanup_ready(conn: sqlite3.Connection, task_id: str) -> 
     """Refuse terminal writes that would imply unsupported workspace cleanup."""
     row = conn.execute("SELECT workspace_path FROM tasks WHERE id = ?", (task_id,)).fetchone()
     if row and row["workspace_path"]:
+        from agents.core.kanban.workspace_context import current_workspace
+
+        binding = current_workspace()
+        if binding is not None and binding.context.task_id == task_id:
+            return  # The controller cleans only after this exact runner exits.
         from .compat import require_workspace_path, unresolved
 
         require_workspace_path(row["workspace_path"])
@@ -3154,6 +3181,7 @@ def edit_task(
 def block_task(
     conn: sqlite3.Connection, task_id: str, *, reason: str | None = None,
     kind: str | None = None, expected_run_id: int | None = None,
+    _before_commit: Callable[[], None] | None = None,
 ) -> bool:
     """``running``/``ready`` -> ``blocked`` (or ``todo`` / ``triage``, see
     :func:`_route_block`). ``kind='dependency'`` with no incomplete parent is
@@ -3171,6 +3199,8 @@ def block_task(
     """
     if kind is not None and kind not in VALID_BLOCK_KINDS:
         raise ValueError(f"block kind must be one of {sorted(VALID_BLOCK_KINDS)} or None")
+    if _before_commit is not None and (kind != "needs_input" or not callable(_before_commit)):
+        raise ValueError("approval composition requires needs_input and a callable")
     with write_txn(conn):
         cur_row = conn.execute(
             "SELECT status, block_kind, block_recurrences FROM tasks WHERE id = ?", (task_id,),
@@ -3237,6 +3267,11 @@ def block_task(
         )
         _append_event(conn, task_id, event_kind, payload, run_id=run_id)
         blocked_task = get_task(conn, task_id)
+        if _before_commit is not None:
+            # Bind a server-owned child approval atomically with this park.
+            # The hook below remains after the durable commit; failed binding
+            # rolls back the board/run/event together, before any notification.
+            _before_commit()
         if kind == "dependency":
             # Historical ordering: the dependency lane fires inside the txn.
             _fire_task_hook("kanban_task_blocked", blocked_task, task_id, run_id, reason=reason)

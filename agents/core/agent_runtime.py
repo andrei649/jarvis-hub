@@ -1572,6 +1572,8 @@ class AgentToolRuntime:
         }
 
     async def _emit(self, event_sink: ToolEventSink | None, event: dict[str, Any]) -> None:
+        from .channels.session_lifecycle import note_session_activity
+        note_session_activity()
         if event_sink is None:
             return
         sink_id = id(event_sink)

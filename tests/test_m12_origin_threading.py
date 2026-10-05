@@ -67,10 +67,12 @@ def test_gateway_threads_origin_from_channel():
     ]
 
 
-def test_channel_handler_origin_context_is_request_local():
+def test_channel_handler_origin_context_is_request_local(tmp_path):
     orch = Orchestrator.__new__(Orchestrator)
     orch._channel_sessions = {}
-    orch.get_setting = lambda *_args, **_kwargs: False
+    orch.session_id = "origin_context_fixture"
+    orch._session_lifecycle_path = tmp_path / "routes.sqlite"
+    orch.get_setting = lambda _key, default=None: default
     sent = []
 
     async def send(channel, response, **kwargs):

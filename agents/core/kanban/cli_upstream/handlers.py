@@ -254,7 +254,9 @@ def _cmd_create(args: argparse.Namespace) -> int:
         return _err(f"kanban: --max-retries must be >= 1 (got {max_retries}); "
                     "use 1 to trip on the first failure.", 2)
     with kbc.connect_closing() as conn:
-        task_id = kb.create_task(
+        from ..task_creation import create_task
+
+        task_id = create_task(
             conn, title=args.title, body=body, assignee=args.assignee,
             created_by=_profile_author(),
             workspace_kind=ws_kind, workspace_path=ws_path, branch_name=branch_name,

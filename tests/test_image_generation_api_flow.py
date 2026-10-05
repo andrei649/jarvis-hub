@@ -10,6 +10,47 @@ from tests.test_image_mediation_composition import composed as composed
 from tests.test_local_image_runtime import PNG
 
 
+def test_tool_enhance_selector_requires_exact_shape_and_preserves_actor_origin():
+    from types import SimpleNamespace
+
+    from agents.core.action_origin import bind_action_origin, reset_action_origin
+    from agents.core.image_tool_dispatcher import INPUT_SCHEMA, ImageToolDispatcher
+    from agents.core.tool_rpc import ToolRPCValidationError
+
+    calls = []
+    runtime = SimpleNamespace(enhance=lambda task_id, origin, *, actor: (
+        calls.append((task_id, origin, actor)) or 41))
+    dispatcher = ImageToolDispatcher(None, cloud_runtime=lambda: runtime, approved_task=lambda: None)
+    args = {"cloud": True, "backend": "krea", "prompt": "", "enhance_task_id": 17}
+    assert INPUT_SCHEMA["properties"]["enhance_task_id"] == {
+        "type": "integer", "minimum": 1, "maximum": 2**63 - 1,
+        "description": "Krea only: fresh approval to enhance a completed image; prompt must be empty.",
+    }
+    assert dispatcher.preflight(args) == args
+    token = bind_action_origin("inbound")
+    try:
+        assert dispatcher.intake("athena", args) == 41
+    finally:
+        reset_action_origin(token)
+    assert calls == [(17, "inbound", "athena")]
+
+    invalid = [
+        {**args, "enhance_task_id": value} for value in (0, -1, True, 1.0, "17", 2**63)
+    ] + [
+        {**args, "prompt": "a new image"}, {**args, "backend": "openai"},
+        {**args, "model": "krea-2-medium"}, {**args, "size": "1024x1024"},
+        {**args, "enhance_image_url": "https://example.com/x.png"},
+        {**args, "resume_task_id": 17}, {**args, "refresh_catalog": True},
+        {**args, "cloud": False},
+        {key: value for key, value in args.items() if key != "cloud"},
+        {key: value for key, value in args.items() if key != "prompt"},
+    ]
+    for proposal in invalid:
+        with pytest.raises(ToolRPCValidationError):
+            dispatcher.preflight(proposal)
+    assert calls == [(17, "inbound", "athena")]
+
+
 @pytest.mark.asyncio
 async def test_composer_observes_one_approved_image_and_can_resume_reads(composed, monkeypatch):
     monkeypatch.setattr(web, "USER_TOKEN", "image-user")
@@ -29,7 +70,8 @@ async def test_composer_observes_one_approved_image_and_can_resume_reads(compose
         path = f"/api/media/generation-tasks/{task_id}"
         assert (await client.get(path, headers={"X-User-Token": "image-user"})).status_code == 401
         pending = await client.get(path, headers=owner)
-        assert pending.json() == {"task_id": task_id, "state": "awaiting_approval", "artifact": None}
+        assert pending.json() == {"task_id": task_id, "state": "awaiting_approval", "artifact": None,
+                                  "resume_available": False, "enhance_available": False}
         await composed.worker.tick()
         assert composed.requests == []
 

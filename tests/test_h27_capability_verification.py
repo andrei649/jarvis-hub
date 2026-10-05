@@ -178,26 +178,27 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     cases = registry_reality_cases(orch)
     by_ref = {case.ref: case for case in cases}
 
-    # URL attachments add one governed plugin to the previous 77 boot records.
-    assert len(records) == len(cases) == len(by_ref) == 78
+    # URL attachments and ntfy add governed plugins to the previous 77 records.
+    assert len(records) == len(cases) == len(by_ref) == 79
     assert by_ref["reality-v1:plugin:cloud-image"].capability_id == "plugin:cloud-image"
     assert by_ref["reality-v1:plugin:kanban-attachments"].capability_id == "plugin:kanban-attachments"
+    assert by_ref["reality-v1:plugin:ntfy"].capability_id == "plugin:ntfy"
     assert {
         kind: sum(case.capability_id.startswith(f"{kind}:") for case in cases)
         for kind in ("plugin", "component", "skill")
     } == {
-        "plugin": 42,
+        "plugin": 43,
         "component": 24,
         "skill": 12,
     }
-    assert len({case.capability_id for case in cases}) == 78
+    assert len({case.capability_id for case in cases}) == 79
     for record in records:
         assert record.verification in by_ref
         assert by_ref[record.verification].capability_id == record.id
 
     combined = all_reality_cases(orch)
     assert combined[: len(CASES)] == CASES
-    assert len(combined) == len(CASES) + 78
+    assert len(combined) == len(CASES) + 79
     all_refs = [case.ref for case in combined]
     assert len(all_refs) == len(set(all_refs))
 
@@ -205,7 +206,7 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     verification_pairs = [
         (manifest.verification, manifest.id) for manifest in ACTION_CAPABILITY_MANIFESTS.values()
     ] + [(record.verification, record.id) for record in [*tool_records, *records]]
-    assert len(verification_pairs) == 112
+    assert len(verification_pairs) == 113
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1
@@ -222,8 +223,9 @@ async def test_wired_registry_cases_pass_hermetically_and_seam_fails_honestly(mo
     result = await run_reality(cases, promote=False)
     by_id = {item["capability_id"]: item for item in result["results"]}
 
-    assert result["total"] == 78
-    assert result["passed"] == 77
+    assert result["total"] == 79
+    assert result["passed"] == 78
+    assert by_id["plugin:ntfy"]["passed"] is True
     assert result["skipped"] == 0
     assert all(
         by_id[case.capability_id]["passed"]

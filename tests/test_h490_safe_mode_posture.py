@@ -203,12 +203,19 @@ _NUMBERS_NOT_FORCED = {
     "autonomy.night_start", "autonomy.night_end", "autonomy.calendar_lead_time",
     "autonomy.tech_scout_interval_hours", "ambient.generation", "ambient.quiet_hours_start",
     "ambient.quiet_hours_end",
+    # gateway context/index housekeeping and owner alert cadence; no transcript
+    # deletion or action budget. Stall delivery still uses safe-mode egress.
+    "sessions.idle_minutes", "sessions.daily_hour", "sessions.store_max_age_days",
+    "sessions.stall_seconds",
     # the owner's own alert thresholds
     "autonomy.finance_min_ron", "autonomy.finance_min_eur", "autonomy.health_min_sleep",
     "autonomy.health_min_hrv",
     # retention windows: how long data is kept, not what may run
     "retention.artifact_ttl_days", "retention.conversation_ttl_days", "retention.audit_ttl_days",
     "retention.ingestion_ttl_days", "retention.min_interval_hours", "retention.min_vacuum_interval_days",
+    # Retention of delivered ephemeral notices only; zero retains them. Pending
+    # prompts explicitly use TTL0, and durable decisions/history are unaffected.
+    "display.ephemeral_system_ttl",
 }
 
 

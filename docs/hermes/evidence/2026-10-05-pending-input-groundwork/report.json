@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-05T03:24:52.579541+00:00",
+  "goal": "Complete all original697 pinned Hermes capabilities; H067 original full contract retained",
+  "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "dirty_local_snapshot": true,
+  "phase": "groundwork_and_direct_gateway_partial",
+  "accepted_complete": false,
+  "reference": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "models": {
+    "implementers": "gpt-6-sol high; at most2 concurrent; no implementer delegation",
+    "root": "coordinator integration and corrections"
+  },
+  "delivered_locally": [
+    "Pure identity-bound FIFO clarifier/three-way parser; cancellation, timeout and exact-prompt cleanup.",
+    "session_command ledger surface only accepts exact64lowercase-hex identity and governed always scope; legacy flag-off checks unchanged.",
+    "Opt-in actual clarify ToolRPC registration; direct Gateway replies intercept before leases, fail-closed pairing and delivered human-wait credit.",
+    "Telegram strict-ack per-chunk ephemeral deletion, forum routing, plain fallback, no voice mark consumption.",
+    "Conversation-only durable undo utility and persistence tests; command remains unintegrated."
+  ],
+  "tests": {
+    "affected_final": {
+      "cases": 502,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "frozen_inputs": 2036,
+    "drift_at_terminal": 0,
+    "attempts": [
+      {
+        "name": "ephemeral-red",
+        "cases": 1,
+        "failures": 0,
+        "errors": 1,
+        "skipped": 0,
+        "raw_sha256": "76493fe511e83c47b8bd57e709671bbcd9342a1f6946eb94740d3d1fc890414a"
+      },
+      {
+        "name": "pending-runtime-red",
+        "cases": 1,
+        "failures": 0,
+        "errors": 1,
+        "skipped": 0,
+        "raw_sha256": "7923d2755b47a80036ebe60218310fda7289bf0bbcd667013c9c8552b1bf8c7e"
+      },
+      {
+        "name": "runtime-shutdown-red",
+        "cases": 8,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0,
+        "raw_sha256": "9db317f1e2d551c0c7c8ba11713161aa295c8869efd127880f06df23dc424d93"
+      },
+      {
+        "name": "pending-cleanup-red",
+        "cases": 8,
+        "failures": 3,
+        "errors": 0,
+        "skipped": 0,
+        "raw_sha256": "d0087f67a6e7883abd9a54ebe274f35ad9d5de47979d6a3f39a3d8cd4846a013"
+      },
+      {
+        "name": "groundwork-affected",
+        "cases": 421,
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0,
+        "raw_sha256": "8e0dcbbf8d991428870bc701a0917ca0211d7896822f9511bf0f36ea0ae577a5"
+      }
+    ],
+    "full_backend_run_for_this_change": false,
+    "frontend_run_for_this_change": false,
+    "live_provider_or_transport_run": false,
+    "code_rpc_collateral": {
+      "cases": 99,
+      "passed": 99,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "raw_sha256": "fdea56c9a79ea23f0807eab943a53b735f238cff4504a556bfececde2330f041"
+    },
+    "first_metadata_attempt": {
+      "cases": 195,
+      "passed": 194,
+      "failures": 1,
+      "reason": "H660 coordinator evidence drift; current preimage matched, reviewed and validated with99 scoped code/RPC tests"
+    },
+    "metadata_final": {
+      "cases": 195,
+      "passed": 195,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "raw_sha256": "aba9f20fc9239127faa3d31c0bcd1e3579b236e71b46e10ae70843f5d974c94a"
+    },
+    "second_metadata_attempt": {
+      "cases": 195,
+      "passed": 194,
+      "failures": 1,
+      "reason": "The same changed coordinator also invalidated H595; current preimage matched, scoped99 tests preserved its partial verdict."
+    }
+  },
+  "gates": {
+    "ruff": "passed on16 scoped Python files",
+    "bandit": "passed on9 scoped production paths against unchanged existing baseline",
+    "secret_scan": {
+      "proof_exit_code": 0,
+      "proof_findings": 0,
+      "scoped_source_exit_code": 1,
+      "scoped_source_findings": 2,
+      "actual_secret_findings": 0,
+      "classification": "public empty analytics-setting key and synthetic64hex session-command selector; both AST-verified; no exclusions or baseline edits"
+    },
+    "graft": {
+      "graph_ok": true,
+      "nodes": 52407,
+      "context_missing": true,
+      "context_note": "LLM context intentionally not requested; indexing local cache only"
+    }
+  },
+  "provenance": {
+    "raw_junit_sha256": "d55908222131d713f14a9864eff6f76ec8d0a265f7cf9e3985bc2f1c6c598a10",
+    "sanitized_junit_sha256": "9df859e5fa76e3ad7d9465126d0a1a7ef5237a072bdb6c89e2103ee762461625"
+  },
+  "collateral": {
+    "fresh_preimage_pins_reviewed": 13,
+    "inherited_stale_pins_preserved": 4,
+    "notes": "Only reviewed immediate preimage matches in H063/H099/H075/H515/H581 are refreshed. No blanket restamp. H660 coordinator-only preimage also matches; its partial verdict retained after99 code/RPC tests. H595 has the same sole changed coordinator preimage; partial SDK status preserved after the same99 checks."
+  },
+  "limits": [
+    "Feature preview remains default-off; no live activation, staging, commit, push, merge or deployment.",
+    "An already-started delete may resist cancellation; bounded drain reports unfinished work and late outcomes as abandoned. It does not forcibly stop remote IO.",
+    "502 passes cover the named affected surfaces and provider stubs; they do not prove complete697 parity or live channel acceptance."
+  ],
+  "remaining": [
+    "All other chat/CLI/HUD routes still need delivered typed/native clarification producers and pending interception; this checkpoint proves direct Telegram Gateway entry only.",
+    "Telegram poll/chat-lane bypass with pairing/origin checks before interception; current tests enter Gateway directly.",
+    "Pending replies must remain resolvable when the shared gateway model-message rate budget is saturated.",
+    "Native Telegram/Slack/Discord cards and callbacks, exact owner/sender/topic/current prompt and revision fencing.",
+    "Destructive /new, /reset and /undo once/always/cancel command integration; generation and actual session lease rechecks.",
+    "Governed persistent Always permission.grant request, actual human queue decision, kernel/executor integration and restart opt-out.",
+    "Governed workspace delivery and delivery receipts before human-wait credit; no direct Slack/Discord bypass.",
+    "Preserve ephemeral notices through all command/response paths without conversation-memory append; extend deletion transports.",
+    "Clarify Other/native multiple choices, batch questions and full donor validation/timeout behavior through the integrated runtime.",
+    "Investigate same-instance stop/start support; closed pending services currently remain closed, as intended for shutdown.",
+    "Final integrated H067 full backend and serial frontend acceptance; latest H063 full suites predate this change.",
+    "Current H277 original49 mutations and remaining H277 kernel/provider requirements are still open."
+  ]
+}

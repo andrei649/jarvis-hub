@@ -1695,6 +1695,7 @@ def register_file_tools(
     tools: FileTools | None = None,
     *,
     enabled: bool | None = None,
+    mutation_intake: Callable[[str, str, dict, Mapping[str, Any] | None], int] | None = None,
 ) -> list[str]:
     """Register the five file tools on a ToolRPC server. Default-off: returns
     ``[]`` without touching the server unless ``JARVIS_FILE_TOOLS`` is on (or
@@ -1702,30 +1703,62 @@ def register_file_tools(
     on = file_tools_enabled() if enabled is None else bool(enabled)
     if not on:
         return []
+    if mutation_intake is not None and not callable(mutation_intake):
+        raise ValueError("mutation_intake must be callable")
     instance = tools if tools is not None else FileTools.from_env()
 
+    def _current_instance():
+        from .kanban.workspace_context import file_tools_for_workspace
+
+        return file_tools_for_workspace(instance)
+
+    def _preflight(name):
+        def validate(args):
+            try:
+                current = _current_instance()
+            except FileScopeError as exc:
+                raise ToolRPCValidationError(exc.reason) from None
+            return current.preflight(name)(args)
+        return validate
+
     async def _read(args: dict) -> dict:
-        return await instance.read_file(args)
+        return await _current_instance().read_file(args)
 
     async def _list(args: dict) -> dict:
-        return await instance.list_dir(args)
+        return await _current_instance().list_dir(args)
 
     async def _search(args: dict) -> dict:
-        return await instance.search_files(args)
+        return await _current_instance().search_files(args)
 
     async def _write(args: dict) -> dict:
         # Reached only through ToolRPCServer.execute after durable approval
         # (gated tools never run inline from handle()), and only after that
         # execute matched the call's H506 class against the approved card.
-        return await instance.write_file(args, approved=True)
+        return await _current_instance().write_file(args, approved=True)
 
     async def _delete(args: dict) -> dict:
-        return await instance.delete_file(args, approved=True)
+        return await _current_instance().delete_file(args, approved=True)
 
     def _classify(args: dict) -> Mapping[str, Any] | None:
         # H506 — server-owned, registered here, never selectable by call data: a
         # sandboxed script cannot label its own write, nor strip the label off one.
-        return instance.classify_mutation(args)
+        return _current_instance().classify_mutation(args)
+
+    def _gated_intake(name: str):
+        def intake(actor: str, args: dict) -> int:
+            # The registrar owns this callback. Recheck the worker binding at the
+            # last synchronous boundary before the coordinator queues its action.
+            try:
+                current = _current_instance()
+                labels = current.classify_mutation(args)
+                latest = _current_instance()
+                if getattr(current, "binding", None) is not getattr(latest, "binding", None):
+                    raise FileScopeError("outside_scope")
+            except FileScopeError as exc:
+                raise ToolRPCValidationError(exc.reason) from None
+            return mutation_intake(actor, name, args, labels)
+
+        return intake
 
     handlers = {
         "file_read": _read, "file_list": _list, "file_search": _search,
@@ -1743,9 +1776,10 @@ def register_file_tools(
             description=spec["description"],
             input_schema=spec["input_schema"],
             capability_id=spec["capability_id"],
-            preflight=instance.preflight(name),
+            preflight=_preflight(name),
             trusted_execution=spec["trusted_execution"],
             classifier=classifiers.get(name),
+            gated_intake=_gated_intake(name) if mutation_intake is not None and spec["gated"] else None,
         )
         registered.append(name)
     return registered

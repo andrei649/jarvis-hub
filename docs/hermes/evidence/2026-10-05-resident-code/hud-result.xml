@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="7" failures="0" errors="0" time="0.172799667">
+    <testsuite name="src/test/sandbox-kernels.test.tsx" timestamp="2026-10-05T18:25:01.945Z" hostname="Macmini" tests="7" failures="0" errors="0" skipped="0" time="0.172799667">
+        <testcase classname="src/test/sandbox-kernels.test.tsx" name="SandboxPanel session kernels (K3) &gt; shows the mode and, with no kernel, says the first cell starts one" time="0.088632833">
+        </testcase>
+        <testcase classname="src/test/sandbox-kernels.test.tsx" name="SandboxPanel session kernels (K3) &gt; shows the caller own kernel age and cell count" time="0.008316917">
+        </testcase>
+        <testcase classname="src/test/sandbox-kernels.test.tsx" name="SandboxPanel session kernels (K3) &gt; names the switch when sessions are off, and offers no reset" time="0.011937125">
+        </testcase>
+        <testcase classname="src/test/sandbox-kernels.test.tsx" name="SandboxPanel session kernels (K3) &gt; reports a reset that destroyed a kernel" time="0.017965125">
+        </testcase>
+        <testcase classname="src/test/sandbox-kernels.test.tsx" name="SandboxPanel session kernels (K3) &gt; does not call an empty seat a reset" time="0.014768291">
+        </testcase>
+        <testcase classname="src/test/sandbox-kernels.test.tsx" name="SandboxPanel session kernels (K3) &gt; keeps a failed call distinct from a successful reset" time="0.014094791">
+        </testcase>
+        <testcase classname="src/test/sandbox-kernels.test.tsx" name="shows quarantined teardown as unconfirmed and allows reset retry" time="0.01555425">
+        </testcase>
+    </testsuite>
+</testsuites>

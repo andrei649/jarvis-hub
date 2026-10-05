@@ -1,0 +1,4 @@
+{
+  "agents/core/channels/pending_input_runtime.py": "67c5c53f13ebab7b7321b4728ea0d50943389f8a371ec667a50adeadef94d84d",
+  "tests/test_pending_input_cancel.py": "ac0fa00afc07fcff752fb08f8ed8c9e369872a06def46a177cf94c2409a1052f"
+}

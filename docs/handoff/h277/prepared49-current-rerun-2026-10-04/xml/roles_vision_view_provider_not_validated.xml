@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.372" timestamp="2026-10-04T23:53:30.669393+03:00" hostname="Macmini"><testcase classname="tests.test_h277_model_roles" name="test_unknown_vision_provider_is_rejected" time="1.139"><failure message="AssertionError: assert 'vlm_disabled' == 'role_provider_unknown'&#10;  &#10;  - role_provider_unknown&#10;  + vlm_disabled">tests/test_h277_model_roles.py:186: in test_unknown_vision_provider_is_rejected
+    assert refused.value.reason == "role_provider_unknown"
+E   AssertionError: assert 'vlm_disabled' == 'role_provider_unknown'
+E     
+E     - role_provider_unknown
+E     + vlm_disabled</failure></testcase></testsuite></testsuites>

@@ -32,6 +32,7 @@ def http(monkeypatch):
 def test_http_command_requires_the_real_owner_guard(http):
     response = http.post("/api/kanban/command", json={"argv": ["init"]})
     assert response.status_code == 401
+    assert http.post("/api/kanban/projects/command", json={"argv": ["create", "Blocked"]}).status_code == 401
 
 
 def test_websocket_refuses_unauthenticated_and_query_credentials(http):
@@ -59,6 +60,105 @@ def test_host_cli_exposes_the_copied_argument_tree(capsys):
     assert main(["kanban", "--help"]) == 0
     help_text = capsys.readouterr().out
     assert all(command in help_text for command in ["boards", "create", "dispatch", "runs"])
+    assert main(["project", "--help"]) == 0
+    project_help = capsys.readouterr().out
+    assert all(command in project_help for command in ["add-folder", "set-primary", "bind-board", "archive"])
+
+
+@pytest.mark.asyncio
+async def test_typed_project_requires_owner_and_uses_real_store(tmp_path, monkeypatch):
+    from agents.core.kanban import projects_cli
+
+    monkeypatch.setattr(projects_cli, "data_path", lambda *parts: tmp_path)
+    registry = build_default_registry()
+    orch = SimpleNamespace(get_setting=lambda key, default=None: key == "llm.kanban")
+    guest = await registry.dispatch("/project create Shared", orch=orch, principal=Principal(channel="telegram"))
+    assert guest is not None and guest.status == "refused"
+    assert not (tmp_path / "projects.db").exists()
+    owner = Principal(channel="telegram", admin=True)
+    made = await registry.dispatch('/project create "My App" --description "literal --text"', orch=orch, principal=owner)
+    assert made is not None and made.status == "answered" and "Created project my-app" in made.reply
+    shown = await registry.dispatch("/project show my-app", orch=orch, principal=owner)
+    assert "literal --text" in shown.reply
+
+
+def test_host_project_command_and_inventory_share_store(active, tmp_path, monkeypatch):
+    import io
+
+    from agents.cli.nerva import Context, main
+
+    client, _ = active
+    folder = tmp_path / "repo"
+    folder.mkdir()
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(folder))
+    calls = []
+
+    class LocalClient:
+        def post(self, path, body=None):
+            calls.append((path, body["argv"]))
+            response = client.post(path, headers=OWNER, json=body)
+            assert response.status_code == 200, response.text
+            return response.json()
+
+    output = io.StringIO()
+    ctx = Context(environ={}, out=output, err=io.StringIO(), client_factory=lambda _: LocalClient())
+    argv = ["create", "My App", str(folder), "--description", "literal --value", "--use"]
+    assert main(["project", *argv], context=ctx) == 0
+    assert calls == [("/api/kanban/projects/command", argv)]
+    response = client.get("/api/kanban/projects", headers=OWNER)
+    assert response.status_code == 200, response.text
+    project = response.json()["projects"][0]
+    assert project["name"] == "My App" and project["description"] == "literal --value"
+    assert project["primary_path"] == str(folder)
+    assert main(["project", "show", "absent"], context=ctx) != 0
+
+
+def test_owner_can_create_workspace_tasks_and_reject_invalid_paths_atomically(active, tmp_path, monkeypatch):
+    client, _ = active
+    root = tmp_path / "repos"
+    root.mkdir()
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(root))
+    folder = root / "working"
+    response = client.post("/api/kanban/tasks", headers=OWNER,
+                           json={"title": "Dir task", "workspace_kind": "dir", "workspace_path": str(folder), "triage": True})
+    assert response.status_code == 200, response.text
+    assert response.json()["task"]["workspace_path"] == str(folder)
+    assert not folder.exists()  # Owner metadata creation is not execution authority.
+    outside = tmp_path / "outside"
+    bad = client.post("/api/kanban/tasks", headers=OWNER,
+                      json={"title": "Must roll back", "workspace_kind": "dir", "workspace_path": str(outside)})
+    assert bad.status_code == 400, bad.text
+    commands = ["create", "Must also roll back", "--workspace", f"dir:{outside}", "--triage"]
+    rejected = client.post("/api/kanban/command", headers=OWNER, json={"argv": commands})
+    assert rejected.status_code == 200 and not rejected.json()["ok"]
+    board = client.get("/api/kanban/board", headers=OWNER).json()
+    cards = [task for column in board["columns"] for task in column["tasks"]]
+    assert [task["title"] for task in cards] == ["Dir task"]
+
+
+def test_real_project_and_kanban_commands_create_linked_worktree_card(active, tmp_path, monkeypatch):
+    from tests.test_hermes_kanban_workspaces import _git
+
+    client, _ = active
+    root = tmp_path / "repos"
+    root.mkdir()
+    repo = root / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(root))
+    _git(repo, "init", "-b", "main")
+    _git(repo, "-c", "user.email=test@example.invalid", "-c", "user.name=Test",
+         "commit", "--allow-empty", "-m", "base")
+    project = client.post("/api/kanban/projects/command", headers=OWNER,
+                          json={"argv": ["create", "My App", str(repo), "--board", "default"]})
+    assert project.status_code == 200 and project.json()["ok"], project.text
+    created = client.post("/api/kanban/command", headers=OWNER,
+                          json={"argv": ["create", "Linked task", "--assignee", "jarvis", "--triage", "--json"]})
+    assert created.status_code == 200 and created.json()["ok"], created.text
+    board = client.get("/api/kanban/board", headers=OWNER).json()
+    task = board["columns"][0]["tasks"][0]
+    assert task["project_id"] and task["workspace_kind"] == "worktree"
+    assert task["branch_name"].startswith("my-app/")
+    assert not __import__("pathlib").Path(task["workspace_path"]).exists()
 
 
 OWNER = {"X-Admin-Token": "synthetic-kanban-owner"}

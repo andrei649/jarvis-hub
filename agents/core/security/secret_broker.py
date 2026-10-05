@@ -19,6 +19,7 @@ from agents.core.secrets import SecretStoreError
 logger = logging.getLogger("jarvis.security.secret_broker")
 
 _HANDLE = re.compile(r"\{\{\s*secret:([A-Za-z0-9_.\-]+)\s*\}\}")
+_INTERNAL_PREFIX = "h034."
 
 
 class _DictStore:
@@ -41,11 +42,13 @@ class _DictStore:
 
 
 class SecretBroker:
-    def __init__(self, store=None) -> None:
+    def __init__(self, store=None, *, sources=None) -> None:
         self._store = store if store is not None else _DictStore()
+        self._sources = sources
         self._lock = threading.Lock()
 
-    def _safe_get(self, name: str):
+    def _safe_get(self, name: str, *, external: bool = False, owner_id: str | None = None,
+                  background: bool = False):
         """Fetch one secret, degrading to None if it can't be decrypted.
 
         The encrypted SecretStore raises SecretStoreError on a wrong key or
@@ -53,8 +56,13 @@ class SecretBroker:
         inject()/has() raise for *every* call — the defense-in-depth scrubbing
         path would take down the very features it protects (e.g. all tool-RPC).
         """
+        if name.startswith(_INTERNAL_PREFIX):
+            return None
         try:
-            return self._store.get(name)
+            value = self._store.get(name)
+            if value is None and external and self._sources is not None:
+                return self._sources.resolve(name, owner_id=owner_id, background=background)
+            return value
         except SecretStoreError:
             logger.warning("secret %r could not be decrypted — skipping", name)
             return None
@@ -62,6 +70,8 @@ class SecretBroker:
     # ── management (values in, never out) ────────────────────────────────────
 
     def put(self, name: str, value: str) -> None:
+        if name.startswith(_INTERNAL_PREFIX):
+            raise ValueError("reserved secret name")
         with self._lock:
             self._store.set(name, value)
 
@@ -69,9 +79,11 @@ class SecretBroker:
         return self._safe_get(name) is not None
 
     def names(self) -> list[str]:
-        return list(self._store.names())
+        return [name for name in self._store.names() if not name.startswith(_INTERNAL_PREFIX)]
 
     def delete(self, name: str) -> bool:
+        if name.startswith(_INTERNAL_PREFIX):
+            return False
         return self._store.delete(name)
 
     @staticmethod
@@ -81,7 +93,8 @@ class SecretBroker:
 
     # ── just-in-time injection (behind approval) ─────────────────────────────
 
-    def inject(self, text: str, approved: bool = False) -> dict:
+    def inject(self, text: str, approved: bool = False, *, owner_id: str | None = None,
+               background: bool = False) -> dict:
         """Resolve ``{{secret:NAME}}`` handles to real values — only if *approved*.
 
         Returns {text, injected:[names], blocked:[names]}. When not approved (or a
@@ -96,7 +109,7 @@ class SecretBroker:
             if not approved:
                 blocked.append(name)
                 return f"[secret:{name} blocked — approval required]"
-            value = self._safe_get(name)
+            value = self._safe_get(name, external=True, owner_id=owner_id, background=background)
             if value is None:
                 blocked.append(name)
                 return f"[secret:{name} not found]"
@@ -115,7 +128,15 @@ class SecretBroker:
         with self._lock:
             names = list(self._store.names())
         for name in names:
-            value = self._safe_get(name)
+            try:
+                value = (self._store.get(name) if name.startswith("h034.token.")
+                         else self._safe_get(name))
+            except SecretStoreError:
+                value = None
             if value and value in out:
                 out = out.replace(value, f"[REDACTED:{name}]")
+        if self._sources is not None:
+            for name, value in self._sources.redaction_values():
+                if value and value in out:
+                    out = out.replace(value, f"[REDACTED:{name}]")
         return out

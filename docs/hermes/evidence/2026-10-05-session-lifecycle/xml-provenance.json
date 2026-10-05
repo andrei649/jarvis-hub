@@ -1,0 +1,72 @@
+[
+  {
+    "name": "metadata-valid-red",
+    "raw_sha256": "21dc81aac51dc73f7514737da48d0da418a7e72f587dfe0c8158ec97c31ab590",
+    "sanitized_sha256": "8624760f54fc47edeafcf0e27c911a88d454e2cf90ca391d520f758c92ae3018"
+  },
+  {
+    "name": "concurrency-red",
+    "raw_sha256": "badc33325d03e497489866e866353efc785caed6cb6c6c7d7464db2d3c9bffc8",
+    "sanitized_sha256": "fb0861e5a28c2d64fd76f34061a1d2549119c6658e61444f8bb1e6e79973afe4"
+  },
+  {
+    "name": "storage-token-red",
+    "raw_sha256": "c00383386b5c1f9f64aca8ddf1f5764977776e070065f0b8db948e457d8e3f6b",
+    "sanitized_sha256": "b18b55d887fc5772a7307b85168de45be783e84307c8b5638e07e0802ace3fdd"
+  },
+  {
+    "name": "shutdown-topic-red",
+    "raw_sha256": "720d70b88df442d30adacb1037e6b9700bf8d15bd874dc63a8e04ff0244dec1a",
+    "sanitized_sha256": "05b7cfdf609fca7271af418aeba7f201fe8ddab729320b86770bba456acc1142"
+  },
+  {
+    "name": "voice-topic-red",
+    "raw_sha256": "d4cfea67d2ec0a7ac6337c00a440e95491bbace0fa8d5957dcd85e30642a20de",
+    "sanitized_sha256": "924545debf74751d05b48df28feb7c87adb5c25a978c3b4c03a7ee8b7c7cf2ed"
+  },
+  {
+    "name": "affected-final2",
+    "raw_sha256": "f9c1f20504efdbd5fa0d1bf36b5f4b058464cf6ea769e66cd26ef713d76d9257",
+    "sanitized_sha256": "e3f660f0d89e205f353f65146544cc7794b760372ba6753a122956f291608759"
+  },
+  {
+    "name": "first-full-result",
+    "raw_sha256": "fd461fbbe827285a341775160fa7addf26d36955cb7e4e81fbc7e947a24e0f7a",
+    "sanitized_sha256": "e713bc3e5a17547c77e7c3c5d461cd017fd6ce60ff9d0e6f2d2ece2b10d749ac"
+  },
+  {
+    "name": "round2-focused",
+    "raw_sha256": "dfb9bc70cd041f9f26fcdb69ed3b12f7d18b9de2f5d5b2e1dbe453e5c4c96e52",
+    "sanitized_sha256": "0d88ecdab4ced6c1b6d7416a4a6853287b127374630bd85a22dc297c750afe40"
+  },
+  {
+    "name": "provider-emitter-red",
+    "raw_sha256": "f4fedb148f8fe20395ea1488c756badc00ebe9127b87ee1ebe3248a1a9f63345",
+    "sanitized_sha256": "d836f1bc1a2f8090e1dc06ce606d83cba778c9d71b8679e5392e4cd8ba6ce3e2"
+  },
+  {
+    "name": "round2-provider-green",
+    "raw_sha256": "c39e83098d4f18a59da461555250db039ad83143a5ec8d0cabefeea0434874a5",
+    "sanitized_sha256": "eb4987e5c6316d602c3954f5cd53f4eeebd5cddff135c73ddff55a530191258d"
+  },
+  {
+    "name": "second-full-result",
+    "raw_sha256": "6522ba2ecee03c55633f6992beb917b650e3298b9219d228d78fc94aa5373151",
+    "sanitized_sha256": "55324a9a20c15cb6070bd8d12146e87d8ef2e0528d640e6547b85a248bdc3b56"
+  },
+  {
+    "name": "wait-credit-disabled-red",
+    "raw_sha256": "927f37a76c678e7f0d6691902cb97aa5c60635557e9fa84410887cc049d2f166",
+    "sanitized_sha256": "00c932282394641f0e45678f7e6c3e9d91ae5e0ba43b20c3ae13c1162aad7308"
+  },
+  {
+    "name": "final-clock-affected",
+    "raw_sha256": "e02ec8ce0b654e87146a1363bc9a49406bd3e9243593d81eeae91efce5455d0f",
+    "sanitized_sha256": "979b2c6ede347275ab50a12301ccacf50db8061f7e9b0e0425b7fccf613bddaf"
+  },
+  {
+    "name": "backend-result",
+    "raw_sha256": "22f1ff60ae5a4c017abde238d47973b11cb51856e33a639c16651f19caafdd5d",
+    "sanitized_sha256": "75875a821f94d4289b6dc9a4618248e2eac846bfcfbb2cf256716af2f24191d7"
+  }
+]

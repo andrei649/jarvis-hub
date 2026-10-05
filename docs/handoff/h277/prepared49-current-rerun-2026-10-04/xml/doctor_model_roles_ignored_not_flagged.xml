@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.408" timestamp="2026-10-04T23:54:55.535155+03:00" hostname="Macmini"><testcase classname="tests.test_h277_model_roles" name="test_doctor_model_roles_row_warns_on_an_ignored_main_variable" time="1.175"><failure message="AssertionError: assert ('ok' == 'warn'&#10;  &#10;  - warn&#10;  + ok)">tests/test_h277_model_roles.py:408: in test_doctor_model_roles_row_warns_on_an_ignored_main_variable
+    assert check.status == doctor.WARN and "JARVIS_ROLE_MAIN_MODEL" in check.detail
+E   AssertionError: assert ('ok' == 'warn'
+E     
+E     - warn
+E     + ok)</failure></testcase></testsuite></testsuites>

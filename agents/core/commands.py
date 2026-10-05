@@ -87,7 +87,7 @@ class CommandOutcome:
     """What dispatch decided, so callers can log and record it honestly."""
 
     name: str
-    status: str  # answered | refused | unknown | failed
+    status: str  # answered | queued | refused | unknown | failed
     reply: str
 
 
@@ -131,7 +131,8 @@ class CommandRegistry:
             return None
         return match.group(1).lower(), (match.group(2) or "").strip()[:_MAX_ARGS]
 
-    async def dispatch(self, text: str, *, orch: Any, principal: Principal) -> CommandOutcome | None:
+    async def dispatch(self, text: str, *, orch: Any, principal: Principal,
+                       _quick_seen: frozenset[str] = frozenset()) -> CommandOutcome | None:
         """Answer a slash command, or return None when *text* is not one."""
         checkpoint_name = checkpoint_command_name(text)
         if checkpoint_name and len(text.strip()) > _MAX_ARGS:
@@ -145,6 +146,11 @@ class CommandRegistry:
             return self._observed(CommandOutcome(name, "refused", "Kanban command is too long; nothing changed."))
         command = self.get(name)
         if command is None:
+            from .quick_commands import dispatch_quick
+
+            quick = await dispatch_quick(self, text, orch=orch, principal=principal, seen=_quick_seen)
+            if quick is not None:
+                return self._observed(quick)
             # Deliberately NOT observed. `name` here is whatever the sender typed, so
             # emitting it would push arbitrary message text through a field that
             # promises to carry command names — a body leak wearing a safe label.
@@ -187,6 +193,10 @@ def _help(ctx: CommandContext) -> str:
     registry = getattr(ctx.orch, "commands", None)
     commands = registry.visible(ctx.principal) if isinstance(registry, CommandRegistry) else []
     lines = [command.summary for command in commands]
+    if ctx.principal.admin and isinstance(registry, CommandRegistry):
+        from .quick_commands import help_lines
+
+        lines.extend(help_lines(ctx.orch, registry))
     if not ctx.principal.admin:
         lines.append("Owner commands (such as /pause, /resume, /stop, /remind and /refine) answer only "
                      "the owner's channel.")
@@ -428,6 +438,18 @@ async def _kanban(ctx: CommandContext) -> str:
     return result["output"]
 
 
+async def _project(ctx: CommandContext) -> str:
+    from .kanban.projects_cli import execute_command
+
+    try:
+        argv = shlex.split(ctx.args or "")
+    except ValueError:
+        return "project: invalid quoted arguments"
+    result = await execute_command(ctx.orch, argv, ctx.principal,
+                                   session_id=getattr(ctx.orch, "session_id", None), owner_command=ctx)
+    return result["output"]
+
+
 def build_default_registry() -> CommandRegistry:
     from .checkpoint_commands import checkpoint_command
 
@@ -450,5 +472,7 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("rollback", "list checkpoints or request an approved restore",
                                    checkpoint_command, tier=ADMIN, usage="[checkpoint]"))
     registry.register(SlashCommand("kanban", "manage your task boards", _kanban,
+                                   tier=ADMIN, usage="<action> [arguments]"))
+    registry.register(SlashCommand("project", "manage your projects and folders", _project,
                                    tier=ADMIN, usage="<action> [arguments]"))
     return registry

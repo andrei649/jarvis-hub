@@ -728,7 +728,8 @@ async def test_the_orchestrator_passes_the_setting(tmp_path, monkeypatch):
 
     seen = {}
 
-    def fake(session, *, setting=None, workdir=None):
+    def fake(session, *, setting=None, workdir=None, scope=None):
+        assert scope is None, "an ordinary owner turn has no worker workspace scope"
         seen.update(session=session, workdir=workdir, on=setting("k", None))
         return None
     monkeypatch.setattr(pc, "build_turn", fake)

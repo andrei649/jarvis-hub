@@ -15,7 +15,7 @@ from agents.core.paths import data_path
 from .persistence import JsonStore
 
 DEFAULT_PATH = data_path("channel_inbox.json")
-SUPPORTED_INBOX_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord"})
+SUPPORTED_INBOX_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord", "ntfy"})
 _MAX_TEXT = 4_000
 _PREVIEW = 240
 _REPLY_KEYS = {
@@ -26,6 +26,7 @@ _REPLY_KEYS = {
     "email": ("to", "subject"),
     "slack": ("slack_channel", "thread_ts"),
     "discord": ("channel_id",),
+    "ntfy": ("ntfy_topic", "ntfy_context"),
 }
 
 
@@ -251,6 +252,8 @@ def _thread_id(channel: str, sender: str, reply: dict) -> str:
         stable = f"{reply['slack_channel']}:{reply.get('thread_ts', '')}"
     elif channel == "discord" and reply.get("channel_id"):
         stable = str(reply["channel_id"])
+    elif channel == "ntfy" and reply.get("ntfy_context"):
+        stable = str(reply["ntfy_context"])
     digest = hashlib.sha256(f"{channel}:{stable}".encode()).hexdigest()[:12]
     return f"{channel}:{digest}"
 

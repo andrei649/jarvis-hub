@@ -95,16 +95,12 @@ def _preflight(args, context):
             if args.body_file == "-":
                 return "kanban create: stdin body adapter is not bound"
             require_scoped_path(Path(args.body_file))
-        if (args.workspace not in (None, "scratch") or args.branch or args.project
-                or args.goal_mode or args.goal_max_turns is not None):
-            return "kanban create: workspace/project/goal adapter is not bound"
+        if args.goal_mode or args.goal_max_turns is not None:
+            return "kanban create: goal adapter is not bound"
         if args.skills:
             return "kanban create: worker skill injection adapter is not bound"
         if args.completion_contract not in (None, "local-only"):
             return "kanban create: GitHub/PR completion contract adapter is not bound"
-        meta = kb.read_board_metadata(context.board)
-        if meta.get("project_id") or meta.get("default_workdir"):
-            return "kanban create: board project/workspace adapter is not bound"
     if action == "attach":
         require_scoped_path(Path(args.path))
     if action == "attach-rm":
