@@ -1,7 +1,7 @@
 {
   "goal_scope": "all697",
   "H515": "partial",
-  "publication": "owner-authorized draft checkpoint requested; pending push",
+  "publication": "owner-authorized draft checkpoint on codex/hermes-parity-handover-20261006",
   "implemented": [
     "Separate explicit Krea Enhance source-bound signed POST approval, exact native factor2 body and original preserved",
     "Source URL/artifact/hash/actual human execution/principal/live-host checks before dial and publication",
@@ -23,7 +23,9 @@
       "tests": 1976,
       "passed": 1976,
       "failed": 0,
-      "pending": 0
+      "pending": 0,
+      "integrated_main": "c21202c1",
+      "before_main_receipt": "frontend-before-main-result.json"
     },
     "typecheck": true,
     "build": true,
@@ -60,7 +62,7 @@
       "findings": 0,
       "baseline": false,
       "inline_allow": false,
-      "note": "Exact staged snapshot; final publishing session rechecks updated complete index before push"
+      "note": "Earlier 721-file new-work index passed with zero findings. Broader outgoing snapshot scan additionally covers historical files and preserves its reviewed false-positive report."
     },
     "no_live_calls": true,
     "publication_metadata": {
@@ -69,6 +71,16 @@
       "failures": 0,
       "errors": 0,
       "settings_AST_identical": true
+    },
+    "outgoing_snapshot_scan": {
+      "receipt": "outgoing-snapshot-scan-result.json",
+      "review": "outgoing-snapshot-scan-review.json",
+      "paths": 1268,
+      "raw_findings": 113,
+      "reviewed_nonsecrets": 113,
+      "unresolved": 0,
+      "baseline": false,
+      "inline_allow": false
     }
   },
   "verification_history": {
@@ -103,5 +115,12 @@
     "reviewed_equivalent": 22,
     "inherited_equivalent": 108,
     "new_equivalent_H515": 0
+  },
+  "main_integration": {
+    "main": "c21202c1",
+    "source_review": "main-integration-review.json",
+    "upstream_commits": 4,
+    "generated_assets": "rebuilt from merged source; typecheck/build/full frontend pass",
+    "full_aggregate_backend_rerun": false
   }
 }

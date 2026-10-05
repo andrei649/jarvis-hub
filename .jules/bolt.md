@@ -19,3 +19,15 @@
 ## 2026-04-04 - High-frequency Array Iteration Closures in Canvas Animation Loops
 **Learning:** In canvas components like `NeuralBurst` (`frontend/src/burst.tsx`), nested `.forEach()` calls across cluster dendrites and synapse nodes execute ~500+ times per frame (~30,000 callback closures/sec at 60 FPS). This causes function closure allocation overhead and CPU cycle overhead in main-thread frame rendering.
 **Action:** Use indexed `for` loops (`for (let i = 0; i < len; i++)`) in Canvas 2D `draw()` animation loops to avoid closure creation overhead entirely.
+
+## 2026-04-05 - Frame-throttling MutationObserver Layout Measurements in HUD Overlays
+**Learning:** `MutationObserver` watching `document.body` for subtree changes (such as in `PointerView` in `frontend/src/pointer.tsx`) fires synchronously on microtask DOM updates. Calling `elementFromPoint()` or `getBoundingClientRect()` directly inside the mutation callback forces synchronous layout recalculations (layout thrashing) on every DOM mutation burst.
+**Action:** Frame-throttle DOM layout measurement callbacks triggered by `MutationObserver` using `requestAnimationFrame` to collapse mutation bursts into at most one layout measurement per animation frame.
+
+## 2026-04-06 - In-place Array Pruning in Canvas Animation Loops
+**Learning:** Updating dynamic array states via `arr = arr.filter(...)` inside Canvas 2D `requestAnimationFrame` loops (e.g. `st.particles` and `st.rings` in `NeuralMesh` in `frontend/src/mesh.tsx`) creates new array instances on every frame (~3,600 allocations/min).
+**Action:** Use a single write-index `for` loop to mutate and prune active elements in-place (`arr[writeIdx++] = item; arr.length = writeIdx`) during frame rendering to avoid per-frame array allocations.
+
+## 2026-04-07 - High-Frequency SVG Animation Tick Allocation Overhead in NetworkBrain
+**Learning:** In high-frequency animated SVG components (e.g. `NetworkBrain` in `frontend/src/network.tsx` updating on a 60ms interval timer), defining path generation functions or path string computation `useMemo` hooks inside the component body creates function closures and re-evaluations on every tick. Chaining `.filter().map()` calls inside tick-driven `useMemo` hooks allocates multiple intermediate arrays on every animation tick.
+**Action:** Move static geometry generators outside component scope as module-level constants and use single-pass indexed `for` loops in tick-driven `useMemo` hooks to avoid per-tick heap allocations.

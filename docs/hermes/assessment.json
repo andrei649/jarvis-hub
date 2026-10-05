@@ -6511,7 +6511,7 @@
         },
         {
           "path": "frontend/src/pointer.tsx",
-          "sha256": "6499eefb53069b8ae875ea276afbe0cbe4275706c78315cc53564e6f6d2901e6"
+          "sha256": "69688bbcacaa8c2d3dc1354b087a690af020aa1db5aa9221f2a4c589be7879d5"
         },
         {
           "path": "frontend/src/app.tsx",
@@ -6536,6 +6536,10 @@
         {
           "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/web-report.json",
           "sha256": "bac15d8d3dfec97b8e2afd866157dad237e2e70afe7c0bec0f17126f4d88d208"
+        },
+        {
+          "path": "docs/hermes/evidence/2026-10-06-krea-enhance/main-integration-review.json",
+          "sha256": "39fe5727362d6fd82d79354d4fa30c42d55a5a11128db8452c893a00b5da5139"
         }
       ]
     },
@@ -13344,66 +13348,6 @@
           "sha256": "adad246193e8caf1bef380d2b7bf5e5756a93c261595f181302c6de215eb72ea"
         },
         {
-          "path": "agents/web/v2/assets/client-D7Azo9Vs.js",
-          "sha256": "14ff90baa08a75c728800011be72023cd1697fde0c24b065918584114df483d6"
-        },
-        {
-          "path": "agents/web/v2/assets/gap-Crl5de4H.css",
-          "sha256": "ea2c58ff70f0e4322cd34ebcd152e1292bc36317ab221186fc70ffdc890a72c5"
-        },
-        {
-          "path": "agents/web/v2/assets/gap-rM_2ANBh.js",
-          "sha256": "9d9cf9a1837ff2cc9685c7bccff749e491639bd33e5becfe7178893e6c615124"
-        },
-        {
-          "path": "agents/web/v2/assets/index-BOq2XdIA.js",
-          "sha256": "b0018bd3f74869ee79540e8f845eb5ebf7b246dcc5850c0ce2907397514ec98f"
-        },
-        {
-          "path": "agents/web/v2/assets/index-teqkDIsI.css",
-          "sha256": "f2ed79d72c09f820317880035ede4e11c9fe4452e78554a89e8a39c4ea57b7c9"
-        },
-        {
-          "path": "agents/web/v2/assets/jobs-vYmczPrq.js",
-          "sha256": "3b81379f8be7515b6fa596ed3c8c4e322d6b1bd3ad2afdf60c8cbd3b5e39eeb9"
-        },
-        {
-          "path": "agents/web/v2/assets/modes-B8KTs2G5.js",
-          "sha256": "26d636f2f64783c865814561a55fa25ef2f9c46fd34e1f0930606d76e90d8479"
-        },
-        {
-          "path": "agents/web/v2/assets/modes2-BTJUhdvd.js",
-          "sha256": "265eb5d4845c5c667c6182c243658dd8c11ef103728dfd234ebc6c366a534053"
-        },
-        {
-          "path": "agents/web/v2/assets/modes3-8LgYNpQ9.js",
-          "sha256": "43561855419ba0c14bdbd031db360266a39160baad327764a466972a0ed573fb"
-        },
-        {
-          "path": "agents/web/v2/assets/modes4-BSOV0X8t.js",
-          "sha256": "49eaa53e11baab87b6901a4c5b50801a2664b048db07352630eb8eccdbb17c8b"
-        },
-        {
-          "path": "agents/web/v2/assets/modes_world-Nv2xcVlR.js",
-          "sha256": "8c8924854a4a64e0caebcc399297638ddc005d201d54410f488e685676114e3f"
-        },
-        {
-          "path": "agents/web/v2/assets/panel-kit-CwyHgGr0.js",
-          "sha256": "9f0fb670dba95dbad8e5453c6c282f0da22e5548bd8475cc39e36c79e80d58d5"
-        },
-        {
-          "path": "agents/web/v2/assets/soul-edit-BcaRddJT.js",
-          "sha256": "b4f223073a316469a1eb8f911f8d814e1266c4e5050515aa41d3ce3498c02e69"
-        },
-        {
-          "path": "agents/web/v2/index.html",
-          "sha256": "f837cfdb9d84e9b11da11f5455300c8f4c5898d26ab859e6df9864f3c2d58f18"
-        },
-        {
-          "path": "agents/web/v2/sw-v2.js",
-          "sha256": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c"
-        },
-        {
           "path": "docs/hermes/evidence/2026-10-06-krea-enhance/backend-result.xml",
           "sha256": "d20a3aef16b954ca40421c8006d88d9ec149313fcbdd7d1f3f0f17fe86e703a0"
         },
@@ -13417,15 +13361,15 @@
         },
         {
           "path": "docs/hermes/evidence/2026-10-06-krea-enhance/frontend-result.json",
-          "sha256": "7f1516f17bca37c926e3aab58d72484cdd4e2b3240ab689d395bc1eb57d0f56d"
+          "sha256": "4e4bffffdf093e80ea7c6418142a5b82f629985908dde9e27a9960f8aae18a98"
         },
         {
           "path": "docs/hermes/evidence/2026-10-06-krea-enhance/report.json",
-          "sha256": "67aeb16150aa61a1744172ddd52a95710c3cc088016ecf85a4da3c0335b7124f"
+          "sha256": "8c22ef3bf0ae42ee093624ca0d12e32bd4bbfc59dce6f4fe63250a14b7d94fec"
         },
         {
           "path": "docs/hermes/evidence/2026-10-06-krea-enhance/scoped-inputs.json",
-          "sha256": "6a869c48c3d6bed314d8269a5f141e2036e037369bc88bd6bcf1d43d8ea18879"
+          "sha256": "9103a7bcdb4f42da9b46dc41beba46722a95f5e1bd4ed6ea4178cf6567e3012a"
         },
         {
           "path": "docs/hermes/h515-krea-enhance-plan-2026-10-06.md",
@@ -13453,7 +13397,7 @@
         },
         {
           "path": "docs/hermes/evidence/2026-10-06-krea-enhance/records-result.xml",
-          "sha256": "3f0b154f8b7cd95a64d23d76567051f837a30717136fb9eb25341896908ebb12"
+          "sha256": "cf926f059ffa394871a23201e0b57ea4406d13805886e008050b88b20275c2eb"
         },
         {
           "path": "docs/hermes/evidence/2026-10-06-krea-enhance/secret-scan-result.json",
@@ -13470,6 +13414,82 @@
         {
           "path": "docs/hermes/evidence/2026-10-06-krea-enhance/publication-history-secret-scan.json",
           "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+        },
+        {
+          "path": "agents/web/v2/assets/client-D7Azo9Vs.js",
+          "sha256": "14ff90baa08a75c728800011be72023cd1697fde0c24b065918584114df483d6"
+        },
+        {
+          "path": "agents/web/v2/assets/gap-Cqao4FKH.js",
+          "sha256": "8f2dd3a4f423add284575873c35f72ddf72d82b1d4d396c8ac0db4c118773f2a"
+        },
+        {
+          "path": "agents/web/v2/assets/gap-Crl5de4H.css",
+          "sha256": "ea2c58ff70f0e4322cd34ebcd152e1292bc36317ab221186fc70ffdc890a72c5"
+        },
+        {
+          "path": "agents/web/v2/assets/index-BDFXdZ0i.js",
+          "sha256": "7910afbc02dfce89972d271aded44c6bc2d452d46df6bb8187c502583ffe5c53"
+        },
+        {
+          "path": "agents/web/v2/assets/index-teqkDIsI.css",
+          "sha256": "f2ed79d72c09f820317880035ede4e11c9fe4452e78554a89e8a39c4ea57b7c9"
+        },
+        {
+          "path": "agents/web/v2/assets/jobs-vYmczPrq.js",
+          "sha256": "3b81379f8be7515b6fa596ed3c8c4e322d6b1bd3ad2afdf60c8cbd3b5e39eeb9"
+        },
+        {
+          "path": "agents/web/v2/assets/modes-BP_QFfDf.js",
+          "sha256": "cabc735192920d564949ae29a4f284ee17fbc5a7e802bdbee276e20d6a80fa87"
+        },
+        {
+          "path": "agents/web/v2/assets/modes2-BUQltWq6.js",
+          "sha256": "bca840ddb90a36d1815f462b65744ab268390e913a5c42a3186d8207407d27da"
+        },
+        {
+          "path": "agents/web/v2/assets/modes3-CK3eMYVV.js",
+          "sha256": "52f05338e34ea8e1cecadf743790365eb3d13ee32800c5effa3e5441e1c6eee6"
+        },
+        {
+          "path": "agents/web/v2/assets/modes4-BOirc9JJ.js",
+          "sha256": "7dbc1019b6c0bd21cd15ede940d4659174ff09a7480959e1e1faf830bf6d8e84"
+        },
+        {
+          "path": "agents/web/v2/assets/modes_world-KqiJAoOO.js",
+          "sha256": "be54b457ff322b85c7dd3652cbac23cefa1332b2f75315091996e953d7aa0b95"
+        },
+        {
+          "path": "agents/web/v2/assets/panel-kit-CwyHgGr0.js",
+          "sha256": "9f0fb670dba95dbad8e5453c6c282f0da22e5548bd8475cc39e36c79e80d58d5"
+        },
+        {
+          "path": "agents/web/v2/assets/soul-edit-BcaRddJT.js",
+          "sha256": "b4f223073a316469a1eb8f911f8d814e1266c4e5050515aa41d3ce3498c02e69"
+        },
+        {
+          "path": "agents/web/v2/index.html",
+          "sha256": "663af83f69f59c7b69d11837e01ca48a6908f883fd69c22b57cddf4b10330221"
+        },
+        {
+          "path": "agents/web/v2/sw-v2.js",
+          "sha256": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c"
+        },
+        {
+          "path": "docs/hermes/evidence/2026-10-06-krea-enhance/frontend-before-main-result.json",
+          "sha256": "7f1516f17bca37c926e3aab58d72484cdd4e2b3240ab689d395bc1eb57d0f56d"
+        },
+        {
+          "path": "docs/hermes/evidence/2026-10-06-krea-enhance/main-integration-review.json",
+          "sha256": "39fe5727362d6fd82d79354d4fa30c42d55a5a11128db8452c893a00b5da5139"
+        },
+        {
+          "path": "docs/hermes/evidence/2026-10-06-krea-enhance/outgoing-snapshot-scan-result.json",
+          "sha256": "f07829d9822a02d3f16cad6a4308a5c752c9b9e1f7526fcc94a759120bd76f99"
+        },
+        {
+          "path": "docs/hermes/evidence/2026-10-06-krea-enhance/outgoing-snapshot-scan-review.json",
+          "sha256": "21d752674c16da6c24d820c891692067db5a3d3bd8bad93d57c14041b233f9e8"
         }
       ]
     },

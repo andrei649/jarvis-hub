@@ -1,0 +1,688 @@
+{
+  "scope": "All final-index files differing from fetched origin/main, extracted byte-exactly before scanning",
+  "raw_findings": 113,
+  "reviewed_nonsecrets": 113,
+  "unresolved": 0,
+  "no_baseline_or_inline_allowances": true,
+  "preservation": "Historical evidence maps and raw receipts remain unchanged; this review does not suppress scanner findings.",
+  "review": [
+    {
+      "file": "docs/handoff/h277/mutation-refresh-2026-10-04.json",
+      "rule": "generic-api-key",
+      "line": 134,
+      "classification": "Synthetic prepared mutation case identifier"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 18,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 204,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 244,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 345,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 370,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 371,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 389,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 430,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 551,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 587,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 630,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 650,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 681,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 682,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 696,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 699,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 782,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 829,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 903,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "generic-api-key",
+      "line": 930,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "rule": "discord-api-token",
+      "line": 167,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h487-telegram-consent-progress-2026-10-04.json",
+      "rule": "generic-api-key",
+      "line": 20,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/kanban-cli-dashboard-local-2026-10-04.json",
+      "rule": "generic-api-key",
+      "line": 169,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/kanban-cli-dashboard-local-2026-10-04.json",
+      "rule": "generic-api-key",
+      "line": 181,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/kanban-cli-dashboard-local-2026-10-04.json",
+      "rule": "generic-api-key",
+      "line": 185,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/kanban-cli-dashboard-local-2026-10-04.json",
+      "rule": "generic-api-key",
+      "line": 186,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/kanban-dispatch-local-2026-10-04.json",
+      "rule": "generic-api-key",
+      "line": 287,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/kanban-dispatch-local-2026-10-04.json",
+      "rule": "generic-api-key",
+      "line": 290,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/kanban-dispatch-local-2026-10-04.json",
+      "rule": "generic-api-key",
+      "line": 292,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/kanban-dispatch-local-2026-10-04.json",
+      "rule": "generic-api-key",
+      "line": 293,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/kanban-dispatch-local-2026-10-04.json",
+      "rule": "generic-api-key",
+      "line": 295,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "discord-api-token",
+      "line": 251,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 70,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 113,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 282,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 322,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 420,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 444,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 462,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 503,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 623,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 659,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 702,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 722,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 753,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 754,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 768,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 771,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 854,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 901,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 1003,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 1053,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 1304,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 1480,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 1661,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 1783,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 1821,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2159,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2181,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2261,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2423,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2449,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2508,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2511,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2512,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2528,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2555,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2572,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2582,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "discord-api-token",
+      "line": 2632,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2643,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2652,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2721,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2740,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2776,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2818,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2840,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2842,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2886,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2887,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2975,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 2986,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3153,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3216,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3228,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3229,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3249,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3265,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3323,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3324,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3325,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3330,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3331,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3349,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3416,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3421,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3450,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3451,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3472,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3488,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3511,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3527,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3547,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3548,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3561,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3604,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3664,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3723,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3763,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3779,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3908,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    },
+    {
+      "file": "docs/hermes/evidence/h485-owner-once-full-verification-2026-10-03.json",
+      "rule": "generic-api-key",
+      "line": 3912,
+      "classification": "SHA256 file digest in historical path-to-digest evidence map"
+    }
+  ]
+}

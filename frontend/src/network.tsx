@@ -3,6 +3,18 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { V2 } from './data';
 
+// Bolt Optimization: Pre-generate constant hexagon path at module level
+// to avoid function closure allocations and useMemo recalculation on every 60ms animation tick.
+function buildHexPath(r: number): string {
+  let p = '';
+  for (let i = 0; i < 6; i++) {
+    const a = (i * 60 - 90) * Math.PI / 180;
+    p += (i ? 'L' : 'M') + Math.cos(a) * r + ',' + Math.sin(a) * r;
+  }
+  return p + 'Z';
+}
+const HEX_PATH_15 = buildHexPath(15);
+
 function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocusId, motion, t }) {
   const W = 640, H = 460, CX = W/2, CY = H/2;
   const R_TASK = 250; // outer ring where per-agent task nodes sit (V1's task-fan)
@@ -12,17 +24,18 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
 
   // layout: 4 tiers on concentric rings
   const layout = useMemo(() => {
-    const tiers = { CNS:[], BIZ:[], SEC:[], FND:[] };
+    const tiers: Record<string, any[]> = { CNS:[], BIZ:[], SEC:[], FND:[] };
     // v2 fix: the orchestrator (jarvis) IS the core — exclude it from the orbiting ring
     // so it isn't rendered twice (core + CNS node). Spokes/nodes skip ids absent from layout.
-    agents.filter(a => a.id !== 'jarvis').forEach(a => (tiers[a.tier] || tiers.FND).push(a));
+    // Bolt Optimization: Single-pass indexed loop avoids intermediate array allocations from .filter()
+    for (let i = 0; i < agents.length; i++) {
+      const a = agents[i];
+      if (a.id !== 'jarvis') {
+        (tiers[a.tier] || tiers.FND).push(a);
+      }
+    }
     const rings = { CNS:84, BIZ:150, SEC:150, FND:210 };
     const pos = {};
-    // CNS ring
-    const place = (list, r, startDeg) => list.forEach((a,i) => {
-      const ang = ((startDeg + i*(360/Math.max(list.length, (list===tiers.CNS?list.length:6)))) * Math.PI)/180;
-      pos[a.id] = { x: CX + Math.cos(ang)*r, y: CY + Math.sin(ang)*r, a };
-    });
     // distribute: CNS inner full circle; BIZ left arc; SEC right arc; FND outer ring
     tiers.CNS.forEach((a,i)=>{ const ang=(i*(360/tiers.CNS.length)-90)*Math.PI/180; pos[a.id]={x:CX+Math.cos(ang)*rings.CNS, y:CY+Math.sin(ang)*rings.CNS, a}; });
     tiers.BIZ.forEach((a,i)=>{ const ang=(150 + i*(120/Math.max(1,tiers.BIZ.length-1)))*Math.PI/180; pos[a.id]={x:CX+Math.cos(ang)*rings.BIZ, y:CY+Math.sin(ang)*rings.BIZ, a}; });
@@ -34,13 +47,20 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
   // Bolt Optimization: Precompute control points (cx, cy) and endpoints (px, py, qx, qy) on links
   // so the 60ms animation loop avoids recalculating quadratic bezier control points every frame.
   const COLLAB = (V2 && V2.COLLAB) || [];
-  const links = useMemo(() => COLLAB.filter(([a,b]) => layout[a] && layout[b]).map(([a,b]) => {
-    const p = layout[a], q = layout[b];
-    const mx = (p.x+q.x)/2, my = (p.y+q.y)/2;
-    // bow toward center for organic feel
-    const cx = mx + (CX-mx)*0.32, cy = my + (CY-my)*0.32;
-    return { a, b, px: p.x, py: p.y, qx: q.x, qy: q.y, cx, cy, d:`M${p.x},${p.y} Q${cx},${cy} ${q.x},${q.y}` };
-  }), [layout]);
+  const links = useMemo(() => {
+    // Bolt Optimization: Single pass filtering + mapping without intermediate array allocations
+    const res = [];
+    for (let i = 0; i < COLLAB.length; i++) {
+      const [a, b] = COLLAB[i];
+      const p = layout[a], q = layout[b];
+      if (p && q) {
+        const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+        const cx = mx + (CX - mx) * 0.32, cy = my + (CY - my) * 0.32;
+        res.push({ a, b, px: p.x, py: p.y, qx: q.x, qy: q.y, cx, cy, d: `M${p.x},${p.y} Q${cx},${cy} ${q.x},${q.y}` });
+      }
+    }
+    return res;
+  }, [layout]);
 
   // packet animation tick
   useEffect(() => {
@@ -49,17 +69,33 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
     return () => clearInterval(i);
   }, [motion]);
 
-  // Bolt Optimization: Use a Set for active agent lookup to avoid O(Links * Active) array scans
+  // Bolt Optimization: Single pass activeSet construction avoids intermediate array allocations from .filter().map()
   const livePackets = useMemo(() => {
-    const activeSet = new Set(agents.filter(a=>a.status==='active'||a.status==='busy').map(a=>a.id));
-    return links.filter(l => activeSet.has(l.a) || activeSet.has(l.b)).slice(0,6);
+    const activeSet = new Set<string>();
+    for (let i = 0; i < agents.length; i++) {
+      const st = agents[i].status;
+      if (st === 'active' || st === 'busy') activeSet.add(agents[i].id);
+    }
+    const res = [];
+    for (let i = 0; i < links.length; i++) {
+      const l = links[i];
+      if (activeSet.has(l.a) || activeSet.has(l.b)) {
+        res.push(l);
+        if (res.length === 6) break;
+      }
+    }
+    return res;
   }, [links, agents]);
 
   const focused = focusId;
   const neighbors = useMemo(() => {
     if (!focused) return null;
     const set = new Set([focused]);
-    links.forEach(l => { if (l.a===focused) set.add(l.b); if (l.b===focused) set.add(l.a); });
+    for (let i = 0; i < links.length; i++) {
+      const l = links[i];
+      if (l.a === focused) set.add(l.b);
+      else if (l.b === focused) set.add(l.a);
+    }
     return set;
   }, [focused, links]);
 
@@ -70,44 +106,52 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
   // Each task gets an outer-ring node near its owning agent; on focus they fan out
   // around the focused agent. Owners absent from the layout (or 'jarvis' → core) are
   // skipped so we never draw a node off the ring. Empty /tasks → no fan (honest).
-  const taskAngle = id => { const p = layout[id]; return p ? Math.atan2(p.y-CY, p.x-CX) : 0; };
   const positionedTasks = useMemo(() => {
-    const byOwner = {};
-    (tasks || []).forEach(tk => { const o = (tk.owner || tk.agent_id || 'jarvis'); (byOwner[o] ||= []).push(tk); });
+    const byOwner: Record<string, any[]> = {};
+    const taskList = tasks || [];
+    for (let i = 0; i < taskList.length; i++) {
+      const tk = taskList[i];
+      const o = tk.owner || tk.agent_id || 'jarvis';
+      (byOwner[o] ||= []).push(tk);
+    }
     const out = [];
-    Object.keys(byOwner).forEach(owner => {
-      if (!layout[owner]) return; // owner not on the ring (e.g. jarvis core) → skip
-      const list = byOwner[owner]; const n = list.length; const base = taskAngle(owner);
-      list.forEach((tk, i) => {
+    const owners = Object.keys(byOwner);
+    for (let k = 0; k < owners.length; k++) {
+      const owner = owners[k];
+      const p = layout[owner];
+      if (!p) continue; // owner not on the ring (e.g. jarvis core) → skip
+      const list = byOwner[owner];
+      const n = list.length;
+      const base = Math.atan2(p.y - CY, p.x - CX);
+      for (let i = 0; i < n; i++) {
+        const tk = list[i];
         const offset = n === 1 ? 0 : (i - (n - 1) / 2) * 0.18;
         const ang = base + offset;
-        out.push({ ...tk, owner, idx: i, x: CX + Math.cos(ang)*R_TASK, y: CY + Math.sin(ang)*R_TASK,
-          ox: layout[owner].x, oy: layout[owner].y });
-      });
-    });
+        out.push({
+          ...tk, owner, idx: i,
+          x: CX + Math.cos(ang) * R_TASK, y: CY + Math.sin(ang) * R_TASK,
+          ox: p.x, oy: p.y,
+        });
+      }
+    }
     return out;
   }, [tasks, layout]);
+
   // When an agent is focused, fan its tasks around it (closer arc) for legibility.
   const focusedTaskPos = useMemo(() => {
     if (!focused || !layout[focused]) return [];
+    const p = layout[focused];
+    const dir = Math.atan2(p.y - CY, p.x - CX);
     const list = positionedTasks.filter(tk => tk.owner === focused);
-    const n = list.length; const dir = taskAngle(focused); const span = Math.PI * 0.55; const R = 84;
+    const n = list.length; const span = Math.PI * 0.55; const R = 84;
     return list.map((tk, i) => {
       const frac = n === 1 ? 0.5 : i / (n - 1);
       const a = dir + (frac - 0.5) * span;
-      return { ...tk, x: layout[focused].x + Math.cos(a)*R, y: layout[focused].y + Math.sin(a)*R };
+      return { ...tk, x: p.x + Math.cos(a) * R, y: p.y + Math.sin(a) * R };
     });
   }, [focused, positionedTasks, layout]);
   const drawTasks = focused ? focusedTaskPos : positionedTasks;
   const taskColor = s => (s==='running'||s==='active') ? 'var(--accent)' : (s==='blocked'||s==='held'||s==='pending') ? 'var(--amber)' : (s==='error'||s==='failed'||s==='denied') ? 'var(--red)' : 'var(--ink-3)';
-
-  // Bolt Optimization: Pre-generate constant hexagon path to eliminate per-frame trig calculations
-  const hexPath = (cx, cy, r) => {
-    let p='';
-    for(let i=0;i<6;i++){ const a=(i*60-90)*Math.PI/180; p+=(i?'L':'M')+(cx+Math.cos(a)*r)+','+(cy+Math.sin(a)*r); }
-    return p+'Z';
-  };
-  const HEX_PATH_15 = useMemo(() => hexPath(0, 0, 15), []);
 
   // Bolt Optimization: Memoize agent status counts to avoid scanning agents array twice on every frame
   const { activeCount, busyCount } = useMemo(() => {

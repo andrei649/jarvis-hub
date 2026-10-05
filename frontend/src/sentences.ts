@@ -49,26 +49,34 @@ function isDecimalSplit(current: string, rest: string): boolean {
 export function splitSentences(text: string, minChars: number = DEFAULT_MIN_CHARS): string[] {
   const src = text || '';
   const out: string[] = [];
-  let buf: string[] = [];
+  // Bolt Optimization: Accumulate characters in a string buffer rather than a character array (`string[]`).
+  // In streaming TTS responses (`SentenceAggregator`), `splitSentences` is called on every token delta.
+  // Using a string buffer eliminates thousands of array allocations (`buf.push`) and array join (`buf.join('')`)
+  // operations per streamed response.
+  let buf = '';
   let i = 0;
   const n = src.length;
 
   while (i < n) {
     const ch = src[i];
-    buf.push(ch);
+    buf += ch;
     if (TERMINATORS.includes(ch)) {
       // Collapse a run of terminators into one boundary.
       let j = i + 1;
       let run = ch;
-      while (j < n && TERMINATORS.includes(src[j])) { run += src[j]; buf.push(src[j]); j += 1; }
-      const current = buf.join('');
+      while (j < n && TERMINATORS.includes(src[j])) {
+        run += src[j];
+        buf += src[j];
+        j += 1;
+      }
+      const current = buf;
       const rest = src.slice(j);
       let hard = false;
       for (const c of run) if (HARD_TERMINATORS.includes(c)) { hard = true; break; }
       const boundary = j >= n || /\s/.test(src[j]) || hard;
       if (boundary && !isDecimalSplit(current, rest) && !endsWithAbbreviation(current)) {
         const candidate = current.trim();
-        if (candidate && candidate.length >= minChars) { out.push(candidate); buf = []; }
+        if (candidate && candidate.length >= minChars) { out.push(candidate); buf = ''; }
         // else: too short → keep accumulating (merge forward)
       }
       i = j;
@@ -77,7 +85,7 @@ export function splitSentences(text: string, minChars: number = DEFAULT_MIN_CHAR
     i += 1;
   }
 
-  const tail = buf.join('').trim();
+  const tail = buf.trim();
   if (tail) {
     if (out.length && tail.length < minChars) out[out.length - 1] = `${out[out.length - 1]} ${tail}`;
     else out.push(tail);

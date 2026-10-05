@@ -1,13 +1,13 @@
 # Hermes parity handover — 2026-10-06
 
-**Goal:** Functional Nerva parity with every one of the frozen 697 Hermes capabilities, using donor implementations/tests and complete coherent batches with minimal repeated work. The goal is unfinished and development is paused at the owner's wrap-up request. Publication of all current repository work is explicitly authorized for this handover; merge, deployment, provider activation and paid/live calls are not requested.
+**Goal:** Functional Nerva parity with every one of the frozen 697 Hermes capabilities, using donor implementations/tests and complete coherent batches with minimal repeated work. The goal is unfinished and development is paused at the owner's wrap-up request. Publication of all current repository work is explicitly authorized for this handover; merge into GitHub main, deployment, provider activation and paid/live calls are not requested.
 
-**Freshness:** Prepared on 2026-10-06 in `/Users/andrei649/Projects/nerva-pr-worktrees/consent`. Development head before the snapshot: `a7ffad6676cfb28e7ac374d495b4a5889e5f4646`. Fetched GitHub `main`: `c21202c1` (four commits not present in that local head). Published snapshot branch: `codex/hermes-parity-handover-20261006`. The snapshot commit containing this document is the handover head; verify its exact SHA and live PR checks before further work. Do not infer mergeability or CI success from local checks.
+**Freshness:** Prepared on 2026-10-06 in `/Users/andrei649/Projects/nerva-pr-worktrees/consent`. Development head before the snapshot: `a7ffad6676cfb28e7ac374d495b4a5889e5f4646`; accumulated work checkpoint: `e8a10b50`. GitHub `main` through `c21202c1`, including its four newer UI optimization commits, is integrated into the snapshot branch `codex/hermes-parity-handover-20261006`. Source merged cleanly; conflicting generated assets were rebuilt from that merged source. The containing merge commit is the handover head; verify its exact SHA and live PR checks before further work. Do not infer mergeability or CI success from local checks.
 
 ## Current accounting
 
 - 130/697 documented code-equivalent capabilities (18.7%); 227 partial, 56 missing, 284 needing review, zero excluded.
-- Of the 130, 108 retain the September7 audit; 22 have current reviewed evidence. The 57 current reviews are not a full697 reaudit.
+- Of the 130, 108 retain the September 7 audit; 22 have current reviewed evidence. The 57 current reviews are not a full 697 reaudit.
 - The latest Krea Enhance work did not close whole H515. Five previously equivalent rows temporarily lost credit while shared frontend source changed; matching preimages were reviewed and refreshed after regressions. Unrelated pre-existing stale pins were preserved.
 - Canonical status: `HERMES_STATUS.md`, `docs/HERMES_CAPABILITIES.md`, `docs/hermes/assessment.json`; derive/check with `scripts/hermes_status.py`, never invent a progress percentage from code/file counts.
 
@@ -25,15 +25,17 @@ Evidence: `docs/hermes/evidence/2026-10-06-krea-enhance/` and `docs/hermes/h515-
 - Complete frontend suite:1976/1976 pass. Initial run had one obsolete exact-shape assertion; corrected without weakening private-field rejection, then the complete suite passed.
 - Record/route/OpenAPI/schema guards:120 tests pass. Typecheck, build and scoped Ruff pass.
 - Bandit:3601 analyzed lines, zero findings/errors. Graft source graph fresh with zero added/removed/changed/stale; authored context is intentionally absent. Its cache is outside the repository and must not be committed.
-- Exact staged-content secret scan and published commit/PR state must be verified by the publishing session. This document does not claim future GitHub CI success.
+- Publication metadata regressions: 34 tests pass; the setting identifier cleanup preserves its Python AST and runtime value. Historical digest maps retain the same path/hash pairs in scanner-safe `source_entries` objects.
+- Exact snapshot-content and outgoing-history secret scans use no baseline or inline allowances. The publishing session verifies the final commit, remote branch and draft PR separately. This document does not claim future GitHub CI success.
+- The broader outgoing snapshot scan retains 113 reviewed nonsecret findings from six historical evidence files: 112 path-to-SHA256 map entries and one synthetic mutation-case marker. No unresolved finding remains; the raw redacted report and classification are retained rather than suppressing findings or rewriting historical receipts.
 - No full-repository backend suite was rerun for the entire accumulated snapshot in this wrap-up. Earlier batch receipts have their own scope and dates. Keep the aggregate PR draft until conflicts/review/checks and broader integration are resolved.
 
 ## First next actions
 
-1. Verify the snapshot branch/commit, worktree status, latest `origin/main`, PR mergeability and reported checks. Preserve dirty state; no reset or automatic rebase. Review the four newer main commits before any integration. Do not merge merely because a local suite is green.
+1. Verify the snapshot branch/commit, worktree status, latest `origin/main`, PR mergeability and reported checks. Preserve dirty state; no reset or automatic rebase. Main through `c21202c1` is already integrated; inspect any later incoming commits before integrating them. Do not merge merely because a local suite is green.
 2. Read `docs/hermes/h515-managed-nous-map-2026-10-06.md` and the pinned donor files it identifies. The next implementation seam is managed Nous image selection/catalog/transport over a narrow encrypted OAuth access-token reader. Existing inference credentials may prefer an agent key and are not gateway Bearer credentials. Verify current gateway scope/audience/contracts; keep explicit per-tool selection, entitlement refusal, fixed origins and separate approvals. No activation/import/paid probe.
 3. Complete remaining H515 contracts in coherent batches: managed Nous/FAL, other dynamic catalogs, FAL local artifact upload/Clarity, product-managed Codex OAuth, provider-specific/larger output bounds and xAI storage controls. Then close the existing local ComfyUI LLM restore/lease/authority/native/mobile requirements against the entire frozen row. Do not award equivalence for adapters alone.
-4. Continue the whole697 queue, prioritizing closing existing work and complete usable capabilities. Reuse donor code/tests, avoid repeated broad exploration and refresh only reviewed matching evidence pins. The remaining requirements in each assessment row stay authoritative until verified.
+4. Continue the whole 697 queue, prioritizing closing existing work and complete usable capabilities. Reuse donor code/tests, avoid repeated broad exploration and refresh only reviewed matching evidence pins. The remaining requirements in each assessment row stay authoritative until verified.
 
 ## Local resources and execution discipline
 

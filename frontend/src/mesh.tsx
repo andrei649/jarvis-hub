@@ -265,15 +265,40 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       && (st.tasks.length || st.nodes.some((n) => n.kind === 'agent' && isExecutingAgent(n.agent)))) {
       corePulse();
     }
-    st.particles = st.particles.filter((p) => p.life < 1);
-    st.particles.forEach((p) => {
-      p.life += calm ? p.sp * 0.4 : p.sp; if (p.life < 0) return; const a = node(p.e.a), b = node(p.e.b); if (!a || !b) return;
+    // Bolt Optimization: Prune particles in-place during iteration instead of filter() + forEach()
+    // to prevent array allocations and GC pressure every 60 FPS frame (~3,600 allocations/min).
+    const particles = st.particles;
+    let particleWriteIdx = 0;
+    const numParticles = particles.length;
+    for (let i = 0; i < numParticles; i++) {
+      const p = particles[i];
+      p.life += calm ? p.sp * 0.4 : p.sp;
+      if (p.life >= 1) continue;
+      particles[particleWriteIdx++] = p;
+      if (p.life < 0) continue;
+      const a = node(p.e.a), b = node(p.e.b); if (!a || !b) continue;
       const x = a.x + (b.x - a.x) * p.life, y = a.y + (b.y - a.y) * p.life; const sz = p.big ? 2.4 : 1.7;
       ctx.globalAlpha = (1 - p.life) * 0.22; ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(x, y, sz * 3, 0, 7); ctx.fill();
       ctx.globalAlpha = 1 - p.life * 0.35; ctx.beginPath(); ctx.arc(x, y, sz, 0, 7); ctx.fillStyle = '#eaf6ff'; ctx.fill();
-    });
+    }
+    particles.length = particleWriteIdx;
+
     ctx.globalAlpha = 1;
-    st.rings = st.rings.filter((r) => r.life < 1); st.rings.forEach((r) => { r.life += r.big ? 0.028 : 0.04; ctx.globalAlpha = (1 - r.life) * 0.55; ctx.strokeStyle = r.c; ctx.lineWidth = r.big ? 2 : 1.2; ctx.beginPath(); ctx.arc(r.x, r.y, 4 + r.life * (r.big ? 40 : 22), 0, 7); ctx.stroke(); });
+
+    // Bolt Optimization: Prune rings in-place during iteration instead of filter() + forEach()
+    // to prevent array allocations and GC pressure every 60 FPS frame.
+    const rings = st.rings;
+    let ringWriteIdx = 0;
+    const numRings = rings.length;
+    for (let i = 0; i < numRings; i++) {
+      const r = rings[i];
+      r.life += r.big ? 0.028 : 0.04;
+      if (r.life >= 1) continue;
+      rings[ringWriteIdx++] = r;
+      ctx.globalAlpha = (1 - r.life) * 0.55; ctx.strokeStyle = r.c; ctx.lineWidth = r.big ? 2 : 1.2; ctx.beginPath(); ctx.arc(r.x, r.y, 4 + r.life * (r.big ? 40 : 22), 0, 7); ctx.stroke();
+    }
+    rings.length = ringWriteIdx;
+
     ctx.globalAlpha = 1;
     st.nodes.forEach((n) => {
       const active = isExecutingAgent(n.agent); const isHov = hov === n.id || foc === n.id;
