@@ -11,7 +11,6 @@ import inspect
 import logging
 import math
 import importlib
-import os
 import re
 import time
 import uuid
@@ -79,7 +78,7 @@ from .security.audit import AuditLogger
 from .security.recall_taint import mark_turn_recall_tainted
 from .security.taint import is_untrusted_source
 from .security.types import RedactionMode, SecurityEvent, SecurityEventType
-from .env_config import env_flag, truthy
+from .env_config import env_flag, env_str, truthy
 from .log import log_error
 from .errors import (
     E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
@@ -513,8 +512,8 @@ class Orchestrator:
         self.config = config
         self.agents: dict[str, Agent] = {}
         self.router = IntentRouter(config)
-        gemini_key = os.environ.get("GEMINI_API_KEY", "")
-        anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        gemini_key = env_str("GEMINI_API_KEY")
+        anthropic_key = env_str("ANTHROPIC_API_KEY")
         self.llm_router = HybridRouter(gemini_api_key=gemini_key, anthropic_api_key=anthropic_key)
         # The auth-profile pool does not exist until HybridRouter.detect().  In
         # particular, GEMINI_API_KEYS-only deployments have no single boot key.

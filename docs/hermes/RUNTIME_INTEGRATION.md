@@ -24,11 +24,19 @@ not a few-line or ultralight dependency. An existing owner profile and provider
 credentials are not imported. Configure providers in the private Hermes home
 under `$JARVIS_HOME/hermes-runtime/home`, using upstream's documented configuration.
 
-Set `JARVIS_HERMES_ENABLED=1` and `JARVIS_ACTION_KERNEL=1` in the Hub environment.
+Set `JARVIS_HERMES_ENABLED=1`, `JARVIS_ACTION_KERNEL=1` and
+`JARVIS_TASK_MEDIATION=enforce` in the Hub environment. Governed approvals also
+require global autonomy **AUTO** and the persistent signed IntentLog/TaskQueue.
 Start the Hub and open **Admin → Hermes Runtime**. The panel starts/stops the
 runtime, creates/lists sessions, submits JSON arguments to pinned RPC methods,
 streams events, and answers interactive server requests. HTTP and WebSocket
 access require the Hub's admin identity. Safe mode disables this runtime.
+
+The same authenticated controls are available to subsequent coding-agent sessions
+through `scripts/hermes_control.py`: `status`, `start`, `stop`, `catalog`, `rpc`,
+`approvals`, `approve` and `deny`. Load `JARVIS_ADMIN_TOKEN` through a private
+environment; the CLI has no credential argument. See [OPERATOR.md](OPERATOR.md)
+for setup, exact command examples and interpreting outcomes.
 
 `prepare` downloads and verifies source only. `install` also provisions the
 environment and atomically writes a private `runtime.json`. No HTTP endpoint
@@ -71,12 +79,24 @@ own dependencies, configuration and capability adapters.
 ## Availability and remaining work
 
 The complete engine is provisioned; catalog coverage does not prove executable
-equivalence for every feature. Terminal, arbitrary code, plugin/connector writes,
-payments, device effects, delegation and other unverified operations remain at
-an approval floor. A Kernel QUEUE is reported as pending/refused; this milestone
-does **not** manufacture an approved task or replay an operation from an approval
-card. Durable, action-bound TaskQueue execution for these effects, followed by
-live/offline probes of each family, remains necessary for full governed use.
+equivalence for every feature. Tier-3 effects now enter the canonical signed
+TaskQueue and appear in the Hub's **Action approvals** panel and operator CLI.
+An owner decision binds the exact operation, target, arguments, private owner,
+session, runtime generation and deadline. Accepted RPCs receive a one-use claim
+and live Kernel revalidation before the original native handler executes.
+Native tool calls wait in their original call frame; losing that continuation
+rejects the card. Generic Hub task runners cannot consume these tasks.
+
+Denial, expiry, kill switch, disabled policy, changed arguments and revoked
+generation prevent dispatch. A private completion acknowledgement records the
+handler's return; a lost acknowledgement leaves a consumed, unknown outcome and
+never triggers an automatic retry. Stopping the runtime revokes its pending
+cards. A new runtime cannot use cards from an earlier generation.
+
+The installed pin has been exercised with harmless shell execution and a paused
+ToolRegistry invocation. Provider-backed turns, payments, real devices,
+delegation and optional connector families still need their own configured
+dependencies and acceptance probes. No provider credentials are imported.
 
 All **697** Hermes parity contracts remain in scope in the existing inventory.
 Adding an upstream runtime does not increase the native-equivalence count or

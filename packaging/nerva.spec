@@ -49,6 +49,10 @@ datas = [
      os.path.join("agents", "core", "hermes_runtime")),
     (os.path.join(ROOT, "agents", "core", "hermes_runtime", "bridge.py"),
      os.path.join("agents", "core", "hermes_runtime")),
+    # The standalone managed interpreter loads this stdlib leaf by file, without
+    # importing the frozen Hub or shadowing upstream Hermes packages.
+    (os.path.join(ROOT, "agents", "core", "env_config.py"),
+     os.path.join("agents", "core")),
 ]
 
 # Agent SOUL/HEARTBEAT templates: agents/<id>/*.md (generic templates only —

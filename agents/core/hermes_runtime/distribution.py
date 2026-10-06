@@ -133,7 +133,7 @@ def _extract_archive(archive: Path, destination: Path, archive_root: str) -> Non
         root = unpacked / archive_root
         if not root.is_dir():
             raise ValueError("Unsafe Hermes archive root")
-        executable_paths = json.loads(PIN_FILE.with_name("executable-paths.json").read_text())
+        executable_paths = json.loads(PIN_FILE.with_name("executable-paths.json").read_text(encoding="utf-8"))
         for relative in executable_paths:
             path = Path(relative)
             if path.is_absolute() or ".." in path.parts:
@@ -173,6 +173,8 @@ def prepare_source(destination: Path) -> Path:
 
 
 def runtime_environment(home: Path, *, for_install: bool = False) -> dict[str, str]:
+    from agents.core.env_config import env_str
+
     home = Path(home).expanduser().absolute()
     # Deliberately do not copy os.environ: provider and operator secrets are ambient there.
     env = {
@@ -182,19 +184,19 @@ def runtime_environment(home: Path, *, for_install: bool = False) -> dict[str, s
     }
     for name in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP"):
         if os.name == "nt" and name in os.environ:
-            env[name] = os.environ[name]
+            env[name] = env_str(name)
     if for_install:
-        certificate = os.environ.get("SSL_CERT_FILE", "")
+        certificate = env_str("SSL_CERT_FILE")
         if certificate and Path(certificate).is_file():
             env["SSL_CERT_FILE"] = certificate
         for name in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
-            value = os.environ.get(name, "")
+            value = env_str(name)
             if value and len(value) < 2048:
                 parsed = urlsplit(value)
                 if parsed.scheme in {"http", "https"} and parsed.hostname and not parsed.username and not parsed.password:
                     env[name] = value
         for name in ("NO_PROXY", "no_proxy"):
-            value = os.environ.get(name, "")
+            value = env_str(name)
             if value and len(value) < 2048:
                 env[name] = value
     return env

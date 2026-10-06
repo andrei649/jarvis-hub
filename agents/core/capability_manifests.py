@@ -116,6 +116,19 @@ def _action(
 
 # Explicit product decisions.  A drift test pins this key set to ACTION_REGISTRY.
 ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
+    "hermes.runtime": _action(
+        "hermes.runtime",
+        "Run one exact governed operation in the pinned private Hermes runtime.",
+        required=("operation", "target", "arguments", "generation", "owner", "risk_tier"),
+        risk="irreversible_or_money",
+        supports=("execute", "approve", "deny"),
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Stop the runtime to revoke waiting operations before dispatch.",
+            limitations="Completed upstream effects have their own rollback contracts and are never automatically repeated.",
+        ),
+        implementation="agents.core.hermes_runtime.policy:HermesGate.authorize",
+    ),
     "kanban.worker": _action(
         "kanban.worker",
         "Run an exact approved board prompt in its isolated agent session and claimed run.",

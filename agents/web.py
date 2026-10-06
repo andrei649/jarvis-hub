@@ -660,11 +660,11 @@ async def lifespan(application: FastAPI):
     # H283: systemd's READY/STOPPING are not sent from here — uvicorn binds the port
     # only after this startup returns; serve.py's NotifyingServer sends them.
     yield
-    from agents.core.hermes_runtime.service import get_service as get_hermes_runtime
-    await get_hermes_runtime().stop()
     # H161: the clean-shutdown mark first — a later step that hangs must not make this
     # stop look like an out-of-memory kill to the next start.
     resource_pressure.monitor().stop()
+    from agents.core.hermes_runtime.service import get_service as get_hermes_runtime
+    await get_hermes_runtime().stop()
     from agents.core import power
     power.KEEP_AWAKE.release_all()   # H182: no power assertion outlives the hub
     from agents.core.routers.cameras import stop_camera_ingestion
@@ -1246,7 +1246,7 @@ async def chat(req: ChatRequest, request: Request):
             except ContinuationRefused as exc:
                 return JSONResponse({"error": exc.reason}, status_code=exc.status)
         from agents.core import code_interruptions
-        code_interruptions.interrupt(str(req.session_id or orch.session_id or ""))
+        code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
         # H579: @file:path references in the owner's own message are attached for this turn:
         # the model reads them after the message, which itself goes on as typed.
         from agents.core import context_refs
@@ -1282,9 +1282,9 @@ async def chat(req: ChatRequest, request: Request):
                     if req.session_id is not None:
                         await prepare_session(orch, req.session_id)
                     from agents.core.routers.chat_pending import http_chat_binding
-                    async with http_chat_binding(orch, request, req.session_id or orch.session_id):
+                    async with http_chat_binding(orch, request, req.session_id or getattr(orch, "session_id", None)):
                         conversation_token = code_interruptions.bind_conversation(
-                            str(req.session_id or orch.session_id or ""))
+                            str(req.session_id or getattr(orch, "session_id", None) or ""))
                         try:
                             reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None,
                                                            **({"session_id": req.session_id} if req.session_id is not None else {}))
@@ -1360,14 +1360,15 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                     if session_id is not None:
                         from agents.core.session_continuation import prepare_session
                         await prepare_session(orch, session_id)
-                    runtime = (orch._pending_input_service() if pending_actor is not None else None)
-                    binding = (runtime.bind_http(pending_actor, session_id or orch.session_id,
+                    pending_service = getattr(orch, "_pending_input_service", None)
+                    runtime = (pending_service() if pending_actor is not None and callable(pending_service) else None)
+                    binding = (runtime.bind_http(pending_actor, session_id or getattr(orch, "session_id", None),
                                                  on_clarify, pending_current)
                                if runtime is not None else nullcontext())
                     with binding:
                         from agents.core import code_interruptions
                         conversation_token = code_interruptions.bind_conversation(
-                            str(session_id or orch.session_id or ""))
+                            str(session_id or getattr(orch, "session_id", None) or ""))
                         try:
                             full = await orch.handle_input_stream(
                                 message, channel="web", on_token=on_token, agent_override=agent_override,
@@ -1444,7 +1445,7 @@ async def chat_stream(req: ChatRequest, request: Request):
         except ContinuationRefused as exc:
             return JSONResponse({"error": exc.reason}, status_code=exc.status)
     from agents.core import code_interruptions
-    code_interruptions.interrupt(str(req.session_id or orch.session_id or ""))
+    code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
     agent_override = req.agent if req.agent != "jarvis" else None
     # H579: @file:path references are attached for the turn here too, as on /chat.
     from agents.core import context_refs

@@ -254,7 +254,22 @@ def test_release_ends_the_helper_and_whatever_it_started():
     started = []
 
     def spawn(argv, **kw):
-        proc = subprocess.Popen(["/bin/sh", "-c", "sleep 60 & echo $!; wait"], stdout=subprocess.PIPE,
+        # The fixture owns its child and reaps it on TERM, including in containers
+        # whose PID 1 does not reap orphan zombies. kill(pid, 0) then still proves
+        # actual disappearance rather than mistaking an unreaped corpse for work.
+        # Popen's exec handshake makes the child real before the ready line;
+        # a shell's background fork can still inherit its parent's TERM trap.
+        helper = (
+            "import signal, subprocess, sys\n"
+            "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+            "def stopped(signum, frame):\n"
+            "    child.wait(timeout=2)\n"
+            "    raise SystemExit\n"
+            "signal.signal(signal.SIGTERM, stopped)\n"
+            "print(child.pid, flush=True)\n"
+            "signal.pause()\n"
+        )
+        proc = subprocess.Popen([sys.executable, "-c", helper], stdout=subprocess.PIPE,
                                 stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                 start_new_session=kw["start_new_session"])
         started.append(proc)

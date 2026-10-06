@@ -11,11 +11,39 @@ from pathlib import Path
 
 # This script is deliberately executable without importing the agents package.
 if __package__:
+    from agents.core.env_config import env_str
+
     from .bridge import BrokerClient
 else:
+    # env_config is a standard-library-only leaf. The worker remains unable to
+    # import the Hub package. Load it by file without adding Hub paths to
+    # sys.path, where they would shadow native Hermes's `agent` package.
+    import importlib.util
+
     from bridge import BrokerClient
 
+    _env_spec = importlib.util.spec_from_file_location(
+        "_jarvis_hermes_env_config", Path(__file__).resolve().parents[1] / "env_config.py")
+    _env_module = importlib.util.module_from_spec(_env_spec)
+    _env_spec.loader.exec_module(_env_module)
+    env_str = _env_module.env_str
+
 SOURCE_SHA = "0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7"
+
+
+def native_rpc_completion(response, rid):
+    """A native JSON-RPC error is a failed call, even when its handler returned."""
+    if (type(response) is not dict or response.get("jsonrpc") != "2.0"
+            or response.get("id") != rid or ("result" in response) == ("error" in response)):
+        return False, {"state": "unknown"}
+    if "result" in response:
+        return True, {"state": "result", "value": response["result"]}
+    error = response["error"]
+    if (type(error) is not dict or type(error.get("code")) is not int
+            or type(error.get("message")) is not str):
+        return False, {"state": "unknown"}
+    return False, {"state": "error", "value": {
+        "code": error["code"], "message": error["message"]}}
 
 
 def install_guards(broker):
@@ -28,12 +56,21 @@ def install_guards(broker):
     def guarded_method(name, handler):
         @functools.wraps(handler)
         def execute(rid, params):
-            decision = broker.authorize("rpc", name, params)
+            decision = broker.authorize("rpc", name, params, request_id=str(rid))
             if decision["verdict"] != "grant":
                 return {"jsonrpc": "2.0", "id": rid, "error": {"code": 4030,
                         "message": decision.get("reason", "Jarvis refused operation"),
-                        "data": {"jarvis_verdict": decision["verdict"]}}}
-            return handler(rid, params)
+                        "data": {"jarvis_verdict": decision["verdict"],
+                                 "task_id": decision.get("task_id"),
+                                 "disposition": decision.get("disposition")}}}
+            try:
+                result = handler(rid, params)
+            except BaseException:
+                broker.complete(decision, ok=False, outcome={"state": "unknown"})
+                raise
+            ok, outcome = native_rpc_completion(result, rid)
+            broker.complete(decision, ok=ok, outcome=outcome)
+            return result
         return execute
 
     for name, handler in tuple(server._methods.items()):
@@ -90,16 +127,17 @@ def main():
     if sys.version_info[:2] != (3, 14):
         raise SystemExit("Hermes worker requires managed Python 3.14")
     source, home = options.source.resolve(), options.home.resolve()
-    if os.environ.get("HERMES_HOME") != str(home):
+    if env_str("HERMES_HOME") != str(home):
         raise SystemExit("Hermes worker home differs from supervisor")
     os.chdir(source)
     sys.path.insert(0, str(source))
-    os.environ["HERMES_SERVE_HEADLESS"] = "1"
-    broker = BrokerClient(os.environ["JARVIS_HERMES_BRIDGE_URL"], os.environ["JARVIS_HERMES_BRIDGE_TOKEN"], os.environ["JARVIS_HERMES_GENERATION"])
+    os.environ.update({"HERMES_SERVE_HEADLESS": "1"})
+    # Pop bootstrap credentials before importing any native Hermes module.
+    broker = BrokerClient(os.environ.pop("JARVIS_HERMES_BRIDGE_URL"),
+                          os.environ.pop("JARVIS_HERMES_BRIDGE_TOKEN"),
+                          os.environ.pop("JARVIS_HERMES_GENERATION"))
     # Bootstrap credentials never pass to native helper/CLI subprocesses.
-    for name in ("JARVIS_HERMES_BRIDGE_URL", "JARVIS_HERMES_BRIDGE_TOKEN", "JARVIS_HERMES_GENERATION"):
-        os.environ.pop(name, None)
-    worker_token = os.environ["HERMES_DASHBOARD_SESSION_TOKEN"]
+    worker_token = env_str("HERMES_DASHBOARD_SESSION_TOKEN")
     from fastapi import Request
     from fastapi.responses import JSONResponse
     from hermes_cli import web_server

@@ -410,7 +410,8 @@ class TelegramChannel(ChannelAdapter):
             self._consent_fast.clear()
         if hasattr(self, "_consent_denial_fast"):
             self._consent_denial_fast.clear()
-        self._pending_callback_fast.clear()
+        if hasattr(self, "_pending_callback_fast"):
+            self._pending_callback_fast.clear()
         if self._poll_task:
             self._poll_task.cancel()
             # H117: the cancel lands at one of the loop's awaits, so the hand-over at its

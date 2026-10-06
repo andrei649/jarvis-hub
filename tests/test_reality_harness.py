@@ -45,12 +45,18 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
     out = await rh.run_reality(cases, promote=False)
     results = {item["capability_id"]: item["passed"] for item in out["results"]}
 
-    # URL attachments and ntfy add governed plugins to the previous 77 records.
-    assert len(cases) == len(records) == 79
+    # Six default-off image-provider manifests now have separate policy cases.
+    assert len(cases) == len(records) == 85
     assert results["plugin:ntfy"] is True
+    # The six disabled cloud-image plugins still have real manifest egress rails;
+    # proving that policy does not change their default-off readiness state.
+    default_off = {f"plugin:cloud-image-{provider}" for provider in (
+        "fal", "codex", "openrouter", "krea", "xai", "deepinfra")}
+    assert {capability_id for capability_id, record in records.items()
+            if record.state == cr.SEAM} == default_off | {"skill:Weather Intel"}
+    assert all(results[capability_id] is True for capability_id in default_off)
     assert {capability_id for capability_id, passed in results.items() if not passed} == {
-        capability_id for capability_id, record in records.items() if record.state == cr.SEAM
-    }
+        "skill:Weather Intel"}
 
 
 async def _ok():

@@ -88,9 +88,11 @@ class HermesRPCClient:
                 queue.put_nowait(None)
             self._subscribers.clear()
 
-    async def rpc(self, method: str, params: dict):
+    async def rpc(self, method: str, params: dict, *, request_id: str | None = None):
         await self.open()  # a new request may reconnect; an accepted request never retries
-        rid = secrets.token_hex(16)
+        rid = request_id or secrets.token_hex(16)
+        if rid in self._pending:
+            raise RuntimeUnavailable("duplicate private Hermes request")
         future = asyncio.get_running_loop().create_future()
         self._pending[rid] = future
         try:
@@ -100,7 +102,8 @@ class HermesRPCClient:
                 error = frame["error"]
                 data = error.get("data", {}) if isinstance(error, dict) else {}
                 if data.get("jarvis_verdict") in {"deny", "queue"}:
-                    raise RuntimeDenied(error.get("message", "Hermes refused operation"), verdict=data["jarvis_verdict"])
+                    raise RuntimeDenied(error.get("message", "Hermes refused operation"),
+                                        verdict=data["jarvis_verdict"], task_id=data.get("task_id"))
                 raise RuntimeUnavailable(error.get("message", "Hermes request failed") if isinstance(error, dict) else "Hermes request failed")
             return frame.get("result")
         except (TimeoutError, ConnectionError) as exc:

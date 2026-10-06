@@ -39,6 +39,13 @@ class FakeService:
         self.calls.append((method, params))
         return {"method": method, "params": params}
 
+    async def approval_list(self):
+        return {"tasks": [], "total": 0}
+
+    async def approval_decide(self, task_id, approved):
+        self.calls.append(("decision", task_id, approved))
+        return {"task_id": task_id, "status": "approved" if approved else "rejected"}
+
     async def reply(self, frame):
         self.replies.append(frame)
 
@@ -82,6 +89,21 @@ def test_http_admin_contract_and_no_caller_selected_runtime(hub):
     assert response.json()["result"] == {"method": "session.list", "params": {"limit": 5}}
     assert service.calls == [("session.list", {"limit": 5})]
     assert client.post("/api/hermes/stop", headers=headers).json()["ready"] is False
+
+
+def test_approval_routes_require_admin_and_strict_boolean(hub):
+    client, service = hub
+    path = "/api/hermes/approvals/7/decision"
+    assert client.get("/api/hermes/approvals").status_code == 401
+    assert client.post(path, json={"approved": True}).status_code == 401
+    headers = {"x-admin-token": "secret"}
+    assert client.get("/api/hermes/approvals", headers=headers).json() == {"tasks": [], "total": 0}
+    for body in ({"approved": 1}, {"approved": "true"},
+                 {"approved": True, "task_id": 8}, {}):
+        assert client.post(path, headers=headers, json=body).status_code == 422
+    assert client.post(path, headers=headers, json={"approved": True}).json() == {
+        "task_id": 7, "status": "approved"}
+    assert service.calls == [("decision", 7, True)]
 
 
 @pytest.mark.parametrize(("path", "headers"), [

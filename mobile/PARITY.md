@@ -32,6 +32,7 @@ gateway implementation.
 
 | Surface | API (agents/web.py) | Browser | Mobile | Task |
 |---------|---------------------|:-------:|:------:|------|
+| Managed Hermes runtime and exact action approvals | Admin `/api/hermes/{status,catalog,start,stop,rpc,ws,approvals}` and approval decision API | ✅ private runtime, sessions, methods, events, approve/deny controls | ➖ intentionally owner desktop administration; no native acceptance claimed | PR #1233 |
 | Chat (streaming) | `POST /chat/stream`, `POST /chat` | ✅ | ✅ | H18.1 |
 | Chat-command catalog (live registry, filtered by chat principal) | `GET /api/commands` | ✅ quickbar menu | ⬜ discovery menu; typed commands still use chat | H18.26 |
 | Owner checkpoint operations (H011, partial) | Existing `POST /chat`, `POST /chat/stream`; no new route | Owner inventory, diff, selected/force restore and index maintenance through typed commands and host CLI; signed human task + kernel execution; successful restore rewinds only the current last-user exchange | ⬜ dedicated checkpoint UI and native acceptance; no native implementation claimed | H011 / H18.26; size/retention controls and complete checkpoint-owned payload cleanup remain open; shared blobs retained |

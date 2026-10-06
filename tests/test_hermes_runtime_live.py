@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import os
 import subprocess
@@ -19,7 +20,11 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from agents.core.autonomy.mediation import DetachedHMACSigner, MonotonicHeadAnchor
 from agents.core.autonomy.policy import AutonomyPolicy
+from agents.core.autonomy.queue import TaskQueue
+from agents.core.autonomy.worker import AutonomyWorker
+from agents.core.hermes_runtime.approvals import HermesApprovals
 from agents.core.hermes_runtime.bridge import AuthorizationBridge
 from agents.core.hermes_runtime.client import HermesRPCClient
 from agents.core.hermes_runtime.distribution import (
@@ -251,3 +256,195 @@ assert not marker.exists()
     )
     assert result.returncode == 0, result.stderr[-2000:]
     assert not marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_real_shell_requires_canonical_approval_and_executes_once(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    source, home, python = _installation()
+    signer = DetachedHMACSigner(lambda data: hmac.new(b"hermes-live-approval-fixture", data, hashlib.sha256).hexdigest())
+    head = [None]
+
+    def cas(previous, replacement):
+        if previous != head[0]:
+            return False
+        head[0] = replacement
+        return True
+
+    queue = TaskQueue(str(tmp_path / "approvals.db"), mediation_mode="enforce",
+                      mediation_signer=signer,
+                      mediation_head_anchor=MonotonicHeadAnchor(lambda: head[0], cas),
+                      mediation_scope="global").initialize()
+    worker = AutonomyWorker(queue, policy=AutonomyPolicy(mode="auto"))
+    orch = SimpleNamespace(autonomy=worker, capabilities=CapabilityBroker(),
+                           kill_switch=KillSwitch(tmp_path / "halt.json"), intent_log=None)
+    gate = HermesGate(orchestrator=lambda: orch)
+    from agents.core.kernel.binding import make_action_kernel
+    worker.bind_mediation(make_action_kernel(orch), signer)
+    loop = asyncio.get_running_loop()
+    manager = None
+
+    def authorize(frame):
+        if frame.get("phase") == "complete":
+            return manager.complete(frame)
+        if frame.get("phase") == "continue":
+            return manager.continue_tool(frame)
+        try:
+            return manager.authorize(frame)
+        except RuntimeDenied as exc:
+            if exc.verdict != "queue":
+                raise
+            return asyncio.run_coroutine_threadsafe(manager.submit(frame), loop).result(timeout=10)
+
+    bridge = AuthorizationBridge(authorize)
+    bridge.start()
+    runtime = RuntimeProcess(source, home, python)
+    client = None
+    try:
+        private = await runtime.start(bridge_url=bridge.url, bridge_token=bridge.token)
+        bridge.generation = private["generation"]
+        client = HermesRPCClient(private["url"], private["token"], private["generation"])
+        await client.open()
+        manager = HermesApprovals(worker=worker, queue=queue, gate=gate,
+                                  generation=private["generation"], client=client)
+        sentinel = tmp_path / "approved-shell"
+        args = {"command": f"printf authorized > {sentinel}"}
+        with pytest.raises(RuntimeDenied) as queued:
+            await client.rpc("shell.exec", args)
+        task_id = queued.value.task_id
+        assert queued.value.verdict == "queue" and type(task_id) is int
+        assert not sentinel.exists()
+        await manager.decide(task_id, True)
+        await asyncio.wait_for(next(iter(manager._jobs)), timeout=45)
+        assert sentinel.read_text() == "authorized"
+        assert queue.get(task_id).status == "done"
+        assert queue.get(task_id).result["disposition"] == "completed"
+        assert "value" in queue.get(task_id).result
+
+        with pytest.raises(RuntimeDenied) as invalid_request:
+            await client.rpc("shell.exec", {"command": ""})
+        invalid_task = invalid_request.value.task_id
+        await manager.decide(invalid_task, True)
+        await asyncio.wait_for(next(iter(manager._jobs)), timeout=45)
+        assert queue.get(invalid_task).status == "failed"
+        assert queue.get(invalid_task).result["disposition"] == "native_error"
+
+        denied = tmp_path / "denied-shell"
+        with pytest.raises(RuntimeDenied) as denied_request:
+            await client.rpc("shell.exec", {"command": f"printf denied > {denied}"})
+        await manager.decide(denied_request.value.task_id, False)
+        assert not denied.exists()
+
+        stale = tmp_path / "stale-shell"
+        with pytest.raises(RuntimeDenied) as old_request:
+            await client.rpc("shell.exec", {"command": f"printf stale > {stale}"})
+        manager.revoke()
+        bridge.generation = None
+        await client.close()
+        client = None
+        await runtime.stop()
+        with pytest.raises(RuntimeDenied, match="generation revoked"):
+            await manager.decide(old_request.value.task_id, True)
+        assert not stale.exists()
+    finally:
+        if client is not None:
+            await client.close()
+        bridge.generation = None
+        await runtime.stop()
+        bridge.stop()
+        queue.close()
+
+
+@pytest.mark.asyncio
+async def test_real_tool_registry_pauses_for_canonical_approval(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    source, home, python = _installation()
+    signer = DetachedHMACSigner(lambda data: hmac.new(b"hermes-live-tool-fixture", data, hashlib.sha256).hexdigest())
+    head = [None]
+
+    def cas(previous, replacement):
+        if previous != head[0]:
+            return False
+        head[0] = replacement
+        return True
+
+    queue = TaskQueue(str(tmp_path / "tool-approvals.db"), mediation_mode="enforce",
+                      mediation_signer=signer,
+                      mediation_head_anchor=MonotonicHeadAnchor(lambda: head[0], cas),
+                      mediation_scope="global").initialize()
+    worker = AutonomyWorker(queue, policy=AutonomyPolicy(mode="auto"))
+    orch = SimpleNamespace(autonomy=worker, capabilities=CapabilityBroker(),
+                           kill_switch=KillSwitch(tmp_path / "halt.json"), intent_log=None)
+    gate = HermesGate(orchestrator=lambda: orch)
+    from agents.core.kernel.binding import make_action_kernel
+    worker.bind_mediation(make_action_kernel(orch), signer)
+    loop = asyncio.get_running_loop()
+    manager = None
+
+    def authorize(frame):
+        if frame.get("phase") == "complete":
+            return manager.complete(frame)
+        if frame.get("phase") == "continue":
+            return manager.continue_tool(frame)
+        try:
+            return manager.authorize(frame)
+        except RuntimeDenied as exc:
+            if exc.verdict != "queue":
+                raise
+            return asyncio.run_coroutine_threadsafe(manager.submit(frame), loop).result(timeout=10)
+
+    bridge = AuthorizationBridge(authorize)
+    bridge.start()
+    bridge.generation = "g1"
+    manager = HermesApprovals(worker=worker, queue=queue, gate=gate,
+                              generation="g1", client=None)
+    sentinel = tmp_path / "tool-effect"
+    script = """
+import os, sys
+from pathlib import Path
+sys.path.insert(0, os.environ['JARVIS_TEST_WORKER_DIR'])
+from bridge import BrokerClient
+from worker import install_guards
+from tools.registry import ToolRegistry
+marker = Path(os.environ['JARVIS_TEST_MARKER'])
+registry = ToolRegistry()
+registry.register('fixture_write', 'smoke', {'name': 'fixture_write', 'parameters': {'type': 'object'}}, lambda args: marker.write_text(args['content']))
+broker = BrokerClient(os.environ['JARVIS_TEST_BRIDGE_URL'], os.environ['JARVIS_TEST_BRIDGE_TOKEN'], 'g1')
+install_guards(broker)
+assert registry.dispatch('fixture_write', {'content': 'authorized'})
+"""
+    env = runtime_environment(home)
+    env.update({"JARVIS_TEST_WORKER_DIR": str(WORKER_SCRIPT.parent),
+                "JARVIS_TEST_MARKER": str(sentinel),
+                "JARVIS_TEST_BRIDGE_URL": bridge.url,
+                "JARVIS_TEST_BRIDGE_TOKEN": bridge.token})
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            str(python), "-c", script, cwd=source, env=env,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        task = None
+        for _ in range(100):
+            rows = queue.pending_decisions(kind="hermes.runtime")
+            if rows:
+                task = rows[0]
+                break
+            await asyncio.sleep(0.1)
+        if task is None:
+            _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=5)
+            pytest.fail(f"tool approval was not queued (exit={proc.returncode}): {stderr.decode(errors='replace')[-2000:]}")
+        assert not sentinel.exists()
+        await manager.decide(task.id, True)
+        _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=45)
+        assert proc.returncode == 0, stderr.decode(errors="replace")[-2000:]
+        assert sentinel.read_text() == "authorized"
+        assert queue.get(task.id).status == "done"
+    finally:
+        manager.revoke()
+        bridge.generation = None
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+        bridge.stop()
+        queue.close()

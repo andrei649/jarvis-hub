@@ -16,6 +16,24 @@ type Method = { name: string; summary?: string; risk_tier?: string; params?: unk
 type Catalog = { source_sha?: string; methods?: Method[] };
 type Frame = Record<string, unknown>;
 type ServerRequest = Frame & { id: string | number; method: string };
+type ApprovalTask = {
+  task_id: number;
+  status: string;
+  disposition?: string;
+  operation?: string;
+  target?: string;
+  arguments?: unknown;
+  risk_tier?: string;
+  created_at?: string;
+  expires_at?: string;
+  result?: unknown;
+  error?: unknown;
+};
+type ApprovalList = { tasks: ApprovalTask[]; total: number };
+
+function decisionReady(task: ApprovalTask): boolean {
+  return task.status === 'blocked' && task.disposition === 'queued';
+}
 
 const PROTOCOL = 'hermes-runtime-v1';
 const MAX_LOG = 50;
@@ -26,7 +44,10 @@ async function readJson<T>(path: string, method: 'GET' | 'POST' = 'GET', body?: 
     let reason = '';
     try {
       const payload = await response.json();
-      reason = String(payload?.detail?.error || payload?.detail || payload?.error || '');
+      const detail = payload?.detail;
+      reason = String(detail?.error || detail || payload?.error || '');
+      if (typeof detail?.task_id === 'number') reason += ` · task ${detail.task_id}`;
+      if (typeof detail?.disposition === 'string') reason += ` (${detail.disposition})`;
     } catch { /* non-JSON errors stay generic */ }
     throw new Error(reason || `Hermes request failed (${response.status})`);
   }
@@ -65,6 +86,10 @@ export function HermesRuntimePanel() {
   const [streamRetry, setStreamRetry] = useState(0);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [approvals, setApprovals] = useState<ApprovalTask[]>([]);
+  const [approvalsLoaded, setApprovalsLoaded] = useState(false);
+  const [approvalBusy, setApprovalBusy] = useState<number | null>(null);
+  const [approvalNotice, setApprovalNotice] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -76,6 +101,13 @@ export function HermesRuntimePanel() {
         if (!alive) return;
         setCatalog(nextCatalog);
         if (nextCatalog.methods?.length) setMethod(nextCatalog.methods[0].name);
+      })
+      .catch((exc: unknown) => { if (alive) setError(String(exc)); });
+    readJson<ApprovalList>('/api/hermes/approvals')
+      .then((next) => {
+        if (!alive) return;
+        setApprovals(Array.isArray(next.tasks) ? next.tasks : []);
+        setApprovalsLoaded(true);
       })
       .catch((exc: unknown) => { if (alive) setError(String(exc)); });
     return () => { alive = false; };
@@ -140,6 +172,29 @@ export function HermesRuntimePanel() {
     setStatus(await readJson<RuntimeStatus>('/api/hermes/status'));
   }
 
+  async function refreshApprovals() {
+    const next = await readJson<ApprovalList>('/api/hermes/approvals');
+    setApprovals(Array.isArray(next.tasks) ? next.tasks : []);
+    setApprovalsLoaded(true);
+  }
+
+  async function decide(task: ApprovalTask, approved: boolean) {
+    if (approvalBusy !== null || !decisionReady(task)) return;
+    setApprovalBusy(task.task_id);
+    setError('');
+    setApprovalNotice('');
+    try {
+      const updated = await readJson<ApprovalTask>(
+        `/api/hermes/approvals/${task.task_id}/decision`, 'POST', { approved },
+      );
+      setApprovals((previous) => previous.map((item) =>
+        item.task_id === task.task_id ? updated : item));
+      setApprovalNotice(`Task ${task.task_id}: ${updated.status}. Refresh to inspect execution outcome.`);
+      await refreshApprovals();
+    } catch (exc) { setError(String(exc)); }
+    finally { setApprovalBusy(null); }
+  }
+
   async function control(action: 'start' | 'stop') {
     if (busy) return;
     setBusy(action);
@@ -171,7 +226,10 @@ export function HermesRuntimePanel() {
         setSessionsLoaded(true);
       }
       await refreshStatus();
-    } catch (exc) { setError(String(exc)); }
+    } catch (exc) {
+      setError(String(exc));
+      try { await refreshApprovals(); } catch { /* preserve the original RPC refusal */ }
+    }
     finally { setBusy(''); }
   }
 
@@ -223,6 +281,37 @@ export function HermesRuntimePanel() {
         </>
       )}
       {error && <p role="alert">{error}</p>}
+      <div style={{ marginTop: 16 }}>
+        <div className="sub-h">ACTION APPROVALS</div>
+        <p>Review the exact queued operation before deciding. This controls Hub tasks; provider and server request replies are separate.</p>
+        <button type="button" disabled={approvalBusy !== null} onClick={() => {
+          setError('');
+          void refreshApprovals().catch((exc: unknown) => setError(String(exc)));
+        }}>Refresh approvals</button>
+        {approvalNotice && <p role="status">{approvalNotice}</p>}
+        {approvals.length ? <ul aria-label="Hermes approval tasks">{approvals.map((task) => (
+          <li key={task.task_id}>
+            <strong>Task {task.task_id}</strong> · {task.status}
+            {task.disposition ? ` · ${task.disposition}` : ''}
+            {task.risk_tier ? ` · risk: ${task.risk_tier}` : ''}
+            <div>Operation: {task.operation || 'unknown'}</div>
+            <div>Target: <code>{task.target || 'unknown'}</code></div>
+            <pre aria-label={`Arguments for task ${task.task_id}`}>{JSON.stringify(task.arguments ?? {}, null, 2)}</pre>
+            {(task.result !== undefined || task.error !== undefined) && (
+              <pre aria-label={`Outcome for task ${task.task_id}`}>
+                {JSON.stringify({ result: task.result, error: task.error }, null, 2)}
+              </pre>
+            )}
+            {task.disposition === 'consumed_outcome_unknown' &&
+              <p>Execution outcome is unknown. Inspect the target before issuing a new operation.</p>}
+            {task.expires_at && <div>Expires: {task.expires_at}</div>}
+            <button type="button" disabled={!decisionReady(task) || approvalBusy !== null}
+              onClick={() => void decide(task, true)}>Approve task {task.task_id}</button>
+            <button type="button" disabled={!decisionReady(task) || approvalBusy !== null}
+              onClick={() => void decide(task, false)}>Deny task {task.task_id}</button>
+          </li>
+        ))}</ul> : <p>{approvalsLoaded ? 'No approval tasks reported.' : 'Checking approval tasks…'}</p>}
+      </div>
       <div style={{ marginTop: 16 }}>
         <div className="sub-h">SESSIONS</div>
         <div style={{ display: 'flex', gap: 8 }}>

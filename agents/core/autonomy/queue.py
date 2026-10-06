@@ -4990,7 +4990,8 @@ class TaskQueue:
         return _row_to_task(row) if row else None
 
     def list(
-        self, status: Optional[str] = None, origin: Optional[str] = None, limit: int = 100
+        self, status: Optional[str] = None, origin: Optional[str] = None, limit: int = 100,
+        *, kind: Optional[str] = None,
     ) -> list[Task]:
         clauses, params = [], []
         if status:
@@ -4999,11 +5000,14 @@ class TaskQueue:
         if origin:
             clauses.append("origin=?")
             params.append(origin)
+        if kind is not None:
+            clauses.append("kind=?")
+            params.append(kind)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(limit)
         with self._lock:
             rows = self._conn.execute(
-                # `where` contains only the fixed status/origin clauses above.
+                # `where` contains only fixed status/origin/kind clauses above.
                 f"SELECT * FROM tasks {where} ORDER BY id DESC LIMIT ?",  # nosec B608
                 params,
             ).fetchall()
@@ -5054,7 +5058,11 @@ class TaskQueue:
             raise ValueError("task_id must be a positive integer")
         # An owner-once approval is inert without its private named claim.
         clause = ("status='approved' AND attempts < ? AND "
-                  "COALESCE(decided_by,'')!='owner_once' AND COALESCE(decision,'')!='owner-once'")
+                  "COALESCE(decided_by,'')!='owner_once' AND COALESCE(decision,'')!='owner-once' "
+                  "AND kind!='hermes.runtime'")
+        # Hermes claims an exact upstream continuation through its private
+        # dispatcher. The generic LLM executor must never consume that approval,
+        # even when a caller explicitly asks tick(task_id=...).
         params: list = [MAX_ATTEMPTS]
         if max_tier is not None:
             clause += " AND risk_tier <= ?"

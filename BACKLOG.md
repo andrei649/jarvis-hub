@@ -14,6 +14,16 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-10-06 PR #1233 runtime continuation: the complete pinned Hermes engine
+  now uses canonical, exact-action approvals with one-use Kernel revalidation,
+  generation revocation and original-frame tool continuation. Owner HUD and
+  authenticated operator CLI expose pending decisions and execution disposition.
+  A private installed profile supports subsequent sessions; providers remain
+  owner-configured. Runtime coverage does not add native equivalence credit.
+  See [operator instructions](docs/hermes/OPERATOR.md) and the
+  [operational verification receipt](docs/hermes/evidence/2026-10-06-runtime-operations/report.json):
+  full backend 24,611 passed, 55 skips and one expected failure; frontend 1,985 passed.
+
 - 2026-10-04 H487 live native wait continuation: actual delivered reusable and
   owner-once Telegram prompts now credit the per-run union of human wait time
   to model wall/tool execution budgets. Expiry, authority loss and cancellation

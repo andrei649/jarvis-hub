@@ -225,6 +225,10 @@ INTERRUPT_BUDGET_PER_DAY = 4
 _HOUSE_REFUSALS = ("kernel_denied", "execution_in_progress", "task_payload_changed",
                    "unified_action_api_disabled", "action_kernel_disabled")
 _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
+    # Hermes is consumed by its own signed, one-use runtime bridge. The generic
+    # autonomy executor cannot run this kind and therefore has no handler-returned
+    # `failed` reason to classify as an unattempted refusal here.
+    "hermes.runtime": (),
     # node.dispatch — NodeMesh.execute re-authorises at action time: NodeMesh._authorize
     # and security.capability.authorize (``kill-switch engaged for scope '<scope>'``
     # matches by prefix, below). ``capability_broker_unavailable`` is not one: the

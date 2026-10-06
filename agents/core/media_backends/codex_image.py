@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import time
 import uuid
 from dataclasses import dataclass
+
+from agents.core.env_config import env_flag, env_str
 
 from .openai_image import IMAGE2_TIERS, SIZES
 
@@ -42,11 +43,11 @@ class CodexCredential:
 
 def configured_source():
     """Explicit owner setting; no discovery of existing user credential files."""
-    if os.environ.get("NERVA_CODEX_IMAGE_OAUTH_ENABLED") != "1":
+    if not env_flag("NERVA_CODEX_IMAGE_OAUTH_ENABLED"):
         return None
     return {
-        "access_token": os.environ.get("NERVA_CODEX_IMAGE_OAUTH_TOKEN"),
-        "base_url": os.environ.get("NERVA_CODEX_IMAGE_OAUTH_BASE_URL"),
+        "access_token": env_str("NERVA_CODEX_IMAGE_OAUTH_TOKEN", None),
+        "base_url": env_str("NERVA_CODEX_IMAGE_OAUTH_BASE_URL", None),
     }
 
 

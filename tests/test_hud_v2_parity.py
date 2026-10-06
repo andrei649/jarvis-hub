@@ -11,6 +11,7 @@ See ``docs/design/HUD_V2_IMPLEMENTATION_PLAN.md`` §8 and the coverage map in
 ``docs/design/HUD_V2_COVERAGE_AND_PLAN.md``.
 """
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -58,6 +59,7 @@ RULES = [
     ("/api/design-manifest", "observe"),
     ("/api/widget/", "interop"),  # embeddable widget runtime (managed under Interop)
     ("/api/ops/estop", "admin"),  # global emergency stop (hermes v2026.8.27 port) — owner control
+    ("/api/hermes/", "admin"),  # managed runtime controls and task approvals in Admin → Hermes Runtime
     # cockpit / conversation
     ("/chat", "cockpit"),
     ("/api/status", "cockpit"),
@@ -224,12 +226,30 @@ CORE_SURFACES = [
 ]
 
 
+def _router_prefix(source: str) -> str:
+    """Honor a router's literal APIRouter prefix when scanning decorator paths."""
+    for statement in ast.parse(source).body:
+        if not isinstance(statement, ast.Assign) or not any(
+            isinstance(target, ast.Name) and target.id == "router" for target in statement.targets
+        ):
+            continue
+        call = statement.value
+        if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name) or call.func.id != "APIRouter":
+            continue
+        for keyword in call.keywords:
+            if keyword.arg == "prefix" and isinstance(keyword.value, ast.Constant) and isinstance(keyword.value.value, str):
+                return keyword.value.value
+    return ""
+
+
 def _routes():
     app_pat = r'^@app\.(?:get|post|put|delete|patch)\("([^"]+)"'
     router_pat = r'^@router\.(?:get|post|put|delete|patch)\("([^"]+)"'
     found = set(re.findall(app_pat, WEB.read_text(encoding="utf-8"), re.M))
     for mod in sorted(ROUTERS.glob("*.py")):
-        found |= set(re.findall(router_pat, mod.read_text(encoding="utf-8"), re.M))
+        source = mod.read_text(encoding="utf-8")
+        prefix = _router_prefix(source)
+        found |= {prefix + path for path in re.findall(router_pat, source, re.M)}
     return sorted(found)
 
 
@@ -245,6 +265,16 @@ def _classify(path):
 def test_routes_extracted():
     routes = _routes()
     assert len(routes) > 150, f"expected the full route surface, got {len(routes)}"
+
+
+def test_prefixed_hermes_routes_are_mapped_to_the_real_admin_panel():
+    routes = _routes()
+    assert "/api/hermes/approvals" in routes
+    assert "/api/hermes/approvals/{task_id}/decision" in routes
+    assert "/approvals" not in routes
+    assert _classify("/api/hermes/approvals") == "admin"
+    admin_source = (REPO / "frontend/src/modes3.tsx").read_text(encoding="utf-8")
+    assert "<HermesRuntimePanel/>" in admin_source.split("function AdminMode", 1)[1]
 
 
 def test_every_route_has_a_v2_home():
@@ -703,6 +733,9 @@ def test_kanban_route_gap_document_matches_the_uncalled_routes():
 # NOT unfinished work: putting them on the punch list would record a false statement and
 # send a future reader to build controls that already exist.
 COMPUTED_URL_CALLERS: dict[str, str] = {
+    # HermesRuntimePanel composes `/api/hermes/${action}` from its start/stop controls.
+    "/api/hermes/start": "frontend/src/hermes-runtime-panel.tsx",
+    "/api/hermes/stop": "frontend/src/hermes-runtime-panel.tsx",
     # Kanban transport composes the shared root and scoped task paths in api.ts.
     # The test above verifies each expression and its mounted UI consumer.
     **dict.fromkeys(KANBAN_HTTP_CONSUMERS, "frontend/src/panels/kanban/api.ts"),
@@ -853,6 +886,14 @@ def test_computed_url_callers_stay_real():
             problems.append(f"{path}: {client} is not in the client corpus")
         elif path in KANBAN_HTTP_CONSUMERS:
             # The dedicated gate checks the composed URL and its mounted caller.
+            continue
+        elif path in {"/api/hermes/start", "/api/hermes/stop"}:
+            action = path.rsplit("/", 1)[1]
+            if ("`/api/hermes/${action}`" not in source
+                    or f"control('{action}')" not in source
+                    or "action: 'start' | 'stop'" not in source
+                    or _has_caller(path, blob)):
+                problems.append(f"{path}: Hermes panel no longer builds and uses this control URL")
             continue
         elif stem not in source:
             problems.append(f"{path}: {client} never mentions {stem}")

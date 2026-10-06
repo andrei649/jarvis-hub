@@ -57,6 +57,17 @@ def _isolate_registry_state():
 INTENTIONALLY_SEAM: set[str] = {
     # Manifest-only command spec; live weather is provided by the weather plugin path.
     "skill:Weather Intel",
+    # These provider-specific image adapters exist and have mediated worker tests
+    # (test_cloud_image_{fal,codex,openrouter_krea,xai,deepinfra}.py). Their plugin
+    # manifests deliberately start disabled; owners enable one provider explicitly.
+    # The readiness record describes that default-off plugin policy, not absence
+    # of its native adapter. Turning one on must remove its entry from this set.
+    "plugin:cloud-image-fal",
+    "plugin:cloud-image-codex",
+    "plugin:cloud-image-openrouter",
+    "plugin:cloud-image-krea",
+    "plugin:cloud-image-xai",
+    "plugin:cloud-image-deepinfra",
 }
 # WIRED capabilities with no matching executable reality case. H27.5 reconciled the
 # complete boot snapshot, so this escape set is intentionally empty. Kept honest below.

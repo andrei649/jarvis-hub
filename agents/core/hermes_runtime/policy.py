@@ -18,8 +18,8 @@ READ_TOOLS = frozenset({"web_search", "web_extract", "read_file", "search_files"
 
 
 class RuntimeDenied(RuntimeError):
-    def __init__(self, reason: str, *, verdict: str = "deny", card=None):
-        self.reason, self.verdict, self.card = reason, verdict, card
+    def __init__(self, reason: str, *, verdict: str = "deny", card=None, task_id=None):
+        self.reason, self.verdict, self.card, self.task_id = reason, verdict, card, task_id
         super().__init__(reason)
 
 
@@ -56,7 +56,9 @@ class HermesGate:
     def __init__(self, *, kernel=None, orchestrator=None):
         self._kernel, self._orchestrator = kernel, orchestrator
 
-    def authorize(self, kind: str, target: str, args: dict, generation: str) -> dict:
+    def authorize(self, kind: str, target: str, args: dict, generation: str, *,
+                  request_nonce: str | None = None, approved_task_id: int | None = None,
+                  approval_check=None) -> dict:
         tier = classify(kind, target)
         if not kernel_enabled():
             raise RuntimeDenied("Hermes requires the Action Kernel")
@@ -71,18 +73,30 @@ class HermesGate:
             if not callable(kernel) or not token:
                 raise RuntimeDenied("Hermes authority is unavailable")
             capability = Capability(token_id=token, name=KIND)
+        payload = {"operation": kind, "target": target, "arguments": deepcopy(args),
+                   "generation": generation, "owner": "hub-owner",
+                   "session_id": args.get("session_id"), "risk_tier": tier}
+        if request_nonce is not None:
+            payload["request_nonce"] = request_nonce
+            payload["submission_id"] = request_nonce
+        if approved_task_id is not None:
+            payload["approved_task_id"] = approved_task_id
         action = Action(
             kind=KIND, agent="hermes", title=f"Hermes {kind}: {target}",
-            payload={"operation": kind, "target": target, "arguments": deepcopy(args),
-                     "generation": generation, "owner": "hub-owner",
-                     "session_id": args.get("session_id"), "risk_tier": tier},
+            payload=payload,
             origin="generated",
         )
         try:
-            decision = kernel(action, capability)
+            if approved_task_id is None:
+                decision = kernel(action, capability)
+            else:
+                check = getattr(kernel, "revalidate", None)
+                if not callable(check) or not callable(approval_check):
+                    raise RuntimeDenied("Hermes live revalidation is unavailable")
+                decision = check(action, capability, approval_check=approval_check)
         except Exception as exc:
             raise RuntimeDenied("Hermes authority is unavailable") from exc
-        if decision.verdict is not Verdict.GRANT:
+        if decision.verdict is not Verdict.GRANT or (approved_task_id is not None and decision.task_id != approved_task_id):
             raise RuntimeDenied(decision.reason or "Hermes operation refused",
                                 verdict=decision.verdict.value, card=decision.card)
         return {"verdict": "grant", "tier": decision.tier}

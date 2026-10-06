@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "4d7f52382ab5c18e9be0a5c56306b7c15232f764",
-  "assessed_at": "2026-10-05T18:06:25Z",
+  "base_sha": "c6a855183b26a8b45200d47834565d69aa6dcb0f",
+  "assessed_at": "2026-10-06T14:08:22Z",
   "reviews": [
     {
       "id": "H001",
@@ -12936,7 +12936,7 @@
       "id": "H515",
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
-      "summary": "Local approved ComfyUI/image-service, OpenAI1.5/Image2, native Codex, FAL25, OpenRouter12, Krea3, xAI3 and dynamic DeepInfra remain integrated. Explicit Krea Enhance now queues a separate signed source-bound factor2 POST; exact original artifact/hash, retained provider URL, source human execution, current principal/configuration and host admission are rechecked. Original generation remains intact; interrupted Enhance reuses saved-job freshGET continuation without another POST. Output is metadata-stripped PNG up to4096px/16MiB, with private pixel/execution proof for authenticated download, gallery, binary ZIP and portable export. The responsive HUD preserves the original preview and one ambiguous submission, displays immutable source approval and cleans up blobs. Final affected backend956 and full frontend1976 pass with typecheck/build, bounded review and source-bound receipts in docs/hermes/evidence/2026-10-06-krea-enhance/. No activation, paid/live call or native-device acceptance. Whole H515 remains partial.",
+      "summary": "Existing local ComfyUI and direct OpenAI, Codex, FAL, OpenRouter, Krea, xAI and DeepInfra image paths remain integrated and partial. The 2026-10-06 collateral source review confirms that typed environment readers preserve explicit, default-off Codex configuration and the official-origin/account/expiry checks (agents/core/media_backends/codex_image.py:44-80). The actual approved route and one-request artifact contract remains exercised (tests/test_cloud_image_codex.py:33-66). Krea Enhance still revalidates the exact approved source, retained URL, configuration and source-host admission (agents/core/cloud_image_runtime.py:673-719), and changed source cannot dial (tests/test_cloud_image_krea_enhance_guards.py:91-101). The dedicated review run passed77 injected cases; prior broader source-bound receipts keep their original scope/date. See docs/hermes/evidence/2026-10-06-runtime-operations/image-source-review.md. No paid/live acceptance or credential import. The imported Hermes runtime gives no native-equivalence credit; whole H515 remains partial.",
       "remaining": "Managed Nous FAL routing remains; a pinned-source/current-doc contract map is saved, without activation or an entitlement claim. Legacy Krea jobs missing private authority proof cannot be resumed and are never resubmitted automatically. Other dynamic donor catalogs, xAI storage controls and provider-specific/larger image outputs remain open. Krea Enhance supports4K through private completion proof; OpenRouter4K and output above4K remain outside the current bounds. Historical Krea completions lacking retained provider URLs do notEnhance, expired sourceURLs mayfail and Enhance cannotnest. Official xAI result host is admitted in its default-off manifest; undocumented provider/CDN hosts require owner admission. Product-managed Codex OAuth sign-in/refresh and live subscription endpoint acceptance remain. FAL local artifact uploads and Clarity remain. The real local ComfyUI path still lacks LLM unload/restore integration. Frozen media.generate/file.write authority kinds require explicit architecture adjudication; current tool.rpc/plugin.egress mediation does not silently equate contracts. Existing reference blending is pixel composition and local upscale is bicubic. Canonical aliases, backend/controller identity, atomic generation leases, owner coordination and authoritative hardware snapshots remain unresolved; coarse headroom/no-victim behavior is unchanged, and unknown ComfyUI submissions need reconciliation before lease release. Native-mobile controls and fresh live ComfyUI/provider acceptance remain open. Ambiguous submissions never retry automatically; catalog opt-out remains respected.",
       "evidence": [
         {
@@ -13177,7 +13177,7 @@
         },
         {
           "path": "agents/core/media_backends/codex_image.py",
-          "sha256": "5941eab7f653cb20365b4e4a625e31d783de42e022632359929080a4cab1d60d"
+          "sha256": "06b298d61fc223a711047e3b1afc5384f92683bb24dcc72b089602d45d41ce72"
         },
         {
           "path": "tests/test_cloud_image_codex.py",
@@ -13313,7 +13313,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "57c527f7099a4c0bceaf0b022d8de17624f70d00756d67628ac635cbf1daeb44"
+          "sha256": "40e7ed180193d070f49ea5a9dd67aa4e8069051ffda6e8ac718bd4576cd7d8f1"
         },
         {
           "path": "docs/hermes/h515-job-continuation-providers-plan-2026-10-06.md",
@@ -13321,11 +13321,11 @@
         },
         {
           "path": "mobile/PARITY.md",
-          "sha256": "5f5ec6d37b808b6572344723681ac43c9da3ebf3568a913774e31666fbf3a8ee"
+          "sha256": "be8f191aa8025ad7078663627b53f1f9d591e749cb3e676f4148f7797cd99cd7"
         },
         {
           "path": "docs/design/HUD_V2_REMAINING.md",
-          "sha256": "071a8467668f0782192e2a672785b8b7c0d0d0122d706b91ffe34630b6a408d5"
+          "sha256": "1db4f0351d092408179e3d97b7544758ef830b8e2750e3c1e89d36dea09593fe"
         },
         {
           "path": "docs/hermes/evidence/2026-10-06-image-continuation-xai-deepinfra/scoped-inputs.json",
@@ -13416,62 +13416,6 @@
           "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
         },
         {
-          "path": "agents/web/v2/assets/client-D7Azo9Vs.js",
-          "sha256": "14ff90baa08a75c728800011be72023cd1697fde0c24b065918584114df483d6"
-        },
-        {
-          "path": "agents/web/v2/assets/gap-Cqao4FKH.js",
-          "sha256": "8f2dd3a4f423add284575873c35f72ddf72d82b1d4d396c8ac0db4c118773f2a"
-        },
-        {
-          "path": "agents/web/v2/assets/gap-Crl5de4H.css",
-          "sha256": "ea2c58ff70f0e4322cd34ebcd152e1292bc36317ab221186fc70ffdc890a72c5"
-        },
-        {
-          "path": "agents/web/v2/assets/index-BDFXdZ0i.js",
-          "sha256": "7910afbc02dfce89972d271aded44c6bc2d452d46df6bb8187c502583ffe5c53"
-        },
-        {
-          "path": "agents/web/v2/assets/index-teqkDIsI.css",
-          "sha256": "f2ed79d72c09f820317880035ede4e11c9fe4452e78554a89e8a39c4ea57b7c9"
-        },
-        {
-          "path": "agents/web/v2/assets/jobs-vYmczPrq.js",
-          "sha256": "3b81379f8be7515b6fa596ed3c8c4e322d6b1bd3ad2afdf60c8cbd3b5e39eeb9"
-        },
-        {
-          "path": "agents/web/v2/assets/modes-BP_QFfDf.js",
-          "sha256": "cabc735192920d564949ae29a4f284ee17fbc5a7e802bdbee276e20d6a80fa87"
-        },
-        {
-          "path": "agents/web/v2/assets/modes2-BUQltWq6.js",
-          "sha256": "bca840ddb90a36d1815f462b65744ab268390e913a5c42a3186d8207407d27da"
-        },
-        {
-          "path": "agents/web/v2/assets/modes3-CK3eMYVV.js",
-          "sha256": "52f05338e34ea8e1cecadf743790365eb3d13ee32800c5effa3e5441e1c6eee6"
-        },
-        {
-          "path": "agents/web/v2/assets/modes4-BOirc9JJ.js",
-          "sha256": "7dbc1019b6c0bd21cd15ede940d4659174ff09a7480959e1e1faf830bf6d8e84"
-        },
-        {
-          "path": "agents/web/v2/assets/modes_world-KqiJAoOO.js",
-          "sha256": "be54b457ff322b85c7dd3652cbac23cefa1332b2f75315091996e953d7aa0b95"
-        },
-        {
-          "path": "agents/web/v2/assets/panel-kit-CwyHgGr0.js",
-          "sha256": "9f0fb670dba95dbad8e5453c6c282f0da22e5548bd8475cc39e36c79e80d58d5"
-        },
-        {
-          "path": "agents/web/v2/assets/soul-edit-BcaRddJT.js",
-          "sha256": "b4f223073a316469a1eb8f911f8d814e1266c4e5050515aa41d3ce3498c02e69"
-        },
-        {
-          "path": "agents/web/v2/index.html",
-          "sha256": "663af83f69f59c7b69d11837e01ca48a6908f883fd69c22b57cddf4b10330221"
-        },
-        {
           "path": "agents/web/v2/sw-v2.js",
           "sha256": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c"
         },
@@ -13490,6 +13434,10 @@
         {
           "path": "docs/hermes/evidence/2026-10-06-krea-enhance/outgoing-snapshot-scan-review.json",
           "sha256": "21d752674c16da6c24d820c891692067db5a3d3bd8bad93d57c14041b233f9e8"
+        },
+        {
+          "path": "docs/hermes/evidence/2026-10-06-runtime-operations/image-source-review.md",
+          "sha256": "133ce807c16830095e5ef6b4ee4a94582d8f8727cbd6af80a9e96ad9ce1cd718"
         }
       ]
     },

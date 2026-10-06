@@ -16,6 +16,12 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
+Hermes runtime (2026-10-06, PR #1233): Admin now has private runtime start/stop,
+session/RPC/event controls and exact queued-action approve/deny controls. The
+operator CLI uses the same authenticated API. This is intentionally owner desktop
+administration. Upstream REST/PTY/SPA and native-device acceptance remain outside
+this controlled headless surface; see `docs/hermes/OPERATOR.md`.
+
 H063 (2026-10-05): channel reset/index/stall policies run on the host through
 existing settings and channel ingress. No dedicated lifecycle configuration panel
 was added. HUD/API chat paths retain their current lifecycle; gateway validation

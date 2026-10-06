@@ -5552,6 +5552,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hermes/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Approvals */
+        get: operations["approvals_api_hermes_approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hermes/approvals/{task_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approval Decision */
+        post: operations["approval_decision_api_hermes_approvals__task_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/missions": {
         parameters: {
             query?: never;
@@ -12021,6 +12055,11 @@ export interface components {
             name: string;
             /** Version */
             version?: number | null;
+        };
+        /** DecisionBody */
+        DecisionBody: {
+            /** Approved */
+            approved: boolean;
         };
         /** DefineSpaceBody */
         DefineSpaceBody: {
@@ -22555,6 +22594,61 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RpcBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approvals_api_hermes_approvals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    approval_decision_api_hermes_approvals__task_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionBody"];
             };
         };
         responses: {

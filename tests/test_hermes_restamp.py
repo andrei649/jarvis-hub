@@ -1064,6 +1064,17 @@ def test_stamp_rewrites_only_the_patched_reviews(repo, capsys):
     assert rows["H004"]["basis"] == "stale_evidence"
 
 
+def test_stamp_preserves_untouched_reviews_when_existing_order_is_not_sorted(repo):
+    data = hs.load(repo.root)[1]
+    data["reviews"] = list(reversed(data["reviews"]))
+    save(repo.root, data)
+    old = [r for r in data["reviews"] if r["id"] != "H002"]
+    hr.stamp(repo.root, [reread_h002()])
+    current = hs.load(repo.root)[1]
+    assert [r for r in current["reviews"] if r["id"] != "H002"] == old
+    assert [r["id"] for r in current["reviews"]] == [r["id"] for r in data["reviews"]]
+
+
 def test_restamping_an_unchanged_review_round_trips_byte_for_byte(repo):
     target = repo.root / hs.ASSESSMENT
     before = target.read_bytes()

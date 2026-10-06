@@ -48,13 +48,21 @@ class RpcBody(BaseModel):
         return self
 
 
+class DecisionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    approved: bool
+
+
 def _http_error(exc: Exception) -> HTTPException:
     from agents.core.hermes_runtime.service import RuntimeDenied, RuntimeUnavailable
 
     if isinstance(exc, RuntimeDenied):
         verdict = getattr(exc, "verdict", "deny")
         if verdict == "queue":
-            return HTTPException(409, {"error": "approval_required"})
+            return HTTPException(409, {"error": "approval_required",
+                                       "task_id": getattr(exc, "task_id", None),
+                                       "disposition": "queued"})
         return HTTPException(403, {"error": "runtime_denied"})
     if isinstance(exc, RuntimeUnavailable):
         return HTTPException(503, {"error": "runtime_unavailable"})
@@ -97,6 +105,22 @@ async def stop(body: EmptyBody | None = None):
 async def rpc(body: RpcBody):
     try:
         return {"result": await _service().rpc(body.method, body.params)}
+    except Exception as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/approvals", dependencies=[Depends(admin_guard)])
+async def approvals():
+    try:
+        return await _service().approval_list()
+    except Exception as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post("/approvals/{task_id}/decision", dependencies=[Depends(admin_guard)])
+async def approval_decision(task_id: int, body: DecisionBody):
+    try:
+        return await _service().approval_decide(task_id, body.approved)
     except Exception as exc:
         raise _http_error(exc) from exc
 
@@ -161,7 +185,8 @@ async def _run_rpc(ws: WebSocket, service: Any, method: str, params: dict,
     except Exception as exc:
         denied = _http_error(exc)
         response = {"jsonrpc": "2.0", "id": request_id,
-                    "error": {"code": -32000, "message": denied.detail["error"]}}
+                    "error": {"code": -32000, "message": denied.detail["error"],
+                              "data": denied.detail}}
     async with send_lock:
         await ws.send_json(response)
 

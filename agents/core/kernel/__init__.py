@@ -223,7 +223,7 @@ def authorize(action: Action,
         decision = Decision(Verdict.GRANT, reason=pdec.reason, tier=tier)
     else:  # ASK (or anything unexpected) → queue for approval
         # Only a trusted, action-bound receipt can satisfy the ordinary tier-3
-        # policy ASK for terminal or the two checkpoint effects. The payload's
+        # policy ASK for terminal, checkpoint or a private Hermes continuation. The payload's
         # ID alone carries no authority.
         approved_task_id = (
             action.payload.get("approved_task_id")
@@ -232,8 +232,9 @@ def authorize(action: Action,
         trusted_receipt = False
         sealed_terminal = action.kind == "terminal.exec"
         sealed_checkpoint = action.kind in {"checkpoint.restore", "checkpoint.maintenance"}
+        sealed_hermes = action.kind == "hermes.runtime"
         if (
-            (sealed_terminal or sealed_checkpoint)
+            (sealed_terminal or sealed_checkpoint or sealed_hermes)
             and pdec.outcome == ASK
             and tier == int(RiskTier.IRREVERSIBLE_OR_MONEY)
             and isinstance(approved_task_id, int)
@@ -247,7 +248,9 @@ def authorize(action: Action,
                 if policy.effective_mode(action.agent) == "auto":
                     trusted_receipt = approval_check(action) is True
         if trusted_receipt:
-            seal_reason = "sealed_terminal_approval" if sealed_terminal else "sealed_checkpoint_approval"
+            seal_reason = ("sealed_terminal_approval" if sealed_terminal else
+                           "sealed_checkpoint_approval" if sealed_checkpoint else
+                           "sealed_hermes_approval")
             decision = Decision(Verdict.GRANT, reason=f"{seal_reason}; {pdec.reason}", tier=tier,
                                 task_id=approved_task_id)
         else:
