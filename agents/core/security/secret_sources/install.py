@@ -12,13 +12,14 @@ import platform
 import sys
 import tempfile
 import urllib.request
-import zipfile
 from pathlib import Path
 
+from agents.core.archive_safe import ArchiveLimits, ArchiveRejected, extract_zip_bytes
 from agents.core.paths import data_path
 
 _VERSION = "2.0.0"
 _BASE = f"https://github.com/bitwarden/sdk-sm/releases/download/bws-v{_VERSION}/"
+_MAX_ARCHIVE_BYTES = 50 * 1024 * 1024
 _PINNED = {
     ("darwin", "arm64"): ("bws-macos-universal-2.0.0.zip", "67ab9bc345e2ec3b5dfddd116f938fdab79538042623a6bcca5ca0c1b0c42d95"),
     ("darwin", "x86_64"): ("bws-macos-universal-2.0.0.zip", "67ab9bc345e2ec3b5dfddd116f938fdab79538042623a6bcca5ca0c1b0c42d95"),
@@ -46,27 +47,29 @@ def install_bws(*, destination: Path | None = None) -> Path:
         archive = stage / filename
         digest = hashlib.sha256()
         total = 0
-        with urllib.request.urlopen(_BASE + filename, timeout=30) as response, archive.open("wb") as output:
+        # The URL is a fixed HTTPS GitHub release plus a closed-table filename;
+        # the downloaded bytes must also match the table's SHA-256 pin.
+        with urllib.request.urlopen(  # nosec B310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+            _BASE + filename, timeout=30
+        ) as response, archive.open("wb") as output:
             while chunk := response.read(1024 * 1024):
                 total += len(chunk)
-                if total > 50 * 1024 * 1024:
+                if total > _MAX_ARCHIVE_BYTES:
                     raise RuntimeError("bws archive exceeded size limit")
                 digest.update(chunk)
                 output.write(chunk)
         if digest.hexdigest() != expected_sha:
             raise RuntimeError("bws archive checksum mismatch")
         try:
-            with zipfile.ZipFile(archive) as zipped:
-                matches = [item for item in zipped.infolist()
-                           if Path(item.filename).name == destination.name and not item.is_dir()]
-                if len(matches) != 1 or matches[0].file_size > 50 * 1024 * 1024:
-                    raise RuntimeError("bws archive has no unique bounded executable")
-                with zipped.open(matches[0]) as src, (stage / destination.name).open("wb") as dst:
-                    while chunk := src.read(1024 * 1024):
-                        dst.write(chunk)
-        except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError) as exc:
+            unpacked = stage / "unpacked"
+            files = extract_zip_bytes(archive.read_bytes(), unpacked,
+                                      limits=ArchiveLimits(max_members=256, max_bytes=_MAX_ARCHIVE_BYTES))
+        except ArchiveRejected as exc:
             raise RuntimeError("bws archive is invalid") from exc
-        binary = stage / destination.name
+        matches = [parts for parts in files if parts[-1] == destination.name]
+        if len(matches) != 1:
+            raise RuntimeError("bws archive has no unique bounded executable")
+        binary = unpacked.joinpath(*matches[0])
         binary.chmod(0o700)
         os.replace(binary, destination)
     return destination

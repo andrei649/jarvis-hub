@@ -660,6 +660,8 @@ async def lifespan(application: FastAPI):
     # H283: systemd's READY/STOPPING are not sent from here — uvicorn binds the port
     # only after this startup returns; serve.py's NotifyingServer sends them.
     yield
+    from agents.core.hermes_runtime.service import get_service as get_hermes_runtime
+    await get_hermes_runtime().stop()
     # H161: the clean-shutdown mark first — a later step that hangs must not make this
     # stop look like an out-of-memory kill to the next start.
     resource_pressure.monitor().stop()
@@ -1599,6 +1601,7 @@ from agents.core.routers.analytics import router as _analytics_router  # noqa: E
 from agents.core.routers.arena import router as _arena_router  # noqa: E402
 from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
 from agents.core.routers.kanban import router as _kanban_router  # noqa: E402
+from agents.core.routers.hermes_runtime import router as _hermes_runtime_router  # noqa: E402
 from agents.core.routers.missions import router as _missions_router  # noqa: E402
 from agents.core.routers.bench import router as _bench_router  # noqa: E402
 from agents.core.routers.ops import router as _ops_router  # noqa: E402
@@ -1713,6 +1716,7 @@ app.include_router(_secrets_router)
 app.include_router(_mesh_router)
 app.include_router(_autonomy_router)
 app.include_router(_kanban_router)
+app.include_router(_hermes_runtime_router)
 app.include_router(_missions_router)
 app.include_router(_models_llm_router)
 app.include_router(_oauth_router)

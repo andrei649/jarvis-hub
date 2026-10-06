@@ -9,6 +9,7 @@
  "desktop.step": "kernel",
  "file.write": "kernel",
  "goal.approve": "kernel",
+ "hermes.runtime": "kernel",
  "host.control": "kernel",
  "house.control": "kernel",
  "house.recovery": "kernel",

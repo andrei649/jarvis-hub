@@ -9,14 +9,25 @@ from __future__ import annotations
 
 import argparse
 import getpass
-import subprocess
+import subprocess  # nosec B404 - fixed helper argv, no shell; credentials use a narrow child environment
 import sys
+from typing import TYPE_CHECKING
 
 from agents.core.secrets import SecretStore, SecretStoreError
-from agents.core.security.secret_sources import ExternalSecretSources, onepassword
-from agents.core.security.secret_sources.base import executable, valid_env_name
+
+if TYPE_CHECKING:
+    from agents.core.security.secret_sources import ExternalSecretSources
 
 _REGIONS = {"us": "", "eu": "https://vault.bitwarden.eu"}
+
+
+def __getattr__(name: str):
+    """Keep the existing injectable source class without loading it for CLI help."""
+    if name == "ExternalSecretSources":
+        from agents.core.security.secret_sources import ExternalSecretSources
+
+        return ExternalSecretSources
+    raise AttributeError(name)
 
 
 def register_parser(subparsers) -> None:
@@ -53,10 +64,17 @@ def register_parser(subparsers) -> None:
 def cmd_secrets(ns: argparse.Namespace, ctx, *, store: SecretStore | None = None,
                 sources: ExternalSecretSources | None = None) -> int:
     """Offline command handler. Root wires this to the main CLI dispatch table."""
+    from agents.core.security.secret_sources import onepassword
+    from agents.core.security.secret_sources.base import executable, valid_env_name
+
+    source_type = globals().get("ExternalSecretSources")
+    if source_type is None:
+        from agents.core.security.secret_sources import ExternalSecretSources as source_type
+
     out, err = ctx.out, ctx.err
     provider = "bitwarden" if ns.provider in ("bitwarden", "bw") else "onepassword"
     try:
-        source = sources or ExternalSecretSources(store or SecretStore())
+        source = sources or source_type(store or SecretStore())
         cfg = source.configuration(provider)
         action = ns.action
         if action == "status":
@@ -166,7 +184,7 @@ def cmd_secrets(ns: argparse.Namespace, ctx, *, store: SecretStore | None = None
 
 def _verify_token(source: ExternalSecretSources, provider: str, cfg: dict, token: str) -> bool:
     """Probe candidate in an isolated child; a failed rotation leaves store intact."""
-    from agents.core.security.secret_sources.base import run_helper
+    from agents.core.security.secret_sources.base import executable, run_helper
 
     binary = executable(str(cfg.get("binary_path") or ""), "bws" if provider == "bitwarden" else "op")
     if not binary:

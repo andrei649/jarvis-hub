@@ -246,6 +246,13 @@ change the seven strict-local auxiliary routes or enable a provider.
 
 ### Security
 
+The optional Hermes engine is an isolated, pinned Python 3.14 runtime, controlled
+through the owner-only Hub RPC/event adapter and mandatory Kernel bridge.
+See [runtime integration](hermes/RUNTIME_INTEGRATION.md) for setup, the complete
+251-method catalog, approval floors, process boundaries and current availability.
+Its source/environment/profile live under `data_path("hermes-runtime")`; it does
+not participate as an `LLMBackend` in Jarvis's native tool loop.
+
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
 | `agents/core/security/guardrails.py` | Scan/redact/block wrapper around LLM | `GuardrailsEngine`, `SecurityBlockError` |

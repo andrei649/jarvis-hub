@@ -1,0 +1,11 @@
+{
+  "project": "NousResearch/hermes-agent",
+  "commit": "0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
+  "tree_sha1": "d9d9232e36e067a90d92e4a264de1f741b1ee1b4",
+  "source_sha256": "413107320c0af4993e8e484c2c180016c26486f3a7def835f1784ca1361b5dc4",
+  "git_tree_sha1": "ee58f424daf921cbb47a203038cf2c1cc9e059d2",
+  "archive_url": "https://codeload.github.com/NousResearch/hermes-agent/tar.gz/0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
+  "archive_sha256": "4174aa7661a591bf822097c66d1d1109ffbde0e3af8be881dd495a8a8b243f63",
+  "archive_root": "hermes-agent-0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
+  "license": "MIT"
+}

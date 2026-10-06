@@ -7,7 +7,7 @@ No implicit installer or plaintext disk cache is used by Nerva.
 from __future__ import annotations
 
 import json
-import subprocess
+import subprocess  # nosec B404 - bws uses a fixed argv list through run_helper, never a shell
 
 from .base import ErrorKind, FetchResult, Runner, executable, run_helper, valid_env_name
 

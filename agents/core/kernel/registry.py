@@ -30,6 +30,7 @@ class Mediation(StrEnum):
 # everything else is PENDING_KERNEL until its wave lands (see the design spec's
 # migration order: brokers → plugin egress → MCP+KG → admin routes).
 ACTION_REGISTRY: dict[str, Mediation] = {
+    "hermes.runtime": Mediation.KERNEL,
     "kanban.worker": Mediation.KERNEL,
     # Wave 1 — kernel-mediated.
     "node.dispatch": Mediation.KERNEL,
@@ -146,6 +147,8 @@ def known_broker_action_kinds() -> set[str]:
     Imports are lazy so the registry module stays cheap and cycle-free.
     """
     kinds: set[str] = set()
+    from ..hermes_runtime.policy import KIND as HERMES_KIND
+    kinds.add(HERMES_KIND)
     from ..kanban.dispatcher import KanbanDispatcher
     kinds.add(KanbanDispatcher.KIND)
     from ..node_mesh import KIND as NODE_KIND

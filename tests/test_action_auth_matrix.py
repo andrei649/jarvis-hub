@@ -13,6 +13,7 @@ route-auth suite:
 
 import inspect
 import json
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -77,7 +78,12 @@ class _SpyKernel:
 
 def _exercise(kind, spy, tmp_path, monkeypatch=None):
     """Drive the broker/route that owns *kind* through its real entry-point."""
-    if kind == "call.outbound":
+    if kind == "hermes.runtime":
+        from agents.core.hermes_runtime.policy import HermesGate, RuntimeDenied
+
+        with suppress(RuntimeDenied):
+            HermesGate(kernel=spy).authorize("rpc", "session.list", {}, "test-generation")
+    elif kind == "call.outbound":
         from agents.core.autonomy.call_broker import CallBroker
 
         CallBroker(enqueue=lambda *a, **k: 1, kernel=spy).request(

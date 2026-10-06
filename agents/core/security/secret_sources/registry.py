@@ -7,7 +7,7 @@ Precedence follows Hermes agent/secret_sources/registry.py at 59b2aeef6c7a
 from __future__ import annotations
 
 import json
-import subprocess
+import subprocess  # nosec B404 - injected helper runner uses run_helper's argv and narrow environment
 import threading
 import time
 from collections.abc import Callable
@@ -19,7 +19,7 @@ from .base import FetchResult, Runner, valid_env_name
 
 _PROVIDERS = ("onepassword", "bitwarden")
 _CONFIG_PREFIX = "h034.config."
-_TOKEN_PREFIX = "h034.token."
+_TOKEN_PREFIX = "h034.token."  # nosec B105 - SecretStore key namespace, not a credential value
 
 
 class OwnerSessions:

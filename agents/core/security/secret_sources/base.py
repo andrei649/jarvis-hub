@@ -7,7 +7,7 @@ Nerva resolves at an approved broker action, without modifying os.environ.
 from __future__ import annotations
 
 import re
-import subprocess
+import subprocess  # nosec B404 - helper argv lists, no shell; child environment is allow-listed
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum

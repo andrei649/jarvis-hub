@@ -5,7 +5,7 @@ Adapted from Hermes agent/secret_sources/onepassword.py at 59b2aeef6c7a (MIT).
 
 from __future__ import annotations
 
-import subprocess
+import subprocess  # nosec B404 - op uses a fixed argv list through run_helper, never a shell
 import time
 
 from .base import ErrorKind, FetchResult, Runner, executable, run_helper, valid_env_name

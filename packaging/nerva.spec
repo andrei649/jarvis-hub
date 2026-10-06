@@ -42,6 +42,13 @@ datas = [
     (os.path.join(ROOT, "skills"), "skills"),
     # First-run template copied to Documents/Nerva/.env by ensure_user_home().
     (os.path.join(ROOT, ".env.example"), "."),
+    # Hermes donor pin/license/catalog and standalone bridge entrypoints. The
+    # actual upstream environment is provisioned into the owner's data root.
+    (os.path.join(ROOT, "runtime", "hermes"), os.path.join("runtime", "hermes")),
+    (os.path.join(ROOT, "agents", "core", "hermes_runtime", "worker.py"),
+     os.path.join("agents", "core", "hermes_runtime")),
+    (os.path.join(ROOT, "agents", "core", "hermes_runtime", "bridge.py"),
+     os.path.join("agents", "core", "hermes_runtime")),
 ]
 
 # Agent SOUL/HEARTBEAT templates: agents/<id>/*.md (generic templates only —
