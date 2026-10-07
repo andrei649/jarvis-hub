@@ -21,7 +21,7 @@
    Canvas 2D only, no dependencies, no external assets. Degrades to a non-throwing empty
    shell when the 2D context is null (JSDOM/headless), like the mesh. */
 import React, { useRef, useEffect, useMemo } from 'react';
-import { runningTasks, effectiveTaskState } from './task-state';
+import { runningTasks } from './task-state';
 import { isExecutingAgent } from './mesh';
 
 // Tier palette — identical to the Neural Mesh, so the same agent is the same colour
@@ -86,17 +86,8 @@ export function burstRegions({ agents = [], tasks = [] }: any = {}) {
    Priority: a measured mic level while listening > live cabinet work > idle. */
 export function burstEnergy({ agents = [], tasks = [], voice = null, demo = false }: any = {}) {
   const list = Array.isArray(agents) ? agents : [];
-  // Bolt Optimization: Count executing agents and running tasks directly via indexed for loops
-  // to avoid allocating intermediate filtered arrays from .filter() and runningTasks().
-  let firing = 0;
-  for (let i = 0; i < list.length; i++) {
-    if (isExecutingAgent(list[i])) firing++;
-  }
-  const taskList = Array.isArray(tasks) ? tasks : [];
-  let running = 0;
-  for (let i = 0; i < taskList.length; i++) {
-    if (effectiveTaskState(taskList[i]) === 'running') running++;
-  }
+  const firing = list.filter(isExecutingAgent).length;
+  const running = runningTasks(Array.isArray(tasks) ? tasks : []).length;
   const status = String((voice && voice.status) || 'off');
   const listening = status === 'listening';
   const mic = listening ? Math.max(0, Math.min(1, (Number(voice && voice.level) || 0) / 0.25)) : 0;
