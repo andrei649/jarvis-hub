@@ -14,6 +14,8 @@
 
 ## Current sprint: Hermes capability equivalence — 2026-09-09
 
+- 2026-10-08 native recovery (H595/H660): owner-enabled execute_code defaults to persistent sessions when an isolated backend is configured. Project/strict context, backend-local interpreter selection, owner-scoped skill environment declarations and import stubs use existing per-cell authorization. Bounded project snapshots are read-only, exclude secrets/links/generated trees, and use native Windows handle containment. Admin settings persist and reject invalid values. Cancellation/teardown regressions include selected-interpreter descendants and bounded Docker failure; live Windows Docker and remote transports remain unverified. Recovered from #1233 without importing Hermes runtime.
+
 - 2026-09-28 Codex-sprint review and ledger recovery (Claude, PR #1207): six red-first
   fix rounds on `beb2ee5a` make capability outcomes honest (failure when an attempt could
   have touched the world or machinery broke; nothing for a governance refusal/withhold or a
