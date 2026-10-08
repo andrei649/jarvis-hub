@@ -3677,10 +3677,14 @@ class Orchestrator:
         t_route: int,
         t_plugin: int,
         t_synthesize: int,
+        media: dict | None = None,
     ) -> None:
         """Single post-LLM seam: memory, checkpoint, logs, learning and trace."""
         called = turn_tools.collected()
-        if called:
+        if media is not None:
+            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id,
+                                       tools=called or None, media=media)
+        elif called:
             await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id,
                                        tools=called)
         else:
@@ -3718,6 +3722,53 @@ class Orchestrator:
         # inside — cognition.review_enabled + cadence/daily budget). Never blocks
         # the turn; never raises into the seam.
         self._spawn_background_review(text, synthesized, channel)
+
+    async def complete_selected_image_turn(
+        self, *, session_id: str, agent_id: str, question: str, answer: str,
+        image_count: int, model: str, route_name: str, latency: float,
+    ) -> None:
+        """Commit only text and provenance after a reviewed Ollama image answer."""
+        from .memory.conversation import validated_media
+
+        if agent_id not in self.agents or not question.strip() or not answer.strip():
+            raise ValueError("invalid selected image turn")
+        media = validated_media({"kind": "image", "count": image_count,
+                                 "model": model, "backend": "ollama", "local": True})
+        session_token = _active_session.set(session_id)
+        shared_token = _session_is_shared.set(session_id == self._session_id_default)
+        meter_token = _TURN_METER_MAPS.set({})
+        title_token = _TURN_TITLE.set([])
+        origin_token = bind_turn_action_origin("web")
+        try:
+            self._last_channel = "web"
+            turn_tools.begin()
+            intent = await self.router.classify_deterministic(question, self.agents)
+            self._last_models = {agent_id: model}
+            self._last_routes = {agent_id: route_name}
+            self._last_latencies = {agent_id: max(0.0, latency)}
+            self._last_cached_tokens = {}
+            self._last_prompt_tokens = {}
+            self._last_reported_usage = {}
+            marker = "image" if image_count == 1 else "images"
+            await self.memory.add_turn(session_id, "user", f"{question}\n[{image_count} {marker} attached]",
+                                       channel="web", media=media)
+            self._title_session(question, "web")
+            await self._complete_llm_turn(
+                text=question, intent=intent, plugin_data={}, responses={agent_id: answer},
+                synthesized=answer, responder_id=agent_id, route_name=route_name,
+                channel="web", action_taken="selected_image_turn via web",
+                t_classify=0, t_route=0, t_plugin=0,
+                t_synthesize=max(0, int(latency * 1000)), media=media,
+            )
+        finally:
+            reset_action_origin(origin_token)
+            titles = _TURN_TITLE.get()
+            _TURN_TITLE.reset(title_token)
+            if titles:
+                self._start_title_upgrades(titles)
+            _TURN_METER_MAPS.reset(meter_token)
+            _session_is_shared.reset(shared_token)
+            _active_session.reset(session_token)
 
     def _agent_call_timeout(
         self, *, route_name: str | None = None, model: str | None = None,

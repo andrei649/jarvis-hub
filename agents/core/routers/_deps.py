@@ -13,8 +13,9 @@ routers package has no static import back into `agents.web` at all.
 """
 
 import sys
+from typing import Annotated
 
-from fastapi import Request
+from fastapi import Depends, HTTPException, Request
 
 
 def _web():
@@ -28,3 +29,12 @@ async def user_guard(request: Request):
 
 async def admin_guard(request: Request):
     return await _web()._admin_guard(request)
+
+
+async def owner_web_principal(request: Request,
+                              _owner: Annotated[None, Depends(admin_guard)]):
+    """Resolve the same owner predicate and principal as the web chat door."""
+    principal = _web()._web_principal(request)
+    if not principal.admin or principal.channel != "web":
+        raise HTTPException(status_code=403, detail="owner required")
+    return principal
