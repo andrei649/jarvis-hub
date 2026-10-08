@@ -144,6 +144,7 @@ DEFAULTS: list[dict[str, Any]] = [
     # general
     dict(category="general", key="timezone",         value="Europe/Bucharest",    label="Timezone",           kind="select",  opts=["Europe/Bucharest","UTC","US/Eastern"]),
     dict(category="general", key="wake_words",       value=["nerva","jarvis","hub"], label="Wake words",      kind="tags"),
+    dict(category="commands", key="quick_commands", value={}, label="Owner quick commands — JSON aliases or fixed shell commands (execution always needs approval)", kind="json"),
     # H063 — durable channel route generations. The reset policy is off by default;
     # explicit owner /new and /reset remain available regardless of this mode.
     dict(category="sessions", key="reset_mode", value="none", label="Conversation reset mode", kind="select", opts=["none", "idle", "daily", "both"]),
@@ -947,6 +948,10 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
         err = _validate_value(key, value, spec.get("kind", "text"), spec.get("opts", []) or [])
         if err is None and cat == "sessions":
             err = _session_setting_problem(key, value)
+        if err is None and (cat, key) == ("commands", "quick_commands"):
+            from .quick_commands import configuration_problem
+
+            err = configuration_problem(value)
         if err is None and (cat, key) == ("skills", "template_vars"):
             err = _template_vars_problem(value)
         if err is None and (cat, key) == ("skills", "channel_disabled"):
