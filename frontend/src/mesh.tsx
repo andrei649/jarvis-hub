@@ -221,25 +221,43 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = 'rgba(4,7,13,' + (calm ? 0.4 : 0.26) + ')'; ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = 'lighter';
-    st.stars.forEach((s) => { const tw = 0.6 + 0.4 * Math.sin(st.tick * 0.03 + s.x); ctx.globalAlpha = s.a * tw; ctx.fillStyle = '#6fb8e0'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 7); ctx.fill(); });
+    // Bolt Optimization: Replace .forEach() array closures with indexed for loops across stars, nodes, and edges
+    // in the 60 FPS animation loop to avoid allocating function closures on every frame.
+    const stars = st.stars;
+    const numStars = stars.length;
+    for (let i = 0; i < numStars; i++) {
+      const s = stars[i];
+      const tw = 0.6 + 0.4 * Math.sin(st.tick * 0.03 + s.x);
+      ctx.globalAlpha = s.a * tw;
+      ctx.fillStyle = '#6fb8e0';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, 7);
+      ctx.fill();
+    }
     ctx.globalAlpha = 1;
     const bloom = ctx.createRadialGradient(cx, cy, 4, cx, cy, Math.min(W, H) * 0.5);
     bloom.addColorStop(0, 'rgba(43,140,210,0.10)'); bloom.addColorStop(1, 'rgba(43,140,210,0)');
     ctx.fillStyle = bloom; ctx.fillRect(0, 0, W, H);
     const rot = calm ? 0 : st.tick * (cinema ? 0.0011 : 0.0016);
-    st.nodes.forEach((n) => {
-      if (n.kind === 'core') { n.x = cx; n.y = cy; n._r = n.r; return; }
+    const nodes = st.nodes;
+    const numNodes = nodes.length;
+    for (let i = 0; i < numNodes; i++) {
+      const n = nodes[i];
+      if (n.kind === 'core') { n.x = cx; n.y = cy; n._r = n.r; continue; }
       const rad = n.baseRad + (calm ? 0 : Math.sin(st.tick * 0.04 + n.i) * 2.2);
       n.x = cx + Math.cos(n.baseAng + rot) * rad; n.y = cy + Math.sin(n.baseAng + rot) * rad; n._r = n.r;
-    });
+    }
     const hov = st.hover, foc = st.focus;
-    st.edges.forEach((e) => {
-      const a = node(e.a), b = node(e.b); if (!a || !b) return;
+    const edges = st.edges;
+    const numEdges = edges.length;
+    for (let i = 0; i < numEdges; i++) {
+      const e = edges[i];
+      const a = node(e.a), b = node(e.b); if (!a || !b) continue;
       const act = isExecutingAgent(a.agent) || isExecutingAgent(b.agent) || foc === e.a;
       const dim = (hov && hov !== e.a && hov !== e.b) || (foc && foc !== e.a && foc !== e.b && e.a !== 'jarvis');
       ctx.strokeStyle = dim ? 'rgba(90,120,150,0.05)' : act ? 'rgba(80,190,255,0.22)' : 'rgba(110,140,170,0.09)';
       ctx.lineWidth = e.kind === 'mc' ? 1.2 : 0.7; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-    });
+    }
     drawTaskFan(ctx, st, foc);
     ctx.globalCompositeOperation = 'lighter';
     if (!calm && st.demo) {
@@ -300,15 +318,17 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     rings.length = ringWriteIdx;
 
     ctx.globalAlpha = 1;
-    st.nodes.forEach((n) => {
+    for (let i = 0; i < numNodes; i++) {
+      const n = nodes[i];
       const active = isExecutingAgent(n.agent); const isHov = hov === n.id || foc === n.id;
       if (n.kind === 'core' || active || isHov || n.kind === 'model') {
         const c = colorFor(n); const g = ctx.createRadialGradient(n.x, n.y, 1, n.x, n.y, n._r + (n.kind === 'core' ? 16 : 9));
         g.addColorStop(0, c + '88'); g.addColorStop(1, c + '00'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(n.x, n.y, n._r + (n.kind === 'core' ? 16 : 9), 0, 7); ctx.fill();
       }
-    });
+    }
     ctx.globalCompositeOperation = 'source-over';
-    st.nodes.forEach((n) => {
+    for (let i = 0; i < numNodes; i++) {
+      const n = nodes[i];
       const c = colorFor(n); const isHov = hov === n.id; const dim = (hov && !isHov && n.kind !== 'core') || (foc && foc !== n.id && n.kind === 'agent');
       const active = isExecutingAgent(n.agent); ctx.globalAlpha = dim ? 0.3 : 1;
       if (n.kind === 'core') {
@@ -327,7 +347,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       }
       ctx.globalAlpha = 1;
       if (n.kind !== 'agent' || active || isHov || foc === n.id) { ctx.fillStyle = isHov ? '#eaf6ff' : 'rgba(165,190,210,0.75)'; ctx.font = '800 8px "JetBrains Mono",monospace'; ctx.textAlign = 'center'; ctx.fillText(String(n.label).toUpperCase(), n.x, n.y + n._r + 10); }
-    });
+    }
   }
 
   function drawTaskFan(ctx, st, foc) {
