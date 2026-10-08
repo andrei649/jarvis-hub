@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agents.core.channels.session import SessionSource, build_session_key
+from agents.core.channels.session import SessionSource, build_session_key, session_type
 from agents.core.channels.session_lifecycle import lifecycle
 from agents.core.memory import persistence
 from agents.core.memory.conversation import ConversationMemory
@@ -97,6 +97,81 @@ async def test_scheduler_expires_idle_route_without_new_inbound_message(tmp_path
     await incoming(orch, "new topic")
     assert cap["sessions"][-1] != old
     assert cap["sessions"][-1].endswith("_g1")
+
+
+@pytest.mark.asyncio
+async def test_observer_waiting_for_resume_cannot_restore_an_expired_route(tmp_path):
+    base = build_session_key(SessionSource(channel="telegram", sender="42", thread_id="123"))
+    orch, cap, clock = host(tmp_path, {"sessions.reset_mode": "idle", "sessions.idle_minutes": 1},
+                            resumable={base})
+    service = lifecycle(orch)
+    await incoming(orch, "first")
+    orch._channel_sessions.clear()  # restart: durable route exists, in-memory route is empty
+    entered, release = asyncio.Event(), asyncio.Event()
+    resume = orch.memory.resume_session
+
+    async def slow_resume(sid):
+        if sid == base:
+            entered.set()
+            await release.wait()
+        return await resume(sid)
+
+    async def add_turn(*_args, **_kwargs):
+        pass
+
+    orch.memory.resume_session = slow_resume
+    orch.memory.add_turn = add_turn
+    clock["now"] += 61
+    observed = asyncio.create_task(incoming(orch, "room chatter", observe_only=True))
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        assert await service.expire() == {"retired": 0, "rotated": 1}
+    finally:
+        release.set()
+        assert await observed is None
+    assert orch._channel_sessions.get(base) != base
+    await incoming(orch, "next")
+    assert cap["sessions"][-1] == f"mem:{base}_g1"
+
+
+@pytest.mark.asyncio
+async def test_observer_uses_route_selected_by_a_concurrent_turn(tmp_path):
+    source = SessionSource(channel="telegram", sender="42", thread_id="123")
+    base = build_session_key(source)
+    orch, _, _ = host(tmp_path)
+    service = lifecycle(orch)
+    service.store.touch(base, service.now(), source.channel, session_type(source))
+    entered, release = asyncio.Event(), asyncio.Event()
+    resume = orch.memory.resume_session
+    creations = []
+    observed_sessions = []
+
+    async def slow_resume(sid):
+        if asyncio.current_task() is observer:
+            entered.set()
+            await release.wait()
+        return await resume(sid)
+
+    async def new_session(sid):
+        selected = f"memory-{len(creations)}:{sid}"
+        creations.append(selected)
+        return selected
+
+    async def add_turn(sid, *_args, **_kwargs):
+        observed_sessions.append(sid)
+
+    orch.memory.resume_session = slow_resume
+    orch.memory.new_session = new_session
+    orch.memory.add_turn = add_turn
+    observer = asyncio.create_task(incoming(orch, "room chatter", observe_only=True))
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        await incoming(orch, "normal turn")
+    finally:
+        release.set()
+        assert await observer is None
+    assert orch._channel_sessions[base] == creations[0]
+    assert observed_sessions == [creations[0]]
 
 
 @pytest.mark.asyncio

@@ -232,21 +232,26 @@ class ChannelSessionLifecycle:
     async def _observe(self, source, text, *, base, kind, draft, shared):
         """Context-only ingress keeps the existing no-turn-lease contract.
 
-        It never rotates a generation or overwrites a route selected while the
-        memory call awaited. Conversation memory serializes its own append.
+        It never rotates a generation. A memory await may overlap expiry or a
+        normal turn, so select from the current generation and winning route.
         """
-        state = self.store.state(base)
-        key = generation_key(base, state.generation)
-        selected = self.orch._channel_sessions.get(base)
-        if selected is None:
-            if shared and state.generation == 0:
-                selected = self.orch._session_id_default
-            elif await self.orch.memory.resume_session(key):
-                selected = key
-            else:
-                selected = await self._new_memory_session(key, prior_route=state.active)
-            if not (shared and state.generation == 0):
-                self.orch._channel_sessions.setdefault(base, selected)
+        while True:
+            state = self.store.state(base)
+            key = generation_key(base, state.generation)
+            selected = self.orch._channel_sessions.get(base)
+            if selected is None:
+                if shared and state.generation == 0:
+                    selected = self.orch._session_id_default
+                elif await self.orch.memory.resume_session(key):
+                    selected = key
+                else:
+                    selected = await self._new_memory_session(key, prior_route=state.active)
+                current = self.store.state(base)
+                if (current.generation, current.active) != (state.generation, state.active):
+                    continue
+                if not (shared and state.generation == 0):
+                    selected = self.orch._channel_sessions.setdefault(base, selected)
+            break
         self.store.touch(base, self.now(), source.channel, kind)
         return await self.orch._run_channel_session_turn(
             selected, text, source.channel, observe_only=True, draft=draft)
