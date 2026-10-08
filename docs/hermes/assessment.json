@@ -9938,7 +9938,7 @@
         },
         {
           "path": "tests/test_session_kernel_routes.py",
-          "sha256": "eae9c0deba766ffde8e7ce720d761ef5889f228ae34a0d7af41f554d628066f1"
+          "sha256": "93e565df99b60a706f2471097b98cbaaaba333bce9ef064d2a4dfbb497ca97c9"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -10529,7 +10529,7 @@
         },
         {
           "path": "tests/test_session_kernel_routes.py",
-          "sha256": "eae9c0deba766ffde8e7ce720d761ef5889f228ae34a0d7af41f554d628066f1"
+          "sha256": "93e565df99b60a706f2471097b98cbaaaba333bce9ef064d2a4dfbb497ca97c9"
         },
         {
           "path": "frontend/src/gap.tsx",
