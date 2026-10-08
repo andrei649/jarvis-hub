@@ -405,6 +405,9 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("help", "the commands you can use here", _help))
     registry.register(SlashCommand("status", "backend, agents, autonomy mode, e-stop", _status))
     registry.register(SlashCommand("sessions", "the five most recent sessions", _sessions))
+    registry.register(SlashCommand("new", "start a fresh conversation and save this one", _session_change, tier=ADMIN))
+    registry.register(SlashCommand("reset", "same as /new", _session_change, tier=ADMIN))
+    registry.register(SlashCommand("undo", "remove the last exchange while preserving history", _session_change, tier=ADMIN))
     registry.register(SlashCommand("recap", "this conversation's last exchanges, with no model call", _recap, usage="[exchanges]"))
     registry.register(SlashCommand("usage", "cloud provider quota left, and any 429 hold", _usage, tier=ADMIN))
     registry.register(SlashCommand("pause", "engage the emergency stop", _pause, tier=ADMIN, usage="[reason]"))
@@ -415,3 +418,11 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("voice", "spoken replies in this chat: off, voice-for-voice, or always", _voice, usage="[off|voice|always]"))
     registry.register(SlashCommand("refine", "review this conversation now for memories and skill changes", _refine, tier=ADMIN, usage="[focus]"))
     return registry
+
+
+async def _session_change(ctx: CommandContext) -> str:
+    change = getattr(ctx.orch, "_direct_session_command", None)
+    if change is None:
+        return "Conversation change unavailable; nothing was applied."
+    result = await change(f"/{ctx.name}", ctx.principal.channel, None)
+    return result or "Conversation change unavailable; nothing was applied."

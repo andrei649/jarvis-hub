@@ -144,6 +144,17 @@ DEFAULTS: list[dict[str, Any]] = [
     # general
     dict(category="general", key="timezone",         value="Europe/Bucharest",    label="Timezone",           kind="select",  opts=["Europe/Bucharest","UTC","US/Eastern"]),
     dict(category="general", key="wake_words",       value=["nerva","jarvis","hub"], label="Wake words",      kind="tags"),
+    # H063 — durable channel route generations. The reset policy is off by default;
+    # explicit owner /new and /reset remain available regardless of this mode.
+    dict(category="sessions", key="reset_mode", value="none", label="Conversation reset mode", kind="select", opts=["none", "idle", "daily", "both"]),
+    dict(category="sessions", key="idle_minutes", value=1440, label="Idle minutes before a new conversation", kind="number"),
+    dict(category="sessions", key="daily_hour", value=4, label="Daily conversation reset hour", kind="number"),
+    dict(category="sessions", key="reset_by_type", value={}, label="Conversation reset overrides by chat type", kind="json"),
+    dict(category="sessions", key="reset_by_channel", value={}, label="Conversation reset overrides by channel", kind="json"),
+    dict(category="sessions", key="reset_triggers", value=["/new", "/reset"], label="Owner commands that start a new conversation", kind="tags"),
+    dict(category="sessions", key="stall_seconds", value=300, label="No-progress notice after seconds", kind="number"),
+    dict(category="sessions", key="stall_channel", value="telegram", label="No-progress notice channel", kind="select", opts=["telegram", "ntfy", "web"]),
+    dict(category="sessions", key="store_max_age_days", value=90, label="Retire idle route indexes after days (0 disables)", kind="number"),
     # product — owner-consented posture, default OFF. O26-P2.4 wave 1 wakes the
     # "knows you" stack only after the onboarding/product setting selects it.
     dict(category="product", key="posture", value="off", label="Product posture", kind="select", opts=["off", "companion_wave1", "design_partner"]),
@@ -869,6 +880,33 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     return None
 
 
+def _session_setting_problem(key: str, value: Any) -> str | None:
+    """Apply the same bounds the route lifecycle reads, before an owner write."""
+    from .channels.session_reset import ResetPolicy, SessionResetError, resolve_policy
+
+    try:
+        if key in {"reset_mode", "idle_minutes", "daily_hour"}:
+            field = "mode" if key == "reset_mode" else key
+            ResetPolicy(**{field: value})
+        elif key in {"reset_by_type", "reset_by_channel"}:
+            resolve_policy(lambda name, default: value if name == f"sessions.{key}" else default,
+                           "telegram", "private")
+        elif key == "reset_triggers":
+            if not isinstance(value, list) or len(value) > 32 or any(
+                not isinstance(item, str) or not item.strip() or len(item) > 120 for item in value
+            ):
+                return f"{key}: expected up to 32 non-empty commands of at most 120 characters"
+        elif key == "stall_seconds":
+            if type(value) not in (int, float) or not math.isfinite(value) or not 1 <= value <= 86400:
+                return f"{key}: expected a number between 1 and 86400 seconds"
+        elif key == "store_max_age_days":
+            if type(value) is not int or not 0 <= value <= 36500:
+                return f"{key}: expected an integer between 0 and 36500 days"
+    except SessionResetError as exc:
+        return f"{key}: {exc}"
+    return None
+
+
 #: Declared settings one route writes, never a generic settings write (review-H329 F1):
 #: switching a skill back on widens what the hub does, so it goes through the skill switch
 #: route, which records it in the intent log and refuses when it cannot. A settings write,
@@ -907,6 +945,8 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
             errors.append(f"{key}: value is not JSON-serializable")
             continue
         err = _validate_value(key, value, spec.get("kind", "text"), spec.get("opts", []) or [])
+        if err is None and cat == "sessions":
+            err = _session_setting_problem(key, value)
         if err is None and (cat, key) == ("skills", "template_vars"):
             err = _template_vars_problem(value)
         if err is None and (cat, key) == ("skills", "channel_disabled"):

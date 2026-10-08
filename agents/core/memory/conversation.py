@@ -87,7 +87,7 @@ class ConversationMemory:
             turns_data = snapshot.get("turns", [])
             if snapshot.get("instance_id"):
                 self.instances[sid] = snapshot["instance_id"]
-            if turns_data:
+            if snapshot.get("session_id") == sid and isinstance(turns_data, list):
                 self.sessions[sid] = []
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
@@ -118,7 +118,7 @@ class ConversationMemory:
                 turns_data = snapshot.get("turns", [])
                 if snapshot.get("instance_id"):
                     self.instances[session_id] = snapshot["instance_id"]
-                if not turns_data:
+                if snapshot.get("session_id") != session_id or not isinstance(turns_data, list):
                     return False
                 self.sessions[session_id] = []
                 for t in turns_data:

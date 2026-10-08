@@ -6,6 +6,7 @@ response when the orchestrator has not been initialised.
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -80,6 +81,40 @@ def test_chat_with_mock_orch_returns_reply(monkeypatch):
     assert resp.json()["reply"] == "Salut!"
 
 
+def test_chat_returns_selected_session_id_after_new_command(monkeypatch):
+    mock = MagicMock()
+    mock.session_id = "old_topic"
+
+    async def change_session(*args, **kwargs):
+        mock.session_id = "session_new_topic"
+        return "Started a new conversation."
+
+    mock.handle_input = change_session
+    monkeypatch.setattr(web, "orch", mock)
+    response = TestClient(web.app).post("/chat", json={"message": "/new"})
+    assert response.status_code == 200
+    assert response.json()["session_id"] == "session_new_topic"
+
+
+def test_resume_old_topic_returns_its_exact_saved_history(monkeypatch):
+    class Memory:
+        async def resume_session(self, sid):
+            return sid == "old_topic"
+
+        async def get_history(self, sid):
+            assert sid == "old_topic"
+            return [{"role": "user", "content": "old question"},
+                    {"role": "assistant", "content": "old answer"}]
+
+    selected = SimpleNamespace(memory=Memory(), session_id="session_new_topic", checkpoints=None)
+    monkeypatch.setattr(web, "orch", selected)
+    response = TestClient(web.app).post("/sessions/resume", json={"session_id": "old_topic"})
+    assert response.status_code == 200
+    assert response.json()["session"] == "old_topic"
+    assert response.json()["turns"][1]["content"] == "old answer"
+    assert selected.session_id == "old_topic"
+
+
 def test_chat_agent_override_not_jarvis(monkeypatch):
     mock = MagicMock()
     mock.handle_input = AsyncMock(return_value="Friday here.")
@@ -149,6 +184,14 @@ def test_chat_stream_last_event_is_end(monkeypatch):
     last = events[-1]
     assert last["type"] == "end"
     assert last["text"] == "Hi"
+
+
+def test_chat_stream_end_returns_selected_session_id(monkeypatch):
+    mock = _mock_orch_with_stream([], full="Started a new conversation.")
+    mock.session_id = "session_new_topic"
+    monkeypatch.setattr(web, "orch", mock)
+    response = TestClient(web.app).post("/chat/stream", json={"message": "/new"})
+    assert _parse_sse(response.text)[-1]["session_id"] == "session_new_topic"
 
 
 def test_chat_stream_end_event_carries_agent(monkeypatch):
