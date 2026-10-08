@@ -890,7 +890,7 @@ async def test_a_runaway_stdout_spill_stops_at_its_ceiling_and_says_so(tmp_path)
     assert raw[:100_000] == b"z" * 100_000
     assert raw[100_000:].count(b"[... spill capped at 100000 bytes") == 1
     assert result["stdout_spill_capped"] is True
-    assert result["stdout_bytes"] == 300_001, "what the script printed, not what was kept"
+    assert result["stdout_bytes"] == 300_000 + len(os.linesep.encode()), "what the script printed, not what was kept"
     assert result["stdout_file_bytes"] == len(raw)
     assert result["stdout_kept_bytes"] == 100_000, "the stream's bytes, not the marker's"
     assert result["stdout_sha256"] == hashlib.sha256(raw).hexdigest()

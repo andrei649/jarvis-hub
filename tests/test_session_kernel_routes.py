@@ -114,7 +114,7 @@ def test_the_mode_names_the_switch_to_change_not_the_symptom(client, monkeypatch
     _owner(monkeypatch)
     for settings, expected in (
         ({}, "code_execution_disabled"),
-        ({"llm.execute_code": True}, "sessions_disabled"),
+        ({"llm.execute_code": True, "llm.execute_code_sessions": False}, "sessions_disabled"),
     ):
         _bind(monkeypatch, _orch(tmp_path, settings=settings, kernels=None))
         body = client.get("/sandbox/kernels").json()
@@ -238,7 +238,8 @@ def test_reset_with_sessions_off_names_the_switch_rather_than_claiming_success(
     client, monkeypatch, tmp_path,
 ):
     _owner(monkeypatch)
-    _bind(monkeypatch, _orch(tmp_path, settings={"llm.execute_code": True}, kernels=None))
+    _bind(monkeypatch, _orch(tmp_path, settings={"llm.execute_code": True,
+                                                "llm.execute_code_sessions": False}, kernels=None))
     body = client.post("/sandbox/kernels/reset").json()
     assert body == {"reset": False, "mode": "one_shot", "reason": "sessions_disabled"}
 
