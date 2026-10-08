@@ -8,19 +8,18 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { saveCanvasArtifact, streamChat, type HistoryTurn } from '../api/client';
+import { saveCanvasArtifact, type HistoryTurn } from '../api/client';
 import { speak, stopSpeaking } from '../audio/tts';
 import type { ChatMessage, SaveState } from '../chat/types';
 import { AgentPicker } from '../components/AgentPicker';
 import { MessageBubble } from '../components/MessageBubble';
 import { SessionsModal } from '../components/SessionsModal';
 import { useServer } from '../context/ServerContext';
-import { clearHistory, loadHistory, saveHistory } from '../storage/chat';
+import { Conversation, type ConversationState } from '../chat/conversation';
 import { DEFAULT_PREFS, loadPrefs, savePrefs } from '../storage/prefs';
 import { useThemeStyles, type Theme } from '../theme';
 
-let idSeq = 0;
-const nextId = () => `m${Date.now()}_${idSeq++}`;
+const EMPTY_CONVERSATION: ConversationState = { sessionId: null, messages: [], ready: false, sending: false };
 
 /** Flatten Markdown to plain text so TTS doesn't read syntax characters aloud. */
 function toPlain(md: string): string {
@@ -36,37 +35,38 @@ function toPlain(md: string): string {
 
 export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const { theme, styles } = useThemeStyles(makeStyles);
-  const { config, configured } = useServer();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const { config, configured, ready, chatScope } = useServer();
+  const [snapshot, setSnapshot] = useState({ scope: '', state: EMPTY_CONVERSATION });
+  const conversation = useRef<{ scope: string; chat: Conversation } | null>(null);
+  const state = snapshot.scope === chatScope ? snapshot.state : EMPTY_CONVERSATION;
+  const { messages, sending } = state;
   const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
   const [agent, setAgent] = useState(DEFAULT_PREFS.agent);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
-  const cancelRef = useRef<(() => void) | null>(null);
-
-  // Restore persisted thread + agent preference once.
+  // A connection owns its controller. Cleanup revokes old callbacks before a new hub hydrates.
   useEffect(() => {
-    loadHistory().then((h) => h.length && setMessages(h));
-    loadPrefs().then((p) => setAgent(p.agent));
-  }, []);
+    if (!ready) return;
+    const chat = new Conversation(config, chatScope, next => setSnapshot({ scope: chatScope, state: next }));
+    conversation.current = { scope: chatScope, chat };
+    setSnapshot({ scope: chatScope, state: chat.state });
+    setSessionsOpen(false);
+    setSpeakingId(null);
+    void chat.hydrate();
+    return () => {
+      chat.dispose();
+      if (conversation.current?.chat === chat) conversation.current = null;
+      stopSpeaking();
+    };
+  }, [ready, config, chatScope]);
 
-  // Persist the thread whenever it settles (never mid-stream).
-  useEffect(() => {
-    if (!sending) saveHistory(messages);
-  }, [messages, sending]);
-
-  // Stop any audio when leaving the screen.
-  useEffect(() => () => stopSpeaking(), []);
+  useEffect(() => { void loadPrefs().then(p => setAgent(p.agent)); }, []);
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
-
-  const patch = useCallback((id: string, updater: (m: ChatMessage) => ChatMessage) => {
-    setMessages((prev) => prev.map((m) => (m.id === id ? updater(m) : m)));
-  }, []);
+  useEffect(scrollToEnd, [messages, scrollToEnd]);
 
   const changeAgent = useCallback((id: string) => {
     setAgent(id);
@@ -74,54 +74,21 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   }, []);
 
   const send = useCallback(() => {
-    const text = input.trim();
-    if (!text || sending || !configured) return;
-
-    const userMsg: ChatMessage = { id: nextId(), role: 'user', text };
-    const botId = nextId();
-    const botMsg: ChatMessage = { id: botId, role: 'assistant', text: '', pending: true };
-    setMessages((prev) => [...prev, userMsg, botMsg]);
-    setInput('');
-    setSending(true);
-    scrollToEnd();
-
-    cancelRef.current = streamChat(config, text, agent, {
-      // remember which agent ACTUALLY answered, so an explicit save attributes
-      // the artifact to the real responder (not just the selected agent)
-      onStart: (a) => patch(botId, (m) => ({ ...m, agent: a || agent })),
-      onToken: (t) => {
-        patch(botId, (m) => ({ ...m, text: m.text + t, pending: true }));
-        scrollToEnd();
-      },
-      onDone: (full) => {
-        patch(botId, (m) => ({ ...m, text: full || m.text, pending: false }));
-        setSending(false);
-        cancelRef.current = null;
-        scrollToEnd();
-      },
-      onError: (err) => {
-        // an empty bubble becomes an error placeholder (never saveable);
-        // partial streamed text stays as a real (kept) reply
-        patch(botId, (m) => ({ ...m, text: m.text || `⚠ ${err}`, pending: false, error: !m.text }));
-        setSending(false);
-        cancelRef.current = null;
-      },
-    });
-  }, [agent, config, configured, input, patch, scrollToEnd, sending]);
+    if (!configured || conversation.current?.scope !== chatScope) return;
+    if (conversation.current.chat.send(input, agent)) setInput('');
+  }, [agent, configured, input, chatScope]);
 
   const stop = useCallback(() => {
-    cancelRef.current?.();
-    cancelRef.current = null;
-    setSending(false);
-  }, []);
+    if (conversation.current?.scope === chatScope) conversation.current.chat.stop();
+  }, [chatScope]);
 
   const newChat = useCallback(() => {
-    stop();
+    if (!configured || conversation.current?.scope !== chatScope) return;
     stopSpeaking();
     setSpeakingId(null);
-    setMessages([]);
-    clearHistory();
-  }, [stop]);
+    // Only a successful governed /new response changes the transcript and session.
+    conversation.current.chat.send('/new', agent);
+  }, [agent, configured, chatScope]);
 
   const handleSpeak = useCallback(
     (m: ChatMessage) => {
@@ -156,19 +123,12 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     [agent, config],
   );
 
-  const onResumed = useCallback(
-    (_sid: string, turns: HistoryTurn[]) => {
-      stop();
-      const msgs: ChatMessage[] = turns.map((t) => ({
-        id: nextId(),
-        role: t.role === 'user' ? 'user' : 'assistant',
-        text: t.content,
-      }));
-      setMessages(msgs);
-      scrollToEnd();
-    },
-    [scrollToEnd, stop],
-  );
+  const onResumed = useCallback((sid: string, turns: HistoryTurn[]) => {
+    if (conversation.current?.scope !== chatScope) return;
+    stopSpeaking();
+    setSpeakingId(null);
+    conversation.current.chat.resume(sid, turns);
+  }, [chatScope]);
 
   if (!configured) {
     return (
@@ -194,8 +154,8 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
           <Pressable style={styles.toolBtn} onPress={() => setSessionsOpen(true)} hitSlop={6}>
             <Text style={styles.toolBtnText}>History</Text>
           </Pressable>
-          <Pressable style={styles.toolBtn} onPress={newChat} hitSlop={6} disabled={!messages.length}>
-            <Text style={[styles.toolBtnText, !messages.length && styles.toolBtnDisabled]}>New</Text>
+          <Pressable style={styles.toolBtn} onPress={newChat} hitSlop={6} disabled={!messages.length || sending || !state.ready}>
+            <Text style={[styles.toolBtnText, (!messages.length || sending || !state.ready) && styles.toolBtnDisabled]}>New</Text>
           </Pressable>
         </View>
       </View>
@@ -223,10 +183,10 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
           style={styles.input}
           value={input}
           onChangeText={setInput}
-          placeholder="Message Jarvis…"
+          placeholder={state.ready ? 'Message Jarvis…' : 'Restoring conversation…'}
           placeholderTextColor={theme.textDim}
           multiline
-          editable={!sending}
+          editable={!sending && state.ready}
           onSubmitEditing={send}
           returnKeyType="send"
         />
@@ -236,9 +196,9 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
           </Pressable>
         ) : (
           <Pressable
-            style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
+            style={[styles.sendBtn, (!input.trim() || !state.ready) && styles.sendBtnDisabled]}
             onPress={send}
-            disabled={!input.trim()}
+            disabled={!input.trim() || !state.ready}
           >
             <Text style={styles.sendText}>Send</Text>
           </Pressable>

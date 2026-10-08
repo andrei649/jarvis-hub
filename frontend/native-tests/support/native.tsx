@@ -9,7 +9,9 @@ export const StyleSheet = { create: (styles: unknown) => styles, flatten: (style
 export const Linking = { openURL: async () => {} };
 const host = (tag: string) => React.forwardRef<any, any>(({ children, style, onPress, onChangeText, testID, accessibilityLabel, ...rest }, ref) => {
   const flat = StyleSheet.flatten(style);
-  const props: any = { ref, 'data-testid': testID, 'aria-label': accessibilityLabel, 'data-native-style': JSON.stringify(flat), onClick: onPress };
+  // Native press responders own a nested press; DOM clicks otherwise also dismiss modal backdrops.
+  const props: any = { ref, 'data-testid': testID, 'aria-label': accessibilityLabel, 'data-native-style': JSON.stringify(flat),
+    onClick: onPress ? (event: React.MouseEvent) => { event.stopPropagation(); onPress(event); } : undefined };
   for (const key of ['value', 'placeholder', 'disabled']) if (key in rest) props[key] = rest[key];
   if (onChangeText) props.onChange = (event: any) => onChangeText(event.target.value);
   return React.createElement(tag, props, tag === 'input' ? undefined : children);

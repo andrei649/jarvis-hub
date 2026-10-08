@@ -2362,6 +2362,7 @@ export type HistoryTurn = {
 export async function fetchSessions(config: ServerConfig): Promise<SessionInfo[]> {
   const res = await request<{ sessions: SessionInfo[] }>(config, 'GET', '/sessions', undefined, {
     retries: 2,
+    admin: true,
   });
   return res.sessions ?? [];
 }
@@ -2370,7 +2371,7 @@ export async function resumeSession(
   config: ServerConfig,
   sessionId: string,
 ): Promise<{ ok: boolean; session: string; turns: HistoryTurn[] }> {
-  return request(config, 'POST', '/sessions/resume', { session_id: sessionId });
+  return request(config, 'POST', '/sessions/resume', { session_id: sessionId }, { admin: true });
 }
 
 // ── TTS ───────────────────────────────────────────────────────────
@@ -2432,12 +2433,17 @@ function blobToBase64(blob: Blob): Promise<string> {
 export type StreamHandlers = {
   onStart?: (agent: string) => void;
   onToken: (text: string) => void;
-  onDone: (full: string) => void;
+  onDone: (full: string, sessionId?: string | null) => void;
   onError: (message: string) => void;
 };
 
 /** Abort the stream if no data arrives for this long. */
 const STREAM_IDLE_TIMEOUT_MS = 45000;
+const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
+function validSessionId(value: unknown): value is string {
+  return typeof value === 'string' && SESSION_ID_PATTERN.test(value);
+}
 
 /**
  * POST /chat/stream and surface server-sent events incrementally.
@@ -2449,10 +2455,15 @@ export function streamChat(
   message: string,
   agent: string,
   handlers: StreamHandlers,
+  sessionId?: string | null,
 ): () => void {
   const base = normalizeBaseUrl(config.baseUrl);
   if (!base) {
     handlers.onError('No server URL configured');
+    return () => {};
+  }
+  if (sessionId != null && !validSessionId(sessionId)) {
+    handlers.onError('Invalid session ID');
     return () => {};
   }
 
@@ -2474,24 +2485,30 @@ export function streamChat(
     fn();
   };
   const armIdle = () => {
+    if (settled) return;
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-      try {
-        xhr.abort();
-      } catch {
-        // ignore
-      }
-      finish(() => handlers.onError('Stream stalled — no response from the hub'));
+      finish(() => {
+        try {
+          xhr.abort();
+        } catch {
+          // ignore
+        }
+        handlers.onError('Stream stalled — no response from the hub');
+      });
     }, STREAM_IDLE_TIMEOUT_MS);
   };
 
   const handleEvents = (chunk: string) => {
+    if (settled) return;
     for (const evt of decoder.push(chunk)) {
+      if (settled) break;
       if (evt.type === 'start') handlers.onStart?.(evt.agent || agent);
       else if (evt.type === 'token') handlers.onToken(evt.text || '');
       else if (evt.type === 'end') {
         finished = true;
-        finish(() => handlers.onDone(evt.text || ''));
+        const endSessionId = evt.session_id === null ? null : validSessionId(evt.session_id) ? evt.session_id : undefined;
+        finish(() => handlers.onDone(evt.text || '', endSessionId));
       }
     }
   };
@@ -2500,8 +2517,10 @@ export function streamChat(
   xhr.setRequestHeader('Content-Type', 'application/json');
   xhr.setRequestHeader('Accept', 'text/event-stream');
   if (config.token.trim()) xhr.setRequestHeader('X-User-Token', config.token.trim());
+  if (config.adminToken.trim()) xhr.setRequestHeader('X-Admin-Token', config.adminToken.trim());
 
   xhr.onreadystatechange = () => {
+    if (settled) return;
     if (xhr.readyState >= 3 && xhr.status === 200) {
       armIdle();
       const text = xhr.responseText;
@@ -2521,16 +2540,18 @@ export function streamChat(
       } else if (!finished) {
         // Stream closed without an explicit end frame — flush any tail.
         handleEvents('\n');
-        finish(() => handlers.onDone(''));
+        finish(() => handlers.onDone('', undefined));
       }
     }
   };
   xhr.onerror = () => finish(() => handlers.onError(`Could not reach ${base} — check the URL and network`));
 
   armIdle();
-  xhr.send(JSON.stringify({ message, agent }));
+  xhr.send(JSON.stringify({ message, agent, ...(validSessionId(sessionId) ? { session_id: sessionId } : {}) }));
 
   return () => {
+    if (settled) return;
+    settled = true;
     cleanup();
     try {
       xhr.abort();

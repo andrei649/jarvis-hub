@@ -5,6 +5,42 @@ import type { ChatMessage } from '../chat/types';
 
 const KEY = 'jarvis.chat.history.v1';
 const MAX_MESSAGES = 200;
+const CONVERSATION_KEY = 'jarvis.chat.conversation.v2';
+let writes: Promise<void> = Promise.resolve();
+
+export type SavedConversation = { sessionId: string | null; messages: ChatMessage[] };
+
+function settledMessages(value: unknown): ChatMessage[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((m): m is ChatMessage => m && typeof m === 'object'
+    && typeof m.id === 'string' && typeof m.text === 'string'
+    && (m.role === 'user' || m.role === 'assistant') && !m.pending).slice(-MAX_MESSAGES);
+}
+
+/** A connection's opaque scope binds history without copying its credentials. */
+export async function loadConversation(scope: string): Promise<SavedConversation> {
+  try {
+    await writes;
+    const raw = await AsyncStorage.getItem(CONVERSATION_KEY);
+    const record = raw ? JSON.parse(raw) : null;
+    if (scope && record?.version === 2 && record.scope === scope
+      && (record.sessionId === null || (typeof record.sessionId === 'string'
+        && /^[A-Za-z0-9_-]{1,128}$/.test(record.sessionId)))) {
+      return { sessionId: record.sessionId, messages: settledMessages(record.messages) };
+    }
+  } catch { /* Unavailable/corrupt storage never chooses another session. */ }
+  // The legacy unscoped cache is retained, but never attached to a different hub.
+  return { sessionId: null, messages: [] };
+}
+
+/** Store the ID and transcript atomically, serializing writes in selection order. */
+export function saveConversation(scope: string, conversation: SavedConversation): Promise<void> {
+  if (!scope) return Promise.resolve();
+  const snapshot = JSON.stringify({ version: 2, scope, sessionId: conversation.sessionId,
+    messages: settledMessages(conversation.messages) });
+  writes = writes.catch(() => {}).then(() => AsyncStorage.setItem(CONVERSATION_KEY, snapshot)).catch(() => {});
+  return writes;
+}
 
 export async function loadHistory(): Promise<ChatMessage[]> {
   try {

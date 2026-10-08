@@ -1,5 +1,5 @@
 import { Text } from './ThemedText';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { ApiError, fetchSessions, resumeSession, type HistoryTurn, type SessionInfo } from '../api/client';
 import { useServer } from '../context/ServerContext';
@@ -21,35 +21,46 @@ export function SessionsModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const epoch = useRef(0);
 
   const load = useCallback(async () => {
+    const request = ++epoch.current;
     setLoading(true);
     setError(null);
     try {
-      setSessions(await fetchSessions(config));
+      const result = await fetchSessions(config);
+      if (epoch.current === request) setSessions(result);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to load sessions');
+      if (epoch.current === request) setError(e instanceof ApiError ? e.message : 'Failed to load sessions');
     } finally {
-      setLoading(false);
+      if (epoch.current === request) setLoading(false);
     }
   }, [config]);
 
   useEffect(() => {
+    setSessions([]);
+    setBusyId(null);
     if (visible) load();
+    return () => { ++epoch.current; };
   }, [visible, load]);
 
   const resume = useCallback(
     async (id: string) => {
+      const request = ++epoch.current;
       setBusyId(id);
       setError(null);
       try {
         const res = await resumeSession(config, id);
+        if (epoch.current !== request) return;
+        if (!res.ok || res.session !== id || !Array.isArray(res.turns)) {
+          throw new ApiError('The hub did not resume the selected session');
+        }
         onResumed(res.session || id, res.turns || []);
         onClose();
       } catch (e) {
-        setError(e instanceof ApiError ? e.message : 'Failed to resume session');
+        if (epoch.current === request) setError(e instanceof ApiError ? e.message : 'Failed to resume session');
       } finally {
-        setBusyId(null);
+        if (epoch.current === request) setBusyId(null);
       }
     },
     [config, onResumed, onClose],
@@ -61,7 +72,7 @@ export function SessionsModal({
         <Pressable style={styles.sheet} onPress={() => {}}>
           <View style={styles.header}>
             <Text style={styles.title}>Resume session</Text>
-            <Pressable onPress={load} hitSlop={8}>
+            <Pressable onPress={load} hitSlop={8} disabled={!!busyId}>
               <Text style={styles.refresh}>↻</Text>
             </Pressable>
           </View>
@@ -74,7 +85,7 @@ export function SessionsModal({
             keyExtractor={(s) => s.id}
             style={styles.list}
             renderItem={({ item }) => (
-              <Pressable style={styles.option} onPress={() => resume(item.id)} disabled={!!busyId}>
+              <Pressable style={styles.option} onPress={() => resume(item.id)} disabled={!!busyId || loading}>
                 <View style={styles.optInfo}>
                   <Text style={styles.optTitle} numberOfLines={1}>
                     {item.title?.trim() || item.summary?.trim() || item.id}
