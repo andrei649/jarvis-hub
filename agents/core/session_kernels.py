@@ -60,6 +60,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .action_origin import current_action_origin
+from .code_context import CHILD_CONTEXT_SOURCE
 from .environments.output_limits import MAX_OUTPUT_BYTES, render_capped
 from .security.taint import is_untrusted_source
 from .session_kernel_mailbox import SessionRPCStore
@@ -272,13 +273,42 @@ class KernelTeardownUnconfirmed(KernelRefused):
         self.cancelled = cancelled
 
 
-WORKER_SOURCE = r'''
+WORKER_SOURCE = CHILD_CONTEXT_SOURCE + r'''
 import contextlib, io, json, os, sys, time, traceback
 
 # The reply token arrives over stdin as the first line, never in the environment: an
 # env var is readable from `docker inspect` and from /proc/1/environ, and this one is
 # correlation marker for framed output. It is not a boundary against worker introspection.
-_INIT = json.loads(sys.stdin.readline() or "{}")
+if len(sys.argv) > 1:
+    with os.fdopen(int(sys.argv[1]), encoding="utf-8") as config_handle:
+        _INIT = json.load(config_handle)
+else:
+    _INIT = json.loads(sys.stdin.readline() or "{}")
+_CONTEXT = {}
+if _INIT.get("execution_context"):
+    context = _INIT["execution_context"]
+    _CONTEXT = resolve_child_context({**context, "env": {
+        **context.get("env", {}), **context.get("interpreter_env", {})}})
+    child_env = dict(_INIT["base_env"])
+    child_env.update(context.get("env", {}))
+    if not _INIT.get("context_started") and _CONTEXT["python"] != sys.executable:
+        # A private, unlinked child-side file carries startup values across exec.
+        # Neither argv nor a visible path contains environment values.
+        import tempfile
+        _INIT["context_started"] = True
+        with tempfile.TemporaryFile(mode="w+b") as config_handle:
+            config_handle.write(json.dumps(_INIT).encode("utf-8"))
+            config_handle.flush()
+            config_handle.seek(0)
+            os.set_inheritable(config_handle.fileno(), True)
+            os.execve(_CONTEXT["python"], [_CONTEXT["python"], "-c",
+                      _INIT["worker_source"], str(config_handle.fileno())], child_env)
+    os.environ.clear()
+    os.environ.update(child_env)
+    os.chdir(_CONTEXT["cwd"])
+    sys.path.insert(0, _CONTEXT["cwd"])
+    _INIT.pop("execution_context", None)
+    _INIT.pop("worker_source", None)
 REPLY = str(_INIT.get("token") or "")
 CAP = int(_INIT.get("max_output") or 50000)
 RPC_TIMEOUT = float(_INIT.get("rpc_timeout") or 30)
@@ -372,7 +402,7 @@ def run(source):
     return {"failed": failed}
 
 
-reply({"ready": True})
+reply({"ready": True, "execution_context": _CONTEXT})
 
 for line in sys.stdin:
     line = line.strip()
@@ -409,6 +439,7 @@ class KernelKey:
     principal: str
     session_id: str
     data_scope: str
+    context_id: str = ""
 
     @classmethod
     def from_invocation(cls, invocation) -> KernelKey:
@@ -424,6 +455,8 @@ class KernelKey:
     def token(self) -> str:
         """A stable, opaque handle for logs and container names. Not a secret."""
         raw = "\x1f".join((self.agent, self.principal, self.session_id, self.data_scope))
+        if self.context_id:
+            raw += "\x1f" + self.context_id
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
     def as_dict(self) -> dict:
@@ -455,6 +488,7 @@ class CellOutcome:
     #: the caller declares it in its result, so the loop fences the output and raises
     #: the turn's taint whether the cell succeeded or not.
     tainted: bool = False
+    execution_context: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
@@ -463,6 +497,7 @@ class CellOutcome:
             "continuity": self.continuity,
             "kernel_token": self.kernel_token, "cells_run": self.cells_run,
             "tool_calls": self.tool_calls,
+            **({"execution_context": self.execution_context} if self.execution_context else {}),
             **({"reason": self.reason} if self.reason else {}),
         }
 
@@ -519,11 +554,13 @@ class PipeKernelBackend:
         except Exception:
             return False
 
-    async def start(self, key: KernelKey, *, rpc_dir: str = "", child_rpc_dir: str = ""):
+    async def start(self, key: KernelKey, *, rpc_dir: str = "", child_rpc_dir: str = "",
+                    execution_context=None):
         if not self.available():
             raise KernelRefused(KERNEL_UNAVAILABLE)
         token = secrets.token_hex(16)
         argv = list(self._argv(key, token, rpc_dir))
+        config = self._startup_config(token, execution_context, rpc_dir, argv)
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv,
@@ -535,25 +572,62 @@ class PipeKernelBackend:
         except (OSError, ValueError):
             logger.warning("session kernel failed to start", exc_info=True)
             raise KernelRefused(KERNEL_UNAVAILABLE) from None
+        handle = _Handle(process=process, token=token, child_rpc_dir=child_rpc_dir)
         try:
-            process.stdin.write((json.dumps({
-                "token": token, "max_output": self._max_output_bytes,
-                "rpc_timeout": self._rpc_timeout,
-            }) + "\n").encode("utf-8"))
+            self._validate_context(execution_context)
+            process.stdin.write((json.dumps(config) + "\n").encode("utf-8"))
             await process.stdin.drain()
         except (BrokenPipeError, ConnectionResetError, OSError):
             with contextlib.suppress(Exception):
                 process.kill()
+            await process.wait()
             raise KernelRefused(KERNEL_UNAVAILABLE) from None
-        handle = _Handle(process=process, token=token, child_rpc_dir=child_rpc_dir)
+        except KernelRefused:
+            await self.stop(handle)
+            raise
         try:
-            ready = await asyncio.wait_for(self._read_reply(process, token), 10)
+            ready = await asyncio.wait_for(self._read_reply(process, token),
+                                          30 if execution_context is not None else 10)
             if not ready.get("ready"):
                 raise KernelRefused(KERNEL_UNAVAILABLE)
+            handle.execution_context = ready.get("execution_context") or {}
         except BaseException:
             await self.stop(handle)
             raise
         return handle
+
+    @staticmethod
+    def _validate_context(context):
+        checker = context.get("check_current") if context is not None else None
+        if checker is not None:
+            try:
+                checker()
+            except Exception as refusal:
+                raise KernelRefused(getattr(refusal, "reason", CELL_REFUSED)) from None
+
+    def _startup_config(self, token, context, rpc_dir, argv, *, source=WORKER_SOURCE):
+        config = {"token": token, "max_output": self._max_output_bytes,
+                  "rpc_timeout": self._rpc_timeout}
+        if context is None:
+            return config
+        container = self._child_root is not None
+        project = context.get("project_dir")
+        if project and container:
+            argv[argv.index("-i") + 1:argv.index("-i") + 1] = [
+                "-v", f"{project}:/nerva-project:ro"]
+        # The isolated container's existing private tmpfs, not a host temp path.
+        staging = "/tmp" if container else rpc_dir  # nosec B108 # noqa: S108
+        payload = {"mode": context["mode"], "env": context["env"],
+                   "interpreter_env": context.get("interpreter_env", {}),
+                   "staging_dir": staging,
+                   "cwd": ("/nerva-project" if container else project) if project else staging}
+        if os.name == "nt" and not container:
+            from .code_context import resolve_child_context
+
+            selected = resolve_child_context({**payload, "env": payload["interpreter_env"]})
+            argv[0] = selected["python"]
+        config.update(execution_context=payload, base_env=self._child_env(), worker_source=source)
+        return config
 
     def _child_env(self) -> dict:
         """A frozen, minimal environment. Nothing of the host's is inherited.
@@ -683,6 +757,7 @@ class _Handle:
     process: object
     token: str
     child_rpc_dir: str = ""
+    execution_context: dict = field(default_factory=dict)
 
 
 def docker_kernel_argv(image: str, *, memory_mb: int = 256, pids: int = 64):
@@ -762,7 +837,8 @@ class SessionKernelManager:
 
     async def run(self, invocation, cell: str, *,
                   authorize: Callable[[str], None] | None = None,
-                  broker=None, sinks=None) -> CellOutcome:
+                  broker=None, sinks=None, prelude: str = "", execution_context=None,
+                  context_id: str = "") -> CellOutcome:
         """Run one cell in this invocation's kernel, re-earning the right first.
 
         ``invocation`` is a *fresh* K0 binding for this cell, not the one that started
@@ -782,23 +858,31 @@ class SessionKernelManager:
         if self._expired(invocation):
             await self._drop(KernelKey.from_invocation(invocation), EXPIRED)
             return CellOutcome(ok=False, reason=AUTHORITY_EXPIRED)
-        if authorize is not None:
-            try:
-                authorize(cell)
-            except KernelRefused:
-                raise
-            except Exception as exc:
-                # The cell never reaches the interpreter: the write is below this.
-                return CellOutcome(ok=False, reason=str(getattr(exc, "reason", CELL_REFUSED)))
+        refusal = self._authorization_refusal(cell, authorize)
+        if refusal is not None:
+            return CellOutcome(ok=False, reason=refusal)
 
         key = KernelKey.from_invocation(invocation)
+        if context_id:
+            key = KernelKey(key.agent, key.principal, key.session_id, key.data_scope, context_id)
+        context_loss = ""
+        # Context revisions may contain revoked environment values. Destroy every
+        # older interpreter of this exact authority before admitting a new one.
+        for previous in list(self._records):
+            if (previous.agent, previous.principal, previous.session_id, previous.data_scope) == (
+                    key.agent, key.principal, key.session_id, key.data_scope) and previous != key:
+                record = self._records[previous]
+                async with record.lock:
+                    if not await self._drop(previous, RESET):
+                        return CellOutcome(ok=False, reason=TEARDOWN_UNCONFIRMED)
+                    context_loss = RESET
         # Acquire, lock, then re-check: a reset or a crash can land between the two,
         # and holding the *previous* record's lock while running on a new one would
         # let two cells into the same interpreter at once. On a mismatch, drop the
         # lock and try again rather than proceed on a stale record.
         for _attempt in range(3):
             try:
-                record = await self._acquire(key)
+                record = await self._acquire(key, execution_context=execution_context, lost=context_loss)
             except KernelRefused as refusal:
                 # A backend that cannot start one, or a pool with nothing free to
                 # evict. The caller gets a named refusal: raising out of a tool
@@ -823,8 +907,33 @@ class SessionKernelManager:
                     return CellOutcome(ok=False, reason=TEARDOWN_UNCONFIRMED)
                 if self._records.get(key) is not record or not self._backend.alive(record.handle):
                     continue
-                return await self._cell(key, record, cell, broker, sinks)
+                # Revalidate the startup grant against live policy after waiting,
+                # without consuming another budget/loop entry for this cell.
+                checker = getattr(authorize, "revalidate", authorize)
+                refusal = self._authorization_refusal(cell, checker)
+                if authorize is not None and checker is None:
+                    refusal = CELL_REFUSED
+                if refusal is not None:
+                    if refusal == "code_context_changed":
+                        destroyed = await self._drop(key, RESET)
+                        return CellOutcome(ok=False, reason=refusal if destroyed else TEARDOWN_UNCONFIRMED,
+                                           state_lost=destroyed, continuity=RESET if destroyed else "")
+                    return CellOutcome(ok=False, reason=refusal)
+                # Host-generated imports do not consume the caller's code limit.
+                source = f"{prelude}\n{cell}" if prelude else cell
+                return await self._cell(key, record, source, broker, sinks)
         return CellOutcome(ok=False, reason=KERNEL_UNAVAILABLE)
+
+    @staticmethod
+    def _authorization_refusal(cell, authorize):
+        if authorize is not None:
+            try:
+                authorize(cell)
+            except KernelRefused:
+                raise
+            except Exception as exc:
+                return str(getattr(exc, "reason", CELL_REFUSED))
+        return None
 
     async def _cell(self, key: KernelKey, record: _Record, cell: str,
                     broker=None, sinks=None) -> CellOutcome:
@@ -882,6 +991,7 @@ class SessionKernelManager:
             state_lost=continuity in DESTRUCTIVE, continuity=continuity,
             kernel_token=key.token, cells_run=record.cells_run,
             tool_calls=int(payload.get("tool_calls") or 0),
+            execution_context=getattr(record.handle, "execution_context", {}),
         )
 
     def _failed_cell(self, key, reason, record):
@@ -1002,7 +1112,14 @@ class SessionKernelManager:
 
     async def reset(self, invocation) -> bool:
         """Confirm destruction; on failure retain a quarantined row for retry."""
-        return await self._drop(KernelKey.from_invocation(invocation), RESET)
+        base = KernelKey.from_invocation(invocation)
+        keys = [key for key in self._records if (
+            key.agent, key.principal, key.session_id, key.data_scope) == (
+                base.agent, base.principal, base.session_id, base.data_scope)]
+        if not keys:
+            return await self._drop(base, RESET)
+        results = [await self._drop(key, RESET) for key in keys]
+        return all(results)
 
     async def close_session(self, session_id: str) -> int:
         keys = [key for key in list(self._records) if key.session_id == str(session_id)]
@@ -1058,7 +1175,7 @@ class SessionKernelManager:
         except Exception:
             return True
 
-    async def _acquire(self, key: KernelKey, *, lost: str = "") -> _Record:
+    async def _acquire(self, key: KernelKey, *, lost: str = "", execution_context=None) -> _Record:
         async with self._guard:
             await self._reap()
             record = self._records.get(key)
@@ -1078,7 +1195,24 @@ class SessionKernelManager:
                 await self._evict()
             mount = self._mount(key)
             try:
-                handle = await self._backend.start(key, **mount)
+                startup = {}
+                if execution_context is not None:
+                    context = dict(execution_context)
+                    PipeKernelBackend._validate_context(context)
+                    if not mount:
+                        raise KernelRefused(KERNEL_UNAVAILABLE)
+                    project = context.pop("project_root", "")
+                    redact = context.pop("redact", None)
+                    if project and context["mode"] == "project":
+                        from .code_context import ProjectSnapshotError, prepare_project
+                        destination = mount["rpc_dir"] + ".project"
+                        try:
+                            prepare_project(project, destination, redact=redact)
+                        except ProjectSnapshotError:
+                            raise KernelRefused("code_project_unavailable") from None
+                        context["project_dir"] = destination
+                    startup["execution_context"] = context
+                handle = await self._backend.start(key, **mount, **startup)
             except KernelTeardownUnconfirmed as refusal:
                 now = self._clock()
                 # The quarantined row owns the directory, so its teardown removes it
@@ -1140,6 +1274,7 @@ class SessionKernelManager:
         host = (mount or {}).get("rpc_dir") if isinstance(mount, dict) else mount
         if host:
             shutil.rmtree(host, ignore_errors=True)
+            shutil.rmtree(str(host) + ".project", ignore_errors=True)
 
     def _clear_stale_mounts(self) -> None:
         """Remove what the interpreters of a process that is gone left under the root.

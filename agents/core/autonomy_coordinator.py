@@ -1110,6 +1110,16 @@ class AutonomyCoordinator:
         # them itself so the authority it binds (K0) comes from the host, never from an
         # argument.
         from .code_tools import register_code_tools
+        from .code_env import CodeEnvRegistry
+
+        code_environment = CodeEnvRegistry()
+
+        def _redact_code_project(text):
+            redact = getattr(getattr(self._orch, "secret_broker", None), "redact", None)
+            if not callable(redact):
+                from .code_context import ProjectSnapshotError
+                raise ProjectSnapshotError("redactor_unavailable")
+            return redact(text)
 
         kernels = self._session_kernels(_get_setting)
         register_code_tools(
@@ -1127,6 +1137,8 @@ class AutonomyCoordinator:
             # moving tag is a different program tomorrow.
             kernels=kernels,
             authorizer=action_kernel,
+            environment_registry=code_environment,
+            project_redactor=_redact_code_project,
             # H305/H595 — a run's stdout over the ceiling is spooled to disk as it
             # arrives and the result names the file, instead of the bytes being
             # dropped. Same store and same retention as a spilled tool result.
@@ -1191,6 +1203,8 @@ class AutonomyCoordinator:
             session_id=lambda: str(getattr(self._orch, "session_id", "") or ""),
             posture=lambda: tool_profile.posture().key,
             settings=_get_setting,
+            environment_registry=code_environment,
+            principal=_turn_principal,
         )
         # H309 — the model points at the owner's HUD (a tip, or a short tour) through
         # the canvas; ungated, named anchors only, marked when an untrusted turn wrote it.
@@ -1284,7 +1298,10 @@ class AutonomyCoordinator:
         is off: `code_tools` then stays on the K1 one-shot path and says so, rather
         than advertising persistence it cannot keep.
         """
-        if get_setting(CODE_SESSIONS_SETTING, False) is not True:
+        from .code_tools import SETTING
+
+        if (get_setting(SETTING, False) is not True
+                or get_setting(CODE_SESSIONS_SETTING, True) is not True):
             return None
         image = str(get_setting("llm.execute_code_image", "") or "").strip()
         if "@sha256:" not in image:

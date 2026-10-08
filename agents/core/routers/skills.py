@@ -252,7 +252,7 @@ def _kernel_mode(orch, get_setting) -> tuple[object, str, str]:
         return None, ONE_SHOT_MODE, CODE_OFF
     if get_setting(SETTING, False) is not True:
         return None, ONE_SHOT_MODE, CODE_OFF
-    if get_setting(SESSION_SETTING, False) is not True:
+    if get_setting(SESSION_SETTING, True) is not True:
         return None, ONE_SHOT_MODE, SESSIONS_OFF
     kernels = getattr(orch, "session_kernels", None)
     if kernels is None:

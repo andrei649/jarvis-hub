@@ -39,7 +39,11 @@ chose to print, so the tool loop fences it as DATA and raises the turn's taint.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import logging
+import os
 from collections.abc import Callable, Mapping, Sequence
 
 from .action_origin import current_action_origin
@@ -106,6 +110,8 @@ DESCRIPTION = (
     "Run one Python script in the isolated sandbox. Inside it, "
     "jarvis_tool_call(name, args) reaches the same tools this turn was offered, so "
     "many calls can be filtered and combined without returning here between them."
+    " Import offered tools with from jarvis_tools import tool_name; functions accept"
+    " the tool schema's arguments and return the same RPC envelope."
 )
 SESSION_DESCRIPTION = DESCRIPTION + (
     " Variables, imports and loaded data persist between calls in this session; the "
@@ -293,6 +299,9 @@ class CodeExecutionTool:
         authorizer: Callable[..., object] | None = None,
         result_store=None,
         shared_session: Callable[[], bool] | None = None,
+        environment_registry=None,
+        environment_source=None,
+        project_redactor=None,
     ) -> None:
         self._server = server
         self._sandbox = sandbox
@@ -309,6 +318,59 @@ class CodeExecutionTool:
         # H305/H595. Absent, and an over-long stream is truncated as before; the
         # feature adds a complete copy, it never becomes a dependency.
         self._result_store = result_store
+        self._environment_registry = environment_registry
+        self._environment_source = os.environ if environment_source is None else environment_source
+        self._project_redactor = project_redactor
+        self._context_key = os.urandom(32)
+
+    def _execution_context(self, invocation):
+        from .code_context import normalize_mode
+        from .code_env import prepare_code_env
+
+        owner = invocation.principal == "owner"
+        mode = normalize_mode(self._settings("llm.execute_code_mode", None))
+        root = self._settings("llm.execute_code_project_root", "") if owner else ""
+        if not isinstance(root, str):
+            raise ValueError("invalid_project_root")
+        env = {}
+        interpreter_env = {}
+        if owner and self._environment_registry is not None:
+            names = self._environment_registry.resolve_names(
+                agent=invocation.agent, principal=invocation.principal,
+                session_id=invocation.session_id,
+                machine_allowlist=lambda: self._settings("llm.execute_code_env_passthrough", ()))
+            env = prepare_code_env(self._environment_source, allowed_names=names)
+            for name in ("VIRTUAL_ENV", "CONDA_PREFIX"):
+                value = (self._environment_source(name) if callable(self._environment_source)
+                         else self._environment_source.get(name))
+                if isinstance(value, str) and "\x00" not in value:
+                    interpreter_env[name] = value
+        explicit = mode == "strict" or bool(root) or bool(env) or bool(interpreter_env)
+        if not explicit:
+            return None, ""
+        context = {"mode": mode, "project_root": root, "env": env,
+                   "interpreter_env": interpreter_env}
+        revision = hmac.new(self._context_key, json.dumps(context, sort_keys=True).encode(),
+                            hashlib.sha256).hexdigest()
+        context["redact"] = self._project_redactor
+        return context, revision
+
+    def _revalidate_context(self, invocation, revision):
+        self._authorize_cell(invocation, revalidate=True)
+        try:
+            _current, current_revision = self._execution_context(invocation)
+        except (ValueError, TypeError):
+            raise ToolRPCValidationError("code_context_changed") from None
+        if current_revision != revision:
+            raise ToolRPCValidationError("code_context_changed")
+
+    def _context_requires_grant(self, invocation):
+        from .code_context import normalize_mode
+
+        mode = normalize_mode(self._settings("llm.execute_code_mode", None))
+        return mode == "strict" or (invocation.principal == "owner" and (
+            self._environment_registry is not None
+            or bool(self._settings("llm.execute_code_project_root", ""))))
 
     # ── authority ────────────────────────────────────────────────────────────
 
@@ -366,11 +428,11 @@ class CodeExecutionTool:
     # ── the arguments ────────────────────────────────────────────────────────
 
     def sessions_on(self) -> bool:
-        """K2 is a second switch, not a consequence of the first."""
+        """Use the resident manager by default, with an explicit owner opt-out."""
         if self._kernels is None:
             return False
         try:
-            return self._settings(SESSION_SETTING, False) is True
+            return self._settings(SESSION_SETTING, True) is True
         except Exception:
             logger.warning("session-kernel setting unreadable; leaving it off",
                            exc_info=True)
@@ -434,9 +496,24 @@ class CodeExecutionTool:
         if self.sessions_on():
             return await self._session_cell(
                 invocation, code, reset=bool(args.get("reset")), sandbox=sandbox)
-        return await self._oneshot(invocation, code, sandbox, max_calls=max_calls)
+        try:
+            if self._context_requires_grant(invocation):
+                self._authorize_cell(invocation)
+            context, revision = self._execution_context(invocation)
+            if context is not None:
+                context["check_current"] = lambda: self._revalidate_context(invocation, revision)
+        except ToolRPCValidationError as refusal:
+            return {"ok": False, "reason": refusal.reason}
+        except (ValueError, TypeError):
+            return {"ok": False, "reason": "code_context_invalid"}
+        try:
+            return await self._oneshot(invocation, code, sandbox, max_calls=max_calls,
+                                       execution_context=context)
+        except ToolRPCValidationError as refusal:
+            return {"ok": False, "reason": refusal.reason}
 
-    async def _oneshot(self, invocation, code, sandbox, *, max_calls, before_execute=None):
+    async def _oneshot(self, invocation, code, sandbox, *, max_calls, before_execute=None,
+                       execution_context=None):
         from .tool_rpc_runtime import ToolRPCSandboxRuntime
         # Opened before the run because that is the only moment it can be: the
         # sandbox's reader discards the middle of a long stream as it goes, so a
@@ -447,6 +524,7 @@ class CodeExecutionTool:
             run = await ToolRPCSandboxRuntime(
                 self._server, sandbox, invocation=invocation, max_tool_calls=max_calls,
             ).run_python(code, sinks=sinks,
+                         **({"execution_context": execution_context} if execution_context is not None else {}),
                          **({"before_execute": before_execute} if before_execute else {}))
         except BaseException:
             self._abandon_stream_spills(out_spill, err_spill)
@@ -472,6 +550,10 @@ class CodeExecutionTool:
             "max_tool_calls": max_calls,
             "timed_out": run.timed_out,
             "offered_tools": sorted(invocation.offered),
+            **({"execution_context": run.result.execution_context}
+               if getattr(run.result, "execution_context", None) else {}),
+            **({"reason": run.result.refusal_reason}
+               if getattr(run.result, "refusal_reason", "") else {}),
             **_run_taint(stdout.text, stderr.text,
                          read_untrusted=is_untrusted_source(current_action_origin())),
         }
@@ -519,16 +601,43 @@ class CodeExecutionTool:
         cell here rather than at whatever it would have done next.
         """
         from .tool_rpc_runtime import ToolCallBroker
+        from .tool_rpc_stubs import tool_import_source
+
+        granted = False
+
+        def authorize_cell(_cell):
+            nonlocal granted
+            self._authorize_cell(invocation, revalidate=granted)
+            granted = True
+
+        try:
+            authorize_cell(code)
+            execution_context, revision = self._execution_context(invocation)
+        except ToolRPCValidationError as refusal:
+            return {"ok": False, "reason": refusal.reason, "session": True}
+        except (ValueError, TypeError):
+            return {"ok": False, "reason": "code_context_invalid", "session": True}
+
+        authorize_cell.revalidate = lambda _cell: self._revalidate_context(invocation, revision)
+        if execution_context is not None:
+            execution_context["check_current"] = lambda: authorize_cell.revalidate(code)
 
         if reset:
+            try:
+                authorize_cell(code)
+            except ToolRPCValidationError as refusal:
+                return {"ok": False, "reason": refusal.reason, "session": True}
             await self._kernels.reset(invocation)
         out_spill, err_spill, sinks = self._open_stream_spills()
         try:
             outcome = await self._kernels.run(
                 invocation, code,
-                authorize=lambda cell: self._authorize_cell(invocation),
+                authorize=authorize_cell,
                 broker=ToolCallBroker(self._server, invocation),
                 sinks=sinks,
+                prelude=tool_import_source(self._server.tools(), invocation.offered),
+                **({"execution_context": execution_context, "context_id": revision}
+                   if execution_context is not None or revision else {}),
             )
         except BaseException:
             self._abandon_stream_spills(out_spill, err_spill)
@@ -539,7 +648,8 @@ class CodeExecutionTool:
             try:
                 result = await self._oneshot(invocation, code, sandbox, max_calls=max(0,
                     _int_setting(self._settings, MAX_TOOL_CALLS_SETTING, DEFAULT_MAX_TOOL_CALLS)),
-                    before_execute=lambda: self._authorize_fallback(invocation))
+                    execution_context=execution_context,
+                    before_execute=lambda: self._authorize_fallback(invocation, revalidate=granted))
             except (KernelRefused, ToolRPCValidationError) as refusal:
                 return {"ok": False, "reason": refusal.reason, "session": False,
                         "state_lost": outcome.state_lost, "continuity": outcome.continuity}
@@ -566,17 +676,17 @@ class CodeExecutionTool:
             **_run_taint(stdout.text, stderr.text, read_untrusted=outcome.tainted),
         }
 
-    def _authorize_fallback(self, invocation):
+    def _authorize_fallback(self, invocation, *, revalidate=False):
         from .session_kernels import KernelRefused
         reason = self._kernels.dispatch_refusal(invocation)
         if reason:
             raise KernelRefused(reason)
-        self._authorize_cell(invocation)
+        self._authorize_cell(invocation, revalidate=revalidate)
         reason = self._kernels.dispatch_refusal(invocation)
         if reason:
             raise KernelRefused(reason)
 
-    def _authorize_cell(self, invocation) -> None:
+    def _authorize_cell(self, invocation, *, revalidate=False) -> None:
         """Cross the Action Kernel for this cell, or refuse it.
 
         A resident interpreter authorized once and then fed arbitrary later code is a
@@ -584,11 +694,13 @@ class CodeExecutionTool:
         effect, the same boundary the one-shot path already sits behind.
         """
         if self._authorizer is None:
-            return
+            raise ToolRPCValidationError(SESSION_DENIED)
         from .kernel import Action, Verdict
 
         try:
-            decision = self._authorizer(Action(
+            checker = (getattr(self._authorizer, "revalidate", self._authorizer)
+                       if revalidate else self._authorizer)
+            decision = checker(Action(
                 kind="tool.rpc", agent=invocation.agent,
                 title="Run one code cell in the session kernel",
                 payload={"tool": TOOL, "target": TOOL, "session": invocation.session_id},
@@ -597,7 +709,7 @@ class CodeExecutionTool:
         except Exception:
             logger.warning("session cell authorization failed", exc_info=True)
             raise ToolRPCValidationError(SESSION_DENIED) from None
-        if getattr(decision, "verdict", None) is Verdict.DENY:
+        if getattr(decision, "verdict", None) is not Verdict.GRANT:
             raise ToolRPCValidationError(SESSION_DENIED)
 
 
@@ -624,6 +736,9 @@ def register_code_tools(
     authorizer: Callable[..., object] | None = None,
     result_store=None,
     shared_session: Callable[[], bool] | None = None,
+    environment_registry=None,
+    environment_source=None,
+    project_redactor=None,
 ) -> list[str]:
     """Register ``execute_code`` when the owner has switched it on, else nothing.
 
@@ -642,6 +757,8 @@ def register_code_tools(
         server, sandbox=sandbox, settings=settings, agent_patterns=agent_patterns,
         principal=principal, session_id=session_id, kernels=kernels,
         authorizer=authorizer, result_store=result_store, shared_session=shared_session,
+        environment_registry=environment_registry, environment_source=environment_source,
+        project_redactor=project_redactor,
     )
     sessions = tool.sessions_on()
     server.register_tool(
