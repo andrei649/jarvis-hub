@@ -84,10 +84,10 @@ class ConversationMemory:
         if sessions:
             sid = sessions[0]
             snapshot = load_memory_snapshot(sid)
-            turns_data = snapshot.get("turns", [])
-            if snapshot.get("instance_id"):
-                self.instances[sid] = snapshot["instance_id"]
-            if turns_data:
+            turns_data = snapshot.get("turns")
+            if snapshot.get("session_id") == sid and isinstance(turns_data, list):
+                if snapshot.get("instance_id"):
+                    self.instances[sid] = snapshot["instance_id"]
                 self.sessions[sid] = []
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
@@ -115,11 +115,11 @@ class ConversationMemory:
         async with self._lock:
             if session_id not in self.sessions:
                 snapshot = load_memory_snapshot(session_id)
-                turns_data = snapshot.get("turns", [])
+                turns_data = snapshot.get("turns")
+                if snapshot.get("session_id") != session_id or not isinstance(turns_data, list):
+                    return False
                 if snapshot.get("instance_id"):
                     self.instances[session_id] = snapshot["instance_id"]
-                if not turns_data:
-                    return False
                 self.sessions[session_id] = []
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),

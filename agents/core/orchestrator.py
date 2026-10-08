@@ -87,7 +87,7 @@ from .errors import (
 )
 from .channels.base import ChannelAdapter
 from .channels.manager import ChannelManager
-from .channels.session import DeliveryRouter, SessionSource, build_session_key
+from .channels.session import DeliveryRouter, SessionSource
 from .settings_db import get_all as _get_settings
 from datetime import UTC
 # Live-plugin classes + oauth helpers moved with the registry to PluginManager (CLN-2).
@@ -721,6 +721,7 @@ class Orchestrator:
         self.on_token: Optional[Callable] = None
         self._runtime_settings: dict = {}
         self._channel_sessions: dict[str, str] = {}
+        self._channel_lifecycle = None
         self._turn_leases: dict[str, asyncio.Lock] = {}
         self._turn_lease_max_wait: float = _TURN_LEASE_MAX_WAIT_SECONDS
         self.commands = build_default_registry()
@@ -1406,6 +1407,9 @@ class Orchestrator:
         self.channel_manager.register(channel)
 
     async def start_channels(self):
+        lifecycle = self.__dict__.get("_channel_lifecycle")
+        if lifecycle is not None and lifecycle.closed:
+            self._channel_lifecycle = None
         await self.channel_manager.start_all()
         self.heartbeat_scheduler.start(self)
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
@@ -1454,6 +1458,9 @@ class Orchestrator:
             setattr(self, name, None)
 
     async def stop_channels(self):
+        lifecycle = self.__dict__.get("_channel_lifecycle")
+        if lifecycle is not None:
+            await lifecycle.close()
         await self.channel_manager.stop_all()
         self.heartbeat_scheduler.stop()
         # Every long-lived loop started in start_channels(). The autonomy worker and
@@ -1508,10 +1515,17 @@ class Orchestrator:
         # session key and the delivery decision.
         thread_id = (kwargs.get("chat_id") or kwargs.get("slack_channel")
                      or kwargs.get("room_id") or kwargs.get("conversation") or kwargs.get("space"))
+        chat_type = kwargs.get("chat_type")
+        if channel == "telegram" and kwargs.get("message_thread_id"):
+            thread_id = f"{thread_id}:topic:{kwargs['message_thread_id']}"
+            chat_type = "thread"
         if channel == "slack":
             thread_id = kwargs.get("slack_channel")
             if thread_id and kwargs.get("thread_ts"):
                 thread_id = f"{thread_id}:{kwargs['thread_ts']}"
+                chat_type = "thread"
+            elif not chat_type:
+                chat_type = "private" if str(thread_id or "").startswith("D") else "group"
         elif channel == "discord":
             thread_id = kwargs.get("channel_id")
         source = SessionSource(
@@ -1519,6 +1533,7 @@ class Orchestrator:
             sender=kwargs.get("sender"),
             thread_id=thread_id,
             client_id=kwargs.get("client_id"),
+            chat_type=chat_type,
         )
         try:
             # H3.3: cross-channel context is opt-in. When enabled, every channel
@@ -1533,46 +1548,26 @@ class Orchestrator:
             # would deliver to this source at all, and it sends nothing until the first
             # token, so a silent turn leaves no placeholder behind.
             draft = None if observe_only else self._begin_channel_draft(channel, source, kwargs)
-            cross_channel = self.get_setting("memory.cross_channel_sessions", False)
-            if not cross_channel and (source.thread_id or source.sender or source.client_id):
-                key = build_session_key(source)
-                if key not in self._channel_sessions:
-                    # RESUME BEFORE CREATE. `_channel_sessions` is per-process, so this
-                    # branch is taken on the first turn after every restart — and
-                    # `new_session(key)` seeds an EMPTY turn list without touching disk
-                    # (memory/conversation.py:81-88; only `resume_session` calls
-                    # `load_memory`). Pairing a now-DETERMINISTIC key with new_session
-                    # would therefore reopen the same session id with no history and
-                    # overwrite the persisted transcript on the next save — the stable
-                    # key turning into data loss, which is strictly worse than the old
-                    # per-boot random id it replaces. Resume first, create only when
-                    # there is genuinely nothing on disk to resume.
-                    if await self.memory.resume_session(key):
-                        self._channel_sessions[key] = key
-                    else:
-                        self._channel_sessions[key] = await self.memory.new_session(key)
-                # BUG-5: bind this channel conversation's session into the per-request
-                # async context instead of mutating shared `self.session_id` and
-                # restoring it in a finally. The old save/restore-on-self clobbered
-                # concurrent turns (the finally reset the *shared* attribute another
-                # in-flight request was reading). Here we set a *context-local* token
-                # and reset it in finally, so the binding is scoped to this request's
-                # async context only and never touches the shared default.
-                # `_resolve_session` inside handle_input keeps the value we set here.
-                channel_session = self._channel_sessions[key]
-                token = _active_session.set(channel_session)
-                shared_token = _session_is_shared.set(channel_session == self._session_id_default)
-                try:
-                    response = await self._channel_turn(
-                        text, channel, observe_only=observe_only, draft=draft
-                    )
-                finally:
-                    _session_is_shared.reset(shared_token)
-                    _active_session.reset(token)
-            else:
-                response = await self._channel_turn(
-                    text, channel, observe_only=observe_only, draft=draft
-                )
+            from .channels.session_lifecycle import UNAVAILABLE, lifecycle
+            from .channels.session_reset import SessionResetError
+
+            try:
+                service = lifecycle(self)
+                shared = self.get_setting("memory.cross_channel_sessions", False) or not (
+                    source.thread_id or source.sender or source.client_id)
+                reset = service.reset_requested(text)
+                undo = text.strip() == "/undo"
+                if (reset or undo) and not observe_only and not current_principal().admin:
+                    response = f"{text.strip()} is an owner command — send it from the owner's channel or with an admin token."
+                elif undo and not observe_only:
+                    response = await service.undo(source, shared=shared)
+                else:
+                    response = await service.run(
+                        source, text, shared=shared, observe_only=observe_only, draft=draft,
+                        authorize_reset=lambda: current_principal().admin)
+            except (SessionResetError, OSError, OverflowError):
+                logger.warning("channel session lifecycle unavailable", exc_info=True)
+                response = UNAVAILABLE
             if observe_only:
                 return None
             if draft is not None and draft.started:
@@ -1638,6 +1633,46 @@ class Orchestrator:
             logger.warning("slash command dispatch failed closed", exc_info=True)
             return None
 
+    async def _direct_session_command(self, text: str, channel: str, session_id: str | None):
+        """Switch web/CLI to a concrete new ID before appending a command turn."""
+        if channel not in {"web", "cli"} or (session_id is None and _session_is_shared.get() is False):
+            return None
+        from .validation import is_valid_session_id
+        from uuid import uuid4
+
+        base = session_id or self._session_id_default
+        if not is_valid_session_id(base):
+            return None
+        command = text.strip()
+        if command not in {"/new", "/reset", "/undo"}:
+            return None
+        if not current_principal().admin:
+            return f"{command} is an owner command — send it from the owner's channel or with an admin token."
+        try:
+            async with self.turn_lease(base) as acquired:
+                if not acquired:
+                    return TURN_BUSY_REPLY
+                turns = await self.memory.get_history(base) if command == "/undo" else []
+                if command == "/undo":
+                    last_user = next((i for i in range(len(turns) - 1, -1, -1)
+                                      if turns[i].get("role") == "user"), None)
+                    if last_user is None:
+                        return "There is no conversation to undo; nothing changed."
+                    turns = turns[:last_user]
+                sid = await self.new_session(f"session_{uuid4().hex}")
+                for turn in turns:
+                    await self.memory.add_turn(sid, turn["role"], turn["content"],
+                                               agent_id=turn.get("agent_id"), tools=turn.get("tools"))
+                if base == self._session_id_default:
+                    self._session_id_default = sid
+                if command == "/undo":
+                    return f"Removed the last exchange. Earlier conversation is preserved. Session: {sid}."
+                return f"Started a new conversation. Your previous conversation is still saved. Session: {sid}."
+        except (OSError, ValueError, KeyError, TypeError):
+            logger.warning("direct session change unavailable", exc_info=True)
+            self.session_id = base
+            return "Conversation change unavailable; the previous conversation remains selected."
+
     async def _channel_turn(
         self, text: str, channel: str, *, observe_only: bool, draft=None,
     ) -> Optional[str]:
@@ -1653,8 +1688,24 @@ class Orchestrator:
             if WARMUP.warming:   # H677: named, so a slow first reply is not a mystery
                 logger.info("%s turn served while the local model is still warming up", channel)
             if draft is not None:
-                return await self.handle_input_stream(text, channel, on_token=draft.push)
+                from .channels.session_lifecycle import note_session_activity
+                note_session_activity()
+                async def push(token):
+                    note_session_activity()
+                    await draft.push(token)
+                return await self.handle_input_stream(text, channel, on_token=push)
+            from .channels.session_lifecycle import note_session_activity
+            note_session_activity()
             return await self.handle_input(text, channel)
+
+    async def _run_channel_session_turn(self, session_id, text, channel, *, observe_only, draft):
+        token = _active_session.set(session_id)
+        shared_token = _session_is_shared.set(session_id == self._session_id_default)
+        try:
+            return await self._channel_turn(text, channel, observe_only=observe_only, draft=draft)
+        finally:
+            _session_is_shared.reset(shared_token)
+            _active_session.reset(token)
 
     def _begin_channel_draft(self, channel: str, source, kwargs: dict):
         """A streaming draft for this turn, or None when the channel cannot edit, the
@@ -2004,6 +2055,9 @@ class Orchestrator:
         # single-shared-session behavior (or to honor a session a caller like
         # `channel_handler` already pinned in this context).
         self._resolve_session(session_id)
+        session_reply = await self._direct_session_command(text, channel, session_id)
+        if session_reply is not None:
+            return session_reply
         from .session_continuation import prepare_continuation_turn
 
         await prepare_continuation_turn(self, self.session_id)
@@ -2206,6 +2260,13 @@ class Orchestrator:
         # BUG-5: see handle_input — pin this turn to its own session so it can
         # never read or write another concurrent request's conversation.
         self._resolve_session(session_id)
+        session_reply = await self._direct_session_command(text, channel, session_id)
+        if session_reply is not None:
+            if on_token:
+                emitted = on_token(session_reply)
+                if inspect.isawaitable(emitted):
+                    await emitted
+            return session_reply
         from .session_continuation import prepare_continuation_turn
 
         await prepare_continuation_turn(self, self.session_id)
@@ -4642,7 +4703,7 @@ class Orchestrator:
             cache[sid] = born
         return born
 
-    async def new_session(self) -> str:
+    async def new_session(self, session_id: str | None = None) -> str:
         """Wrapper around memory.new_session() that flushes the checkpoint first
         so the outgoing session is not lost before we switch context.
 
@@ -4654,7 +4715,19 @@ class Orchestrator:
 
         await self._flush_checkpoint()
         previous = self.session_id
-        sid = await self.memory.new_session()
+        if session_id is not None:
+            from .memory.persistence import load_memory_snapshot, memory_dir
+            from .validation import is_valid_session_id
+
+            if not is_valid_session_id(session_id) or (memory_dir() / f"{session_id}.json").exists():
+                raise ValueError("new session ID unavailable")
+        sid = await self.memory.new_session(session_id) if session_id is not None else await self.memory.new_session()
+        conversation = getattr(self.memory, "conversation", None)
+        if session_id is not None and getattr(conversation, "persist", False):
+            conversation._save_snapshot(sid)
+            snapshot = load_memory_snapshot(sid)
+            if snapshot.get("session_id") != sid or snapshot.get("turns") != []:
+                raise OSError("new session transcript could not be saved")
         self.session_id = sid
         if previous:
             # K3 — a session's resident interpreters die with the session. Leaving

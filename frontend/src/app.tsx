@@ -23,7 +23,7 @@ import { noticeMessages } from './turn-notices';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
-import { postStream, apiGet } from './api/client';
+import { postStream, apiGet, apiPost } from './api/client';
 import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
 import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
@@ -54,6 +54,19 @@ const FamilyMode = lazy(() => import('./modes4').then(m => ({ default: m.FamilyM
 const ConsoleOverlay = lazy(() => import('./gap').then(m => ({ default: m.ConsoleOverlay })));
 const FirstRunGate = lazy(() => import('./gap').then(m => ({ default: m.FirstRunGate })));
 const ProjectsMode = lazy(() => import('./gap').then(m => ({ default: m.ProjectsMode })));
+
+const CHAT_SESSION_KEY = 'nerva.chat.session_id';
+function savedChatSession(): string | null {
+  try { return sessionStorage.getItem(CHAT_SESSION_KEY); } catch { return null; }
+}
+function visibleTurns(turns: any[]): any[] {
+  return turns.map((tn: any) => {
+    const ts = fmtTimeShort(new Date(tn.timestamp || Date.now()));
+    return tn.role === 'user'
+      ? { role: 'user', text: tn.content, ts }
+      : { role: 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts };
+  });
+}
 
 function ModeStub({ label }) {
   return (
@@ -111,8 +124,32 @@ function App({ floating = false, shortcuts, onWorld }: {
   const [activeId, setActiveId] = useState('jarvis');
   const [focusId, setFocusId] = useState(null);
   const [messages, setMessages] = useState<any[]>(demo ? V2.SEED_MESSAGES : []);
+  const sessionId = useRef<string | null>(savedChatSession());
+  const selectedSessionId = useCallback(() => sessionId.current, []);
+  const selectSession = useCallback((id: string, turns?: any[]) => {
+    sessionId.current = id;
+    try { sessionStorage.setItem(CHAT_SESSION_KEY, id); } catch { /* storage unavailable */ }
+    if (turns) setMessages(visibleTurns(turns));
+  }, []);
+  useEffect(() => {
+    const selected = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (typeof detail?.sessionId === 'string' && Array.isArray(detail.turns)) {
+        if (turnBusy.current) {
+          abortRef.current?.abort(); abortRef.current = null;
+          turnEpoch.current++; turnBusy.current = false;
+          turnResolve.current?.(); turnResolve.current = null;
+          setThinking(null);
+        }
+        selectSession(detail.sessionId, detail.turns);
+        setCenterTab('conversation');
+      }
+    };
+    window.addEventListener('nerva:session-selected', selected);
+    return () => window.removeEventListener('nerva:session-selected', selected);
+  }, [selectSession]);
   const [thinking, setThinking] = useState(null);
-  useDesktopConversation(setMessages, !!thinking, demo);
+  useDesktopConversation(setMessages, !!thinking, demo, selectedSessionId);
   const [trace, setTrace] = useState(null);
   const [centerTab, setCenterTab] = useState('conversation');
   // bumped after every successful explicit save so the Artifacts tab refetches
@@ -198,20 +235,24 @@ function App({ floating = false, shortcuts, onWorld }: {
   useEffect(() => {
     if (demo || _rehydrated.current) return;
     _rehydrated.current = true;
-    apiGet('/memory')
+    const savedId = savedChatSession();
+    const history = savedId
+      ? apiPost('/sessions/resume', { session_id: savedId }).catch(() => {
+          try { sessionStorage.removeItem(CHAT_SESSION_KEY); } catch { /* storage unavailable */ }
+          return apiGet('/memory');
+        })
+      : apiGet('/memory');
+    history
       .then((r: any) => {
+        if (sessionId.current && sessionId.current !== savedId) return;
+        if (typeof r?.session === 'string') selectSession(r.session);
         const turns = (r && r.turns) || [];
         if (!turns.length) return;
-        const mapped = turns.map((tn: any) => {
-          const ts = fmtTimeShort(new Date(tn.timestamp || Date.now()));
-          return tn.role === 'user'
-            ? { role: 'user', text: tn.content, ts }
-            : { role: 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts };
-        });
+        const mapped = visibleTurns(turns);
         setMessages((cur) => (cur.length ? cur : mapped));
       })
       .catch(() => {});
-  }, [demo]);
+  }, [demo, selectSession]);
 
   // hotkeys (H209): every shortcut is an action in shortcuts.ts, rebindable from the
   // Keyboard Shortcuts panel (mod+/); nothing here spells a key.
@@ -333,7 +374,8 @@ function App({ floating = false, shortcuts, onWorld }: {
     // cancel path (web.py _chat_event_stream), which never persists a partial.
     const ctl = new AbortController();
     abortRef.current = ctl;
-    postStream('/chat/stream', { message: text, agent: activeId }, (evt) => {
+    postStream('/chat/stream', { message: text, agent: activeId,
+      ...(sessionId.current ? { session_id: sessionId.current } : {}) }, (evt) => {
       if(epoch!==turnEpoch.current||ctl.signal.aborted)return;
       if (evt.type === 'start') {
         setThinking({ label: t.think, route: [String(evt.agent || activeId).toUpperCase()] });
@@ -347,7 +389,23 @@ function App({ floating = false, shortcuts, onWorld }: {
         setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: streamed }; return c; });
       } else if (evt.type === 'end') {
         const finalText = evt.text || streamed;
-        setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: finalText, who: evt.agent || activeId }; else c.push({ role: 'agent', who: evt.agent || activeId, ts: fmtTimeShort(new Date()), text: finalText }); return c; });
+        const changed = typeof evt.session_id === 'string' && evt.session_id !== sessionId.current;
+        if (typeof evt.session_id === 'string') selectSession(evt.session_id);
+        if (changed && ['/new', '/reset', '/undo'].includes(text.trim())) {
+          if (text.trim() === '/undo') {
+            const commandEpoch = turnEpoch.current;
+            apiPost('/sessions/resume', { session_id: evt.session_id })
+              .then((r: any) => {
+                if (sessionId.current === evt.session_id && turnEpoch.current === commandEpoch && Array.isArray(r?.turns)) {
+                  selectSession(evt.session_id, r.turns);
+                }
+              })
+              .catch(() => {});
+          }
+          setMessages([{ role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: finalText }]);
+        } else {
+          setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: finalText, who: evt.agent || activeId }; else c.push({ role: 'agent', who: evt.agent || activeId, ts: fmtTimeShort(new Date()), text: finalText }); return c; });
+        }
         // H674: what the owner should know beside the reply (e.g. the summary was deferred).
         const notes = noticeMessages(evt, fmtTimeShort(new Date()));
         if (notes.length) setMessages((m) => [...m, ...notes]);
@@ -380,7 +438,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       setMessages((m) => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()), text: '⚠ No reply — the model backend is unreachable or no model is loaded. Load a model in LM Studio, or enable ◐ DEMO to preview the interface.' }]);
       resolve('');
     });
-  }).finally(() => { if (!demo) notifyDesktopConversation(); }), [t, activeId, runMock, demo, thinking]);
+  }).finally(() => { if (!demo) notifyDesktopConversation(); }), [t, activeId, runMock, demo, thinking, selectSession]);
 
   const runVision=useCallback(async(text:string,draft:VisionDraft)=>{
     if(turnBusy.current||thinking)return;

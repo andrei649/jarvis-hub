@@ -54,3 +54,19 @@ it('coalesces busy invalidations into one refresh after returning idle', async (
   await waitFor(() => expect(setMessages).toHaveBeenCalledWith([]));
   expect(fetch).toHaveBeenCalledTimes(1);
 });
+
+it('refreshes the selected topic instead of the shared default transcript', async () => {
+  const fetch = vi.fn(async (_path, init: any) => ({ ok: true, json: async () => ({
+    session: 'old_topic', turns: [{ role: 'assistant', content: 'old answer' }],
+  }) }));
+  vi.stubGlobal('fetch', fetch);
+  const setMessages = vi.fn();
+  const selected = () => 'old_topic';
+  function Window() { useDesktopConversation(setMessages, false, false, selected); return null; }
+  render(<Window />);
+  await React.act(async () => { window.dispatchEvent(new Event('focus')); await deliver(); });
+  await waitFor(() => expect(setMessages).toHaveBeenCalled());
+  expect(fetch.mock.calls[0][0]).toBe('/sessions/resume');
+  expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ session_id: 'old_topic' });
+  expect(setMessages.mock.calls[setMessages.mock.calls.length - 1][0][0].text).toBe('old answer');
+});
