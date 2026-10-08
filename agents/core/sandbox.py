@@ -9,10 +9,13 @@ Supports:
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import platform
 import secrets
+import shutil
+import signal
 import stat
 import sys
 import time
@@ -23,6 +26,10 @@ logger = logging.getLogger("jarvis.sandbox")
 
 
 class SandboxError(Exception):
+    pass
+
+
+class ContextTeardownUnconfirmed(SandboxError):
     pass
 
 
@@ -41,11 +48,16 @@ def _bind_mount(source: str, target: str, *, readonly: bool) -> list[str]:
 
 
 class SandboxResult:
-    def __init__(self, stdout: str = "", stderr: str = "", exit_code: int = -1, duration: float = 0.0):
+    def __init__(self, stdout: str = "", stderr: str = "", exit_code: int = -1,
+                 duration: float = 0.0, execution_context: dict | None = None,
+                 refusal_reason: str = "", timed_out: bool = False):
         self.stdout = stdout
         self.stderr = stderr
         self.exit_code = exit_code
         self.duration = duration
+        self.execution_context = execution_context
+        self.refusal_reason = refusal_reason
+        self.timed_out = timed_out
 
     @property
     def success(self) -> bool:
@@ -284,6 +296,7 @@ class Sandbox:
         filename: str = "script.py",
         writable_paths: list[str | Path] | None = None,
         sinks=None,
+        execution_context: dict | None = None,
     ) -> SandboxResult:
         """``sinks`` (an ``output_limits.StreamSinks``) spools the child's streams.
 
@@ -309,11 +322,199 @@ class Sandbox:
                 else f"{path.name}-{secrets.token_hex(8)}")
         run_name = str(path.with_name(name))
         try:
+            if execution_context is not None:
+                return await self._execute_context_python(
+                    code, run_name, writable_paths=writable_paths, sinks=sinks,
+                    execution_context=execution_context,
+                )
             return await self._execute_python_file(code, run_name, writable_paths=writable_paths,
                                                    sinks=sinks)
         finally:
             with contextlib.suppress(OSError):
                 (self.work_dir / run_name).unlink()
+
+    @staticmethod
+    def _context_refusal(check_current) -> str:
+        if not callable(check_current):
+            return "context_stale"
+        try:
+            return "context_stale" if check_current() is False else ""
+        except Exception as exc:
+            reason = getattr(exc, "reason", "")
+            if isinstance(reason, str) and reason.isidentifier() and len(reason) <= 64:
+                return reason
+            return "context_stale"
+
+    @staticmethod
+    def _context_bootstrap_source() -> str:
+        """Constant worker source. Code and environment arrive only on stdin."""
+        from .code_context import CHILD_CONTEXT_SOURCE
+
+        return CHILD_CONTEXT_SOURCE + """
+import json
+
+def _h595_main():
+    raw = sys.stdin.buffer.read()
+    payload = json.loads(raw)
+    selected = resolve_child_context(payload["context"])
+    if (not payload.get("reexecuted") and
+            os.path.abspath(selected["python"]) != os.path.abspath(sys.executable)):
+        payload["reexecuted"] = True
+        child_env = payload["env"]
+        result = subprocess.run([selected["python"], __file__],
+                                input=json.dumps(payload).encode("utf-8"),
+                                env=child_env, check=False)
+        raise SystemExit(result.returncode)
+    os.chdir(selected["cwd"])
+    os.environ.clear()
+    os.environ.update(payload["env"])
+    sys.path.insert(0, selected["cwd"])
+    metadata_path = payload.get("metadata_path")
+    if metadata_path:
+        metadata_tmp = metadata_path + ".tmp"
+        with open(metadata_tmp, "x", encoding="utf-8") as output:
+            json.dump({"mode": selected["mode"], "cwd": os.getcwd(),
+                       "python": sys.executable}, output)
+        os.replace(metadata_tmp, metadata_path)
+    scope = {"__name__": "__main__", "__file__": "<execute_code>"}
+    exec(compile(payload["code"], "<execute_code>", "exec"), scope)
+
+if __name__ == "__main__":
+    _h595_main()
+"""
+
+    async def _execute_context_python(self, code: str, filename: str,
+                                      *, writable_paths=None, sinks=None,
+                                      execution_context: dict) -> SandboxResult:
+        """Prepare a bounded project mirror, then start a context-aware worker."""
+        from .code_context import ProjectSnapshotError, normalize_mode, prepare_project
+
+        context = execution_context
+        check_current = context.get("check_current") if isinstance(context, dict) else None
+        refusal = self._context_refusal(check_current)
+        if refusal:
+            return SandboxResult(stderr="Execution context is no longer current",
+                                 refusal_reason=refusal)
+        try:
+            mode = normalize_mode(context.get("mode"))
+            env = context.get("env", {})
+            interpreter_env = context.get("interpreter_env", {})
+            if not isinstance(env, dict) or not isinstance(interpreter_env, dict):
+                raise ValueError("invalid_environment")
+            if any(not isinstance(k, str) or not isinstance(v, str)
+                   for mapping in (env, interpreter_env) for k, v in mapping.items()):
+                raise ValueError("invalid_environment")
+            exposed_env = dict(env)
+            exposed_env.setdefault("PYTHONIOENCODING", "utf-8")
+            exposed_env.setdefault("PYTHONUTF8", "1")
+        except (AttributeError, ValueError) as exc:
+            return SandboxResult(stderr="Invalid execution context", refusal_reason=str(exc))
+
+        backend = self.active_backend()
+        if backend == "wasm" or backend == "disabled" or (
+            backend == "subprocess-host" and
+            not getattr(self, "_allow_host_context_for_tests", False)
+        ):
+            return SandboxResult(stderr="Execution context requires an isolated Docker backend",
+                                 refusal_reason="context_backend_unsupported")
+
+        self._ensure_work_dir()
+        snapshot = None
+        context_dir = self.work_dir.parent / ".h595_context" / f"run-{secrets.token_hex(8)}"
+        context_dir.mkdir(mode=0o700, parents=True)
+        metadata_dir = context_dir / "metadata"
+        metadata_dir.mkdir(mode=0o700, parents=True)
+        metadata_file = metadata_dir / "result.json"
+        keep_context = False
+        try:
+            if mode == "project" and context.get("project_root"):
+                source_root = Path(context["project_root"]).expanduser().resolve()
+                if (self.work_dir.resolve().is_relative_to(source_root) or
+                        context_dir.resolve().is_relative_to(source_root)):
+                    return SandboxResult(stderr="Project includes sandbox cache",
+                                         refusal_reason="project_contains_sandbox_cache")
+                snapshot = context_dir / "project"
+                prepare_project(context["project_root"], snapshot, redact=context.get("redact"))
+            stage = "/workspace" if backend == "docker" else str(self.work_dir)
+            project_cwd = ("/project" if backend == "docker" else str(snapshot)) if snapshot else stage
+            payload = {
+                "code": code,
+                "env": exposed_env,
+                "context": {"mode": mode, "cwd": project_cwd, "staging_dir": stage,
+                            "env": interpreter_env},
+                "metadata_path": "/context/result.json" if backend == "docker" else str(metadata_file),
+            }
+            startup = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            if len(startup) > 1_000_000:
+                return SandboxResult(stderr="Execution context is too large",
+                                     refusal_reason="context_too_large")
+            bootstrap = self._context_bootstrap_source()
+            if backend == "docker":
+                mounts = [(str(snapshot), "/project")] if snapshot else []
+                result = await self._run_docker(
+                    ["python", f"/workspace/{filename}"], {filename: bootstrap},
+                    writable_paths=writable_paths, readonly_mounts=mounts,
+                    context_writable_mount=(str(metadata_dir), "/context"),
+                    startup_data=startup, check_current=check_current,
+                    context_run=True, sinks=sinks,
+                )
+            else:
+                result = await self._execute_context_test_subprocess(
+                    bootstrap, filename, startup, check_current, sinks=sinks,
+                )
+            result.execution_context = self._read_context_metadata(metadata_file)
+            return result
+        except ContextTeardownUnconfirmed:
+            keep_context = True
+            return SandboxResult(stderr="Execution context teardown unconfirmed",
+                                 refusal_reason="context_teardown_unconfirmed")
+        except ProjectSnapshotError as exc:
+            return SandboxResult(stderr="Project projection refused",
+                                 refusal_reason=str(exc))
+        finally:
+            if not keep_context:
+                shutil.rmtree(context_dir, ignore_errors=True)
+
+    @staticmethod
+    def _read_context_metadata(path: Path) -> dict | None:
+        """Read an untrusted, bounded informational sidecar without following links."""
+        from .code_context import ProjectSnapshotError
+
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                from .code_context import _windows_project_handle
+
+                root, root_name, close = _windows_project_handle(path.parent, directory=True)
+                try:
+                    handle, final, _ = _windows_project_handle(path)
+                    if os.path.commonpath((root_name, final)) != root_name:
+                        close(handle)
+                        return None
+                    fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+                finally:
+                    close(root)
+            else:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                metadata_stat = os.fstat(fd)
+                if not stat.S_ISREG(metadata_stat.st_mode) or metadata_stat.st_size > 4096:
+                    return None
+                raw = os.read(fd, 4097)
+            finally:
+                os.close(fd)
+            if len(raw) > 4096:
+                return None
+            value = json.loads(raw)
+        except (OSError, UnicodeError, ValueError, TypeError, ProjectSnapshotError):
+            return None
+        if not isinstance(value, dict) or value.get("mode") not in ("project", "strict"):
+            return None
+        if any(not isinstance(value.get(key), str) or len(value[key]) > 2048 or
+               not os.path.isabs(value[key]) for key in ("cwd", "python")):
+            return None
+        return {key: value[key] for key in ("mode", "cwd", "python")}
 
     async def _execute_python_file(self, code: str, filename: str,
                                    writable_paths: list[str | Path] | None = None,
@@ -362,8 +563,13 @@ class Sandbox:
                 await proc.wait()
                 return SandboxResult(
                     stderr=f"Execution timed out after {self.timeout}s",
-                    exit_code=-1, duration=time.monotonic() - start,
+                    exit_code=-1, duration=time.monotonic() - start, timed_out=True,
                 )
+            except asyncio.CancelledError:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                await proc.wait()
+                raise
         except FileNotFoundError:
             logger.warning("wasmtime not found at execution — falling back")
             self._has_wasmtime = False
@@ -409,6 +615,11 @@ class Sandbox:
         files: dict[str, str] = None,
         writable_paths: list[str | Path] | None = None,
         sinks=None,
+        readonly_mounts: list[tuple[str, str]] | None = None,
+        context_writable_mount: tuple[str, str] | None = None,
+        startup_data: bytes | None = None,
+        check_current=None,
+        context_run: bool = False,
     ) -> SandboxResult:
         start = time.monotonic()
 
@@ -425,7 +636,7 @@ class Sandbox:
             fpath.write_text(content, encoding="utf-8")
 
         docker_cmd = [
-            "docker", "run", "--rm",
+            "docker", "run", *(["-i"] if startup_data is not None else []), "--rm",
             "--name", container_name,
             "--network", "none",
             "--memory", f"{self.max_memory_mb}m",
@@ -434,20 +645,54 @@ class Sandbox:
             "--pids-limit", "50",
             "--read-only",
             *_bind_mount(workdir_path, "/workspace", readonly=True),
+            *(item for source, target in (readonly_mounts or [])
+              for item in _bind_mount(source, target, readonly=True)),
             *self._docker_writable_mount_args(writable_paths),
+            *(_bind_mount(*context_writable_mount, readonly=False)
+              if context_writable_mount is not None else []),
             "-w", "/workspace",
             self.docker_image,
         ] + cmd
 
+        proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 *docker_cmd,
+                **({"stdin": asyncio.subprocess.PIPE} if startup_data is not None else {}),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
+                if startup_data is not None:
+                    refusal = self._context_refusal(check_current)
+                    if refusal:
+                        await self._stop_docker_context(proc, container_name)
+                        return SandboxResult(stderr="Execution context is no longer current",
+                                             refusal_reason=refusal)
+                    try:
+                        async def send_startup():
+                            proc.stdin.write(startup_data)
+                            await proc.stdin.drain()
+                            proc.stdin.close()
+                            await proc.stdin.wait_closed()
+
+                        await asyncio.wait_for(send_startup(), timeout=max(
+                            0.001, self.timeout - (time.monotonic() - start)))
+                    except asyncio.TimeoutError:
+                        raise
+                    except asyncio.CancelledError:
+                        await self._stop_docker_context(proc, container_name)
+                        raise
+                    except Exception:
+                        await self._stop_docker_context(proc, container_name)
+                        return SandboxResult(stderr="Execution context startup failed",
+                                             refusal_reason="context_startup_failed")
+                if asyncio.current_task().cancelling():
+                    raise asyncio.CancelledError
                 out_text, err_text = await asyncio.wait_for(
-                    self._read_output_capped(proc, sinks), timeout=self.timeout
+                    self._read_output_capped(proc, sinks),
+                    timeout=(max(0.001, self.timeout - (time.monotonic() - start))
+                             if startup_data is not None else self.timeout),
                 )
                 duration = time.monotonic() - start
                 return SandboxResult(
@@ -457,6 +702,11 @@ class Sandbox:
                     duration=duration,
                 )
             except asyncio.TimeoutError:
+                if context_run:
+                    await self._stop_docker_context(proc, container_name)
+                    return SandboxResult(stderr=f"Execution timed out after {self.timeout}s",
+                                         exit_code=-1, duration=time.monotonic() - start,
+                                         timed_out=True)
                 proc.kill()
                 await proc.wait()
                 # Killing the docker *client* detaches it; the daemon-side
@@ -475,9 +725,12 @@ class Sandbox:
                 return SandboxResult(
                     stderr=f"Execution timed out after {self.timeout}s",
                     exit_code=-1,
-                    duration=duration,
+                    duration=duration, timed_out=True,
                 )
             except asyncio.CancelledError:
+                if context_run:
+                    await self._stop_docker_context(proc, container_name)
+                    raise
                 # A caller (e.g. the file-RPC runtime's outer service window)
                 # cancelled us. Kill the child AND the named container so neither
                 # is orphaned, then propagate the cancellation. (contextlib.suppress
@@ -497,6 +750,11 @@ class Sandbox:
         except FileNotFoundError:
             logger.warning("Docker not found")
             self._has_docker = False
+            if context_run:
+                if proc is not None:
+                    await self._stop_docker_context(proc, container_name)
+                return SandboxResult(stderr="Context Docker backend unavailable",
+                                     exit_code=-1, refusal_reason="context_backend_unsupported")
             if not self.allow_subprocess:
                 return SandboxResult(
                     stderr="Code execution disabled: Docker not available and the host "
@@ -516,11 +774,116 @@ class Sandbox:
                        "input to fall back to.",
                 exit_code=-1,
             )
+        except ContextTeardownUnconfirmed:
+            raise
         except Exception as e:
+            if context_run and proc is not None:
+                await self._stop_docker_context(proc, container_name)
             duration = time.monotonic() - start
             return SandboxResult(
-                stderr=str(e), exit_code=-1, duration=duration
+                stderr="Execution context backend failed" if context_run else str(e),
+                exit_code=-1, duration=duration,
+                refusal_reason="context_backend_failed" if context_run else "",
             )
+
+    @staticmethod
+    async def _stop_docker_context(proc, container_name: str, *, timeout: float = 5) -> None:
+        """Bound teardown and prove the named container is no longer running."""
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout)
+        except (OSError, asyncio.TimeoutError) as exc:
+            raise ContextTeardownUnconfirmed from exc
+
+        async def docker(*args):
+            cli = await asyncio.wait_for(asyncio.create_subprocess_exec(
+                "docker", *args, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL), timeout)
+            try:
+                output, _ = await asyncio.wait_for(cli.communicate(), timeout)
+            except asyncio.TimeoutError:
+                with contextlib.suppress(ProcessLookupError):
+                    cli.kill()
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(cli.wait(), timeout)
+                raise
+            return cli.returncode, output
+
+        try:
+            with contextlib.suppress(OSError, asyncio.TimeoutError):
+                await docker("kill", container_name)
+            status, running = await docker(
+                "ps", "--filter", f"name=^/{container_name}$", "--format", "{{.ID}}")
+            if status != 0 or running.strip():
+                raise ContextTeardownUnconfirmed
+        except (OSError, asyncio.TimeoutError) as exc:
+            raise ContextTeardownUnconfirmed from exc
+
+    async def _execute_context_test_subprocess(self, bootstrap: str, filename: str,
+                                               startup: bytes, check_current,
+                                               *, sinks=None) -> SandboxResult:
+        """Test-only host worker; production context never routes to this backend."""
+        start = time.monotonic()
+        fpath = self.work_dir / filename
+        fpath.parent.mkdir(parents=True, exist_ok=True)
+        fpath.write_text(bootstrap, encoding="utf-8")
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, str(fpath), stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            cwd=str(self.work_dir), env={"PATH": os.defpath, "PYTHONIOENCODING": "utf-8"},
+            start_new_session=os.name != "nt",
+        )
+        try:
+            refusal = self._context_refusal(check_current)
+            if refusal:
+                await self._stop_host_context(proc)
+                return SandboxResult(stderr="Execution context is no longer current",
+                                     refusal_reason=refusal)
+
+            async def complete() -> tuple[str, str]:
+                proc.stdin.write(startup)
+                await proc.stdin.drain()
+                proc.stdin.close()
+                await proc.stdin.wait_closed()
+                return await self._read_output_capped(proc, sinks)
+
+            try:
+                out_text, err_text = await asyncio.wait_for(
+                    complete(), timeout=self.timeout,
+                )
+            except asyncio.TimeoutError:
+                await self._stop_host_context(proc)
+                return SandboxResult(stderr=f"Execution timed out after {self.timeout}s",
+                                     duration=time.monotonic() - start, timed_out=True)
+            return SandboxResult(stdout=out_text, stderr=err_text,
+                                 exit_code=proc.returncode or 0,
+                                 duration=time.monotonic() - start)
+        except asyncio.CancelledError:
+            await self._stop_host_context(proc)
+            raise
+        except Exception:
+            await self._stop_host_context(proc)
+            return SandboxResult(stderr="Execution context worker failed",
+                                 refusal_reason="context_worker_failed")
+
+    @staticmethod
+    async def _stop_host_context(proc) -> None:
+        """Test-only host worker and its selected-interpreter descendant form one group."""
+        if os.name == "nt" and getattr(proc, "pid", None):
+            with contextlib.suppress(OSError):
+                killer = await asyncio.create_subprocess_exec(
+                    "taskkill", "/PID", str(proc.pid), "/T", "/F",
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL)
+                await asyncio.wait_for(killer.wait(), 5)
+        elif getattr(proc, "pid", None):
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        with contextlib.suppress(Exception):
+            await proc.wait()
 
     def _docker_writable_mount_args(self, paths: list[str | Path] | None) -> list[str]:
         args: list[str] = []
@@ -579,8 +942,13 @@ class Sandbox:
                 return SandboxResult(
                     stderr=f"Execution timed out after {self.timeout}s",
                     exit_code=-1,
-                    duration=duration,
+                    duration=duration, timed_out=True,
                 )
+            except asyncio.CancelledError:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                await proc.wait()
+                raise
         except Exception as e:
             duration = time.monotonic() - start
             return SandboxResult(stderr=str(e), exit_code=-1, duration=duration)
@@ -617,7 +985,7 @@ class Sandbox:
                 return SandboxResult(
                     stderr=f"Execution timed out after {self.timeout}s",
                     exit_code=-1,
-                    duration=time.monotonic() - start,
+                    duration=time.monotonic() - start, timed_out=True,
                 )
         except Exception as e:
             return SandboxResult(stderr=str(e), exit_code=-1, duration=time.monotonic() - start)

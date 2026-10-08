@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "74423b4150cbd3dae1ac4b88c3aa997fc510d908",
-  "assessed_at": "2026-10-02T04:48:07Z",
+  "base_sha": "fe25329fe771c392a2604f2851b40dd8a50c304b",
+  "assessed_at": "2026-10-08T12:25:40.934879Z",
   "reviews": [
     {
       "id": "H001",
@@ -9881,12 +9881,12 @@
       "id": "H595",
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
-      "summary": "K1/K2/K3 are delivered: default-off execute_code with fresh host authorization, persistent session namespaces, operator status/reset, and redirected Python stdout/stderr stream spills on both one-shot and session paths. Each stream spill keeps at most 5,000,000 bytes (the ToolResultStore default, which the coordinator does not override). Past that, the file ends in one explicit spill-capped marker, the result reports the cap with kept and on-disk byte counts, and the notice says the stream's end survives only in the inline tail. Bounded previews retain file references, original byte counts and the on-disk file hash without buffering the full stream. A notice names the exact file_read(path, offset, max_bytes) paging call, also returned as a read_with field and continued by next_offset, only when two conditions hold: the run's own offer includes file_read, and the coordinator's probe confirms file_read can open that spill through the live file scope or the spill directory's read-only door. Otherwise the notice says the file is kept for the owner and cannot be paged from that turn. H660 now supplies the detached Docker transport. Review fixes retain unconfirmed teardown as quarantined/retryable state and prevent fallback dispatch after current authority or e-stop refusal. Native macOS and Linux real-Docker containment are now verified. The host CLI and local Unix endpoint are frozen; private CLI configuration prevents operator proxy credentials reaching the worker, including after context changes. H277 follow-up review (2026-09-27): inspected the changed shared HUD/VLM hunks; image and code-execution request controls remain unchanged. Full offline suite exercised these paths; this is not a new real-provider or Docker acceptance run. H487/H513 follow-up review (2026-09-27): shared coordinator changes are restricted to Telegram decision cards and human-reason replies; HUD changes affect approval grouping/reasons and provider posture. Image and code-execution dispatch/return controls remain unchanged. The complete frontend suite passes 1802 tests; backend milestone verification is recorded separately. Existing partial status and remaining acceptance requirements are retained. H487 chat-outcome review: ToolRPC additions scope observational association only around the existing generic synchronous enqueue; specialized intakes explicitly mask that scope. Tool execution, spill paging and SDK return contracts are unchanged. The complete backend run exercised these paths; its remaining failures concern wrapper fixtures, auxiliary fixture identity and this stale shared-file record, not SDK execution. H595 remains partial. H487 shared-source review: coordinator changes add expiry bookkeeping under e-stop; SDK code dispatch and spill controls are unchanged. Decision Inbox deadline display adds no execution authority. Interactive VLM shared-source review: only VLM status/describe/screen-reflex policy and their two HUD panels changed. Image generation, code execution, task approval/deadline controls and other handlers remain unchanged. Full frontend verification passes 1815 tests; no live-provider or native-mobile acceptance is claimed. Codex-sprint review rounds (to 7a7f976a): shared coordinator changes are H117's Telegram reason replies and a missing work-run ledger reported as failed, and ToolRPC's approved-task path now lifts a trusted tool's scrubbed failure detail; execute_code is neither gated nor trusted-execution, so its dispatch, spill paging and SDK returns are unchanged. Video-consumer shared-source review (2026-10-02): compared the current coordinator diff with 9d5b3add and re-read this row contract. The new registration is default-off; its signed-context checks apply to canonical video tasks. Existing image recognition, trusted tool kinds, code execution registration, spill access and session-kernel wiring are retained. The canonical media dispatcher additionally recognizes video while preserving the prior non-media refusal reason. Binding inventory edits only move existing callsite positions. No other pinned implementation source changed from this row's prior reviewed snapshot. This delta does not close any of the remaining requirements or claim new live-provider or Docker acceptance. Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review.",
-      "remaining": "Generic SSH/Modal provisioning remains unsupported; the validated Docker transport accepts local Unix endpoints. Deliberate native-fd bypass output is not a redirected Python stream. Stream spills are capped at 5,000,000 bytes per stream: later bytes are counted but not kept, so only the inline tail shows a runaway stream's end. Hermes project|strict mode remains intentionally represented by Nerva tool profiles (agent x surface x principal), not copied as a separate switch.",
+      "summary": "Native execute_code remains owner opt-in and every tool/cell uses current host authorization. Python can call the existing RPC registry through tool imports and retains the existing bounded stdout/stderr file spills. The recovery adds backend-local project/strict context and interpreter selection; an owner-selected project is projected into a fresh read-only snapshot with secret-name/content filtering, file/byte bounds, root-relative POSIX no-follow or Windows opened-handle containment and identity checks. Skill-view environment names are scoped to agent, principal and session and revalidated before use; no credential values are accepted from the model. Settings are available through the existing admin API and dynamic HUD, with persisted-write and invalid-value regressions. One-shot and persistent workers share the context; stale settings/grants refuse execution. Windows regular-project, junction/root substitution, interpreter cancellation, and fake Docker startup/teardown failure regressions pass. Existing redirects retain bounded per-stream spill behavior. This is native adaptation from #1233, not runtime-import credit.",
+      "remaining": "Live Windows Docker acceptance is unverified; supported detached Docker transport remains local Unix only. SSH/Modal/remote TLS provisioning is unsupported. Project mode uses an isolated read-only snapshot, not arbitrary writable access to the host project or its host virtualenv. Redirected streams keep up to 5,000,000 bytes per stream; native-fd bypass and later runaway bytes are outside disk-spill coverage. A teardown whose absence cannot be proved retains its snapshot and requires operator inspection. No live model/provider or production-deployment acceptance was run.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "652ee5d6bfaa2331b7fd3d3db0a2fd9c2e8f83190ba26ccbc4e9e4bbd1ab9feb"
+          "sha256": "126926d63fac4d9d980ef9e56fc0b959fd98478c4a57e6f9eb685f1b31243a77"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -9894,7 +9894,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1c9f11237f8df0962801f12b0daede0109e87605b95c85236d6cdff93b97226b"
+          "sha256": "e30b53707c5b2b5d599eddc05c36b32b757341a1b85eb77e5c13fe01b4ed418f"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -9906,7 +9906,7 @@
         },
         {
           "path": "agents/core/routers/skills.py",
-          "sha256": "b33537c1e8a72689580e0d26bc282cc946d34b17a9b6ff6f9fec0abc14c1fc7e"
+          "sha256": "4abb3392bf00c532c6d77e2a5c0428ea5b20f83a7e5d4e726f04817f30680910"
         },
         {
           "path": "tests/test_sandbox_invocation.py",
@@ -9918,7 +9918,7 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "cac98ea7a1362ba3601b8e4e573fe477030aa637a6bb265f14dc29847cec1449"
+          "sha256": "9db0a76e64aa62168d6bd10560b2550093b279e1b4cc8f07f8a7917021f78370"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -9926,11 +9926,11 @@
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "ca759a5c31ed10d3dab7128e97f5de6c0c8ce0c44951f7d70ac272c09df55a50"
+          "sha256": "1b799fd2d4c318e9c99f127f07f0b1203de3ae73bbacc1322cef86d10bcd2876"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "d2d5330355e52230c4e137076258531f0b438ff79e62bb75800f4720c8b6ede9"
+          "sha256": "67035351e3ab6fa11a318137f23f0054625c5390cea936e713b77c3231e872cf"
         },
         {
           "path": "tests/test_session_kernels.py",
@@ -9938,7 +9938,7 @@
         },
         {
           "path": "tests/test_session_kernel_routes.py",
-          "sha256": "eae9c0deba766ffde8e7ce720d761ef5889f228ae34a0d7af41f554d628066f1"
+          "sha256": "93e565df99b60a706f2471097b98cbaaaba333bce9ef064d2a4dfbb497ca97c9"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -9950,7 +9950,7 @@
         },
         {
           "path": "agents/core/sandbox.py",
-          "sha256": "228adcfa9334b3c71926308606d88f38d897ecbba9a5026747df8ecc302413f1"
+          "sha256": "64fa9018f727f4c4f3aa859198235179f1f32ced3ef1a6053511e0f8948ec3f9"
         },
         {
           "path": "agents/core/tool_result_store.py",
@@ -9967,6 +9967,54 @@
         {
           "path": "docs/hermes/evidence/2026-09-15-docker-containment.json",
           "sha256": "67cf1b8a68f92d5b594f3a6b257d965d101004a1897623f25b8dbc03df493692"
+        },
+        {
+          "path": "agents/core/code_context.py",
+          "sha256": "9e6897a6bb97614e2e5efafa1d871fa67ac42ab5e27deb00daeb69342056113c"
+        },
+        {
+          "path": "agents/core/code_env.py",
+          "sha256": "e64a6bd305004e290b60617893c5919e2cfdf482a2a43f9735b26f9cc30ee835"
+        },
+        {
+          "path": "agents/core/tool_rpc_stubs.py",
+          "sha256": "49b02f5a264b2569048b425b9ed539c5add06e31ecbbb0c2539641aa4563ffe8"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "795d851deb67257764ce82c17ad61cbbfafee287ef3c3743326d56a222a9d33b"
+        },
+        {
+          "path": "agents/core/skills/tools.py",
+          "sha256": "baddb8a558766ce92701a45e59d076d6abf31d00098cb3fe975f29ec4ebf4f09"
+        },
+        {
+          "path": "tests/test_h595_code_context.py",
+          "sha256": "83d99f6e08e81830c23934dff3f7c298c6be59fa7a6f3af766a3700b85716c10"
+        },
+        {
+          "path": "tests/test_h595_code_env.py",
+          "sha256": "eeba70a83cc56f79c43df6937dca457a412fe45ba7d40bbc64c424b44bf2a761"
+        },
+        {
+          "path": "tests/test_h595_code_settings.py",
+          "sha256": "ce3c6ef9a8e3a8648b7a5266fe6d324db635e9f2538ff99f61c581a4236579d3"
+        },
+        {
+          "path": "tests/test_h595_context_integration.py",
+          "sha256": "716ff8f3594f34f8f7ae7466ac5c1b0d618e5d42e180b215dccc3fc1a1c20e4f"
+        },
+        {
+          "path": "tests/test_h595_import_lifecycle.py",
+          "sha256": "9ad4048ab63e02b5a4a90729fb0cab158b504fef99ba704d0dc1df3366dc8140"
+        },
+        {
+          "path": "tests/test_h595_model_context.py",
+          "sha256": "f47a0cb2a85f7ed746c6e88a02b303fe1b64da87c1d32f1496ccf3d64c607d08"
+        },
+        {
+          "path": "tests/test_h595_oneshot_context.py",
+          "sha256": "5e40b7ad5c20a54db10a9f907e9ee60f4c97628ad502079d6a557efa78cf1962"
         }
       ]
     },
@@ -10440,12 +10488,12 @@
       "id": "H660",
       "row_sha256": "6cb94acacb3b84265ebcc49258ca6349094c2e8a033111f74472c8269b252fae",
       "status": "partial",
-      "summary": "K2/K3 now include a production detached Docker worker over run-to-completion CLI calls, with a private size-limited container mailbox, bounded response packets/backpressure, ready handshake, cell nonces, asynchronous liveness monitoring, and kill/reset/cancel lifecycle. Each cell still crosses the current host authorization and ToolCallBroker. Only a proved pre-dispatch startup refusal permits explicit isolated per-call fallback; dispatched/ambiguous cells never retry. Python cell stdout/stderr streams now reach existing ToolResultStore spills before preview truncation, retaining the middle without unbounded worker buffers up to a 5,000,000-byte per-stream spill ceiling. Past the ceiling, the file ends in one explicit capped marker and the result reports the cap with kept and on-disk byte counts. Spill notices name the exact file_read paging call (path, offset, max_bytes, continued by next_offset) only when the run was offered file_read and it can open that file; otherwise they say the file is kept for the owner and cannot be paged from that turn. Session tool-RPC uses directory-pinned no-follow I/O and random cell directories, closing a reproduced host-write symlink issue. Existing opt-in settings and digest-pinned Docker isolation remain. Independent-review repairs recheck e-stop/expiry and authorization inside fallback dispatch, retain unconfirmed removals as quarantined records with retryable operator reset, validate hostile stream labels, and keep deadline/stop monitoring independent of awaited tool calls. Late broker replies cannot write after cancellation; old-cell cleanup cannot destroy a replacement kernel. Native macOS and Linux real-Docker containment are now verified. The host CLI and local Unix endpoint are frozen; private CLI configuration prevents operator proxy credentials reaching the worker, including after context changes. H277 follow-up review (2026-09-27): inspected the changed shared HUD/VLM hunks; image and code-execution request controls remain unchanged. Full offline suite exercised these paths; this is not a new real-provider or Docker acceptance run. H487/H513 follow-up review (2026-09-27): shared coordinator changes are restricted to Telegram decision cards and human-reason replies; HUD changes affect approval grouping/reasons and provider posture. Image and code-execution dispatch/return controls remain unchanged. The complete frontend suite passes 1802 tests; backend milestone verification is recorded separately. Existing partial status and remaining acceptance requirements are retained. H487 shared-source review: coordinator changes add expiry bookkeeping under e-stop; Docker execution controls and host authorization remain unchanged. Decision Inbox deadline display adds no execution authority. Interactive VLM shared-source review: only VLM status/describe/screen-reflex policy and their two HUD panels changed. Image generation, code execution, task approval/deadline controls and other handlers remain unchanged. Full frontend verification passes 1815 tests; no live-provider or native-mobile acceptance is claimed. Video-consumer shared-source review (2026-10-02): compared the current coordinator diff with 9d5b3add and re-read this row contract. The new registration is default-off; its signed-context checks apply to canonical video tasks. Existing image recognition, trusted tool kinds, code execution registration, spill access and session-kernel wiring are retained. The canonical media dispatcher additionally recognizes video while preserving the prior non-media refusal reason. Binding inventory edits only move existing callsite positions. No other pinned implementation source changed from this row's prior reviewed snapshot. This delta does not close any of the remaining requirements or claim new live-provider or Docker acceptance. Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review.",
-      "remaining": "Generic SSH, Modal and remote TLS provisioning remain unsupported and require an explicitly isolated governed transport design. Docker selection currently supports local Unix endpoints. Correlation tokens/nonces reject stale frames but cannot attest output against Python introspection inside the same worker; authorization is enforced by the host broker. Spills cover redirected Python stdout/stderr up to 5,000,000 bytes per stream; deliberate native-fd bypasses and the part of a runaway stream past that ceiling are not kept on disk. Production deployment evidence is separate from these real-container tests.",
+      "summary": "Native code sessions use the existing detached isolated Docker worker and retain variables, imports and loaded data across cells. Persistence now defaults on after the separate execute_code opt-in when the isolated backend is configured; an explicit session-disable setting is preserved. Every cell still crosses current host consent, principal/profile scope, approval and RPC broker, and startup-only refusal permits the existing isolated one-shot fallback. The recovery carries project/strict and scoped environment/import context through the session mailbox and revokes/restarts context when authorization or settings change. Existing bounded stream spill, liveness, reset and ambiguous-execution refusal remain authoritative. New default-persistence and per-cell grant regressions, native context tests and settings API roundtrips pass; prior dated Linux/macOS real-container receipts keep their original scope.",
+      "remaining": "Generic SSH, Modal and remote TLS provisioning remain unsupported; validated detached Docker transport accepts local Unix endpoints. A configured digest-pinned isolated image is required; enabling execute_code does not install or validate a daemon. Live Windows Docker and current production deployment remain unverified. Correlation tokens cannot attest introspectable worker output; authorization remains in the host broker. Redirected Python streams retain a 5,000,000-byte per-stream spill ceiling; native-fd bypass and later runaway bytes are not retained on disk.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "652ee5d6bfaa2331b7fd3d3db0a2fd9c2e8f83190ba26ccbc4e9e4bbd1ab9feb"
+          "sha256": "126926d63fac4d9d980ef9e56fc0b959fd98478c4a57e6f9eb685f1b31243a77"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -10453,7 +10501,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1c9f11237f8df0962801f12b0daede0109e87605b95c85236d6cdff93b97226b"
+          "sha256": "e30b53707c5b2b5d599eddc05c36b32b757341a1b85eb77e5c13fe01b4ed418f"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -10461,15 +10509,15 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "cac98ea7a1362ba3601b8e4e573fe477030aa637a6bb265f14dc29847cec1449"
+          "sha256": "9db0a76e64aa62168d6bd10560b2550093b279e1b4cc8f07f8a7917021f78370"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "ca759a5c31ed10d3dab7128e97f5de6c0c8ce0c44951f7d70ac272c09df55a50"
+          "sha256": "1b799fd2d4c318e9c99f127f07f0b1203de3ae73bbacc1322cef86d10bcd2876"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "d2d5330355e52230c4e137076258531f0b438ff79e62bb75800f4720c8b6ede9"
+          "sha256": "67035351e3ab6fa11a318137f23f0054625c5390cea936e713b77c3231e872cf"
         },
         {
           "path": "tests/test_session_kernels.py",
@@ -10477,11 +10525,11 @@
         },
         {
           "path": "agents/core/routers/skills.py",
-          "sha256": "b33537c1e8a72689580e0d26bc282cc946d34b17a9b6ff6f9fec0abc14c1fc7e"
+          "sha256": "4abb3392bf00c532c6d77e2a5c0428ea5b20f83a7e5d4e726f04817f30680910"
         },
         {
           "path": "tests/test_session_kernel_routes.py",
-          "sha256": "eae9c0deba766ffde8e7ce720d761ef5889f228ae34a0d7af41f554d628066f1"
+          "sha256": "93e565df99b60a706f2471097b98cbaaaba333bce9ef064d2a4dfbb497ca97c9"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -10497,7 +10545,7 @@
         },
         {
           "path": "agents/core/session_kernel_mailbox.py",
-          "sha256": "d026a68c2f9082521acf5428ea20e6992dc0479abcc2d59a9fd67d12e222d85d"
+          "sha256": "6eb83259c880f850696ed365b408e7812e0db1f3b1177806661d8e62a94656e4"
         },
         {
           "path": "tests/test_detached_kernel.py",
@@ -10514,6 +10562,34 @@
         {
           "path": "docs/hermes/evidence/2026-09-15-docker-containment.json",
           "sha256": "67cf1b8a68f92d5b594f3a6b257d965d101004a1897623f25b8dbc03df493692"
+        },
+        {
+          "path": "agents/core/code_context.py",
+          "sha256": "9e6897a6bb97614e2e5efafa1d871fa67ac42ab5e27deb00daeb69342056113c"
+        },
+        {
+          "path": "agents/core/code_env.py",
+          "sha256": "e64a6bd305004e290b60617893c5919e2cfdf482a2a43f9735b26f9cc30ee835"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "795d851deb67257764ce82c17ad61cbbfafee287ef3c3743326d56a222a9d33b"
+        },
+        {
+          "path": "tests/test_h660_cell_grants.py",
+          "sha256": "1e8a02b4bdadc9009cc5b92179aeb2a2185c82ffe847abb1736ca03bcaa77369"
+        },
+        {
+          "path": "tests/test_h660_default_sessions.py",
+          "sha256": "17ccf4f29337c8091ff900871c7857bc898d5a274fe8c63b5cd32a0768fc6981"
+        },
+        {
+          "path": "tests/test_h595_context_integration.py",
+          "sha256": "716ff8f3594f34f8f7ae7466ac5c1b0d618e5d42e180b215dccc3fc1a1c20e4f"
+        },
+        {
+          "path": "tests/test_h595_code_settings.py",
+          "sha256": "ce3c6ef9a8e3a8648b7a5266fe6d324db635e9f2538ff99f61c581a4236579d3"
         }
       ]
     },

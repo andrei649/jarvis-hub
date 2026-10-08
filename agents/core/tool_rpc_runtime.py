@@ -369,6 +369,7 @@ class ToolRPCSandboxRuntime:
         filename: str = "script.py",
         sinks=None,
         before_execute=None,
+        execution_context: dict | None = None,
     ) -> ToolRPCSandboxRun:
         """``sinks`` is handed straight to the sandbox; see ``Sandbox.execute_python``.
 
@@ -390,12 +391,16 @@ class ToolRPCSandboxRuntime:
             timeout_seconds=max(1.0, float(self.sandbox.timeout)),
             poll_interval=self.poll_interval,
         )
-        script = f"{shim}\n{code}"
+        from .tool_rpc_stubs import tool_import_source
+
+        offered = self.invocation.offered if self.invocation is not None else frozenset()
+        script = f"{shim}\n{tool_import_source(self.server.tools(), offered)}\n{code}"
         async def execute():
             if before_execute is not None:
                 before_execute()
+            options = {"execution_context": execution_context} if execution_context is not None else {}
             return await self.sandbox.execute_python(
-                script, filename, writable_paths=[rpc_dir], sinks=sinks)
+                script, filename, writable_paths=[rpc_dir], sinks=sinks, **options)
 
         task = asyncio.create_task(execute())
 
@@ -431,12 +436,23 @@ class ToolRPCSandboxRuntime:
                 await asyncio.sleep(self.poll_interval)
 
             tool_calls = await self._service_pending(store, processed, tool_calls)
+            result = await task
             return ToolRPCSandboxRun(
-                result=await task,
+                result=result,
                 tool_calls=tool_calls,
-                timed_out=timed_out,
+                timed_out=timed_out or bool(getattr(result, "timed_out", False)),
             )
         finally:
+            # This runtime owns the execute task even while awaiting host RPC.
+            # Propagate interruption into the backend's existing teardown before
+            # removing the mailbox it may still need during shutdown.
+            if not task.done():
+                task.cancel()
+            # A backend exception has already propagated through `await task`
+            # above, or another failure is unwinding the RPC service. Retrieving
+            # it again must not skip mailbox cleanup or mask that original error.
+            with suppress(asyncio.CancelledError, Exception):
+                await task
             with suppress(Exception):
                 shutil.rmtree(rpc_dir)
 

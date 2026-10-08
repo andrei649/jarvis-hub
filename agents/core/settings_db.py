@@ -189,6 +189,14 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="cost_confirm_usd_per_mtok", value=40,          label="Ask before choosing a model whose output costs at least this many USD per million tokens (0 = never ask)", kind="number"),
     dict(category="llm",     key="hybrid_flash_max", value=1000000,                label="Cloud Flash routing threshold — above N input tokens escalates to Pro (0 = unlimited)", kind="number"),
     dict(category="llm",     key="tool_loop_enabled", value=False,                  label="Agent tool loop (experimental)", kind="toggle"),
+    # Native execute_code remains owner opt-in. Sessions follow that switch by default;
+    # the image is needed only for persistent Docker kernels, not one-shot execution.
+    dict(category="llm", key="execute_code", value=False, label="Offer native code execution to the owner", kind="toggle"),
+    dict(category="llm", key="execute_code_sessions", value=True, label="Keep native code variables across cells when enabled", kind="toggle"),
+    dict(category="llm", key="execute_code_image", value="", label="Digest-pinned Docker image for persistent code sessions", kind="text"),
+    dict(category="llm", key="execute_code_mode", value="project", label="Native code context mode", kind="select", opts=["project", "strict"]),
+    dict(category="llm", key="execute_code_project_root", value="", label="Absolute project folder available to owner code execution (empty = no project copy)", kind="text"),
+    dict(category="llm", key="execute_code_env_passthrough", value=[], label="Host environment variable names allowed for declared code skills (names only)", kind="tags"),
     dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),
     dict(category="llm",     key="tool_loop_context_tokens", value=0,               label="Agent tool-loop context budget (tokens; 0 = 75% of the model window)", kind="number"),
     dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap; todo is not capped)", kind="number"),
@@ -786,6 +794,21 @@ def bounded_learning_int(key: str, raw: Any, default: int) -> int:
 
 def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     """Return an error string if *value* violates the *kind*'s schema, else None."""
+    if key == "execute_code_project_root" and (
+            not isinstance(value, str) or len(value) > 2048 or "\x00" in value
+            or (value != "" and (value != value.strip() or not os.path.isabs(value)))):
+        return f"{key}: expected an absolute project folder path or empty"
+    if key == "execute_code_env_passthrough":
+        from .code_env import _passable_name
+
+        if (not isinstance(value, list) or len(value) > 64
+                or not all(_passable_name(name) for name in value)
+                or len(set(value)) != len(value)):
+            return f"{key}: expected up to 64 distinct safe environment variable names"
+    if key == "execute_code_image" and (
+            not isinstance(value, str) or (value != "" and re.fullmatch(
+                r"[a-zA-Z0-9][a-zA-Z0-9./:_-]*@sha256:[0-9a-fA-F]{64}", value) is None)):
+        return f"{key}: expected a Docker image pinned by sha256 digest or empty"
     if key == "stt_command_provider":
         from .voice.provider_store import valid_provider_id
         if value != "" and not valid_provider_id(value):

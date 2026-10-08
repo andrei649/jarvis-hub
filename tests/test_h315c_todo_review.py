@@ -212,6 +212,7 @@ async def test_the_broker_carries_an_untrusted_read_to_every_later_call_it_servi
 def _kernel_tool(server, sandbox, tmp_path):
     from agents.core import code_tools
     from agents.core.code_tools import CodeExecutionTool
+    from agents.core.kernel import Decision, Verdict
     from agents.core.session_kernels import WORKER_SOURCE, PipeKernelBackend, SessionKernelManager
 
     kernels = SessionKernelManager(
@@ -221,7 +222,8 @@ def _kernel_tool(server, sandbox, tmp_path):
     tool = CodeExecutionTool(server, sandbox=lambda: sandbox, settings=lambda key, default: values.get(key, default),
                              agent_patterns=lambda agent: None,
                              principal=lambda: SimpleNamespace(admin=True, channel="web"),
-                             session_id=lambda: "owner-session", kernels=kernels)
+                             session_id=lambda: "owner-session", kernels=kernels,
+                             authorizer=lambda _action: Decision(Verdict.GRANT))
     return tool, kernels
 
 
