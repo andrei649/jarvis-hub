@@ -57,6 +57,7 @@ def _k1(server, tmp_path):
 def _k2(server, tmp_path):
     from agents.core import code_tools
     from agents.core.code_tools import register_code_tools
+    from agents.core.kernel import Decision, Verdict
     from agents.core.session_kernels import WORKER_SOURCE, PipeKernelBackend, SessionKernelManager
 
     kernels = SessionKernelManager(
@@ -68,7 +69,8 @@ def _k2(server, tmp_path):
                         settings=lambda key, default: values.get(key, default),
                         agent_patterns=lambda agent: None,
                         principal=lambda: SimpleNamespace(admin=True, channel="web"),
-                        session_id=lambda: "owner-session", kernels=kernels)
+                        session_id=lambda: "owner-session", kernels=kernels,
+                        authorizer=lambda _action: Decision(Verdict.GRANT))
     return AgentToolRuntime(server, enabled=lambda: True, max_iterations=lambda: 8), kernels
 
 
