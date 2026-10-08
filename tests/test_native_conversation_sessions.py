@@ -1,6 +1,7 @@
 """Entry-point checks for generation-fenced conversation changes."""
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -190,6 +191,23 @@ async def test_empty_new_session_is_resumable_after_restart(tmp_path, monkeypatc
     later.sessions.clear()
     assert await later.resume_session(sid) is True
     assert later.sessions[sid] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", [
+    {"session_id": "session_corrupt", "instance_id": "stale"},
+    {"session_id": "session_corrupt", "turns": None, "instance_id": "stale"},
+    {"session_id": "session_corrupt", "turns": {}, "instance_id": "stale"},
+])
+async def test_resume_refuses_corrupt_snapshot_without_claiming_session(tmp_path, monkeypatch, payload):
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path)
+    (tmp_path / "session_corrupt.json").write_text(json.dumps(payload), encoding="utf-8")
+    memory = ConversationMemory(persist=True)
+    assert memory.current_session_id is None
+    assert await memory.resume_session("session_corrupt") is False
+    assert memory.current_session_id is None
+    assert "session_corrupt" not in memory.sessions
+    assert "session_corrupt" not in memory.instances
 
 
 @pytest.mark.asyncio
