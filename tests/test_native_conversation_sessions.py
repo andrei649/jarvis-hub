@@ -77,6 +77,22 @@ async def test_idle_reset_and_forum_topics_use_separate_generations(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_admitted_guest_turn_gets_owner_configured_idle_rollover_but_cannot_reset(tmp_path):
+    orch, cap, clock = host(tmp_path, {"sessions.reset_mode": "idle", "sessions.idle_minutes": 1})
+    await incoming(orch, "first", sender="99")
+    base = build_session_key(SessionSource(channel="telegram", sender="99", thread_id="123"))
+    old = cap["sessions"][-1]
+    clock["now"] += 61
+
+    assert await incoming(orch, "next", sender="99") == "ok"
+    assert cap["sessions"] == [old, f"mem:{base}_g1"]
+    assert orch._channel_sessions[base] == f"mem:{base}_g1"
+    assert "owner command" in await incoming(orch, "/reset", sender="99")
+    assert orch._channel_sessions[base] == f"mem:{base}_g1"
+    assert cap["sessions"] == [old, f"mem:{base}_g1"]
+
+
+@pytest.mark.asyncio
 async def test_scheduler_expires_idle_route_without_new_inbound_message(tmp_path):
     orch, cap, clock = host(tmp_path, {"sessions.reset_mode": "idle", "sessions.idle_minutes": 1})
     await incoming(orch, "old topic")

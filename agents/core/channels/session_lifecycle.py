@@ -165,7 +165,9 @@ class ChannelSessionLifecycle:
                     # Prepare the new memory session before committing the route.
                     # A refused create/resume must leave the old route intact.
                     if reset:
-                        if authorize_reset is not None and authorize_reset() is not True:
+                        # The owner configured idle/daily rollover; only an explicit
+                        # command needs the turn's authority rechecked at commit.
+                        if explicit and authorize_reset is not None and authorize_reset() is not True:
                             raise SessionResetError("Reset authority changed")
                         state = self.store.rotate(base, now, source.channel, kind)
                     self.store.touch(base, now, source.channel, kind)
