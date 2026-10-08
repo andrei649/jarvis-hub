@@ -29,6 +29,8 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 |---------|---------------------|:-------:|:------:|------|
 | Chat (streaming) | `POST /chat/stream`, `POST /chat` | ✅ | ✅ | H18.1 |
 
+| Selected Ollama image turns and active history | owner GET active-images and POST selected-prepare/selected-chat under /api/vlm/composer | ✅ all active HUD composers, exact model/session review and stale-response fences | ⬜ selected route review, active-history choices and concrete session binding | H18.31 / H277 |
+
 | Owner quick commands | existing chat slash dispatch and Admin commands.quick_commands JSON | ✅ existing Admin configuration, /help and approval tasks | ✅ typed aliases/fixed commands use the same governed chat path; native catalog discovery remains open | H078 / H18.26 |
 
 | Session command ID transitions (/new, /reset, /undo) | POST /chat and /chat/stream return session_id; existing POST /sessions/resume | ✅ concrete topic state, old-topic reopening and desktop sync | ⬜ follow returned ID and refresh/reset visible transcript; current resume API stays compatible | H18.30 |
