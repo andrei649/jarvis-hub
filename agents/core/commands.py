@@ -77,7 +77,7 @@ class CommandOutcome:
     """What dispatch decided, so callers can log and record it honestly."""
 
     name: str
-    status: str  # answered | refused | unknown | failed
+    status: str  # answered | queued | refused | unknown | failed
     reply: str
 
 
@@ -121,7 +121,8 @@ class CommandRegistry:
             return None
         return match.group(1).lower(), (match.group(2) or "").strip()[:_MAX_ARGS]
 
-    async def dispatch(self, text: str, *, orch: Any, principal: Principal) -> CommandOutcome | None:
+    async def dispatch(self, text: str, *, orch: Any, principal: Principal,
+                       _quick_seen: frozenset[str] = frozenset()) -> CommandOutcome | None:
         """Answer a slash command, or return None when *text* is not one."""
         parsed = self.parse(text)
         if parsed is None:
@@ -129,6 +130,12 @@ class CommandRegistry:
         name, args = parsed
         command = self.get(name)
         if command is None:
+            from .quick_commands import dispatch_quick
+
+            quick = await dispatch_quick(self, name, args, text=text,
+                                         orch=orch, principal=principal, seen=_quick_seen)
+            if quick is not None:
+                return self._observed(quick)
             # Deliberately NOT observed. `name` here is whatever the sender typed, so
             # emitting it would push arbitrary message text through a field that
             # promises to carry command names — a body leak wearing a safe label.
@@ -168,9 +175,13 @@ class CommandRegistry:
 
 
 def _help(ctx: CommandContext) -> str:
+    from .quick_commands import help_lines
+
     registry = getattr(ctx.orch, "commands", None)
     commands = registry.visible(ctx.principal) if isinstance(registry, CommandRegistry) else []
     lines = [command.summary for command in commands]
+    if ctx.principal.admin and isinstance(registry, CommandRegistry):
+        lines.extend(help_lines(registry))
     if not ctx.principal.admin:
         lines.append("Owner commands (such as /pause, /resume, /stop, /remind and /refine) answer only "
                      "the owner's channel.")

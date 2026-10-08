@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "eb7da4cb708e5ef52608f7b8a057be4898224b2a",
-  "assessed_at": "2026-10-08T13:11:47.144048Z",
+  "base_sha": "fa34cd5013a7e0dec821867f36966a48f5ff492b",
+  "assessed_at": "2026-10-08T13:32:09.362918Z",
   "reviews": [
     {
       "id": "H001",
@@ -548,11 +548,11 @@
         },
         {
           "path": "agents/core/commands.py",
-          "sha256": "bbcbf02915a731b79e9e1e84970e3c759cd67dc8e26e9590d3869292d879ba85"
+          "sha256": "65c930e520cbfa43482e46551e2b3969758c560f6de248971e489c49dafcb9f9"
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "f43ad410db6f1e1045d859b5e73d8c91c55c630b16726b7c0f0bd342e1e0849e"
+          "sha256": "7fc8f4921ab5668410a0380d8408d353202e7fa7191448aff2cfb2faebd7126e"
         },
         {
           "path": "agents/core/memory/conversation.py",
@@ -10054,7 +10054,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "f43ad410db6f1e1045d859b5e73d8c91c55c630b16726b7c0f0bd342e1e0849e"
+          "sha256": "7fc8f4921ab5668410a0380d8408d353202e7fa7191448aff2cfb2faebd7126e"
         },
         {
           "path": "agents/core/skills/tools.py",
@@ -10645,7 +10645,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "f43ad410db6f1e1045d859b5e73d8c91c55c630b16726b7c0f0bd342e1e0849e"
+          "sha256": "7fc8f4921ab5668410a0380d8408d353202e7fa7191448aff2cfb2faebd7126e"
         },
         {
           "path": "tests/test_h660_cell_grants.py",
@@ -12039,6 +12039,55 @@
         {
           "path": "tests/test_hermes_pin_doc_consistency.py",
           "sha256": "f17b235b40611afe37b0c33722e1549651b597e17ceea8d82759b809b4c107c3"
+        }
+      ]
+    },
+    {
+      "id": "H078",
+      "row_sha256": "4f226f6c7a2d1517e0bc1c68c654d3f0fe6893e79ce039d3e2118c179e9bd91f",
+      "status": "equivalent",
+      "summary": "Native owner quick commands are persisted as commands.quick_commands through the existing validated Admin JSON settings. An empty map enables nothing. Built-in slash commands have precedence; bounded aliases re-enter the same current-principal registry, retain arguments, reject cycles and cannot target /new, /reset or /undo. Named fixed shell commands ignore all inbound arguments and use the existing terminal_run ToolRPC registry with local-host target policy, Action Kernel preflight and signed ask-tier approval intake; the terminal handler cannot run before a durable human-approved task. Current terminal consent/gates and irreversible approval floor remain authoritative. Owner help lists configured commands. Immediate governed responses are bounded and pass broker plus SecretRedactionFilter redaction, failing closed on a redaction error; approved task results use existing task plumbing. Focused dispatch/builtin-priority/guest/cycle/oversize/fixed-payload/no-immediate-execution/redaction tests and Admin persisted-roundtrip/rejected-write tests pass. This is the governed native adaptation required by the frozen H078 row, without the Hermes gateway runtime or direct shell spawning.",
+      "remaining": "",
+      "evidence": [
+        {
+          "path": "agents/core/quick_commands.py",
+          "sha256": "f0b7b6074eaf254a20220daf57bc16d12e34f4acaed0dc921b2b64abd1aee15c"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "65c930e520cbfa43482e46551e2b3969758c560f6de248971e489c49dafcb9f9"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "7fc8f4921ab5668410a0380d8408d353202e7fa7191448aff2cfb2faebd7126e"
+        },
+        {
+          "path": "agents/core/tool_rpc.py",
+          "sha256": "ee88bdaeb6ce2872836e157729679e070d1e25258b4bf2991f0b7bb297a917d4"
+        },
+        {
+          "path": "agents/core/kernel/registry.py",
+          "sha256": "261e05b31a7523af256880e5c0a61fe6c38bdb760587ac752beb063d8c07fd32"
+        },
+        {
+          "path": "agents/core/environments/execution.py",
+          "sha256": "4f023b1165fe4ca37fd38f7b21160bc0b3cbb1e8d98d4da5dce7dc8c71981a4f"
+        },
+        {
+          "path": "tests/test_quick_commands.py",
+          "sha256": "0bf79c2a2569619443f6c9a98389fe9a4f60a41eab4fa420c012e69e09957bce"
+        },
+        {
+          "path": "tests/test_slash_commands.py",
+          "sha256": "c21d1a935428dabcc32decee6f50fedc6e2d36ad548529f071001097b814aeab"
+        },
+        {
+          "path": "tests/test_commands_catalog.py",
+          "sha256": "5a14fd6c2049ebed81c992320e48edd74adfc411b7323c82d33d39b1d5f04b61"
+        },
+        {
+          "path": "docs/plans/2026-10-08-native-quick-commands.md",
+          "sha256": "0099b953cc1c42c7e1c0af52dbbc58d15709d9ea51ff34da7c45df2cd2cccdc6"
         }
       ]
     }
