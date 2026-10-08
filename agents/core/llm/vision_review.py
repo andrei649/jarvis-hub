@@ -58,17 +58,18 @@ class VisionReviewStore:
 
     @staticmethod
     def _fingerprint(session_id: str, agent_id: str, prompt: str,
-                     model: str, route: str, binding: tuple) -> tuple[str, str]:
+                     model: str, route: str, binding: tuple,
+                     principal: tuple) -> tuple[str, str]:
         if not all(isinstance(value, str) and value for value in
-                   (session_id, agent_id, prompt, model, route)) or not isinstance(binding, tuple):
+                   (session_id, agent_id, prompt, model, route)) or not isinstance(binding, tuple) or not isinstance(principal, tuple):
             raise VisionReviewRefused("vlm_review_invalid")
-        return (_digest((session_id, agent_id, prompt, model, route, binding)),
+        return (_digest((principal, session_id, agent_id, prompt, model, route, binding)),
                 _digest((session_id,)))
 
     def issue(self, *, session_id: str, agent_id: str, prompt: str,
-              model: str, route: str, binding: tuple) -> str:
+              model: str, route: str, binding: tuple, principal: tuple) -> str:
         fingerprint, session = self._fingerprint(
-            session_id, agent_id, prompt, model, route, binding)
+            session_id, agent_id, prompt, model, route, binding, principal)
         now = self._clock()
         with self._lock:
             self._reviews = {token: review for token, review in self._reviews.items()
@@ -82,11 +83,11 @@ class VisionReviewStore:
         return token
 
     def consume(self, token: str, *, session_id: str, agent_id: str, prompt: str,
-                model: str, route: str, binding: tuple) -> None:
+                model: str, route: str, binding: tuple, principal: tuple) -> None:
         if not isinstance(token, str) or not 1 <= len(token) <= 128:
             raise VisionReviewRefused("vlm_review_unavailable")
         fingerprint, _session = self._fingerprint(
-            session_id, agent_id, prompt, model, route, binding)
+            session_id, agent_id, prompt, model, route, binding, principal)
         with self._lock:
             review = self._reviews.pop(token, None)
         if review is None:

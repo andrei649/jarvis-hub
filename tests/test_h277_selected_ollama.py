@@ -14,6 +14,7 @@ from PIL import Image
 from agents import web
 from agents.core.llm.base import OllamaBackend
 from agents.core.llm.egress import llm_async_client
+from agents.core.llm.vision_review import VisionReviewRefused, VisionReviewStore
 from agents.core.llm.vision_turn import (
     SelectedImageTurn,
     history_fingerprint,
@@ -57,6 +58,9 @@ def selected(monkeypatch):
         yield True
 
     async def complete(**kwargs):
+        from agents.core.orchestrator import current_principal
+
+        orch.principals.append(current_principal())
         orch.committed.append(kwargs)
         await memory.add_turn("selected_s", "user", kwargs["question"])
         await memory.add_turn("selected_s", "assistant", kwargs["answer"])
@@ -64,16 +68,24 @@ def selected(monkeypatch):
     orch.turn_lease = lease
     orch.complete_selected_image_turn = complete
     orch.committed = []
+    orch.principals = []
+    orch.prepare_principals = []
 
     async def prepare(_orch, _body):
+        from agents.core.orchestrator import current_principal
+
+        orch.prepare_principals.append(current_principal())
         return turn, composer_vision._selected_destination(turn)
 
     monkeypatch.setattr(composer_vision, "_selected_turn", prepare)
     monkeypatch.setattr(web, "orch", orch)
     monkeypatch.setattr(web, "USER_TOKEN", "selected-test")
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "selected-admin")
     monkeypatch.setenv("JARVIS_USER_TOKEN", "selected-test")
-    client = TestClient(web.app, headers={"X-User-Token": "selected-test"})
-    return SimpleNamespace(client=client, calls=calls, response=response, state=state, orch=orch,
+    monkeypatch.setenv("JARVIS_ADMIN_TOKEN", "selected-admin")
+    client = TestClient(web.app, headers={"X-User-Token": "selected-test", "X-Admin-Token": "selected-admin"})
+    user_client = TestClient(web.app, headers={"X-User-Token": "selected-test"})
+    return SimpleNamespace(client=client, user_client=user_client, calls=calls, response=response, state=state, orch=orch,
                            memory=memory, turn=turn)
 
 
@@ -97,6 +109,9 @@ def test_selected_ollama_sends_native_chat_and_retains_private_bytes_after_commi
     assert response.status_code == 200, response.text
     assert response.json()["committed"] is True
     assert selected.orch.committed[0]["model"] == "vision-model"
+    assert selected.orch.prepare_principals[0].admin is True
+    assert selected.orch.principals[0].channel == "web"
+    assert selected.orch.principals[0].admin is True
     assert selected.calls[0].url.path == "/api/chat"
     wire = selected.calls[0].read().decode()
     assert '"images"' in wire and '"model":"vision-model"' in wire
@@ -105,6 +120,37 @@ def test_selected_ollama_sends_native_chat_and_retains_private_bytes_after_commi
     assert selected.memory.active_images.resolve("selected_s", instance, "jarvis", [handle]) == (
         base64.b64decode(PNG.partition(",")[2]),)
     assert base64.b64decode(PNG.partition(",")[2]) not in repr(selected.memory.sessions).encode()
+
+
+def test_user_scope_cannot_read_prepare_or_send_selected_owner_images(selected):
+    instance = selected.memory.active_image_instance("selected_s")
+    selected.memory.active_images.remember(
+        "selected_s", instance, "jarvis", "private question", "private answer",
+        [base64.b64decode(PNG.partition(",")[2])])
+    payload = _review(selected)
+    prepare = {"prompt": payload["prompt"], "agent": "jarvis", "session_id": "selected_s",
+               "image_digests": [hashlib.sha256(PNG.encode()).hexdigest()]}
+    listing = selected.user_client.get("/api/vlm/composer/active-images",
+                                       params={"session_id": "selected_s", "agent": "jarvis"})
+    review = selected.user_client.post("/api/vlm/composer/selected-prepare", json=prepare)
+    send = selected.user_client.post("/api/vlm/composer/selected-chat", json=payload)
+    assert [listing.status_code, review.status_code, send.status_code] == [401, 401, 401]
+    assert selected.user_client.post("/api/vlm/composer/describe", json={}).status_code == 422
+    assert "private question" not in listing.text
+    assert selected.calls == [] and selected.orch.committed == []
+    assert len(selected.orch.prepare_principals) == 1
+    assert selected.memory.sessions["selected_s"] == []
+
+
+def test_selected_review_binds_resolved_owner_profile():
+    store = VisionReviewStore()
+    args = {"session_id": "selected_s", "agent_id": "jarvis", "prompt": "question",
+            "model": "vision-model", "route": "local", "binding": ("exact images",)}
+    token = store.issue(**args, principal=("web", None, True, None))
+    with pytest.raises(VisionReviewRefused, match="vlm_destination_changed"):
+        store.consume(token, **args, principal=("web", None, False, None))
+    with pytest.raises(VisionReviewRefused, match="vlm_review_unavailable"):
+        store.consume(token, **args, principal=("web", None, True, None))
 
 
 def test_changed_image_burns_review_without_sending(selected):

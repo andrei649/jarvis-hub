@@ -17,7 +17,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from agents.core.routers._deps import user_guard
+from agents.core.commands import Principal
+from agents.core.routers._deps import owner_web_principal, user_guard
 from agents.core.web_helpers import nocache_json
 
 
@@ -418,11 +419,21 @@ def _selected_binding(turn, origin, image_digests, active_signature):
             tuple(image_digests), active_signature)
 
 
+def _owner_profile(principal):
+    """The web owner's resolved role, without copying a credential into review state."""
+    if principal.channel != "web" or not principal.admin:
+        raise VisionReviewRefused("vlm_owner_required")
+    return (principal.channel, principal.sender, principal.admin, principal.chat)
+
+
 @router.get("/api/vlm/composer/active-images")
-async def composer_active_images(session_id: str, agent: str = "jarvis"):
+async def composer_active_images(session_id: str,
+                                 principal: Annotated[Principal, Depends(owner_web_principal)],
+                                 agent: str = "jarvis"):
     from agents.core.app_state import get_orch
     from agents.core.validation import is_valid_session_id
 
+    _owner_profile(principal)
     orch = get_orch()
     if orch is None or not is_valid_session_id(session_id) or agent not in orch.agents:
         return nocache_json({"error": "Image session unavailable", "reason": "vlm_session_changed"}, status_code=409)
@@ -433,12 +444,16 @@ async def composer_active_images(session_id: str, agent: str = "jarvis"):
 
 
 @router.post("/api/vlm/composer/selected-prepare")
-async def composer_selected_prepare(body: SelectedImagePrepare):
+async def composer_selected_prepare(body: SelectedImagePrepare,
+                                    principal: Annotated[Principal, Depends(owner_web_principal)]):
     from agents.core.app_state import get_orch
+    from agents.core.orchestrator import bind_turn_principal, reset_turn_principal
 
+    profile = _owner_profile(principal)
     orch = get_orch()
     if orch is None:
         return nocache_json({"error": "Conversation unavailable", "reason": "vlm_orchestrator_unavailable"}, status_code=503)
+    principal_token = bind_turn_principal(principal)
     try:
         turn, destination = await _selected_turn(orch, body)
         active_turns, signature = _active_selection(
@@ -449,7 +464,8 @@ async def composer_selected_prepare(body: SelectedImagePrepare):
         token = _SELECTED_REVIEWS.issue(
             session_id=body.session_id, agent_id=body.agent, prompt=body.prompt,
             model=turn.model, route=turn.route,
-            binding=_selected_binding(turn, destination, body.image_digests, signature))
+            binding=_selected_binding(turn, destination, body.image_digests, signature),
+            principal=profile)
         return nocache_json({"configured": True, "reachable": None, "review_token": token,
                              "session_id": body.session_id, "destination": destination,
                              "model": turn.model, "backend": "ollama", "local": True,
@@ -457,10 +473,11 @@ async def composer_selected_prepare(body: SelectedImagePrepare):
     except (ValueError, VisionReviewRefused):
         return nocache_json({"error": "Selected Ollama vision unavailable",
                              "reason": "vlm_selected_unavailable"}, status_code=409)
+    finally:
+        reset_turn_principal(principal_token)
 
 
-@router.post("/api/vlm/composer/selected-chat")
-async def composer_selected_chat(body: SelectedImageSend, request: Request):
+async def _composer_selected_chat(body: SelectedImageSend, request: Request, profile):
     from agents.core.app_state import get_orch
     from agents.core.llm.data_handling import physical_request_scope
     from agents.core.llm.direct_transport import require_direct_async_transport
@@ -492,7 +509,8 @@ async def composer_selected_chat(body: SelectedImageSend, request: Request):
             _SELECTED_REVIEWS.consume(
                 body.review_token, session_id=body.session_id, agent_id=body.agent,
                 prompt=body.prompt, model=turn.model, route=turn.route,
-                binding=_selected_binding(turn, destination, digests, signature))
+                binding=_selected_binding(turn, destination, digests, signature),
+                principal=profile)
             messages = []
             for prior in active_turns:
                 messages.append({"role": "user", "content": [
@@ -580,3 +598,16 @@ async def composer_selected_chat(body: SelectedImageSend, request: Request):
                 _SELECTED_REVIEWS.cancel(body.review_token, session_id=body.session_id)
             return nocache_json({"error": "Vision analysis failed",
                                  "reason": "vlm_generation_failed"}, status_code=502)
+
+
+@router.post("/api/vlm/composer/selected-chat")
+async def composer_selected_chat(body: SelectedImageSend, request: Request,
+                                 principal: Annotated[Principal, Depends(owner_web_principal)]):
+    from agents.core.orchestrator import bind_turn_principal, reset_turn_principal
+
+    profile = _owner_profile(principal)
+    principal_token = bind_turn_principal(principal)
+    try:
+        return await _composer_selected_chat(body, request, profile)
+    finally:
+        reset_turn_principal(principal_token)
