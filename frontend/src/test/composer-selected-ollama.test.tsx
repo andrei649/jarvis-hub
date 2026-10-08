@@ -1,5 +1,5 @@
 import React from 'react';
-import {render,screen,fireEvent,waitFor,cleanup} from '@testing-library/react';
+import {render,screen,fireEvent,waitFor,cleanup,act} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {InputBar} from '../cockpit';
 import {describeImages} from '../vision-turn';
@@ -68,4 +68,20 @@ it('sends a reviewed selected draft to the committed chat route',async()=>{
   expect(result.text).toBe('A blue square.');
   expect(requests[0].path).toContain('/selected-chat');
   expect(JSON.parse(requests[0].body!)).not.toHaveProperty('names');
+});
+
+it('does not show images loaded for a previous session after switching topics',async()=>{
+  let releaseOld!:(response:Response)=>void;
+  vi.stubGlobal('fetch',vi.fn(async(path:string)=>{
+    requests.push({path});
+    if(path.includes('session_id=old_session'))return new Promise<Response>(resolve=>{releaseOld=resolve;});
+    if(path.includes('session_id=new_session'))return new Response(JSON.stringify({session_id:'new_session',images:[]}));
+    return new Response('{}',{status:404});
+  }));
+  const view=render(<InputBar onSubmit={vi.fn()} t={t} agent="jarvis" sessionId="old_session" selectedTurn/>);
+  fireEvent.click(screen.getByRole('button',{name:'Use previous image'}));
+  await waitFor(()=>expect(releaseOld).toBeTruthy());
+  view.rerender(<InputBar onSubmit={vi.fn()} t={t} agent="jarvis" sessionId="new_session" selectedTurn/>);
+  await act(async()=>releaseOld(new Response(JSON.stringify({session_id:'old_session',images:[{handle:active,count:1,question:'Old image'}]}))));
+  await waitFor(()=>expect(screen.queryByLabelText(/Old image/)).toBeNull());
 });

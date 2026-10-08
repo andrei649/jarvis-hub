@@ -19,6 +19,8 @@ function validRetryMetadata(data:Destination){
 
 export function useComposerImages(prompt='',agent='jarvis',sessionId='',selectedTurn=false){
   const records=useRef<Draft[]>([]), serial=useRef(0);
+  const context=useRef('');
+  context.current=`${sessionId}\u0000${agent}\u0000${selectedTurn}`;
   const [images,setImages]=useState<Draft[]>([]),[note,setNote]=useState('');
   const [destination,setDestination]=useState<Destination|null>(null),[ack,setAck]=useState('');
   const [refreshId,setRefreshId]=useState(0);
@@ -55,10 +57,11 @@ export function useComposerImages(prompt='',agent='jarvis',sessionId='',selected
   };
   const onPaste=(event:React.ClipboardEvent)=>{const files=transfer(event.clipboardData).filter(file=>file.type.startsWith('image/'));if(files.length){event.preventDefault();addFiles(files);}};
   const onDrop=(event:React.DragEvent)=>{const files=transfer(event.dataTransfer);if(files.length){event.preventDefault();addFiles(files);}};
-  useEffect(()=>()=>{records.current.forEach(dispose);records.current=[];},[]);
+  useEffect(()=>()=>{context.current='';records.current.forEach(dispose);records.current=[];},[]);
   useEffect(()=>{clear();setActiveImages([]);},[sessionId,agent,selectedTurn]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadActive=async()=>{
     if(!sessionId)return;
+    const requestedContext=context.current;
     try{
       const response=await apiFetchOnce(`/api/vlm/composer/active-images?session_id=${encodeURIComponent(sessionId)}&agent=${encodeURIComponent(agent)}`);
       const text=await response.text();if(!response.ok||text.length>8192)throw new Error();
@@ -66,8 +69,8 @@ export function useComposerImages(prompt='',agent='jarvis',sessionId='',selected
       if(data.session_id!==sessionId||!Array.isArray(data.images)||data.images.length>32||
         data.images.some((row:ActiveImage)=>!row||typeof row.handle!=='string'||!/^[-_A-Za-z0-9]{20,128}$/.test(row.handle)||
           !Number.isInteger(row.count)||row.count<1||row.count>8||typeof row.question!=='string'||row.question.length>120))throw new Error();
-      setActiveImages(data.images);
-    }catch{setActiveImages([]);setSelectedHandles([]);setNote('Previous images are unavailable');}
+      if(context.current===requestedContext)setActiveImages(data.images);
+    }catch{if(context.current===requestedContext){setActiveImages([]);setSelectedHandles([]);setNote('Previous images are unavailable');}}
   };
   const toggleActive=(handle:string)=>{
     const row=activeImages.find(item=>item.handle===handle);if(!row)return;

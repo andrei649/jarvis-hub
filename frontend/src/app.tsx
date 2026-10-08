@@ -125,9 +125,11 @@ function App({ floating = false, shortcuts, onWorld }: {
   const [focusId, setFocusId] = useState(null);
   const [messages, setMessages] = useState<any[]>(demo ? V2.SEED_MESSAGES : []);
   const sessionId = useRef<string | null>(savedChatSession());
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => sessionId.current);
   const selectedSessionId = useCallback(() => sessionId.current, []);
   const selectSession = useCallback((id: string, turns?: any[]) => {
     sessionId.current = id;
+    setActiveSessionId(id);
     try { sessionStorage.setItem(CHAT_SESSION_KEY, id); } catch { /* storage unavailable */ }
     if (turns) setMessages(visibleTurns(turns));
   }, []);
@@ -463,11 +465,16 @@ function App({ floating = false, shortcuts, onWorld }: {
     turnResolve.current?.();turnResolve.current=null;
     timers.current.forEach(clearTimeout);timers.current=[];setThinking(null);
   },[]);
+  const selectAgent=useCallback((id:string)=>{
+    if(id!==activeId)stopTurn();
+    setActiveId(id);setDossier(id);
+  },[activeId,stopTurn]);
   const submit=useCallback((text:string,vision?:VisionDraft)=>{
     if(turnBusy.current||thinking)return false;
+    if(vision?.review_token && (vision.session_id!==sessionId.current || vision.agent!==activeId))return false;
     if(vision)void runVision(text,vision);else void runTurn(text);
     return true;
-  },[runTurn,runVision,thinking]);
+  },[runTurn,runVision,thinking,activeId]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
   const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: runTurn });
   useListeningIndicator(demo, voice.active);   // H222: the tray says when Nerva is listening
@@ -566,7 +573,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     {appearanceNotice}
     <SafeModeBanner state={safeMode} />
     {demo && <DemoBanner onExit={exitDemo} />}
-    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
+    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} />
     {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
   </div></RouteBoundary>;
 
@@ -602,14 +609,14 @@ function App({ floating = false, shortcuts, onWorld }: {
             <RouteBoundary routeKey={`${route.path}:${demo}`}>
             {mode === 'cockpit' ? (
               <div className="workzone cockpit" style={{ flex: 1, minHeight: 0 }}>
-                <RosterColumn agents={agents} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} sys={sys} llm={llm} demo={demo} t={t} />
+                <RosterColumn agents={agents} activeId={activeId} onSelect={selectAgent} sys={sys} llm={llm} demo={demo} t={t} />
                 <div className="col" style={{ minHeight: 0 }}>
                   <div className="panel" style={{ flex: '1.3 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
                     <div className="panel-head"><Icon d={ICONS.brain} size={14} /><span className="ttl">{t.network}</span><span className="st">focus mode</span></div>
                     {/* Neural Mesh — native canvas brain of agents + models firing
                         (HUD-v3 port of v3-mesh.jsx; replaces the /brain?embed=1 iframe). */}
-                    <NeuralMesh agents={agents} tasks={tasks} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} motion={motion} llm={llm} trust={trust} sources={sources} demo={demo} t={t} />
+                    <NeuralMesh agents={agents} tasks={tasks} activeId={activeId} onSelect={selectAgent} motion={motion} llm={llm} trust={trust} sources={sources} demo={demo} t={t} />
                   </div>
                   <div className="panel" style={{ flex: '1 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -623,7 +630,7 @@ function App({ floating = false, shortcuts, onWorld }: {
                       : centerTab === 'cognition'
                         ? <CognitionStream trace={trace} t={t} />
                         : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} />}
-                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} />
+                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} />
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
@@ -634,18 +641,18 @@ function App({ floating = false, shortcuts, onWorld }: {
               </div>
             ) : mode === 'agents' ? (
               <div className="workzone wide" style={{ flex: 1, minHeight: 0 }}>
-                <AgentsMode agents={agents} onOpen={(id) => { setActiveId(id); setDossier(id); }} t={t} />
+                <AgentsMode agents={agents} onOpen={selectAgent} t={t} />
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
               </div>
             ) : mode === 'chat' ? (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
+                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} />
               </div>
             ) : (
               <div className="workzone full" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <LiveSourceChip state={liveSourceState(mode, demo, liveModes.live, MODE_LIVE_KEYS)} />
                 <div style={{ flex: 1, minHeight: 0 }}>
-                  {modeComponent(mode, t, { demo, live: liveModes.live, onDemo: () => setDemo(true), localPct, activeId, onOpen: (id) => { setActiveId(id); setDossier(id); } })}
+                  {modeComponent(mode, t, { demo, live: liveModes.live, onDemo: () => setDemo(true), localPct, activeId, onOpen: selectAgent })}
                 </div>
               </div>
             )}
