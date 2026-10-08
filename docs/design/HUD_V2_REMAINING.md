@@ -16,6 +16,8 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
+H063 recovery (2026-10-08): typed /new, /reset and /undo are owner commands. Chat follows the concrete ID returned by /chat or the SSE end event; Sessions reopens the exact selected transcript, and desktop synchronization keeps the selected topic. Admin exposes reset policy, channel/type overrides and stall settings. Old transcripts are retained; empty sessions restart correctly and malformed snapshots fail closed. Direct web/CLI automatic reset/stall observation and native mobile ID transitions remain open.
+
 H595/H660 recovery (2026-10-08): existing Admin settings now expose the execute-code opt-in, persistent-session setting, digest-pinned session image, project/strict mode, project directory and allowed environment names. Existing sandbox status/reset remains the operator surface. Complete project context is projected read-only; unconfirmed one-shot Docker teardown retains its snapshot and reports uncertainty. Native mobile configuration and live Windows Docker acceptance remain open.
 
 H277 (2026-09-27): Decision Inbox renders advisory risk scores, escaped rationale,

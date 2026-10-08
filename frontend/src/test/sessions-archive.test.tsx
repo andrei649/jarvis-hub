@@ -45,14 +45,14 @@ describe('SessionsPanel — H218 archive', () => {
     expect(screen.queryByRole('button', { name: 'unarchive s-live' })).toBeNull();
   });
 
-  it('shows the archived chats with unarchive and no resume', async () => {
+  it('shows the archived chats with resume and unarchive', async () => {
     render(<SessionsPanel />);
     await screen.findByText('Today');
     fireEvent.click(screen.getByRole('tab', { name: 'archived' }));
     expect(await screen.findByText('Old trip')).toBeTruthy();
     expect(screen.getByText('ARCHIVED CHATS')).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'archived' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.queryByRole('button', { name: 'resume s-away' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'resume s-away' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'unarchive s-away' }));
     expect(await screen.findByText('back in the list: s-away')).toBeTruthy();
     expect(posts('POST')).toEqual(['/sessions/s-away/unarchive']);

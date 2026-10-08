@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "fe25329fe771c392a2604f2851b40dd8a50c304b",
-  "assessed_at": "2026-10-08T12:25:40.934879Z",
+  "base_sha": "eb7da4cb708e5ef52608f7b8a057be4898224b2a",
+  "assessed_at": "2026-10-08T13:11:47.144048Z",
   "reviews": [
     {
       "id": "H001",
@@ -503,16 +503,16 @@
       "id": "H063",
       "row_sha256": "cd1345086d24f184cc5642d24c7d354f791ff49949787d9c4b9256b878bb567a",
       "status": "partial",
-      "summary": "Channel conversations are designed to be forever-sessions. Orchestrator.channel_handler derives a deterministic key per channel identity with build_session_key (agents/core/channels/session.py:68, called at agents/core/orchestrator.py:1508) and resumes that same session on every turn (agents/core/orchestrator.py:1520). conversation_clock (agents/core/conversation_clock.py) only tells a long-lived session today's date. There is no reset policy, no idle or daily expiry, no reset-trigger phrase and no stall watcher: reset_policy, session_reset, idle_reset and stall-watcher terms have no matches under agents/. The only adjacent mechanism is disk retention. The H262 lifecycle sweep (run_sweep, agents/core/lifecycle_sweep.py:213) deletes archived, unpinned chats whose last activity is older than retention.conversation_ttl_days, backup first; an hourly, interval-gated job (agents/core/scheduler_service.py:184) runs it, and it deletes only when retention.enabled is on (off by default) and a person approved the horizon. It does not evict the in-memory session, so it ages records out, the analogue of session_store_max_age_days, but does not reset live context. Tests tests/test_retention.py and tests/test_channel_sessions.py pass.",
-      "remaining": "1. Reset policy: idle-minutes and daily-at-hour resets, overridable per session type (dm/group/thread) and per channel, applied by rotating the channel session to a fresh id while keeping the old transcript.\n2. Reset triggers: configurable texts (e.g. /new, /reset) intercepted in channel_handler before a turn runs; they start a fresh session and acknowledge it.\n3. Expiry watcher: a scheduled job that applies the idle/daily policies and drops stale _channel_sessions entries.\n4. Stall watcher: track inbound receipt against last turn progress per session and notify the owner once when a message has been pending past a threshold with no progress.\n5. Tests for each.",
+      "summary": "The recovered native channel-session service rotates durable route generations under the existing stable base/session turn leases. Reset settings support idle minutes and daily local hour with timezone/DST, per-type dm/group/thread and channel overrides, explicit reset texts and bounded route-index ageing. Owner /new and /reset create a fresh transcript; /undo creates a new transcript from exchanges before the last user turn, preserving its predecessor. Existing APScheduler invokes expiry even without new inbound text and skips active leases; routing-index retirement does not delete conversation data. Per-inbound stall episodes track actual processing/model-token activity and use the existing governed owner notification transport once per due episode. Telegram topics, Slack threads/groups and other channel identity/delivery rules remain authoritative. Direct web and CLI reset/undo commands use new concrete IDs; ChatResponse and SSE end expose session_id, the HUD sends it on later turns, Sessions reopens exact older/archived topics, desktop sync and asynchronous callbacks are fenced by current topic/turn. Valid empty snapshots survive restart/resume, while missing or malformed turns refuse without changing in-memory identity. Existing Admin settings persist and validate the nine session options. Focused backend/API/settings/scheduler and frontend transition/reopen/desktop regressions pass. Native adaptation from #1233; no file checkpoint restore or runtime import.",
+      "remaining": "Automatic policy expiry/stall observation is connected to channel inbound routes; direct web/CLI use explicit lifecycle commands and existing stream limits, not that automatic watcher. Configured-channel live notification delivery and real device acceptance were not run. Native mobile clients still need concrete returned-ID transitions and visible-transcript refresh (H18.30). Session-index metadata persists independently; old transcript data is retained and never deleted by routing expiry.",
       "evidence": [
         {
           "path": "agents/core/channels/session.py",
-          "sha256": "6a471472fa47ddbe4329a3c163919d04eb9fae7e96e1c1ced77d1960b8c38127"
+          "sha256": "b57b377db25f43a6b0356c7c6459b1149492d3d883958c06576dd4b5858f2cf5"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "d6772e26d983fad2722df85491bb7534e03765bf569f7f8d1c0fe0a578ad07b5"
+          "sha256": "999282a3ae9fb680a761cd85c17638cf8eb32b07cfc45a75e54fb37dc96fecc1"
         },
         {
           "path": "agents/core/conversation_clock.py",
@@ -524,7 +524,7 @@
         },
         {
           "path": "agents/core/scheduler_service.py",
-          "sha256": "1b8486922bd649f45ff7801de567933c30ef8b0f6c9be5c59dadc513855ab66b"
+          "sha256": "1bf8a64a53c8e2ab28dcf670527694da848b9314af332a740f20d3a61bea82dd"
         },
         {
           "path": "tests/test_retention.py",
@@ -533,6 +533,78 @@
         {
           "path": "tests/test_channel_sessions.py",
           "sha256": "0766b7f11f4865eb47344e42a761584fcde7e10e04bd5d603ff411559cd2af53"
+        },
+        {
+          "path": "agents/core/channels/session_lifecycle.py",
+          "sha256": "963d0cd3508526584679ff5b0ec1f5b29e0f17be2a7b70cee1c97510dae58618"
+        },
+        {
+          "path": "agents/core/channels/session_reset.py",
+          "sha256": "99d1e0a6039519125b1ea9b9fa5d547707fbb8235b084d52be1ca85cd8d83692"
+        },
+        {
+          "path": "agents/core/channels/session_stall.py",
+          "sha256": "9eab44e1afa569bf8316ccb8e4f8d9983888c90eda1b4e0cdf6e797819cc4e88"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "bbcbf02915a731b79e9e1e84970e3c759cd67dc8e26e9590d3869292d879ba85"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "f43ad410db6f1e1045d859b5e73d8c91c55c630b16726b7c0f0bd342e1e0849e"
+        },
+        {
+          "path": "agents/core/memory/conversation.py",
+          "sha256": "510e9ee752fed8b45fc1839fc8b8988238a19f96c82f6617f5db8df2aa67c55f"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "e6412426b262bdb4017a17acdc934af66f6ca78be064c50947044c99401bcd96"
+        },
+        {
+          "path": "frontend/src/app.tsx",
+          "sha256": "da7a7d7940af2eed6076e7751a66770327ad332bd208658250bea191307af0f2"
+        },
+        {
+          "path": "frontend/src/desktop.tsx",
+          "sha256": "06262f92701050fa9dfa968e2d7ea2bde99488b13fd2964ab677cb96be0a1fb8"
+        },
+        {
+          "path": "frontend/src/panels/sessions.tsx",
+          "sha256": "5b73e230f9dea4d919947095f580bdc6462b4ff4ef28c5dc7e465b21bc7f59d4"
+        },
+        {
+          "path": "tests/test_native_conversation_sessions.py",
+          "sha256": "a6cb3506440978df107c5bca361c5ebc55795e28143d7da656f30fdc7163eb78"
+        },
+        {
+          "path": "tests/test_session_reset_policy.py",
+          "sha256": "719d2c6b9b054cee0af64a4698d0da5714772fc2aea7187f28d8727e8b09d2ba"
+        },
+        {
+          "path": "tests/test_session_settings.py",
+          "sha256": "4e9f736d32c34b2aae3805ab866894fceab322b9ac91b6fae3ab64392f2b9b9d"
+        },
+        {
+          "path": "tests/test_stall_watcher.py",
+          "sha256": "6fa47a9aca3e64a8d4cc3c9edfc025d960016a8b8f9535ffe53c6c31d935dcbb"
+        },
+        {
+          "path": "tests/test_chat_http.py",
+          "sha256": "2f89a184a265e73667a4cd70cc2ab4f805d4263e42f96eacde3f43532a3431b0"
+        },
+        {
+          "path": "frontend/src/test/composer-vision-turn.test.tsx",
+          "sha256": "23da691ed6c2b9136ed4d6c880ccc8cd1624e419e0d7e8984f1ef48ec8250586"
+        },
+        {
+          "path": "frontend/src/test/desktop-sync.test.tsx",
+          "sha256": "f9293c2c5a2a013fc269b6a98ea19019ad9d86bf141f6b3268b84446581e02ef"
+        },
+        {
+          "path": "frontend/src/test/sessions-recap.test.tsx",
+          "sha256": "c33ca504da35f990f5fc6f3f3ad58d87ec1e1a69fbd73947efde41126173b73d"
         }
       ]
     },
@@ -9982,7 +10054,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "795d851deb67257764ce82c17ad61cbbfafee287ef3c3743326d56a222a9d33b"
+          "sha256": "f43ad410db6f1e1045d859b5e73d8c91c55c630b16726b7c0f0bd342e1e0849e"
         },
         {
           "path": "agents/core/skills/tools.py",
@@ -10573,7 +10645,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "795d851deb67257764ce82c17ad61cbbfafee287ef3c3743326d56a222a9d33b"
+          "sha256": "f43ad410db6f1e1045d859b5e73d8c91c55c630b16726b7c0f0bd342e1e0849e"
         },
         {
           "path": "tests/test_h660_cell_grants.py",

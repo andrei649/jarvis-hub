@@ -10675,6 +10675,8 @@ export interface components {
         ChatResponse: {
             /** Reply */
             reply: string;
+            /** Session Id */
+            session_id?: string | null;
             /**
              * Pending Approvals
              * @default []

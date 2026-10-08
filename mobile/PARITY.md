@@ -29,6 +29,8 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 |---------|---------------------|:-------:|:------:|------|
 | Chat (streaming) | `POST /chat/stream`, `POST /chat` | ✅ | ✅ | H18.1 |
 
+| Session command ID transitions (/new, /reset, /undo) | POST /chat and /chat/stream return session_id; existing POST /sessions/resume | ✅ concrete topic state, old-topic reopening and desktop sync | ⬜ follow returned ID and refresh/reset visible transcript; current resume API stays compatible | H18.30 |
+
 | Code execution project context and persistence | existing admin settings and sandbox status/reset | ✅ existing Admin settings and sandbox surface | ➖ operator configuration stays on the owner HUD; chat tools use the same governed backend | H595/H660, remote transports remain partial |
 | Chat-command catalog (live registry, filtered by chat principal) | `GET /api/commands` | ✅ quickbar menu | ⬜ discovery menu; typed commands still use chat | H18.26 |
 | Chat history persistence | — (client-side) | ✅ | ✅ | H18.2 |
