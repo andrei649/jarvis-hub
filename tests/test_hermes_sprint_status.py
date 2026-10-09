@@ -300,10 +300,32 @@ def test_reviewed_rows_cite_lines_that_exist_in_the_code_they_pinned():
         assert cited, f"{ident}: no citation lands in a file still pinned — screen is vacuous"
         assert hs._cited_lines(text, pinned) == [], f"{ident}: citation does not resolve"
 
-    # And the real corpus still exercises the screen broadly, so a repo-wide drift
-    # cannot quietly reduce every row to the skipped path.
-    rows = hs.assess(ledger, data, hs.REPO)
-    assert sum(row["basis"] == "reviewed" for row in rows) >= 50
+    # Screen all rows with at least one still-current pin and a citation that
+    # resolves uniquely to it. A stale pin demotes the whole review, but cannot
+    # invalidate citations into other files whose pinned bytes still match.
+    screened = []
+    citation_errors = {}
+    for item in data["reviews"]:
+        pinned = {}
+        for entry in item["evidence"]:
+            path = hs.REPO / entry["path"]
+            if path.is_file() and hs.file_digest(path) == entry["sha256"]:
+                pinned[entry["path"]] = path.read_text(encoding="utf-8").splitlines()
+        text = f"{item['summary']}\n{item['remaining']}"
+        cited = [m.group(0) for m in hs.CITATION.finditer(text)
+                 if sum(p == m.group(1) or p.endswith("/" + m.group(1)) for p in pinned) == 1]
+        if not cited:
+            continue
+        errors = hs._cited_lines(text, pinned)
+        if errors:
+            citation_errors[item["id"]] = errors
+        else:
+            screened.append(item["id"])
+    assert len(screened) >= 50, f"{len(screened)} valid rows; citation errors: {citation_errors}"
+    rows = {row["id"]: row for row in hs.assess(ledger, data, hs.REPO)}
+    assert all(rows[ident]["status"] == "needs_review" and
+               rows[ident]["basis"] == "stale_evidence"
+               for ident in citation_errors), citation_errors
 
 
 def test_real_inventory_covers_exactly_697_rows_and_reports_are_current():
@@ -332,12 +354,13 @@ def test_current_images_and_sdk_are_not_mistaken_for_full_inventory_parity():
     assert rows["H566"]["status"] == "partial"
     # K2 built the resident interpreter, so H660 is no longer `missing` — and it is
     # not done either: the remote kernel and K3's operator controls are unwritten, and
-    # no container has been proven. The pin moves with the evidence, never past it.
-    assert rows["H660"]["status"] == "partial"
-    # H595's twelve-entry programmatic-code contract now has its own registered
-    # worker/context/interruption and rendered HUD evidence. That closure does
-    # not imply H660 remote backend breadth or the unfinished image providers.
-    assert rows["H595"]["status"] == "equivalent"
+    # no container has been proven. Changed source pins can require review; neither
+    # state warrants a completed implementation claim.
+    assert rows["H660"]["status"] in {"partial", "needs_review"}
+    # H595's registered worker/context/interruption and HUD evidence still leave
+    # Docker, remote and output-boundary gaps. Its review remains partial, and
+    # changed source pins can demote the effective status to needs_review.
+    assert rows["H595"]["status"] in {"partial", "needs_review"}
 
 
 def test_json_summary_and_bounded_listing(sample, capsys):

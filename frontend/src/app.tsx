@@ -20,6 +20,7 @@ import { PointerOverlay } from './pointer';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
 import { noticeMessages } from './turn-notices';
+import { turnOutcome, type TurnOutcome } from './turn-outcome';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
@@ -74,7 +75,7 @@ function ModeStub({ label }) {
     <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
       <div className="panel" style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-        <div style={{ textAlign: 'center', color: 'var(--ink-3)', maxWidth: 360 }}>
+        <div style={{ textAlign: 'center', color: 'var(--ink-2)', maxWidth: 360 }}>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.18em', color: 'var(--accent-light)' }}>{String(label).toUpperCase()}</div>
           <div style={{ marginTop: 12, fontSize: 13, color: 'var(--ink-2)' }}>Mode wiring in progress — ported from the prototype next.</div>
           <div style={{ marginTop: 8, fontFamily: 'var(--font-mono)', fontSize: 10 }}>P0 · shell + cockpit live · build green</div>
@@ -125,10 +126,12 @@ function App({ floating = false, shortcuts, onWorld }: {
   const [activeId, setActiveId] = useState('jarvis');
   const [focusId, setFocusId] = useState(null);
   const [messages, setMessages] = useState<any[]>(demo ? V2.SEED_MESSAGES : []);
+  const [currentOutcome, setCurrentOutcome] = useState<TurnOutcome | null>(null);
   const sessionId = useRef<string | null>(savedChatSession());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => sessionId.current);
   const selectedSessionId = useCallback(() => sessionId.current, []);
   const selectSession = useCallback((id: string, turns?: any[]) => {
+    if (id !== sessionId.current || turns) setCurrentOutcome(null);
     sessionId.current = id;
     setActiveSessionId(id);
     try { sessionStorage.setItem(CHAT_SESSION_KEY, id); } catch { /* storage unavailable */ }
@@ -138,6 +141,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     const selected = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (typeof detail?.sessionId === 'string' && Array.isArray(detail.turns)) {
+        setCurrentOutcome(null);
         if (turnBusy.current || textTurns.current.size) {
           abortRef.current?.abort(); abortRef.current = null;
           turnEpoch.current++; turnBusy.current = false;
@@ -376,6 +380,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     if (turnBusy.current || (source==='voice' && (thinking || textTurns.current.size>0)) || (thinking && textTurns.current.size===0)) { resolve(''); return; }
     const id=++nextTextTurn.current, epoch=turnEpoch.current;
     latestTextTurn.current=id;
+    setCurrentOutcome(null);
     timers.current.forEach(clearTimeout); timers.current = [];
     const ctl = new AbortController();
     let streamed='', closed=false;
@@ -416,6 +421,8 @@ function App({ floating = false, shortcuts, onWorld }: {
         const finalText = evt.text || streamed;
         const changed = typeof evt.session_id === 'string' && evt.session_id !== sessionId.current;
         if (typeof evt.session_id === 'string') selectSession(evt.session_id);
+        if(id===latestTextTurn.current) setCurrentOutcome(changed && ['/new', '/reset', '/undo'].includes(text.trim())
+          ? null : turnOutcome(evt.outcome));
         if (changed && ['/new', '/reset', '/undo'].includes(text.trim())) {
           if (text.trim() === '/undo') {
             const commandEpoch = turnEpoch.current;
@@ -452,6 +459,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       settle(streamed);
     }).catch((err) => {
       if(closed||epoch!==turnEpoch.current){settle(streamed);return;}
+      if(!closed && epoch===turnEpoch.current && id===latestTextTurn.current)setCurrentOutcome(null);
       // A user Stop (AbortError) is a clean outcome, not a failure: the partial
       // text already streamed into the bubble stays, no error notice — and the
       // server's disconnect path guarantees no partial is persisted to memory.
@@ -469,6 +477,7 @@ function App({ floating = false, shortcuts, onWorld }: {
   const runVision=useCallback(async(text:string,draft:VisionDraft)=>{
     if(turnBusy.current||thinking||textTurns.current.size>0)return;
     turnBusy.current=true;
+    setCurrentOutcome(null);
     const epoch=++turnEpoch.current,controller=new AbortController();abortRef.current=controller;
     setCenterTab('conversation');
     setMessages(messages=>[...messages,{role:'user',text,imageNames:[...draft.names],ts:fmtTimeShort(new Date())}]);
@@ -489,6 +498,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     turnEpoch.current++;
     for(const turn of textTurns.current.values()){turn.controller.abort();turn.settle('');}
     abortRef.current?.abort();abortRef.current=null;turnBusy.current=false;
+    setCurrentOutcome(null);
     timers.current.forEach(clearTimeout);timers.current=[];setThinking(null);
   },[]);
   const selectAgent=useCallback((id:string)=>{
@@ -524,6 +534,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     abortRef.current?.abort();
     abortRef.current = null;
     turnEpoch.current++;turnBusy.current=false;
+    setCurrentOutcome(null);
     setAgents([]);
     baseAgents.current = [];
     setActiveId('jarvis');
@@ -547,14 +558,14 @@ function App({ floating = false, shortcuts, onWorld }: {
     setSources({ tasks: false, trust: false });
     setLocality(null);
   }, []);
-
   // Popstate can also take the HUD out of DEMO. A layout effect closes that
   // path before paint; the explicit Exit control clears in its event handler.
   const previousDemo = useRef(demo);
   useLayoutEffect(() => {
     if (previousDemo.current && !demo) clearDemoDerivedState();
+    else if (!previousDemo.current && demo) stopTurn();
     previousDemo.current = demo;
-  }, [clearDemoDerivedState, demo]);
+  }, [clearDemoDerivedState, demo, stopTurn]);
   const exitDemo = useCallback(() => {
     clearDemoDerivedState();
     setDemo(false);
@@ -610,7 +621,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     {questionPanel}
     <SafeModeBanner state={safeMode} />
     {demo && <DemoBanner onExit={exitDemo} />}
-    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} />
+    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
     {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
   </div></RouteBoundary>;
 
@@ -668,7 +679,7 @@ function App({ floating = false, shortcuts, onWorld }: {
                       : centerTab === 'cognition'
                         ? <CognitionStream trace={trace} t={t} />
                         : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} />}
-                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} />
+                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
@@ -684,7 +695,7 @@ function App({ floating = false, shortcuts, onWorld }: {
               </div>
             ) : mode === 'chat' ? (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} />
+                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
               </div>
             ) : (
               <div className="workzone full" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -786,9 +797,9 @@ function ProvModal({ prov, onClose }) {
       <div className="pal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px,92vw)' }}>
         <div className="pal-input" style={{ borderBottom: '1px solid var(--panel-line)' }}><span className="pc"><Icon d={ICONS.shield} size={16} /></span><span style={{ fontSize: 14, letterSpacing: '.04em' }}>PROVENANCE</span><span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--green)' }}>conf {prov.conf}</span></div>
         <div style={{ padding: 18 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)', marginBottom: 8 }}>AGENTS CONSULTED</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', marginBottom: 8 }}>AGENTS CONSULTED</div>
           <div className="dep-links" style={{ marginBottom: 16 }}>{prov.agents.map((a) => <span key={a} className="dep-link" style={{ cursor: 'default' }}><Glyph id={a} size={12} />{a}</span>)}</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)', marginBottom: 8 }}>PLUGIN READS</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', marginBottom: 8 }}>PLUGIN READS</div>
           <div className="dep-links" style={{ marginBottom: 16 }}>{prov.plugins.map((p) => <span key={p} className="dep-link" style={{ cursor: 'default' }}>{p}</span>)}</div>
           <div className="verified-row"><Icon d={ICONS.shield} size={13} /> {prov.local === true ? '100% on-device · no cloud egress' : prov.local === false ? 'cloud-assisted' : 'locality not reported'}</div>
         </div>
@@ -816,7 +827,7 @@ function ModeEmpty({ mode, onDemo }) {
     <div className="workzone full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div className="panel" style={{ maxWidth: 460, textAlign: 'center', padding: '30px 26px' }}>
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.2em', color: 'var(--ink-3)', marginBottom: 10 }}>{(MODE_LABELS[mode] || mode).toUpperCase()}</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.2em', color: 'var(--ink-2)', marginBottom: 10 }}>{(MODE_LABELS[mode] || mode).toUpperCase()}</div>
         <div style={{ fontSize: 14, color: 'var(--ink)', marginBottom: 8 }}>{wired ? 'Not connected' : 'Design preview'}</div>
         <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5, marginBottom: 18 }}>
           {wired

@@ -809,8 +809,8 @@ class LMStudioBackend(LLMBackend):
         if (temperature_retried and completed and not usage_failed and not refused
                 and finish == "stop" and answer.strip() and not is_degraded_reply(answer)):
             remember_temperature_rejection(self, model)
-        if completed and not usage_failed and usage is not None:
-            report_text_usage(usage)
+        if completed and not usage_failed:
+            report_text_usage(usage if usage is not None else lmstudio_usage({}))
         return answer
 
 

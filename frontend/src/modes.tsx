@@ -101,7 +101,7 @@ function Dossier({ id, onClose, onOpen }) {
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 16px'}}>
               {[['Model',d.model||a.model],['Channel',d.channel],['Heartbeat',d.heartbeat],['Policy',d.policy||a.policy],['Skills',d.skills],['Memory facts',d.memory_facts]].map(([k,v])=>(
                 <div key={k} style={{fontFamily:'var(--font-mono)',fontSize:12}}>
-                  <span style={{color:'var(--ink-3)',fontSize:9,letterSpacing:'.1em',textTransform:'uppercase',display:'block'}}>{k}</span>
+                  <span style={{color:'var(--ink-2)',fontSize:9,letterSpacing:'.1em',textTransform:'uppercase',display:'block'}}>{k}</span>
                   <span style={{color:'var(--accent-light)'}}>{v != null && v !== '' ? v : '—'}</span>
                 </div>
               ))}
@@ -188,7 +188,7 @@ function TrustMode({ t, localPct = null }) {
         <div className="trust-grid">
           {/* left: audit chain */}
           <div>
-            <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',marginBottom:10}}>{t.auditTitle}</div>
+            <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-2)',marginBottom:10}}>{t.auditTitle}</div>
             {/* Live chain-verification result (real GET /api/security/audit/verify),
                 replacing the static badge. Falls back to the demo chain visual below. */}
             <div className="verified-row" style={audit&&!audit.valid?{color:'var(--red)'}:undefined}>
@@ -225,7 +225,7 @@ function TrustMode({ t, localPct = null }) {
                 fabricated split. localPct comes from /api/trust/status via app.tsx. */}
             {localPct != null && (
             <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
-              <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',marginBottom:10}}>{t.locality}</div>
+              <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-2)',marginBottom:10}}>{t.locality}</div>
               <div className="loc-ring-wrap">
                 <div className="loc-pct">{localPct}%</div>
                 <div className="loc-legend">
@@ -238,17 +238,17 @@ function TrustMode({ t, localPct = null }) {
             )}
 
             <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
-              <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',marginBottom:6}}>{t.capsTitle}</div>
+              <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-2)',marginBottom:6}}>{t.capsTitle}</div>
               {D.CAPABILITIES.map((c,i)=>(
                 <div className="cap-row" key={i}><div><div className="cn">{c.cn}</div><div className="cd">{c.cd}</div></div><span className={'cap-tag '+c.tag}>{c.tagLabel}</span></div>
               ))}
             </div>
 
             <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
-              <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',marginBottom:6}}>{t.payTitle}</div>
+              <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-2)',marginBottom:6}}>{t.payTitle}</div>
               {D.PAYMENTS.map((p: { pcap: string; desc: string; amt: string; state: string; id?: string }, i)=>(
                 <div className="pay-row" key={i}><span className="pcap">{p.pcap}</span><span style={{color:'var(--ink-2)'}}>{p.desc}</span>
-                  <span style={{textAlign:'right',color:p.state==='pending'?'var(--amber)':p.state==='cleared'?'var(--green)':'var(--ink-3)'}}>{p.amt}</span>
+                  <span style={{textAlign:'right',color:p.state==='pending'?'var(--amber)':p.state==='cleared'?'var(--green)':'var(--ink-2)'}}>{p.amt}</span>
                   {/* Lifecycle controls only when the row carries a real broker id (live data). */}
                   {p.id && p.state==='pending' && (
                     <span style={{display:'flex',gap:4,marginLeft:6}}>
@@ -322,15 +322,15 @@ function MemoryMode({ t, demo = false }) {
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'var(--gap)',alignItems:'start'}}>
           <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
-            <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',marginBottom:8}}>{t.recall}</div>
+            <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-2)',marginBottom:8}}>{t.recall}</div>
             {!demo && <div role="status" style={{fontSize:12,color:'var(--ink-2)'}}>{recallState}</div>}
             {RECALLS.map((r,i)=>(
               <div className="recall-row" key={i}><div><div className="rx">{r.rx}</div><div className="rsrc">{r.rsrc}</div></div><span className="recall-score">{r.score}</span></div>
             ))}
-            {demo && <><div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-3)',margin:'16px 0 8px'}}>{t.spaces}</div>
+            {demo && <><div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-2)',margin:'16px 0 8px'}}>{t.spaces}</div>
             {D.TOPICS.map((tp,i)=>(
               <div key={i} style={{marginBottom:8}}>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--ink-2)'}}><span>{tp.t}</span><span style={{fontFamily:'var(--font-mono)',color:'var(--ink-3)'}}>{100-tp.d}% fresh</span></div>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--ink-2)'}}><span>{tp.t}</span><span style={{fontFamily:'var(--font-mono)',color:'var(--ink-2)'}}>{100-tp.d}% fresh</span></div>
                 <div className="decay-bar"><i style={{width:(100-tp.d)+'%'}}></i></div>
               </div>
             ))}</>}

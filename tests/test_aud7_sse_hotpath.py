@@ -61,7 +61,7 @@ async def test_sse_normal_completion_emits_start_tokens_end():
     # `notices` (empty when the turn had nothing to say beside its reply).
     assert events[-1] == {"type": "end", "agent": "friday", "text": "hello",
                           "session_id": "aud7_session",
-                          "pending_approvals": [], "warming": False, "notices": []}
+                          "pending_approvals": [], "warming": False, "notices": [], "outcome": None}
 
 
 async def test_sse_runner_error_surfaces_as_end_event():

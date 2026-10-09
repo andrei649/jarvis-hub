@@ -17,11 +17,19 @@ from pathlib import Path
 from .autonomy.queue import MediationStateUnavailable
 from .env_config import env_str
 from .media_backends.comfyui import (
+    _HISTORY_ERROR_MARKER,
+    _HISTORY_ERROR_REASON,
     ComfyUIBackend,
     ComfyUIConfig,
     ImageGenerationError,
+    _ComfyHistoryError,
 )
-from .media_backends.local_openai_image import LocalOpenAIImageBackend
+from .media_backends.local_openai_image import (
+    _RESPONSE_FAILURE_MARKER,
+    _RESPONSE_FAILURE_REASONS,
+    LocalOpenAIImageBackend,
+    _ProviderResponseFailure,
+)
 from .media_backends.registry import configuration_status as configuration_status
 from .media_backends.registry import (
     normalize_options,
@@ -250,6 +258,7 @@ class LocalImageRuntime:
 
         reason = "local_refused"
         detail = None
+        provider_response_failed = None
         try:
             config = self._config(args)
             task = self._approval(args, config)
@@ -307,7 +316,7 @@ class LocalImageRuntime:
                 return False, reason
 
         async def comfyui(prompt, opts):
-            nonlocal reason, detail
+            nonlocal reason, detail, provider_response_failed
             try:
                 def recheck():
                     allowed, why = guard("image", prompt, opts, consume=False)
@@ -326,6 +335,10 @@ class LocalImageRuntime:
                 # reason — a failure, as before the request (round 5, item 1).
                 reason = exc.reason
                 detail = getattr(exc, "cause", None)
+                if type(exc) is _ProviderResponseFailure and exc.reason in _RESPONSE_FAILURE_REASONS:
+                    provider_response_failed = _RESPONSE_FAILURE_MARKER
+                elif type(exc) is _ComfyHistoryError and exc.reason == _HISTORY_ERROR_REASON:
+                    provider_response_failed = _HISTORY_ERROR_MARKER
                 raise
 
         comfyui.__name__ = args.get("backend", env_str("JARVIS_LOCAL_IMAGE_DEFAULT_BACKEND", "comfyui"))
@@ -334,6 +347,8 @@ class LocalImageRuntime:
         result = await manager.generate("image", args["prompt"], opts=options)
         if not result.get("ok"):
             result["reason"] = reason
+            if provider_response_failed:
+                result["provider_response_failed"] = provider_response_failed
             if isinstance(detail, str) and detail:
                 result["detail"] = detail
         elif isinstance(result.get("result"), dict):

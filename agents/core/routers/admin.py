@@ -542,18 +542,6 @@ async def admin_rotate_tokens(body: RotateTokensBody):
     token = await asyncio.to_thread(
         get_token_store().rotate, scope, ttl, "rotated via /api/admin/rotate-tokens"
     )
-    orch = get_orch()
-    audit = getattr(orch, "audit", None) if orch else None
-    if audit is not None:
-        try:
-            await asyncio.to_thread(audit.log, SecurityEvent(
-                event_type=SecurityEventType.AUDIT_LOG,
-                timestamp=time.time(),
-                content_preview=f"issued token rotated (scope={scope}, ttl_days={ttl})",
-                action_taken="token_rotated",
-            ))
-        except Exception:
-            logger.warning("failed to audit token rotation")
     return {"scope": scope, "ttl_days": ttl, "token": token,
             "note": "store this token now — it is shown only once"}
 

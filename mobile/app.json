@@ -39,6 +39,23 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 180
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Record a short message only when you start dictation.",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose photos to review and send in your Nerva conversation.",
+          "cameraPermission": false,
+          "microphonePermission": "Record a short message only when you start dictation."
+        }
       ]
     ]
   }

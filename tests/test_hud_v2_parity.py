@@ -34,6 +34,7 @@ OPERATOR = Path(__file__).resolve().parent.parent / "frontend" / "src" / "operat
 RULES = [
     # served shells / infra
     ("/v2", "shell"),
+    ("/v1/capabilities", "NOT_IN_HUD"),  # external-client chat/session protocol discovery
     ("/v1", "shell"),
     ("/static", "shell"),
     ("/favicon", "shell"),
@@ -510,6 +511,9 @@ MACHINE_FACING: dict[str, str] = {
     "/api/vlm/composer/status":
         "legacy vision preview read by `nerva chat --image`; the web composer uses "
         "prompt-bound /api/vlm/composer/prepare instead",
+    "/v1/capabilities":
+        "protocol discovery for external HTTP chat/session clients; packaged HUD/native "
+        "clients retain their fixed tested contract, with no discovery control",
     "/sessions/continue":
         "explicit owner CLI creation via `nerva sessions continue`; the returned child is "
         "addressed by `nerva chat --session` without changing the HUD default session",
@@ -600,7 +604,7 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/kanban/tasks/{task_id}/specify",
     "/api/kanban/workers/active",
     # H075/H581: approved backend dispatch exists; dedicated board/worker
-    # controls remain in HUD_V2_REMAINING.md and native task H18.32.
+    # controls remain in HUD_V2_REMAINING.md and native task H18.34.
     "/api/autonomy/kanban/dispatch",
     # Nous account operations have a working owner CLI (agents/cli/nous_auth.py).
     # HUD account controls remain unfinished, recorded in HUD_V2_REMAINING.md.

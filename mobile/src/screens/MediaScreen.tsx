@@ -27,6 +27,7 @@ import {
 } from '../api/client';
 import { useServer } from '../context/ServerContext';
 import { useThemeStyles, type Theme } from '../theme';
+import { GeneratedImages } from './GeneratedImages';
 
 const CONTENT_TYPES: MediaContentType[] = ['url', 'local', 'catalog', 'query'];
 const MODES: MediaMode[] = ['play', 'show', 'announce'];
@@ -152,7 +153,7 @@ function SessionCard({ session, busy, onRestore }: { session: MediaSession; busy
   );
 }
 
-export function MediaScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
+export function MediaScreen({ onGoToSettings, onGoToApprovals }: { onGoToSettings: () => void; onGoToApprovals: () => void }) {
   const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured } = useServer();
   const [devices, setDevices] = useState<MediaDevice[]>([]);
@@ -329,6 +330,7 @@ export function MediaScreen({ onGoToSettings }: { onGoToSettings: () => void }) 
         <Text style={styles.heroTitle}>Governed presentation</Text>
         <Text style={styles.heroBody}>Metadata only. Every present and restore is an explicit, kernel-mediated action.</Text>
       </View>
+      <GeneratedImages onGoToApprovals={onGoToApprovals} />
 
       {error ? (
         <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>

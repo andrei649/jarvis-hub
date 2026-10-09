@@ -90,7 +90,7 @@ function secState(v: any): SecState {
 }
 const num = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? String(v) : '—');
 const RIGHT: React.CSSProperties = { marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' };
-const FOOT: React.CSSProperties = { ...mono, fontSize: 9.5, color: 'var(--ink-3)', lineHeight: 1.5, marginTop: 8 };
+const FOOT: React.CSSProperties = { ...mono, fontSize: 9.5, color: 'var(--ink-2)', lineHeight: 1.5, marginTop: 8 };
 
 function SupportBundleCard() {
   const { d, e, loading, reload } = useApi('/api/support/bundle', true, true);   // admin-tier read
@@ -159,7 +159,7 @@ function SupportBundleCard() {
             <span style={RIGHT}>
               {meta && typeof meta.version === 'string' && meta.version
                 ? <Tag c="var(--ink-2)">v{meta.version}</Tag>
-                : <Tag c="var(--ink-3)">version not reported</Tag>}
+                : <Tag c="var(--ink-2)">version not reported</Tag>}
               <Tag>py {(meta && meta.python) || '—'}</Tag>
               <Tag>{(meta && meta.platform) || '—'}</Tag>
             </span>
@@ -213,10 +213,10 @@ function SupportBundleCard() {
                     : pluginNames.length === 0
                       /* `clean` is `not violations` → true over an empty sample. Nothing
                          was measured, so nothing is proven. */
-                      ? <Tag c="var(--ink-3)">no egress recorded yet — nothing measured</Tag>
+                      ? <Tag c="var(--ink-2)">no egress recorded yet — nothing measured</Tag>
                       : typeof extTotal === 'number' && extTotal > 0 && eg.clean === true
                         ? <Tag c="var(--green)">no local-only violations</Tag>
-                        : <Tag c="var(--ink-3)">no external calls recorded — nothing to violate</Tag>}
+                        : <Tag c="var(--ink-2)">no external calls recorded — nothing to violate</Tag>}
                 </>
               )}
             </span>
@@ -234,7 +234,7 @@ function SupportBundleCard() {
                     : chainOk === true
                       ? (auWindow && auWindow > 0
                         ? <Tag c="var(--green)">chain verified over {auWindow} row(s)</Tag>
-                        : <Tag c="var(--ink-3)">no events in window — a zero-row chain verifies trivially</Tag>)
+                        : <Tag c="var(--ink-2)">no events in window — a zero-row chain verifies trivially</Tag>)
                       : <Tag c="var(--amber)">chain not verified in this bundle</Tag>}
                 </>
               )}
@@ -303,7 +303,7 @@ function WyomingCard() {
               `listening` is a measurement, `reachable` is both. */}
           <Row>
             <span style={mono}>enabled (setting voice.wyoming_enabled)</span>
-            <span style={RIGHT}>{flag(d.enabled, 'true', 'false', 'var(--ink-3)')}</span>
+            <span style={RIGHT}>{flag(d.enabled, 'true', 'false', 'var(--ink-2)')}</span>
           </Row>
           <Row>
             <span style={mono}>listening (measured · loopback connect)</span>

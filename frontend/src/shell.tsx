@@ -39,12 +39,12 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, l
   const LLM = ({
     ready:    { v:'● READY',    c:'var(--green)', t:'model loaded' + (lm.model ? ': ' + lm.model : '') },
     no_model: { v:'○ NO MODEL', c:'var(--amber)', t:'LM Studio reachable but no model is loaded' },
-    offline:  { v:'○ OFFLINE',  c:'var(--ink-3)', t:'no local LLM backend reachable' },
-  })[lm.state] || { v:'○ —', c:'var(--ink-3)', t:'LLM state unknown' };
+    offline:  { v:'○ OFFLINE',  c:'var(--ink-2)', t:'no local LLM backend reachable' },
+  })[lm.state] || { v:'○ —', c:'var(--ink-2)', t:'LLM state unknown' };
   const DATA = demo ? { v:'◐ DEMO', c:'var(--amber)', t:'demo data — seeded sample, not your live backend' }
-    : !serverUp ? { v:'○ OFFLINE', c:'var(--ink-3)', t:'server unreachable' }
+    : !serverUp ? { v:'○ OFFLINE', c:'var(--ink-2)', t:'server unreachable' }
     : live ? { v:'● LIVE', c:'var(--green)', t:'live backend data' }
-    : { v:'○ EMPTY', c:'var(--ink-3)', t:'server up — no live data yet (connect plugins / load a model)' };
+    : { v:'○ EMPTY', c:'var(--ink-2)', t:'server up — no live data yet (connect plugins / load a model)' };
   return (
     <div className="topbar">
       <div className="brand">
@@ -130,7 +130,7 @@ function Tabs({ mode, setMode, t }){
 /* RIGHT CONTEXT COLUMN */
 function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, demo, t }){
   const W = weather; const CAL = calendar || []; const HB = heartbeat || [];
-  const empty = (msg) => <div style={{color:'var(--ink-3)',fontSize:11,textAlign:'center',padding:'16px 0',fontFamily:'var(--font-mono)',letterSpacing:'.05em'}}>{msg}</div>;
+  const empty = (msg) => <div style={{color:'var(--ink-2)',fontSize:11,textAlign:'center',padding:'16px 0',fontFamily:'var(--font-mono)',letterSpacing:'.05em'}}>{msg}</div>;
   return (
     <div className="col scrollcol">
       <div className="panel" data-anchor="decisions">
@@ -155,14 +155,14 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, de
           {W ? (<>
             <div style={{display:'flex',alignItems:'flex-end',gap:14}}>
               <div className="temp">{W.temp}°</div>
-              <div style={{paddingBottom:6}}><div style={{fontSize:13,color:'var(--ink)'}}>{W.desc}</div><div style={{fontFamily:'var(--font-mono)',fontSize:10,color:'var(--ink-3)'}}>feels {W.feels}°</div></div>
+              <div style={{paddingBottom:6}}><div style={{fontSize:13,color:'var(--ink)'}}>{W.desc}</div><div style={{fontFamily:'var(--font-mono)',fontSize:10,color:'var(--ink-2)'}}>feels {W.feels}°</div></div>
             </div>
             <div className="wgrid">
               <span className="wk">WIND</span><span className="wv">{W.wind}</span>
               <span className="wk">HUMIDITY</span><span className="wv">{W.humidity}</span>
             </div>
             <div className="wfore" style={{display:'flex',justifyContent:'space-between',marginTop:14}}>
-              {(W.forecast||[]).map((f,i)=><div key={i} style={{textAlign:'center',fontFamily:'var(--font-mono)',fontSize:10,color:'var(--ink-3)'}}>{f.d}<div style={{color:'var(--ink)',marginTop:4}}>{f.t}</div></div>)}
+              {(W.forecast||[]).map((f,i)=><div key={i} style={{textAlign:'center',fontFamily:'var(--font-mono)',fontSize:10,color:'var(--ink-2)'}}>{f.d}<div style={{color:'var(--ink)',marginTop:4}}>{f.t}</div></div>)}
             </div>
           </>) : empty('weather not connected')}
         </div>
@@ -205,7 +205,7 @@ function RosterColumn({ agents, activeId, onSelect, sys, llm, demo, t }){
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
         <div className="panel-head"><Icon d={ICONS.agents} size={14}/><span className="ttl">{t.roster}</span><span className="st">{agents.length} enabled</span></div>
         <div className="panel-body tight" tabIndex={0}>
-          {agents.length===0 && <div style={{color:'var(--ink-3)',fontSize:11,textAlign:'center',padding:'16px 0',fontFamily:'var(--font-mono)'}}>roster offline — server unreachable</div>}
+          {agents.length===0 && <div style={{color:'var(--ink-2)',fontSize:11,textAlign:'center',padding:'16px 0',fontFamily:'var(--font-mono)'}}>roster offline — server unreachable</div>}
           {TIERS.map(tier=>{
             const list=agents.filter(a=>a.tier===tier.id); if(!list.length)return null;
             return <div className="tier-group" key={tier.id}>
@@ -227,7 +227,7 @@ function RosterColumn({ agents, activeId, onSelect, sys, llm, demo, t }){
         <div className="panel-body tight" tabIndex={0}>
           {(() => { const S = sys || {}; const lm = llm || {}; const pct = (u, tot) => (tot ? Math.round((u / tot) * 100) : 0);
             const model = lm.state==='ready' ? (lm.model || 'loaded') : lm.state==='no_model' ? 'no model loaded' : lm.state==='offline' ? 'backend offline' : '—';
-            const mcol = lm.state==='ready' ? 'var(--accent-light)' : (lm.state==='no_model' || lm.state==='offline') ? 'var(--amber)' : 'var(--ink-3)';
+            const mcol = lm.state==='ready' ? 'var(--accent-light)' : (lm.state==='no_model' || lm.state==='offline') ? 'var(--amber)' : 'var(--ink-2)';
             return (<>
               <Meter label="RAM" val={pct(S.ram_used, S.ram_total)}/>
               <Meter label="VRAM" val={pct(S.vram_used, S.vram_total)}/>

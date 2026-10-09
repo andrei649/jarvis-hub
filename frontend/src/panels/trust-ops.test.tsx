@@ -160,7 +160,7 @@ describe('TrustOpsPanel · redact — an information-poor 200 that must not beco
     expect(screen.getByText(/skipped SILENTLY by the broker/)).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/no secrets present/i);
     expect(document.body.textContent).not.toMatch(/safe to send|nothing sensitive/i);
-    expect(screen.getByText(/^unchanged — /).style.color).toBe('var(--ink-3)');
+    expect(screen.getByText(/^unchanged — /).style.color).toBe('var(--ink-2)');
   });
 
   it('says {"names": []} cannot distinguish an empty broker from a missing one', async () => {

@@ -138,10 +138,14 @@ _CHANGED_DEFAULTS: tuple[tuple[str, str, str, Any, Any], ...] = (
 )
 
 # ── default settings — seed values ────────────────────────────────
+_STATUS_FIELDS = ("model", "context_pct", "cache_hit", "latency", "tps", "compressions", "bg_tasks", "duration")
 
 DEFAULTS: list[dict[str, Any]] = [
     # H135: only explicit owner choices; empty preserves device motion defaults.
     dict(category="appearance", key="preferences", value={}, label="Appearance preferences", kind="json"),
+    dict(category="display", key="status_bar_fields", value=["latency"],
+         label="Visible chat status fields", kind="tags",
+         opts=list(_STATUS_FIELDS)),
     # general
     dict(category="general", key="timezone",         value="Europe/Bucharest",    label="Timezone",           kind="select",  opts=["Europe/Bucharest","UTC","US/Eastern"]),
     dict(category="general", key="wake_words",       value=["nerva","jarvis","hub"], label="Wake words",      kind="tags"),
@@ -878,6 +882,15 @@ def get_category(cat: str) -> list[dict]:
 _SPEC: dict[tuple[str, str], dict[str, Any]] = {(d["category"], d["key"]): d for d in DEFAULTS}
 
 
+def selected_status_fields(raw: Any) -> frozenset[str] | None:
+    """Validate a stored display selection, including rows predating write bounds."""
+    if (not isinstance(raw, list) or len(raw) > 8
+            or any(type(item) is not str or item not in _STATUS_FIELDS for item in raw)
+            or len(set(raw)) != len(raw)):
+        return None
+    return frozenset(raw)
+
+
 # H583 — the OpenRouter provider-slug lists refuse anything that is not a slug.
 _ROUTING_SLUG_KEYS = frozenset(_routing.SETTINGS_KEYS[name] for name in _routing.SLUG_LISTS)
 
@@ -919,6 +932,8 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
             not isinstance(value, str) or len(value) > 2048 or "\x00" in value
             or (value != "" and (value != value.strip() or not os.path.isabs(value)))):
         return f"{key}: expected an absolute project folder path or empty"
+    if key == "status_bar_fields" and selected_status_fields(value) is None:
+        return f"{key}: expected up to eight distinct declared status fields"
     if key == "execute_code_env_passthrough":
         from .code_env import _passable_name
 

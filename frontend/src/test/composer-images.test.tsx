@@ -22,7 +22,7 @@ it('requires an explicit active-image choice and a new reviewed follow-up',async
     path.includes('/active-images')?active:reviewed))));
   const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
   expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false);
-  fireEvent.click(screen.getByRole('button',{name:'Reuse earlier images'}));
+  fireEvent.click(screen.getByRole('button',{name:'Use previous image'}));
   const previous=await screen.findByRole('checkbox',{name:/Use previous image.*Describe this/});
   expect(screen.getByRole('button',{name:'Send'}).hasAttribute('disabled')).toBe(false);
   fireEvent.click(previous);
@@ -43,7 +43,7 @@ it('shows unavailable active history after a restart and leaves text chat availa
     session_id:'image_session',images:[],
   }))));
   const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
-  fireEvent.click(screen.getByRole('button',{name:'Reuse earlier images'}));
+  fireEvent.click(screen.getByRole('button',{name:'Use previous image'}));
   expect(await screen.findByText(/Earlier images are unavailable/)).toBeTruthy();
   expect(screen.queryByRole('checkbox',{name:/Use previous image/})).toBeNull();
   fireEvent.change(screen.getByPlaceholderText('Ask Nerva'),{target:{value:'Normal text'}});
@@ -62,7 +62,7 @@ it('requires fresh remote, training and cost acknowledgements for reused images'
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async(path:string)=>new Response(JSON.stringify(
     path.includes('/active-images')?active:reviewed))));
   const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
-  fireEvent.click(screen.getByRole('button',{name:'Reuse earlier images'}));
+  fireEvent.click(screen.getByRole('button',{name:'Use previous image'}));
   fireEvent.click(await screen.findByRole('checkbox',{name:/Use previous image.*A door/}));
   fireEvent.change(screen.getByPlaceholderText('Ask Nerva'),{target:{value:'What color?'}});
   const remote=await screen.findByRole('checkbox',{name:/leave this host/});
@@ -85,7 +85,7 @@ it('counts previous images against the eight-image attachment limit',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async(path:string)=>new Response(JSON.stringify(
     path.includes('/active-images')?active:reviewed))));
   render(<InputBar onSubmit={()=>{}} t={t}/>);
-  fireEvent.click(screen.getByRole('button',{name:'Reuse earlier images'}));
+  fireEvent.click(screen.getByRole('button',{name:'Use previous image'}));
   fireEvent.click(await screen.findByRole('checkbox',{name:/Use previous image.*Seven views/}));
   fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[file('new.png'),file('extra.png')]}});
   expect(await screen.findByAltText('new.png')).toBeTruthy();
@@ -99,7 +99,7 @@ it('drops an evicted selection before a reviewed request can be submitted',async
     path.includes('/active-images')?new Response(JSON.stringify(active)):
       new Response(JSON.stringify({reason:'vlm_active_image_unavailable'}),{status:409})));
   const submit=vi.fn();render(<InputBar onSubmit={submit} t={t}/>);
-  fireEvent.click(screen.getByRole('button',{name:'Reuse earlier images'}));
+  fireEvent.click(screen.getByRole('button',{name:'Use previous image'}));
   fireEvent.click(await screen.findByRole('checkbox',{name:/Use previous image.*A door/}));
   fireEvent.change(screen.getByPlaceholderText('Ask Nerva'),{target:{value:'Follow up'}});
   expect(await screen.findByText(/Earlier images are unavailable/)).toBeTruthy();

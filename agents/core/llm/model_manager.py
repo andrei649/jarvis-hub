@@ -25,9 +25,11 @@ Design constraints (H22.5):
     (`JARVIS_VRAM_RESERVE_MB`, per-model size hints). Refine the size hints after
     measuring on the real card.
 
-Each public state mutation is guarded by an asyncio lock. The separate
-`ensure_resident()` and `using()` calls are not an atomic reservation. Confirmed
-entries represent controller acknowledgments, not measured hardware residency.
+Each public state mutation is guarded by an asyncio lock. Callers that need
+protection across loading and generation enter `using()` first, then await
+`ensure_resident()` inside it. A standalone ensure call is not an atomic lease.
+Confirmed entries represent controller acknowledgments, not measured hardware
+residency.
 """
 from __future__ import annotations
 
@@ -184,12 +186,12 @@ class ModelManager:
 
     Typical use (best-effort, default-off via the kill-switch):
 
-        await manager.ensure_resident("deepseek-r1-distill-qwen-32b")
         async with manager.using(model_id):
+            await manager.ensure_resident(model_id)
             await backend.generate(model=model_id, ...)
 
-    `using()` ref-counts the model for the duration of a generation so it can't
-    be evicted mid-flight by a concurrent `ensure_resident()`.
+    `using()` ref-counts the model through loading and generation so it can't
+    be evicted by a concurrent `ensure_resident()` between those steps.
     """
 
     def __init__(
@@ -307,8 +309,9 @@ class ModelManager:
 
         While held, the model's ref-count is > 0 so `ensure_resident()` will
         never evict it. A no-op when the kill-switch is off. Entering does NOT
-        load the model — call `ensure_resident()` first if you need it resident;
-        `using()` only protects whatever is (or becomes) resident under that id.
+        load the model — call `ensure_resident()` inside this context if you
+        need it resident. `using()` protects whatever is (or becomes) resident
+        under that id.
         """
         return _ResidencyRef(self, model_id)
 

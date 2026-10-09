@@ -81,7 +81,7 @@ const Amber = ({ children }: { children?: any }) => (
   <div style={{ ...mono, fontSize: 11, color: 'var(--amber)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
 );
 const Note = ({ children }: { children?: any }) => (
-  <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
+  <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
 );
 const Head = ({ children }: { children?: any }) => (
   <div style={{
@@ -312,7 +312,7 @@ export function CreativePanel() {
           />
         </div>
         <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', padding: '3px 0' }}>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>platforms</span>
+          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>platforms</span>
           {TARGETS.map((t) => (
             <button
               key={t}
@@ -347,7 +347,7 @@ export function CreativePanel() {
         />
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0' }}>
           <button className="tool-btn" onClick={runPlan}>plan</button>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>
+          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>
             {picked.length ? `${picked.length} platform(s) picked` : 'no platform picked — the backend substitutes youtube + readme'}
           </span>
         </div>
@@ -455,7 +455,7 @@ export function CreativePanel() {
         </Note>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', paddingTop: 6 }}>
-          <label style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', display: 'flex', gap: 4, alignItems: 'center' }}>
+          <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', display: 'flex', gap: 4, alignItems: 'center' }}>
             <input type="checkbox" checked={showRaw} onChange={(e) => setShowRaw(e.target.checked)} />
             raw response
           </label>
@@ -499,7 +499,7 @@ export function CreativePanel() {
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0' }}>
           <button className="tool-btn"
             onClick={() => setRows([...rows, { symbol: '', low: '', high: '', quote: '', note: '' }])}>+ watch</button>
-          <label style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', display: 'flex', gap: 4, alignItems: 'center' }}>
+          <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', display: 'flex', gap: 4, alignItems: 'center' }}>
             <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} />
             fill missing quotes from the keyless stock-quotes feed (delayed Stooq closes)
           </label>
@@ -528,7 +528,7 @@ export function CreativePanel() {
           <button className="tool-btn"
             onClick={() => setPositions([...positions, { symbol: '', qty: '', price: '', kind: 'other' }])}>+ position</button>
           <button className="tool-btn" onClick={runBrief}>brief</button>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>kind is free text — the backend does not enum it</span>
+          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>kind is free text — the backend does not enum it</span>
         </div>
         {briefErr && <Amber>{briefErr}</Amber>}
 
@@ -563,12 +563,12 @@ export function CreativePanel() {
             {alerts.map((a: any, i: number) => (
               <Row key={`a-${a?.symbol ?? i}`}>
                 <span style={{ ...mono, color: 'var(--accent-light)' }}>{String(a?.symbol ?? '—')}</span>
-                <span style={{ ...mono, color: a?.price == null ? 'var(--ink-3)' : 'var(--ink-2)' }}>
+                <span style={{ ...mono, color: a?.price == null ? 'var(--ink-2)' : 'var(--ink-2)' }}>
                   {a?.price == null ? 'no quote' : String(a.price)}
                 </span>
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
                   <Tag>{a?.low == null ? '−∞' : String(a.low)}–{a?.high == null ? '+∞' : String(a.high)}</Tag>
-                  <Tag c={a?.breached ? 'var(--amber)' : a?.status === 'no_quote' ? 'var(--ink-3)' : 'var(--ink-2)'}>
+                  <Tag c={a?.breached ? 'var(--amber)' : a?.status === 'no_quote' ? 'var(--ink-2)' : 'var(--ink-2)'}>
                     {String(a?.status ?? '')}
                   </Tag>
                 </span>
@@ -586,7 +586,7 @@ export function CreativePanel() {
             {snap && snapCount > 0 && (
               <>
                 <Row>
-                  <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>net worth</span>
+                  <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>net worth</span>
                   <span style={{ ...mono, color: 'var(--ink-2)' }}>{String(snap.net_worth)}</span>
                   <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                     {Object.keys(byKind).map((k) => <Tag key={k}>{k} {String(byKind[k])}</Tag>)}
@@ -596,7 +596,7 @@ export function CreativePanel() {
                   <Row key={`sp-${p?.symbol ?? i}`}>
                     <span style={{ ...mono, color: 'var(--accent-light)' }}>{String(p?.symbol ?? '—')}</span>
                     <Tag>{String(p?.kind ?? 'other')}</Tag>
-                    <span style={{ ...mono, color: 'var(--ink-3)' }}>{String(p?.qty)} × {String(p?.price)}</span>
+                    <span style={{ ...mono, color: 'var(--ink-2)' }}>{String(p?.qty)} × {String(p?.price)}</span>
                     <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                       <Tag>{String(p?.value)}</Tag>
                       <Tag>{typeof p?.weight === 'number' ? `${(p.weight * 100).toFixed(1)}%` : 'no weight'}</Tag>

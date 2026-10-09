@@ -148,12 +148,12 @@ export function PointerView({ pointer, onClose }: { pointer: Pointer; onClose: (
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.12em', color: 'var(--accent-light)' }}>
             {tour ? `${(pointer.title || 'TOUR').toUpperCase()} · ${index + 1}/${pointer.steps.length}` : 'TIP'}
           </span>
-          <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>from {pointer.agent}</span>
+          <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>from {pointer.agent}</span>
           {pointer.untrusted && <span role="note" style={{ fontSize: 10, color: 'var(--warn, #e0a030)' }}>from an untrusted turn — check before acting</span>}
           <button type="button" aria-label="Close" onClick={onClose} style={{ marginLeft: 'auto' }}>✕</button>
         </div>
         <div>{step.caption}</div>
-        {!rect && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>(not on this screen: {step.target})</div>}
+        {!rect && <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>(not on this screen: {step.target})</div>}
         {tour && (
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
             <button type="button" disabled={index === 0} onClick={() => setIndex((i) => Math.max(0, i - 1))}>Back</button>

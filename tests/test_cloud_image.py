@@ -171,6 +171,21 @@ async def test_signed_cloud_completion_catalog_and_no_replay(cloud):
     assert len(rows) == 1 and rows[0]["cloud"] is True and rows[0]["available"] is True
     meta, data = read_catalog_blob(rows[0]["id"], cloud.root)
     assert meta["mime"] == "image/png" and data.startswith(b"\x89PNG")
+    assert meta["digest_status"] == "verified"
+    from agents.core.media_catalog import MediaCatalog
+    catalog_row = MediaCatalog(cloud.root / "media" / "catalog.json").get(rows[0]["id"])
+    assert catalog_row["sha256"] == meta["sha256"]
+    assert catalog_row["meta"]["sha256"] == meta["sha256"]
+    from pathlib import Path
+
+    from agents.core.artifact_store import sniff
+
+    changed = io.BytesIO()
+    Image.new("RGB", (1024, 1024), "red").save(changed, format="PNG")
+    assert sniff(changed.getvalue()) == "image/png"
+    Path(catalog_row["path"]).write_bytes(changed.getvalue())
+    with pytest.raises(ValueError, match="artifact_not_found"):
+        read_catalog_blob(rows[0]["id"], cloud.root)
     assert (await cloud.runtime.execute(task))["status"] == "refused"
     assert len(cloud.requests) == 1
     assert "fixture-credential" not in str(task.result) + str(task.payload)
@@ -394,6 +409,9 @@ async def test_catalog_opt_out_and_real_runtime_restart(cloud, monkeypatch):
         key=lambda: cloud.state.key,
     )
     assert restarted.recover(task) == task.result
+    assert restarted.project(task).state == "ready"
+    # A verified completion outranks even a contrary stored failure envelope.
+    task.result = {"status": "failed", "reason": "cloud_image_provider_error"}
     assert restarted.project(task).state == "ready"
     assert len(cloud.requests) == 1
 
@@ -680,6 +698,11 @@ async def test_a_provider_failure_is_a_failure_under_its_own_reason(cloud, respo
     cloud.state.response = bodies[response]
     task = await finish(cloud)
     assert task.result == {"status": "failed", "reason": reason}
+    assert task.status == "done"
+    assert cloud.runtime.project(task).model_dump() == {
+        "task_id": task.id, "state": "failed", "artifact": None,
+        "resume_available": False, "enhance_available": False,
+    }
     assert len(cloud.requests) == 1
     assert not list((cloud.root / "media" / "generated").glob("*.png"))
     assert _outcomes(cloud) == (0, 1)

@@ -25,6 +25,26 @@ beforeEach(() => {
 });
 
 describe('EstopCard (AUTONOMY PAUSE)', () => {
+  it('reports a pending read until the server settles, then ready without changing the state text', async () => {
+    let release!: (value: unknown) => void;
+    global.fetch = vi.fn((url, init) =>
+      String(url) === '/api/ops/estop' && (init?.method || 'GET') === 'GET'
+        ? new Promise(resolve => { release = resolve; })
+        : Promise.resolve({ ok: true, status: 200, json: async () => ({}) })
+    );
+    render(<AdminMode t={t} />);
+    expect(fetch).toHaveBeenCalledWith('/api/ops/estop', expect.objectContaining({ method: 'GET' }));
+    const card = screen.getByTestId('estop-card');
+    expect(card.getAttribute('data-estop-readiness')).toBe('pending');
+    expect(card.getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByText(/checking estop/)).toBeTruthy();
+
+    release({ ok: true, status: 200, json: async () => ({ engaged: false, state: null }) });
+    await waitFor(() => expect(card.getAttribute('data-estop-readiness')).toBe('ready'));
+    expect(card.getAttribute('aria-busy')).toBe('false');
+    expect(screen.getByText(/RELEASED · autonomy running/)).toBeTruthy();
+  });
+
   it('is named distinctly from the Trust kill-switch and reads RELEASED when disengaged', async () => {
     mockEstop({ engaged: false, state: null });
     render(<AdminMode t={t} />);
@@ -38,6 +58,17 @@ describe('EstopCard (AUTONOMY PAUSE)', () => {
     global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
     render(<AdminMode t={t} />);
     await waitFor(() => expect(screen.getByText(/estop state unavailable/)).toBeTruthy());
+    expect(screen.queryByText(/RELEASED/)).toBeNull();
+    expect(screen.getByTestId('estop-card').getAttribute('data-estop-readiness')).toBe('unavailable');
+    expect(screen.getByTestId('estop-card').getAttribute('aria-busy')).toBe('false');
+  });
+
+  it('settles an empty response as unavailable instead of remaining pending', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => null });
+    render(<AdminMode t={t} />);
+    const card = screen.getByTestId('estop-card');
+    await waitFor(() => expect(card.getAttribute('data-estop-readiness')).toBe('unavailable'));
+    expect(card.getAttribute('aria-busy')).toBe('false');
     expect(screen.queryByText(/RELEASED/)).toBeNull();
   });
 
@@ -56,6 +87,27 @@ describe('EstopCard (AUTONOMY PAUSE)', () => {
     expect(String(post[0])).toBe('/api/ops/estop/engage');
     expect(JSON.parse(post[1].body)).toEqual({ reason: 'drill' });
     expect(screen.getByText(/reason: drill · since t1/)).toBeTruthy();
+  });
+
+  it('reports a pending mutation until the pause response settles', async () => {
+    let release!: (value: unknown) => void;
+    global.fetch = vi.fn((url, init) =>
+      init?.method === 'POST'
+        ? new Promise(resolve => { release = resolve; })
+        : Promise.resolve({ ok: true, status: 200, json: async () => ({ engaged: false, state: null }) })
+    );
+    render(<AdminMode t={t} />);
+    const card = screen.getByTestId('estop-card');
+    await waitFor(() => expect(card.getAttribute('data-estop-readiness')).toBe('ready'));
+    fireEvent.click(screen.getByText('Pause new autonomous work…'));
+    fireEvent.click(screen.getByText('Confirm pause'));
+    await waitFor(() => expect(card.getAttribute('data-estop-readiness')).toBe('pending'));
+    expect(card.getAttribute('aria-busy')).toBe('true');
+
+    release({ ok: true, status: 200, json: async () => ({ engaged: true, state: null }) });
+    await waitFor(() => expect(card.getAttribute('data-estop-readiness')).toBe('ready'));
+    expect(card.getAttribute('aria-busy')).toBe('false');
+    expect(screen.getByText(/PAUSED · new autonomous work held/)).toBeTruthy();
   });
 
   it('cancel backs out of the confirm without posting', async () => {

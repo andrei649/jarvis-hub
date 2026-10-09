@@ -194,12 +194,18 @@ def _local_count(data: Mapping[str, Any], key: str) -> int:
 def ollama_usage(data: Mapping[str, Any]) -> TokenUsage:
     """/api/chat totals; prompt_eval_count already includes cached prompt tokens.
 
+    Only an exact nonnegative integer pair supplies complete observed counters.
+    Missing or malformed counters do not discard a valid sibling or answer.
     Protocol: https://docs.ollama.com/api/chat (reviewed 2026-09-15).
     """
     if not isinstance(data, Mapping):
-        return TokenUsage()
+        return TokenUsage(counts_complete=False)
+    prompt = data.get("prompt_eval_count")
+    completion = data.get("eval_count")
     return TokenUsage(input_tokens=_local_count(data, "prompt_eval_count"),
-                      output_tokens=_local_count(data, "eval_count"))
+                      output_tokens=_local_count(data, "eval_count"),
+                      counts_complete=(type(prompt) is int and prompt >= 0
+                                       and type(completion) is int and completion >= 0))
 
 
 def lmstudio_usage(data: Mapping[str, Any]) -> TokenUsage:
@@ -209,10 +215,22 @@ def lmstudio_usage(data: Mapping[str, Any]) -> TokenUsage:
     (reviewed 2026-09-15). Do not infer cache billing from local token totals.
     """
     raw = data.get("usage") if isinstance(data, Mapping) else None
+    return _canonical_pair_usage(raw)
+
+
+def _canonical_pair_usage(raw: Any) -> TokenUsage:
+    """Validate the two inclusive OpenAI-compatible totals independently."""
     if not isinstance(raw, Mapping):
-        return TokenUsage()
-    return TokenUsage(input_tokens=_local_count(raw, "prompt_tokens"),
-                      output_tokens=_local_count(raw, "completion_tokens"))
+        return TokenUsage(counts_complete=False)
+    prompt = raw.get("prompt_tokens")
+    completion = raw.get("completion_tokens")
+    prompt_valid = type(prompt) is int and prompt >= 0
+    completion_valid = type(completion) is int and completion >= 0
+    return TokenUsage(
+        input_tokens=prompt if prompt_valid else 0,
+        output_tokens=completion if completion_valid else 0,
+        counts_complete=prompt_valid and completion_valid,
+    )
 
 
 def compatible_usage(data: Mapping[str, Any]) -> TokenUsage:
@@ -222,48 +240,62 @@ def compatible_usage(data: Mapping[str, Any]) -> TokenUsage:
     Cache discounts remain unmodeled: prompt_tokens already includes cache.
     """
     raw = data.get("usage") if isinstance(data, Mapping) else None
-    if not isinstance(raw, Mapping):
-        return TokenUsage()
-    return TokenUsage(input_tokens=_local_count(raw, "prompt_tokens"),
-                      output_tokens=_local_count(raw, "completion_tokens"))
+    return _canonical_pair_usage(raw)
 
 
 def gemini_usage(data: Mapping[str, Any]) -> TokenUsage:
     """Gemini inclusive prompt total and disjoint candidates/thoughts output.
 
     https://ai.google.dev/api/generate-content#UsageMetadata
-    Do not add cached, total, modality or tool-use prompt detail counts.
+    Do not add cached, total, modality or tool-use prompt counts. This mapping
+    is complete only with explicit mapped counters and zero tool-use input;
+    a supplied total must agree with the documented four-category sum.
     """
     raw = data.get("usageMetadata") if isinstance(data, Mapping) else None
     if not isinstance(raw, Mapping):
-        return TokenUsage()
-    return TokenUsage(input_tokens=_local_count(raw, "promptTokenCount"),
-                      output_tokens=_local_count(raw, "candidatesTokenCount")
-                      + _local_count(raw, "thoughtsTokenCount"))
+        return TokenUsage(counts_complete=False)
+    keys = ("promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount",
+            "toolUsePromptTokenCount")
+    observed = {key: raw.get(key) for key in keys}
+    complete = (
+        all(type(observed[key]) is int and observed[key] >= 0 for key in keys[:3])
+        and type(observed["toolUsePromptTokenCount"]) is int
+        and observed["toolUsePromptTokenCount"] == 0
+    )
+    if complete and "totalTokenCount" in raw:
+        total = raw.get("totalTokenCount")
+        complete = type(total) is int and total >= 0 and total == sum(observed.values())
+    return TokenUsage(input_tokens=_local_count(observed, "promptTokenCount"),
+                      output_tokens=_local_count(observed, "candidatesTokenCount")
+                      + _local_count(observed, "thoughtsTokenCount"),
+                      counts_complete=complete)
 
 
 def anthropic_usage(data: Mapping[str, Any]) -> TokenUsage:
     """The provider's own token counts, or an empty usage when it said nothing.
 
-    Every field is coerced and floored at zero rather than trusted: this is a parsed
-    response body from outside the box, and a negative or non-numeric count reaching
-    the cost meter would report a negative bill.
+    Each field must be an exact nonnegative integer. Invalid fields become zero
+    without discarding valid sibling counts from the parsed provider response.
+    All four disjoint categories must be explicit to mark this observation
+    complete for accounting; omitted optional cache fields remain unknown.
     """
     raw = data.get("usage") if isinstance(data, Mapping) else None
     if not isinstance(raw, Mapping):
-        return TokenUsage()
-
-    def _count(key: str) -> int:
-        try:
-            return max(0, int(raw.get(key) or 0))
-        except (TypeError, ValueError, OverflowError):
-            return 0
-
+        return TokenUsage(counts_complete=False, prompt_counts_complete=False)
+    keys = ("input_tokens", "output_tokens", "cache_read_input_tokens",
+            "cache_creation_input_tokens")
+    observed = {key: raw.get(key) for key in keys}
     return TokenUsage(
-        input_tokens=_count("input_tokens"),
-        output_tokens=_count("output_tokens"),
-        cache_read=_count("cache_read_input_tokens"),
-        cache_write=_count("cache_creation_input_tokens"),
+        input_tokens=_local_count(observed, "input_tokens"),
+        output_tokens=_local_count(observed, "output_tokens"),
+        cache_read=_local_count(observed, "cache_read_input_tokens"),
+        cache_write=_local_count(observed, "cache_creation_input_tokens"),
+        counts_complete=all(type(value) is int and value >= 0
+                            for value in observed.values()),
+        prompt_counts_complete=all(
+            type(observed[key]) is int and observed[key] >= 0
+            for key in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+        ),
     )
 
 

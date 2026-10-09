@@ -5,6 +5,7 @@ import pytest
 from agents.core.llm import tool_protocol
 from agents.core.llm.base import THINKING_EXHAUSTED_REPLY, LLMBackend, LMStudioBackend
 from agents.core.llm.tool_protocol import (
+    TokenUsage,
     ToolCall,
     ToolSpec,
     ToolTurn,
@@ -455,6 +456,7 @@ async def test_lmstudio_tool_turn_sends_tools_and_parses_tool_calls():
             ),
         ),
         finish_reason="tool_calls",
+        usage=TokenUsage(counts_complete=False),
     )
 
 
@@ -513,7 +515,7 @@ async def test_lmstudio_content_only_response_becomes_final_tool_turn():
         max_tokens=123,
     )
 
-    assert turn == ToolTurn(content="Final answer", finish_reason="stop")
+    assert turn == ToolTurn(content="Final answer", finish_reason="stop", usage=TokenUsage(counts_complete=False))
     assert backend.client.posts[0]["json"]["max_tokens"] == 123
 
 

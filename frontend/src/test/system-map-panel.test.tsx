@@ -58,13 +58,22 @@ describe('SystemMapPanel — the architecture lit by live health', () => {
     expect(screen.getByText('1/4 ok · 1 attention')).toBeTruthy();
   });
 
-  it('unknown never renders green: the unknown node text is not var(--green)', async () => {
-    mockFetch(feed({ memory: { status: 'unknown', stats: {}, evidence: null } }));
+  it('keeps off, unknown, and unmapped status text readable while outlines stay dim', async () => {
+    mockFetch(feed({
+      local: { status: 'off', stats: {}, evidence: null },
+      cloud: { status: 'unknown', stats: {}, evidence: null },
+      memory: { status: 'future_status', stats: {}, evidence: null },
+    }));
     render(<SystemMapPanel />);
     await waitFor(() => expect(screen.getByText('Memory')).toBeTruthy());
-    const statusText = screen.getAllByText('unknown').find((el) => el.tagName === 'text');
-    expect(statusText).toBeTruthy();
-    expect(statusText.getAttribute('fill')).not.toBe('var(--green)');
+    for (const status of ['off', 'unknown', 'future_status']) {
+      const statusText = screen.getAllByText(status).find((el) => el.tagName === 'text');
+      expect(statusText, `${status} SVG status text`).toBeTruthy();
+      expect(statusText.getAttribute('fill')).toBe('var(--ink-2)');
+      const outline = statusText.parentElement.querySelector('rect');
+      expect(outline.getAttribute('stroke')).toBe('var(--ink-3)');
+      expect(outline.getAttribute('opacity')).toBe(status === 'off' ? '0.55' : '1');
+    }
   });
 
   it('renders a counter only for edges the feed measured', async () => {

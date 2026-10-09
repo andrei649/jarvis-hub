@@ -123,8 +123,8 @@ class ChannelSessionLifecycle:
 
     async def run(self, source: SessionSource, text: str, *, observe_only=False, draft=None,
                   shared=False, authorize_reset=None):
-        from ..orchestrator import TURN_BUSY_REPLY
         from ..memory.manager import RewindRefused
+        from ..orchestrator import TURN_BUSY_REPLY
 
         base = self.orch._session_id_default if shared else build_session_key(source)
         kind = session_type(source)

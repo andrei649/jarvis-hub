@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import re
 import time
 from typing import Any, Callable, Optional, Protocol
 
@@ -180,6 +181,12 @@ class MediaGenManager:
         if self._catalog is None:
             return
         try:
+            digest = {}
+            if isinstance(result, dict) and "sha256" in result:
+                value = result["sha256"]
+                if type(value) is not str or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+                    raise ValueError("invalid producer digest")
+                digest["sha256"] = value
             rec = self._catalog.add(
                 kind=kind,
                 prompt=prompt,
@@ -188,6 +195,7 @@ class MediaGenManager:
                 backend=getattr(backend, "__name__", "local"),
                 cloud=False,
                 tags=list((opts or {}).get("tags") or []),
+                **digest,
             )
             out["catalog_id"] = rec["id"]
         except Exception:

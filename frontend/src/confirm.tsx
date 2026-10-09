@@ -149,7 +149,7 @@ export function ConfirmAction({ tier, label, onConfirm, onArm, phrase = 'CONFIRM
         onChange={(ev) => setTyped(ev.target.value)}
         onKeyDown={(ev) => { if (ev.key === 'Enter' && matches && !disabled && !busy) { ev.preventDefault(); fire(); } }}
         style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 4, fontFamily: 'var(--font-mono)', fontSize: 11, width: Math.max(90, phrase.length * 8) }} />
-      <button ref={refs.confirm} type="button" className={confirmClassName || className} style={matches ? DANGER : { color: 'var(--ink-3)' }}
+      <button ref={refs.confirm} type="button" className={confirmClassName || className} style={matches ? DANGER : { color: 'var(--ink-2)' }}
         aria-label={confirmAriaLabel} disabled={!matches || disabled || busy} onClick={fire}>{armedLabel || <>confirm {label}</>}</button>
       {!open && <button type="button" className={className} disabled={busy} aria-label={cancelAriaLabel} onClick={cancel}>{cancelLabel}</button>}
     </Group>

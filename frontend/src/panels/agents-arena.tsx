@@ -81,7 +81,6 @@ const COST_WHY =
   "the orchestrator's run_history.record() call never passes cost (orchestrator.py:2629), "
   + 'so 0.0 means NOT RECORDED, not free';
 
-const ink3 = 'var(--ink-3)';
 const ink2 = 'var(--ink-2)';
 
 function ago(ts: any): string {
@@ -121,7 +120,7 @@ function EmptyRollup({ health }: { health: any }) {
   }
   if (hc.run_history === 'ok') {
     return (
-      <div style={{ ...mono, color: ink3, marginTop: 4 }}>
+      <div style={{ ...mono, color: ink2, marginTop: 4 }}>
         no runs recorded yet — the run-history component reports ok, so the ring is
         genuinely empty.
       </div>
@@ -145,7 +144,7 @@ function MatchRefusal({ err, arenaHealth, id }: { err: any; arenaHealth: any; id
       <div style={{ ...mono, color }}>{head}</div>
       <div style={{ ...mono, color: ink2, marginTop: 4 }}>{msg}</div>
       {body}
-      <div style={{ ...mono, color: ink3, marginTop: 4 }}>
+      <div style={{ ...mono, color: ink2, marginTop: 4 }}>
         GETs surface the status only — apiGet does not attach the response body
         (client.ts:107), so no reason string is quoted here.
       </div>
@@ -168,7 +167,7 @@ function MatchRefusal({ err, arenaHealth, id }: { err: any; arenaHealth: any; id
     ));
   }
   if (st === 404) {
-    return box(ink3, 'no match with that id (404)', (
+    return box(ink2, 'no match with that id (404)', (
       <div style={{ ...mono, color: ink2, marginTop: 4 }}>
         arena.get_match("{id}") returned None — unknown or purged id. The arena itself
         answered, so this is not an outage.
@@ -272,7 +271,7 @@ export function AgentsArenaPanel() {
         sub={rows.length > 0 ? `${rows.length} agents` : (hist.d ? 'empty rollup' : null)}
         onReload={() => { hist.reload(); health.reload(); }}
       >
-        <div style={{ ...mono, color: ink3, marginBottom: 6 }}>
+        <div style={{ ...mono, color: ink2, marginBottom: 6 }}>
           Fleet rollup from the per-agent run-history ring — one row per agent that has at
           least one retained run. Agents with an empty ring are omitted by the backend, so
           an absent agent is not a non-existent agent.
@@ -282,7 +281,7 @@ export function AgentsArenaPanel() {
 
         {rows.map((r: any, i: number) => {
           const ok = typeof r.ok_rate === 'number' ? r.ok_rate : null;
-          const okColor = ok == null ? ink3 : ok < 0.5 ? 'var(--red)' : ok < 0.95 ? 'var(--amber)' : 'var(--green)';
+          const okColor = ok == null ? ink2 : ok < 0.5 ? 'var(--red)' : ok < 0.95 ? 'var(--amber)' : 'var(--green)';
           const cost = typeof r.total_cost === 'number' ? r.total_cost : 0;
           const picked = sel.indexOf(String(r.agent_id)) >= 0;
           return (
@@ -302,14 +301,14 @@ export function AgentsArenaPanel() {
                 {cost > 0
                   ? <Tag c="var(--amber)">{cost} cost</Tag>
                   : <span title={COST_WHY}><Tag>cost —</Tag></span>}
-                <span style={{ ...mono, color: ink3 }} title={stamp(r.last_ts)}>{ago(r.last_ts)}</span>
+                <span style={{ ...mono, color: ink2 }} title={stamp(r.last_ts)}>{ago(r.last_ts)}</span>
               </span>
             </Row>
           );
         })}
 
         {rows.length > 0 && (
-          <div style={{ ...mono, color: ink3, marginTop: 6 }}>
+          <div style={{ ...mono, color: ink2, marginTop: 6 }}>
             runs · ok-rate · avg latency are computed over the last ≤{RING} retained runs
             per agent (RUN_HISTORY_MAX_PER_AGENT), never all-time. "cost —" means the
             recorder does not write a cost field, not that the runs were free.
@@ -318,7 +317,7 @@ export function AgentsArenaPanel() {
 
         {!hist.loading && !hist.e && rows.length === 0 && <EmptyRollup health={health} />}
 
-        <div style={{ ...mono, color: ink3, marginTop: 8 }}>
+        <div style={{ ...mono, color: ink2, marginTop: 8 }}>
           user-tier read · GET {HISTORY_PATH} · availability cross-checked against GET
           {' '}{HEALTH_PATH}
           {health.d && health.d.summary ? ` ("${String(health.d.summary)}")` : ''}.
@@ -331,7 +330,7 @@ export function AgentsArenaPanel() {
         sub={m ? (m.voted ? 'voted' : 'blind') : null}
         onReload={() => { if (mid) load(mid); }}
       >
-        <div style={{ ...mono, color: ink3, marginBottom: 6 }}>
+        <div style={{ ...mono, color: ink2, marginBottom: 6 }}>
           One blind match in full: the entries as the arena stores them, and the label→model
           mapping only once a vote has revealed it. No route lists match ids — the
           leaderboard ranks models, not matches — so an id comes from a run below, from a
@@ -340,7 +339,7 @@ export function AgentsArenaPanel() {
 
         {/* ── run: the only honest source of a match id ─────────────────────────── */}
         <Row>
-          <span style={{ ...mono, color: ink3 }}>query</span>
+          <span style={{ ...mono, color: ink2 }}>query</span>
           <input
             style={{ ...inpS, flex: 1 }}
             value={q}
@@ -349,7 +348,7 @@ export function AgentsArenaPanel() {
           />
         </Row>
         <Row>
-          <span style={{ ...mono, color: ink3 }}>agents</span>
+          <span style={{ ...mono, color: ink2 }}>agents</span>
           <input
             style={{ ...inpS, flex: 1 }}
             value={extra}
@@ -358,7 +357,7 @@ export function AgentsArenaPanel() {
           />
           <button className="tool-btn" disabled={!runReady} onClick={run}>RUN MATCH</button>
         </Row>
-        <div style={{ ...mono, color: ink3, marginTop: 4 }}>
+        <div style={{ ...mono, color: ink2, marginTop: 4 }}>
           selected: {agentIds.length ? agentIds.join(', ') : '(none — click agent ids above)'}
         </div>
         {!runReady && !busy && (
@@ -379,7 +378,7 @@ export function AgentsArenaPanel() {
             run refused · POST {RUN_PATH} · {runErr}
           </div>
         )}
-        <div style={{ ...mono, color: ink3, marginTop: 4 }}>
+        <div style={{ ...mono, color: ink2, marginTop: 4 }}>
           only the {'{query, agents:[…]}'} body is offered. The route also accepts
           {' '}{'{candidates:{model:response}}'} — pre-generated model output — and a textarea
           asking you to paste two model answers by hand would be a form over something only
@@ -388,7 +387,7 @@ export function AgentsArenaPanel() {
 
         {/* ── pick an id ────────────────────────────────────────────────────────── */}
         <Row>
-          <span style={{ ...mono, color: ink3 }}>match id</span>
+          <span style={{ ...mono, color: ink2 }}>match id</span>
           <input
             style={{ ...inpS, flex: 1 }}
             value={paste}
@@ -399,7 +398,7 @@ export function AgentsArenaPanel() {
         </Row>
         {ids.length > 0 && (
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 6, alignItems: 'center' }}>
-            <span style={{ ...mono, color: ink3 }}>this session:</span>
+            <span style={{ ...mono, color: ink2 }}>this session:</span>
             {ids.map((id) => (
               <button key={id} className="tool-btn" style={{ ...mono, color: id === mid ? 'var(--accent-light)' : ink2 }} onClick={() => load(id)}>
                 {id}
@@ -416,13 +415,13 @@ export function AgentsArenaPanel() {
               <span style={{ ...mono, color: ink2 }}>{String(m.id)}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                 <Tag c={m.voted ? 'var(--green)' : 'var(--amber)'}>{m.voted ? 'VOTED' : 'BLIND'}</Tag>
-                <span style={{ ...mono, color: ink3 }}>{stamp(m.created_at)}</span>
+                <span style={{ ...mono, color: ink2 }}>{stamp(m.created_at)}</span>
               </span>
             </Row>
             <div style={{ ...mono, color: ink2, marginTop: 6 }}>query: {String(m.query)}</div>
 
             {!m.voted && (
-              <div style={{ ...mono, color: ink3, marginTop: 4 }}>
+              <div style={{ ...mono, color: ink2, marginTop: 4 }}>
                 model identities are hidden until a vote — the server strips the label→model
                 mapping from this response, so this panel cannot say which model is which.
               </div>
@@ -491,18 +490,18 @@ export function AgentsArenaPanel() {
         )}
 
         {m == null && mErr == null && (
-          <div style={{ ...mono, color: ink3, marginTop: 8 }}>
+          <div style={{ ...mono, color: ink2, marginTop: 8 }}>
             no match loaded — run one above, or paste an id.
           </div>
         )}
 
-        <div style={{ ...mono, color: ink3, marginTop: 8 }}>
+        <div style={{ ...mono, color: ink2, marginTop: 8 }}>
           user-tier reads and writes · GET {MATCH_STEM}{'{match_id}'} · the run and vote
           controls drive POST {RUN_PATH} and POST {VOTE_PATH}, which the legacy /tools HUD
           already calls (agents/web/static/tools.js:102,106); they exist here because no
           route lists match ids, so a run is the only place one can come from.
         </div>
-        <div style={{ ...mono, color: ink3, marginTop: 2 }}>
+        <div style={{ ...mono, color: ink2, marginTop: 2 }}>
           no clear/reset control: Arena.clear() and RunHistory.clear() have no HTTP route.
         </div>
       </Card>

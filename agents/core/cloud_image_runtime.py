@@ -32,6 +32,7 @@ from .media_backends import (
     openrouter_image,
     xai_image,
 )
+from .media_backends.comfyui import implementation_fingerprint, save_artifact
 from .media_backends.openai_image import (
     ENDPOINT,
     IMAGE2_TIERS,
@@ -61,6 +62,7 @@ DEEPINFRA_VERSION = "deepinfra-image-v1"
 _CODE_DIGEST = hashlib.sha256(
     Path(__file__).read_bytes()
     + (Path(__file__).parent / "media_backends" / "openai_image.py").read_bytes()
+    + implementation_fingerprint().encode("ascii")
 ).hexdigest()
 _FAL_CODE_DIGEST = hashlib.sha256(
     Path(__file__).read_bytes()
@@ -340,6 +342,8 @@ class CloudImageRuntime:
                      DEEPINFRA_PLUGIN: self.deepinfra_key}.get(plugin, self.key)())
         if plugin != CODEX_PLUGIN and (not isinstance(key, str) or not key.strip()):
             raise _Declined("credential_not_configured", "cloud image credential unavailable")
+        # Bind the sidecar publisher implementation before recording this configuration.
+        implementation_fingerprint()
         # Only a random generation is public. The credential hash stays in a
         # private local record, so task/status metadata is not a secret oracle.
         version = _VERSIONS[plugin]
@@ -973,6 +977,7 @@ class CloudImageRuntime:
                                  "selected_model", "gpt-image-1.5")),
                     cloud=True,
                     record_id="md-" + hashlib.sha256(_task_binding(task).encode()).hexdigest()[:12],
+                    sha256=done["sha256"],
                     meta={"task_id": task.id, "sha256": done["sha256"]},
                 )
                 done["catalog_id"] = row["id"]
@@ -1349,21 +1354,32 @@ class CloudImageRuntime:
             phase = "generated"
             live_check(task.payload["method"], endpoint)
             phase = "published"
-            artifact_id = uuid.uuid4().hex
-            destination = self.root / "media" / "generated" / (artifact_id + ".png")
-            _write(destination, data)
+            generated_root = _safe(self.root / "media" / "generated")
             width, height = (dimensions if plugin in {FAL_PLUGIN, OPENROUTER_PLUGIN, KREA_PLUGIN, XAI_PLUGIN, DEEPINFRA_PLUGIN} else
                              tuple(map(int, task.payload["image"]["body"]["size"].split("x"))))
+
+            def final_publication_guard():
+                nonlocal phase
+                _safe(generated_root)
+                try:
+                    live_check(task.payload["method"], endpoint)
+                except Exception:
+                    phase = "generated"
+                    raise
+
+            published = save_artifact(
+                generated_root, data, width, height, guard=final_publication_guard,
+            )
             done = {
                 "binding": _task_binding(source),
                 "created_at": time.time(),
                 "catalog_requested": env_flag("JARVIS_MEDIA_CATALOG"),
-                "sha256": hashlib.sha256(data).hexdigest(),
+                "sha256": published["sha256"],
                 "artifact": {
-                    "artifact_id": artifact_id,
-                    "bytes": len(data),
-                    "width": width,
-                    "height": height,
+                    "artifact_id": published["artifact_id"],
+                    "bytes": published["bytes"],
+                    "width": published["width"],
+                    "height": published["height"],
                 },
             }
             if plugin == KREA_PLUGIN:

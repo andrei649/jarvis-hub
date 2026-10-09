@@ -21,8 +21,8 @@ const LABELS: Record<string, [string, string]> = {
   error: ['provider error', 'var(--red)'],
   unreachable: ['unreachable', 'var(--red)'],
   refused: ['refused by the hub (wrong host protocol)', 'var(--red)'],
-  not_configured: ['no key set', 'var(--ink-3)'],
-  not_cloud: ['local', 'var(--ink-3)'],
+  not_configured: ['no key set', 'var(--ink-2)'],
+  not_cloud: ['local', 'var(--ink-2)'],
 };
 
 export function ProviderCheckPanel() {
@@ -53,10 +53,10 @@ export function ProviderCheckPanel() {
     <Card title="CLOUD PROVIDER CHECK" live={rows ? 'live' : undefined} sub={rows ? (bad ? `${bad} failing` : 'ok') : null}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
         <button className="tool-btn" disabled={busy} onClick={() => run()}>{busy ? 'checking…' : 'check all providers'}</button>
-        <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>one authenticated model-list read per provider with a key</span>
+        <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>one authenticated model-list read per provider with a key</span>
       </div>
       {(rows || []).map((row: any) => {
-        const [label, color] = LABELS[row.verdict] || [String(row.verdict || '?'), 'var(--ink-3)'];
+        const [label, color] = LABELS[row.verdict] || [String(row.verdict || '?'), 'var(--ink-2)'];
         return (
           <Row key={row.provider}>
             <span style={{ ...mono }}>{row.display_name || row.provider}</span>
@@ -72,7 +72,7 @@ export function ProviderCheckPanel() {
         );
       })}
       {msg && <div role="status" style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>{msg}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>keys and provider replies are never shown</div>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>keys and provider replies are never shown</div>
     </Card>
   );
 }

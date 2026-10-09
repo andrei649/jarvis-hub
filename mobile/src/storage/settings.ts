@@ -3,10 +3,20 @@ import { normalizeAppearance, type Appearance } from '../appearance';
 
 /** Credentials remain only in the existing connection settings record. */
 export type ServerConfig = { baseUrl: string; token: string; adminToken: string };
-export type ServerRecord = { version: 2; config: ServerConfig; appearance: Appearance | null };
+export type ServerRecord = { version: 2; config: ServerConfig; appearance: Appearance | null; chatScope: string };
 const KEY = 'jarvis.server.config.v1';
 export const DEFAULT_CONFIG: ServerConfig = { baseUrl: '', token: '', adminToken: '' };
 let writes: Promise<void> = Promise.resolve();
+
+/** Cache identity only; this opaque value is never an authorization credential. */
+export function newChatScope(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+export function reconfigureServer(record: ServerRecord, config: ServerConfig): ServerRecord {
+  const changed = (Object.keys(config) as (keyof ServerConfig)[]).some(key => record.config[key] !== config[key]);
+  return changed ? { version: 2, config, appearance: null, chatScope: newChatScope() } : record;
+}
 
 export async function loadServerRecord(): Promise<ServerRecord> {
   try {
@@ -23,9 +33,11 @@ export async function loadServerRecord(): Promise<ServerRecord> {
     // Only fixed enum fields enter the cache; no server metadata or credentials.
     const appearance = parsed?.version === 2 && parsed.appearance && typeof parsed.appearance === 'object' && !Array.isArray(parsed.appearance)
       ? normalizeAppearance(parsed.appearance) : null;
-    return { version: 2, config, appearance };
+    const chatScope = typeof parsed?.chatScope === 'string' && /^[a-z0-9-]{1,128}$/.test(parsed.chatScope)
+      ? parsed.chatScope : newChatScope();
+    return { version: 2, config, appearance, chatScope };
   } catch {
-    return { version: 2, config: { ...DEFAULT_CONFIG }, appearance: null };
+    return { version: 2, config: { ...DEFAULT_CONFIG }, appearance: null, chatScope: newChatScope() };
   }
 }
 

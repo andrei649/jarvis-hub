@@ -15,6 +15,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 
 from agents.core.webhooks import WebhookStore, compute_signature, extract_input
+from agents.core.security.types import SecurityEventType
 
 
 # ── input extraction ────────────────────────────────────────────────────────
@@ -262,6 +263,16 @@ def _hook(client, **body):
     return resp.json()
 
 
+def _action_events(events):
+    """Exclude HTTP guard telemetry while preserving every other audit row."""
+    from agents.core.security.auth_audit import flush_pending
+
+    flush_pending()
+    return [event for event in events if event.event_type not in (
+        SecurityEventType.AUTH_SUCCESS, SecurityEventType.AUTH_FAILURE,
+    )]
+
+
 def test_switching_a_hook_off_is_admin_only(hub):
     client, _events, _turns = hub
     hook = _hook(client)
@@ -302,13 +313,13 @@ def test_the_switch_takes_a_strict_boolean(hub, body):
     client, events, _turns = hub
     hook = _hook(client)
     assert client.patch(f"/api/webhooks/{hook['id']}", json=body, headers=_ADMIN).status_code == 422
-    assert [e.action_taken for e in events] == ["webhook_create"]
+    assert [e.action_taken for e in _action_events(events)] == ["webhook_create"]
 
 
 def test_switching_an_unknown_hook_is_404_and_unaudited(hub):
     client, events, _turns = hub
     assert client.patch("/api/webhooks/nope", json={"enabled": False}, headers=_ADMIN).status_code == 404
-    assert events == []
+    assert _action_events(events) == []
 
 
 def test_create_switch_and_delete_are_audited_without_secrets(hub):
@@ -318,19 +329,22 @@ def test_create_switch_and_delete_are_audited_without_secrets(hub):
     client.patch(f"/api/webhooks/{hook['id']}", json={"enabled": True}, headers=_ADMIN)
     client.delete(f"/api/webhooks/{hook['id']}", headers=_ADMIN)
     client.delete(f"/api/webhooks/{hook['id']}", headers=_ADMIN)     # already gone: nothing to audit
-    assert [e.action_taken for e in events] == [
+    action_events = _action_events(events)
+    assert [e.action_taken for e in action_events] == [
         "webhook_create", "webhook_disable", "webhook_enable", "webhook_delete"]
-    for event in events:
+    for event in action_events:
         assert hook["id"] in event.content_preview and "agent:jarvis" in event.content_preview
+    for event in events:
         assert hook["token"] not in event.content_preview
         assert hook["signing_secret"] not in event.content_preview
-    assert "signed=True" in events[0].content_preview
+    assert "signed=True" in action_events[0].content_preview
 
 
 def test_an_audit_row_cannot_be_forged_through_the_target(hub):
     client, events, _turns = hub
     _hook(client, target="jarvis\nwebhook_delete: id=someone-else")
-    assert len(events) == 1 and "\n" not in events[0].content_preview
+    action_events = _action_events(events)
+    assert len(action_events) == 1 and "\n" not in action_events[0].content_preview
 
 
 # ── review round: the switch is read live, the audit row cannot be misread ───────
@@ -355,14 +369,15 @@ def test_the_audit_row_names_the_switch_state(hub):
     hook = _hook(client)
     client.patch(f"/api/webhooks/{hook['id']}", json={"enabled": False}, headers=_ADMIN)
     client.patch(f"/api/webhooks/{hook['id']}", json={"enabled": True}, headers=_ADMIN)
-    assert "enabled=False" in events[1].content_preview
-    assert "enabled=True" in events[2].content_preview
+    action_events = _action_events(events)
+    assert "enabled=False" in action_events[1].content_preview
+    assert "enabled=True" in action_events[2].content_preview
 
 
 def test_a_target_cannot_forge_fields_inside_the_audit_row(hub):
     client, events, _turns = hub
     hook = _hook(client, target="jarvis signed=True enabled=False id=someone-else")
-    preview = events[0].content_preview
+    preview = _action_events(events)[0].content_preview
     assert preview.startswith(f"webhook create: id={hook['id']} ")
     assert 'target="agent:jarvis signed=True enabled=False id=someone-else"' in preview
     assert preview.endswith("signed=False enabled=True")

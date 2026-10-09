@@ -822,6 +822,32 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             assert bool(result["queued"]) == (enabled and spy._verdict is not Verdict.DENY)
         finally:
             orch.autonomy_queue.close()
+    elif kind == "research":
+        # A governed autonomy research proposal crosses the injected kernel
+        # before it can reach the queue. The task is never dispatched here, so
+        # no websearch backend or network access is needed for the matrix.
+        import asyncio
+        from types import SimpleNamespace
+
+        from agents.core.autonomy.queue import TaskQueue
+        from agents.core.autonomy.worker import AutonomyWorker
+        from agents.core.kernel.binding import MediationKernelBridge
+
+        queue = TaskQueue(str(tmp_path / "research-matrix.db")).initialize()
+        try:
+            worker = AutonomyWorker(
+                queue,
+                policy=SimpleNamespace(decide=lambda _action: SimpleNamespace(
+                    outcome="ask", tier=0, reason="read only"
+                )),
+                kernel=MediationKernelBridge(spy),
+            )
+            asyncio.run(worker.submit(
+                "jarvis", "research", "Research local probe",
+                {"query": "local probe"}, attention_mode="none",
+            ))
+        finally:
+            queue.close()
     elif kind == "settings.voice_command":
         import asyncio
 

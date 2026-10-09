@@ -4594,6 +4594,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/autonomy/mediation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Autonomy Mediation Status
+         * @description Read the queue's verified mediation counts off the event-loop thread.
+         */
+        get: operations["autonomy_mediation_status_autonomy_mediation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/autonomy/observer": {
         parameters: {
             query?: never;
@@ -7139,6 +7159,26 @@ export interface paths {
          *     available here under the normal user guard for planners and product clients.
          */
         get: operations["capabilities_api_capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Client Protocol Capabilities
+         * @description Static mounted chat/session wire contract, separate from live readiness.
+         */
+        get: operations["client_protocol_capabilities_v1_capabilities_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -11819,6 +11859,7 @@ export interface components {
              * @default []
              */
             notices: components["schemas"]["TurnNotice"][];
+            outcome?: components["schemas"]["TurnOutcome"] | null;
         };
         /** ClimateControlBody */
         ClimateControlBody: {
@@ -12338,7 +12379,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "awaiting_approval" | "queued" | "generating" | "ready" | "rejected" | "deferred" | "refused" | "uncertain";
+            state: "awaiting_approval" | "queued" | "generating" | "ready" | "failed" | "rejected" | "deferred" | "refused" | "uncertain";
             artifact?: components["schemas"]["ImageArtifactView"] | null;
             /**
              * Resume Available
@@ -12596,6 +12637,28 @@ export interface components {
             backend?: string | null;
             /** Model */
             model?: string | null;
+        };
+        /** MediationCounts */
+        MediationCounts: {
+            /** Authorized Enqueue */
+            authorized_enqueue: number;
+            /** Governed */
+            governed: number;
+            /** Refused Unmediated */
+            refused_unmediated: number;
+            /** Ungoverned Detected */
+            ungoverned_detected: number;
+        };
+        /** MediationStatus */
+        MediationStatus: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "off" | "hold" | "enforce";
+            /** Valid */
+            valid: boolean;
+            stats: components["schemas"]["MediationCounts"] | null;
         };
         /** MicArmBody */
         MicArmBody: {
@@ -13439,6 +13502,11 @@ export interface components {
             code: string;
             /** Text */
             text: string;
+        };
+        /** TurnOutcome */
+        TurnOutcome: {
+            /** Latency Ms */
+            latency_ms: number;
         };
         /** UninstallSkillBody */
         UninstallSkillBody: {
@@ -20726,6 +20794,26 @@ export interface operations {
             };
         };
     };
+    autonomy_mediation_status_autonomy_mediation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MediationStatus"];
+                };
+            };
+        };
+    };
     autonomy_observer_status_autonomy_observer_get: {
         parameters: {
             query?: never;
@@ -24866,6 +24954,26 @@ export interface operations {
         };
     };
     capabilities_api_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    client_protocol_capabilities_v1_capabilities_get: {
         parameters: {
             query?: never;
             header?: never;

@@ -1,5 +1,6 @@
 """Declarative local image registration and bounded offline wire protocol."""
 import base64
+import gzip
 import json
 import struct
 import zlib
@@ -127,16 +128,29 @@ def test_status_is_pure_and_model_names_are_data(monkeypatch):
     assert resolve_config(env={}) is None
 
 
-@pytest.mark.parametrize('kind', ['url', 'two', 'duplicate', 'base64', 'png', 'dimensions', 'encoding', 'redirect'])
-async def test_invalid_responses_never_publish(tmp_path, kind):
+@pytest.mark.parametrize('kind, reason', [
+    ('http_error', 'backend_http_error'), ('wrong_type', 'invalid_response'),
+    ('too_large', 'response_too_large'), ('url', 'invalid_response'),
+    ('two', 'invalid_response'), ('duplicate', 'invalid_response'),
+    ('base64', 'invalid_response'), ('png', 'invalid_image'),
+    ('dimensions', 'image_dimensions_mismatch'),
+    ('encoding', 'content_encoding_refused'), ('redirect', 'redirect_refused'),
+])
+async def test_invalid_responses_never_publish(tmp_path, kind, reason):
+    from agents.core.media_backends import local_openai_image
     from agents.core.media_backends.comfyui import ImageGenerationError
-    from agents.core.media_backends.local_openai_image import LocalOpenAIImageBackend
     from agents.core.media_backends.registry import resolve_config
     calls = []
     def service(request):
         calls.append(request)
+        if kind == 'http_error':
+            return httpx.Response(503, json={'error': 'PRIVATE'})
+        if kind == 'wrong_type':
+            return httpx.Response(200, headers={'content-type': 'text/plain'}, content=b'PRIVATE')
+        if kind == 'too_large':
+            return httpx.Response(200, headers={'content-type': 'application/json', 'content-length': '999999999'})
         if kind == 'encoding':
-            return httpx.Response(200, headers={'content-encoding': 'gzip'}, content=b'bad')
+            return httpx.Response(200, headers={'content-encoding': 'gzip'}, content=gzip.compress(b'PRIVATE'))
         if kind == 'redirect':
             return httpx.Response(307, headers={'location': 'http://remote.example/image'})
         if kind == 'duplicate':
@@ -150,15 +164,23 @@ async def test_invalid_responses_never_publish(tmp_path, kind):
             item = {'b64_json': base64.b64encode(b'invalid PNG').decode()}
         return httpx.Response(200, json={'data': [item, item] if kind == 'two' else [item]})
     config = resolve_config(env=environment(), output_root=tmp_path)
-    with pytest.raises(ImageGenerationError):
-        await LocalOpenAIImageBackend(config, transport=httpx.MockTransport(service)).generate('boat', {'width': 64, 'height': 64})
+    with pytest.raises(ImageGenerationError) as raised:
+        await local_openai_image.LocalOpenAIImageBackend(config, transport=httpx.MockTransport(service)).generate('boat', {'width': 64, 'height': 64})
+    assert raised.value.reason == reason
+    if kind in {'encoding', 'redirect'}:
+        assert type(raised.value) is ImageGenerationError
+    else:
+        assert type(raised.value) is local_openai_image._ProviderResponseFailure
+        assert raised.value.reason in local_openai_image._RESPONSE_FAILURE_REASONS
     assert len(calls) == 1 and not list(tmp_path.glob('*.png'))
 
 
 @pytest.mark.parametrize('phase, cause', [
     ('send', 'kernel_denied'),
+    ('send', 'backend_http_error'),
     ('publication', 'kernel_denied'),
     ('publication', 'mediation_execution_required'),
+    ('publication', 'backend_http_error'),
     # The guard BREAKING is not governance (review round 5, item 1).
     ('publication', 'local_guard_failed'),
     ('publication', 'approval_binding_invalid'),
@@ -166,7 +188,6 @@ async def test_invalid_responses_never_publish(tmp_path, kind):
 async def test_fresh_guard_prevents_send_or_publication(tmp_path, phase, cause):
     from agents.core.media_backends.comfyui import (
         ImageGenerationError,
-        ImageWithheldAfterGeneration,
     )
     from agents.core.media_backends.local_openai_image import LocalOpenAIImageBackend
     from agents.core.media_backends.registry import resolve_config
@@ -193,7 +214,7 @@ async def test_fresh_guard_prevents_send_or_publication(tmp_path, phase, cause):
         # ... while a guard that broke is a failure under its own reason, never withheld
         # (review round 5, item 1). Nothing is published either way.
         assert raised.value.reason == cause
-        assert not isinstance(raised.value, ImageWithheldAfterGeneration)
+        assert type(raised.value) is ImageGenerationError
 
 
 async def test_uncertain_post_is_never_retried(tmp_path):

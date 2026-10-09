@@ -32,6 +32,10 @@ class Mediation(StrEnum):
 ACTION_REGISTRY: dict[str, Mediation] = {
     "hermes.runtime": Mediation.KERNEL,
     "kanban.worker": Mediation.KERNEL,
+    # The autonomy research handler reads through configured websearch egress.
+    # Its exact task kind needs persisted kernel authority before dispatch;
+    # related/prefixed kinds remain unclassified until their effects are audited.
+    "research": Mediation.KERNEL,
     # Wave 1 — kernel-mediated.
     "node.dispatch": Mediation.KERNEL,
     "call.outbound": Mediation.KERNEL,

@@ -4,9 +4,9 @@
     "blocked": 1,
     "delivered": 0,
     "done": 289,
-    "open": 17,
-    "open_or_blocked": 18,
-    "total": 307
+    "open": 20,
+    "open_or_blocked": 21,
+    "total": 310
   },
   "horizons": {
     "H10": {
@@ -69,8 +69,8 @@
       "blocked": 0,
       "delivered": 0,
       "done": 22,
-      "open": 9,
-      "total": 31
+      "open": 12,
+      "total": 34
     },
     "H19": {
       "blocked": 0,
@@ -199,7 +199,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "cb3b164f4009130cb820781fe4aafb4b0be1d735",
+  "latest_ci_commit": "25be9fa303f2511c0dd3ca0ef39f6d645fd2cfb5",
   "open_release_gates": [
     {
       "id": "A1",
@@ -209,7 +209,7 @@
     {
       "id": "A3",
       "name": "Dependabot re-triage — offline `npm audit` / `pip-audit`, measured 2026-09-02: frontend **0** · root `package-lock` (HUD-test tree) **5** (2 high) · worldview **3 high** · worldview/mcp **5** (2 high) · mobile **21–22** (10–11 high; device-gated Expo chain) · Python `requirements.lock` **clean**. *(Superseded figure: 19 open alerts / 4 high, 2026-07-07.)*",
-      "status": "🟢 agent half done in #634 — local re-audit enumerated everything without the UI: fixed frontend `undici` (high, dev-chain) and worldview/mcp `hono`+`esbuild` (high+moderate), both trees 0 vulns at the time with suites green; mobile attempt reverted after it broke `tsc` (expo-audio type surface — the device gate is real). **Recounted 2026-09-02 (measured offline; GitHub's own alert count still to be read by the owner — Security tab, or `gh api repos/andrei649/jarvis-hub/dependabot/alerts?state=open`):** frontend still 0; worldview/mcp is back to 5 (2 high), worldview at 3 high and the root HUD-test tree at 5 (2 high) — all `fixAvailable`, taken by the 2026-09-02 dependency audit wave (CTO D7: `npm audit fix` + that tree's own tests/build; frontend and mobile untouched); Python clean via `pip-audit`. **Mobile re-audit 2026-09-15:** compatible transitive updates reduce the fresh audit from21 (9 high) to11 moderate/0 high/0 critical; SDK versions stay unchanged. Native TypeScript,140 tests and offline Android/iOS Hermes exports pass after the documented polyfill compatibility repair. See [dependency evidence](docs/mobile-lock-security-audit.md). Owner tail: native device verification and remaining UUID/xcode chain; read the real Dependabot count and dismiss stale alerts in UI"
+      "status": "🟡 partial — **Mobile re-audit 2026-10-09:** local compatible lock refresh removes the critical `shell-quote` advisory and two high package findings: **45 → 42 findings (0 critical, 15 high, 27 moderate)**. Direct Expo/RN versions stay fixed. Remaining leaf advisories are `braces`, `node-forge`, `uuid` and `sprintf-js`; no compatible published fix exists within the current graph. Native tests/TypeScript and Android/iOS export evidence are tracked in [current dependency report](docs/mobile-lock-security-refresh-20261009.md); device acceptance and the remaining dependency work stay open. Historical evidence follows. Agent half done in #634 — local re-audit enumerated everything without the UI: fixed frontend `undici` (high, dev-chain) and worldview/mcp `hono`+`esbuild` (high+moderate), both trees 0 vulns at the time with suites green; mobile attempt reverted after it broke `tsc` (expo-audio type surface — the device gate is real). **Recounted 2026-09-02 (measured offline; GitHub's own alert count still to be read by the owner — Security tab, or `gh api repos/andrei649/jarvis-hub/dependabot/alerts?state=open`):** frontend still 0; worldview/mcp is back to 5 (2 high), worldview at 3 high and the root HUD-test tree at 5 (2 high) — all `fixAvailable`, taken by the 2026-09-02 dependency audit wave (CTO D7: `npm audit fix` + that tree's own tests/build; frontend and mobile untouched); Python clean via `pip-audit`. **Mobile re-audit 2026-09-15:** compatible transitive updates reduce the fresh audit from21 (9 high) to11 moderate/0 high/0 critical; SDK versions stay unchanged. Native TypeScript,140 tests and offline Android/iOS Hermes exports pass after the documented polyfill compatibility repair. See [dependency evidence](docs/mobile-lock-security-audit.md). Owner tail: native device verification and remaining UUID/xcode chain; read the real Dependabot count and dismiss stale alerts in UI"
     },
     {
       "id": "A4",
@@ -222,11 +222,11 @@
       "status": "🟡 **partial (owner, 2026-08-28)** — landing half moving; the 60s demo cut is the remaining piece. Not a 1.0 blocker (GTM, not proof)"
     }
   ],
-  "routes": 553,
+  "routes": 622,
   "tests": {
-    "backend": 20985,
-    "frontend": 1859,
-    "mobile": 142
+    "backend": 25540,
+    "frontend": 2177,
+    "mobile": 359
   },
   "version": "1.0.0"
 }

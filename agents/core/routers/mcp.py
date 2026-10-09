@@ -21,6 +21,7 @@ The orchestrator is reached via `get_orch()`.
 
 import logging
 import sys
+from contextlib import suppress
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
@@ -29,6 +30,7 @@ from pydantic import BaseModel
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
+from agents.core.security.auth_audit import submit_auth_event
 from agents.core.web_helpers import nocache_json
 
 logger = logging.getLogger("jarvis.web")
@@ -44,6 +46,18 @@ def _web():
 
 def _mcp_resource(request: Request) -> str:
     return str(request.base_url).rstrip("/") + "/api/mcp/server"
+
+
+def _audit_mcp_auth(request: Request, *, success: bool, reason: str) -> None:
+    """Record the transport decision without retaining credential or RPC values."""
+    # An unavailable audit queue cannot change the transport decision.
+    with suppress(Exception):
+        submit_auth_event(
+            "auth_success" if success else "auth_failure",
+            tier="user", reason=reason,
+            client=request.client.host if request.client else "",
+            surface="mcp",
+        )
 
 
 # ── MCP admin (client servers) ───────────────────────────────────
@@ -365,6 +379,7 @@ async def mcp_server_rpc(message: dict, request: Request):
         )
     w = _web()
     verified_identity = None
+    success_reason = "credential"
     if bool(orch.get_setting("mcp.oauth_required", False)):
         from agents.core.mcp.oauth import MCPResourceServer
         from agents.core.mcp.server import VerifiedMCPIdentity
@@ -372,6 +387,10 @@ async def mcp_server_rpc(message: dict, request: Request):
         result = w._get_mcp_rs().validate(
             request.headers.get("authorization", ""), resource, required_scope="mcp")
         if not result["ok"]:
+            _audit_mcp_auth(
+                request, success=False,
+                reason="invalid" if request.headers.get("authorization") else "missing",
+            )
             return JSONResponse(
                 {"error": f"unauthorized: {result['error']}"}, status_code=401,
                 headers={"WWW-Authenticate": MCPResourceServer.challenge(resource)})
@@ -379,6 +398,7 @@ async def mcp_server_rpc(message: dict, request: Request):
             subject=str((result.get("claims") or {}).get("sub") or "").strip()
         )
         if not verified_identity.subject:
+            _audit_mcp_auth(request, success=False, reason="invalid")
             return JSONResponse(
                 {"error": "unauthorized: OAuth subject required"}, status_code=401,
                 headers={"WWW-Authenticate": MCPResourceServer.challenge(resource)})
@@ -390,21 +410,32 @@ async def mcp_server_rpc(message: dict, request: Request):
         # (dashboard/memory) over the MCP transport even though the HTTP routes are guarded.
         # The credential is required exactly when the guard requires it (H273, review-H273e
         # M1): one predicate, so a lapsed or revoked credential locks MCP as it locks HTTP.
-        if w._user_credential_required():
+        credential_required = w._user_credential_required()
+        if credential_required:
             if not w._request_is_authed(request):
+                _audit_mcp_auth(
+                    request, success=False,
+                    reason="invalid" if (
+                        request.headers.get("x-user-token") or request.headers.get("x-admin-token")
+                    ) else "missing",
+                )
                 return JSONResponse(
                     {"error": "unauthorized: user token required"}, status_code=401)
         elif w._real_client_host(request) not in w._LOCALHOSTS:
+            _audit_mcp_auth(request, success=False, reason="network_disabled")
             return JSONResponse(
                 {"error": "MCP server disabled from network — set JARVIS_USER_TOKEN to enable remote access"},
                 status_code=403,
             )
+        else:
+            success_reason = "local_bypass"
     # Thread the caller's user identity (same header user_guard reads) into the server
     # so MUTATING route tools can enforce the per-identity gate. An admin token also
     # satisfies the user gate (admin ⊇ user).
     identity = verified_identity or (
         request.headers.get("x-user-token") or request.headers.get("x-admin-token")
     )
+    _audit_mcp_auth(request, success=True, reason=success_reason)
     response = await w._build_mcp_server().handle(message, identity=identity)
     # JSON-RPC notifications produce no response body.
     return nocache_json(response if response is not None else {"ok": True})

@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 
 from .conversation_clock import ClockSnapshot, parse_started_at
-from .memory.conversation import _tool_names, validated_media
+from .memory.conversation import _tool_names
 from .validation import is_valid_session_id
 
 MAX_SEED_BYTES = 512 * 1024

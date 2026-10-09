@@ -74,7 +74,7 @@ export function DataHandling({ value, reload }) {
     </p>}
     {[...providers, ...targets].map((p, index) => <div key={`${identity(p)}:${p.scope || ''}:${index}`} style={{ padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
       <span style={mono}>{p.target_id ? ROLE_LABELS[p.target_id] : p.provider}</span>{' '}
-      <Tag c={p.warning ? 'var(--amber)' : 'var(--ink-3)'}>{p.policy || 'unknown'}</Tag>
+      <Tag c={p.warning ? 'var(--amber)' : 'var(--ink-2)'}>{p.policy || 'unknown'}</Tag>
       {p.target_id && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>{p.provider} · {p.mode} · {p.model}</div>}
       {p.note && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>{p.note}</div>}
       {p.warning && <>

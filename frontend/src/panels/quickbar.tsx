@@ -61,7 +61,7 @@ const KIND_COLOR: Record<string, string> = {
   summon: 'var(--accent-light)',
   query: 'var(--ink-2)',
   help: 'var(--ink-2)',
-  empty: 'var(--ink-3)',
+  empty: 'var(--ink-2)',
   unresolved: 'var(--amber)',
 };
 
@@ -149,14 +149,14 @@ export function QuickbarPanel() {
           <Row>
             <span style={{ ...mono, fontSize: 11 }}>{plan.input || EM}</span>
             <span style={{ marginLeft: 'auto' }}>
-              <Tag c={KIND_COLOR[String(plan.kind)] || 'var(--ink-3)'}>{plan.kind}</Tag>
+              <Tag c={KIND_COLOR[String(plan.kind)] || 'var(--ink-2)'}>{plan.kind}</Tag>
             </span>
           </Row>
           <Note c={plan.kind === 'unresolved' ? 'var(--amber)' : undefined}>
             {describePlan(plan)}
           </Note>
           {plan.kind === 'query' && plan.route_hint && (
-            <Note c="var(--ink-3)">
+            <Note c="var(--ink-2)">
               The agent is a <b>guess</b> — routing is decided when you actually send it.
             </Note>
           )}

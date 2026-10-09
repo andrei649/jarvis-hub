@@ -75,7 +75,7 @@ function AppShell() {
         {tab === 'capture' && <CaptureScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'house' && <HouseScreen onGoToSettings={() => setTab('settings')} onGoToApprovals={() => setTab('approvals')} />}
         {tab === 'cameras' && <CameraScreen onGoToSettings={() => setTab('settings')} />}
-        {tab === 'media' && <MediaScreen onGoToSettings={() => setTab('settings')} />}
+        {tab === 'media' && <MediaScreen onGoToSettings={() => setTab('settings')} onGoToApprovals={() => setTab('approvals')} />}
         {tab === 'acquisition' && <AcquisitionScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'comms' && <CommsScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'skills' && <SkillsScreen onGoToSettings={() => setTab('settings')} />}

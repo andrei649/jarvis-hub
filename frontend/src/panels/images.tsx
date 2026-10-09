@@ -10,6 +10,7 @@ const cloudLabels: Record<CloudImageProviderId, string> = {
 const stateText: Record<ImageTask['state'], string> = {
   awaiting_approval: 'Awaiting approval in the Decision Inbox.', queued: 'Approved and queued.',
   generating: 'Generating the approved image.', ready: 'Generation completed; loading the saved image.',
+  failed: 'Provider response failed; no usable image was verified. Check this task before proposing another.',
   rejected: 'Proposal rejected.', deferred: 'Proposal deferred.', refused: 'Execution refused.',
   uncertain: 'Result uncertain. Check the task before making another proposal; generation may have started.',
 };

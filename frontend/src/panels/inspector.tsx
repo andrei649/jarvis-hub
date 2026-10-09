@@ -38,7 +38,7 @@ export function statusLine(s: any): string {
 function Section({ title, sub, children }: { title: string; sub?: string; children?: any }) {
   return (
     <details style={{ marginTop: 6 }}>
-      <summary style={{ cursor: 'pointer', ...mono }}>{title}{sub ? <span style={{ color: 'var(--ink-3)' }}> · {sub}</span> : null}</summary>
+      <summary style={{ cursor: 'pointer', ...mono }}>{title}{sub ? <span style={{ color: 'var(--ink-2)' }}> · {sub}</span> : null}</summary>
       <div style={{ paddingLeft: 8 }}>{children}</div>
     </details>
   );
@@ -93,18 +93,18 @@ export function InspectorPanel() {
               <span style={{ ...mono, minWidth: 130 }}>{t.name}</span>
               {t.gated ? <Tag c="var(--amber)">gated</Tag> : null}
               {t.untrusted_output ? <Tag c="var(--red)">untrusted output</Tag> : null}
-              <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{t.description}</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{t.description}</span>
             </Row>
           ))}
           {(tools.withheld || []).length ? (
-            <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>withheld ({tools.withheld.length}): {tools.withheld.join(', ')}</div>
+            <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>withheld ({tools.withheld.length}): {tools.withheld.join(', ')}</div>
           ) : null}
         </Section>
       ) : null}
       {skills ? (
         <Section title="Skills" sub={skills.in_prompt ? `${skills.count} in the prompt` : 'none in the prompt (llm.skills_in_prompt is off)'}>
           {(skills.rows || []).map((r: any) => (
-            <Row key={`${r.skill}:${r.command}`}><span style={{ ...mono, minWidth: 130 }}>{r.command}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{r.description}</span></Row>
+            <Row key={`${r.skill}:${r.command}`}><span style={{ ...mono, minWidth: 130 }}>{r.command}</span><span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{r.description}</span></Row>
           ))}
         </Section>
       ) : null}
@@ -115,7 +115,7 @@ export function InspectorPanel() {
               <span style={{ ...mono, minWidth: 100 }}>{s.name}</span>
               <Tag>{s.transport}</Tag><Tag>{s.trust}</Tag>
               <Tag c={s.connected ? 'var(--green)' : 'var(--amber)'}>{s.connected ? 'connected' : 'down'}</Tag>
-              <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{s.tools} tools{(s.tool_names || []).length ? `: ${s.tool_names.join(', ')}` : ''}</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{s.tools} tools{(s.tool_names || []).length ? `: ${s.tool_names.join(', ')}` : ''}</span>
             </Row>
           ))}
         </Section>
@@ -126,10 +126,10 @@ export function InspectorPanel() {
             <>
               <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>{promptResolution(prompt)}</div>
               {prompt.resolved == null ? <div style={{ fontSize: 10, color: 'var(--amber)' }}>model-specific prompt additions unverified</div> : null}
-              <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>Fixed empty-turn preview (an empty user message); active history, user input and tool schemas omitted; cached runtime facts may differ.</div>
-              <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>system</div>
+              <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>Fixed empty-turn preview (an empty user message); active history, user input and tool schemas omitted; cached runtime facts may differ.</div>
+              <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>system</div>
               <pre aria-label="System part" style={pre}>{prompt.system}</pre>
-              <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>turn (an empty user message)</div>
+              <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>turn (an empty user message)</div>
               <pre aria-label="Turn part" style={pre}>{prompt.turn}</pre>
             </>
           )}

@@ -16,11 +16,35 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
-H277 recovery (2026-10-08): the active chat, floating chat and cockpit image composers now review the actual selected local Ollama agent/model/session. Reviewable prior image handles are bounded to that session and cleared on restart/reload. A selected turn with an unresolved conversation ID stays disabled; changing topic or agent invalidates pending work. Owner-only selected prepare/send/history routes preserve legacy standalone VLM behavior. Native clients still need selected-image review/history controls (H18.31).
+Session ID validation (local backend candidate, 2026-10-09): existing chat and
+session routes reject a terminal newline through the corrected shared validator,
+before session or memory work. Valid IDs keep their exact value; no new HUD
+control or response schema is needed. See docs/project-session-id-validation-20261009.md.
 
-H078 recovery (2026-10-08): existing Admin Settings exposes commands.quick_commands as an initially empty JSON map. Owner /help lists valid aliases and fixed commands. Execution queues through existing approval tasks and terminal gates; no new command editor or argument templates are added. The existing native command-catalog gap H18.26 remains open.
+Media catalog integrity (local backend candidate, 2026-10-09): new cloud-completion, ComfyUI and local OpenAI PNG catalog rows carry their producer SHA-256 checked on `md-*` delivery/export. Gallery previews remain metadata hints until download; export metadata distinguishes verified and unbound rows. No new HUD control or native negotiation is added, and legacy/other unsupplied producer rows plus standalone generated URLs remain outside this digest binding. H477 stays partial.
 
-H063 recovery (2026-10-08): typed /new, /reset and /undo are owner commands. Chat follows the concrete ID returned by /chat or the SSE end event; Sessions reopens the exact selected transcript, and desktop synchronization keeps the selected topic. Admin exposes reset policy, channel/type overrides and stall settings. Old transcripts are retained; empty sessions restart correctly and malformed snapshots fail closed. Direct web/CLI automatic reset/stall observation and native mobile ID transitions remain open.
+Client protocol discovery (local candidate, 2026-10-09): `GET /v1/capabilities` now exposes the mounted chat/session wire contracts for external clients. This is a machine-readable API, with no new HUD control; existing browser and native transports keep their tested contracts. Live readiness remains `/api/capabilities`, and `/v1` remains the legacy HUD. Wider API discovery and compatibility negotiation remain open under H477.
+
+Native local integration (2026-10-09): completed command, memory-neighbor, advisory,
+generated-image and selected-image candidates are combined with voice orb, dictation and
+briefing controls. Mobile284/native137, TypeScript and Android/iOS exports pass;
+mode transitions fence old dictation and image reviews. Camera permission remains absent,
+while the selected-photo plugin preserves the explicit dictation microphone permission.
+This does not modify browser/backend behavior or close device/live-Hub acceptance.
+See mobile/docs/mobile-integration-20261009.md.
+
+HUD text contrast (local candidate, 2026-10-09): secondary text moves from the
+decorative `--ink-3` token to the existing readable `--ink-2` foreground across
+CSS and inline text, including status/consent labels and SVG text. Icon-only,
+stroke and background uses retain their decorative colour. Browser measurement
+and remaining exclusions are recorded in `docs/hud-muted-text-contrast-20261009.md`;
+this is not a claim of complete WCAG conformance or native-device parity.
+
+H277 recovery (2026-10-08): the active chat, floating chat and cockpit image composers now review the actual selected local Ollama agent/model/session. Reviewable prior image handles are bounded to that session and cleared on restart/reload. A selected turn with an unresolved conversation ID stays disabled; changing topic or agent invalidates pending work. Owner-only selected prepare/send/history routes preserve legacy standalone VLM behavior. H18.31 now has a local native candidate for bounded photo-library snapshots, exact selected model/session review, explicit send and process-local active-history choices. It records ambiguous delivery before dispatch and requires explicit History inspection before retry; no browser or backend behavior changed. Device/live-Hub acceptance remains open. See mobile/docs/h1831-selected-images.md.
+
+H078 recovery (2026-10-08): existing Admin Settings exposes commands.quick_commands as an initially empty JSON map. Owner /help lists valid aliases and fixed commands. Execution queues through existing approval tasks and terminal gates; no new command editor or argument templates are added. Native H18.26 catalog code is locally implemented; device/live-Hub acceptance remains open.
+
+H063 recovery (2026-10-08): typed /new, /reset and /undo are owner commands. Chat follows the concrete ID returned by /chat or the SSE end event; Sessions reopens the exact selected transcript, and desktop synchronization keeps the selected topic. Admin exposes reset policy, channel/type overrides and stall settings. Old transcripts are retained; empty sessions restart correctly and malformed snapshots fail closed. H18.30 local continuation adds native mobile ID transitions, scoped restart persistence and stale-response fences; device/live-Hub acceptance remains open. Direct web/CLI automatic reset/stall observation remains open.
 
 H595/H660 recovery (2026-10-08): existing Admin settings now expose the execute-code opt-in, persistent-session setting, digest-pinned session image, project/strict mode, project directory and allowed environment names. Existing sandbox status/reset remains the operator surface. Complete project context is projected read-only; unconfirmed one-shot Docker teardown retains its snapshot and reports uncertainty. Native mobile configuration and live Windows Docker acceptance remain open.
 
@@ -134,6 +158,12 @@ Role configuration is shown beside Model Fingerprints through authenticated
 late results, refreshes, failed reads and browser-throttled timers; this is not a
 claim of a live model or native mobile acceptance run.
 
+H18.29 native candidate (2026-10-09): the existing Approvals cards now show the
+optional advisory opinion and pending state, with manual pull-to-refresh. A separate
+read-only model roles view names configuration and says connectivity has not been
+checked. Automatic native polling is deferred; #1233 decision-lifecycle integration,
+physical-device review and live hub/judge acceptance remain open.
+
 H277 terminal guardian (2026-10-03): trusted owner opt-in can apply a signed
 one-operation smart approval to terminal tasks. Decision Inbox distinguishes
 guardian DENY/ESCALATE from advisory risk scores and preserves owner controls;
@@ -176,6 +206,10 @@ or configuration listing yet. Acquisition retains its existing governed routes. 
 - ✅ **Chat-command discovery (HA-4i-catalog):** the Quickbar panel reads `GET /api/commands`
   from the live registry, with usage and owner markers filtered by chat's principal. Loading,
   empty and unavailable states are distinct. This is a catalog; commands execute through chat.
+  Native H18.26 now has a locally implemented Chat catalog modal using the same endpoint and
+  principal credentials. It shows command, usage, description and owner tier, distinguishes
+  loading/empty/error/unavailable states, supports retry and inserts a choice into the composer.
+  Native device/live-Hub acceptance remains open; actual Send follows the guarded chat session path.
 - ✅ **Ambient Watch (H33.6):** the Home cluster now reads the redacted live ambient runtime,
   showing monitor/source health, last policy decision, rung counts, and the single global
   attention budget. Monitor administration remains in the separately authenticated admin API;
@@ -217,6 +251,10 @@ with plugin-configured checks instead of seeded success. Still open:
   The sample graph, recalls, topic freshness bars and historical slider appear only in explicit
   Demo. Live decay ranking and bitemporal as-of navigation remain open. Relationships are
   presented without directional or semantic-distance claims; this is no 3D embedding map.
+  Native H18.28 has local Graph navigation and stale-read guards over the same KG routes;
+  focused native/API tests pass, while device/live-Hub acceptance and integration remain open.
+  React Native verifies the one-MiB response bound after `Response.text()` on transports
+  without a reliable stream reader, and rejects an oversized `Content-Length` before reading.
 - **Trust**: real `%‑local` meter (needs a locality/cost summary endpoint, §6).
 - **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).
 - **Comms**: rooms + registered **Discord/Slack** channel status now feed the mode. The Console now
@@ -234,6 +272,19 @@ with plugin-configured checks instead of seeded success. Still open:
   (currently reads the `DOSSIER` mock).
 
 ## 4. Cockpit / signature interactions
+H18.24 native continuation (2026-10-09): a local SVG orb candidate in Chat follows
+actual TTS playback events, labels preparation separately, and cancels late playback
+after stop or a hub change. Reduced motion and background state pause animation.
+Native Chat now has a local explicit dictation candidate: bounded capture, fresh
+mic trust and permission checks, stopping state, and local STT draft insertion.
+The H18.25 local wall candidate now adds a bounded SVG tier field, source-backed
+stat cards and chips, and a default-hidden spoken line in Chat. It preserves
+unknown-source semantics and cancels background/scope-stale updates. Physical
+device/live STT acceptance remains open. The separate source-card candidate adds
+returned approvals, a calendar sample, local-model/voice reports and heartbeat
+schedule counts, with unknown data kept explicit and private details discarded;
+see `mobile/docs/h1825-briefing-wall.md` and `mobile/docs/h1825-briefing-sources.md`.
+
 - ~~**Network task‑fan**: v2 `NetworkBrain` doesn't render per‑agent task dots from `/tasks` (v1 did) —
   the old task fan exists in `network.tsx`, but the current cockpit renders `NeuralMesh`; integrate
   live `/tasks` dots into the current mesh or retire the stale `NetworkBrain`.~~
@@ -413,6 +464,24 @@ ComfyUI proof and native presentation (H18.27) remain open. The production appro
 bridge supports `off` and `enforce`; `hold` intentionally refuses execution.
 Per-conversation access isolation is not added by this surface.
 
+H18.27 native continuation (2026-10-09): a local Media-screen candidate adds
+configuration-only local status, exact-prompt proposals through the existing approval
+queue, task restoration across the approval handoff, manual status refresh and
+authenticated PNG preview/save. It does not initiate cloud generation or repeat a
+proposal automatically. Real-device/live-generator acceptance stays open. The server
+projects three exact, normally completed cloud provider-response failures, five
+typed local OpenAI-compatible response failures and the documented ComfyUI history
+error shape as `failed`. Local adapters persist fixed producer markers; legacy
+rows without them stay uncertain. The ComfyUI marker requires the matching prompt
+history with exact error/false status fields; malformed or incomplete history is
+not enough. Verified cloud artifact recovery keeps precedence. Web/native readers
+state that no usable image was verified and add no preview or automatic proposal.
+Generic failures, malformed results, ambiguous delivery and withheld output remain
+`uncertain`; native cloud proposal controls are unchanged. See
+[cloud evidence](../project-image-provider-failure-20261009.md),
+[typed local evidence](../project-local-image-response-20261009.md) and
+[ComfyUI history evidence](../project-comfyui-response-20261009.md).
+
 **HA-4i-S1 declarative extension inspection (2026-09-09):** user-guarded
 `GET /api/plugins/extensions` projects already-composed acquired package declarations
 without activation; `nerva extensions doctor` validates local JSON offline. A dedicated
@@ -533,6 +602,60 @@ selections remain visible as unavailable. Image and speech dispatch now use the
 common registry. Full vendor/plugin/setup breadth remains open under H517/H613;
 native mobile provider configuration is still a gap.
 
+H512 authentication audit continuation (2026-10-09): the existing admin audit reader
+shows typed HTTP guard and managed token lifecycle events through `GET /api/admin/audit`.
+No new route or dashboard control is added. The native audit reader remains open
+in `mobile/PARITY.md`; native bearer requests are covered by the shared server guards.
+The broader login/session/WebSocket/native-auth event contract remains incomplete.
+
+DRA-59 local observability (2026-10-09): Autonomy Control now reads admin-only
+`GET /autonomy/mediation` and displays the effective queue mode separately from
+evidence validity. Only verified recorded event counts are shown; unavailable,
+malformed and refreshing states hide numbers. The section has no enable, approval
+or raw-event control. B7 operational acceptance and broader task coverage remain
+open. H18.32 now provides the local native Status counterpart with strict snapshot
+validation and connection/read-order fences; physical-device/live-hub acceptance
+remains open in [native evidence](../../mobile/docs/h1832-task-mediation-status.md).
+
+### H686 current-turn duration — 2026-10-09 local candidate
+
+Cockpit and focus chat share a duration strip from the optional `outcome.latency_ms`
+on the current SSE end. The measured interval is the public orchestrator invocation,
+including cleanup; it is not network round-trip time or model-only generation time.
+A normally returned command or refusal may have a duration. Errors, cancellation and
+uninstrumented turns have none. Selection is applied by the backend from the ordinary
+Admin Settings `display.status_bar_fields` list (default `latency`; empty hides it).
+The strip clears on new work or session/agent/demo changes and is not transcript history.
+TPS, model/context/cache/compression metrics and H396 whole-turn exit/accounting remain open;
+future work extends the same outcome. H18.33 adds a local native current-turn strip
+using the server-selected SSE outcome, with strict validation and ephemeral state.
+It clears on work/context changes and never enters stored history; physical-device
+and live-Hub acceptance remain open. See `mobile/docs/h1833-turn-duration.md`.
+
+H396's local runtime now retains a typed tool-loop exit and emits one bounded
+diagnostic attempt after a normal return, while its legacy caller receives the
+same reply text. This internal result is not a whole-turn completion claim or a
+new HTTP/SSE field. HUD explanations, pending-result severity and accounting still
+need defined cross-agent and non-loop semantics on the shared outcome.
+The local file mutation receipt describes returned approved-task attempts only;
+its scrubbed path and task status are insufficient for a same-turn mutation footer.
+Task/attempt correlation, missing/unknown effects and ordering remain open.
+
+
+### H444/H576 document input limit — 2026-10-09 local candidate
+
+Parser-backed file_read now refuses observed PDF/DOCX inputs above 50,000,000
+bytes before parser discovery. Existing tool-result handling carries the named
+refusal and raw byte paging remains available. This is a backend admission check.
+See `docs/project-document-input-limit-20261009.md`.
+
+PDF reads now report significant ranges without extracted text in separate,
+bounded tool-result metadata: more than 20% of pages or at least ten pages,
+first 16 ranges, preceding 160-character source excerpts and explicit omitted
+range counts. Text bytes and pagination are unchanged. Existing model/tool
+handling carries the warning; a dedicated HUD PDF coverage card is not added.
+This does not identify scanned content or run OCR. See
+`docs/project-pdf-text-coverage-20261009.md`.
 
 Explicit OpenRouter vision (H277, 2026-10-02): the existing composer model,
 destination and policy display covers the new server-side provider. Its remote

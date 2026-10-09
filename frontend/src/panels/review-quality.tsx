@@ -112,8 +112,8 @@ const ROLLUP = [
   ['in_dataset', 'in dataset'],
 ];
 
-const label = { ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)', marginTop: 10 };
-const note = { ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 };
+const label = { ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', marginTop: 10 };
+const note = { ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 };
 const amber = { ...mono, fontSize: 10.5, color: 'var(--amber)', marginTop: 4 };
 
 export function ReviewQualityPanel() {
@@ -216,7 +216,7 @@ export function ReviewQualityPanel() {
           ))}
           {arr(st, 'rubric_criteria').length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-              <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>rubric:</span>
+              <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>rubric:</span>
               {arr(st, 'rubric_criteria').map((c, i) => <Tag key={i} c="var(--ink-2)">{String(c)}</Tag>)}
             </div>
           )}
@@ -390,7 +390,7 @@ export function ReviewQualityPanel() {
       {res && res.ok && <FlagOutcome res={res} />}
       {res && !res.ok && <FlagFailure res={res} />}
 
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 10, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
+      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 10, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
         {STATS_PATH} is unauthenticated; {SCORES_PATH.split('?')[0]}, {TRACES_PATH.split('?')[0]}{' '}
         and POST {FLAG_PATH} are user-tier (X-User-Token when the instance is network-exposed).
         No admin call on this panel. Voting, promote-to-dataset and the alert-threshold control

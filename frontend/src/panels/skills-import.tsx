@@ -120,10 +120,10 @@ const refusal = (err: any): { status: number; kind: 'route' | 'guard' | 'none'; 
 };
 
 const H = ({ children }) => (
-  <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)', margin: '10px 0 5px' }}>{children}</div>
+  <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', margin: '10px 0 5px' }}>{children}</div>
 );
 const Note = ({ children }) => (
-  <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 4, lineHeight: 1.5 }}>{children}</div>
+  <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4, lineHeight: 1.5 }}>{children}</div>
 );
 const Fail = ({ children }) => (
   <div role="alert" style={{ ...mono, fontSize: 10.5, marginTop: 6, color: 'var(--red)' }}>{children}</div>
@@ -241,7 +241,7 @@ export function SkillsImportPanel() {
             </Amber>
           : <State e={e} loading={false} n={null} />)
         : rows.length === 0
-          ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>
+          ? <div style={{ color: 'var(--ink-2)', fontSize: 12 }}>
               no imported skills on disk yet — skills/&lt;slug&gt;/manifest.json is written only by an import
             </div>
           : rows.map((row, i) => {
@@ -262,7 +262,7 @@ export function SkillsImportPanel() {
                     {digest && <Tag><span title={digest}>sha256 {digest.slice(0, 12)}…</span></Tag>}
                   </div>
                   {r.description ? (
-                    <div style={{ fontSize: 10.5, color: 'var(--ink-3)', marginTop: 2 }}>{String(r.description)}</div>
+                    <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 2 }}>{String(r.description)}</div>
                   ) : null}
                   {open === i && <Json v={r} />}
                 </div>
@@ -395,7 +395,7 @@ export function SkillsImportPanel() {
         </Note>
       )}
 
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
         GET {IMPORTED_PATH} is <b>unguarded</b> and reads skills/&lt;slug&gt;/manifest.json sidecars ·
         POST {IMPORT_PATH} is <b>user tier</b> (X-User-Token, not admin) and DEV_MODE-gated · a real import makes
         outbound requests to raw.githubusercontent.com and api.github.com. Marketplace registry rows, review status

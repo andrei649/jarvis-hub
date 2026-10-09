@@ -50,7 +50,7 @@ const Note = ({ c, children }: { c?: any; children?: any }) => (
 const TriTag = ({ v }: { v: any }) => {
   if (v === true) return <Tag c="var(--green)">yes</Tag>;
   if (v === false) return <Tag c="var(--red)">no</Tag>;
-  return <Tag c="var(--ink-3)">unknown</Tag>;
+  return <Tag c="var(--ink-2)">unknown</Tag>;
 };
 
 const PLATFORM_LABEL: Record<string, string> = {
@@ -128,7 +128,7 @@ export function HostReadinessPanel() {
               <Tag c={ready ? 'var(--green)' : 'var(--amber)'}>
                 {ready ? 'nothing blocking' : `${refusals.length} blocker(s)`}
               </Tag>
-              <Tag c={anyFlagOn ? 'var(--green)' : 'var(--ink-3)'}>
+              <Tag c={anyFlagOn ? 'var(--green)' : 'var(--ink-2)'}>
                 {anyFlagOn ? 'a host rail is armed' : 'all host rails off'}
               </Tag>
             </span>
@@ -172,7 +172,7 @@ export function HostReadinessPanel() {
             <Row>
               <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                 {Object.keys(deps).map((k) => (
-                  <Tag key={k} c={deps[k] ? 'var(--green)' : 'var(--ink-3)'}>{k}</Tag>
+                  <Tag key={k} c={deps[k] ? 'var(--green)' : 'var(--ink-2)'}>{k}</Tag>
                 ))}
               </span>
             </Row>
@@ -183,7 +183,7 @@ export function HostReadinessPanel() {
             <Row>
               <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                 {Object.keys(binaries).map((k) => (
-                  <Tag key={k} c={binaries[k] ? 'var(--green)' : 'var(--ink-3)'}>{k}</Tag>
+                  <Tag key={k} c={binaries[k] ? 'var(--green)' : 'var(--ink-2)'}>{k}</Tag>
                 ))}
               </span>
             </Row>
@@ -194,7 +194,7 @@ export function HostReadinessPanel() {
             <Row key={k}>
               <span style={{ ...mono, fontSize: 10 }}>{k}</span>
               <span style={{ marginLeft: 'auto' }}>
-                <Tag c={flags[k] ? 'var(--green)' : 'var(--ink-3)'}>{flags[k] ? 'on' : 'off'}</Tag>
+                <Tag c={flags[k] ? 'var(--green)' : 'var(--ink-2)'}>{flags[k] ? 'on' : 'off'}</Tag>
               </span>
             </Row>
           ))}
@@ -219,7 +219,7 @@ export function HostReadinessPanel() {
           <Row>
             <span style={mono}>never run</span>
             <span style={{ marginLeft: 'auto' }}>
-              <Tag c="var(--ink-3)">{bench.d.tasks ?? EM} task(s)</Tag>
+              <Tag c="var(--ink-2)">{bench.d.tasks ?? EM} task(s)</Tag>
             </span>
           </Row>
           {/* Not a zero score: nobody has measured, which is a different claim. */}
@@ -259,7 +259,7 @@ export function HostReadinessPanel() {
                   <Tag c="var(--red)">{bench.d.by_surface[surface].failed} failed</Tag>
                 )}
                 {bench.d.by_surface[surface].skipped > 0 && (
-                  <Tag c="var(--ink-3)">{bench.d.by_surface[surface].skipped} skipped</Tag>
+                  <Tag c="var(--ink-2)">{bench.d.by_surface[surface].skipped} skipped</Tag>
                 )}
               </span>
             </Row>
@@ -282,7 +282,7 @@ export function HostReadinessPanel() {
           {task.negative_control && (
             <span style={{ marginLeft: 'auto' }}>
               {/* Labelled so its expected failure never reads as a defect. */}
-              <Tag c="var(--ink-3)">negative control</Tag>
+              <Tag c="var(--ink-2)">negative control</Tag>
             </span>
           )}
         </Row>

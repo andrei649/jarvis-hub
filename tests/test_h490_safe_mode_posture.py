@@ -208,10 +208,6 @@ _NUMBERS_NOT_FORCED = {
     "autonomy.night_start", "autonomy.night_end", "autonomy.calendar_lead_time",
     "autonomy.tech_scout_interval_hours", "ambient.generation", "ambient.quiet_hours_start",
     "ambient.quiet_hours_end",
-    # gateway context/index housekeeping and owner alert cadence; no transcript
-    # deletion or action budget. Stall delivery still uses safe-mode egress.
-    "sessions.idle_minutes", "sessions.daily_hour", "sessions.store_max_age_days",
-    "sessions.stall_seconds",
     # the owner's own alert thresholds
     "autonomy.finance_min_ron", "autonomy.finance_min_eur", "autonomy.health_min_sleep",
     "autonomy.health_min_hrv",
