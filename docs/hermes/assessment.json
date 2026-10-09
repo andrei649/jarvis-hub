@@ -3955,7 +3955,7 @@
         },
         {
           "path": "tests/test_h285_load_set.py",
-          "sha256": "2a9047b9f4497f1b1b03dbb49a9afd09fa9a4e7fa6456dd3f60192f1b7bb010b"
+          "sha256": "2465c69699323deaf9e4ccb244ece1e1441f19c7bb8dcb8ac5330eab116664da"
         },
         {
           "path": "agents/core/plugin_manager.py",

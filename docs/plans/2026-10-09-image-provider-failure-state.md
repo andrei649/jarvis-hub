@@ -109,3 +109,34 @@ All assessment claims/verdicts remain identical. Schema generation changes only
 the ImageTaskView state literal; route/auth/operation-ID snapshots are unchanged.
 Final complete frontend and backend milestone results are recorded in
 [the integration evidence](../project-image-provider-failure-20261009.md).
+
+## Full-backend diagnostic and bounded test repair
+
+At source `af75de269e4e012d06351401db04bc359f9ede42`, the full backend reports
+21,116 passed,37 skipped,one failed,zero errors (21,154 cases,267.217 seconds).
+The sole failure is `test_h285_load_set::test_a_toggle_writes_an_audit_row`:
+its last-call assertion found AUTH_SUCCESS instead of SETTINGS_CHANGE. The case
+passes alone. Source inspection establishes two legitimate producers into the
+same captured sink: the guard queues AUTH_SUCCESS asynchronously, while the
+plugin handler awaits its SETTINGS_CHANGE audit call. Their completion order is
+not a contract. No audit event or production policy needs to change.
+
+Next: use a finite test-only barrier to deliver the real auth audit after the
+handler's settings audit, reproducing the original last-call assertion failure.
+Then change only that existing test to require exactly one SETTINGS_CHANGE from
+all observed calls, preserving the plugin/key assertions and also checking the
+successful persisted response/action. Prove the corrected case with the same
+barrier, then run H285 and authentication-audit regressions plus the affected
+image/route/metadata union. Refresh a test evidence pin only if it was current
+before this bounded correction. Record the original full failure honestly; do
+not relabel it green. Rollback of this independent test correction does not alter
+any product/audit behavior or the image feature.
+
+The finite late-auth diagnostic reproduces the original failure and passes after
+the test-only correction. The corrected test requires the exact persisted,
+disabled HTTP 200 response and exactly one SETTINGS_CHANGE naming the plugin,
+setting key and disabled action. The focused H285/auth/image/route/metadata union
+passes; the independent reviewer confirms the H285 claim and its existing case
+count remain valid. Its previously current test pin alone is refreshed. A fresh
+complete backend run will verify integration after this demonstrated correction;
+the earlier failed run remains recorded separately.
