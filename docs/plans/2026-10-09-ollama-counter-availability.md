@@ -2,12 +2,13 @@
 
 - Generated: 2026-10-09 UTC.
 - Goal: partial Ollama counters must not be treated as complete provider totals.
-- Base/HEAD: de70661489cd5c69b245de23186d77ece040629f.
+- Base: de70661489cd5c69b245de23186d77ece040629f.
+- Tested source: 8363102c85a78e584aae9cce520def9e70c80607.
 - Branch/worktree: codex/ollama-counter-availability-20261009,
   /workspace/jarvis-hub-ollama-counter-availability.
 - Delivery: autonomous local development; no remote publication or live provider.
-- Next action: frozen parser and focused/integration checks pass; finalize
-  independent reviews, canonical evidence and the local documentation commit.
+- Status: implementation, independent review, focused/integration verification
+  and canonical evidence complete. No further action within this unit.
 
 ## Bounded contract
 
@@ -79,3 +80,7 @@ passing cases, no errors/skips. Only ollama_usage changes production behavior;
 the other 28 module functions and other module AST are identical. Canonical
 collection is 21,450 backend cases (+41); client counts are reused. No new full
 backend run is claimed for this parser-only unit after the preceding milestone.
+Independent production and collateral-claim reviews have no Critical/Important
+finding. Twelve previously-current pins are refreshed; two new H673 test pins
+are added, all 226 capability statuses preserved. Hermes/status, Ruff and diff
+checks pass. See [final evidence](../project-ollama-counter-availability-20261009.md).
