@@ -533,6 +533,13 @@ Task/attempt correlation, missing/unknown effects and ordering remain open.
 
 Parser-backed file_read now refuses observed PDF/DOCX inputs above 50,000,000
 bytes before parser discovery. Existing tool-result handling carries the named
-refusal and raw byte paging remains available. This is a backend admission check;
-scanned-page coverage warnings and any corresponding presentation remain open.
+refusal and raw byte paging remains available. This is a backend admission check.
 See `docs/project-document-input-limit-20261009.md`.
+
+PDF reads now report significant ranges without extracted text in separate,
+bounded tool-result metadata: more than 20% of pages or at least ten pages,
+first 16 ranges, preceding 160-character source excerpts and explicit omitted
+range counts. Text bytes and pagination are unchanged. Existing model/tool
+handling carries the warning; a dedicated HUD PDF coverage card is not added.
+This does not identify scanned content or run OCR. See
+`docs/project-pdf-text-coverage-20261009.md`.

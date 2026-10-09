@@ -4268,7 +4268,7 @@
         },
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "d3c1c83d294899e99f66ba7605eb1496334a1c286b36d39fcfec0c2e3fc70617"
+          "sha256": "96304eb6a777e4beb6be3396daec1118edefd00b6bbf0a5aa4f822314a75a3f3"
         },
         {
           "path": "tests/test_effective_tool_window.py",
@@ -4280,7 +4280,7 @@
         },
         {
           "path": "tests/test_spill_paging.py",
-          "sha256": "8cca0ad664b5c2b2278128ef16e02098bb787f30ad9f81e8ea3b65fbd24184db"
+          "sha256": "51087d48435c0b949b652b35be17ef111d4a0c0a2c190815a401b1b08f6540b8"
         },
         {
           "path": "docs/superpowers/plans/2026-09-15-effective-tool-window.md",
@@ -4343,7 +4343,7 @@
       "evidence": [
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "d3c1c83d294899e99f66ba7605eb1496334a1c286b36d39fcfec0c2e3fc70617"
+          "sha256": "96304eb6a777e4beb6be3396daec1118edefd00b6bbf0a5aa4f822314a75a3f3"
         },
         {
           "path": "tests/test_file_search.py",
@@ -4351,11 +4351,11 @@
         },
         {
           "path": "tests/test_file_read_documents.py",
-          "sha256": "d108d43a6366a6a9d59493077123096ea74bfe0054e3af5a91b645fbcabb8240"
+          "sha256": "9c815b4780fb99d7435af43cd6487444c8833de21edfae96b30737bdc7e0900c"
         },
         {
           "path": "tests/test_spill_paging.py",
-          "sha256": "8cca0ad664b5c2b2278128ef16e02098bb787f30ad9f81e8ea3b65fbd24184db"
+          "sha256": "51087d48435c0b949b652b35be17ef111d4a0c0a2c190815a401b1b08f6540b8"
         }
       ]
     },
@@ -6054,7 +6054,7 @@
         },
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "d3c1c83d294899e99f66ba7605eb1496334a1c286b36d39fcfec0c2e3fc70617"
+          "sha256": "96304eb6a777e4beb6be3396daec1118edefd00b6bbf0a5aa4f822314a75a3f3"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -6738,12 +6738,12 @@
       "id": "H444",
       "row_sha256": "6535326d3f790273e023d6fe88e89ca91138c8af7ea0ea28b7b56680e192649f",
       "status": "partial",
-      "summary": "file_read in agents/core/file_tools.py is off unless JARVIS_FILE_TOOLS is set and bounded to JARVIS_FILE_ROOTS (no `..`, no symlink escape, secret-looking names refused, bytes capped by max_bytes). It returns a .pdf (pypdf) or .docx (python-docx) as extracted text when the input is admitted and parseable, names a missing parser (`parser_missing`) or a parse failure (`extraction_failed`) instead of returning replacement characters, and returns the bytes with raw=true. Since H661 it pages: `offset` starts the read at a byte, a read that stops early returns `next_offset`, a page is trimmed to end on a whole UTF-8 character (unless max_bytes is smaller than one), and an offset that is not an int in 0..MAX_OFFSET is refused as `bad_offset` rather than read from 0. A document pages through its extracted text: `offset` counts bytes of the extracted UTF-8 text, and `text_size` is reported beside the file's `size` (tests/test_spill_paging.py pages a .pdf's extracted text, with the extractor stubbed, back to its last byte). local_docs and agents/core/ingestion/ remain the bulk-ingestion path into memory. Local 2026-10-09 parser-backed file_read admission refuses an observed on-disk PDF/DOCX size above 50,000,000 bytes (decimal 50 MB) as document_too_large before parser discovery or extraction. Equality is admitted; raw=true and ordinary byte pages retain their output bounds.",
-      "remaining": "The part this row says is worth copying is missing. A scanned (image-only) PDF extracts to empty or near-empty text, and file_read returns that as a normal successful read, with no coverage warning naming the page ranges that yielded no text. Every admitted document page still reparses the whole file, and max_bytes bounds only the text returned. The observed-size admission does not cap parser memory/CPU, decompression or full extracted-text allocation, and cannot prevent file growth after stat; bulk ingestion remains separate. Paging is by byte offset, not a line offset/limit window. The wider format matrix (.ipynb, .xlsx, legacy Office, OpenDocument, .rtf, .epub) and Markdown conversion are not built; the row's rationale does not ask for them.",
+      "summary": "file_read in agents/core/file_tools.py is off unless JARVIS_FILE_TOOLS is set and bounded to JARVIS_FILE_ROOTS (no `..`, no symlink escape, secret-looking names refused, bytes capped by max_bytes). It returns a .pdf (pypdf) or .docx (python-docx) as extracted text when the input is admitted and parseable, names a missing parser (`parser_missing`) or a parse failure (`extraction_failed`) instead of returning replacement characters, and returns the bytes with raw=true. Since H661 it pages: `offset` starts the read at a byte, a read that stops early returns `next_offset`, a page is trimmed to end on a whole UTF-8 character (unless max_bytes is smaller than one), and an offset that is not an int in 0..MAX_OFFSET is refused as `bad_offset` rather than read from 0. A document pages through its extracted text: `offset` counts bytes of the extracted UTF-8 text, and `text_size` is reported beside the file's `size` (tests/test_spill_paging.py pages a .pdf's extracted text, with the extractor stubbed, back to its last byte). local_docs and agents/core/ingestion/ remain the bulk-ingestion path into memory. Local 2026-10-09 parser-backed file_read admission refuses an observed on-disk PDF/DOCX size above 50,000,000 bytes (decimal 50 MB) as document_too_large before parser discovery or extraction. Equality is admitted; raw=true and ordinary byte pages retain their output bounds. Local 2026-10-09 PDF text-layer coverage uses one shared parser traversal per request and adds coverage_warning beside unchanged extracted content when more than 20% of pages or at least ten pages yield no text. It reports exact page/gap totals, the first 16 maximal one-based ranges, and preceding source excerpts capped to 160 Unicode code points, with explicit omitted-range and excerpt-truncation fields. Blank/whitespace/None page text counts; reader/page failures retain extraction_failed without partial coverage. Existing normal-loop and nested ToolRPC scanners also scan the quoted metadata; this does not declare every file result untrusted.",
+      "remaining": "Coverage measures extracted text only: nonblank but incomplete/garbled text and visual content are not detected. Only the first 16 gap ranges are listed, with an explicit omitted count; no OCR is performed. Every admitted document page still reparses the whole file, and max_bytes bounds only the text returned. The observed-size admission does not cap parser memory/CPU, decompression or full extracted-text allocation, and cannot prevent file growth after stat; bulk ingestion remains separate. Paging is by byte offset, not a line offset/limit window. The wider format matrix (.ipynb, .xlsx, legacy Office, OpenDocument, .rtf, .epub) and Markdown conversion are not built; the row's rationale does not ask for them.",
       "evidence": [
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "d3c1c83d294899e99f66ba7605eb1496334a1c286b36d39fcfec0c2e3fc70617"
+          "sha256": "96304eb6a777e4beb6be3396daec1118edefd00b6bbf0a5aa4f822314a75a3f3"
         },
         {
           "path": "tests/test_file_search.py",
@@ -6751,19 +6751,31 @@
         },
         {
           "path": "tests/test_file_read_documents.py",
-          "sha256": "d108d43a6366a6a9d59493077123096ea74bfe0054e3af5a91b645fbcabb8240"
+          "sha256": "9c815b4780fb99d7435af43cd6487444c8833de21edfae96b30737bdc7e0900c"
         },
         {
           "path": "tests/test_spill_paging.py",
-          "sha256": "8cca0ad664b5c2b2278128ef16e02098bb787f30ad9f81e8ea3b65fbd24184db"
+          "sha256": "51087d48435c0b949b652b35be17ef111d4a0c0a2c190815a401b1b08f6540b8"
         },
         {
           "path": "tests/test_file_document_input_limit.py",
-          "sha256": "8fcb2e63beed4ef937ed66a9e6aa1cd337ce131559d4598b7c2c805b8e63cac0"
+          "sha256": "26947a9a853a941fbdf6cd21c62f4eba0c7a213af28b25ab061c97295617d267"
         },
         {
           "path": "tests/test_file_document_input_limit_rpc.py",
-          "sha256": "730f9d1b063b6f25e584865ac395cfd33b17f55cbd6a09f354b867bac84c9543"
+          "sha256": "ed901306108bb095af862ecfd4d5d79a747130b150bb4cd37326850eef39f0c6"
+        },
+        {
+          "path": "agents/core/local_docs.py",
+          "sha256": "e9677aaa1da860d486b01350f453674f428cd0929cd88bc773213ab8d73dcf1f"
+        },
+        {
+          "path": "tests/test_file_pdf_coverage.py",
+          "sha256": "0902d54ff409bc49387b469f1e8e90114565ac773466e6af7f61c4d5a4175e93"
+        },
+        {
+          "path": "tests/test_file_pdf_coverage_rpc.py",
+          "sha256": "800457327b10d8fff37812c7c38e5d0df78f2bb72a25c38acc6a6b5c27a73dc5"
         }
       ]
     },
@@ -8339,7 +8351,7 @@
       "evidence": [
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "d3c1c83d294899e99f66ba7605eb1496334a1c286b36d39fcfec0c2e3fc70617"
+          "sha256": "96304eb6a777e4beb6be3396daec1118edefd00b6bbf0a5aa4f822314a75a3f3"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -8380,7 +8392,7 @@
         },
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "d3c1c83d294899e99f66ba7605eb1496334a1c286b36d39fcfec0c2e3fc70617"
+          "sha256": "96304eb6a777e4beb6be3396daec1118edefd00b6bbf0a5aa4f822314a75a3f3"
         },
         {
           "path": "agents/core/skills/marketplace.py",
@@ -9615,7 +9627,7 @@
       "evidence": [
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "d3c1c83d294899e99f66ba7605eb1496334a1c286b36d39fcfec0c2e3fc70617"
+          "sha256": "96304eb6a777e4beb6be3396daec1118edefd00b6bbf0a5aa4f822314a75a3f3"
         },
         {
           "path": "tests/test_file_search.py",
@@ -9623,11 +9635,11 @@
         },
         {
           "path": "tests/test_file_read_documents.py",
-          "sha256": "d108d43a6366a6a9d59493077123096ea74bfe0054e3af5a91b645fbcabb8240"
+          "sha256": "9c815b4780fb99d7435af43cd6487444c8833de21edfae96b30737bdc7e0900c"
         },
         {
           "path": "tests/test_spill_paging.py",
-          "sha256": "8cca0ad664b5c2b2278128ef16e02098bb787f30ad9f81e8ea3b65fbd24184db"
+          "sha256": "51087d48435c0b949b652b35be17ef111d4a0c0a2c190815a401b1b08f6540b8"
         }
       ]
     },
@@ -9928,12 +9940,12 @@
       "id": "H576",
       "row_sha256": "f0fa068039695312b24854188bf8874941cf55c602969d29a9117b403d1d97a0",
       "status": "partial",
-      "summary": "The model can read a document mid-turn through a tool call. file_read in agents/core/file_tools.py is off unless JARVIS_FILE_TOOLS is set and bounded to JARVIS_FILE_ROOTS (no `..`, no symlink escape, secret-looking names refused, bytes capped by max_bytes). It returns a .pdf (pypdf) or .docx (python-docx) as extracted text when the input is admitted and parseable, names a missing parser (`parser_missing`) or a parse failure (`extraction_failed`) instead of returning replacement characters, and returns the bytes with raw=true. Since H661 it pages: `offset` starts the read at a byte, a read that stops early returns `next_offset`, a page is trimmed to end on a whole UTF-8 character (unless max_bytes is smaller than one), and an offset that is not an int in 0..MAX_OFFSET is refused as `bad_offset` rather than read from 0. A document pages through its extracted text: `offset` counts bytes of the extracted UTF-8 text, and `text_size` is reported beside the file's `size` (tests/test_spill_paging.py pages a .pdf's extracted text, with the extractor stubbed, back to its last byte). Local 2026-10-09 parser-backed file_read admission refuses an observed on-disk PDF/DOCX size above 50,000,000 bytes (decimal 50 MB) as document_too_large before parser discovery or extraction. Equality is admitted; raw=true and ordinary byte pages retain their output bounds.",
-      "remaining": "Formats stop at .pdf and .docx: no .ipynb, .xlsx, .doc, .ppt, .odt, .rtf or .epub, and the text comes back plain rather than converted to Markdown. Every admitted document page still reparses the whole file, and max_bytes bounds only the text returned. The observed-size admission does not cap parser memory/CPU, decompression or full extracted-text allocation, and cannot prevent file growth after stat; bulk ingestion remains separate. There is no scanned-page coverage warning naming the page ranges that yielded no text, which the row calls the clever half. Paging is by byte offset, not a line offset/limit window. A missing parser is named (`parser_missing`) rather than installed lazily.",
+      "summary": "The model can read a document mid-turn through a tool call. file_read in agents/core/file_tools.py is off unless JARVIS_FILE_TOOLS is set and bounded to JARVIS_FILE_ROOTS (no `..`, no symlink escape, secret-looking names refused, bytes capped by max_bytes). It returns a .pdf (pypdf) or .docx (python-docx) as extracted text when the input is admitted and parseable, names a missing parser (`parser_missing`) or a parse failure (`extraction_failed`) instead of returning replacement characters, and returns the bytes with raw=true. Since H661 it pages: `offset` starts the read at a byte, a read that stops early returns `next_offset`, a page is trimmed to end on a whole UTF-8 character (unless max_bytes is smaller than one), and an offset that is not an int in 0..MAX_OFFSET is refused as `bad_offset` rather than read from 0. A document pages through its extracted text: `offset` counts bytes of the extracted UTF-8 text, and `text_size` is reported beside the file's `size` (tests/test_spill_paging.py pages a .pdf's extracted text, with the extractor stubbed, back to its last byte). Local 2026-10-09 parser-backed file_read admission refuses an observed on-disk PDF/DOCX size above 50,000,000 bytes (decimal 50 MB) as document_too_large before parser discovery or extraction. Equality is admitted; raw=true and ordinary byte pages retain their output bounds. Local 2026-10-09 PDF text-layer coverage uses one shared parser traversal per request and adds coverage_warning beside unchanged extracted content when more than 20% of pages or at least ten pages yield no text. It reports exact page/gap totals, the first 16 maximal one-based ranges, and preceding source excerpts capped to 160 Unicode code points, with explicit omitted-range and excerpt-truncation fields. Blank/whitespace/None page text counts; reader/page failures retain extraction_failed without partial coverage. Existing normal-loop and nested ToolRPC scanners also scan the quoted metadata; this does not declare every file result untrusted.",
+      "remaining": "Formats stop at .pdf and .docx: no .ipynb, .xlsx, .doc, .ppt, .odt, .rtf or .epub, and the text comes back plain rather than converted to Markdown. Every admitted document page still reparses the whole file, and max_bytes bounds only the text returned. The observed-size admission does not cap parser memory/CPU, decompression or full extracted-text allocation, and cannot prevent file growth after stat; bulk ingestion remains separate. Coverage measures extracted text only: nonblank but incomplete/garbled text and visual content are not detected. Only the first 16 gap ranges are listed, with an explicit omitted count; no OCR is performed. Paging is by byte offset, not a line offset/limit window. A missing parser is named (`parser_missing`) rather than installed lazily.",
       "evidence": [
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "d3c1c83d294899e99f66ba7605eb1496334a1c286b36d39fcfec0c2e3fc70617"
+          "sha256": "96304eb6a777e4beb6be3396daec1118edefd00b6bbf0a5aa4f822314a75a3f3"
         },
         {
           "path": "tests/test_file_search.py",
@@ -9941,19 +9953,31 @@
         },
         {
           "path": "tests/test_file_read_documents.py",
-          "sha256": "d108d43a6366a6a9d59493077123096ea74bfe0054e3af5a91b645fbcabb8240"
+          "sha256": "9c815b4780fb99d7435af43cd6487444c8833de21edfae96b30737bdc7e0900c"
         },
         {
           "path": "tests/test_spill_paging.py",
-          "sha256": "8cca0ad664b5c2b2278128ef16e02098bb787f30ad9f81e8ea3b65fbd24184db"
+          "sha256": "51087d48435c0b949b652b35be17ef111d4a0c0a2c190815a401b1b08f6540b8"
         },
         {
           "path": "tests/test_file_document_input_limit.py",
-          "sha256": "8fcb2e63beed4ef937ed66a9e6aa1cd337ce131559d4598b7c2c805b8e63cac0"
+          "sha256": "26947a9a853a941fbdf6cd21c62f4eba0c7a213af28b25ab061c97295617d267"
         },
         {
           "path": "tests/test_file_document_input_limit_rpc.py",
-          "sha256": "730f9d1b063b6f25e584865ac395cfd33b17f55cbd6a09f354b867bac84c9543"
+          "sha256": "ed901306108bb095af862ecfd4d5d79a747130b150bb4cd37326850eef39f0c6"
+        },
+        {
+          "path": "agents/core/local_docs.py",
+          "sha256": "e9677aaa1da860d486b01350f453674f428cd0929cd88bc773213ab8d73dcf1f"
+        },
+        {
+          "path": "tests/test_file_pdf_coverage.py",
+          "sha256": "0902d54ff409bc49387b469f1e8e90114565ac773466e6af7f61c4d5a4175e93"
+        },
+        {
+          "path": "tests/test_file_pdf_coverage_rpc.py",
+          "sha256": "800457327b10d8fff37812c7c38e5d0df78f2bb72a25c38acc6a6b5c27a73dc5"
         }
       ]
     },
@@ -10153,7 +10177,7 @@
         },
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "d3c1c83d294899e99f66ba7605eb1496334a1c286b36d39fcfec0c2e3fc70617"
+          "sha256": "96304eb6a777e4beb6be3396daec1118edefd00b6bbf0a5aa4f822314a75a3f3"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -10897,12 +10921,12 @@
       "id": "H661",
       "row_sha256": "f561e9e036f1b296b050101ac1f5ead31c1e09146635fe8adae5e8d7424c2bab",
       "status": "equivalent",
-      "summary": "Oversized output is paged back from its spill file instead of being re-run. execute_code stdout/stderr are spooled to disk as they arrive (agents/core/code_tools.py:480, agents/core/tool_result_store.py:431) under <data root>/workspace/tool_results. Each stream is capped at DEFAULT_MAX_STREAM_BYTES = 5,000,000 (agents/core/tool_result_store.py:130): StreamSpill.write stops writing at the cap but keeps counting (agents/core/tool_result_store.py:600), close appends one '[... spill capped at N bytes: M more bytes ...]' marker (agents/core/tool_result_store.py:642), and the result carries <stream>_spill_capped and <stream>_kept_bytes (agents/core/code_tools.py:274-275). Head and tail stay inline with omitted-byte accounting (agents/core/environments/output_limits.py:42, tests/test_environment_output_limits.py:38). A whole result the loop spills (agents/core/agent_runtime.py:1483) keeps both ends in its preview (agents/core/tool_result_store.py:705-706, tests/test_tool_loop_result_spill.py:139), and file_read itself is never spilled (tests/test_tool_loop_result_spill.py:287). Every notice carries the exact call from page_recipe (agents/core/tool_result_store.py:145): file_read(path=\"<resolved path>\", offset=0, max_bytes=N). The same arguments are returned as <stream>_read_with (agents/core/code_tools.py:272) and read_with (agents/core/tool_result_store.py:736), and stream recipes propose pages of at most 8,000 bytes (agents/core/code_tools.py:226). file_read takes an integer offset from 0 to MAX_OFFSET = 2**53-1 (agents/core/file_tools.py:124, agents/core/file_tools.py:1553). Anything else is refused as bad_offset, both in the preflight and in a direct call (agents/core/file_tools.py:1471, agents/core/file_tools.py:756). An offset at or past the end is an empty final page, answered without seeking (agents/core/file_tools.py:774). A page that stops early returns next_offset (agents/core/file_tools.py:1314) and never ends inside a UTF-8 character (agents/core/file_tools.py:1266). A .pdf/.docx pages through its extracted text (agents/core/file_tools.py:1318). The named call is one file_read answers in every live setup, including the three the review found broken. The recipe path is resolved (agents/core/tool_result_store.py:207). A spill is never named like a secret (agents/core/tool_result_store.py:190). file_read alone gets a read-only door for exact spill-file names in the coordinator's spill directory (agents/core/file_tools.py:664, agents/core/file_tools.py:701, agents/core/file_tools.py:1231), wired at agents/core/autonomy_coordinator.py:1011. So JARVIS_FILE_ROOTS pointing elsewhere, a symlinked JARVIS_HOME or a bridged tool with a secret-looking name no longer strands the file (tests/test_spill_paging.py:507, tests/test_spill_paging.py:535); the door's limits are pinned by tests/test_spill_paging.py:414. The recipe is named only where that call is answered. ToolResultStore.readable(path) (agents/core/tool_result_store.py:361) asks the coordinator probe (agents/core/autonomy_coordinator.py:1015). The probe requires four things: file_read registered, allowed by the job toolset, in this turn's profile offer (noted at agents/core/autonomy_coordinator.py:1169), and able to open this very path (agents/core/autonomy_coordinator.py:1027, agents/core/file_tools.py:729). execute_code also requires file_read in its own run's offer (agents/core/code_tools.py:462, agents/core/code_tools.py:559). Otherwise the notice says the file is kept for the owner and cannot be paged from this turn (tests/test_spill_paging.py:545, tests/test_spill_paging.py:589, tests/test_code_tools.py:866), and concurrent turns each see their own offer (tests/test_spill_paging.py:627). A failed spill just omits the path (agents/core/code_tools.py:258-259, tests/test_code_tools.py:698). Retention is unchanged (agents/core/tool_result_store.py:490, tests/test_tool_result_store.py:214, tests/test_tool_result_store.py:353). End to end, a real AgentToolRuntime follows read_with and then next_offset through the real file_read and rebuilds the spilled result byte for byte, while the producing tool runs once (tests/test_spill_paging.py:719). execute_code stdout does the same on the one-shot and session paths (tests/test_code_tools.py:824), and a runaway stream stops at its ceiling with one marker (tests/test_code_tools.py:877, tests/test_spill_paging.py:233). Adaptations: offsets are bytes, not Hermes' lines. The 5,000,000-byte cap covers streamed spills, which is Hermes' execute_code scope; whole-result JSON spills stay bounded by the 256 MB retention sweep. A spill stays third-party when it comes back: every file directly in a spill directory counts as one (agents/core/file_tools.py:715), a file_read page of it and a file_search whose matches reach it declare tainted (agents/core/file_tools.py:781, agents/core/file_tools.py:933), and the loop fences the result as DATA and raises the turn's recall taint, in the turn that spilled it or any later one (tests/test_spill_paging.py:761, tests/test_spill_paging.py:812, tests/test_spill_paging.py:834, tests/test_spill_paging.py:856). A trusted tool's spill counts too, because a spill's file name cannot say reliably which tool wrote it.",
+      "summary": "Oversized output is paged back from its spill file instead of being re-run. execute_code stdout/stderr are spooled to disk as they arrive (agents/core/code_tools.py:480, agents/core/tool_result_store.py:431) under <data root>/workspace/tool_results. Each stream is capped at DEFAULT_MAX_STREAM_BYTES = 5,000,000 (agents/core/tool_result_store.py:130): StreamSpill.write stops writing at the cap but keeps counting (agents/core/tool_result_store.py:600), close appends one '[... spill capped at N bytes: M more bytes ...]' marker (agents/core/tool_result_store.py:642), and the result carries <stream>_spill_capped and <stream>_kept_bytes (agents/core/code_tools.py:274-275). Head and tail stay inline with omitted-byte accounting (agents/core/environments/output_limits.py:42, tests/test_environment_output_limits.py:38). A whole result the loop spills (agents/core/agent_runtime.py:1483) keeps both ends in its preview (agents/core/tool_result_store.py:705-706, tests/test_tool_loop_result_spill.py:139), and file_read itself is never spilled (tests/test_tool_loop_result_spill.py:287). Every notice carries the exact call from page_recipe (agents/core/tool_result_store.py:145): file_read(path=\"<resolved path>\", offset=0, max_bytes=N). The same arguments are returned as <stream>_read_with (agents/core/code_tools.py:272) and read_with (agents/core/tool_result_store.py:736), and stream recipes propose pages of at most 8,000 bytes (agents/core/code_tools.py:226). file_read takes an integer offset from 0 to MAX_OFFSET = 2**53-1 (agents/core/file_tools.py:124, agents/core/file_tools.py:1562). Anything else is refused as bad_offset, both in the preflight and in a direct call (agents/core/file_tools.py:1479, agents/core/file_tools.py:756). An offset at or past the end is an empty final page, answered without seeking (agents/core/file_tools.py:774). A page that stops early returns next_offset (agents/core/file_tools.py:1314) and never ends inside a UTF-8 character (agents/core/file_tools.py:1266). A .pdf/.docx pages through its extracted text (agents/core/file_tools.py:1318). The named call is one file_read answers in every live setup, including the three the review found broken. The recipe path is resolved (agents/core/tool_result_store.py:207). A spill is never named like a secret (agents/core/tool_result_store.py:190). file_read alone gets a read-only door for exact spill-file names in the coordinator's spill directory (agents/core/file_tools.py:664, agents/core/file_tools.py:701, agents/core/file_tools.py:1231), wired at agents/core/autonomy_coordinator.py:1011. So JARVIS_FILE_ROOTS pointing elsewhere, a symlinked JARVIS_HOME or a bridged tool with a secret-looking name no longer strands the file (tests/test_spill_paging.py:507, tests/test_spill_paging.py:535); the door's limits are pinned by tests/test_spill_paging.py:414. The recipe is named only where that call is answered. ToolResultStore.readable(path) (agents/core/tool_result_store.py:361) asks the coordinator probe (agents/core/autonomy_coordinator.py:1015). The probe requires four things: file_read registered, allowed by the job toolset, in this turn's profile offer (noted at agents/core/autonomy_coordinator.py:1169), and able to open this very path (agents/core/autonomy_coordinator.py:1027, agents/core/file_tools.py:729). execute_code also requires file_read in its own run's offer (agents/core/code_tools.py:462, agents/core/code_tools.py:559). Otherwise the notice says the file is kept for the owner and cannot be paged from this turn (tests/test_spill_paging.py:545, tests/test_spill_paging.py:589, tests/test_code_tools.py:866), and concurrent turns each see their own offer (tests/test_spill_paging.py:627). A failed spill just omits the path (agents/core/code_tools.py:258-259, tests/test_code_tools.py:698). Retention is unchanged (agents/core/tool_result_store.py:490, tests/test_tool_result_store.py:214, tests/test_tool_result_store.py:353). End to end, a real AgentToolRuntime follows read_with and then next_offset through the real file_read and rebuilds the spilled result byte for byte, while the producing tool runs once (tests/test_spill_paging.py:719). execute_code stdout does the same on the one-shot and session paths (tests/test_code_tools.py:824), and a runaway stream stops at its ceiling with one marker (tests/test_code_tools.py:877, tests/test_spill_paging.py:233). Adaptations: offsets are bytes, not Hermes' lines. The 5,000,000-byte cap covers streamed spills, which is Hermes' execute_code scope; whole-result JSON spills stay bounded by the 256 MB retention sweep. A spill stays third-party when it comes back: every file directly in a spill directory counts as one (agents/core/file_tools.py:715), a file_read page of it and a file_search whose matches reach it declare tainted (agents/core/file_tools.py:781, agents/core/file_tools.py:933), and the loop fences the result as DATA and raises the turn's recall taint, in the turn that spilled it or any later one (tests/test_spill_paging.py:761, tests/test_spill_paging.py:812, tests/test_spill_paging.py:834, tests/test_spill_paging.py:856). A trusted tool's spill counts too, because a spill's file name cannot say reliably which tool wrote it.",
       "remaining": "",
       "evidence": [
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "d3c1c83d294899e99f66ba7605eb1496334a1c286b36d39fcfec0c2e3fc70617"
+          "sha256": "96304eb6a777e4beb6be3396daec1118edefd00b6bbf0a5aa4f822314a75a3f3"
         },
         {
           "path": "agents/core/tool_result_store.py",
@@ -10926,7 +10950,7 @@
         },
         {
           "path": "tests/test_spill_paging.py",
-          "sha256": "8cca0ad664b5c2b2278128ef16e02098bb787f30ad9f81e8ea3b65fbd24184db"
+          "sha256": "51087d48435c0b949b652b35be17ef111d4a0c0a2c190815a401b1b08f6540b8"
         },
         {
           "path": "tests/test_code_tools.py",
@@ -11133,11 +11157,11 @@
         },
         {
           "path": "docs/ARCHITECTURE.md",
-          "sha256": "85a4aa139686a25b1273d99d75a5ea668e4b04911a506c5d4419c8a31df5ba2a"
+          "sha256": "c1146840415849b984993b7f53a22311162ca1b5b08f3328c0bb15a44c239c20"
         },
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "d3c1c83d294899e99f66ba7605eb1496334a1c286b36d39fcfec0c2e3fc70617"
+          "sha256": "96304eb6a777e4beb6be3396daec1118edefd00b6bbf0a5aa4f822314a75a3f3"
         },
         {
           "path": "agents/core/paths.py",

@@ -137,7 +137,7 @@ async def test_a_document_pages_through_its_extracted_text(tmp_path, monkeypatch
     (root / "report.pdf").write_bytes(b"%PDF-1.4 not really")
     text = "Quarterly report: " + "revenue up, costs down; " * 30
     monkeypatch.setattr(file_tools, "_parser_available", lambda suffix: True)
-    monkeypatch.setattr(file_tools, "extract_text", lambda path: text)
+    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: [text])
     tools = _tools(root, tmp_path)
 
     second = await tools.read_file({"path": "report.pdf", "offset": 18, "max_bytes": 12})

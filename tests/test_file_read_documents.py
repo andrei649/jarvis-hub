@@ -34,7 +34,9 @@ def tools(tmp_path):
 @pytest.mark.asyncio
 async def test_a_document_comes_back_as_bounded_text(tools, monkeypatch):
     monkeypatch.setattr(file_tools, "_parser_available", lambda suffix: True)
-    monkeypatch.setattr(file_tools, "extract_text", lambda path: "Quarterly report: " + "revenue up " * 20)
+    text = "Quarterly report: " + "revenue up " * 20
+    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: [text])
+    monkeypatch.setattr(file_tools, "extract_text", lambda path: text)
     out = await tools.read_file({"path": "report.pdf"})
     assert out["ok"] is True and out["extracted"] is True and out["format"] == "pdf"
     assert out["content"].startswith("Quarterly report: revenue up")
@@ -53,7 +55,7 @@ async def test_missing_parser_and_failed_extraction_are_named(tools, monkeypatch
     out = await tools.read_file({"path": "memo.docx"})
     assert out["reason"] == "parser_missing" and "docx" in out["detail"]
     monkeypatch.setattr(file_tools, "_parser_available", lambda suffix: True)
-    monkeypatch.setattr(file_tools, "extract_text", lambda path: None)
+    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: None)
     out = await tools.read_file({"path": "report.pdf"})
     assert out == {"ok": False, "reason": "extraction_failed", "detail": "the file could not be parsed"}
 
@@ -61,6 +63,7 @@ async def test_missing_parser_and_failed_extraction_are_named(tools, monkeypatch
 @pytest.mark.asyncio
 async def test_raw_returns_the_bytes_and_text_files_are_untouched(tools, monkeypatch):
     monkeypatch.setattr(file_tools, "extract_text", lambda path: pytest.fail("must not extract"))
+    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: pytest.fail("must not extract"))
     out = await tools.read_file({"path": "report.pdf", "raw": True})
     assert out["ok"] is True and "extracted" not in out and out["content"].startswith("%PDF-1.4")
     out = await tools.read_file({"path": "notes.txt"})

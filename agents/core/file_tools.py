@@ -100,7 +100,7 @@ from agents.core import project_context
 from agents.core.automation_contracts import ContractTemplate, predicate
 from agents.core.env_config import env_flag, env_int, env_list
 from agents.core.environments import SECRET_ENV_SUBSTRINGS
-from agents.core.local_docs import DOC_EXTS, extract_text
+from agents.core.local_docs import DOC_EXTS, extract_pdf_pages, extract_text, pdf_coverage_warning
 from agents.core.paths import data_path
 from agents.core.tool_result_store import SPILL_DIRNAME as _SPILL_DIRNAME
 from agents.core.tool_result_store import is_reference as _is_spill_reference
@@ -1341,13 +1341,21 @@ def _read_document(target: Path, size: int, limit: int, offset: int = 0) -> dict
             "reason": "parser_missing",
             "detail": f"reading {suffix} needs the {_DOCUMENT_PARSERS[suffix]} package; raw=true returns the bytes",
         }
-    text = extract_text(target)
+    coverage = None
+    if suffix == ".pdf":
+        pages = extract_pdf_pages(target)
+        text = "\n".join(pages) if pages is not None else None
+        if pages is not None:
+            coverage = pdf_coverage_warning(pages)
+    else:
+        text = extract_text(target)
     if text is None:
         return {"ok": False, "reason": "extraction_failed", "detail": "the file could not be parsed"}
     data = text.encode("utf-8")
     return {
         "ok": True,
         "path": str(target),
+        **({"coverage_warning": coverage} if coverage is not None else {}),
         **_page(data[offset:offset + limit], offset=offset, total=len(data)),
         "size": size,
         "text_size": len(data),
@@ -1540,7 +1548,8 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
             ".docx is returned as its extracted text (raw=true for the bytes). offset "
             "starts the read at that byte; a read that stops early returns next_offset — "
             "pass it back as offset to page through a large file or a spilled tool result. "
-            "PDF/DOCX extraction accepts at most 50 MB (50,000,000 bytes); raw=true pages bytes."
+            "PDF/DOCX extraction accepts at most 50 MB (50,000,000 bytes); raw=true pages bytes. "
+            "PDF page gaps without extracted text are reported separately from content."
         ),
         "gated": False,
         "trusted_execution": False,

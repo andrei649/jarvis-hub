@@ -45,6 +45,13 @@ input-size check, not a parser memory bound. Existing chat/tool result handling
 carries the named refusal; no new native presentation is required. See
 [document input evidence](../docs/project-document-input-limit-20261009.md).
 
+PDF text coverage (H444/H576 local backend candidate, 2026-10-09): significant
+no-text page ranges now appear as bounded metadata in the existing file_read
+result, with preceding source quotes and explicit omission counts. Extracted
+content and byte pagination are unchanged. Both clients inherit the model-side
+warning; there is no new HTTP/SSE field or dedicated native PDF warning card.
+See [coverage evidence](../docs/project-pdf-text-coverage-20261009.md).
+
 Session ID validation (local backend candidate, 2026-10-09): both clients inherit
 strict full-string session validation on the existing shared server boundaries.
 A terminal newline is refused before session or memory work; valid IDs retain

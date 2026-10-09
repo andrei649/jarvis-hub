@@ -55,6 +55,7 @@ async def test_oversized_documents_refuse_before_parser_probe_or_extraction(
 
     monkeypatch.setattr(file_tools, "_parser_available", available)
     monkeypatch.setattr(file_tools, "extract_text", extract)
+    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: [extract(path)])
     result = await tools(root).read_file({"path": name, "offset": offset, "max_bytes": 5})
     assert target.stat().st_size == CEILING + 1
     assert calls == [], f"oversized parser path was reached: {calls!r}"
@@ -75,6 +76,7 @@ async def test_oversized_document_refuses_even_when_parser_is_unavailable(root, 
 
     monkeypatch.setattr(file_tools, "_parser_available", unavailable)
     monkeypatch.setattr(file_tools, "extract_text", lambda path: pytest.fail("extract called"))
+    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: pytest.fail("extract called"))
     result = await tools(root).read_file({"path": target.name})
     assert target.stat().st_size == CEILING + 1
     assert calls == [], f"oversized parser discovery was reached: {calls!r}"
@@ -107,6 +109,7 @@ async def test_equal_and_below_limit_keep_extracted_utf8_paging(
 
     monkeypatch.setattr(file_tools, "_parser_available", available)
     monkeypatch.setattr(file_tools, "extract_text", extract)
+    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: [extract(path)])
     result = await tools(root).read_file({"path": name, "max_bytes": 5})
     assert target.stat().st_size == size
     assert calls == [("probe", target.suffix.lower()), ("extract", target)]
@@ -131,6 +134,7 @@ async def test_large_raw_document_and_plain_file_still_page_bytes_near_eof(
         stream.write(b"END")
     monkeypatch.setattr(file_tools, "_parser_available", lambda suffix: pytest.fail("probe"))
     monkeypatch.setattr(file_tools, "extract_text", lambda path: pytest.fail("extract"))
+    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: pytest.fail("extract"))
     args = {"path": name, "offset": size - 3, "max_bytes": 2}
     if name.endswith(".pdf"):
         args["raw"] = True
@@ -166,7 +170,7 @@ async def test_smaller_document_keeps_named_parser_and_extraction_failures(root,
     }
 
     monkeypatch.setattr(file_tools, "_parser_available", lambda suffix: True)
-    monkeypatch.setattr(file_tools, "extract_text", lambda path: None)
+    monkeypatch.setattr(file_tools, "extract_pdf_pages", lambda path: None)
     second = await tools(root).read_file({"path": target.name})
     assert second == {
         "ok": False, "reason": "extraction_failed",

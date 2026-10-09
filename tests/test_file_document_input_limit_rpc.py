@@ -48,6 +48,8 @@ async def test_oversized_document_is_nested_refusal_before_parser_probe(
     monkeypatch.setattr(file_tools, "_parser_available", parser_available)
     monkeypatch.setattr(file_tools, "extract_text",
                         lambda path: pytest.fail("oversized document must not be extracted"))
+    monkeypatch.setattr(file_tools, "extract_pdf_pages",
+                        lambda path: pytest.fail("oversized PDF must not be extracted"))
     response = await _read(server, path=name, offset=11)
     assert response["ok"] is True and response["tool"] == "file_read"
     assert "task_id" not in response
@@ -76,10 +78,10 @@ async def test_exact_boundary_still_extracts_and_pages_utf8_text(registered, mon
 
     def extract(target):
         extracted.append(target)
-        return "alpha beta gamma"
+        return ["alpha beta gamma"]
 
     monkeypatch.setattr(file_tools, "_parser_available", parser_available)
-    monkeypatch.setattr(file_tools, "extract_text", extract)
+    monkeypatch.setattr(file_tools, "extract_pdf_pages", extract)
     response = await _read(server, path=path.name, offset=6, max_bytes=4)
     assert response["ok"] is True and response["tool"] == "file_read"
     result = response["result"]
@@ -107,6 +109,8 @@ async def test_raw_oversized_document_and_plain_file_stay_bounded_pages(
                         lambda suffix: pytest.fail("raw/plain read must not probe parser"))
     monkeypatch.setattr(file_tools, "extract_text",
                         lambda path: pytest.fail("raw/plain read must not extract"))
+    monkeypatch.setattr(file_tools, "extract_pdf_pages",
+                        lambda path: pytest.fail("raw/plain read must not extract PDF"))
 
     for name, raw in (("large.docx", True), ("large.txt", False)):
         first = (await _read(server, path=name, raw=raw, offset=LIMIT - 3,
