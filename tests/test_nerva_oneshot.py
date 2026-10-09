@@ -238,15 +238,76 @@ def test_the_usage_file_never_invents_a_number(tmp_path):
     assert report["cost_basis"] == "unavailable"
 
 
-def test_the_usage_file_reports_the_session_only_when_the_caller_named_one(tmp_path):
-    """The hub never says which session it used, so reporting one we were not given
-    would be a guess."""
-    path = tmp_path / "a.json"
-    _run(["chat", "-z", "--usage-file", str(path), "hi"], hub=_FakeHub(ANSWER))
-    assert json.loads(path.read_text(encoding="utf-8"))["session_id"] is None
-    path = tmp_path / "b.json"
-    _run(["chat", "-z", "--usage-file", str(path), "--session", "s-42", "hi"], hub=_FakeHub(ANSWER))
-    assert json.loads(path.read_text(encoding="utf-8"))["session_id"] == "s-42"
+@pytest.mark.parametrize("reply,expected_code,expected_status,interactive", [
+    ({"reply": "the roof is fine", "session_id": "actual-7"}, EXIT_OK, "completed", False),
+    ({"reply": "Internal error.", "session_id": "actual-7"}, EXIT_FAILED, "refused", False),
+    ({"reply": "", "session_id": "actual-7"}, EXIT_FAILED, "refused", False),
+    ({"reply": APPROVAL, "pending_approvals": [7], "session_id": "actual-7"},
+     EXIT_FAILED, "queued_for_approval", False),
+    ({"reply": "the roof is fine", "session_id": "actual-7"}, EXIT_OK, "completed", True),
+])
+def test_receipt_distinguishes_returned_session_from_requested_session(
+    tmp_path, reply, expected_code, expected_status, interactive,
+):
+    path = tmp_path / "usage.json"
+    argv = ["chat", "--usage-file", str(path), "--session", "requested-2", "hi"]
+    if not interactive:
+        argv.insert(1, "-z")
+    code, _out, _err, hub = _run(argv, hub=_FakeHub({"POST /chat": reply}))
+
+    assert code == expected_code
+    assert hub.calls == [("POST", "/chat", {"message": "hi", "session_id": "requested-2"})]
+    report = json.loads(path.read_text(encoding="utf-8"))
+    assert report["status"] == expected_status
+    assert report["session_id"] == "actual-7"
+    assert report["requested_session_id"] == "requested-2"
+
+
+@pytest.mark.parametrize("returned", [
+    None, "", " abc", "abc ", "a/b", "a.b", "a\n", "é", 17, True, "a" * 129,
+])
+def test_receipt_refuses_to_attribute_missing_or_malformed_returned_session(tmp_path, returned):
+    path = tmp_path / "usage.json"
+    reply = {"reply": "fine"}
+    if returned is not None:
+        reply["session_id"] = returned
+    code, out, err, _hub = _run(
+        ["chat", "-z", "--usage-file", str(path), "--session", "requested-2", "hi"],
+        hub=_FakeHub({"POST /chat": reply}),
+    )
+
+    assert code == EXIT_OK and out == "fine\n" and err == ""
+    report = json.loads(path.read_text(encoding="utf-8"))
+    assert report["session_id"] is None
+    assert report["requested_session_id"] == "requested-2"
+
+
+def test_receipt_accepts_returned_session_at_exact_length_limit(tmp_path):
+    path = tmp_path / "usage.json"
+    returned = "A_9-" * 32
+    _run(["chat", "-z", "--usage-file", str(path), "hi"],
+         hub=_FakeHub({"POST /chat": {"reply": "fine", "session_id": returned}}))
+    report = json.loads(path.read_text(encoding="utf-8"))
+    assert report["session_id"] == returned
+    assert report["requested_session_id"] is None
+
+
+@pytest.mark.parametrize("hub,argv,status", [
+    (_FakeHub({"POST /chat": {"reply": "fine"}}), ["--session", "requested-2", "hi"], "completed"),
+    (_FakeHub({"POST /chat": "undecoded"}), ["--session", "requested-2", "hi"], "refused"),
+    (_FakeHub(raise_with=HubError(401, "user token required")),
+     ["--session", "requested-2", "hi"], "unauthorised"),
+    (_FakeHub(raise_with=HubUnavailable("http://127.0.0.1:9", "refused")),
+     ["--session", "requested-2", "hi"], "no_hub"),
+    (_FakeHub(), ["--session", "requested-2", "x" * 4097], "usage"),
+])
+def test_receipt_retains_requested_session_without_decoded_response(tmp_path, hub, argv, status):
+    path = tmp_path / "usage.json"
+    _run(["chat", "-z", "--usage-file", str(path), *argv], hub=hub)
+    report = json.loads(path.read_text(encoding="utf-8"))
+    assert report["status"] == status
+    assert report["session_id"] is None
+    assert report["requested_session_id"] == "requested-2"
 
 
 def test_a_usage_file_that_cannot_be_written_warns_without_changing_the_verdict(tmp_path):
@@ -513,12 +574,14 @@ def test_an_interrupted_run_still_leaves_a_receipt(tmp_path):
             raise KeyboardInterrupt
 
     code, out, _err, _hub = _run(
-        ["chat", "-z", "--usage-file", str(report), "hi"], hub=_Interrupted())
+        ["chat", "-z", "--usage-file", str(report), "--session", "requested-2", "hi"],
+        hub=_Interrupted())
 
     assert code == EXIT_INTERRUPTED and out == ""
     body = json.loads(report.read_text())
     assert body["status"] == "interrupted" and body["completed"] is False
     assert body["exit_code"] == EXIT_INTERRUPTED
+    assert body["session_id"] is None and body["requested_session_id"] == "requested-2"
 
 
 def test_a_failed_write_leaves_no_temp_file_behind(tmp_path, monkeypatch):

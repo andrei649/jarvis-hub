@@ -340,6 +340,22 @@ One test was replaced rather than kept: `test_the_usage_file_is_replaced_atomica
 
 51 tests; 23 mutations of the shipped behaviour each turn at least one of them red. The headline is unchanged at 122/697.
 
+### 2026-10-09 — H002 session receipts and thinking exhaustion
+
+The earlier H002 entries describe their original snapshots. POST /chat now
+returns its selected session ID, and the CLI receipt records that valid returned
+value in session_id. The additive requested_session_id preserves the old caller
+echo separately. Missing, malformed or absent responses leave the observed ID
+null; vision turns never claim a chat session. Historical v1 receipts lacking
+the new field remain caller-echo evidence, not confirmation of a selected session.
+See the [current receipt contract](cli-chat-receipts.md) and
+[local verification](project-cli-receipt-session-20261009.md).
+
+The preceding [thinking-exhaustion fix](project-oneshot-thinking-exhausted-20261009.md)
+also makes the exact no-visible-answer backend message fail one-shot execution.
+H002 remains partial: rephrased outcomes and per-turn usage attribution are still
+open. No earlier mutation count or full-suite result is relabeled as new evidence.
+
 ### 2026-09-18 — the cost meter tells a measurement from a guess
 
 Not a Hermes row of its own, but the reason H002's spend report ships as a schema of nulls, so it is recorded here with the same evidence discipline. `cost_tracker` had two ways to be confidently wrong. The record site in `_record_interactions` passed the agent's **configured** model, and `AgentConfig.model` defaults to `google/gemma-4-31b-a4b` while not one of the 18 agents in `agents/_system/agents.yaml` sets `model` — so the first term of `configured or agent_route or "default"` was always truthy, the two fallbacks were unreachable, and a 1M/500k-token Claude turn metered at `total_cost_usd 0.0`. And `_price_for` ended in `return MODEL_PRICES["default"]`, so an id the table did not recognise was billed $3/$15 — a number an owner could not distinguish from a measurement, feeding the same `spend_today_usd()` that backs the daily-cap refusal.

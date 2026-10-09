@@ -1936,7 +1936,8 @@ def _usage_report(**fields: Any) -> dict[str, Any]:
         "schema": "nerva.chat.usage.v1",
         "status": "failed", "completed": False, "exit_code": EXIT_FAILED,
         "started_at": None, "finished_at": None, "duration_ms": None,
-        "session_id": None, "agent": None, "model": None, "provider": None,
+        "session_id": None, "requested_session_id": None,
+        "agent": None, "model": None, "provider": None,
         "api_calls": None, "input_tokens": None, "output_tokens": None,
         "estimated_cost_usd": None, "cost_basis": "unavailable",
         "pending_approvals": [], "reason": None,
@@ -2000,6 +2001,9 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.err.write("--usage-file was given an empty path; no report will be written\n")
         usage_file = None
     started = _utc_now()
+    # A request names intent; only a decoded /chat response can establish the session
+    # actually used. The vision branch and every pre-response failure leave this unknown.
+    observed_session_id: str | None = None
 
     def finish(code: int, *, status: str, reason: str | None = None,
                pending: list[Any] | None = None, completed: bool | None = None) -> int:
@@ -2015,7 +2019,8 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
                 exit_code=code,
                 started_at=started, finished_at=finished,
                 duration_ms=_elapsed_ms(started, finished),
-                session_id=getattr(ns, "session", None) or None,
+                session_id=observed_session_id,
+                requested_session_id=getattr(ns, "session", None) or None,
                 agent=getattr(ns, "agent", None) or None,
                 pending_approvals=list(pending or []), reason=reason,
             ), ctx)
@@ -2069,6 +2074,11 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         finish(EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED,
                status=status, reason=str(exc))
         raise
+
+    if isinstance(reply, dict):
+        returned_session = reply.get("session_id")
+        if isinstance(returned_session, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", returned_session):
+            observed_session_id = returned_session
 
     raw = (reply or {}).get("reply", "") if isinstance(reply, dict) else ""
     # Sanitise BEFORE judging, not after. The verdict used to read the raw reply while
