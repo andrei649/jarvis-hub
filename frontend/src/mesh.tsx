@@ -162,20 +162,32 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
   function fire(id, big?) {
     const st = S.current, n = node(id); if (!n) return; const c = colorFor(n);
     st.rings.push({ x: n.x, y: n.y, life: 0, c, big });
-    // Bolt Optimization: O(1) Map lookup via edgesByA instead of O(E) array scan
+    // Bolt Optimization: O(1) Map lookup via edgesByA and indexed for loop to avoid array closures
     const outgoing = st.edgesByA ? st.edgesByA.get(id) : st.edges.filter((e) => e.a === id);
-    (outgoing || []).forEach((e) => {
-      for (let k = 0; k < (big ? 4 : 3); k++) {
-        st.particles.push({ e, life: -k * 0.12, sp: 0.017 + ((n.i + k) % 3) * 0.005, c, big });
+    if (outgoing) {
+      const numOutgoing = outgoing.length;
+      for (let i = 0; i < numOutgoing; i++) {
+        const e = outgoing[i];
+        for (let k = 0; k < (big ? 4 : 3); k++) {
+          st.particles.push({ e, life: -k * 0.12, sp: 0.017 + ((n.i + k) % 3) * 0.005, c, big });
+        }
       }
-    });
+    }
   }
   function corePulse() {
     const st = S.current, c = node('jarvis'); if (!c) return;
     st.rings.push({ x: c.x, y: c.y, life: 0, c: '#8fe0ff', big: true });
-    // Bolt Optimization: O(1) Map lookup via edgesByA instead of O(E) array scan
+    // Bolt Optimization: O(1) Map lookup via edgesByA and indexed for loop to avoid array closures
     const outgoing = st.edgesByA ? st.edgesByA.get('jarvis') : st.edges.filter((e) => e.a === 'jarvis');
-    (outgoing || []).forEach((e) => { for (let k = 0; k < 2; k++) st.particles.push({ e, life: -k * 0.1, sp: 0.022, c: '#8fe0ff', big: true }); });
+    if (outgoing) {
+      const numOutgoing = outgoing.length;
+      for (let i = 0; i < numOutgoing; i++) {
+        const e = outgoing[i];
+        for (let k = 0; k < 2; k++) {
+          st.particles.push({ e, life: -k * 0.1, sp: 0.022, c: '#8fe0ff', big: true });
+        }
+      }
+    }
   }
 
   function resize() {
@@ -267,21 +279,42 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       if (st.cascadeI >= 0 && st.tick % 2 === 0) { const ags = st.nodes.filter((n) => n.kind === 'agent').sort((p, q) => p.baseAng - q.baseAng); const n = ags[st.cascadeI]; if (n) fire(n.id, true); st.cascadeI++; if (st.cascadeI >= ags.length) { st.cascadeI = -1; corePulse(); } }
     }
     if (!calm && !st.demo && st.tick % 8 === 0) {
-      st.nodes.forEach((n) => {
+      // Bolt Optimization: Use indexed for loop instead of .forEach closure allocation
+      for (let i = 0; i < numNodes; i++) {
+        const n = nodes[i];
         if (n.kind === 'agent' && isExecutingAgent(n.agent)) {
           // Bolt Optimization: O(1) Map lookup via agentModelEdgeMap instead of O(E) array scan per executing agent frame
           const e = st.agentModelEdgeMap ? st.agentModelEdgeMap.get(n.id) : st.edges.find((x) => x.a === n.id && x.kind === 'am');
           if (e) st.particles.push({ e, life: 0, sp: 0.015 + (n.i % 3) * 0.004, c: colorFor(n) });
         }
-      });
+      }
     }
     if (!calm && !st.demo && st.tick % 30 === 0 && st.tasks.length) {
-      const owners = new Set(st.tasks.map(taskOwner));
-      owners.forEach((owner) => fire(owner));
+      // Bolt Optimization: Avoid st.tasks.map(taskOwner) array allocation and .forEach callback closure
+      const tasks = st.tasks;
+      const numTasks = tasks.length;
+      const firedOwners = new Set<string>();
+      for (let i = 0; i < numTasks; i++) {
+        const owner = taskOwner(tasks[i]);
+        if (!firedOwners.has(owner)) {
+          firedOwners.add(owner);
+          fire(owner);
+        }
+      }
     }
-    if (!calm && !st.demo && st.tick % 60 === 0
-      && (st.tasks.length || st.nodes.some((n) => n.kind === 'agent' && isExecutingAgent(n.agent)))) {
-      corePulse();
+    if (!calm && !st.demo && st.tick % 60 === 0) {
+      // Bolt Optimization: Avoid st.nodes.some callback closure allocation
+      if (st.tasks.length) {
+        corePulse();
+      } else {
+        for (let i = 0; i < numNodes; i++) {
+          const n = nodes[i];
+          if (n.kind === 'agent' && isExecutingAgent(n.agent)) {
+            corePulse();
+            break;
+          }
+        }
+      }
     }
     // Bolt Optimization: Prune particles in-place during iteration instead of filter() + forEach()
     // to prevent array allocations and GC pressure every 60 FPS frame (~3,600 allocations/min).
@@ -360,9 +393,10 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     // more tasks than a fixed-size arc can label legibly — cap what's drawn so
     // the fan never degrades into an unreadable overlapping block, no matter
     // how many tasks pile up under one owner.
-    byOwner.forEach((fullList: any[], owner: string) => {
+    // Bolt Optimization: Use for...of iteration over Map entries to avoid closure creation
+    for (const [owner, fullList] of byOwner as Map<string, any[]>) {
       const origin = node(owner);
-      if (!origin) return;
+      if (!origin) continue;
       const focused = foc === owner;
       const count = Math.min(fullList.length, MAX_FAN_TASKS);
       const base = Math.atan2(origin.y - cy, origin.x - cx);
@@ -394,13 +428,21 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
           }
         }
       }
-    });
+    }
     ctx.globalAlpha = 1;
   }
 
   function onMove(e) {
     const st = S.current, r = canvasRef.current.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
-    let hit: any = null, hd = 15; st.nodes.forEach((n) => { const d = Math.hypot(n.x - mx, n.y - my); if (d < hd) { hd = d; hit = n; } });
+    let hit: any = null, hd = 15;
+    // Bolt Optimization: Use indexed loop on mouse movement handler to eliminate callback closures
+    const nodes = st.nodes;
+    const numNodes = nodes.length;
+    for (let i = 0; i < numNodes; i++) {
+      const n = nodes[i];
+      const d = Math.hypot(n.x - mx, n.y - my);
+      if (d < hd) { hd = d; hit = n; }
+    }
     st.hover = hit ? hit.id : null;
     if (hit && hit.kind === 'agent' && hit.agent) setTip({ x: mx, y: my, name: hit.agent.name || hit.label, role: (hit.agent.role || '') + (isExecutingAgent(hit.agent) ? ' · ' + hit.agent.status : '') });
     else if (hit && hit.kind === 'model') setTip({ x: mx, y: my, name: hit.label, role: hit.model.detail });
