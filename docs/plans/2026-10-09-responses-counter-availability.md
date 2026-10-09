@@ -7,9 +7,10 @@
 - Branch/worktree: codex/responses-counter-availability-20261009,
   /workspace/jarvis-hub-responses-counter-availability.
 - Delivery: autonomous local development only; no inference or publication.
-- State: source frozen after verified RED, focused/integration GREEN and
-  independent production review.
-- Next action: local source commit, bounded collateral review and proof commit.
+- Tested source: 5fb7e86d882076683d34225f5d56489822bbf593.
+- State: local implementation, independent reviews and verification complete.
+- Next action: retain this checkpoint and select the next verified local gap
+  from a clean final head; no publication follows from this unit.
 
 ## Evidence and chosen contract
 
@@ -121,3 +122,8 @@ no Critical/Important issue; Ruff/diff pass. Canonical collection is 21,626
 backend (+87), with unchanged client counts 2,009/306 reused, 555 routes and
 18 agents. No full-suite repeat is claimed for this follow-up after the preceding
 full milestone; the current evidence is focused/integration plus collection.
+Four formerly-current pins are refreshed and two new H673 tests pinned; eight
+potential pins to unchanged existing test files remain untouched. All 226 row
+statuses and unrelated stale evidence are preserved. Independent collateral
+review, Hermes/status checks and frozen three-file hash comparison pass. Final
+proof and limits: docs/project-responses-counter-availability-20261009.md.
