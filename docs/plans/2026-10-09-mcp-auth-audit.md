@@ -31,3 +31,5 @@ empty entry, preserving genuine websearch failures. This checkpoint is also
 not a full-suite pass; the vocabulary correction and reviewed client descriptor
 will be verified together at the next combined milestone. JUnit:
 `/workspace/scratch/mcp-auth-audit-backend-corrected.xml`.
+
+Combined milestone (2026-10-09), verified source `c75e031`: full backend **21,032 passed, 37 skipped, zero failures/errors** out of 21,069 cases in 290.333 seconds. Exact-count and generated freshness gates pass. This later combined run includes the corrections described above; earlier checkpoints keep their recorded results. Scope, report locations and remaining limits: [integration proof](../project-media-integrity-integration-20261009.md).
