@@ -171,6 +171,21 @@ async def test_signed_cloud_completion_catalog_and_no_replay(cloud):
     assert len(rows) == 1 and rows[0]["cloud"] is True and rows[0]["available"] is True
     meta, data = read_catalog_blob(rows[0]["id"], cloud.root)
     assert meta["mime"] == "image/png" and data.startswith(b"\x89PNG")
+    assert meta["digest_status"] == "verified"
+    from agents.core.media_catalog import MediaCatalog
+    catalog_row = MediaCatalog(cloud.root / "media" / "catalog.json").get(rows[0]["id"])
+    assert catalog_row["sha256"] == meta["sha256"]
+    assert catalog_row["meta"]["sha256"] == meta["sha256"]
+    from pathlib import Path
+
+    from agents.core.artifact_store import sniff
+
+    changed = io.BytesIO()
+    Image.new("RGB", (1024, 1024), "red").save(changed, format="PNG")
+    assert sniff(changed.getvalue()) == "image/png"
+    Path(catalog_row["path"]).write_bytes(changed.getvalue())
+    with pytest.raises(ValueError, match="artifact_not_found"):
+        read_catalog_blob(rows[0]["id"], cloud.root)
     assert (await cloud.runtime.execute(task))["status"] == "refused"
     assert len(cloud.requests) == 1
     assert "fixture-credential" not in str(task.result) + str(task.payload)

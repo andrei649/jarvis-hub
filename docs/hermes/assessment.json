@@ -3963,7 +3963,7 @@
         },
         {
           "path": "agents/core/cloud_image_runtime.py",
-          "sha256": "f324732fb84aeb0f3be2574f5d84c0d926ff2d2220c07b63d55b4e85321e3db6"
+          "sha256": "77a4bbc04b2279cbf8cc65d778f1dd4d6322ff3b2508a00f4c9733917a08e1fc"
         },
         {
           "path": "agents/core/observability/capability_registry.py",
@@ -7545,8 +7545,8 @@
       "id": "H477",
       "row_sha256": "cc258d1932b68b0d1aa43dc26cddc3a07796ab758cdc5feec0a1d3cac36d089d",
       "status": "partial",
-      "summary": "2026-10-09 bounded discovery continuation: GET /v1/capabilities now exposes descriptor_schema=1 for the five mounted chat/session operations, their auth tiers, request/response schemas and runtime SSE media, session selection/resume semantics and the absence of POST keyed replay. Referenced component schemas resolve inside the descriptor. It separates server release from protocol_version=null and links existing readiness; no readiness probe, model/provider override or remote authority is added. Legacy GET /v1 remains HTML. Auth text describes the actual tier-specific credential predicate, including the revoke-without-sentinel restart residual and admin-only remote user-route restriction. DELETE permits orphaned-outcome cleanup with nullable backup. This supersedes the prior statement that no API contract descriptor exists, only for this narrow chat/session scope. Existing stale evidence outside the reviewed descriptor delta is deliberately not restamped; the whole row still needs broader re-review. The historical assessment below keeps its original scope and test dates.\n\nH477 re-reviewed against live code on 2026-09-18; the inherited 2026-09-07 \"missing\" verdict is wrong and last night's \"already equivalent\" triage is also wrong. Nerva does have a real capability-discovery surface, under /api/* not /v1/*: GET /api/capabilities (agents/core/routers/analytics.py:244, user_guard) returns capability_registry.snapshot() (agents/core/observability/capability_registry.py:509), whose build_records() (:480) merges seven sources — _missing_records (:193), _plugin_records (:127), _action_records (:235, every ACTION_CAPABILITY_MANIFESTS kind joined to kernel/registry.ACTION_REGISTRY), _acquired_records (:430), _tool_records (:314), _component_records (:364), _skill_records (:395) — each record carrying inputs/risk/requires/supports/verification/rollback plus a missing→seam→wired→verified→ga readiness state Hermes has no analogue for; GET /api/metrics/capabilities (analytics.py:227) is the open legacy twin. Skills enumerate at GET /skills (routers/skills.py:39) and /skills/imported (:493); tools at GET /api/toolrpc/tools (routers/mesh.py:170, from ToolRPCServer.tools(), tool_rpc.py:395 — a surface the triage missed); health at GET /healthz (routers/ops.py:42) + GET /readyz (:149) + GET /api/health/components (routers/status.py:68) + /status (:79) + /api/status (:113). Tests pin it: 95 passed, 1 skipped (the IPv6-stack case at tests/test_h2311_operability.py:758) across tests/test_capability_registry.py (11), test_capability_readiness_matrix.py (6), test_h27_capability_verification.py (11), test_route_auth_matrix.py (5), test_h2311_operability.py (38 + 1 skipped), test_hud_v2_parity.py (13), test_endpoints.py (11); the count moved from the 80 of 2026-09-18 because #1168 (+10) and #1177 (+5) added probe_bind port-diagnosis tests to test_h2311_operability.py — #1177's two additions pin serve.py's EACCES arm (the privileged-port sentence only below 1024, a symptom-plus-remedy message at or above it, exit 13 either way) and touch none of the discovery or health endpoints above. Re-checked on main at 6578cd3c after #1187 and #1188: the only cited file they touched is agents/web.py, where five added lines of Telegram pairing wiring in the lifespan shifted the ChatRequest, reasoning_scope, POST /chat and GET /v1 citations five lines later; no discovery, health, skills, toolset or model-routing surface changed, and the seven suites still give 95 passed, 1 skipped. Re-checked on the HEQ lot-1 head (origin/hermes/heq-lot1 at cbe66ce5): its agents/web.py change (H691 forwarded-proto middleware, the lifespan's trusted-proxy announce, a rate-limit exemption keyed on the real client host) moved the ChatRequest, POST /chat, reasoning_scope and GET /v1 citations 56 lines later and touched no discovery, health, skills, toolset or model-routing surface; H583's OpenRouter upstream-provider settings are global and leave ChatRequest unchanged. The seven suites give 94 passed, 2 skipped there: the extra skip is the EACCES privilege-drop case (tests/test_h2311_operability.py:602), whose uid-65534 child could not import serve from a checkout under a 0700 sandbox path, a premise skip rather than a failure. But it is not equivalent. Within the row's own narrowed scope (\"copy the discovery half only\"), /v1/toolsets has no counterpart — /api/capabilities lists individual tools, never toolset groups; the only group catalogue is job_toolsets.CATALOG (basic/files/terminal) exposed inside admin-guarded GET /api/jobs/doctor (autonomy/jobs_health.py:116) and scoped to jobs — and /api/capabilities answers \"what can the agent do\" while Hermes' /v1/capabilities also answers \"what does this API support\" (features/endpoints/auth/session-header/idempotency/browser-control contract), a block Nerva has nowhere; /openapi.json is served open and covers the endpoint list only incidentally. Outside that scope, four rolled-up children were never checked by the triage and three are absent: no browser-control registration at all (rg over agents/ for browser_control|controller_id|extension_control returns nothing; browser_transport.py is SSRF resolver pinning for in-process Chromium, not an external controller), no platform-event normalization (rg reaction|message_edited over agents/ hits only food-diary prose in agents/frigga/HEARTBEAT.md and agents/frigga/SOUL.md, no code; POST /api/channels/{id}/inbound is message ingress), and no per-request model/provider override (ChatRequest, agents/web.py:1057, is extra=\"forbid\" and takes only agent/reasoning/session_id — the reasoning third of the clause is satisfied via reasoning_scope at web.py:1256, model_routes precedence is not). POST /v1/chat/completions and POST /v1/responses are out of scope by the row's own rationale and governance note, not gaps: Nerva's governed chat is POST /chat (web.py:1215) through the kernel/session/approval path, which is what the row requires of any façade. Side note for whoever builds this: GET /v1 is already the legacy HUD HTML (web.py:1177), so a future /v1/* API namespace must be reconciled with it.",
-      "remaining": "Discovery half (the row's own scope), still owed: (1) a `/v1/toolsets` equivalent — `GET /api/capabilities` and `GET /api/toolrpc/tools` enumerate individual tools only; the toolset groups in `agents/core/job_toolsets.py` CATALOG (basic/files/terminal, with `available`) are reachable only inside admin-guarded `GET /api/jobs/doctor` (`agents/core/autonomy/jobs_health.py:116`) and are jobs-scoped, not the agent's platform toolsets with `enabled`/`configured`/expanded `tools`; (2) extend the now-delivered `/v1/capabilities` chat/session descriptor to any additional accepted contracts only when implemented; the descriptor schema is versioned, but there is no independent wire-protocol version or negotiated compatibility policy. The new descriptor is not a live readiness or browser-control guarantee.\n\nRolled-up children with no Nerva surface at all: `.api-browser-control` — no `POST /v1/browser-control/register`, no single-use TTL ticket, no controller websocket, no server-side controller capability allowlist (`rg 'browser_control|controller_id|extension_control'` over agents/ returns nothing; `agents/core/browser_transport.py` is SSRF resolver pinning for in-process Chromium); `.api-platform-events` — no normalization of platform-native reactions/edits (`rg 'reaction|message_edited|platform_event'` over agents/ returns no code, only food-diary prose in agents/frigga/*.md; `POST /api/channels/{channel_id}/inbound` is message ingress).\n\nPartially satisfied children: `.api-model-routing` — `ChatRequest` (`agents/web.py:1057`) is `extra=\"forbid\"` and accepts only `agent`/`reasoning`/`session_id`, so per-request `model`/`provider` and `model_routes` alias precedence (including the 400-on-provider-conflict rule) do not exist; only the `reasoning` override is governed and live (`agents/web.py:1256`). `.api-models` — no `/api/model/options` provider-aware picker payload with refresh/cache-bust semantics; `/api/models/local` and `/api/models/info` (`agents/core/routers/models_llm.py`) are both behind `admin_guard`. `.api-artifacts` — digest guarantees are subtype-specific: `BinaryArtifactStore.read` validates stored size, MIME and expected SHA-256 for `ba-*`; catalog `md-*` reads compute a digest of current bytes without a stored expected digest, and generated PNG delivery validates path/type/bounds without an expected digest comparison. These routes use the shared owner/user guard model; no per-credential tenant isolation is claimed. Expected-digest coverage for catalog/generated media and any wider accepted scope contract remain separate work.\n\nOut of scope by the row's own rationale, not gaps: `POST /v1/chat/completions` (explicitly refused) and `POST /v1/responses` (same chat-façade family; any façade must re-enter the governed `POST /chat` path at `agents/web.py:1215`).\n\nNamespace continuation: the new exact `GET /v1/capabilities` API coexists with the unchanged `GET /v1` legacy HTML; route and OpenAPI gates cover the addition.",
+      "summary": "2026-10-09 expected-digest continuation: new cloud-completion catalog rows carry their verified completion SHA-256. Catalog delivery/export freezes one selected row for path and expected digest, reads bounded MIME-valid bytes and refuses a mismatch; exports mark bound rows verified and legacy rows unbound. Strict optional-field validation rejects malformed stored/supplied hashes. Stable-ID retries retain the existing row without silent hash migration or removal. No new network dispatch, ownership boundary or local-producer binding is added. The 180-case focused union covers signed cloud completion, tampering, recovery, stable identity, export and legacy behavior; broad row equivalence remains unclaimed. 2026-10-09 bounded discovery continuation: GET /v1/capabilities now exposes descriptor_schema=1 for the five mounted chat/session operations, their auth tiers, request/response schemas and runtime SSE media, session selection/resume semantics and the absence of POST keyed replay. Referenced component schemas resolve inside the descriptor. It separates server release from protocol_version=null and links existing readiness; no readiness probe, model/provider override or remote authority is added. Legacy GET /v1 remains HTML. Auth text describes the actual tier-specific credential predicate, including the revoke-without-sentinel restart residual and admin-only remote user-route restriction. DELETE permits orphaned-outcome cleanup with nullable backup. This supersedes the prior statement that no API contract descriptor exists, only for this narrow chat/session scope. Existing stale evidence outside the reviewed descriptor delta is deliberately not restamped; the whole row still needs broader re-review. The historical assessment below keeps its original scope and test dates.\n\nH477 re-reviewed against live code on 2026-09-18; the inherited 2026-09-07 \"missing\" verdict is wrong and last night's \"already equivalent\" triage is also wrong. Nerva does have a real capability-discovery surface, under /api/* not /v1/*: GET /api/capabilities (agents/core/routers/analytics.py:244, user_guard) returns capability_registry.snapshot() (agents/core/observability/capability_registry.py:509), whose build_records() (:480) merges seven sources — _missing_records (:193), _plugin_records (:127), _action_records (:235, every ACTION_CAPABILITY_MANIFESTS kind joined to kernel/registry.ACTION_REGISTRY), _acquired_records (:430), _tool_records (:314), _component_records (:364), _skill_records (:395) — each record carrying inputs/risk/requires/supports/verification/rollback plus a missing→seam→wired→verified→ga readiness state Hermes has no analogue for; GET /api/metrics/capabilities (analytics.py:227) is the open legacy twin. Skills enumerate at GET /skills (routers/skills.py:39) and /skills/imported (:493); tools at GET /api/toolrpc/tools (routers/mesh.py:170, from ToolRPCServer.tools(), tool_rpc.py:395 — a surface the triage missed); health at GET /healthz (routers/ops.py:42) + GET /readyz (:149) + GET /api/health/components (routers/status.py:68) + /status (:79) + /api/status (:113). Tests pin it: 95 passed, 1 skipped (the IPv6-stack case at tests/test_h2311_operability.py:758) across tests/test_capability_registry.py (11), test_capability_readiness_matrix.py (6), test_h27_capability_verification.py (11), test_route_auth_matrix.py (5), test_h2311_operability.py (38 + 1 skipped), test_hud_v2_parity.py (13), test_endpoints.py (11); the count moved from the 80 of 2026-09-18 because #1168 (+10) and #1177 (+5) added probe_bind port-diagnosis tests to test_h2311_operability.py — #1177's two additions pin serve.py's EACCES arm (the privileged-port sentence only below 1024, a symptom-plus-remedy message at or above it, exit 13 either way) and touch none of the discovery or health endpoints above. Re-checked on main at 6578cd3c after #1187 and #1188: the only cited file they touched is agents/web.py, where five added lines of Telegram pairing wiring in the lifespan shifted the ChatRequest, reasoning_scope, POST /chat and GET /v1 citations five lines later; no discovery, health, skills, toolset or model-routing surface changed, and the seven suites still give 95 passed, 1 skipped. Re-checked on the HEQ lot-1 head (origin/hermes/heq-lot1 at cbe66ce5): its agents/web.py change (H691 forwarded-proto middleware, the lifespan's trusted-proxy announce, a rate-limit exemption keyed on the real client host) moved the ChatRequest, POST /chat, reasoning_scope and GET /v1 citations 56 lines later and touched no discovery, health, skills, toolset or model-routing surface; H583's OpenRouter upstream-provider settings are global and leave ChatRequest unchanged. The seven suites give 94 passed, 2 skipped there: the extra skip is the EACCES privilege-drop case (tests/test_h2311_operability.py:602), whose uid-65534 child could not import serve from a checkout under a 0700 sandbox path, a premise skip rather than a failure. But it is not equivalent. Within the row's own narrowed scope (\"copy the discovery half only\"), /v1/toolsets has no counterpart — /api/capabilities lists individual tools, never toolset groups; the only group catalogue is job_toolsets.CATALOG (basic/files/terminal) exposed inside admin-guarded GET /api/jobs/doctor (autonomy/jobs_health.py:116) and scoped to jobs — and /api/capabilities answers \"what can the agent do\" while Hermes' /v1/capabilities also answers \"what does this API support\" (features/endpoints/auth/session-header/idempotency/browser-control contract), a block Nerva has nowhere; /openapi.json is served open and covers the endpoint list only incidentally. Outside that scope, four rolled-up children were never checked by the triage and three are absent: no browser-control registration at all (rg over agents/ for browser_control|controller_id|extension_control returns nothing; browser_transport.py is SSRF resolver pinning for in-process Chromium, not an external controller), no platform-event normalization (rg reaction|message_edited over agents/ hits only food-diary prose in agents/frigga/HEARTBEAT.md and agents/frigga/SOUL.md, no code; POST /api/channels/{id}/inbound is message ingress), and no per-request model/provider override (ChatRequest, agents/web.py:1057, is extra=\"forbid\" and takes only agent/reasoning/session_id — the reasoning third of the clause is satisfied via reasoning_scope at web.py:1256, model_routes precedence is not). POST /v1/chat/completions and POST /v1/responses are out of scope by the row's own rationale and governance note, not gaps: Nerva's governed chat is POST /chat (web.py:1215) through the kernel/session/approval path, which is what the row requires of any façade. Side note for whoever builds this: GET /v1 is already the legacy HUD HTML (web.py:1177), so a future /v1/* API namespace must be reconciled with it.",
+      "remaining": "Discovery half (the row's own scope), still owed: (1) a `/v1/toolsets` equivalent — `GET /api/capabilities` and `GET /api/toolrpc/tools` enumerate individual tools only; the toolset groups in `agents/core/job_toolsets.py` CATALOG (basic/files/terminal, with `available`) are reachable only inside admin-guarded `GET /api/jobs/doctor` (`agents/core/autonomy/jobs_health.py:116`) and are jobs-scoped, not the agent's platform toolsets with `enabled`/`configured`/expanded `tools`; (2) extend the now-delivered `/v1/capabilities` chat/session descriptor to any additional accepted contracts only when implemented; the descriptor schema is versioned, but there is no independent wire-protocol version or negotiated compatibility policy. The new descriptor is not a live readiness or browser-control guarantee.\n\nRolled-up children with no Nerva surface at all: `.api-browser-control` — no `POST /v1/browser-control/register`, no single-use TTL ticket, no controller websocket, no server-side controller capability allowlist (`rg 'browser_control|controller_id|extension_control'` over agents/ returns nothing; `agents/core/browser_transport.py` is SSRF resolver pinning for in-process Chromium); `.api-platform-events` — no normalization of platform-native reactions/edits (`rg 'reaction|message_edited|platform_event'` over agents/ returns no code, only food-diary prose in agents/frigga/*.md; `POST /api/channels/{channel_id}/inbound` is message ingress).\n\nPartially satisfied children: `.api-model-routing` — `ChatRequest` (`agents/web.py:1057`) is `extra=\"forbid\"` and accepts only `agent`/`reasoning`/`session_id`, so per-request `model`/`provider` and `model_routes` alias precedence (including the 400-on-provider-conflict rule) do not exist; only the `reasoning` override is governed and live (`agents/web.py:1256`). `.api-models` — no `/api/model/options` provider-aware picker payload with refresh/cache-bust semantics; `/api/models/local` and `/api/models/info` (`agents/core/routers/models_llm.py`) are both behind `admin_guard`. `.api-artifacts` — digest guarantees are subtype-specific: `BinaryArtifactStore.read` validates stored size, MIME and expected SHA-256 for `ba-*`; new cloud-finalized catalog `md-*` records now persist the already-verified completion digest and compare it with exactly the bytes returned by catalog delivery/export. Legacy and general local-producer catalog rows stay unbound; stable-ID retries do not backfill them. Catalog export metadata distinguishes verified/unbound. Standalone generated PNG delivery validates path/type/bounds without an expected digest comparison. These routes use the shared owner/user guard model; no per-credential tenant isolation is claimed. Expected-digest binding for general local/legacy catalog producers, standalone generated IDs and any wider accepted scope contract remain separate work; raw blob responses and gallery controls do not expose the new export integrity status.\n\nOut of scope by the row's own rationale, not gaps: `POST /v1/chat/completions` (explicitly refused) and `POST /v1/responses` (same chat-façade family; any façade must re-enter the governed `POST /chat` path at `agents/web.py:1215`).\n\nNamespace continuation: the new exact `GET /v1/capabilities` API coexists with the unchanged `GET /v1` legacy HTML; route and OpenAPI gates cover the addition.",
       "evidence": [
         {
           "path": "agents/core/routers/analytics.py",
@@ -7642,7 +7642,19 @@
         },
         {
           "path": "agents/core/media_library.py",
-          "sha256": "17867ff837627e82b3bd9941bf73e70ea5d999646b0a0250f1b93f5793866ab2"
+          "sha256": "937dbe1a1d083bf17c6f8f3b7c942af02fcb9aeb9013532fd545e4341eb8e32b"
+        },
+        {
+          "path": "agents/core/media_catalog.py",
+          "sha256": "069d7c9bc9bd7e1a5575942073bc16d7af85d18fd4f1ee31533005eefeaac493"
+        },
+        {
+          "path": "agents/core/cloud_image_runtime.py",
+          "sha256": "77a4bbc04b2279cbf8cc65d778f1dd4d6322ff3b2508a00f4c9733917a08e1fc"
+        },
+        {
+          "path": "tests/test_media_catalog_digest.py",
+          "sha256": "3efd80dfea71d0ee6a7107074647687450e9ec9c55f8518c8f12b96f80b13205"
         }
       ]
     },
@@ -8880,7 +8892,7 @@
         },
         {
           "path": "agents/core/media_library.py",
-          "sha256": "17867ff837627e82b3bd9941bf73e70ea5d999646b0a0250f1b93f5793866ab2"
+          "sha256": "937dbe1a1d083bf17c6f8f3b7c942af02fcb9aeb9013532fd545e4341eb8e32b"
         },
         {
           "path": "agents/core/routers/artifact_store.py",
@@ -8908,7 +8920,7 @@
         },
         {
           "path": "agents/core/cloud_image_runtime.py",
-          "sha256": "f324732fb84aeb0f3be2574f5d84c0d926ff2d2220c07b63d55b4e85321e3db6"
+          "sha256": "77a4bbc04b2279cbf8cc65d778f1dd4d6322ff3b2508a00f4c9733917a08e1fc"
         },
         {
           "path": "agents/core/media_backends/openai_image.py",
@@ -8916,7 +8928,7 @@
         },
         {
           "path": "agents/core/media_catalog.py",
-          "sha256": "5465f6c049f27b6695978645ce8c6c59e9d6e6eeda6a5debb3166111107c9db3"
+          "sha256": "069d7c9bc9bd7e1a5575942073bc16d7af85d18fd4f1ee31533005eefeaac493"
         },
         {
           "path": "agents/core/routers/multimodal.py",
@@ -8924,7 +8936,7 @@
         },
         {
           "path": "tests/test_cloud_image.py",
-          "sha256": "e2ae6c9134995d878720a2c6e74c93381c0f9d714f96ac01a7437ea49fc06521"
+          "sha256": "8c2481e7bdec5d664361291dfe3698d2648ba47ef84c5fea5428e2f843a8d850"
         },
         {
           "path": "docs/cloud-image-generation.md",
@@ -9186,7 +9198,7 @@
         },
         {
           "path": "agents/core/media_library.py",
-          "sha256": "17867ff837627e82b3bd9941bf73e70ea5d999646b0a0250f1b93f5793866ab2"
+          "sha256": "937dbe1a1d083bf17c6f8f3b7c942af02fcb9aeb9013532fd545e4341eb8e32b"
         },
         {
           "path": "agents/core/routers/artifact_store.py",
@@ -9246,7 +9258,7 @@
         },
         {
           "path": "agents/core/cloud_image_runtime.py",
-          "sha256": "f324732fb84aeb0f3be2574f5d84c0d926ff2d2220c07b63d55b4e85321e3db6"
+          "sha256": "77a4bbc04b2279cbf8cc65d778f1dd4d6322ff3b2508a00f4c9733917a08e1fc"
         },
         {
           "path": "agents/core/media_backends/openai_image.py",
@@ -9254,7 +9266,7 @@
         },
         {
           "path": "agents/core/media_catalog.py",
-          "sha256": "5465f6c049f27b6695978645ce8c6c59e9d6e6eeda6a5debb3166111107c9db3"
+          "sha256": "069d7c9bc9bd7e1a5575942073bc16d7af85d18fd4f1ee31533005eefeaac493"
         },
         {
           "path": "agents/core/routers/multimodal.py",
@@ -9262,7 +9274,7 @@
         },
         {
           "path": "tests/test_cloud_image.py",
-          "sha256": "e2ae6c9134995d878720a2c6e74c93381c0f9d714f96ac01a7437ea49fc06521"
+          "sha256": "8c2481e7bdec5d664361291dfe3698d2648ba47ef84c5fea5428e2f843a8d850"
         },
         {
           "path": "docs/cloud-image-generation.md",
@@ -9299,7 +9311,7 @@
         },
         {
           "path": "agents/core/media_catalog.py",
-          "sha256": "5465f6c049f27b6695978645ce8c6c59e9d6e6eeda6a5debb3166111107c9db3"
+          "sha256": "069d7c9bc9bd7e1a5575942073bc16d7af85d18fd4f1ee31533005eefeaac493"
         },
         {
           "path": "agents/core/media_export.py",
@@ -9315,7 +9327,7 @@
         },
         {
           "path": "agents/core/media_library.py",
-          "sha256": "17867ff837627e82b3bd9941bf73e70ea5d999646b0a0250f1b93f5793866ab2"
+          "sha256": "937dbe1a1d083bf17c6f8f3b7c942af02fcb9aeb9013532fd545e4341eb8e32b"
         },
         {
           "path": "agents/core/routers/artifact_store.py",

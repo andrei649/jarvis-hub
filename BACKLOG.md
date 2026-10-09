@@ -1961,6 +1961,8 @@
 
 - 2026-10-09 H477 local discovery continuation: authenticated `GET /v1/capabilities` describes the existing five chat/session contracts, schemas, actual SSE media, auth tiers and retry/session limitations. It remains separate from live readiness and the legacy `/v1` page. Toolset discovery, broader accepted API children and artifact subtype integrity remain partial; this is not a whole-row equivalence claim. See [descriptor evidence](docs/plans/2026-10-09-client-protocol-discovery.md).
 
+- 2026-10-09 H477 local media-integrity continuation: newly finalized cloud-image catalog records retain the already-verified completion SHA-256. Delivery and export through `md-*` compare that expected digest against the same returned bytes; legacy and general local-producer rows stay explicitly unbound. Stable-ID retries do not silently migrate old rows. `ba-*` keeps its existing digest validation; standalone generated IDs remain separate. This narrows the artifact gap without closing H477. See [catalog integrity evidence](docs/plans/2026-10-09-media-catalog-digest.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
   Reassess inherited judgments, finish the full accepted

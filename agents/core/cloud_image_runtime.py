@@ -346,6 +346,7 @@ class CloudImageRuntime:
                     backend="openai:gpt-image-1.5",
                     cloud=True,
                     record_id="md-" + hashlib.sha256(_task_binding(task).encode()).hexdigest()[:12],
+                    sha256=done["sha256"],
                     meta={"task_id": task.id, "sha256": done["sha256"]},
                 )
                 done["catalog_id"] = row["id"]

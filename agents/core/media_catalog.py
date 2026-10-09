@@ -11,7 +11,7 @@ generation path is byte-for-byte unchanged.
 
 Item shape (JSON-safe)::
 
-    {id, kind, prompt, path, backend, cloud, created_at, tags, meta}
+    {id, kind, prompt, path, backend, cloud, created_at, tags, meta, sha256?}
 
 ``kind`` is validated against ``media_gen.KINDS`` so the catalog can't drift from
 what the generator actually produces.
@@ -47,6 +47,12 @@ _MAX_TAG_CHARS = 64
 _MAX_META_KEYS = 32
 _MAX_META_KEY_CHARS = 64
 _MAX_META_BYTES = 16_384
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def _valid_sha256(value: object) -> bool:
+    """An expected digest is a canonical value, never a caller-coerced label."""
+    return type(value) is str and _SHA256.fullmatch(value) is not None
 
 
 def _created_at(item: dict) -> float:
@@ -98,6 +104,8 @@ class MediaCatalog:
             if not isinstance(value, str) or len(value) > limit:
                 raise ValueError("catalog invalid record")
         if "cloud" in normalized and not isinstance(normalized["cloud"], bool):
+            raise ValueError("catalog invalid record")
+        if "sha256" in normalized and not _valid_sha256(normalized["sha256"]):
             raise ValueError("catalog invalid record")
         tags = normalized.get("tags", [])
         if (
@@ -219,6 +227,7 @@ class MediaCatalog:
         tags: list[str] | None = None,
         meta: dict | None = None,
         record_id: str | None = None,
+        sha256: str | None = None,
     ) -> dict:
         """Catalog one generated media item. ``now`` is the caller's clock (kept
         injectable for tests). Raises ``ValueError`` for an unknown ``kind``."""
@@ -235,6 +244,8 @@ class MediaCatalog:
         )
         if record_id is not None and (not isinstance(record_id, str) or not re.fullmatch(r"md-[a-f0-9]{12}", record_id)):
             raise ValueError("invalid catalog identity")
+        if sha256 is not None and not _valid_sha256(sha256):
+            raise ValueError("invalid catalog digest")
         raw_item = {
             "id": record_id or "md-" + uuid.uuid4().hex[:12],
             "kind": kind,
@@ -246,6 +257,8 @@ class MediaCatalog:
             "tags": bounded_tags,
             "meta": bounded_meta,
         }
+        if sha256 is not None:
+            raw_item["sha256"] = sha256
         if len(self._encoded_json(raw_item, label="item")) > _MAX_ITEM_BYTES:
             raise ValueError("item size limit exceeded")
         item = self._validated_record(raw_item)
@@ -254,7 +267,15 @@ class MediaCatalog:
             items = self._read(strict=True)
             existing = next((row for row in items if row['id'] == item['id']), None)
             if existing is not None:
-                if existing != item:
+                # A stable-ID retry cannot silently backfill a legacy row or
+                # remove a previously pinned digest. Compare other fields only
+                # when either side lacks the optional expected hash.
+                if 'sha256' not in existing or 'sha256' not in item:
+                    same = ({k: v for k, v in existing.items() if k != 'sha256'}
+                            == {k: v for k, v in item.items() if k != 'sha256'})
+                else:
+                    same = existing == item
+                if not same:
                     raise ValueError('catalog identity collision')
                 return dict(existing)
             items.append(item)
