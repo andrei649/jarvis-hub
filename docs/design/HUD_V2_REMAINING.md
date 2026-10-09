@@ -32,6 +32,12 @@ Role configuration is shown beside Model Fingerprints through authenticated
 late results, refreshes, failed reads and browser-throttled timers; this is not a
 claim of a live model or native mobile acceptance run.
 
+H18.29 native candidate (2026-10-09): the existing Approvals cards now show the
+optional advisory opinion and pending state, with manual pull-to-refresh. A separate
+read-only model roles view names configuration and says connectivity has not been
+checked. Automatic native polling is deferred; #1233 decision-lifecycle integration,
+physical-device review and live hub/judge acceptance remain open.
+
 H277 video continuation (2026-10-02): the default-off `video_analyze` tool uses the
 existing Decision Inbox approval surface. Security Posture has an independent
 Video analysis consent row and independent Video fallback 1–4 controls for configured
