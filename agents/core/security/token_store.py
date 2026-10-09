@@ -99,7 +99,7 @@ class TokenStore:
 
             submit_auth_event(kind, tier=scope, reason=reason, count=count,
                               revoke_env=revoke_env, sink=self._audit_sink)
-        except Exception:
+        except Exception:  # nosec B110 - audit failure must not undo committed token changes.
             # A committed token mutation must not be undone by telemetry.
             pass
 

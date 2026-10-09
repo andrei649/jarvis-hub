@@ -8502,7 +8502,7 @@
         },
         {
           "path": "agents/core/security/types.py",
-          "sha256": "d0eb7262d72e2f5be26be6f508358009fc5bb59789bfabfd766b8b0d022f2d70"
+          "sha256": "ea78291a0963d8a1ba3c81f4151e9ba28f782f6e178c31e4d7b0707bae0434c3"
         },
         {
           "path": "agents/web.py",
@@ -8510,7 +8510,7 @@
         },
         {
           "path": "agents/core/security/token_store.py",
-          "sha256": "1f1b5f61f04c986ef1daa4f15bccba135e27119d82ba2681c8cb0bac59d2ecd5"
+          "sha256": "884756c2fb161bfd895d76e2b3640ed5a076364029f19b6bba6064037fcf69f0"
         },
         {
           "path": "agents/core/routers/admin.py",

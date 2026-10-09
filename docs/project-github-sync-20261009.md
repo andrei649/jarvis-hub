@@ -72,6 +72,25 @@ the frontend `typecheck` and `typecheck:e2e` scripts plus
 `tests/test_web_asset_manifest_integrity.py` and `tests/test_hud_v2_parity.py`.
 No physical-device, live-provider or new browser acceptance run is claimed.
 
+## Publication security-check follow-up
+
+The first published head, `648c90934f02ad6038d8582d974324074b014a8e`, failed
+GitHub's Bandit gate. Reproduction with the workflow's exact Bandit 1.9.4 and
+unchanged repository baseline identified four findings: three fixed audit-event
+labels mistaken for passwords (B105) and the intentional post-commit telemetry
+exception handler (B110). Specific inline annotations explain each case; the
+baseline and workflow remain unchanged. Entire-module AST comparison confirms
+the two Python files retain identical runtime behavior and line coordinates.
+Only their two previously fresh H512 evidence hashes were refreshed; all 226
+assessment identities and statuses remain unchanged.
+
+The exact Bandit gate now exits zero with no new findings or scan errors.
+The five existing auth-event, token-lifecycle, admin-audit, audit-chain and MCP-auth
+test modules pass **63/63**, with no skipped cases. Ruff, Hermes and generated
+status checks also pass. This comment-only follow-up does not claim another full
+backend run. GitHub checks on the follow-up commit remain separate from this
+local verification.
+
 Local logs and structured reports are retained under
 `/workspace/scratch/github-development-sync-*`; the backend result is
 `/workspace/scratch/pdf-text-coverage-backend-final.xml`. GitHub CI must evaluate
