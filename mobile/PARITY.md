@@ -29,7 +29,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 |---------|---------------------|:-------:|:------:|------|
 | Chat (streaming) | `POST /chat/stream`, `POST /chat` | ✅ | ✅ | H18.1 |
 
-| Selected Ollama image turns and active history | owner GET active-images and POST selected-prepare/selected-chat under /api/vlm/composer | ✅ all active HUD composers, exact model/session review and stale-response fences | ⬜ selected route review, active-history choices and concrete session binding | H18.31 / H277 |
+| Selected Ollama image turns and active history | owner GET active-images and POST selected-prepare/selected-chat under /api/vlm/composer | ✅ all active HUD composers, exact model/session review and stale-response fences | 🟡 local candidate: frozen picker snapshots, exact session/agent/model review, explicit send, active-image choices and durable unknown-delivery handling; device/live-Hub acceptance open | H18.31 / H277 |
 
 | Owner quick commands | existing chat slash dispatch and Admin commands.quick_commands JSON | ✅ existing Admin configuration, /help and approval tasks | ✅ typed aliases/fixed commands use the same governed chat path; native live catalog implemented locally, device acceptance open | H078 / H18.26 |
 

@@ -157,3 +157,32 @@ test('a synchronous transport error does not leave the conversation busy', async
   expect(chat.state.sending).toBe(false);
   expect(chat.state.messages.at(-1)).toMatchObject({ error: true, pending: false });
 });
+
+test('selected image turn takes the same gate as streaming text and commits only scoped text', async () => {
+  const chat = await opened();
+  chat.resume('selected', turns);
+  const revision = chat.revision;
+  const turn = chat.beginSelectedImage('selected', revision);
+  expect(turn).not.toBeNull();
+  expect(chat.send('Interleaving text', 'jarvis')).toBe(false);
+  expect(chat.beginSelectedImage('selected', revision)).toBeNull();
+  expect(turn!.commit('Exact prompt', 'jarvis', 2, 'llava', 'Answer')).toBe(true);
+  expect(chat.state.sending).toBe(false);
+  expect(chat.state.messages.slice(-2).map(m => m.text)).toEqual(['Exact prompt\n[2 images attached]', 'Answer']);
+  expect(saveConversation).toHaveBeenLastCalledWith('connection-1', expect.objectContaining({ sessionId: 'selected' }));
+});
+
+test('stop or history selection revokes a selected image callback and aborts its request', async () => {
+  const chat = await opened();
+  chat.resume('one', turns);
+  const first = chat.beginSelectedImage('one', chat.revision)!;
+  chat.stop();
+  expect(first.signal.aborted).toBe(true);
+  expect(first.commit('Question', 'jarvis', 1, 'llava', 'Too late')).toBe(false);
+  const second = chat.beginSelectedImage('one', chat.revision)!;
+  chat.resume('two', turns);
+  expect(second.signal.aborted).toBe(true);
+  expect(second.commit('Question', 'jarvis', 1, 'llava', 'Too late')).toBe(false);
+  expect(chat.state.sessionId).toBe('two');
+  expect(chat.state.messages).toHaveLength(2);
+});

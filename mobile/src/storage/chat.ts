@@ -14,7 +14,10 @@ function settledMessages(value: unknown): ChatMessage[] {
   if (!Array.isArray(value)) return [];
   return value.filter((m): m is ChatMessage => m && typeof m === 'object'
     && typeof m.id === 'string' && typeof m.text === 'string'
-    && (m.role === 'user' || m.role === 'assistant') && !m.pending).slice(-MAX_MESSAGES);
+    && (m.role === 'user' || m.role === 'assistant') && !m.pending).slice(-MAX_MESSAGES)
+    .map(m => ({ id: m.id, role: m.role, text: m.text,
+      ...(typeof m.agent === 'string' ? { agent: m.agent } : {}),
+      ...(m.error === true ? { error: true } : {}) }));
 }
 
 /** A connection's opaque scope binds history without copying its credentials. */
@@ -47,7 +50,7 @@ export async function loadHistory(): Promise<ChatMessage[]> {
     const raw = await AsyncStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed as ChatMessage[];
+      if (Array.isArray(parsed)) return settledMessages(parsed);
     }
   } catch {
     // Corrupt/unavailable storage — start fresh.
@@ -57,7 +60,7 @@ export async function loadHistory(): Promise<ChatMessage[]> {
 
 export async function saveHistory(messages: ChatMessage[]): Promise<void> {
   // Never persist in-flight (streaming) messages, and cap the stored thread.
-  const settled = messages.filter((m) => !m.pending).slice(-MAX_MESSAGES);
+  const settled = settledMessages(messages);
   try {
     await AsyncStorage.setItem(KEY, JSON.stringify(settled));
   } catch {

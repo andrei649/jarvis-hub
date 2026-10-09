@@ -17,6 +17,7 @@ import { MessageBubble } from '../components/MessageBubble';
 import { SessionsModal } from '../components/SessionsModal';
 import { VoiceOrb } from '../components/VoiceOrb';
 import { PushToTalk } from '../components/PushToTalk';
+import { SelectedImages } from '../components/SelectedImages';
 import { useServer } from '../context/ServerContext';
 import { Conversation, type ConversationState } from '../chat/conversation';
 import { DEFAULT_PREFS, loadPrefs, savePrefs } from '../storage/prefs';
@@ -54,16 +55,25 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const speech = useSyncExternalStore(subscribeSpeech, getSpeechState, getSpeechState);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [commandsOpen, setCommandsOpen] = useState(false);
+  const [selectedOpen, setSelectedOpen] = useState(false);
+  const [interactionEpoch, setInteractionEpoch] = useState(0);
   const [briefing, setBriefing] = useState({ open: false, epoch: 0 });
   const [dictatedLine, setDictatedLine] = useState<{ context: string; text: string | null }>({ context: '', text: null });
   const speechGeneration = useRef(0);
-  const dictationContext = JSON.stringify([chatScope, connectionEpoch, state.sessionId, agent, briefing.epoch, briefing.open]);
+  const dictationContext = JSON.stringify([chatScope, connectionEpoch, state.sessionId, agent,
+    briefing.epoch, briefing.open, interactionEpoch, commandsOpen, selectedOpen]);
   const currentDictationContext = useRef(dictationContext);
   currentDictationContext.current = dictationContext;
   const commandContext = JSON.stringify([chatScope, connectionEpoch, state.sessionId, agent]);
-  const dictationDisabled = sending || !state.ready || sessionsOpen || commandsOpen || speakingId !== null;
+  const dictationDisabled = sending || !state.ready || sessionsOpen || commandsOpen || selectedOpen || speakingId !== null;
   const canAcceptDictation = useRef(false);
   canAcceptDictation.current = !dictationDisabled;
+  const revokeDictation = useCallback(() => {
+    // Fence callbacks synchronously, before React commits a mode change.
+    currentDictationContext.current = '';
+    canAcceptDictation.current = false;
+    setInteractionEpoch(value => value + 1);
+  }, []);
   const [dictationSnapshot, setDictationSnapshot] = useState({ context: '', state: { status: 'off' } as DictationState, active: false });
   const dictationRef = useRef(dictationSnapshot);
   const dictation = dictationSnapshot.context === dictationContext ? dictationSnapshot : null;
@@ -98,6 +108,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     setSnapshot({ scope: chatScope, state: chat.state });
     setSessionsOpen(false);
     setCommandsOpen(false);
+    setSelectedOpen(false);
     setSpeakingId(null);
     void chat.hydrate();
     return () => {
@@ -114,14 +125,17 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   }, [chatScope, connectionEpoch]);
 
   const changeBriefing = useCallback((open: boolean) => {
+    revokeDictation();
+    commandsOpenContext.current = '';
     speechGeneration.current++;
     stopSpeaking();
     setSpeakingId(null);
     setSessionsOpen(false);
     setCommandsOpen(false);
+    setSelectedOpen(false);
     setDictatedLine({ context: '', text: null });
     setBriefing(previous => ({ open, epoch: previous.epoch + 1 }));
-  }, []);
+  }, [revokeDictation]);
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
@@ -129,19 +143,45 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   useEffect(scrollToEnd, [messages, scrollToEnd]);
 
   const changeAgent = useCallback((id: string) => {
+    revokeDictation();
+    commandsOpenContext.current = '';
     speechGeneration.current++;
     stopSpeaking();
     setSpeakingId(null);
     setCommandsOpen(false);
+    setSelectedOpen(false);
     setAgent(id);
     savePrefs({ agent: id });
-  }, []);
+  }, [revokeDictation]);
 
   const openCommands = useCallback(() => {
+    revokeDictation();
+    speechGeneration.current++;
+    stopSpeaking();
+    setSpeakingId(null);
+    setSelectedOpen(false);
     commandsOpenVersion.current = draftVersion.current;
     commandsOpenContext.current = commandContext;
     setCommandsOpen(true);
-  }, [commandContext]);
+  }, [commandContext, revokeDictation]);
+  const closeCommands = useCallback(() => {
+    revokeDictation();
+    commandsOpenContext.current = '';
+    setCommandsOpen(false);
+  }, [revokeDictation]);
+  const toggleImages = useCallback(() => {
+    revokeDictation();
+    commandsOpenContext.current = '';
+    speechGeneration.current++;
+    stopSpeaking();
+    setSpeakingId(null);
+    setCommandsOpen(false);
+    setSelectedOpen(value => !value);
+  }, [revokeDictation]);
+  const closeImages = useCallback(() => {
+    revokeDictation();
+    setSelectedOpen(false);
+  }, [revokeDictation]);
   const chooseCommand = useCallback((command: string) => {
     // A user can still edit the composer while a modal is open. Keep that newer draft.
     if (commandContext === commandsOpenContext.current && draftVersion.current === commandsOpenVersion.current) {
@@ -161,13 +201,16 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
 
   const newChat = useCallback(() => {
     if (!configured || conversation.current?.scope !== chatScope) return;
+    revokeDictation();
+    commandsOpenContext.current = '';
     speechGeneration.current++;
     stopSpeaking();
     setSpeakingId(null);
     setCommandsOpen(false);
+    setSelectedOpen(false);
     // Only a successful governed /new response changes the transcript and session.
     conversation.current.chat.send('/new', agent);
-  }, [agent, configured, chatScope]);
+  }, [agent, configured, chatScope, revokeDictation]);
 
   const handleSpeak = useCallback(
     (m: ChatMessage) => {
@@ -211,12 +254,15 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
 
   const onResumed = useCallback((sid: string, turns: HistoryTurn[]) => {
     if (conversation.current?.scope !== chatScope) return;
+    revokeDictation();
+    commandsOpenContext.current = '';
     speechGeneration.current++;
     stopSpeaking();
     setSpeakingId(null);
     setCommandsOpen(false);
+    setSelectedOpen(false);
     conversation.current.chat.resume(sid, turns);
-  }, [chatScope]);
+  }, [chatScope, revokeDictation]);
 
   if (!configured) {
     return (
@@ -254,8 +300,12 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
             <Text style={styles.toolBtnText}>Briefing</Text>
           </Pressable>
           <Pressable style={styles.toolBtn} onPress={openCommands} hitSlop={6}
-            disabled={!state.ready || sending || !!dictation?.active} accessibilityLabel="Browse chat commands">
-            <Text style={[styles.toolBtnText, (!state.ready || sending || !!dictation?.active) && styles.toolBtnDisabled]}>Commands</Text>
+            disabled={!state.ready || sending} accessibilityLabel="Browse chat commands">
+            <Text style={[styles.toolBtnText, (!state.ready || sending) && styles.toolBtnDisabled]}>Commands</Text>
+          </Pressable>
+          <Pressable style={styles.toolBtn} onPress={toggleImages}
+            disabled={!state.ready || sending} accessibilityLabel="Selected images" hitSlop={6}>
+            <Text style={[styles.toolBtnText, (!state.ready || sending) && styles.toolBtnDisabled]}>Images</Text>
           </Pressable>
           <Pressable style={styles.toolBtn} onPress={() => setSessionsOpen(true)} hitSlop={6}>
             <Text style={styles.toolBtnText}>History</Text>
@@ -296,6 +346,12 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         }
       />
 
+      {selectedOpen && conversation.current?.scope === chatScope ? <SelectedImages
+        key={`${chatScope}:${connectionEpoch}:${state.sessionId ?? 'none'}:${agent}`}
+        config={config} scope={chatScope} connectionEpoch={connectionEpoch} sessionId={state.sessionId}
+        agent={agent} chat={conversation.current.chat} sending={sending}
+        onClose={closeImages} onInspectHistory={() => setSessionsOpen(true)} /> : null}
+
       <View style={styles.inputBar}>
         <TextInput
           style={styles.input}
@@ -326,7 +382,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
       {dictationControl}
 
       <SessionsModal visible={sessionsOpen} onClose={() => setSessionsOpen(false)} onResumed={onResumed} />
-      <CommandsModal visible={commandsOpen} onClose={() => setCommandsOpen(false)} onChoose={chooseCommand} />
+      <CommandsModal visible={commandsOpen} onClose={closeCommands} onChoose={chooseCommand} />
     </KeyboardAvoidingView>
   );
 }

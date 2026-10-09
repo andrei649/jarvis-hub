@@ -51,3 +51,12 @@ test('writes serialize so an older slow write cannot replace the selected sessio
   await Promise.all([first, next]);
   expect(JSON.parse(jest.mocked(AsyncStorage.setItem).mock.calls[1][1]).sessionId).toBe('new');
 });
+
+test('settled chat persistence allowlists text fields and drops image bytes or handles', async () => {
+  await saveConversation('scope', { sessionId: 'session', messages: [{ id: 'm', role: 'user', text: 'Question',
+    imageBytes: 'secret-pixels', activeImageHandle: 'opaque-handle' } as any] });
+  const raw = jest.mocked(AsyncStorage.setItem).mock.calls.at(-1)![1];
+  expect(raw).not.toContain('secret-pixels');
+  expect(raw).not.toContain('opaque-handle');
+  expect(JSON.parse(raw).messages).toEqual([{ id: 'm', role: 'user', text: 'Question' }]);
+});

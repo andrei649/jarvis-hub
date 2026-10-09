@@ -21,6 +21,8 @@ export class Conversation {
   private active = true;
   private cancel: (() => void) | null = null;
 
+  get revision(): number { return this.epoch; }
+
   constructor(private config: ServerConfig, private scope: string,
     private changed: (state: ConversationState) => void) {}
 
@@ -59,6 +61,38 @@ export class Conversation {
   dispose() {
     this.active = false;
     this.invalidate();
+  }
+
+  /** The selected-image sender shares the text turn lock and epoch. No image bytes enter state. */
+  beginSelectedImage(sessionId: string, expectedRevision: number): {
+    signal: AbortSignal; current: () => boolean; release: () => void; cancel: () => void;
+    commit: (prompt: string, agent: string, count: number, model: string, answer: string) => boolean;
+  } | null {
+    if (!this.active || !this.state.ready || this.state.sending || !validId(sessionId)
+      || this.state.sessionId !== sessionId || this.epoch !== expectedRevision) return null;
+    this.invalidate();
+    const epoch = this.epoch;
+    const controller = new AbortController();
+    this.cancel = () => controller.abort();
+    const current = () => this.active && this.epoch === epoch && this.state.sessionId === sessionId;
+    this.publish({ sending: true });
+    const release = () => {
+      if (!current()) return;
+      this.cancel = null;
+      this.publish({ sending: false });
+    };
+    const commit = (prompt: string, agent: string, count: number, _model: string, answer: string) => {
+      if (!current() || !this.state.sending || !prompt.trim() || !answer.trim()
+        || !Number.isInteger(count) || count < 1 || count > 8) return false;
+      this.cancel = null;
+      const marker = count === 1 ? 'image' : 'images';
+      this.publish({ sending: false, messages: [...this.state.messages,
+        { id: nextId(), role: 'user', text: `${prompt}\n[${count} ${marker} attached]` },
+        { id: nextId(), role: 'assistant', text: answer, agent }] }, true);
+      return true;
+    };
+    const cancel = () => { if (current()) this.stop(); };
+    return { signal: controller.signal, current, release, cancel, commit };
   }
 
   send(message: string, agent: string): boolean {
