@@ -333,3 +333,5 @@ the decorative `--ink-3` token. It changes no native API or interaction; native
 screens use their own theme and require separate contrast/device evidence. See
 `docs/hud-muted-text-contrast-20261009.md` at the repository root for measured
 browser scope and exclusions; no full native accessibility claim is made.
+
+Browser accessibility readiness (2026-10-09): the HUD Admin EstopCard exposes its pending state to assistive technology and its browser scan. This changes no native endpoint or control; native device accessibility remains separately unverified.

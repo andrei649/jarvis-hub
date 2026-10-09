@@ -6219,6 +6219,14 @@ three times as much**, which is the more useful fact:
       then `nodes` and `pending` are recorded per scan so a short scan is visible in the artifact
       rather than silently counted as coverage.
 
+      **Local EstopCard slice 2026-10-09:** the card exposes explicit pending/ready/unavailable
+      state and `aria-busy`; the Admin walk waits for the card to settle before its DOM-quiet/axe
+      steps. A legitimate explicit Admin `ModeEmpty` surface remains recorded as empty, while
+      a mounted Admin surface with a missing marker or a pending request cannot pass that wait.
+      This covers only the EstopCard request. Other Admin feeds and other modes still need their
+      own readiness signals; the row remains open. See
+      [scope and verification](docs/plans/2026-10-09-admin-estop-readiness.md).
+
 - [x] ✅ **The blind spot is now measured, not estimated — `frontend/e2e/contrast.spec.ts` (+3).**
       The row above says the failures are "invisible to axe". That was diagnosed from a tally of
       `incomplete` nodes, which counts what axe *declined* to judge — it does not say what the

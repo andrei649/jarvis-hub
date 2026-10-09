@@ -33,7 +33,7 @@
    Threshold and artifact discipline match a11y.spec.ts: gate on `critical` and `serious`,
    write the full result — violations AND `incomplete`, which is where axe parks contrast it
    could not resolve over a gradient — to e2e/artifacts/ for the human pass. */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
@@ -73,9 +73,43 @@ const ALL_MODE_COUNT = MODES.length + RAIL_ONLY.length;
    Every assertion in this file stayed green through both. 1600ms clears the observed gaps with
    margin; it is a mitigation and not a proof, because no DOM-quiescence heuristic can see an
    outstanding fetch — `nodes` is recorded per scan so a short scan is visible in the artifact
-   after the fact. Closing this properly means a readiness signal per surface, which is its own
-   slice and is written up in BACKLOG.md. */
+   after the fact. Closing this across every mode needs readiness signals for its async sources;
+   the Admin EstopCard wait below covers only that card's request. */
 const QUIET_MS = 1600;
+
+type AdminEstopOutcome = 'ready' | 'unavailable' | 'empty';
+
+/** Admin's EstopCard has its own request lifecycle; DOM quiet alone cannot see it. */
+async function waitForAdminEstopReadiness(page: Page, timeoutMs = 25_000): Promise<AdminEstopOutcome> {
+  let observed = 'missing';
+  await expect.poll(async () => {
+    observed = await page.evaluate(() => {
+      const rail = document.querySelector('.rail-btn.active .rl');
+      const wz = document.querySelector('.workzone');
+      if (rail?.textContent?.trim().toLowerCase() !== 'admin' || !wz) return 'wrong-mode';
+      const card = wz.querySelector('[data-estop-readiness]');
+      if (card) {
+        const state = card.getAttribute('data-estop-readiness');
+        if (card.getAttribute('aria-busy') !== 'false') return 'pending';
+        return state === 'ready' || state === 'unavailable' ? state : 'pending';
+      }
+      // app.tsx ModeEmpty is a legitimate live Admin surface when ADMIN has no
+      // live mark. Match its Admin heading, backend-empty copy, and demo action;
+      // an actual Admin panel missing its Estop marker must never pass this wait.
+      const panel = wz.querySelector(':scope > .panel');
+      const title = panel?.querySelector(':scope > div')?.textContent?.trim();
+      const empty = title === 'ADMIN'
+        && panel?.textContent?.includes('No live data from the backend for this view yet.')
+        && panel?.querySelector('.tool-btn')?.textContent?.includes('enable DEMO');
+      return empty ? 'empty' : 'missing-marker';
+    });
+    return observed;
+  }, {
+    message: 'Admin must show explicit ModeEmpty or a settled EstopCard before axe',
+    timeout: timeoutMs,
+  }).toMatch(/^(ready|unavailable|empty)$/);
+  return observed as AdminEstopOutcome;
+}
 
 /* One caveat that belongs next to the list rather than in a commit message. `projects` does not
    go through the demo path at all: `app.tsx:604` returns `<ProjectsMode t={t} />` BEFORE the
@@ -97,7 +131,8 @@ const VIEWPORTS = [
 
 type ModeScan = {
   mode: string; via: 'hotkey' | 'rail'; rail: string | null; empty: boolean; nodes: number;
-  scrollY: number; pending: boolean; blocking: string[]; incomplete: number;
+  scrollY: number; pending: boolean; adminEstop: AdminEstopOutcome | null;
+  blocking: string[]; incomplete: number;
   unreported: string[];
 };
 
@@ -225,6 +260,11 @@ test.describe('HUD mode surfaces', () => {
           // than trusted.
           await page.evaluate(() => window.scrollTo(0, 0));
 
+          // This is a card-level completion proof, not a declaration that every
+          // Admin feed has settled. Failure/unavailability is itself a rendered
+          // settled state; a pending request must fail this wait before axe runs.
+          let adminEstop = name === 'admin' ? await waitForAdminEstopReadiness(page) : null;
+
           // Not a bare sleep: wait for the DOM to stop changing. What that buys, stated exactly,
           // because the previous wording ("so a slow runner scans the same thing a fast one
           // does") claimed more than the predicate delivers — under enough latency a slow runner
@@ -241,16 +281,17 @@ test.describe('HUD mode surfaces', () => {
             // QUIET_MS is a Node-side constant and this predicate runs IN THE PAGE, so it has to
             // travel as an argument; referencing it directly throws ReferenceError at runtime.
           }, QUIET_MS, { timeout: 25_000 });
+          // A live Admin ModeEmpty may acquire its backend mark during that quiet
+          // window and mount EstopCard. Check again immediately before axe so a
+          // new pending request cannot inherit the earlier empty outcome.
+          if (name === 'admin') adminEstop = await waitForAdminEstopReadiness(page);
           // What this still cannot see, stated rather than left for the next reader to discover.
           // The predicate proves the DOM STOPPED changing, not that it FINISHED: a surface whose
           // async section holds a same-shape placeholder is genuinely flat while its request is in
           // flight, so a stall longer than 450ms ends the wait early and axe scans a partial tree.
-          // The known instance is ADMIN — EstopCard (src/modes3.tsx) shows a one-node "checking
-          // estop..." placeholder until /api/ops/estop answers. Each scan therefore records
-          // `pending`, so the artifact says whether a placeholder was on screen instead of leaving
-          // a green scan to imply the surface was complete. This is NOT gated on: `ModeEmpty`'s
-          // own copy is a legitimate resting state in the live lane, so blocking on "no
-          // placeholder" would turn a correct live surface into a 25s timeout.
+          // Admin's EstopCard has a separate explicit wait above. Other async sections may
+          // still be pending; record the text diagnostic for the artifact rather than treating
+          // every "not connected" or design-preview empty state as a loading failure.
 
           const meta = await page.evaluate(() => {
             const wz = document.querySelector('.workzone');
@@ -270,11 +311,11 @@ test.describe('HUD mode surfaces', () => {
           const results = await new AxeBuilder({ page })
             .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
             .analyze();
-          all.push({ lane, mode: name, via, ...meta, violations: results.violations, incomplete: results.incomplete });
+          all.push({ lane, mode: name, via, adminEstop, ...meta, violations: results.violations, incomplete: results.incomplete });
 
           scans.push({
             mode: name, via, rail: meta.rail, empty: meta.empty, nodes: meta.nodes,
-            scrollY: meta.scrollY, pending: meta.pending,
+            scrollY: meta.scrollY, pending: meta.pending, adminEstop,
             incomplete: results.incomplete.length,
             // `impact == null` is surfaced too, not dropped. Every `incomplete` entry this shell
             // produces today carries one (measured across the four lanes: 64 color-contrast + 4
@@ -382,6 +423,78 @@ test.describe('HUD mode surfaces', () => {
       });
     }
   }
+});
+
+test('Admin readiness accepts only the explicit empty card, not a missing or pending marker', async ({ page }) => {
+  const rail = '<button class="rail-btn active"><span class="rl">Admin</span></button>';
+  await page.setContent(rail + '<div class="workzone full"><div class="panel">'
+    + '<div>ADMIN</div><div>Not connected</div>'
+    + '<div>No live data from the backend for this view yet. It populates automatically once the source responds.</div>'
+    + '<button class="tool-btn">◐ enable DEMO</button></div></div>');
+  expect(await waitForAdminEstopReadiness(page, 500)).toBe('empty');
+
+  await page.setContent(rail + '<div class="workzone full"><div class="panel scroll">'
+    + '<div class="admin-grid">Mounted Admin without EstopCard marker</div></div></div>');
+  await expect(waitForAdminEstopReadiness(page, 350)).rejects.toThrow(/Admin must show explicit ModeEmpty/);
+
+  await page.setContent(rail + '<div class="workzone full"><div class="panel scroll">'
+    + '<div class="admin-grid"><div data-estop-readiness="pending" aria-busy="true">checking estop</div>'
+    + '</div></div></div>');
+  await expect(waitForAdminEstopReadiness(page, 350)).rejects.toThrow(/Admin must show explicit ModeEmpty/);
+});
+
+test('Admin axe scan waits for EstopCard after the old quiet window', async ({ page }) => {
+  test.slow();
+  await page.addInitScript(() => {
+    try { localStorage.setItem('hud.firstrun.dismissed', '1'); } catch { /* ignore */ }
+  });
+  let releaseResponse!: () => void;
+  const heldResponse = new Promise<void>(resolve => { releaseResponse = resolve; });
+  let requestSeen!: () => void;
+  const intercepted = new Promise<void>(resolve => { requestSeen = resolve; });
+  let requests = 0;
+  await page.route(/\/api\/ops\/estop(?:\?.*)?$/, async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    requests += 1;
+    requestSeen();
+    await heldResponse;
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ engaged: false, state: null }),
+    });
+  });
+
+  await page.goto('/v2/?demo=1', { waitUntil: 'domcontentloaded' });
+  const admin = page.locator('.rail-btn').filter({ hasText: /^\s*Admin\s*$/ });
+  await expect(admin).toHaveCount(1);
+  await admin.evaluate(el => (el as HTMLElement).click());
+  await intercepted;
+  const card = page.locator('.workzone [data-estop-readiness]');
+  await expect(card).toHaveAttribute('data-estop-readiness', 'pending');
+  await expect(card).toHaveAttribute('aria-busy', 'true');
+
+  let axeScans = 0;
+  let readyOutcome: AdminEstopOutcome | null = null;
+  const scan = waitForAdminEstopReadiness(page).then(async outcome => {
+    readyOutcome = outcome;
+    axeScans += 1;
+    return new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+  });
+  try {
+    // This test-only controlled delay exceeds the previous DOM-quiet window.
+    // The real walk has no sleep-based success path: its helper must remain blocked.
+    await page.waitForTimeout(QUIET_MS + 150);
+    expect(axeScans).toBe(0);
+    await expect(card).toHaveAttribute('data-estop-readiness', 'pending');
+  } finally {
+    releaseResponse();
+  }
+  const result = await scan;
+  expect(requests).toBe(1);
+  expect(axeScans).toBe(1);
+  expect(readyOutcome).toBe('ready');
+  expect(Array.isArray(result.violations)).toBe(true);
+  await expect(card).toHaveAttribute('data-estop-readiness', 'ready');
 });
 
 /** Count violations by impact across every mode, for the artifact header. */
