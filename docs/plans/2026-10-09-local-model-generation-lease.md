@@ -4,11 +4,13 @@
 - Goal: close the software eviction window between residency confirmation and
   in-flight protection in both Agent.process and Agent.synthesize.
 - Base / HEAD before edits: ef56dd389976a2acc3ebaab3f594a2ff80eaa90e.
+- Tested source checkpoint: efac393a1219c8b87478fd694af7cd01334c9ae7.
 - Branch/worktree: codex/local-model-generation-lease-20261009,
   /workspace/jarvis-hub-model-generation-lease.
 - Scope: owner-authorized autonomous LOCAL development. No push/merge/deploy,
   live model, controller activation or physical-device claim.
-- Next action: meaningful production-path regression RED, minimal reorder, GREEN.
+- Next action: local unit verified; continue separately scoped backlog work while
+  retaining broader model coordination and hardware acceptance gaps.
 
 ## Contract and choice
 
@@ -89,4 +91,8 @@ refreshes plus two new direct H515 evidence pins; eight preexisting stale Agent
 pins remain stale. H515 summary/remaining now distinguish these two protected
 local text paths from broader unresolved generation/resource leases. Its partial
 status and all other claim/status text remain unchanged. The full backend
-milestone follows the source checkpoint and is recorded in the integration proof.
+milestone at the source checkpoint passes: 21,237 passed, the same 37 skipped
+test identities as the preceding ComfyUI milestone, zero failures/errors,
+21,274 total in 268.450 seconds, exit 0. Executed-count verification and final
+Hermes/status/whitespace checks pass. The evidence-only follow-up records the
+complete result in the integration proof.

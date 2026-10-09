@@ -2,6 +2,7 @@
 
 - Generated: 2026-10-09 UTC.
 - Base: ef56dd389976a2acc3ebaab3f594a2ff80eaa90e.
+- Tested source checkpoint: efac393a1219c8b87478fd694af7cd01334c9ae7.
 - Branch/worktree: codex/local-model-generation-lease-20261009,
   /workspace/jarvis-hub-model-generation-lease.
 - Goal: protect the requested local text model before residency work in both
@@ -63,9 +64,15 @@ Python files; whitespace and Hermes/generated-status checks pass.
 
 Canonical collection records **21,274 backend cases** (+22), 555 routes. The
 unchanged frontend/native 2,009 and mobile 306 inventories retain their preceding
-passing evidence; no JS/native execution is relabeled as new. The complete
-backend milestone will follow the source checkpoint. No real model, GPU,
-controller service, cloud request or physical device is used.
+passing evidence; no JS/native execution is relabeled as new.
+
+The complete backend suite at the source checkpoint passes: **21,237 passed,
+37 skipped, zero failures/errors**, 21,274 total in **268.450 seconds**, exit 0.
+The skipped test identities exactly match the preceding ComfyUI milestone.
+Executed-count verification confirms 21,274 against the tracked inventory.
+Hermes/generated-status and whitespace checks pass. The final follow-up commit
+changes evidence documents only. No real model, GPU, controller service, cloud
+request or physical device is used.
 
 ## Review and freshness
 
@@ -92,6 +99,7 @@ Scratch evidence: model-generation-lease-red.log,
 model-generation-lease-params-red.log,
 model-generation-lease-focused.{xml,log},
 model-generation-lease-integration-focused.{xml,log},
+model-generation-lease-backend-final.{xml,log},
 model-generation-lease-status-sync.log,
 model-generation-lease-pin-inventory.{json,md},
 model-generation-lease-collateral-review.md,
