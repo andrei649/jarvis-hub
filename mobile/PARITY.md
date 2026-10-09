@@ -33,6 +33,10 @@ invocation. Existing Agent callers still receive the same text. No new field is
 sent to browser/native chat; whole-turn attribution and client explanations remain
 open and must extend the shared H686 outcome after their semantics are defined.
 See [runtime evidence](../docs/project-tool-loop-exit-result-20261009.md).
+Returned approved file execution now also carries an additive per-attempt mutation
+receipt in its existing task result. It does not add a browser/native chat field
+or mutation footer; missing/cancelled results and cross-task attribution remain
+open. See [receipt evidence](../docs/project-file-mutation-receipts-20261009.md).
 
 Session ID validation (local backend candidate, 2026-10-09): both clients inherit
 strict full-string session validation on the existing shared server boundaries.

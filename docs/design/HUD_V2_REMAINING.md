@@ -524,3 +524,6 @@ diagnostic attempt after a normal return, while its legacy caller receives the
 same reply text. This internal result is not a whole-turn completion claim or a
 new HTTP/SSE field. HUD explanations, pending-result severity and accounting still
 need defined cross-agent and non-loop semantics on the shared outcome.
+The local file mutation receipt describes returned approved-task attempts only;
+its scrubbed path and task status are insufficient for a same-turn mutation footer.
+Task/attempt correlation, missing/unknown effects and ordering remain open.

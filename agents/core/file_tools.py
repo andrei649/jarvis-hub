@@ -589,6 +589,19 @@ def _valid_offset(value: object) -> bool:
             and 0 <= value <= MAX_OFFSET)
 
 
+def _mutation_result(result: dict, target: Path, op: str, outcome: str) -> dict:
+    """Preserve legacy fields and add this resolved attempt's limited observation.
+
+    Refused never submitted ``_apply``; applied means it returned, without
+    read-back; unknown means its OSError handler ran. Cancellation and escaping
+    errors return no receipt. A ToolRPC-scrubbed path is not a stable identity.
+    """
+    return {
+        **result,
+        "mutation_receipt": {"path": str(target), "op": op, "outcome": outcome},
+    }
+
+
 async def _with_project_context(result: dict, target: Path) -> dict:
     """H594 — a read tool's result carries the convention files of *target*'s directory
     chain the turn has not been given (tainted, so the loop fences it); off the loop. A
@@ -1003,9 +1016,12 @@ class FileTools:
         try:
             snap = await asyncio.to_thread(_snapshot)
         except OSError as exc:
-            return {"ok": False, "reason": "snapshot_failed", "detail": exc.__class__.__name__}
+            return _mutation_result(
+                {"ok": False, "reason": "snapshot_failed", "detail": exc.__class__.__name__},
+                target, op, "refused",
+            )
         if isinstance(snap, str):
-            return {"ok": False, "reason": snap}
+            return _mutation_result({"ok": False, "reason": snap}, target, op, "refused")
 
         payload = {
             "kind": KIND,
@@ -1020,7 +1036,10 @@ class FileTools:
         if not decision.admissible:
             reason = decision.reason or "contract_denied"
             self._record("file.contract_denied", f"{op} {target}: {reason}", ok=False)
-            return {"ok": False, "reason": reason, "snapshot_ref": snap.ref}
+            return _mutation_result(
+                {"ok": False, "reason": reason, "snapshot_ref": snap.ref},
+                target, op, "refused",
+            )
 
         # H506 — does this write steer a future run? Checked on both the resolved
         # target and the name the caller spelled, because a symlink can hide one
@@ -1033,7 +1052,10 @@ class FileTools:
         denied = self._authorize(op, target, payload, approved=approved)
         if denied is not None:
             self._record("file.kernel_denied", f"{op} {target}: {denied}", ok=False)
-            return {"ok": False, "reason": denied, "snapshot_ref": snap.ref}
+            return _mutation_result(
+                {"ok": False, "reason": denied, "snapshot_ref": snap.ref},
+                target, op, "refused",
+            )
         # A floor on *this API surface*, for any caller that reaches write_file /
         # delete_file directly: such a call must say ``approved=True`` for an
         # instruction file, whatever the kernel says and whether or not it is on.
@@ -1049,12 +1071,12 @@ class FileTools:
         # in-process caller, not the braces the owner sees.
         if steers and not approved:
             self._record("file.instruction_floor", f"{op} {target}", ok=False)
-            return {
+            return _mutation_result({
                 "ok": False,
                 "reason": "approval_required",
                 "class": INSTRUCTION_CLASS,
                 "snapshot_ref": snap.ref,
-            }
+            }, target, op, "refused")
 
         def _apply() -> None:
             if op == "delete":
@@ -1067,19 +1089,19 @@ class FileTools:
             await asyncio.to_thread(_apply)
         except OSError as exc:
             self._record(f"file.{op}", f"{target}: io_error", ok=False)
-            return {
+            return _mutation_result({
                 "ok": False, "reason": "io_error", "detail": exc.__class__.__name__,
                 "snapshot_ref": snap.ref,
-            }
+            }, target, op, "unknown")
         self._record(f"file.{op}", str(target), ok=True, snapshot_ref=snap.ref)
-        return {
+        return _mutation_result({
             "ok": True,
             "op": op,
             "path": str(target),
             "bytes": len(data),
             "existed": snap.existed,
             "snapshot_ref": snap.ref,
-        }
+        }, target, op, "applied")
 
     def _authorize(self, op: str, target: Path, payload: dict, *, approved: bool) -> str | None:
         """Ask the injected kernel hook. Returns a refusal reason or ``None``."""
