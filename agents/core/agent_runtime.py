@@ -464,12 +464,16 @@ class AgentToolRuntime:
     ) -> None:
         """Hand one turn's provider counts to the meter, and never fail the turn for it.
 
-        Reported only when the provider actually said something: an empty usage means
-        "no numbers", and passing it on would let a caller mistake silence for a turn
-        that cost nothing. A sink that raises is the meter's problem, not the answer's.
+        Explicit True/False counter availability reaches accounting even when both
+        normalized counts are zero. Legacy unflagged empty usage remains silent.
+        A sink that raises is the meter's problem, not the answer's.
         """
         usage = getattr(turn, "usage", None)
-        if usage_sink is None or usage is None or not getattr(usage, "reported", False):
+        if usage_sink is None or usage is None:
+            return
+        complete = getattr(usage, "counts_complete", None)
+        if (complete is not True and complete is not False
+                and not getattr(usage, "reported", False)):
             return
         try:
             usage_sink(usage)

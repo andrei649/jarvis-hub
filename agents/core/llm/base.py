@@ -723,8 +723,8 @@ class LMStudioBackend(LLMBackend):
         # truncated <think> / reasoning_content trace would overwrite the clean
         # bubble and poison conversation memory.
         answer = self._finalize_stream(emitted, reasoning_full, finish, model)
-        if completed and not usage_failed and usage is not None:
-            report_text_usage(usage)
+        if completed and not usage_failed:
+            report_text_usage(usage if usage is not None else lmstudio_usage({}))
         return answer
 
 

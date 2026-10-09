@@ -209,10 +209,22 @@ def lmstudio_usage(data: Mapping[str, Any]) -> TokenUsage:
     (reviewed 2026-09-15). Do not infer cache billing from local token totals.
     """
     raw = data.get("usage") if isinstance(data, Mapping) else None
+    return _canonical_pair_usage(raw)
+
+
+def _canonical_pair_usage(raw: Any) -> TokenUsage:
+    """Validate the two inclusive OpenAI-compatible totals independently."""
     if not isinstance(raw, Mapping):
-        return TokenUsage()
-    return TokenUsage(input_tokens=_local_count(raw, "prompt_tokens"),
-                      output_tokens=_local_count(raw, "completion_tokens"))
+        return TokenUsage(counts_complete=False)
+    prompt = raw.get("prompt_tokens")
+    completion = raw.get("completion_tokens")
+    prompt_valid = type(prompt) is int and prompt >= 0
+    completion_valid = type(completion) is int and completion >= 0
+    return TokenUsage(
+        input_tokens=prompt if prompt_valid else 0,
+        output_tokens=completion if completion_valid else 0,
+        counts_complete=prompt_valid and completion_valid,
+    )
 
 
 def compatible_usage(data: Mapping[str, Any]) -> TokenUsage:
@@ -222,10 +234,7 @@ def compatible_usage(data: Mapping[str, Any]) -> TokenUsage:
     Cache discounts remain unmodeled: prompt_tokens already includes cache.
     """
     raw = data.get("usage") if isinstance(data, Mapping) else None
-    if not isinstance(raw, Mapping):
-        return TokenUsage()
-    return TokenUsage(input_tokens=_local_count(raw, "prompt_tokens"),
-                      output_tokens=_local_count(raw, "completion_tokens"))
+    return _canonical_pair_usage(raw)
 
 
 def gemini_usage(data: Mapping[str, Any]) -> TokenUsage:

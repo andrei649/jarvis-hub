@@ -314,22 +314,32 @@ _session_is_shared: contextvars.ContextVar = contextvars.ContextVar(
 
 
 def _sum_usage(running, incoming):
-    """Add one model turn's reported counts to an agent's running total.
+    """Add one model turn's observed counts to an agent's running total.
 
     A tool loop makes several requests for one answer, so what the turn cost is the
     sum, not the last request. Returns a new value rather than mutating: the caller
     stores it back into a per-turn map, and a mutable accumulator shared across
-    agents is how one agent ends up billed for another's tokens.
+    agents is how one agent ends up billed for another's tokens. Availability is
+    true only for all explicitly complete observations; mixed or incomplete
+    evidence stays incomplete while the known numeric lower bounds still add.
     """
     from .llm.tool_protocol import TokenUsage
 
     if running is None:
         return incoming
+    prior_complete = getattr(running, "counts_complete", None)
+    next_complete = getattr(incoming, "counts_complete", None)
+    complete = (
+        True if prior_complete is True and next_complete is True
+        else None if prior_complete is None and next_complete is None
+        else False
+    )
     return TokenUsage(
         input_tokens=running.input_tokens + incoming.input_tokens,
         output_tokens=running.output_tokens + incoming.output_tokens,
         cache_read=running.cache_read + incoming.cache_read,
         cache_write=running.cache_write + incoming.cache_write,
+        counts_complete=complete,
     )
 
 
@@ -346,9 +356,15 @@ def _billable_from_usage(usage) -> tuple[int, int, int] | None:
     been checked against would be worse than a known, stated under-report. It errs
     the safe way: the bill reads slightly low, never the saving high.
 
-    ``None`` means nothing was reported and the caller keeps its estimate.
+    Explicitly incomplete counts return ``None`` even when a valid sibling is
+    nonzero, so the caller estimates with that known lower bound. Explicitly
+    complete zero counts are a provider observation, while legacy unflagged
+    all-zero usage remains unreported. ``None`` tells the caller to estimate.
     """
-    if usage is None or not getattr(usage, "reported", False):
+    if usage is None or getattr(usage, "counts_complete", None) is False:
+        return None
+    if (getattr(usage, "counts_complete", None) is not True
+            and not getattr(usage, "reported", False)):
         return None
     billable_input = usage.input_tokens + usage.cache_read + usage.cache_write
     return billable_input, usage.output_tokens, usage.cache_read
@@ -4547,8 +4563,22 @@ class Orchestrator:
                 # estimate below. Before this the meter had no way to hear it — the
                 # Anthropic client never read `usage` and Gemini's is dropped in
                 # `_extract_text` — so `cached` was a rate no cloud route could earn.
-                reported = _billable_from_usage(
-                    getattr(self, "_last_reported_usage", {}).get(agent_id))
+                observed = getattr(self, "_last_reported_usage", {}).get(agent_id)
+                reported = _billable_from_usage(observed)
+                incomplete = getattr(observed, "counts_complete", None) is False
+                if reported is not None:
+                    input_tokens, output_tokens = reported[:2]
+                else:
+                    input_tokens = (getattr(self, "_last_prompt_tokens", {}).get(agent_id)
+                                    or estimate_tokens(text))
+                    output_tokens = estimate_tokens(resp)
+                    if incomplete:
+                        known_input = sum(getattr(observed, key, 0) for key in
+                                          ("input_tokens", "cache_read", "cache_write"))
+                        input_tokens = max(input_tokens, known_input)
+                        output_tokens = max(output_tokens, observed.output_tokens)
+                cached_tokens = (reported[2] if reported is not None
+                                 else 0 if incomplete else cached_prefix)
                 metadata = {
                     # CDX-2: record the real origin (web/telegram/discord/voice/
                     # autonomy/…) instead of always "web", so the %-local/cloud
@@ -4561,17 +4591,12 @@ class Orchestrator:
                     # reporting zero. `cached_tokens <= input_tokens` holds by
                     # construction, which is what stops the estimator inventing a
                     # saving on tokens that were never sent.
-                    "input_tokens": (
-                        reported[0] if reported else (
-                            getattr(self, "_last_prompt_tokens", {}).get(agent_id)
-                            or estimate_tokens(text)
-                        )
-                    ),
-                    "output_tokens": reported[1] if reported else estimate_tokens(resp),
-                    "cached_tokens": reported[2] if reported else cached_prefix,
-                    "cache_hit": (reported[2] if reported else cached_prefix) > 0,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "cached_tokens": cached_tokens,
+                    "cache_hit": cached_tokens > 0,
                     # So a reader of the ledger can tell a measurement from a guess.
-                    "usage_source": "provider" if reported else "estimate",
+                    "usage_source": "provider" if reported is not None else "estimate",
                 }
                 self.learning.record(
                     agent_id=agent_id,

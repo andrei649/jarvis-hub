@@ -16,7 +16,10 @@ class _Observer:
         self.active = True
 
     def __call__(self, usage: TokenUsage) -> None:
-        if not self.active or self.sink is None or not usage.reported:
+        flag = getattr(usage, "counts_complete", None)
+        if not self.active or self.sink is None or (
+            flag is not True and flag is not False and not usage.reported
+        ):
             return
         try:
             self.sink(usage)

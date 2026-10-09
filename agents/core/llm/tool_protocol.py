@@ -56,24 +56,30 @@ class TokenUsage:
     An estimate is fine for a budget check and wrong for a bill, and the cost table
     prices a `cached` rate that no Claude route could ever earn.
 
-    Input and cache fields are disjoint token counts. Their sum is complete
-    prompt occupancy. Adapters reporting inclusive prompt totals leave the cache
+    Input and cache fields are disjoint token counts. When all prompt fields are
+    available, their sum is the reported prompt occupancy. Inclusive adapters leave the cache
     fields zero rather than counting cached subsets twice.
 
     ``cache_read`` is what the vendor billed at the discounted rate; ``cache_write``
     is the premium paid to *create* the entry, which is not a saving and must not be
-    reported as one. All four default to zero, which reads as "the provider said
-    nothing" — never as "the turn was free".
+    reported as one. All four default to zero. With legacy ``counts_complete=None``,
+    zeros mean no nonzero counts were observed; ``counts_complete=True`` can mark
+    an explicitly supplied zero pair. Neither proves the whole turn was free.
+
+    ``counts_complete`` describes only whether a parsed response supplied its
+    required counters. It does not account for retries or other model requests.
+    None leaves legacy producers' observation behavior unchanged.
     """
 
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read: int = 0
     cache_write: int = 0
+    counts_complete: bool | None = None
 
     @property
     def reported(self) -> bool:
-        """True when a provider actually supplied numbers, so a caller can fall back."""
+        """Legacy nonzero-count predicate, separate from counter availability."""
         return bool(self.input_tokens or self.output_tokens
                     or self.cache_read or self.cache_write)
 

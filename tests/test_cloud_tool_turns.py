@@ -35,7 +35,7 @@ from agents.core.llm.tool_dialects import (
     is_synthetic_id,
     normalize_finish_reason,
 )
-from agents.core.llm.tool_protocol import ToolCall, ToolSpec, ToolTurn
+from agents.core.llm.tool_protocol import TokenUsage, ToolCall, ToolSpec, ToolTurn
 from agents.core.llm.vlm import VLMBackend
 from agents.core.security.guardrails import GuardrailsEngine
 from agents.core.tool_rpc import ToolRPCServer
@@ -309,7 +309,7 @@ async def test_openrouter_omits_tools_when_none_are_offered():
 
     assert "tools" not in client.calls[0]["json"]
     assert "tool_choice" not in client.calls[0]["json"]
-    assert turn == ToolTurn(content="plain", finish_reason="stop")
+    assert turn == ToolTurn(content="plain", finish_reason="stop", usage=TokenUsage(counts_complete=False))
 
 
 @pytest.mark.asyncio
