@@ -6,7 +6,7 @@ import json
 import pytest
 
 from agents.core.memory.conversation import ConversationMemory, Turn
-from agents.core.session_continuation import seed_json
+from agents.core.session_continuation import ContinuationRefused, seed_json
 
 
 def _history(**kwargs):
@@ -104,4 +104,5 @@ def test_session_continuation_keeps_only_bounded_image_provenance():
     turn = Turn("assistant", "A red door.", media=media)
     assert json.loads(seed_json([turn.to_dict()]))[0]["media"] == media
     bad = {**turn.to_dict(), "media": {**media, "bytes": "private"}}
-    assert "media" not in json.loads(seed_json([bad]))[0]
+    with pytest.raises(ContinuationRefused, match="invalid_history"):
+        seed_json([bad])
