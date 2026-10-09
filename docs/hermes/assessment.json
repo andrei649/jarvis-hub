@@ -9392,7 +9392,7 @@
         },
         {
           "path": "mobile/src/api/client.ts",
-          "sha256": "f97759e72a6bc32987b92627ecf1472228a254890c0e57f8e0baab89c434b145"
+          "sha256": "4bd009f10896b76a43316d311b493aa70a47dc00e670a7982db20db782cef1fc"
         },
         {
           "path": "mobile/src/audio/tts.ts",

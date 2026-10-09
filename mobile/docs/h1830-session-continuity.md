@@ -33,6 +33,12 @@ Transport regressions failed before the implementation: selected ID omitted, end
 
 Native host tests use React DOM plus the repository's React Native/service mocks; they do not constitute Android/iOS device or real-Hub/LLM evidence. No complete backend suite, native package build or provider-backed acceptance was run.
 
+### CI evidence freshness correction — 2026-10-09 (Europe/Bucharest)
+
+The first PR backend run failed the Hermes report freshness regression: H526 pins the entire mobile API client, so the session changes invalidated its speech evidence hash. A separate `gpt-6-sol` high review compared the complete client diff with base `304ae4b`: `ttsFetchBase64`, its URL/auth/error/base64 helpers, the audio wrapper and the speech tests are unchanged, and the cited 204 handling remains accurate. Only H526's client evidence hash was refreshed; its completion claim and the generated reports were not changed.
+
+Focused checks after that review: mobile TTS regressions **2/2 passed**, mobile TypeScript passed, `python -m pytest tests/test_hermes_sprint_status.py -q` **48/48 passed**, and `python scripts/hermes_status.py check` reports both Hermes reports in sync. The Python check used an isolated scratch environment; it is not a full backend run. No live speech playback was performed.
+
 ## Review and continuation
 
 Implementation split: coordinator owned conversation/storage/UI; `gpt-6-sol` at high effort owned transport and its regressions. A separate `gpt-6-sol` at high effort reviewed the diff and identified the History admin-only credential gap, now covered by regression tests. Its final pass found no remaining Important or Critical findings. No subagent delegated or performed a remote mutation.
