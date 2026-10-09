@@ -31,7 +31,7 @@ const host = (tag: string) => React.forwardRef<any, any>(({ children, style, onP
     onClick: onPress ? (event: React.MouseEvent) => { event.stopPropagation(); onPress(event); } : undefined,
     onMouseDown: onPressIn ? (event: React.MouseEvent) => { event.stopPropagation(); onPressIn(event); } : undefined,
     onMouseUp: onPressOut ? (event: React.MouseEvent) => { event.stopPropagation(); onPressOut(event); } : undefined };
-  for (const key of ['value', 'placeholder', 'disabled']) if (key in rest) props[key] = rest[key];
+  for (const key of ['value', 'placeholder', 'disabled', 'onError']) if (key in rest) props[key] = rest[key];
   if (onChangeText) props.onChange = (event: any) => onChangeText(event.target.value);
   const elementTag = tag === 'input' && rest.multiline ? 'textarea' : tag;
   return React.createElement(elementTag, props, tag === 'input' ? undefined : children);

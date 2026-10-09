@@ -327,6 +327,14 @@ ComfyUI proof and native presentation (H18.27) remain open. The production appro
 bridge supports `off` and `enforce`; `hold` intentionally refuses execution.
 Per-conversation access isolation is not added by this surface.
 
+H18.27 native continuation (2026-10-09): a local Media-screen candidate adds
+configuration-only local status, exact-prompt proposals through the existing approval
+queue, task restoration across the approval handoff, manual status refresh and
+authenticated PNG preview/save. It does not initiate cloud generation or repeat a
+proposal automatically. Real-device/live-generator acceptance stays open. The server
+currently projects failed or malformed execution as `uncertain`; a distinct reliable
+failure result remains a backend contract gap, so native does not invent one.
+
 **HA-4i-S1 declarative extension inspection (2026-09-09):** user-guarded
 `GET /api/plugins/extensions` projects already-composed acquired package declarations
 without activation; `nerva extensions doctor` validates local JSON offline. A dedicated
