@@ -104,5 +104,22 @@ have identical ASTs; only the new models/route are added. Four already-stale pin
 status, summary or remaining claim is changed. Native UI remains H18.32.
 
 Backend collection is21,129 (+15), frontend1,978 (+16), mobile284, routes555.
-The full backend integration run follows this source checkpoint; no result for
-that run is claimed yet. Work is local, with no provider/device/publication.
+Work is local, with no provider/device/publication.
+
+Full backend checkpoint at `4625a1b` returned21,091 passed,37 skipped, one failure
+and zero errors (275.149 seconds). The one failure was the existing architecture
+guard `test_no_router_reinlines_the_component_503_preamble`: the new handler
+hand-rolled availability resolution instead of using `require_component`. It
+reproduced in isolation. Correction `9d32c13` uses that existing helper while
+retaining this route's no-store generic503, response projection and admin guard.
+The helper's conservative falsy-orchestrator refusal matches other routers.
+The assertion and its allowlist are unchanged. Only the two current router pins
+were refreshed again; independent review found no blocker.
+
+After the correction, the complete new API, component-sweep, autonomy HTTP,
+route/auth/OpenAPI/HUD/manual and lifespan union passes101/101 in5.023 seconds.
+The failing node is included and passing. Exact count and generated freshness
+gates pass. The full suite was not repeated after this narrowly scoped repair;
+the initial full result remains a failed checkpoint. Frontend source/assets are
+byte-identical to the fully tested checkpoint. See the
+[integration evidence](../project-task-mediation-integration-20261009.md).
