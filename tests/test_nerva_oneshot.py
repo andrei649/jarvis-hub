@@ -156,6 +156,7 @@ def test_a_queued_approval_without_an_id_still_exits_non_zero():
 @pytest.mark.parametrize("reply", [
     "I'm still working on your previous message — send that again in a moment.",
     "I stopped this turn because its context compaction could not be safely committed. Please retry.",
+    "I stopped this turn because its context could not be safely prepared. Please retry; if this persists, reduce the context size.",
     "I stopped this turn because this continued conversation could not be safely restored.",
     "⚠️ No local language model is available. Start LM Studio or Ollama and try again.",
     "Internal error.",
@@ -169,6 +170,8 @@ def test_a_refused_turn_is_not_an_answer(reply):
     code, out, err, _hub = _run(["chat", "-z", "hi"], hub=_FakeHub({"POST /chat": {"reply": reply}}))
     assert code == EXIT_FAILED, f"{reply!r} is not an answer"
     assert out == "" and err.strip()
+    if "its context could not be safely prepared" in reply:
+        assert "context could not be safely prepared" in err
 
 
 def test_the_sentinel_table_still_matches_the_hub():

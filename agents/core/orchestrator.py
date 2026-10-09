@@ -2447,6 +2447,11 @@ class Orchestrator:
                         backend, router_model, route_name = self.llm_router.select_backend(agent_id, prompt)
                     if router_model:
                         model = router_model
+                    if prepared is not None:
+                        from .conversation_clock import render_snapshot
+
+                        rendered_system = render_snapshot(system_prompt, prompt_clock.get())
+                        agent._check_prepared_budget(prepared, prompt, rendered_system)
                     # Reasoning models on the deep slot need a far larger budget:
                     # 1–2k tokens is consumed by chain-of-thought before any
                     # answer, so a small cap truncates mid-thought.
@@ -2491,6 +2496,17 @@ class Orchestrator:
                                 system_prompt,
                                 history_parts,
                             )
+                            if prepared is not None:
+                                material_tokens = estimate_tokens(cache_material.system_instruction) + sum(
+                                    estimate_tokens(part) for part in cache_material.history
+                                )
+                                # The full canonical prompt was checked above. A
+                                # cache material check uses an empty tail so the
+                                # same history is not counted a second time.
+                                agent._check_prepared_budget(
+                                    prepared, "", rendered_system,
+                                    cached_input_tokens=material_tokens,
+                                )
                             cache_binding = await self.context_cache.acquire_binding(
                                 session_id=self.session_id,
                                 model=model,
@@ -2539,6 +2555,11 @@ class Orchestrator:
                                         : cache_binding.cached_prefix_count
                                     ]
                                 )
+                                if prepared is not None:
+                                    agent._check_prepared_budget(
+                                        prepared, prompt, rendered_system,
+                                        cached_input_tokens=cached_tok,
+                                    )
                             else:
                                 self._spawn_cache_task(
                                     self._async_create_cache(
@@ -2567,6 +2588,8 @@ class Orchestrator:
                         if inspect.isawaitable(emitted):
                             await emitted
                     return msg
+                except CompactionClockRefused:
+                    raise
                 except RuntimeError:
                     msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream")
@@ -2614,6 +2637,8 @@ class Orchestrator:
                         usage_sink=_meter,
                         session_id=self.session_id,
                         clock_snapshot=prompt_clock.get(),
+                        **({"prepared_route": prepared, "cached_input_tokens": cached_tok}
+                           if prepared is not None else {}),
                     )
                 synthesized = response
                 self._last_routes[agent_id] = route_name or ""
@@ -4362,6 +4387,8 @@ class Orchestrator:
                 else:
                     reply = f"[{agent_id} timeout]"
                 return agent_id, reply, 0.0, current_action_origin()
+            except CompactionClockRefused:
+                return agent_id, CONTEXT_REFUSED_REPLY, 0.0, current_action_origin()
             except Exception as e:
                 self.agents[agent_id]._record_failure(str(e))
                 log_error(logger, E_INTERNAL_UNEXPECTED, component=f"agent:{agent_id}", detail=str(e))

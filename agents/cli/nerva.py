@@ -1783,6 +1783,9 @@ _NOT_AN_ANSWER: dict[str, str] = {
     "I'm still working on your previous message — send that again in a moment.":
         "the session was busy with the previous turn",
     # agents.core.conversation_clock.CONTEXT_REFUSED_REPLY
+    "I stopped this turn because its context could not be safely prepared. Please retry; if this persists, reduce the context size.":
+        "the turn was refused: its context could not be safely prepared",
+    # Older hubs used the pre-dispatch-CAS wording; retain refusal recognition.
     "I stopped this turn because its context compaction could not be safely committed. Please retry.":
         "the turn was refused: its context could not be safely compacted",
     # agents.core.session_continuation.CONTINUATION_REFUSED_REPLY

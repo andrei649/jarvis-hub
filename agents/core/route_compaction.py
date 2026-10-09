@@ -105,6 +105,46 @@ class PreparedRoute:
         ):
             raise RouteRefused()
 
+    def check_budget(self, prompt, system, tools=(), cached_input_tokens=0):
+        """Refuse an initial dispatch that outgrew its accepted input allowance.
+
+        The canonical prompt still counts when a cache replaces its history with
+        a shorter tail. Cached material is a separate alternative, not another
+        copy of the rendered system instruction or full history.
+        """
+        import json
+
+        from .llm.tokenizer import estimate_tokens
+
+        if (
+            type(self.prompt) is not str
+            or type(prompt) is not str
+            or type(system) is not str
+            or type(cached_input_tokens) is not int
+            or cached_input_tokens < 0
+            or type(tools) not in (tuple, list)
+            or type(self.input_budget) is not int
+            or self.input_budget <= 0
+        ):
+            raise RouteRefused()
+        try:
+            schema_tokens = (
+                estimate_tokens(json.dumps(tools, allow_nan=False))
+                if tools or type(tools) is list else 0
+            )
+            actual_tokens = estimate_tokens(prompt)
+            system_tokens = estimate_tokens(system)
+            needed = max(
+                estimate_tokens(self.prompt) + system_tokens,
+                actual_tokens + system_tokens,
+                actual_tokens + cached_input_tokens,
+            ) + schema_tokens
+            ceiling = int(0.85 * self.input_budget)
+        except (TypeError, ValueError, OverflowError):
+            raise RouteRefused() from None
+        if needed > ceiling:
+            raise RouteRefused()
+
 
 async def prepare_route(router, agent_id, prompt, max_tokens, temperature, session):
     from .context_compressor import window_for

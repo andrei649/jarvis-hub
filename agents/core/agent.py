@@ -9,7 +9,7 @@ import os
 import time
 from typing import Optional
 
-from .conversation_clock import CLOCK_UNSET
+from .conversation_clock import CLOCK_UNSET, CompactionClockRefused
 from .env_config import env_int
 from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
@@ -910,7 +910,8 @@ class Agent:
     async def generate_response(self, backend, model, prompt, system, max_tokens,
                                 temperature, on_token=None, wall_seconds=None,
                                 usage_sink=None, session_id=None, effective_window=None,
-                                clock_snapshot=CLOCK_UNSET) -> str:
+                                clock_snapshot=CLOCK_UNSET, prepared_route=None,
+                                cached_input_tokens=0) -> str:
         from .conversation_clock import capture_clock, clock_scope, render_snapshot
         from .llm.request_context import current_session, session_scope
         from .llm.usage_context import current_observer, observer_scope, text_usage_scope
@@ -921,6 +922,10 @@ class Agent:
         if snapshot is not None and snapshot.session_id != sid:
             snapshot = None
         system = render_snapshot(system, snapshot)
+        if prepared_route is not None:
+            self._check_prepared_budget(
+                prepared_route, prompt, system, cached_input_tokens=cached_input_tokens,
+            )
         sink = usage_sink if usage_sink is not None else current_observer()
         with clock_scope(manager, snapshot), session_scope(sid), observer_scope(sink) as observer, text_usage_scope(None):
             return await self._generate_response(
@@ -929,6 +934,25 @@ class Agent:
                 usage_sink=observer if sink is not None else None,
                 effective_window=effective_window,
             )
+
+    def _check_prepared_budget(self, prepared_route, prompt, rendered_system,
+                               *, cached_input_tokens=0) -> None:
+        """Read one live conservative schema snapshot for a prepared dispatch."""
+        from .route_compaction import PreparedRoute, RouteRefused
+
+        if not isinstance(prepared_route, PreparedRoute):
+            raise RouteRefused()
+        try:
+            runtime = self.tool_runtime
+            tools = runtime._server.tools() if runtime is not None else ()
+            prepared_route.check_budget(
+                prompt, rendered_system, tools=tools,
+                cached_input_tokens=cached_input_tokens,
+            )
+        except RouteRefused:
+            raise
+        except Exception:
+            raise RouteRefused() from None
 
     async def _generate_response(
         self,
@@ -1060,7 +1084,18 @@ class Agent:
         effective_window = prepared.window if prepared is not None else resolve_effective_window(backend, model)
         backend = bind_guardrails(self.guardrails, backend)
 
-        if self._checkpoint_manager:
+        clock_snapshot = context.get("_clock_snapshot", CLOCK_UNSET)
+        if prepared is not None:
+            from .conversation_clock import capture_clock, render_snapshot
+
+            sid = context.get("session_id")
+            snapshot = (capture_clock(self._checkpoint_manager, sid, agent_id=self.id)
+                        if clock_snapshot is CLOCK_UNSET else clock_snapshot)
+            if snapshot is not None and snapshot.session_id != sid:
+                snapshot = None
+            self._check_prepared_budget(prepared, prompt, render_snapshot(system_prompt, snapshot))
+
+        if self._checkpoint_manager and prepared is None:
             self._checkpoint_manager.save_agent_execution(self.id, context.get("session_id", "unknown"), prompt)
 
         # H22.5 — best-effort local model residency (LRU swap fast↔deep). Default
@@ -1081,6 +1116,19 @@ class Agent:
                 start = time.monotonic()
                 if prepared is not None:
                     prepared.check(self.llm_router, self.id, prompt, context.get("session_id"))
+                    from .conversation_clock import capture_clock, render_snapshot
+
+                    sid = context.get("session_id")
+                    snapshot = (capture_clock(self._checkpoint_manager, sid, agent_id=self.id)
+                                if clock_snapshot is CLOCK_UNSET else clock_snapshot)
+                    if snapshot is not None and snapshot.session_id != sid:
+                        snapshot = None
+                    self._check_prepared_budget(prepared, prompt, render_snapshot(system_prompt, snapshot))
+                    # The final guard and backend must see the same clock that
+                    # passed this last post-residency preflight.
+                    clock_snapshot = snapshot
+                    if self._checkpoint_manager:
+                        self._checkpoint_manager.save_agent_execution(self.id, context.get("session_id", "unknown"), prompt)
                 response = await self.generate_response(
                     backend=backend,
                     model=model,
@@ -1092,8 +1140,9 @@ class Agent:
                     # (Hermes absorption 5c); absent, the tool loop keeps its default.
                     effective_window=effective_window,
                     session_id=context.get("session_id"),
-                    clock_snapshot=context.get("_clock_snapshot", CLOCK_UNSET),
+                    clock_snapshot=clock_snapshot,
                     wall_seconds=context.get("wall_seconds") if isinstance(context, dict) else None,
+                    **({"prepared_route": prepared} if prepared is not None else {}),
                 )
             latency = time.monotonic() - start
             self._last_latency = latency
@@ -1104,6 +1153,8 @@ class Agent:
 
             self._failures = 0
             return response
+        except CompactionClockRefused:
+            raise
         except Exception as e:
             latency = time.monotonic() - start
             self._last_latency = latency
