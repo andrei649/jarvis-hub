@@ -39,6 +39,15 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 180
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Record a short message only when you start dictation.",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
       ]
     ]
   }

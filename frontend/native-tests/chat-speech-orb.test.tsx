@@ -44,7 +44,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it('shows preparing separately and only the confirmed playback state drives speaking', async () => {
   mount();
   fireEvent.click(await screen.findByLabelText('Speak message'));
-  expect(screen.getByText('Preparing speech…')).toBeTruthy();
+  expect(await screen.findByText('Preparing speech…')).toBeTruthy();
   expect(screen.getByTestId('speech-orb').getAttribute('data-status')).toBe('idle');
   expect(screen.getByTestId('speech-orb').hasAttribute('data-level')).toBe(false);
   await act(async () => speech.emit('speaking'));

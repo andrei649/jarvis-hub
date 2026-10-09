@@ -124,7 +124,10 @@ with plugin-configured checks instead of seeded success. Still open:
 H18.24 native continuation (2026-10-09): a local SVG orb candidate in Chat follows
 actual TTS playback events, labels preparation separately, and cancels late playback
 after stop or a hub change. Reduced motion and background state pause animation.
-Native microphone/STT capture and physical-device acceptance remain open.
+Native Chat now has a local explicit dictation candidate: bounded capture, fresh
+mic trust and permission checks, stopping state, and local STT draft insertion.
+The H18.25 wall renderer and physical-device/live STT acceptance remain open; see
+`mobile/docs/native-push-to-talk.md`.
 
 - ~~**Network task‑fan**: v2 `NetworkBrain` doesn't render per‑agent task dots from `/tasks` (v1 did) —
   the old task fan exists in `network.tsx`, but the current cockpit renders `NeuralMesh`; integrate

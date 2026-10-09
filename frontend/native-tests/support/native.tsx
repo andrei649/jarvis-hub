@@ -24,14 +24,17 @@ export function foreground(state: string) { AppState.currentState = state; liste
 export const Platform = { OS: 'ios', select: (values: Record<string, unknown>) => values.ios ?? values.default };
 export const StyleSheet = { create: (styles: unknown) => styles, flatten: (style: any): any => Array.isArray(style) ? Object.assign({}, ...style.map(StyleSheet.flatten)) : style || {} };
 export const Linking = { openURL: async () => {} };
-const host = (tag: string) => React.forwardRef<any, any>(({ children, style, onPress, onChangeText, testID, accessibilityLabel, ...rest }, ref) => {
+const host = (tag: string) => React.forwardRef<any, any>(({ children, style, onPress, onPressIn, onPressOut, onChangeText, testID, accessibilityLabel, ...rest }, ref) => {
   const flat = StyleSheet.flatten(style);
   // Native press responders own a nested press; DOM clicks otherwise also dismiss modal backdrops.
   const props: any = { ref, 'data-testid': testID, 'aria-label': accessibilityLabel, 'data-native-style': JSON.stringify(flat),
-    onClick: onPress ? (event: React.MouseEvent) => { event.stopPropagation(); onPress(event); } : undefined };
+    onClick: onPress ? (event: React.MouseEvent) => { event.stopPropagation(); onPress(event); } : undefined,
+    onMouseDown: onPressIn ? (event: React.MouseEvent) => { event.stopPropagation(); onPressIn(event); } : undefined,
+    onMouseUp: onPressOut ? (event: React.MouseEvent) => { event.stopPropagation(); onPressOut(event); } : undefined };
   for (const key of ['value', 'placeholder', 'disabled']) if (key in rest) props[key] = rest[key];
   if (onChangeText) props.onChange = (event: any) => onChangeText(event.target.value);
-  return React.createElement(tag, props, tag === 'input' ? undefined : children);
+  const elementTag = tag === 'input' && rest.multiline ? 'textarea' : tag;
+  return React.createElement(elementTag, props, tag === 'input' ? undefined : children);
 });
 export const View = host('div'), Text = host('span'), TextInput = host('input'), Pressable = host('button');
 export const SafeAreaView = View, ScrollView = View, KeyboardAvoidingView = View, ActivityIndicator = View, RefreshControl = View;

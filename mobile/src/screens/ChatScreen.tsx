@@ -15,10 +15,12 @@ import { AgentPicker } from '../components/AgentPicker';
 import { MessageBubble } from '../components/MessageBubble';
 import { SessionsModal } from '../components/SessionsModal';
 import { VoiceOrb } from '../components/VoiceOrb';
+import { PushToTalk } from '../components/PushToTalk';
 import { useServer } from '../context/ServerContext';
 import { Conversation, type ConversationState } from '../chat/conversation';
 import { DEFAULT_PREFS, loadPrefs, savePrefs } from '../storage/prefs';
 import { useThemeStyles, type Theme } from '../theme';
+import { waitForMicrophoneIdle, type DictationState } from '../voice/pushToTalk';
 
 const EMPTY_CONVERSATION: ConversationState = { sessionId: null, messages: [], ready: false, sending: false };
 
@@ -36,7 +38,7 @@ function toPlain(md: string): string {
 
 export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const { theme, styles } = useThemeStyles(makeStyles);
-  const { config, configured, ready, chatScope } = useServer();
+  const { config, configured, ready, chatScope, connectionEpoch } = useServer();
   const [snapshot, setSnapshot] = useState({ scope: '', state: EMPTY_CONVERSATION });
   const conversation = useRef<{ scope: string; chat: Conversation } | null>(null);
   const state = snapshot.scope === chatScope ? snapshot.state : EMPTY_CONVERSATION;
@@ -46,6 +48,36 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const speech = useSyncExternalStore(subscribeSpeech, getSpeechState, getSpeechState);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const speechGeneration = useRef(0);
+  const dictationContext = JSON.stringify([chatScope, connectionEpoch, state.sessionId, agent]);
+  const currentDictationContext = useRef(dictationContext);
+  currentDictationContext.current = dictationContext;
+  const dictationDisabled = sending || !state.ready || sessionsOpen || speakingId !== null;
+  const canAcceptDictation = useRef(false);
+  canAcceptDictation.current = !dictationDisabled;
+  const [dictationSnapshot, setDictationSnapshot] = useState({ context: '', state: { status: 'off' } as DictationState, active: false });
+  const dictationRef = useRef(dictationSnapshot);
+  const dictation = dictationSnapshot.context === dictationContext ? dictationSnapshot : null;
+  const onDictationState = useCallback((next: DictationState) => {
+    if (currentDictationContext.current !== dictationContext) return;
+    const previous = dictationRef.current.context === dictationContext ? dictationRef.current : null;
+    const terminal = next.status === 'off' || next.status === 'error' ||
+      (next.status === 'idle' && previous?.state.status === 'transcribing');
+    const snapshot = { context: dictationContext, state: next, active: !terminal };
+    dictationRef.current = snapshot;
+    setDictationSnapshot(snapshot);
+  }, [dictationContext]);
+  const onDictationStart = useCallback(() => {
+    if (currentDictationContext.current !== dictationContext) return;
+    speechGeneration.current++;
+    stopSpeaking();
+    setSpeakingId(null);
+    onDictationState({ status: 'idle' });
+  }, [dictationContext, onDictationState]);
+  const onTranscript = useCallback((text: string) => {
+    if (currentDictationContext.current !== dictationContext || !canAcceptDictation.current || !text.trim()) return;
+    setInput(previous => previous ? `${previous}\n${text}` : text);
+  }, [dictationContext]);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   // A connection owns its controller. Cleanup revokes old callbacks before a new hub hydrates.
   useEffect(() => {
@@ -57,6 +89,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     setSpeakingId(null);
     void chat.hydrate();
     return () => {
+      speechGeneration.current++;
       chat.dispose();
       if (conversation.current?.chat === chat) conversation.current = null;
       stopSpeaking();
@@ -71,6 +104,9 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   useEffect(scrollToEnd, [messages, scrollToEnd]);
 
   const changeAgent = useCallback((id: string) => {
+    speechGeneration.current++;
+    stopSpeaking();
+    setSpeakingId(null);
     setAgent(id);
     savePrefs({ agent: id });
   }, []);
@@ -86,6 +122,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
 
   const newChat = useCallback(() => {
     if (!configured || conversation.current?.scope !== chatScope) return;
+    speechGeneration.current++;
     stopSpeaking();
     setSpeakingId(null);
     // Only a successful governed /new response changes the transcript and session.
@@ -94,13 +131,20 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
 
   const handleSpeak = useCallback(
     (m: ChatMessage) => {
+      if (dictationRef.current.context === currentDictationContext.current && dictationRef.current.active) return;
+      const generation = ++speechGeneration.current;
       if (speakingId === m.id) {
         stopSpeaking();
         setSpeakingId(null);
         return;
       }
       setSpeakingId(m.id);
-      speak(config, toPlain(m.text), 'ro', () => setSpeakingId(null)).catch(() => setSpeakingId(null));
+      const context = currentDictationContext.current;
+      const current = () => generation === speechGeneration.current && context === currentDictationContext.current;
+      void waitForMicrophoneIdle().then(async () => {
+        if (!current()) return;
+        await speak(config, toPlain(m.text), 'ro', () => { if (current()) setSpeakingId(null); });
+      }).catch(() => { if (current()) setSpeakingId(null); });
     },
     [config, speakingId],
   );
@@ -127,6 +171,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
 
   const onResumed = useCallback((sid: string, turns: HistoryTurn[]) => {
     if (conversation.current?.scope !== chatScope) return;
+    speechGeneration.current++;
     stopSpeaking();
     setSpeakingId(null);
     conversation.current.chat.resume(sid, turns);
@@ -163,11 +208,14 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
       </View>
 
       <View style={styles.speechStatus}>
-        <VoiceOrb status={speech.status === 'preparing' ? 'idle' : speech.status} size={80} />
+        <VoiceOrb status={dictation?.active || dictation?.state.status === 'error'
+          ? dictation.state.status === 'stopping' ? 'idle' : dictation.state.status
+          : speech.status === 'preparing' ? 'idle' : speech.status}
+          level={dictation?.state.status === 'listening' ? dictation.state.level : undefined} size={80} />
         <View style={styles.speechCopy}>
-          <Text style={styles.speechTitle}>Speech playback</Text>
-          {speech.status === 'preparing' ? <Text style={styles.speechNote}>Preparing speech…</Text> : null}
-          {speech.status === 'error' ? <Text style={styles.speechNote}>Speech playback unavailable. Try speaking again.</Text> : null}
+          <Text style={styles.speechTitle}>Voice</Text>
+          {!dictation?.active && speech.status === 'preparing' ? <Text style={styles.speechNote}>Preparing speech…</Text> : null}
+          {!dictation?.active && speech.status === 'error' ? <Text style={styles.speechNote}>Speech playback unavailable. Try speaking again.</Text> : null}
         </View>
       </View>
 
@@ -176,7 +224,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         data={messages}
         keyExtractor={(m) => m.id}
         renderItem={({ item }) => (
-          <MessageBubble message={item} onSpeak={() => handleSpeak(item)} speaking={speakingId === item.id}
+          <MessageBubble message={item} onSpeak={dictation?.active ? undefined : () => handleSpeak(item)} speaking={speakingId === item.id}
             onSave={() => handleSave(item)} saveState={saveStates[item.id]} />
         )}
         contentContainerStyle={styles.listContent}
@@ -215,6 +263,9 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
           </Pressable>
         )}
       </View>
+
+      <PushToTalk contextKey={dictationContext} disabled={dictationDisabled}
+        onStart={onDictationStart} onState={onDictationState} onTranscript={onTranscript} />
 
       <SessionsModal visible={sessionsOpen} onClose={() => setSessionsOpen(false)} onResumed={onResumed} />
     </KeyboardAvoidingView>
