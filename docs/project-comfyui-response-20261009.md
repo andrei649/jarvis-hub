@@ -2,6 +2,7 @@
 
 - Generated: 2026-10-09 UTC.
 - Base: `c486cb245a279022155146b26e10673b259cecfd`.
+- Tested source checkpoint: `a5a52252e68a9efa2889ee7e9f771a68bd10a8e4`.
 - Branch/worktree: `codex/comfyui-response-evidence-20261009`,
   `/workspace/jarvis-hub-comfyui-response`.
 - Goal: recognize one documented ComfyUI error report while keeping ambiguous
@@ -81,8 +82,15 @@ local OpenAI, cloud, artifact integrity and route/OpenAPI tests pass in the unio
 Canonical collection succeeds at **21,252 backend cases** (+53), 555 routes.
 Frontend/native 2,009 and mobile 306 inventories are unchanged; their preceding
 complete passing evidence is retained, not relabeled as newly executed. Ruff
-passes on all five changed Python files. The full backend milestone is pending.
-No physical device, real model/GPU or live provider was used.
+passes on all five changed Python files.
+
+The complete backend suite at the source checkpoint passes: **21,215 passed,
+37 skipped, zero failures/errors**, 21,252 total in **268.743 seconds**, exit 0.
+The 37 skipped test identities are identical to the preceding local OpenAI
+response milestone. The executed-count check confirms 21,252 against the tracked
+inventory. Hermes reports and generated project status are in sync; the diff
+passes whitespace checks. The final follow-up commit changes evidence documents
+only. No physical device, real model/GPU or live provider was used.
 
 ## Bounded review and freshness
 
@@ -106,6 +114,7 @@ Reports in `/workspace/scratch/`: `comfyui-upstream-error-contract.md`,
 `comfyui-history-producer-red.log`, `comfyui-history-nonfinite-red.log`,
 `comfyui-response-projection-{red,green}.{xml,log}`,
 `comfyui-history-producer-focused.xml`, `comfyui-history-producer-corrected.xml`,
-`comfyui-response-backend-focused.{xml,log}`, `comfyui-response-status-sync.log`,
+`comfyui-response-backend-focused.{xml,log}`,
+`comfyui-response-backend-final.{xml,log}`, `comfyui-response-status-sync.log`,
 `comfyui-response-pin-inventory.{json,md}`, `comfyui-response-cross-review.md`,
 and `comfyui-response-producer-review.md`.

@@ -4,11 +4,12 @@
 - Goal: distinguish one documented ComfyUI history error report from incomplete,
   malformed or otherwise unknown image outcomes.
 - Base / HEAD before edits: `c486cb245a279022155146b26e10673b259cecfd`.
+- Tested source checkpoint: `a5a52252e68a9efa2889ee7e9f771a68bd10a8e4`.
 - Branch/worktree: `codex/comfyui-response-evidence-20261009`,
   `/workspace/jarvis-hub-comfyui-response`.
 - Scope: autonomous local development; no publication, live generator or device.
-- Next action: failing producer/worker and strict projection tests, then the
-  bounded implementation in separately owned files.
+- Next action: local unit verified; preserve the live-generator/device acceptance
+  gap and continue the separately scoped backlog work.
 
 ## Source-backed contract and limits
 
@@ -126,5 +127,8 @@ issue. Named claim review supports 13 formerly current evidence-pin refreshes;
 three already-stale pins and all claims/verdicts/remaining text stay unchanged.
 Root AST review verifies unchanged shared artifact/workflow helpers, the seven
 other runtime methods and public model declarations. The complete backend
-milestone will follow the source checkpoint; results belong in the
+milestone at the source checkpoint passes: 21,215 passed, the same 37 skipped
+identities as the preceding milestone, zero failures/errors, 21,252 total in
+268.743 seconds. Executed-count, Hermes/status synchronization and whitespace
+checks pass. The evidence-only follow-up records these results in the
 [integration evidence](../project-comfyui-response-20261009.md).
