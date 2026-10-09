@@ -31,12 +31,12 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 
 | Selected Ollama image turns and active history | owner GET active-images and POST selected-prepare/selected-chat under /api/vlm/composer | ✅ all active HUD composers, exact model/session review and stale-response fences | ⬜ selected route review, active-history choices and concrete session binding | H18.31 / H277 |
 
-| Owner quick commands | existing chat slash dispatch and Admin commands.quick_commands JSON | ✅ existing Admin configuration, /help and approval tasks | ✅ typed aliases/fixed commands use the same governed chat path; native catalog discovery remains open | H078 / H18.26 |
+| Owner quick commands | existing chat slash dispatch and Admin commands.quick_commands JSON | ✅ existing Admin configuration, /help and approval tasks | ✅ typed aliases/fixed commands use the same governed chat path; native live catalog implemented locally, device acceptance open | H078 / H18.26 |
 
 | Session command ID transitions (/new, /reset, /undo) | POST /chat and /chat/stream return session_id; existing POST /sessions/resume | ✅ concrete topic state, old-topic reopening and desktop sync | 🟡 implemented: exact selected ID, scoped restart persistence, governed New/reset and undo refresh; unit/mounted-host verified, device acceptance open | H18.30 |
 
 | Code execution project context and persistence | existing admin settings and sandbox status/reset | ✅ existing Admin settings and sandbox surface | ➖ operator configuration stays on the owner HUD; chat tools use the same governed backend | H595/H660, remote transports remain partial |
-| Chat-command catalog (live registry, filtered by chat principal) | `GET /api/commands` | ✅ quickbar menu | ⬜ discovery menu; typed commands still use chat | H18.26 |
+| Chat-command catalog (live registry, filtered by chat principal) | `GET /api/commands` | ✅ quickbar menu | 🟡 native Chat modal lists live command, usage, description and owner tier; loading, empty, error and unavailable states, retry, and composer insertion are host-tested. Device/live-Hub acceptance open; Send stays on governed chat path | H18.26 |
 | Chat history persistence | — (client-side) | ✅ | ✅ | H18.2 |
 | Agent selection | `GET /api/agents`, `agent` param | ✅ | ✅ | H18.3 |
 | Markdown rendering | — (client-side) | ✅ | ✅ | H18.4 |

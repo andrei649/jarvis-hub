@@ -12,6 +12,7 @@ import { saveCanvasArtifact, type HistoryTurn } from '../api/client';
 import { getSpeechState, speak, stopSpeaking, subscribeSpeech } from '../audio/tts';
 import type { ChatMessage, SaveState } from '../chat/types';
 import { AgentPicker } from '../components/AgentPicker';
+import { CommandsModal } from '../components/CommandsModal';
 import { MessageBubble } from '../components/MessageBubble';
 import { SessionsModal } from '../components/SessionsModal';
 import { VoiceOrb } from '../components/VoiceOrb';
@@ -45,17 +46,22 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const state = snapshot.scope === chatScope ? snapshot.state : EMPTY_CONVERSATION;
   const { messages, sending } = state;
   const [input, setInput] = useState('');
+  const draftVersion = useRef(0);
+  const commandsOpenVersion = useRef(0);
+  const commandsOpenContext = useRef('');
   const [agent, setAgent] = useState(DEFAULT_PREFS.agent);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const speech = useSyncExternalStore(subscribeSpeech, getSpeechState, getSpeechState);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [commandsOpen, setCommandsOpen] = useState(false);
   const [briefing, setBriefing] = useState({ open: false, epoch: 0 });
   const [dictatedLine, setDictatedLine] = useState<{ context: string; text: string | null }>({ context: '', text: null });
   const speechGeneration = useRef(0);
   const dictationContext = JSON.stringify([chatScope, connectionEpoch, state.sessionId, agent, briefing.epoch, briefing.open]);
   const currentDictationContext = useRef(dictationContext);
   currentDictationContext.current = dictationContext;
-  const dictationDisabled = sending || !state.ready || sessionsOpen || speakingId !== null;
+  const commandContext = JSON.stringify([chatScope, connectionEpoch, state.sessionId, agent]);
+  const dictationDisabled = sending || !state.ready || sessionsOpen || commandsOpen || speakingId !== null;
   const canAcceptDictation = useRef(false);
   canAcceptDictation.current = !dictationDisabled;
   const [dictationSnapshot, setDictationSnapshot] = useState({ context: '', state: { status: 'off' } as DictationState, active: false });
@@ -79,6 +85,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   }, [dictationContext, onDictationState]);
   const onTranscript = useCallback((text: string) => {
     if (currentDictationContext.current !== dictationContext || !canAcceptDictation.current || !text.trim()) return;
+    ++draftVersion.current;
     setInput(previous => previous ? `${previous}\n${text}` : text);
     setDictatedLine({ context: dictationContext, text });
   }, [dictationContext]);
@@ -90,6 +97,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     conversation.current = { scope: chatScope, chat };
     setSnapshot({ scope: chatScope, state: chat.state });
     setSessionsOpen(false);
+    setCommandsOpen(false);
     setSpeakingId(null);
     void chat.hydrate();
     return () => {
@@ -110,6 +118,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     stopSpeaking();
     setSpeakingId(null);
     setSessionsOpen(false);
+    setCommandsOpen(false);
     setDictatedLine({ context: '', text: null });
     setBriefing(previous => ({ open, epoch: previous.epoch + 1 }));
   }, []);
@@ -123,13 +132,27 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     speechGeneration.current++;
     stopSpeaking();
     setSpeakingId(null);
+    setCommandsOpen(false);
     setAgent(id);
     savePrefs({ agent: id });
   }, []);
 
+  const openCommands = useCallback(() => {
+    commandsOpenVersion.current = draftVersion.current;
+    commandsOpenContext.current = commandContext;
+    setCommandsOpen(true);
+  }, [commandContext]);
+  const chooseCommand = useCallback((command: string) => {
+    // A user can still edit the composer while a modal is open. Keep that newer draft.
+    if (commandContext === commandsOpenContext.current && draftVersion.current === commandsOpenVersion.current) {
+      ++draftVersion.current;
+      setInput(command);
+    }
+  }, [commandContext]);
+
   const send = useCallback(() => {
     if (!configured || conversation.current?.scope !== chatScope) return;
-    if (conversation.current.chat.send(input, agent)) setInput('');
+    if (conversation.current.chat.send(input, agent)) { ++draftVersion.current; setInput(''); }
   }, [agent, configured, input, chatScope]);
 
   const stop = useCallback(() => {
@@ -141,6 +164,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     speechGeneration.current++;
     stopSpeaking();
     setSpeakingId(null);
+    setCommandsOpen(false);
     // Only a successful governed /new response changes the transcript and session.
     conversation.current.chat.send('/new', agent);
   }, [agent, configured, chatScope]);
@@ -190,6 +214,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     speechGeneration.current++;
     stopSpeaking();
     setSpeakingId(null);
+    setCommandsOpen(false);
     conversation.current.chat.resume(sid, turns);
   }, [chatScope]);
 
@@ -227,6 +252,10 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         <View style={styles.toolbarActions}>
           <Pressable style={styles.toolBtn} onPress={() => changeBriefing(true)} hitSlop={6} disabled={!state.ready || sending}>
             <Text style={styles.toolBtnText}>Briefing</Text>
+          </Pressable>
+          <Pressable style={styles.toolBtn} onPress={openCommands} hitSlop={6}
+            disabled={!state.ready || sending || !!dictation?.active} accessibilityLabel="Browse chat commands">
+            <Text style={[styles.toolBtnText, (!state.ready || sending || !!dictation?.active) && styles.toolBtnDisabled]}>Commands</Text>
           </Pressable>
           <Pressable style={styles.toolBtn} onPress={() => setSessionsOpen(true)} hitSlop={6}>
             <Text style={styles.toolBtnText}>History</Text>
@@ -271,7 +300,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         <TextInput
           style={styles.input}
           value={input}
-          onChangeText={setInput}
+          onChangeText={text => { ++draftVersion.current; setInput(text); }}
           placeholder={state.ready ? 'Message Jarvis…' : 'Restoring conversation…'}
           placeholderTextColor={theme.textDim}
           multiline
@@ -297,6 +326,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
       {dictationControl}
 
       <SessionsModal visible={sessionsOpen} onClose={() => setSessionsOpen(false)} onResumed={onResumed} />
+      <CommandsModal visible={commandsOpen} onClose={() => setCommandsOpen(false)} onChoose={chooseCommand} />
     </KeyboardAvoidingView>
   );
 }

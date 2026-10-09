@@ -18,7 +18,7 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 H277 recovery (2026-10-08): the active chat, floating chat and cockpit image composers now review the actual selected local Ollama agent/model/session. Reviewable prior image handles are bounded to that session and cleared on restart/reload. A selected turn with an unresolved conversation ID stays disabled; changing topic or agent invalidates pending work. Owner-only selected prepare/send/history routes preserve legacy standalone VLM behavior. Native clients still need selected-image review/history controls (H18.31).
 
-H078 recovery (2026-10-08): existing Admin Settings exposes commands.quick_commands as an initially empty JSON map. Owner /help lists valid aliases and fixed commands. Execution queues through existing approval tasks and terminal gates; no new command editor or argument templates are added. The existing native command-catalog gap H18.26 remains open.
+H078 recovery (2026-10-08): existing Admin Settings exposes commands.quick_commands as an initially empty JSON map. Owner /help lists valid aliases and fixed commands. Execution queues through existing approval tasks and terminal gates; no new command editor or argument templates are added. Native H18.26 catalog code is locally implemented; device/live-Hub acceptance remains open.
 
 H063 recovery (2026-10-08): typed /new, /reset and /undo are owner commands. Chat follows the concrete ID returned by /chat or the SSE end event; Sessions reopens the exact selected transcript, and desktop synchronization keeps the selected topic. Admin exposes reset policy, channel/type overrides and stall settings. Old transcripts are retained; empty sessions restart correctly and malformed snapshots fail closed. H18.30 local continuation adds native mobile ID transitions, scoped restart persistence and stale-response fences; device/live-Hub acceptance remains open. Direct web/CLI automatic reset/stall observation remains open.
 
@@ -63,6 +63,10 @@ or configuration listing yet. Acquisition retains its existing governed routes. 
 - ✅ **Chat-command discovery (HA-4i-catalog):** the Quickbar panel reads `GET /api/commands`
   from the live registry, with usage and owner markers filtered by chat's principal. Loading,
   empty and unavailable states are distinct. This is a catalog; commands execute through chat.
+  Native H18.26 now has a locally implemented Chat catalog modal using the same endpoint and
+  principal credentials. It shows command, usage, description and owner tier, distinguishes
+  loading/empty/error/unavailable states, supports retry and inserts a choice into the composer.
+  Native device/live-Hub acceptance remains open; actual Send follows the guarded chat session path.
 - ✅ **Ambient Watch (H33.6):** the Home cluster now reads the redacted live ambient runtime,
   showing monitor/source health, last policy decision, rung counts, and the single global
   attention budget. Monitor administration remains in the separately authenticated admin API;
