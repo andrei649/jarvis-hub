@@ -18,7 +18,7 @@ web-module globals. The cost/model-tier handlers are pure leaf calls into
 import asyncio
 import json as _json
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from agents.core.app_state import get_orch
@@ -253,6 +253,13 @@ async def capabilities():
         return nocache_json({"error": "not initialized"}, status_code=503)
     from agents.core.observability.capability_registry import snapshot
     return nocache_json(snapshot(orch))
+
+
+@router.get("/v1/capabilities", dependencies=[Depends(user_guard)])
+async def client_protocol_capabilities(request: Request):
+    """Static mounted chat/session wire contract, separate from live readiness."""
+    from agents.core.client_protocol import describe_client_protocol
+    return nocache_json(describe_client_protocol(request.app))
 
 
 @router.get("/api/metrics/kernel")

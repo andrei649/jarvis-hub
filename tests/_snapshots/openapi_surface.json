@@ -294,6 +294,7 @@
   "GET /tasks": "get_tasks_tasks_get",
   "GET /ticker": "get_ticker_ticker_get",
   "GET /v1": "index_v1_v1_get",
+  "GET /v1/capabilities": "client_protocol_capabilities_v1_capabilities_get",
   "GET /v2": "hud_v2_v2_get",
   "GET /v2/manifest.webmanifest": "v2_manifest_v2_manifest_webmanifest_get",
   "GET /v2/sw-v2.js": "v2_service_worker_v2_sw_v2_js_get",

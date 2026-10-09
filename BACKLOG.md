@@ -1959,6 +1959,8 @@
 
 - 2026-10-09 H512 MCP continuation: the RPC transport now submits value-free auth decisions through the bounded audit queue, including OAuth, legacy credentials and localhost/network outcomes. Existing access predicates, response/challenge and server identity are preserved. Only the literal `surface=mcp` is added to these auth rows; no token, subject, RPC content or validation error is retained. Focused tests pass **121/121**; the broader H512 lifecycle, attribution and delivery contract stays partial. See [MCP audit evidence](docs/plans/2026-10-09-mcp-auth-audit.md).
 
+- 2026-10-09 H477 local discovery continuation: authenticated `GET /v1/capabilities` describes the existing five chat/session contracts, schemas, actual SSE media, auth tiers and retry/session limitations. It remains separate from live readiness and the legacy `/v1` page. Toolset discovery, broader accepted API children and artifact subtype integrity remain partial; this is not a whole-row equivalence claim. See [descriptor evidence](docs/plans/2026-10-09-client-protocol-discovery.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
   Reassess inherited judgments, finish the full accepted

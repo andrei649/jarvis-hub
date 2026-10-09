@@ -16,6 +16,8 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
+Client protocol discovery (local candidate, 2026-10-09): `GET /v1/capabilities` now exposes the mounted chat/session wire contracts for external clients. This is a machine-readable API, with no new HUD control; existing browser and native transports keep their tested contracts. Live readiness remains `/api/capabilities`, and `/v1` remains the legacy HUD. Wider API discovery and compatibility negotiation remain open under H477.
+
 Native local integration (2026-10-09): completed command, memory-neighbor, advisory,
 generated-image and selected-image candidates are combined with voice orb, dictation and
 briefing controls. Mobile284/native137, TypeScript and Android/iOS exports pass;

@@ -47,6 +47,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 
 | Code execution project context and persistence | existing admin settings and sandbox status/reset | ✅ existing Admin settings and sandbox surface | ➖ operator configuration stays on the owner HUD; chat tools use the same governed backend | H595/H660, remote transports remain partial |
 | Chat-command catalog (live registry, filtered by chat principal) | `GET /api/commands` | ✅ quickbar menu | 🟡 native Chat modal lists live command, usage, description and owner tier; loading, empty, error and unavailable states, retry, and composer insertion are host-tested. Device/live-Hub acceptance open; Send stays on governed chat path | H18.26 |
+| Chat/session protocol discovery | `GET /v1/capabilities` | ➖ machine-readable client contract; no HUD control | ➖ available to authenticated clients; current native transport remains fixed to its tested contract, runtime negotiation is not implemented | H477 partial |
 | Chat history persistence | — (client-side) | ✅ | ✅ | H18.2 |
 | Agent selection | `GET /api/agents`, `agent` param | ✅ | ✅ | H18.3 |
 | Markdown rendering | — (client-side) | ✅ | ✅ | H18.4 |

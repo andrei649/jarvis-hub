@@ -294,6 +294,7 @@
   "GET /tasks",
   "GET /ticker",
   "GET /v1",
+  "GET /v1/capabilities",
   "GET /v2",
   "GET /v2/manifest.webmanifest",
   "GET /v2/sw-v2.js",
