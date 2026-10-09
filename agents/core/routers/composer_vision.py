@@ -443,6 +443,7 @@ async def composer_status(refresh_catalog: bool = False):
 @router.post("/api/vlm/composer/prepare")
 async def composer_prepare(body: ComposerPrepareBody, request: Request,
                            refresh_catalog: bool = False):
+    """Review one prompt's configured destination before image bytes are sent."""
     async with _selected_owner_scope(request, body.selected_turn):
         return await _composer_prepare(body, refresh_catalog)
 
@@ -497,6 +498,7 @@ async def _composer_prepare(body: ComposerPrepareBody, refresh_catalog: bool):
 
 @router.post("/api/vlm/composer/describe-prepared")
 async def composer_describe_prepared(body: PreparedComposerVisionBody, request: Request):
+    """Consume a reviewed route before invoking the existing physical guard."""
     async with _selected_owner_scope(request, body.selected_turn):
         return await _composer_describe_prepared(body)
 
@@ -581,6 +583,7 @@ async def _consume_prepared_review(body: PreparedComposerVisionBody, *, require_
 
 @router.post("/api/vlm/composer/chat-prepared")
 async def composer_chat_prepared(body: PreparedComposerVisionBody, request: Request):
+    """Commit one reviewed selected image reply to the actual conversation."""
     async with _selected_owner_scope(request, body.selected_turn):
         return await _composer_chat_prepared(body, request)
 
