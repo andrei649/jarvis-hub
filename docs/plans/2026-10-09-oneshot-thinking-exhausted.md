@@ -47,22 +47,24 @@ no public schema or persistent-data migration.
 
 Six selected cases were RED before the table entry: four actual command/receipt
 cases and two existing drift guards extended to the real constant. Final writer
-CLI union: 274 passed/one existing live-import skip,275total,5.398s. Root producer/
-approval/send/image union:79/79,2.618s,55overlap. Across both:299distinct cases,
-298passed/one skipped,zero failures/errors. No live test was activated. All55
-one-shot cases pass; Ruff/whitespace and a site-packages-disabled help launch pass.
+CLI union: 274 passed, one existing live-import skip, 275 total in 5.398 seconds.
+Root producer/approval/send/image union: 79/79 in 2.618 seconds, overlapping by
+55 cases. Across both: 299 distinct cases, 298 passed and one skipped, zero
+failures/errors. No live test was activated. All 55 one-shot cases pass; Ruff,
+whitespace and a site-packages-disabled help launch pass.
 
 Root AST review proves only one refusal-table entry changes; every function,
 class, import and other module statement remains identical. Independent review
 found no Critical/Important issue. This bounded delta needs no repeated full
 backend/client execution after those CLI and adjacent integration checks; the
 previous complete backend result is retained with its actual prior source SHA.
-Collection now21278backend/2009frontend/306mobile,555routes; Hermes/statuschecks
-pass. No schema/client/provider change.
+Collection records 21,278 backend, 2,009 frontend/native and 306 mobile cases,
+with 555 routes; Hermes/status checks pass. No schema/client/provider change.
 
-Nineteen previously current evidence pins are refreshed after named review;35
-preexisting stale pins stay stale,including H002CLI. Eight H586 coordinates shift
-by3with identical target lines. H002remains partial; its missing-sentinel clause
-and testcount are updated, and obsolete billing/session explanations are narrowed
+Nineteen previously current evidence pins are refreshed after named review; 35
+preexisting stale pins stay stale, including H002 CLI. Eight H586 coordinates
+shift by three with identical target lines. H002 remains partial; its missing
+sentinel clause and test count are updated, and obsolete billing/session
+explanations are narrowed
 to verified remaining CLI receipt behavior. No other semantic claim/status change.
 Full results and tested source hashes are in docs/project-oneshot-thinking-exhausted-20261009.md.
