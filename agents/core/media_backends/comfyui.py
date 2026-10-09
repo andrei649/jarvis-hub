@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import struct
 import tempfile
 import uuid
@@ -22,10 +23,12 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from ..archive_safe import _fsync_dir
 from ..env_config import truthy
 
 _IMPORTED_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 _READ_CHUNK_BYTES = 64 * 1024
+_DIGEST_SIDECAR_MAX_BYTES = 128
 
 
 class ImageGenerationError(ValueError):
@@ -270,9 +273,54 @@ def artifact_bytes(artifact_id, root):
         if len(data) > 16 * 1024 * 1024:
             raise OSError
         validate_png(data)
-    except (OSError, ImageGenerationError):
+        expected = _expected_artifact_digest(root / (artifact_id + ".sha256.json"))
+        if expected is not None and hashlib.sha256(data).hexdigest() != expected:
+            raise ValueError
+    except (OSError, ValueError, ImageGenerationError):
         raise ImageGenerationError("reference_not_found") from None
     return data
+
+
+def _expected_artifact_digest(sidecar: Path) -> str | None:
+    """Return a strict optional binding without blocking on special files."""
+    try:
+        before = sidecar.lstat()
+    except FileNotFoundError:
+        return None  # Pre-sidecar legacy image.
+    if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= _DIGEST_SIDECAR_MAX_BYTES:
+        raise ValueError("invalid digest sidecar")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(sidecar, flags)
+    with os.fdopen(fd, "rb") as handle:
+        info = os.fstat(handle.fileno())
+        after = sidecar.lstat()
+        if (not stat.S_ISREG(info.st_mode) or not stat.S_ISREG(after.st_mode)
+                or (before.st_dev, before.st_ino) != (info.st_dev, info.st_ino)
+                or (after.st_dev, after.st_ino) != (info.st_dev, info.st_ino)
+                or not 0 < info.st_size <= _DIGEST_SIDECAR_MAX_BYTES):
+            raise ValueError("invalid digest sidecar")
+        raw = handle.read(_DIGEST_SIDECAR_MAX_BYTES + 1)
+    if len(raw) != info.st_size:
+        raise ValueError("invalid digest sidecar")
+
+    def unique_pairs(pairs):
+        row = {}
+        for key, value in pairs:
+            if key in row:
+                raise ValueError("invalid digest sidecar")
+            row[key] = value
+        return row
+
+    try:
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_pairs)
+    except (UnicodeError, ValueError):
+        raise ValueError("invalid digest sidecar") from None
+    if (not isinstance(value, dict) or set(value) != {"version", "sha256"}
+            or type(value["version"]) is not int or value["version"] != 1
+            or type(value["sha256"]) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", value["sha256"]) is None):
+        raise ValueError("invalid digest sidecar")
+    return value["sha256"]
 
 
 def _workflow(config, prompt, opts, reference_name=None, reference_size=None):
@@ -520,27 +568,78 @@ def save_artifact(output_root, data, width, height, *, prompt_id=None, guard=Non
     # choose a destination and exclusive creation never overwrites a file.
     artifact_id = uuid.uuid4().hex
     destination = output_root / (artifact_id + ".png")
-    temporary = None
+    sidecar = output_root / (artifact_id + ".sha256.json")
+    reservation = output_root / (".nerva-" + artifact_id + ".reserve")
+    digest = hashlib.sha256(data).hexdigest()
+    binding = json.dumps({"version": 1, "sha256": digest}, separators=(",", ":")).encode("ascii")
+    temporary = sidecar_temporary = None
+    reserved = bound = png_link_attempted = published = False
     try:
         output_root.mkdir(parents=True, exist_ok=True)
+        os.mkdir(reservation)
+        reserved = True
+        # Even a dangling symlink occupies its final name. The reservation
+        # serializes cooperating local publishers using the same minted ID.
+        if os.path.lexists(destination) or os.path.lexists(sidecar):
+            raise OSError("artifact name occupied")
         with tempfile.NamedTemporaryFile(mode="wb", dir=output_root,
                                          prefix=".nerva-", suffix=".tmp", delete=False) as handle:
             temporary = Path(handle.name)
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
+        with tempfile.NamedTemporaryFile(mode="wb", dir=output_root,
+                                         prefix=".nerva-", suffix=".tmp", delete=False) as handle:
+            sidecar_temporary = Path(handle.name)
+            handle.write(binding)
+            handle.flush()
+            os.fsync(handle.fileno())
         # Both files are on the same filesystem. link is atomic and refuses
         # an existing destination on Windows and POSIX; replace would erase
         # an unrelated artifact on a collision. Unsupported filesystems fail.
+        os.link(sidecar_temporary, sidecar)
+        bound = True
+        _fsync_dir(output_root)
         if guard is not None:
             guard()
+        png_link_attempted = True
         os.link(temporary, destination)
+        published = True
+        _fsync_dir(output_root)
     except OSError:
         raise ImageGenerationError("artifact_write_failed") from None
     finally:
+        if bound and png_link_attempted and not published and temporary is not None:
+            # A link may have become visible even if its caller reports an
+            # error. Remove our binding for a definite competing inode; if
+            # identity cannot be checked, retain it so a mixed pair
+            # fails closed instead of silently becoming legacy-unbound.
+            try:
+                final = destination.lstat()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                published = True
+            else:
+                try:
+                    staged = temporary.stat()
+                except OSError:
+                    published = True
+                else:
+                    published = (stat.S_ISREG(final.st_mode)
+                                 and (staged.st_dev, staged.st_ino) == (final.st_dev, final.st_ino))
+        if bound and not published:
+            with contextlib.suppress(OSError):
+                sidecar.unlink()
         if temporary is not None:
             with contextlib.suppress(OSError):
                 temporary.unlink(missing_ok=True)
+        if sidecar_temporary is not None:
+            with contextlib.suppress(OSError):
+                sidecar_temporary.unlink(missing_ok=True)
+        if reserved:
+            with contextlib.suppress(OSError):
+                reservation.rmdir()
     return {"path": str(destination), "artifact_id": artifact_id, "prompt_id": prompt_id,
             "bytes": len(data), "width": width, "height": height,
-            "sha256": hashlib.sha256(data).hexdigest()}
+            "sha256": digest}

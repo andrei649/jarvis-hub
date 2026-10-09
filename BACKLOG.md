@@ -1965,6 +1965,8 @@
 
 - 2026-10-09 H477 local-producer continuation: ComfyUI and local OpenAI image publication now returns a digest of the same validated PNG bytes and passes it into new catalog rows. `md-*` read/export inherits the existing mismatch refusal; legacy results omit the hash, while malformed present values cannot silently become unbound rows. Guarded publication, no-replay and typed artifact views stay intact. The standalone generated-ID reader remains a separate gap. See [local producer proof](docs/plans/2026-10-09-local-media-digest.md).
 
+- 2026-10-09 H477 generated-ID continuation: new local ComfyUI and local OpenAI PNGs persist an expected SHA-256 beside the image. The shared download/edit reader refuses malformed bindings or changed bytes; cooperating local publishers reserve IDs and publish the binding before the guarded PNG link. Missing sidecars keep legacy availability without an integrity claim. Cloud publication remains separate, directory-entry sync is best effort, and no provider retry or broader H477 completion is added. See [standalone image proof](docs/plans/2026-10-09-generated-artifact-digest.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
   Reassess inherited judgments, finish the full accepted
