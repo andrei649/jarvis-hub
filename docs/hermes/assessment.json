@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "74423b4150cbd3dae1ac4b88c3aa997fc510d908",
-  "assessed_at": "2026-10-02T04:48:07Z",
+  "base_sha": "36b54419225132b3eb73fec18ad1f2fe3ccdbdc8",
+  "assessed_at": "2026-10-08T13:38:58.177807Z",
   "reviews": [
     {
       "id": "H001",
@@ -503,16 +503,16 @@
       "id": "H063",
       "row_sha256": "cd1345086d24f184cc5642d24c7d354f791ff49949787d9c4b9256b878bb567a",
       "status": "partial",
-      "summary": "Channel conversations are designed to be forever-sessions. Orchestrator.channel_handler derives a deterministic key per channel identity with build_session_key (agents/core/channels/session.py:68, called at agents/core/orchestrator.py:1508) and resumes that same session on every turn (agents/core/orchestrator.py:1520). conversation_clock (agents/core/conversation_clock.py) only tells a long-lived session today's date. There is no reset policy, no idle or daily expiry, no reset-trigger phrase and no stall watcher: reset_policy, session_reset, idle_reset and stall-watcher terms have no matches under agents/. The only adjacent mechanism is disk retention. The H262 lifecycle sweep (run_sweep, agents/core/lifecycle_sweep.py:213) deletes archived, unpinned chats whose last activity is older than retention.conversation_ttl_days, backup first; an hourly, interval-gated job (agents/core/scheduler_service.py:184) runs it, and it deletes only when retention.enabled is on (off by default) and a person approved the horizon. It does not evict the in-memory session, so it ages records out, the analogue of session_store_max_age_days, but does not reset live context. Tests tests/test_retention.py and tests/test_channel_sessions.py pass.",
-      "remaining": "1. Reset policy: idle-minutes and daily-at-hour resets, overridable per session type (dm/group/thread) and per channel, applied by rotating the channel session to a fresh id while keeping the old transcript.\n2. Reset triggers: configurable texts (e.g. /new, /reset) intercepted in channel_handler before a turn runs; they start a fresh session and acknowledge it.\n3. Expiry watcher: a scheduled job that applies the idle/daily policies and drops stale _channel_sessions entries.\n4. Stall watcher: track inbound receipt against last turn progress per session and notify the owner once when a message has been pending past a threshold with no progress.\n5. Tests for each.",
+      "summary": "The recovered native channel-session service rotates durable route generations under the existing stable base/session turn leases. Reset settings support idle minutes and daily local hour with timezone/DST, per-type dm/group/thread and channel overrides, explicit reset texts and bounded route-index ageing. Owner /new and /reset create a fresh transcript; /undo creates a new transcript from exchanges before the last user turn, preserving its predecessor. Existing APScheduler invokes expiry even without new inbound text and skips active leases; routing-index retirement does not delete conversation data. Per-inbound stall episodes track actual processing/model-token activity and use the existing governed owner notification transport once per due episode. Telegram topics, Slack threads/groups and other channel identity/delivery rules remain authoritative. Direct web and CLI reset/undo commands use new concrete IDs; ChatResponse and SSE end expose session_id, the HUD sends it on later turns, Sessions reopens exact older/archived topics, desktop sync and asynchronous callbacks are fenced by current topic/turn. Valid empty snapshots survive restart/resume, while missing or malformed turns refuse without changing in-memory identity. Existing Admin settings persist and validate the nine session options. Focused backend/API/settings/scheduler and frontend transition/reopen/desktop regressions pass. Native adaptation from #1233; no file checkpoint restore or runtime import. Integration review (2026-10-08): observation-only ingress retries when scheduled expiry changes the generation during memory resume and adopts a concurrent normal turn's winning route. Owner-configured automatic idle/daily rollover applies to admitted guests; explicit resets remain owner-only and recheck turn authority before committing. Deterministic race and guest rollover regressions pass. HTTP/SSE fixtures now expose the concrete session ID without weakening their origin, reference, reasoning or warming assertions.",
+      "remaining": "Automatic policy expiry/stall observation is connected to channel inbound routes; direct web/CLI use explicit lifecycle commands and existing stream limits, not that automatic watcher. Configured-channel live notification delivery and real device acceptance were not run. Native mobile clients still need concrete returned-ID transitions and visible-transcript refresh (H18.30). Session-index metadata persists independently; old transcript data is retained and never deleted by routing expiry.",
       "evidence": [
         {
           "path": "agents/core/channels/session.py",
-          "sha256": "6a471472fa47ddbe4329a3c163919d04eb9fae7e96e1c1ced77d1960b8c38127"
+          "sha256": "b57b377db25f43a6b0356c7c6459b1149492d3d883958c06576dd4b5858f2cf5"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "d6772e26d983fad2722df85491bb7534e03765bf569f7f8d1c0fe0a578ad07b5"
+          "sha256": "82fcfeda68f70c2cebd9ecc310db6f23f5b13560948c5634c63eb0155db54101"
         },
         {
           "path": "agents/core/conversation_clock.py",
@@ -524,7 +524,7 @@
         },
         {
           "path": "agents/core/scheduler_service.py",
-          "sha256": "1b8486922bd649f45ff7801de567933c30ef8b0f6c9be5c59dadc513855ab66b"
+          "sha256": "1bf8a64a53c8e2ab28dcf670527694da848b9314af332a740f20d3a61bea82dd"
         },
         {
           "path": "tests/test_retention.py",
@@ -533,6 +533,78 @@
         {
           "path": "tests/test_channel_sessions.py",
           "sha256": "0766b7f11f4865eb47344e42a761584fcde7e10e04bd5d603ff411559cd2af53"
+        },
+        {
+          "path": "agents/core/channels/session_lifecycle.py",
+          "sha256": "9f7922e8642267298084f6f11d6280890e225d38054dd51ef05ea61e98d8fbde"
+        },
+        {
+          "path": "agents/core/channels/session_reset.py",
+          "sha256": "99d1e0a6039519125b1ea9b9fa5d547707fbb8235b084d52be1ca85cd8d83692"
+        },
+        {
+          "path": "agents/core/channels/session_stall.py",
+          "sha256": "9eab44e1afa569bf8316ccb8e4f8d9983888c90eda1b4e0cdf6e797819cc4e88"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "65c930e520cbfa43482e46551e2b3969758c560f6de248971e489c49dafcb9f9"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "7fc8f4921ab5668410a0380d8408d353202e7fa7191448aff2cfb2faebd7126e"
+        },
+        {
+          "path": "agents/core/memory/conversation.py",
+          "sha256": "9fa4330afb1f04e15d07975bc62dc209b10b656d8bd5f575bfb0befb54a33cd1"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "e6412426b262bdb4017a17acdc934af66f6ca78be064c50947044c99401bcd96"
+        },
+        {
+          "path": "frontend/src/app.tsx",
+          "sha256": "78f5f70846a0c5bb9858edc1557e2628acb1c85ec7e0a51395115b050ab153fa"
+        },
+        {
+          "path": "frontend/src/desktop.tsx",
+          "sha256": "06262f92701050fa9dfa968e2d7ea2bde99488b13fd2964ab677cb96be0a1fb8"
+        },
+        {
+          "path": "frontend/src/panels/sessions.tsx",
+          "sha256": "5b73e230f9dea4d919947095f580bdc6462b4ff4ef28c5dc7e465b21bc7f59d4"
+        },
+        {
+          "path": "tests/test_native_conversation_sessions.py",
+          "sha256": "fd45399b5c5641f7d837c191003f799b082f7db2ddd44e2690043beacbbeab38"
+        },
+        {
+          "path": "tests/test_session_reset_policy.py",
+          "sha256": "719d2c6b9b054cee0af64a4698d0da5714772fc2aea7187f28d8727e8b09d2ba"
+        },
+        {
+          "path": "tests/test_session_settings.py",
+          "sha256": "4e9f736d32c34b2aae3805ab866894fceab322b9ac91b6fae3ab64392f2b9b9d"
+        },
+        {
+          "path": "tests/test_stall_watcher.py",
+          "sha256": "6fa47a9aca3e64a8d4cc3c9edfc025d960016a8b8f9535ffe53c6c31d935dcbb"
+        },
+        {
+          "path": "tests/test_chat_http.py",
+          "sha256": "2f89a184a265e73667a4cd70cc2ab4f805d4263e42f96eacde3f43532a3431b0"
+        },
+        {
+          "path": "frontend/src/test/composer-vision-turn.test.tsx",
+          "sha256": "23da691ed6c2b9136ed4d6c880ccc8cd1624e419e0d7e8984f1ef48ec8250586"
+        },
+        {
+          "path": "frontend/src/test/desktop-sync.test.tsx",
+          "sha256": "f9293c2c5a2a013fc269b6a98ea19019ad9d86bf141f6b3268b84446581e02ef"
+        },
+        {
+          "path": "frontend/src/test/sessions-recap.test.tsx",
+          "sha256": "c33ca504da35f990f5fc6f3f3ad58d87ec1e1a69fbd73947efde41126173b73d"
         }
       ]
     },
@@ -3363,8 +3435,8 @@
       "id": "H277",
       "row_sha256": "ec811f318985a04ae87406e63230f447d3ad253fb3d5fac2b2fc3f5e6bb9c0c7",
       "status": "partial",
-      "summary": "Named main/deep/vision/video/approval_judge roles resolve legacy-compatible configuration. Authenticated roles API omits all URLs and reports no reachability; the HUD displays role configuration. VLM describe refuses non-loopback dispatch and checks the actual selected model. Optional advisory judging covers both action approvals and persisted BLOCKED Decision Inbox tasks through one bounded runner (2 calls, 32 reservations), separate SQLite annotations/revisions, fresh contexts, live policy/taint rechecks and compare-and-store. Opinions cannot authorize or mutate signed execution bytes. Edits revoke stale opinions, notification bookkeeping does not, and invalid decisions preserve pending state. Browser cards show escaped opinions and bounded per-card polling. Round2 mutation and post-refactor verification artifacts record exact snapshots and limitations. H487/H513 integration review: grouped requests retain independent authority and advisory fields, task membership settlement is atomic, and provider request guards are scoped to model dispatch rather than ToolRPC or spawned advisory work. Focused H277/approval/worker and complete frontend regressions pass; the prior mutation evidence remains tied to its recorded snapshot. Subsequent H487 chat-outcome review: queue additions are separate observational tables and optional initial-intake status CAS; signed receipts and execution fingerprints remain unchanged. The combined 776-test regression includes task-judge, mediation and worker coverage. Prior mutation results still describe their original recorded snapshots. Approval-judge dispatch now uses separate audited role consent bound to its actual model, destination and Authorization. Pure posture resolves configuration without constructing clients; each physical request rechecks consent, policy, adapter identity and queue eligibility. Late revocation during client cleanup also discards the verdict. Unknown adapters, cookies and custom HTTP auth fail closed. Provider grants cannot authorize this role; the responsive HUD has independent role controls. Focused integration passed 456 cases, including 34 new runtime cases, with separate store/API and HUD regressions. Physical request validation independently pins POST URL and Authorization, rejects cookies and redirected/reused requests, while existing cleanup-only scopes preserve DELETE behavior. An offline 307 regression reproduced the gap before correction. H487 expiry review: task judge validity now checks the persisted deadline at scheduling, send and annotation boundaries. Expiry clears pending advisory keys without creating human decisions; halt defers durable side effects. Existing kernel/role authority is unchanged. No new mutation campaign or live-provider acceptance is claimed. Direct-transport follow-up: owned composer and approval-judge clients disable environment proxies; native HTTPX route selection, actual mounts and exact pool type are checked before dispatch and on retries. Unsupported custom clients/selectors and proxy pools refuse. Borrowed ACTIVE judge clients remain unchanged and open; ordinary local-backend constructor defaults and positional arguments are preserved. Offline real-client regressions and bounded independent review pass; full snapshot evidence is recorded separately. Interactive VLM follow-up preserves role/model selection guards while adding strict-local actual-dispatch checks, sanitized status and honest failure responses. The focused role-route fixtures use native offline HTTPX transports; no wider provider/video parity is claimed. Video consumer review (2026-10-02): the default-off video_analyze tool now creates a canonical human-approved tool.rpc task under enforced signed mediation. A secret-keyed approval class binds scoped source bytes or public source URL, question, roots and effective model destination/credential configuration. POSIX descriptor reads and DNS-pinned redirect-checked downloads are bounded. Native video_url requests use an immutable exact-body digest, URL/authorization checks and direct transport; current task, kernel, consent and privacy posture are checked at physical requests and after cleanup. Model responses are streamed with byte/time limits. Remote use requires independent role:video_analysis consent, environment opt-in and the per-call flag; strict-local, local-only agents, cloud_fallback=never and safe mode are retained. Security Posture exposes the separate consent row. Focused offline tests and full frontend checks passed; live native-video model behavior is unverified. The fresh 14-mutation campaign targets base 9d5b3add only, before the video consumer. Full backend milestone results are recorded separately. Vision inheritance review (2026-10-02): without explicit video provider/base, the shared resolver selects the effective vision native endpoint and model, with a nonblank non-auto video-model override. Invalid configured vision refuses. Explicit video routes require their own model. A dedicated video key wins; otherwise only the vision resolver effective key crosses onto an identical provider and normalized complete native URL. That earlier inheritance slice had no provider-failure retry. Inherited configuration changes stale the HMAC class and separate role consent before network dispatch and withhold late answers; class verification may reread the scoped local file to recompute its hash. The focused integration passed 307 cases, including 19 new fallback cases; parent verification passed 188 cases after import-order cleanup, and independent bounded review found no blocker. Live video-model behavior remains unverified. Configured-chain review (2026-10-02, runtime 591c9e15): up to four explicit fallback slots have strict pure configuration, isolated keys and independent audited role consent. The signed class binds the complete ordered chain; native single-send attempts reuse prepared media and recheck authority at source access, dispatch, cleanup and disclosure. Only reviewed bounded native status/body and transport failures advance; hook/guard failures refuse. One total deadline includes source and cleanup, with smaller attempt limits. No-chain class/scope/result compatibility is retained. 627 focused cases and 1838 frontend cases passed; full milestone results are recorded separately. The separate video mutation snapshot 92905443 detected 29 of 31 valid mutations with two documented survivors and 168 baseline cases; it predates this new chain. Native Gemini video review (2026-10-02,0382ef0b): explicit primary/fallback routes use actual inline video bytes, container MIME and isolated video-only keys. A pure codec enforces native URL/model/response contracts; signed dispatch checks both credential headers and actual request size. Unsupported chain MIME and native payload size refuse before any model lane.707focused cases passed, including66codec and30native integration cases; bounded independent review found no blocker. Full milestone evidence remains separately scoped; no live-provider acceptance is claimed. Primary transient video recovery review (2026-10-02,09f4dd87): explicit0/1configuration binds enabled primary-once policy into task approval. Only first-primary typed connection or bounded HTTP408/5xx can retry once after cleanup/current authority checks; ordinary timeout and all fallback candidates do not retry. Generic transient HTTP cannot authorize provider fallback. Default class/scope/notice/result compatibility is preserved.755focused cases passed including48new retry cases, with corrected default failure-shape regression and bounded independent review clear. Full-suite and new mutation outcomes are separately scoped, not inferred from this focused result. Shared local auxiliary routing review (2026-10-02,aa4865b5): four actual orchestrator consumers now share one invocation helper with independent call-time model IDs. Titles, recall rewriting, review and streamed compression retain their output/default/budget and H513 physical-request contracts.54 new tests include Unicode/sanitized configuration, job exclusion, no-cloud-backend fallback, concurrent guard/model isolation, physical policy changes and cancelled-child late-send refusal;513 focused integration cases passed. Bounded independent source review found no blocker. Full backend and cited-test evidence are recorded in the local auxiliary milestone; no new mutation or live-model claim. Acquisition auxiliary integration (2026-10-02): capability generation and grounded draft planning now select independent local model IDs through prepare_local_auxiliary. One operation captures its backend/model across both JSON attempts; each attempt gets fresh H513 checks. Six consumers share the invocation path. The prior job-pin behavior, optional active-model fallback, token bounds, initially requested temperatures and validators are preserved. 32 new cases and the full frozen backend verify this increment; no new provider, discovery, recovery, live-model or mutation claim. Local parameter recovery review (2026-10-02): five nonstreaming LM Studio auxiliary consumers may omit only temperature after a bounded structured HTTP400 rejection. Initial requested temperatures remain; the repaired request intentionally uses the provider default. Exact backend/model and H513 scope remain bound, and every physical send rechecks policy. One temperature repair composes with one model-unloaded retry in either order, at most three sends. 32 new cases and 612 focused regressions pass; no global rejection cache, credential change, streamed recovery or live-provider claim. Bounded video empty recovery (2026-10-02,45d76bbe): explicit default-zero configuration signs one full-chain restart after a structurally valid empty successful native response. An empty fallback restarts primary; each consumer call has its own existing primary transient budget, at most two calls and2*(routes+transient_budget) sends under the original total deadline. Same prepared media/question and frozen route identities; clients and bodies are fresh, with task/kernel/consent/physical/cleanup checks. Strict compatible and Gemini empty classification rejects malformed, blocked, truncated, tool, reasoning-only compatible and nested-error replies. At that historical video-empty snapshot, existing nonempty acceptance included Gemini thought-part permissiveness; the later native-normalization increment below supersedes it. Enabled provenance separates consumer calls and route attempts; default-zero legacy identity is retained. Four red-first signed-worker cases,61 new cases and647 focused regressions pass; bounded independent review has no blocker. Full-suite and exact-snapshot mutation results are separate evidence; no live-provider acceptance or broader output-normalization parity claim. Governed image recovery (2026-10-02): JARVIS_ROLE_VISION_EMPTY_RETRIES=1 permits exactly one repeat of the same prepared image/model payload only after a structurally valid empty successful response. Default0 preserves legacy behavior. All five governed native consumers share bounded output, one180-second deadline, fresh authorization, exact-body validation and a final request hook. CLI/HUD disclose the potential second call. 582 integrated backend and1847 frontend tests pass; no live-provider or other-adapter normalization claim. Native normalization review (2026-10-02): both VLM paths and signed compatible video now prefer normalized visible text, then ordered typed reasoning/reasoning_content and detail summaries. Pinned Latin/CJK closed thinking aliases are hidden; opaque values are not stringified. Native Gemini joins raw thought fragments before normalization and uses useful thought output without another call. All typed parts/errors are checked before acceptance; malformed thought-marked function calls now refuse. Existing authority, budgets and raw-empty predicate remain. Parent696 integrated cases pass; this supersedes earlier nonempty Gemini permissiveness, without claiming SDK/non-native parity or live-provider acceptance. Publication review correction (2026-10-02): agents/core/llm/native_response.py:72 now admits only legacy untyped, reasoning.text and reasoning.summary details. Encrypted, opaque, unknown and malformed typed details are skipped even if they contain string summary/content/text. Seven actual governed image/video regressions failed before the fix; the corrected normalization and empty-recovery union passed all163 cases. Opaque-only video refuses in one call without granting retry authority. All base evidence hashes were current before this two-file correction; unchanged authority, transport, route and UI contracts retain their existing assessment.",
-      "remaining": "Additional auxiliary adapters and shared task-aware routing beyond the six integrated local consumers (including the still-unwired presence explanation seam), pinned upstream automatic provider discovery, SDK credential recovery, other parameter/provider recovery and route capability caching, additional-adapter empty-output recovery, SDK/non-native output normalization and typed first-token no-progress recovery remain unfinished. Native Gemini larger-video upload/lifecycle and live video-model acceptance remain open. Enforced signed mediation and POSIX local-file access are required; Ollama video is unsupported. Native mobile controls and inbound video ingestion remain broader project work. Historic mutation receipts retain their exact earlier source snapshots; new campaigns must state their own narrower coverage.",
+      "summary": "Named main/deep/vision/video/approval_judge roles resolve legacy-compatible configuration. Authenticated roles API omits all URLs and reports no reachability; the HUD displays role configuration. VLM describe refuses non-loopback dispatch and checks the actual selected model. Optional advisory judging covers both action approvals and persisted BLOCKED Decision Inbox tasks through one bounded runner (2 calls, 32 reservations), separate SQLite annotations/revisions, fresh contexts, live policy/taint rechecks and compare-and-store. Opinions cannot authorize or mutate signed execution bytes. Edits revoke stale opinions, notification bookkeeping does not, and invalid decisions preserve pending state. Browser cards show escaped opinions and bounded per-card polling. Round2 mutation and post-refactor verification artifacts record exact snapshots and limitations. H487/H513 integration review: grouped requests retain independent authority and advisory fields, task membership settlement is atomic, and provider request guards are scoped to model dispatch rather than ToolRPC or spawned advisory work. Focused H277/approval/worker and complete frontend regressions pass; the prior mutation evidence remains tied to its recorded snapshot. Subsequent H487 chat-outcome review: queue additions are separate observational tables and optional initial-intake status CAS; signed receipts and execution fingerprints remain unchanged. The combined 776-test regression includes task-judge, mediation and worker coverage. Prior mutation results still describe their original recorded snapshots. Approval-judge dispatch now uses separate audited role consent bound to its actual model, destination and Authorization. Pure posture resolves configuration without constructing clients; each physical request rechecks consent, policy, adapter identity and queue eligibility. Late revocation during client cleanup also discards the verdict. Unknown adapters, cookies and custom HTTP auth fail closed. Provider grants cannot authorize this role; the responsive HUD has independent role controls. Focused integration passed 456 cases, including 34 new runtime cases, with separate store/API and HUD regressions. Physical request validation independently pins POST URL and Authorization, rejects cookies and redirected/reused requests, while existing cleanup-only scopes preserve DELETE behavior. An offline 307 regression reproduced the gap before correction. H487 expiry review: task judge validity now checks the persisted deadline at scheduling, send and annotation boundaries. Expiry clears pending advisory keys without creating human decisions; halt defers durable side effects. Existing kernel/role authority is unchanged. No new mutation campaign or live-provider acceptance is claimed. Direct-transport follow-up: owned composer and approval-judge clients disable environment proxies; native HTTPX route selection, actual mounts and exact pool type are checked before dispatch and on retries. Unsupported custom clients/selectors and proxy pools refuse. Borrowed ACTIVE judge clients remain unchanged and open; ordinary local-backend constructor defaults and positional arguments are preserved. Offline real-client regressions and bounded independent review pass; full snapshot evidence is recorded separately. Interactive VLM follow-up preserves role/model selection guards while adding strict-local actual-dispatch checks, sanitized status and honest failure responses. The focused role-route fixtures use native offline HTTPX transports; no wider provider/video parity is claimed. Video consumer review (2026-10-02): the default-off video_analyze tool now creates a canonical human-approved tool.rpc task under enforced signed mediation. A secret-keyed approval class binds scoped source bytes or public source URL, question, roots and effective model destination/credential configuration. POSIX descriptor reads and DNS-pinned redirect-checked downloads are bounded. Native video_url requests use an immutable exact-body digest, URL/authorization checks and direct transport; current task, kernel, consent and privacy posture are checked at physical requests and after cleanup. Model responses are streamed with byte/time limits. Remote use requires independent role:video_analysis consent, environment opt-in and the per-call flag; strict-local, local-only agents, cloud_fallback=never and safe mode are retained. Security Posture exposes the separate consent row. Focused offline tests and full frontend checks passed; live native-video model behavior is unverified. The fresh 14-mutation campaign targets base 9d5b3add only, before the video consumer. Full backend milestone results are recorded separately. Vision inheritance review (2026-10-02): without explicit video provider/base, the shared resolver selects the effective vision native endpoint and model, with a nonblank non-auto video-model override. Invalid configured vision refuses. Explicit video routes require their own model. A dedicated video key wins; otherwise only the vision resolver effective key crosses onto an identical provider and normalized complete native URL. That earlier inheritance slice had no provider-failure retry. Inherited configuration changes stale the HMAC class and separate role consent before network dispatch and withhold late answers; class verification may reread the scoped local file to recompute its hash. The focused integration passed 307 cases, including 19 new fallback cases; parent verification passed 188 cases after import-order cleanup, and independent bounded review found no blocker. Live video-model behavior remains unverified. Configured-chain review (2026-10-02, runtime 591c9e15): up to four explicit fallback slots have strict pure configuration, isolated keys and independent audited role consent. The signed class binds the complete ordered chain; native single-send attempts reuse prepared media and recheck authority at source access, dispatch, cleanup and disclosure. Only reviewed bounded native status/body and transport failures advance; hook/guard failures refuse. One total deadline includes source and cleanup, with smaller attempt limits. No-chain class/scope/result compatibility is retained. 627 focused cases and 1838 frontend cases passed; full milestone results are recorded separately. The separate video mutation snapshot 92905443 detected 29 of 31 valid mutations with two documented survivors and 168 baseline cases; it predates this new chain. Native Gemini video review (2026-10-02,0382ef0b): explicit primary/fallback routes use actual inline video bytes, container MIME and isolated video-only keys. A pure codec enforces native URL/model/response contracts; signed dispatch checks both credential headers and actual request size. Unsupported chain MIME and native payload size refuse before any model lane.707focused cases passed, including66codec and30native integration cases; bounded independent review found no blocker. Full milestone evidence remains separately scoped; no live-provider acceptance is claimed. Primary transient video recovery review (2026-10-02,09f4dd87): explicit0/1configuration binds enabled primary-once policy into task approval. Only first-primary typed connection or bounded HTTP408/5xx can retry once after cleanup/current authority checks; ordinary timeout and all fallback candidates do not retry. Generic transient HTTP cannot authorize provider fallback. Default class/scope/notice/result compatibility is preserved.755focused cases passed including48new retry cases, with corrected default failure-shape regression and bounded independent review clear. Full-suite and new mutation outcomes are separately scoped, not inferred from this focused result. Shared local auxiliary routing review (2026-10-02,aa4865b5): four actual orchestrator consumers now share one invocation helper with independent call-time model IDs. Titles, recall rewriting, review and streamed compression retain their output/default/budget and H513 physical-request contracts.54 new tests include Unicode/sanitized configuration, job exclusion, no-cloud-backend fallback, concurrent guard/model isolation, physical policy changes and cancelled-child late-send refusal;513 focused integration cases passed. Bounded independent source review found no blocker. Full backend and cited-test evidence are recorded in the local auxiliary milestone; no new mutation or live-model claim. Acquisition auxiliary integration (2026-10-02): capability generation and grounded draft planning now select independent local model IDs through prepare_local_auxiliary. One operation captures its backend/model across both JSON attempts; each attempt gets fresh H513 checks. Six consumers share the invocation path. The prior job-pin behavior, optional active-model fallback, token bounds, initially requested temperatures and validators are preserved. 32 new cases and the full frozen backend verify this increment; no new provider, discovery, recovery, live-model or mutation claim. Local parameter recovery review (2026-10-02): five nonstreaming LM Studio auxiliary consumers may omit only temperature after a bounded structured HTTP400 rejection. Initial requested temperatures remain; the repaired request intentionally uses the provider default. Exact backend/model and H513 scope remain bound, and every physical send rechecks policy. One temperature repair composes with one model-unloaded retry in either order, at most three sends. 32 new cases and 612 focused regressions pass; no global rejection cache, credential change, streamed recovery or live-provider claim. Bounded video empty recovery (2026-10-02,45d76bbe): explicit default-zero configuration signs one full-chain restart after a structurally valid empty successful native response. An empty fallback restarts primary; each consumer call has its own existing primary transient budget, at most two calls and2*(routes+transient_budget) sends under the original total deadline. Same prepared media/question and frozen route identities; clients and bodies are fresh, with task/kernel/consent/physical/cleanup checks. Strict compatible and Gemini empty classification rejects malformed, blocked, truncated, tool, reasoning-only compatible and nested-error replies. At that historical video-empty snapshot, existing nonempty acceptance included Gemini thought-part permissiveness; the later native-normalization increment below supersedes it. Enabled provenance separates consumer calls and route attempts; default-zero legacy identity is retained. Four red-first signed-worker cases,61 new cases and647 focused regressions pass; bounded independent review has no blocker. Full-suite and exact-snapshot mutation results are separate evidence; no live-provider acceptance or broader output-normalization parity claim. Governed image recovery (2026-10-02): JARVIS_ROLE_VISION_EMPTY_RETRIES=1 permits exactly one repeat of the same prepared image/model payload only after a structurally valid empty successful response. Default0 preserves legacy behavior. All five governed native consumers share bounded output, one180-second deadline, fresh authorization, exact-body validation and a final request hook. CLI/HUD disclose the potential second call. 582 integrated backend and1847 frontend tests pass; no live-provider or other-adapter normalization claim. Native normalization review (2026-10-02): both VLM paths and signed compatible video now prefer normalized visible text, then ordered typed reasoning/reasoning_content and detail summaries. Pinned Latin/CJK closed thinking aliases are hidden; opaque values are not stringified. Native Gemini joins raw thought fragments before normalization and uses useful thought output without another call. All typed parts/errors are checked before acceptance; malformed thought-marked function calls now refuse. Existing authority, budgets and raw-empty predicate remain. Parent696 integrated cases pass; this supersedes earlier nonempty Gemini permissiveness, without claiming SDK/non-native parity or live-provider acceptance. Publication review correction (2026-10-02): agents/core/llm/native_response.py:72 now admits only legacy untyped, reasoning.text and reasoning.summary details. Encrypted, opaque, unknown and malformed typed details are skipped even if they contain string summary/content/text. Seven actual governed image/video regressions failed before the fix; the corrected normalization and empty-recovery union passed all163 cases. Opaque-only video refuses in one call without granting retry authority. All base evidence hashes were current before this two-file correction; unchanged authority, transport, route and UI contracts retain their existing assessment. Selected-turn loopback Ollama recovery (2026-10-08): all active HUD composers carry reactive concrete session and agent identity, require fresh owner review bound to actual selected model/route and exact image bytes, and refuse stale session/agent/history results. Three new routes require the existing admin owner principal and bind its resolved profile into review and turn context. Only successful turns commit text and media provenance; bounded process-local image handles can be reviewed for later turns and clear on restart/load. Existing legacy auxiliary VLM behavior is preserved. Red non-owner API tests exposed access before repair; owner, principal isolation, exact payload, review staleness, history and real App/ChatMode tests pass. New H595 coordinator additions only configure code-session/project grants and skill environment context; existing H277 auxiliary/advisory paths are unchanged. Prior provider/video/mutation receipts retain their dated scope.",
+      "remaining": "Additional auxiliary adapters and shared task-aware routing beyond the six integrated local consumers (including the still-unwired presence explanation seam), pinned upstream automatic provider discovery, SDK credential recovery, other parameter/provider recovery and route capability caching, additional-adapter empty-output recovery, SDK/non-native output normalization and typed first-token no-progress recovery remain unfinished. Native Gemini larger-video upload/lifecycle and live video-model acceptance remain open. Enforced signed mediation and POSIX local-file access are required; Ollama video is unsupported. Native mobile controls and inbound video ingestion remain broader project work. Historic mutation receipts retain their exact earlier source snapshots; new campaigns must state their own narrower coverage. Selected image turns currently support exact loopback Ollama only. Raw active images are process-local and bounded, with fresh review required for reuse; transcript snapshots retain text/provenance rather than raw bytes. Native selected-image/history controls are tracked as H18.31. No live Ollama model or provider/device/deployment acceptance was run.",
       "evidence": [
         {
           "path": "agents/core/llm/model_roles.py",
@@ -3396,7 +3468,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "35278e6c4410450f47ffb9cebc0482ca8ed694ee2bd0ec57b3652102d3097c94"
+          "sha256": "82fcfeda68f70c2cebd9ecc310db6f23f5b13560948c5634c63eb0155db54101"
         },
         {
           "path": "agents/core/routers/autonomy.py",
@@ -3476,7 +3548,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1c9f11237f8df0962801f12b0daede0109e87605b95c85236d6cdff93b97226b"
+          "sha256": "e30b53707c5b2b5d599eddc05c36b32b757341a1b85eb77e5c13fe01b4ed418f"
         },
         {
           "path": "agents/core/job_toolsets.py",
@@ -3661,6 +3733,98 @@
         {
           "path": "tests/test_h277_gemini_normalization.py",
           "sha256": "838d7827e98f9c6cbed9bda120aff8da2ffb6e4abd6554d532725caf90db4823"
+        },
+        {
+          "path": "agents/core/llm/vision_history.py",
+          "sha256": "d0b434be8677ecdbf9908a369757df86ff69ec5206b53962904290470060f7ba"
+        },
+        {
+          "path": "agents/core/llm/vision_review.py",
+          "sha256": "7f7d392361a1982a8d02d41676975a362403b85704a334aa283dc1aec1a473d4"
+        },
+        {
+          "path": "agents/core/llm/vision_turn.py",
+          "sha256": "c08d8df9262d05fd1e497267da710a8dcc8ff00dcf1e9b9dfd7c2b9128793f97"
+        },
+        {
+          "path": "agents/core/llm/vision_ollama_wire.py",
+          "sha256": "9896d01a0d1fa0158aca4eb777bd811ea3292c8cb370f04563f1ce9d9b4a1fbe"
+        },
+        {
+          "path": "agents/core/memory/conversation.py",
+          "sha256": "9fa4330afb1f04e15d07975bc62dc209b10b656d8bd5f575bfb0befb54a33cd1"
+        },
+        {
+          "path": "agents/core/memory/manager.py",
+          "sha256": "94000ea19cecbcdd701e2400f41bdccf2f44ca5de507a595e6311b02c8ce5997"
+        },
+        {
+          "path": "agents/core/session_continuation.py",
+          "sha256": "91f6f514e865b35dfbce130551a351f1c43882058e1af7db0598f8e7d915dee1"
+        },
+        {
+          "path": "agents/core/routers/composer_vision.py",
+          "sha256": "3e591d8a585747b9e84c410c9d266b1a24ebd4d4fcbb5ae1c84d99737c78c360"
+        },
+        {
+          "path": "agents/core/routers/_deps.py",
+          "sha256": "1eba235613e6a644a6488b5478f540eb48c18906f31ae8d8a59c2957d6392dfa"
+        },
+        {
+          "path": "frontend/src/app.tsx",
+          "sha256": "78f5f70846a0c5bb9858edc1557e2628acb1c85ec7e0a51395115b050ab153fa"
+        },
+        {
+          "path": "frontend/src/modes3.tsx",
+          "sha256": "1e40b2b910bb29b7ecaa4989782a3d5b20066c1221f6e0725b213c3bf0e7452a"
+        },
+        {
+          "path": "frontend/src/cockpit.tsx",
+          "sha256": "6bdbd55c36179732c3255b1cc5189b8b70e93610b05154d4cebb1da99d8dac82"
+        },
+        {
+          "path": "frontend/src/composer-images.tsx",
+          "sha256": "5b2f58e197846b30dc9f8661b84ccc3eea26ee96a445c5dbffac528d55b3b928"
+        },
+        {
+          "path": "frontend/src/vision-turn.ts",
+          "sha256": "549ade1c224b4ed5b82ddcbaaa71a998491278e48c5db97dea5eff45ab52a657"
+        },
+        {
+          "path": "tests/test_h277_active_image_history.py",
+          "sha256": "55a0a9f38d8bc475aec961f7a9b11bfe61e06072ffdc6026326b133875a6a493"
+        },
+        {
+          "path": "tests/test_h277_selected_ollama.py",
+          "sha256": "158eb0892042063f3284b9f2b45e3b3d2d19f1f8865761d5c41e129640ac5274"
+        },
+        {
+          "path": "frontend/src/test/composer-selected-ollama.test.tsx",
+          "sha256": "f2ff60efe5d8a8e27b0d61ac8790daa63bb1d73f9a79a28209987aa8851e1bb7"
+        },
+        {
+          "path": "frontend/src/test/selected-vision-app.test.tsx",
+          "sha256": "b4b849a56e5c9189f309d379bf84484682b92e8abd28e23620ee7fd03171478d"
+        },
+        {
+          "path": "tests/_snapshots/route_surface.json",
+          "sha256": "69fd3096d11148558417bbbe54e5f193bf05e3a3fa5d43197dbb5bc9c986a6f0"
+        },
+        {
+          "path": "tests/_snapshots/route_auth.json",
+          "sha256": "a03839559f96dd626703646a124f985475d4af730c1b3bead0c1406b32b198f5"
+        },
+        {
+          "path": "tests/_snapshots/openapi_surface.json",
+          "sha256": "a53a48723db40cc12f475e0f1380ead3dab4c990b6fd60512ab01429bee4be39"
+        },
+        {
+          "path": "frontend/src/api/schema.gen.ts",
+          "sha256": "3a4c4e08589542dad03300f83ca80bb2adffe0e1c9801c49b0d640cf96491aed"
+        },
+        {
+          "path": "docs/plans/2026-10-08-selected-ollama-vision.md",
+          "sha256": "9e6949e70d0ffc862163aa723a475f2eed9dc3b10029c749b4338455c1aa28c0"
         }
       ]
     },
@@ -7787,7 +7951,7 @@
       "id": "H490",
       "row_sha256": "40df56c4740cf8a5cbedb2c4efeda29746ba7c49a46155cdf922aaa85500d90f",
       "status": "equivalent",
-      "summary": "Safe mode now runs in Hermes' whole reduced posture, on top of the owner customizations H275 leaves out, and still relaxes no gate. JARVIS_SAFE_MODE=1 (or `python serve.py --safe-mode`) is the one switch; LAYERS (agents/core/safe_mode.py:63) gains four layers after H275's seven. Plugins: none is built (Orchestrator._build_plugins, agents/core/orchestrator.py:1292, called where the plugin manager used to be built, agents/core/orchestrator.py:1022), so no integration is reached and no plugin data (WorldView, the Signal Layer, the WorldView knowledge-graph sync) reaches a prompt; the hub's .env credentials still load. The permission gate switches every plugin off as well (apply_load_set, agents/core/plugin_gate.py:647), without touching the shared built-in table, and the plugin toggle answers 409 `safe_mode` without rewriting the saved choice (toggle_plugin, agents/core/routers/plugins.py:99). Outbound webhooks: ntfy and the owner-configured webhook channels are not started (agents/web.py:575, agents/web.py:618), a proactive send to an owner destination refuses (send_to_target, agents/core/channels/outbound.py:171), and the inbound webhook receiver, whose hooks start agent runs, answers 503 before it reads its switch (_receiver_refusal, agents/core/routers/webhooks.py:239). Memory: no pre-turn recall (_recall_block, agents/core/orchestrator.py:3133) and no core block (_living_core_memory_block, agents/core/orchestrator.py:3216) enters a prompt, Howard's archive few-shots are not looked up (Agent.build_prompt, agents/core/agent.py:859), and the H314 memory tool reads as memory switched off, refusing with its off description (agents/core/memory_tool.py:429); the conversation's own history stays. Settings: each setting that loosens an approval or widens a budget (FORCED_SETTINGS, agents/core/safe_mode.py:96: the actuation and tool-loop switches, earned autonomy, ambient, acquisition, the input and output scans, the autonomy caps and interrupt budget, the sandbox timeout and memory, the model pull cap, the gateway rate limit, the daily review budget, the per-boot sub-agent spawn budget, H378's model-cost confirmation line (0, never asking, takes the shipped $40; a line under $1 is kept), the guest tool list, cloud fallback and product posture) reads the stricter of the owner's value and its shipped default (stricter, agents/core/safe_mode.py:173), so an owner who tightened one keeps it; a sandbox memory or spawn budget under 1, which means no cap, takes the shipped cap, and a reordered guest list keeps the owner's order; a switch is read by truthiness as the runtime reads it; the three loosening settings with no shipped row are dropped (UNSEEDED_SETTINGS, agents/core/safe_mode.py:125). The runtime settings pass through override_settings (agents/core/safe_mode.py:196) before and after the product posture is applied (agents/core/orchestrator.py:1318), and every boot read of a forced key (the sandbox caps, the autonomy caps, earned autonomy, the interrupt budget and the guardrails scans) goes through safe_mode.get_value (agents/core/safe_mode.py:217, agents/core/orchestrator.py:641), as do the model pull cap (_max_gb, agents/core/routers/model_setup.py:36), the gateway rate limit and the router's own settings read, so a re-detect keeps cloud fallback at the stricter value (HybridRouter._admin_setting, agents/core/llm/hybrid_router.py:256); an AST test finds any forced key read past safe_mode. Settings whose default is already the loosest value keep the owner's choice. Nerva runs no owner-configured shell hooks, so there are none to leave out. The mode and the layers it left out are in /api/security/posture (`safe_mode`, _safe_mode_status, agents/core/routers/security.py:413) besides /healthz, /readyz, /status and /api/status, in the boot log (agents/web.py:483), and in the HUD banner, which names the new layers (frontend/src/safe-mode-banner.tsx). The kernel, the security, secrets and approval modules, the tool profiles, the capability actions and the egress policy still do not read the flag, and the H275 test pinning the exact list of modules that do now names the six new readers. tests/test_h490_safe_mode_posture.py (75 cases) covers the layer order, every forced and unseeded key being a real setting and its default its own stricter value, the stricter rule per kind (switches by truthiness, numbers, a bool that is not a number, the guest list, the ordered choices), settings served unchanged when off, put back when on and copied, the owner's tighter value kept, nothing reported when nothing moved, an unseeded key alone counting, the boot read, the runtime-settings load, no plugin built but the .env still loaded, the gate refusing every plugin with the shared table untouched, the toggle refusing and keeping the saved choice, a proactive send refused, the receiver's 503 before its switch is read, the lifespan's ntfy and webhook-channel gates, no recall and no core block (nothing cached) and recall switched off not reported, the memory tool read and offer, the posture field, the boot log and the banner labels; the banner has a vitest case. 52 mutants, all killed; each review-round fix fails a case when reverted (9 targeted mutants), and a real Orchestrator boot replaces the old source-slice pin.",
+      "summary": "Safe mode now runs in Hermes' whole reduced posture, on top of the owner customizations H275 leaves out, and still relaxes no gate. JARVIS_SAFE_MODE=1 (or `python serve.py --safe-mode`) is the one switch; LAYERS (agents/core/safe_mode.py:63) gains four layers after H275's seven. Plugins: none is built (Orchestrator._build_plugins, agents/core/orchestrator.py:1292, called where the plugin manager used to be built, agents/core/orchestrator.py:1022), so no integration is reached and no plugin data (WorldView, the Signal Layer, the WorldView knowledge-graph sync) reaches a prompt; the hub's .env credentials still load. The permission gate switches every plugin off as well (apply_load_set, agents/core/plugin_gate.py:647), without touching the shared built-in table, and the plugin toggle answers 409 `safe_mode` without rewriting the saved choice (toggle_plugin, agents/core/routers/plugins.py:99). Outbound webhooks: ntfy and the owner-configured webhook channels are not started (agents/web.py:575, agents/web.py:618), a proactive send to an owner destination refuses (send_to_target, agents/core/channels/outbound.py:171), and the inbound webhook receiver, whose hooks start agent runs, answers 503 before it reads its switch (_receiver_refusal, agents/core/routers/webhooks.py:239). Memory: no pre-turn recall (_recall_block, agents/core/orchestrator.py:3133) and no core block (_living_core_memory_block, agents/core/orchestrator.py:3216) enters a prompt, Howard's archive few-shots are not looked up (Agent.build_prompt, agents/core/agent.py:859), and the H314 memory tool reads as memory switched off, refusing with its off description (agents/core/memory_tool.py:429); the conversation's own history stays. Settings: each setting that loosens an approval or widens a budget (FORCED_SETTINGS, agents/core/safe_mode.py:96: the actuation and tool-loop switches, earned autonomy, ambient, acquisition, the input and output scans, the autonomy caps and interrupt budget, the sandbox timeout and memory, the model pull cap, the gateway rate limit, the daily review budget, the per-boot sub-agent spawn budget, H378's model-cost confirmation line (0, never asking, takes the shipped $40; a line under $1 is kept), the guest tool list, cloud fallback and product posture) reads the stricter of the owner's value and its shipped default (stricter, agents/core/safe_mode.py:173), so an owner who tightened one keeps it; a sandbox memory or spawn budget under 1, which means no cap, takes the shipped cap, and a reordered guest list keeps the owner's order; a switch is read by truthiness as the runtime reads it; the three loosening settings with no shipped row are dropped (UNSEEDED_SETTINGS, agents/core/safe_mode.py:125). The runtime settings pass through override_settings (agents/core/safe_mode.py:196) before and after the product posture is applied (agents/core/orchestrator.py:1318), and every boot read of a forced key (the sandbox caps, the autonomy caps, earned autonomy, the interrupt budget and the guardrails scans) goes through safe_mode.get_value (agents/core/safe_mode.py:217, agents/core/orchestrator.py:641), as do the model pull cap (_max_gb, agents/core/routers/model_setup.py:36), the gateway rate limit and the router's own settings read, so a re-detect keeps cloud fallback at the stricter value (HybridRouter._admin_setting, agents/core/llm/hybrid_router.py:256); an AST test finds any forced key read past safe_mode. Settings whose default is already the loosest value keep the owner's choice. Nerva runs no owner-configured shell hooks, so there are none to leave out. The mode and the layers it left out are in /api/security/posture (`safe_mode`, _safe_mode_status, agents/core/routers/security.py:413) besides /healthz, /readyz, /status and /api/status, in the boot log (agents/web.py:483), and in the HUD banner, which names the new layers (frontend/src/safe-mode-banner.tsx). The kernel, the security, secrets and approval modules, the tool profiles, the capability actions and the egress policy still do not read the flag, and the H275 test pinning the exact list of modules that do now names the six new readers. tests/test_h490_safe_mode_posture.py (75 cases) covers the layer order, every forced and unseeded key being a real setting and its default its own stricter value, the stricter rule per kind (switches by truthiness, numbers, a bool that is not a number, the guest list, the ordered choices), settings served unchanged when off, put back when on and copied, the owner's tighter value kept, nothing reported when nothing moved, an unseeded key alone counting, the boot read, the runtime-settings load, no plugin built but the .env still loaded, the gate refusing every plugin with the shared table untouched, the toggle refusing and keeping the saved choice, a proactive send refused, the receiver's 503 before its switch is read, the lifespan's ntfy and webhook-channel gates, no recall and no core block (nothing cached) and recall switched off not reported, the memory tool read and offer, the posture field, the boot log and the banner labels; the banner has a vitest case. 52 mutants, all killed; each review-round fix fails a case when reverted (9 targeted mutants), and a real Orchestrator boot replaces the old source-slice pin. Native session integration review (2026-10-08): four cadence/index-retention settings are explicitly reviewed by the seeded-number test. They do not widen tool authority or delete transcripts; stall notifications still use outbound transport, which refuses in safe mode. The full safe-mode posture test file passes. Only that reviewed test pin is refreshed; unrelated stale source evidence remains subject to review.",
       "remaining": "",
       "evidence": [
         {
@@ -7832,7 +7996,7 @@
         },
         {
           "path": "tests/test_h490_safe_mode_posture.py",
-          "sha256": "6192e68c044caeab19bbd50e08166197fc812873fcd7cd100e9e31bb4d2b8ed4"
+          "sha256": "8b63a9e5b0366a5da1c2a01a7f4d0a071fa4dc26c25a0e33bd9fa8fa2c2c900e"
         },
         {
           "path": "agents/core/agent.py",
@@ -9881,12 +10045,12 @@
       "id": "H595",
       "row_sha256": "fd5bd3b2c3e31b700596fb4172c4e04f2427392a2b2315c30d74fc164a5c9f98",
       "status": "partial",
-      "summary": "K1/K2/K3 are delivered: default-off execute_code with fresh host authorization, persistent session namespaces, operator status/reset, and redirected Python stdout/stderr stream spills on both one-shot and session paths. Each stream spill keeps at most 5,000,000 bytes (the ToolResultStore default, which the coordinator does not override). Past that, the file ends in one explicit spill-capped marker, the result reports the cap with kept and on-disk byte counts, and the notice says the stream's end survives only in the inline tail. Bounded previews retain file references, original byte counts and the on-disk file hash without buffering the full stream. A notice names the exact file_read(path, offset, max_bytes) paging call, also returned as a read_with field and continued by next_offset, only when two conditions hold: the run's own offer includes file_read, and the coordinator's probe confirms file_read can open that spill through the live file scope or the spill directory's read-only door. Otherwise the notice says the file is kept for the owner and cannot be paged from that turn. H660 now supplies the detached Docker transport. Review fixes retain unconfirmed teardown as quarantined/retryable state and prevent fallback dispatch after current authority or e-stop refusal. Native macOS and Linux real-Docker containment are now verified. The host CLI and local Unix endpoint are frozen; private CLI configuration prevents operator proxy credentials reaching the worker, including after context changes. H277 follow-up review (2026-09-27): inspected the changed shared HUD/VLM hunks; image and code-execution request controls remain unchanged. Full offline suite exercised these paths; this is not a new real-provider or Docker acceptance run. H487/H513 follow-up review (2026-09-27): shared coordinator changes are restricted to Telegram decision cards and human-reason replies; HUD changes affect approval grouping/reasons and provider posture. Image and code-execution dispatch/return controls remain unchanged. The complete frontend suite passes 1802 tests; backend milestone verification is recorded separately. Existing partial status and remaining acceptance requirements are retained. H487 chat-outcome review: ToolRPC additions scope observational association only around the existing generic synchronous enqueue; specialized intakes explicitly mask that scope. Tool execution, spill paging and SDK return contracts are unchanged. The complete backend run exercised these paths; its remaining failures concern wrapper fixtures, auxiliary fixture identity and this stale shared-file record, not SDK execution. H595 remains partial. H487 shared-source review: coordinator changes add expiry bookkeeping under e-stop; SDK code dispatch and spill controls are unchanged. Decision Inbox deadline display adds no execution authority. Interactive VLM shared-source review: only VLM status/describe/screen-reflex policy and their two HUD panels changed. Image generation, code execution, task approval/deadline controls and other handlers remain unchanged. Full frontend verification passes 1815 tests; no live-provider or native-mobile acceptance is claimed. Codex-sprint review rounds (to 7a7f976a): shared coordinator changes are H117's Telegram reason replies and a missing work-run ledger reported as failed, and ToolRPC's approved-task path now lifts a trusted tool's scrubbed failure detail; execute_code is neither gated nor trusted-execution, so its dispatch, spill paging and SDK returns are unchanged. Video-consumer shared-source review (2026-10-02): compared the current coordinator diff with 9d5b3add and re-read this row contract. The new registration is default-off; its signed-context checks apply to canonical video tasks. Existing image recognition, trusted tool kinds, code execution registration, spill access and session-kernel wiring are retained. The canonical media dispatcher additionally recognizes video while preserving the prior non-media refusal reason. Binding inventory edits only move existing callsite positions. No other pinned implementation source changed from this row's prior reviewed snapshot. This delta does not close any of the remaining requirements or claim new live-provider or Docker acceptance. Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review.",
-      "remaining": "Generic SSH/Modal provisioning remains unsupported; the validated Docker transport accepts local Unix endpoints. Deliberate native-fd bypass output is not a redirected Python stream. Stream spills are capped at 5,000,000 bytes per stream: later bytes are counted but not kept, so only the inline tail shows a runaway stream's end. Hermes project|strict mode remains intentionally represented by Nerva tool profiles (agent x surface x principal), not copied as a separate switch.",
+      "summary": "Native execute_code remains owner opt-in and every tool/cell uses current host authorization. Python can call the existing RPC registry through tool imports and retains the existing bounded stdout/stderr file spills. The recovery adds backend-local project/strict context and interpreter selection; an owner-selected project is projected into a fresh read-only snapshot with secret-name/content filtering, file/byte bounds, root-relative POSIX no-follow or Windows opened-handle containment and identity checks. Skill-view environment names are scoped to agent, principal and session and revalidated before use; no credential values are accepted from the model. Settings are available through the existing admin API and dynamic HUD, with persisted-write and invalid-value regressions. One-shot and persistent workers share the context; stale settings/grants refuse execution. Windows regular-project, junction/root substitution, interpreter cancellation, and fake Docker startup/teardown failure regressions pass. Existing redirects retain bounded per-stream spill behavior. This is native adaptation from #1233, not runtime-import credit.",
+      "remaining": "Live Windows Docker acceptance is unverified; supported detached Docker transport remains local Unix only. SSH/Modal/remote TLS provisioning is unsupported. Project mode uses an isolated read-only snapshot, not arbitrary writable access to the host project or its host virtualenv. Redirected streams keep up to 5,000,000 bytes per stream; native-fd bypass and later runaway bytes are outside disk-spill coverage. A teardown whose absence cannot be proved retains its snapshot and requires operator inspection. No live model/provider or production-deployment acceptance was run.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "652ee5d6bfaa2331b7fd3d3db0a2fd9c2e8f83190ba26ccbc4e9e4bbd1ab9feb"
+          "sha256": "126926d63fac4d9d980ef9e56fc0b959fd98478c4a57e6f9eb685f1b31243a77"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -9894,7 +10058,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1c9f11237f8df0962801f12b0daede0109e87605b95c85236d6cdff93b97226b"
+          "sha256": "e30b53707c5b2b5d599eddc05c36b32b757341a1b85eb77e5c13fe01b4ed418f"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -9906,7 +10070,7 @@
         },
         {
           "path": "agents/core/routers/skills.py",
-          "sha256": "b33537c1e8a72689580e0d26bc282cc946d34b17a9b6ff6f9fec0abc14c1fc7e"
+          "sha256": "4abb3392bf00c532c6d77e2a5c0428ea5b20f83a7e5d4e726f04817f30680910"
         },
         {
           "path": "tests/test_sandbox_invocation.py",
@@ -9918,7 +10082,7 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "cac98ea7a1362ba3601b8e4e573fe477030aa637a6bb265f14dc29847cec1449"
+          "sha256": "9db0a76e64aa62168d6bd10560b2550093b279e1b4cc8f07f8a7917021f78370"
         },
         {
           "path": "agents/core/tool_rpc.py",
@@ -9926,11 +10090,11 @@
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "ca759a5c31ed10d3dab7128e97f5de6c0c8ce0c44951f7d70ac272c09df55a50"
+          "sha256": "1b799fd2d4c318e9c99f127f07f0b1203de3ae73bbacc1322cef86d10bcd2876"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "d2d5330355e52230c4e137076258531f0b438ff79e62bb75800f4720c8b6ede9"
+          "sha256": "67035351e3ab6fa11a318137f23f0054625c5390cea936e713b77c3231e872cf"
         },
         {
           "path": "tests/test_session_kernels.py",
@@ -9938,7 +10102,7 @@
         },
         {
           "path": "tests/test_session_kernel_routes.py",
-          "sha256": "eae9c0deba766ffde8e7ce720d761ef5889f228ae34a0d7af41f554d628066f1"
+          "sha256": "93e565df99b60a706f2471097b98cbaaaba333bce9ef064d2a4dfbb497ca97c9"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -9950,7 +10114,7 @@
         },
         {
           "path": "agents/core/sandbox.py",
-          "sha256": "228adcfa9334b3c71926308606d88f38d897ecbba9a5026747df8ecc302413f1"
+          "sha256": "64fa9018f727f4c4f3aa859198235179f1f32ced3ef1a6053511e0f8948ec3f9"
         },
         {
           "path": "agents/core/tool_result_store.py",
@@ -9967,6 +10131,54 @@
         {
           "path": "docs/hermes/evidence/2026-09-15-docker-containment.json",
           "sha256": "67cf1b8a68f92d5b594f3a6b257d965d101004a1897623f25b8dbc03df493692"
+        },
+        {
+          "path": "agents/core/code_context.py",
+          "sha256": "9e6897a6bb97614e2e5efafa1d871fa67ac42ab5e27deb00daeb69342056113c"
+        },
+        {
+          "path": "agents/core/code_env.py",
+          "sha256": "e64a6bd305004e290b60617893c5919e2cfdf482a2a43f9735b26f9cc30ee835"
+        },
+        {
+          "path": "agents/core/tool_rpc_stubs.py",
+          "sha256": "49b02f5a264b2569048b425b9ed539c5add06e31ecbbb0c2539641aa4563ffe8"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "7fc8f4921ab5668410a0380d8408d353202e7fa7191448aff2cfb2faebd7126e"
+        },
+        {
+          "path": "agents/core/skills/tools.py",
+          "sha256": "baddb8a558766ce92701a45e59d076d6abf31d00098cb3fe975f29ec4ebf4f09"
+        },
+        {
+          "path": "tests/test_h595_code_context.py",
+          "sha256": "83d99f6e08e81830c23934dff3f7c298c6be59fa7a6f3af766a3700b85716c10"
+        },
+        {
+          "path": "tests/test_h595_code_env.py",
+          "sha256": "eeba70a83cc56f79c43df6937dca457a412fe45ba7d40bbc64c424b44bf2a761"
+        },
+        {
+          "path": "tests/test_h595_code_settings.py",
+          "sha256": "ce3c6ef9a8e3a8648b7a5266fe6d324db635e9f2538ff99f61c581a4236579d3"
+        },
+        {
+          "path": "tests/test_h595_context_integration.py",
+          "sha256": "716ff8f3594f34f8f7ae7466ac5c1b0d618e5d42e180b215dccc3fc1a1c20e4f"
+        },
+        {
+          "path": "tests/test_h595_import_lifecycle.py",
+          "sha256": "9ad4048ab63e02b5a4a90729fb0cab158b504fef99ba704d0dc1df3366dc8140"
+        },
+        {
+          "path": "tests/test_h595_model_context.py",
+          "sha256": "f47a0cb2a85f7ed746c6e88a02b303fe1b64da87c1d32f1496ccf3d64c607d08"
+        },
+        {
+          "path": "tests/test_h595_oneshot_context.py",
+          "sha256": "5e40b7ad5c20a54db10a9f907e9ee60f4c97628ad502079d6a557efa78cf1962"
         }
       ]
     },
@@ -10440,12 +10652,12 @@
       "id": "H660",
       "row_sha256": "6cb94acacb3b84265ebcc49258ca6349094c2e8a033111f74472c8269b252fae",
       "status": "partial",
-      "summary": "K2/K3 now include a production detached Docker worker over run-to-completion CLI calls, with a private size-limited container mailbox, bounded response packets/backpressure, ready handshake, cell nonces, asynchronous liveness monitoring, and kill/reset/cancel lifecycle. Each cell still crosses the current host authorization and ToolCallBroker. Only a proved pre-dispatch startup refusal permits explicit isolated per-call fallback; dispatched/ambiguous cells never retry. Python cell stdout/stderr streams now reach existing ToolResultStore spills before preview truncation, retaining the middle without unbounded worker buffers up to a 5,000,000-byte per-stream spill ceiling. Past the ceiling, the file ends in one explicit capped marker and the result reports the cap with kept and on-disk byte counts. Spill notices name the exact file_read paging call (path, offset, max_bytes, continued by next_offset) only when the run was offered file_read and it can open that file; otherwise they say the file is kept for the owner and cannot be paged from that turn. Session tool-RPC uses directory-pinned no-follow I/O and random cell directories, closing a reproduced host-write symlink issue. Existing opt-in settings and digest-pinned Docker isolation remain. Independent-review repairs recheck e-stop/expiry and authorization inside fallback dispatch, retain unconfirmed removals as quarantined records with retryable operator reset, validate hostile stream labels, and keep deadline/stop monitoring independent of awaited tool calls. Late broker replies cannot write after cancellation; old-cell cleanup cannot destroy a replacement kernel. Native macOS and Linux real-Docker containment are now verified. The host CLI and local Unix endpoint are frozen; private CLI configuration prevents operator proxy credentials reaching the worker, including after context changes. H277 follow-up review (2026-09-27): inspected the changed shared HUD/VLM hunks; image and code-execution request controls remain unchanged. Full offline suite exercised these paths; this is not a new real-provider or Docker acceptance run. H487/H513 follow-up review (2026-09-27): shared coordinator changes are restricted to Telegram decision cards and human-reason replies; HUD changes affect approval grouping/reasons and provider posture. Image and code-execution dispatch/return controls remain unchanged. The complete frontend suite passes 1802 tests; backend milestone verification is recorded separately. Existing partial status and remaining acceptance requirements are retained. H487 shared-source review: coordinator changes add expiry bookkeeping under e-stop; Docker execution controls and host authorization remain unchanged. Decision Inbox deadline display adds no execution authority. Interactive VLM shared-source review: only VLM status/describe/screen-reflex policy and their two HUD panels changed. Image generation, code execution, task approval/deadline controls and other handlers remain unchanged. Full frontend verification passes 1815 tests; no live-provider or native-mobile acceptance is claimed. Video-consumer shared-source review (2026-10-02): compared the current coordinator diff with 9d5b3add and re-read this row contract. The new registration is default-off; its signed-context checks apply to canonical video tasks. Existing image recognition, trusted tool kinds, code execution registration, spill access and session-kernel wiring are retained. The canonical media dispatcher additionally recognizes video while preserving the prior non-media refusal reason. Binding inventory edits only move existing callsite positions. No other pinned implementation source changed from this row's prior reviewed snapshot. This delta does not close any of the remaining requirements or claim new live-provider or Docker acceptance. Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review.",
-      "remaining": "Generic SSH, Modal and remote TLS provisioning remain unsupported and require an explicitly isolated governed transport design. Docker selection currently supports local Unix endpoints. Correlation tokens/nonces reject stale frames but cannot attest output against Python introspection inside the same worker; authorization is enforced by the host broker. Spills cover redirected Python stdout/stderr up to 5,000,000 bytes per stream; deliberate native-fd bypasses and the part of a runaway stream past that ceiling are not kept on disk. Production deployment evidence is separate from these real-container tests.",
+      "summary": "Native code sessions use the existing detached isolated Docker worker and retain variables, imports and loaded data across cells. Persistence now defaults on after the separate execute_code opt-in when the isolated backend is configured; an explicit session-disable setting is preserved. Every cell still crosses current host consent, principal/profile scope, approval and RPC broker, and startup-only refusal permits the existing isolated one-shot fallback. The recovery carries project/strict and scoped environment/import context through the session mailbox and revokes/restarts context when authorization or settings change. Existing bounded stream spill, liveness, reset and ambiguous-execution refusal remain authoritative. New default-persistence and per-cell grant regressions, native context tests and settings API roundtrips pass; prior dated Linux/macOS real-container receipts keep their original scope.",
+      "remaining": "Generic SSH, Modal and remote TLS provisioning remain unsupported; validated detached Docker transport accepts local Unix endpoints. A configured digest-pinned isolated image is required; enabling execute_code does not install or validate a daemon. Live Windows Docker and current production deployment remain unverified. Correlation tokens cannot attest introspectable worker output; authorization remains in the host broker. Redirected Python streams retain a 5,000,000-byte per-stream spill ceiling; native-fd bypass and later runaway bytes are not retained on disk.",
       "evidence": [
         {
           "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "652ee5d6bfaa2331b7fd3d3db0a2fd9c2e8f83190ba26ccbc4e9e4bbd1ab9feb"
+          "sha256": "126926d63fac4d9d980ef9e56fc0b959fd98478c4a57e6f9eb685f1b31243a77"
         },
         {
           "path": "agents/core/memory/session_search.py",
@@ -10453,7 +10665,7 @@
         },
         {
           "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "1c9f11237f8df0962801f12b0daede0109e87605b95c85236d6cdff93b97226b"
+          "sha256": "e30b53707c5b2b5d599eddc05c36b32b757341a1b85eb77e5c13fe01b4ed418f"
         },
         {
           "path": "tests/test_tool_rpc_h20_1.py",
@@ -10461,15 +10673,15 @@
         },
         {
           "path": "agents/core/code_tools.py",
-          "sha256": "cac98ea7a1362ba3601b8e4e573fe477030aa637a6bb265f14dc29847cec1449"
+          "sha256": "9db0a76e64aa62168d6bd10560b2550093b279e1b4cc8f07f8a7917021f78370"
         },
         {
           "path": "tests/test_code_tools.py",
-          "sha256": "ca759a5c31ed10d3dab7128e97f5de6c0c8ce0c44951f7d70ac272c09df55a50"
+          "sha256": "1b799fd2d4c318e9c99f127f07f0b1203de3ae73bbacc1322cef86d10bcd2876"
         },
         {
           "path": "agents/core/session_kernels.py",
-          "sha256": "d2d5330355e52230c4e137076258531f0b438ff79e62bb75800f4720c8b6ede9"
+          "sha256": "67035351e3ab6fa11a318137f23f0054625c5390cea936e713b77c3231e872cf"
         },
         {
           "path": "tests/test_session_kernels.py",
@@ -10477,11 +10689,11 @@
         },
         {
           "path": "agents/core/routers/skills.py",
-          "sha256": "b33537c1e8a72689580e0d26bc282cc946d34b17a9b6ff6f9fec0abc14c1fc7e"
+          "sha256": "4abb3392bf00c532c6d77e2a5c0428ea5b20f83a7e5d4e726f04817f30680910"
         },
         {
           "path": "tests/test_session_kernel_routes.py",
-          "sha256": "eae9c0deba766ffde8e7ce720d761ef5889f228ae34a0d7af41f554d628066f1"
+          "sha256": "93e565df99b60a706f2471097b98cbaaaba333bce9ef064d2a4dfbb497ca97c9"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -10497,7 +10709,7 @@
         },
         {
           "path": "agents/core/session_kernel_mailbox.py",
-          "sha256": "d026a68c2f9082521acf5428ea20e6992dc0479abcc2d59a9fd67d12e222d85d"
+          "sha256": "6eb83259c880f850696ed365b408e7812e0db1f3b1177806661d8e62a94656e4"
         },
         {
           "path": "tests/test_detached_kernel.py",
@@ -10514,6 +10726,34 @@
         {
           "path": "docs/hermes/evidence/2026-09-15-docker-containment.json",
           "sha256": "67cf1b8a68f92d5b594f3a6b257d965d101004a1897623f25b8dbc03df493692"
+        },
+        {
+          "path": "agents/core/code_context.py",
+          "sha256": "9e6897a6bb97614e2e5efafa1d871fa67ac42ab5e27deb00daeb69342056113c"
+        },
+        {
+          "path": "agents/core/code_env.py",
+          "sha256": "e64a6bd305004e290b60617893c5919e2cfdf482a2a43f9735b26f9cc30ee835"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "7fc8f4921ab5668410a0380d8408d353202e7fa7191448aff2cfb2faebd7126e"
+        },
+        {
+          "path": "tests/test_h660_cell_grants.py",
+          "sha256": "1e8a02b4bdadc9009cc5b92179aeb2a2185c82ffe847abb1736ca03bcaa77369"
+        },
+        {
+          "path": "tests/test_h660_default_sessions.py",
+          "sha256": "17ccf4f29337c8091ff900871c7857bc898d5a274fe8c63b5cd32a0768fc6981"
+        },
+        {
+          "path": "tests/test_h595_context_integration.py",
+          "sha256": "716ff8f3594f34f8f7ae7466ac5c1b0d618e5d42e180b215dccc3fc1a1c20e4f"
+        },
+        {
+          "path": "tests/test_h595_code_settings.py",
+          "sha256": "ce3c6ef9a8e3a8648b7a5266fe6d324db635e9f2538ff99f61c581a4236579d3"
         }
       ]
     },
@@ -11891,6 +12131,55 @@
         {
           "path": "tests/test_hermes_pin_doc_consistency.py",
           "sha256": "f17b235b40611afe37b0c33722e1549651b597e17ceea8d82759b809b4c107c3"
+        }
+      ]
+    },
+    {
+      "id": "H078",
+      "row_sha256": "4f226f6c7a2d1517e0bc1c68c654d3f0fe6893e79ce039d3e2118c179e9bd91f",
+      "status": "equivalent",
+      "summary": "Native owner quick commands are persisted as commands.quick_commands through the existing validated Admin JSON settings. An empty map enables nothing. Built-in slash commands have precedence; bounded aliases re-enter the same current-principal registry, retain arguments, reject cycles and cannot target /new, /reset or /undo. Named fixed shell commands ignore all inbound arguments and use the existing terminal_run ToolRPC registry with local-host target policy, Action Kernel preflight and signed ask-tier approval intake; the terminal handler cannot run before a durable human-approved task. Current terminal consent/gates and irreversible approval floor remain authoritative. Owner help lists configured commands. Immediate governed responses are bounded and pass broker plus SecretRedactionFilter redaction, failing closed on a redaction error; approved task results use existing task plumbing. Focused dispatch/builtin-priority/guest/cycle/oversize/fixed-payload/no-immediate-execution/redaction tests and Admin persisted-roundtrip/rejected-write tests pass. This is the governed native adaptation required by the frozen H078 row, without the Hermes gateway runtime or direct shell spawning.",
+      "remaining": "",
+      "evidence": [
+        {
+          "path": "agents/core/quick_commands.py",
+          "sha256": "f0b7b6074eaf254a20220daf57bc16d12e34f4acaed0dc921b2b64abd1aee15c"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "65c930e520cbfa43482e46551e2b3969758c560f6de248971e489c49dafcb9f9"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "7fc8f4921ab5668410a0380d8408d353202e7fa7191448aff2cfb2faebd7126e"
+        },
+        {
+          "path": "agents/core/tool_rpc.py",
+          "sha256": "ee88bdaeb6ce2872836e157729679e070d1e25258b4bf2991f0b7bb297a917d4"
+        },
+        {
+          "path": "agents/core/kernel/registry.py",
+          "sha256": "261e05b31a7523af256880e5c0a61fe6c38bdb760587ac752beb063d8c07fd32"
+        },
+        {
+          "path": "agents/core/environments/execution.py",
+          "sha256": "4f023b1165fe4ca37fd38f7b21160bc0b3cbb1e8d98d4da5dce7dc8c71981a4f"
+        },
+        {
+          "path": "tests/test_quick_commands.py",
+          "sha256": "0bf79c2a2569619443f6c9a98389fe9a4f60a41eab4fa420c012e69e09957bce"
+        },
+        {
+          "path": "tests/test_slash_commands.py",
+          "sha256": "c21d1a935428dabcc32decee6f50fedc6e2d36ad548529f071001097b814aeab"
+        },
+        {
+          "path": "tests/test_commands_catalog.py",
+          "sha256": "5a14fd6c2049ebed81c992320e48edd74adfc411b7323c82d33d39b1d5f04b61"
+        },
+        {
+          "path": "docs/plans/2026-10-08-native-quick-commands.md",
+          "sha256": "0099b953cc1c42c7e1c0af52dbbc58d15709d9ea51ff34da7c45df2cd2cccdc6"
         }
       ]
     }

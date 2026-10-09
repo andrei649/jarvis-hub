@@ -1,0 +1,11 @@
+# Native code execution context adaptation
+
+- Generated: 2026-10-08. Base: `8a02ff345bf81f4a2f162714567a59c185245099`. Branch: `codex/nerva-code-context-20261008`.
+- Goal: make the existing owner-enabled `execute_code` retain session state by default and carry declared, scoped skill and project context into the isolated backend.
+- Non-goals: Hermes runtime import, shell guardian, Kanban, checkpoint restore, remote transports, or broader feature bulk.
+- Likely paths: `agents/core/code_tools.py`, `agents/core/code_context.py`, `agents/core/code_env.py`, `agents/core/skills/tools.py`, existing sandbox/session runtime seams, focused tests.
+- Checks: red regressions on base, focused code tool and H595/H660 tests, Ruff. Existing validation, owner consent, Action Kernel authorization, isolation, and per-cell scope must remain intact.
+- Rollback: revert the single implementation commit. Dependency: source reference `fc47ce039dc1d3279b38eac9d7fce6ce86983b74` is locally available; global status ledgers are owned by the coordinator.
+- Admin seam: `llm.execute_code` stays false by default, while `execute_code_sessions` defaults true under that opt-in. Mode, absolute project root, digest-pinned session image and environment variable *names* are persisted and validated through the existing settings API; no environment values are stored.
+- Reviewed implementation head: `defed8b82262eb1e3f59beba12464b12b0267d9d`. Project mode copies a bounded read-only snapshot; host virtualenv paths are not made executable in a container. Enabling code does not install or verify Docker. An unconfirmed one-shot Docker teardown retains its snapshot and reports uncertainty. Next action: publish and merge only after the trusted policy and all reported checks pass.
+- Evidence: the focused Python 3.12 suite collected 101 tests and passed with four Windows skips, followed by a native initial-root-junction regression and a passing context/settings/one-shot rerun; 33 related admin/settings/code-tool tests passed. Ruff and `git diff --check` passed. Native project copy, junction and root substitution, and virtual interpreter paths were exercised on Windows. Live Docker was not available for validation, so Docker cleanup has fake-CLI timeout/failure regressions and remains an integration gate.

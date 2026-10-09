@@ -262,7 +262,8 @@ def hub(root, monkeypatch):
         return "done"
 
     monkeypatch.setattr(web, "orch", SimpleNamespace(handle_input=handle_input,
-                                                     handle_input_stream=handle_input_stream, notes=None))
+                                                     handle_input_stream=handle_input_stream,
+                                                     session_id="context_ref_session", notes=None))
     return TestClient(web.app), seen
 
 
@@ -270,6 +271,7 @@ def test_chat_attaches_references_and_marks_the_turn(hub):
     client, seen = hub
     got = client.post("/chat", json={"message": "summarise @file:notes.md"})
     assert got.status_code == 200 and got.json()["reply"] == "done"
+    assert got.json()["session_id"] == "context_ref_session"
     ((message, attached, block),) = seen
     assert message == "summarise @file:notes.md" and attached is True
     assert block.startswith("--- Attached Context ---") and "remember the milk" in block
