@@ -4,7 +4,7 @@
 - Goal: retain source-assigned reasons for one tool-loop invocation, with a useful bounded diagnostic, while preserving string callers.
 - Base/head before changes: ad571c36f78253be9b3f0ede220ca699d42f9636.
 - Branch/worktree: codex/tool-loop-exit-result-20261009, /workspace/jarvis-hub-tool-loop-exit-result.
-- State: design settled, tests first. Next action: inspect expected RED failures and unchanged production hashes before source release.
+- State: implemented and independently reviewed; 325 focused cases pass. First full run on cf569ed33a054845fe4f8fc8915d4656ed70bc78 had one test capture-isolation failure (a preliminary legacy invocation was counted with two concurrent invocations). It reproduced under global INFO; the test-only boundary fix passes 1/1 targeted and 9/9 in its module. Next action: repeat full verification on unchanged production; do not claim a passing full run yet.
 - Delivery: local only; PR #1247 remains the earlier published unit. No provider, device, push, merge or deployment.
 
 ## Contract and boundaries

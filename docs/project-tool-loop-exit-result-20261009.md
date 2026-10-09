@@ -58,8 +58,18 @@ dependency, data migration or authority change is introduced.
   result constructors and return annotations, both `_run_turn` and `_run_loop`
   execution bodies exactly match the base. Independent source and named fresh-pin
   collateral reviews found no Critical/Important issue. Ruff and diff checks pass.
-- Full backend milestone is pending on the frozen source. Collection reports
-  **21705 cases**, adding 27; frontend/native **2039** and mobile **316** are
+- First full backend run on `cf569ed33a054845fe4f8fc8915d4656ed70bc78` completed
+  **21705 cases: 21667 passed, 37 JUnit-skipped and one failed**, 290.790 s.
+  The sole failure was the new concurrent-result test: global INFO logging also
+  captured its preliminary legacy invocation, so it counted three correct exit
+  records while expecting only the two concurrent invocations. The captured
+  records name `jarvis` (prelude), `first` and `second`; no duplicate production
+  diagnostic was observed. The exact failure reproduced under global INFO. The
+  test now clears its preliminary capture before the concurrent pair: targeted
+  1/1 and its complete 9/9 module pass under global INFO. Production code is
+  unchanged. Repeat full verification is pending; first-run artifacts and source
+  manifest are preserved.
+  Collection adds 27; frontend/native **2039** and mobile **316** are
   reused from the previous completed unit because client code is unchanged.
   Routes remain 555 and agents 18. No live provider or device test was run.
 

@@ -223,6 +223,7 @@ async def test_concurrent_typed_results_on_shared_runtime_keep_their_own_reason(
     legacy = await _run(runtime, _Turns(ToolTurn(content="legacy string")))
     assert legacy == "legacy string" and type(legacy) is str
     assert callable(getattr(runtime, "run_result", None))
+    caplog.clear()  # Count only the concurrently awaited pair, not the legacy control.
     call = ToolCall(id="one", name="echo", raw_arguments='{"value":"x"}',
                     arguments={"value": "x"})
     with caplog.at_level(logging.INFO, logger="jarvis.agent_runtime"):
