@@ -183,12 +183,13 @@ def test_the_sentinel_table_still_matches_the_hub():
     from agents.cli.nerva import _NOT_AN_ANSWER
     from agents.core.agent_runtime import _APPROVAL_REPLY
     from agents.core.conversation_clock import CONTEXT_REFUSED_REPLY
-    from agents.core.llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
+    from agents.core.llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY, THINKING_EXHAUSTED_REPLY
     from agents.core.orchestrator import TURN_BUSY_REPLY
     from agents.core.session_continuation import CONTINUATION_REFUSED_REPLY
 
     for constant in (_APPROVAL_REPLY, TURN_BUSY_REPLY, CONTEXT_REFUSED_REPLY,
-                     CONTINUATION_REFUSED_REPLY, LOCAL_SELECTION_UNAVAILABLE_REPLY):
+                     CONTINUATION_REFUSED_REPLY, LOCAL_SELECTION_UNAVAILABLE_REPLY,
+                     THINKING_EXHAUSTED_REPLY):
         assert constant.strip() in _NOT_AN_ANSWER, (
             f"the hub now replies {constant!r}; add it to _NOT_AN_ANSWER in agents/cli/nerva.py"
         )
@@ -375,6 +376,43 @@ def test_a_sentinel_padded_with_control_bytes_is_still_not_an_answer():
     assert code == EXIT_FAILED and out == ""
 
 
+@pytest.mark.parametrize("shape", ["direct", "wrapped", "control_padded"])
+def test_thinking_exhausted_reply_is_refused_without_retry_and_receipted(tmp_path, shape):
+    from agents.core.llm.base import THINKING_EXHAUSTED_REPLY
+
+    reply = {
+        "direct": THINKING_EXHAUSTED_REPLY,
+        "wrapped": f"[athena]: {THINKING_EXHAUSTED_REPLY}",
+        "control_padded": f"\x1b[2J{THINKING_EXHAUSTED_REPLY}\x07",
+    }[shape]
+    reason = "the model exhausted its answer budget without a visible answer"
+    report_path = tmp_path / "usage.json"
+    hub = _FakeHub({"POST /chat": {"reply": reply}})
+    code, out, err, hub = _run(
+        ["chat", "-z", "--usage-file", str(report_path), "hi"], hub=hub)
+
+    assert code == EXIT_FAILED and out == "" and err == f"{reason}\n"
+    assert hub.calls == [("POST", "/chat", {"message": "hi"})]
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["status"] == "refused" and report["completed"] is False
+    assert report["reason"] == reason and report["exit_code"] == EXIT_FAILED
+
+
+def test_thinking_exhausted_interactive_keeps_exit_and_print_shape_but_receipts_refusal(tmp_path):
+    from agents.core.llm.base import THINKING_EXHAUSTED_REPLY
+
+    report_path = tmp_path / "usage.json"
+    hub = _FakeHub({"POST /chat": {"reply": THINKING_EXHAUSTED_REPLY}})
+    code, out, err, hub = _run(
+        ["chat", "--usage-file", str(report_path), "hi"], hub=hub)
+
+    assert code == EXIT_OK and out == f"{THINKING_EXHAUSTED_REPLY}\n" and err == ""
+    assert hub.calls == [("POST", "/chat", {"message": "hi"})]
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["status"] == "refused" and report["completed"] is False
+    assert report["reason"] == "the model exhausted its answer budget without a visible answer"
+
+
 @pytest.mark.parametrize("attr", [
     "_DEADLINE_REPLY", "_CONTEXT_REPLY", "_WINDOW_REPLY", "_REPEAT_REPLY", "_FAILURE_REPLY",
 ])
@@ -413,12 +451,13 @@ def test_the_sentinel_table_matches_every_reply_the_hub_can_send():
         _WINDOW_REPLY,
     )
     from agents.core.conversation_clock import CONTEXT_REFUSED_REPLY
-    from agents.core.llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
+    from agents.core.llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY, THINKING_EXHAUSTED_REPLY
     from agents.core.orchestrator import TURN_BUSY_REPLY
     from agents.core.session_continuation import CONTINUATION_REFUSED_REPLY
 
     for constant in (_APPROVAL_REPLY, TURN_BUSY_REPLY, CONTEXT_REFUSED_REPLY,
                      CONTINUATION_REFUSED_REPLY, LOCAL_SELECTION_UNAVAILABLE_REPLY,
+                     THINKING_EXHAUSTED_REPLY,
                      _DEADLINE_REPLY, _CONTEXT_REPLY, _WINDOW_REPLY, _REPEAT_REPLY,
                      _FAILURE_REPLY):
         assert _not_an_answer(constant), (

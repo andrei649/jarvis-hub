@@ -1792,6 +1792,9 @@ _NOT_AN_ANSWER: dict[str, str] = {
     "\u26a0\ufe0f No local language model is available. Start LM Studio or Ollama and try again.":
         "no local model is available",
     # agents.core.llm.base.THINKING_EXHAUSTED_REPLY
+    "\u26a0\ufe0f The model spent its whole answer budget thinking and produced no visible "
+    "answer. Ask again more narrowly, or raise llm.max_tokens (or load a larger-context model).":
+        "the model exhausted its answer budget without a visible answer",
     # agents/web.py — the chat route's own two failure replies
     "Internal error.": "the hub failed while handling the turn",
     "Jarvis not initialized.": "the hub has no orchestrator",

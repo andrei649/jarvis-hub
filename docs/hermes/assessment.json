@@ -34,8 +34,8 @@
       "id": "H002",
       "row_sha256": "aafd61ae951b5eba83ab73becbd13cddc64a3ebfe219cc9c9f5ac551927c8eed",
       "status": "partial",
-      "summary": "`nerva chat -z \"prompt\"` runs one turn non-interactively and puts only the final assistant text on stdout — whole escape sequences and C0/C1 control bytes stripped, newlines and tabs kept — with every other word on stderr. The prompt resolves the way `nerva send`'s body does (argument, else `-f PATH` where `-` is stdin, else piped stdin) and a terminal is never read, by either spelling: `-f /dev/tty` is refused rather than blocking forever. A prompt over the hub's own 4,096-character `ChatRequest` bound is a usage error before the request, not an HTTP 422 a script reads as a failed turn. The ladder is stated in `--help`: 0 answered · 1 the turn did not complete · 2 usage · 3 no hub · 4 not authorised · 130 interrupted; Ctrl-C returns 130 with one stderr line instead of an uncaught traceback that could spill a partial answer. **The governance clause is implemented against Hermes, not after it:** no flag auto-approves, a turn that queues an action stays queued, and the verb exits 1 naming the pending id to decide with `nerva approvals`; a test asserts the one-shot path issues no decision call at all. For a queued action the verdict no longer rests on the reply text. The hub reports what the turn queued: `ChatResponse.pending_approvals` on `POST /chat`, and the same list on `/chat/stream`'s end event. A per-turn collector (`agents/core/turn_approvals.py`) gathers the ids at the gated Tool-RPC enqueue, and they are still reported when the turn raised after queuing. Any reported id makes `-z` exit 1 with the id on stderr, whatever the reply says, so a model that writes a plausible answer around a queued action does not exit 0. The reply text is a second detector, for stops that queue nothing and for a hub that reports no ids. It is matched by containment over the sanitised text, so the deterministic `[athena]: …` join that the synthesis pass falls back to still matches. The table holds the approval reply, the busy/compaction/continuation refusals, the no-local-model reply, the hub's two failure replies, the five tool-loop stops and a prefix rule for the stop built with an f-string. A drift test imports the ten runtime constants and asserts each is matched both verbatim and wrapped. Sanitising happens before the verdict, so a reply of pure control bytes is an incomplete turn rather than exit 0 and a blank line. `--usage-file PATH` writes `nerva.chat.usage.v1` atomically on every path including the interrupt, cleans up its temp file when a write fails, survives a field it cannot encode (a warning, never a crash after the answer is already out), says so when given an empty path, and refuses to call a turn completed while naming an approval it left queued. A hub that reports `pending_approvals` in a shape this version cannot read is told so, rather than the string being exploded into one fabricated id per character. 51 tests in tests/test_nerva_oneshot.py; the hub-side report is pinned by tests/test_turn_pending_approvals.py.",
-      "remaining": "Two parts of the row are open. (1) THE SPEND HALF IS A SCHEMA OF NULLS. The hub cannot attribute one turn's cost. `AgentConfig.model` defaults to `google/gemma-4-31b-a4b` and none of the 18 agents in `agents/_system/agents.yaml` declares a model, so `cost_tracker` meters every turn at the default price row and reports $0.00; an id it does not know is priced from the `default` row with no `priced` flag. `estimated_cost_usd`, the token counts, `api_calls`, `model` and `provider` are therefore `null` with `cost_basis: \"unavailable\"` rather than measured zeros, and a test pins that they never become numbers. (2) A STOP THAT QUEUES NOTHING IS STILL JUDGED BY TEXT, AND ON A LIVE HUB THAT TEXT IS USUALLY REWRITTEN. The hub reports ids only for approvals queued through the gated Tool-RPC path. The tool loop's own stops are recognised only by containment over the reply. A turn routed to a specialist is not handed back verbatim: the orchestrator sends it through synthesis (`was_synthesized = len(responses) > 1 or \"jarvis\" not in responses`). With a `jarvis` agent and a router loaded, `jarvis.synthesize` rewrites it through a model; only the fallbacks (no `jarvis` agent, no router, a failed synthesis call) produce the `[athena]: …` join that containment survives. So a specialist's tool-loop stop can come back reworded and exit 0. The table also has no entry for `THINKING_EXHAUSTED_REPLY` (agents.core.llm.base): a comment in the table names it, but no row follows. A reasoning model that spent its whole budget thinking is therefore printed as the answer with exit 0. Also open: `POST /chat` returns no trace, invocation or session id, so `session_id` is echoed only when the caller supplied one; `-z` does not silence hub-side logging; there is no `--output-format` beyond the existing `--json`; a piped body is read whole up to the bound rather than streamed; and `os.replace` onto a symlinked `--usage-file` path replaces the link with a regular file instead of writing through it.",
+      "summary": "`nerva chat -z \"prompt\"` runs one turn non-interactively and puts only the final assistant text on stdout — whole escape sequences and C0/C1 control bytes stripped, newlines and tabs kept — with every other word on stderr. The prompt resolves the way `nerva send`'s body does (argument, else `-f PATH` where `-` is stdin, else piped stdin) and a terminal is never read, by either spelling: `-f /dev/tty` is refused rather than blocking forever. A prompt over the hub's own 4,096-character `ChatRequest` bound is a usage error before the request, not an HTTP 422 a script reads as a failed turn. The ladder is stated in `--help`: 0 answered · 1 the turn did not complete · 2 usage · 3 no hub · 4 not authorised · 130 interrupted; Ctrl-C returns 130 with one stderr line instead of an uncaught traceback that could spill a partial answer. **The governance clause is implemented against Hermes, not after it:** no flag auto-approves, a turn that queues an action stays queued, and the verb exits 1 naming the pending id to decide with `nerva approvals`; a test asserts the one-shot path issues no decision call at all. For a queued action the verdict no longer rests on the reply text. The hub reports what the turn queued: `ChatResponse.pending_approvals` on `POST /chat`, and the same list on `/chat/stream`'s end event. A per-turn collector (`agents/core/turn_approvals.py`) gathers the ids at the gated Tool-RPC enqueue, and they are still reported when the turn raised after queuing. Any reported id makes `-z` exit 1 with the id on stderr, whatever the reply says, so a model that writes a plausible answer around a queued action does not exit 0. The reply text is a second detector, for stops that queue nothing and for a hub that reports no ids. It is matched by containment over the sanitised text, so the deterministic `[athena]: …` join that the synthesis pass falls back to still matches. The table holds the approval reply, the busy/compaction/continuation refusals, the no-local-model reply, the hub's two failure replies, the five tool-loop stops and a prefix rule for the stop built with an f-string. A drift test imports the eleven runtime constants and asserts each is matched both verbatim and wrapped. Sanitising happens before the verdict, so a reply of pure control bytes is an incomplete turn rather than exit 0 and a blank line. `--usage-file PATH` writes `nerva.chat.usage.v1` atomically on every path including the interrupt, cleans up its temp file when a write fails, survives a field it cannot encode (a warning, never a crash after the answer is already out), says so when given an empty path, and refuses to call a turn completed while naming an approval it left queued. A hub that reports `pending_approvals` in a shape this version cannot read is told so, rather than the string being exploded into one fabricated id per character. 55 tests in tests/test_nerva_oneshot.py; the hub-side report is pinned by tests/test_turn_pending_approvals.py. Thinking-exhaustion follow-up (2026-10-09): the exact backend THINKING_EXHAUSTED_REPLY is now in the stdlib-only refusal table. Direct, specialist-wrapped and control-padded forms make one-shot chat exit 1 with empty stdout and a fixed reason; the persisted receipt is refused/incomplete. Interactive stdout and exit 0 remain compatible while its optional receipt reports the refusal. Both constant drift guards include the real backend sentinel. This does not classify model-rephrased or mixed outcomes and never retries or decides an approval.",
+      "remaining": "Two parts of the row are open. (1) THE CLI RECEIPT STILL HAS NO PER-TURN USAGE ATTRIBUTION. _usage_report initializes model, provider, api_calls, input_tokens, output_tokens and estimated_cost_usd to null with cost_basis unavailable; cmd_chat.finish does not fill them from the hub. These are unavailable values, not measured zeros. (2) A STOP THAT QUEUES NOTHING IS STILL JUDGED BY TEXT, AND ON A LIVE HUB THAT TEXT IS USUALLY REWRITTEN. The hub reports ids only for approvals queued through the gated Tool-RPC path. The tool loop's own stops are recognised only by containment over the reply. A turn routed to a specialist is not handed back verbatim: the orchestrator sends it through synthesis (`was_synthesized = len(responses) > 1 or \"jarvis\" not in responses`). With a `jarvis` agent and a router loaded, `jarvis.synthesize` rewrites it through a model; only the fallbacks (no `jarvis` agent, no router, a failed synthesis call) produce the `[athena]: …` join that containment survives. So a specialist's tool-loop stop can come back reworded and exit 0. The exact THINKING_EXHAUSTED_REPLY and containment-preserving wrappers are now refused; a differently worded synthesis result remains outside this text-only classification. Also open: the CLI receipt records no trace or invocation id and still echoes only a caller-supplied session id, even though POST /chat now returns its actual session_id; `-z` does not silence hub-side logging; there is no `--output-format` beyond the existing `--json`; a piped body is read whole up to the bound rather than streamed; and `os.replace` onto a symlinked `--usage-file` path replaces the link with a regular file instead of writing through it.",
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
@@ -43,7 +43,7 @@
         },
         {
           "path": "tests/test_nerva_oneshot.py",
-          "sha256": "eaa926320c75588f68c28cce889f83d8be450b4da1682da640cf4cfe370ae692"
+          "sha256": "f4eaf73c5c5442bbc6047d8e87f36f9d6cff546b0be3e139170724522336f508"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -68,7 +68,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -1619,7 +1619,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "frontend/src/panels/logs.tsx",
@@ -2035,7 +2035,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "agents/web/static/admin.js",
@@ -2753,7 +2753,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -2790,7 +2790,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "agents/cli/client.py",
@@ -3206,7 +3206,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "agents/cli/client.py",
@@ -5060,7 +5060,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "agents/core/skills/curator.py",
@@ -5236,7 +5236,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "tests/test_h350_skill_validator.py",
@@ -5787,7 +5787,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "frontend/src/selection-guard.tsx",
@@ -6211,7 +6211,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -7330,7 +7330,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "frontend/src/panels/company-room.tsx",
@@ -7391,7 +7391,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "tests/test_h465_refine.py",
@@ -7827,7 +7827,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -9967,7 +9967,7 @@
       "id": "H586",
       "row_sha256": "a646388648bea8ee51e2dbc209ecd437f580d53d44f063bb435d33f944d6941d",
       "status": "equivalent",
-      "summary": "Both halves of the accepted adaptation are delivered: the HUD composer and the terminal. useComposerImages (frontend/src/composer-images.tsx) takes image paste and drag-drop (frontend/src/composer-images.tsx:51-52) plus a file chooser. It accepts at most eight PNG/JPEG/GIF/WebP images of up to 4 MiB each, and the shared InputBar wires it in (frontend/src/cockpit.tsx:246). App.submit sends an image draft to runVision (frontend/src/app.tsx:410, frontend/src/app.tsx:385). runVision posts to the user-guarded POST /api/vlm/composer/describe (agents/core/routers/composer_vision.py:221, registered at agents/web.py:1529). The route checks data-URI signatures and bounds raster decoding (validate_raster, agents/core/routers/composer_vision.py:53). It binds the request to the reviewed destination/model revision and refuses a non-local VLM unless the owner has acknowledged it (agents/core/routers/composer_vision.py:251). It then calls VLMBackend.generate_vision_checked (agents/core/llm/vlm.py:354). Since H513 the binding also covers the credential and the data policy, the H378 selection guards refuse a flagged model before any client is built (409), the configuration and the wire are checked again at the request and after cleanup (a change is never an answer: it is a 409 vlm_destination_changed, or a 502 vlm_generation_failed when the changed configuration is no longer a valid vision destination, such as a non-http(s) URL), and the status and the answer carry the data-policy warning, which the composer and the vision reply show (nerva chat --image does not print it). Images reach only the configured VLM, never the text chat model. The taint governance holds through isolation rather than a taint flag. The vision answer is a client-only transcript entry, and ordinary turns post only {message, agent} to /chat/stream (frontend/src/app.tsx:336), so no tool plan can be derived from image content. tests/test_composer_vision.py (33 passed) covers validation, auth, binding, the remote acknowledgement and error shapes, and, since H513, the warning on a pure status, a key rotation that revises the binding, a policy rotated during client construction, a key rotated during cleanup, the H378 selection refusal and a cancelled generation that closes the client. Intake and the vision turn are covered by frontend/src/test/composer-images.test.tsx, frontend/src/test/composer-vision-turn.test.tsx and frontend/e2e/composer-images.spec.ts, (the two vitest files, 12 cases, pass; the Playwright spec was not run here). The terminal: `nerva chat --image PATH` (repeatable, up to eight) and `--clipboard-image` (agents/cli/nerva.py:353) turn the chat verb into the same vision turn (_vision_turn, agents/cli/nerva.py:2387), dispatched before any /chat body is built (agents/cli/nerva.py:2039). Each file is opened once without blocking, must be a regular file, is read up to 4 MiB and sent by the type its signature says, never its name (_image_mime, agents/cli/nerva.py:2130; _read_image, agents/cli/nerva.py:2140). The clipboard is read by the platform's own reader with a fixed argv, no shell, its output read no further than the bound against a 10 s deadline, in a session of its own whose whole process group is killed at the deadline, past the bound or on an interrupt, so a descendant holding the pipe cannot stretch it (_run_reader, agents/cli/nerva.py:2240): wl-paste on Wayland, xclip on X11, pngpaste or else osascript on macOS, Windows PowerShell from the system directory, else the first powershell.exe or pwsh.exe in an absolute PATH entry that is not the current directory (never shutil.which, which puts the current directory back on Windows), on Windows, and through interop under WSL (the /mnt/c default, else the PATH's powershell.exe) (_clipboard_command, agents/cli/nerva.py:2215; _clipboard_image, agents/cli/nerva.py:2325). The verb reads GET /api/vlm/composer/status, sends that destination and binding with the images, so a model changed in between is refused (409), and a destination off the hub's machine is used only when --remote-vision names it, the terminal's form of the HUD's per-destination acknowledgement (agents/cli/nerva.py:2457). The describe call waits up to 240 s (the hub gives the model 180 s), and a timeout after the status answered is a failed turn, not a missing hub; the reply is checked as the HUD checks it (ok, a string answer of at most 128 KiB); a status without its destination, binding or local sends nothing. The --remote-vision address is compared as the hub names it (scheme and host in any case, the default port, a trailing slash); one with a user name, query or fragment is refused as a look-alike, and --remote-vision without an image is refused. A body the route refuses is answered with its first reason as {error, reason}, never FastAPI's default 422 that echoed the images back (_BoundedValidationRoute, agents/core/routers/composer_vision.py:22), and the CLI prints it, with the field a validation reason names; hub text is filtered before it reaches the terminal. --agent, --session and --reasoning are refused with images: the turn goes to the vision model only, never to /chat, an agent or a session. -z, --json and --usage-file keep their meaning. tests/test_nerva_chat_image.py (30 cases) covers the route taken, the real route answering the CLI, a model changed in between, each raster kind, the remote acknowledgement, the refusals before any request, the hub's answers and the clipboard readers; its 20 mutants are all caught. The first adversarial review (0 major, 6 minor, 9 nits) found the 30 s timeout reported as no hub, the clipboard buffered whole, the route's refusal without its reason, PowerShell resolved from the current directory, 16 surviving mutants of its own, and macOS/WSL gaps; all are fixed, and tests/test_h586b_image_review.py (50 cases) pins them, its 35 mutants all caught. Test manual: CHT-115, CHT-116. The second review (0 major, 4 minor, 8 nits) found an oversized clipboard image reported as empty, the deadline stretched by a descendant, the Windows fallback still reaching the current directory through shutil.which, and 8 real survivors; all are fixed, tests/test_h586c_image_review.py (23 cases, real processes for the deadline, the group kill, the exit code and the bound) pins them, and its 16 mutants are all caught but one equivalent. Known limits: the receipt's model stays null for an image turn, and the route's own 403 (no acknowledgement) is told apart from an auth 403 by its message, a case the binding already makes unreachable. Composer image recovery review (2026-10-02): enabled recovery is exposed by paired validated empty_retries/retry_notice metadata. HUD renders the notice before remote consent and resets acknowledgment on binding changes; CLI validates and prints the notice before acknowledgment/send. Default shapes and stdout/JSON stay unchanged. Actual CLI and web composer tests, full1847 frontend tests, typecheck, E2E TypeScript compilation and build pass; browser E2E execution was not run. Native composer normalization review (2026-10-02): VLM validates and normalizes compatible replies on both budget-disabled and active governed paths. Useful typed reasoning supplies an answer without an extra call; malformed envelopes remain failures. CLI/HUD entrypoints, acknowledgment and public shapes are unchanged. Parent696 integration includes composer/policy tests; frontend/schema/assets match the prior1847-test verified snapshot. Existing equivalent status preserved. Publication review correction (2026-10-02): agents/core/llm/native_response.py:72 now admits only legacy untyped, reasoning.text and reasoning.summary details. Encrypted, opaque, unknown and malformed typed details are skipped even if they contain string summary/content/text. Seven actual governed image/video regressions failed before the fix; the corrected normalization and empty-recovery union passed all163 cases. Opaque-only video refuses in one call without granting retry authority. All base evidence hashes were current before this two-file correction; unchanged authority, transport, route and UI contracts retain their existing assessment.",
+      "summary": "Both halves of the accepted adaptation are delivered: the HUD composer and the terminal. useComposerImages (frontend/src/composer-images.tsx) takes image paste and drag-drop (frontend/src/composer-images.tsx:51-52) plus a file chooser. It accepts at most eight PNG/JPEG/GIF/WebP images of up to 4 MiB each, and the shared InputBar wires it in (frontend/src/cockpit.tsx:246). App.submit sends an image draft to runVision (frontend/src/app.tsx:410, frontend/src/app.tsx:385). runVision posts to the user-guarded POST /api/vlm/composer/describe (agents/core/routers/composer_vision.py:221, registered at agents/web.py:1529). The route checks data-URI signatures and bounds raster decoding (validate_raster, agents/core/routers/composer_vision.py:53). It binds the request to the reviewed destination/model revision and refuses a non-local VLM unless the owner has acknowledged it (agents/core/routers/composer_vision.py:251). It then calls VLMBackend.generate_vision_checked (agents/core/llm/vlm.py:354). Since H513 the binding also covers the credential and the data policy, the H378 selection guards refuse a flagged model before any client is built (409), the configuration and the wire are checked again at the request and after cleanup (a change is never an answer: it is a 409 vlm_destination_changed, or a 502 vlm_generation_failed when the changed configuration is no longer a valid vision destination, such as a non-http(s) URL), and the status and the answer carry the data-policy warning, which the composer and the vision reply show (nerva chat --image does not print it). Images reach only the configured VLM, never the text chat model. The taint governance holds through isolation rather than a taint flag. The vision answer is a client-only transcript entry, and ordinary turns post only {message, agent} to /chat/stream (frontend/src/app.tsx:336), so no tool plan can be derived from image content. tests/test_composer_vision.py (33 passed) covers validation, auth, binding, the remote acknowledgement and error shapes, and, since H513, the warning on a pure status, a key rotation that revises the binding, a policy rotated during client construction, a key rotated during cleanup, the H378 selection refusal and a cancelled generation that closes the client. Intake and the vision turn are covered by frontend/src/test/composer-images.test.tsx, frontend/src/test/composer-vision-turn.test.tsx and frontend/e2e/composer-images.spec.ts, (the two vitest files, 12 cases, pass; the Playwright spec was not run here). The terminal: `nerva chat --image PATH` (repeatable, up to eight) and `--clipboard-image` (agents/cli/nerva.py:353) turn the chat verb into the same vision turn (_vision_turn, agents/cli/nerva.py:2390), dispatched before any /chat body is built (agents/cli/nerva.py:2042). Each file is opened once without blocking, must be a regular file, is read up to 4 MiB and sent by the type its signature says, never its name (_image_mime, agents/cli/nerva.py:2133; _read_image, agents/cli/nerva.py:2143). The clipboard is read by the platform's own reader with a fixed argv, no shell, its output read no further than the bound against a 10 s deadline, in a session of its own whose whole process group is killed at the deadline, past the bound or on an interrupt, so a descendant holding the pipe cannot stretch it (_run_reader, agents/cli/nerva.py:2243): wl-paste on Wayland, xclip on X11, pngpaste or else osascript on macOS, Windows PowerShell from the system directory, else the first powershell.exe or pwsh.exe in an absolute PATH entry that is not the current directory (never shutil.which, which puts the current directory back on Windows), on Windows, and through interop under WSL (the /mnt/c default, else the PATH's powershell.exe) (_clipboard_command, agents/cli/nerva.py:2218; _clipboard_image, agents/cli/nerva.py:2328). The verb reads GET /api/vlm/composer/status, sends that destination and binding with the images, so a model changed in between is refused (409), and a destination off the hub's machine is used only when --remote-vision names it, the terminal's form of the HUD's per-destination acknowledgement (agents/cli/nerva.py:2460). The describe call waits up to 240 s (the hub gives the model 180 s), and a timeout after the status answered is a failed turn, not a missing hub; the reply is checked as the HUD checks it (ok, a string answer of at most 128 KiB); a status without its destination, binding or local sends nothing. The --remote-vision address is compared as the hub names it (scheme and host in any case, the default port, a trailing slash); one with a user name, query or fragment is refused as a look-alike, and --remote-vision without an image is refused. A body the route refuses is answered with its first reason as {error, reason}, never FastAPI's default 422 that echoed the images back (_BoundedValidationRoute, agents/core/routers/composer_vision.py:22), and the CLI prints it, with the field a validation reason names; hub text is filtered before it reaches the terminal. --agent, --session and --reasoning are refused with images: the turn goes to the vision model only, never to /chat, an agent or a session. -z, --json and --usage-file keep their meaning. tests/test_nerva_chat_image.py (30 cases) covers the route taken, the real route answering the CLI, a model changed in between, each raster kind, the remote acknowledgement, the refusals before any request, the hub's answers and the clipboard readers; its 20 mutants are all caught. The first adversarial review (0 major, 6 minor, 9 nits) found the 30 s timeout reported as no hub, the clipboard buffered whole, the route's refusal without its reason, PowerShell resolved from the current directory, 16 surviving mutants of its own, and macOS/WSL gaps; all are fixed, and tests/test_h586b_image_review.py (50 cases) pins them, its 35 mutants all caught. Test manual: CHT-115, CHT-116. The second review (0 major, 4 minor, 8 nits) found an oversized clipboard image reported as empty, the deadline stretched by a descendant, the Windows fallback still reaching the current directory through shutil.which, and 8 real survivors; all are fixed, tests/test_h586c_image_review.py (23 cases, real processes for the deadline, the group kill, the exit code and the bound) pins them, and its 16 mutants are all caught but one equivalent. Known limits: the receipt's model stays null for an image turn, and the route's own 403 (no acknowledgement) is told apart from an auth 403 by its message, a case the binding already makes unreachable. Composer image recovery review (2026-10-02): enabled recovery is exposed by paired validated empty_retries/retry_notice metadata. HUD renders the notice before remote consent and resets acknowledgment on binding changes; CLI validates and prints the notice before acknowledgment/send. Default shapes and stdout/JSON stay unchanged. Actual CLI and web composer tests, full1847 frontend tests, typecheck, E2E TypeScript compilation and build pass; browser E2E execution was not run. Native composer normalization review (2026-10-02): VLM validates and normalizes compatible replies on both budget-disabled and active governed paths. Useful typed reasoning supplies an answer without an extra call; malformed envelopes remain failures. CLI/HUD entrypoints, acknowledgment and public shapes are unchanged. Parent696 integration includes composer/policy tests; frontend/schema/assets match the prior1847-test verified snapshot. Existing equivalent status preserved. Publication review correction (2026-10-02): agents/core/llm/native_response.py:72 now admits only legacy untyped, reasoning.text and reasoning.summary details. Encrypted, opaque, unknown and malformed typed details are skipped even if they contain string summary/content/text. Seven actual governed image/video regressions failed before the fix; the corrected normalization and empty-recovery union passed all163 cases. Opaque-only video refuses in one call without granting retry authority. All base evidence hashes were current before this two-file correction; unchanged authority, transport, route and UI contracts retain their existing assessment.",
       "remaining": "",
       "evidence": [
         {
@@ -10000,7 +10000,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "tests/test_composer_vision.py",
@@ -10907,7 +10907,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "frontend/src/todo-tree.ts",
@@ -11004,7 +11004,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "tests/test_tool_rpc_runtime.py",
@@ -11214,7 +11214,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "tests/test_session_continuation.py",
@@ -12031,7 +12031,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "aa5938dca9e070f5ef8e9f96db0307fc2baae6c14e09308ac3bee1888ae3bcf9"
+          "sha256": "2395c1bae1192dc073bae79a632a3155de1322d77ac50a7d03696b856f07a19f"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",
