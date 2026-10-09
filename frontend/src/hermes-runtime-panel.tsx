@@ -260,7 +260,7 @@ export function HermesRuntimePanel() {
   const ready = Boolean(status?.ready);
 
   return (
-    <section aria-label="Hermes runtime" style={{ border: '1px solid var(--panel-line)', borderRadius: 4, padding: 12, marginTop: 16 }}>
+    <section className="hermes-runtime" aria-label="Hermes runtime" style={{ border: '1px solid var(--panel-line)', borderRadius: 4, padding: 12, marginTop: 16 }}>
       <div className="sub-h">HERMES RUNTIME · PINNED UPSTREAM</div>
       {status === null ? <p role="status">{error ? 'Runtime status unavailable.' : 'Checking runtime readiness…'}</p> : (
         <>
