@@ -3,6 +3,7 @@
 - Generated: 2026-10-09 UTC.
 - Goal: distinguish observed invalid local image responses from unknown outcomes.
 - Base: `662cd4c3d522f6e508a5300aeee56fdf85d508e5`.
+- Verified source: `b5fc19c55553923a2c463c84d5d5d916fcfa17a4`.
 - Branch/worktree: `codex/local-image-response-evidence-20261009`,
   `/workspace/jarvis-hub-local-image-response`.
 - Delivery: local; previously published draft PR #1247 is a separate unit.
@@ -69,8 +70,22 @@ complete suites, types, build and browser proofs passed in the immediately
 preceding [image failure milestone](project-image-provider-failure-20261009.md);
 this Python-only change does not rerun or relabel them as new executions.
 
-The complete backend milestone and final source checkpoint are pending below.
-No live provider or physical device was used.
+The complete backend milestone at `b5fc19c` passes: **21,162 passed, 37 skipped,
+zero failures/errors**, 21,199 total in 264.508 seconds, process exit zero. All 37
+skipped test IDs match the preceding image failure milestone; no skip was added.
+The executed JUnit count matches the canonical collection and tracked inventory.
+The complete run also covers the metadata gates and earlier audit-order repair.
+Command:
+
+```sh
+python /workspace/scratch/pytest-subreaper.py \
+  /workspace/scratch/backend-copy-venv/bin/python -m pytest tests/ \
+  -n 4 --dist loadfile --timeout=90 -q --tb=short \
+  --junitxml=/workspace/scratch/local-image-response-backend-final.xml
+```
+
+No live provider or physical device was used. No push, merge, deployment or
+activation occurred.
 
 ## Review and evidence freshness
 
@@ -94,6 +109,7 @@ Scratch reports: `local-image-response-producer-red.log`,
 `local-image-response-projection-red.log`,
 `local-image-response-projection-final.xml`,
 `local-image-response-backend-focused.{xml,log}`,
+`local-image-response-backend-final.{xml,log}`,
 `local-image-response-status-sync.log`,
 `local-image-response-pin-inventory.{json,md}`,
 `local-image-response-view-collateral-review.md`,

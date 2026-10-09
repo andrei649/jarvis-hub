@@ -108,5 +108,13 @@ remain 2,009 frontend/native and 306 mobile with their prior milestone evidence.
 Cross-review found no Critical/Important issue. Named bounded claim review
 supports 11 formerly current pin replacements; H312's stale runtime pin and all
 claim/verdict/remaining strings are preserved. Public model ASTs and the runtime's
-seven other methods/nested authority guard are unchanged. The complete backend
-milestone will be recorded in the integration evidence after the source checkpoint.
+seven other methods/nested authority guard are unchanged.
+
+The complete backend milestone at source
+`b5fc19c55553923a2c463c84d5d5d916fcfa17a4` passes: 21,162 passed,37 skipped,
+zero failures/errors,21,199 total in 264.508 seconds. The skipped IDs match the
+previous image failure milestone exactly, and executed count verification agrees
+with collection/tracked inventory. The source tree was frozen for the run; only
+these final evidence notes follow it. No frontend/client/schema/build rerun or
+remote/live-provider acceptance is implied. Full evidence:
+[local response integration](../project-local-image-response-20261009.md).
