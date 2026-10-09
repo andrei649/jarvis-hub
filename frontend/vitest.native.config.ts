@@ -15,6 +15,7 @@ export default defineConfig({
     'expo-status-bar': local('./native-tests/support/expo.tsx'),
     'expo-file-system/legacy': local('./native-tests/support/files.ts'),
     'expo-audio': local('./native-tests/support/audio.ts'),
+    'react-native-svg': local('./native-tests/support/svg.tsx'),
   } },
   test: { name: 'native-appearance', environment: 'jsdom', globals: true, include: ['native-tests/*.test.tsx'], maxWorkers: 1 },
 });

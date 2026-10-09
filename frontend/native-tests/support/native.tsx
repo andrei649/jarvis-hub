@@ -1,5 +1,22 @@
 import React from 'react';
 const listeners = new Set<(state: string) => void>();
+const motionListeners = new Set<(reduced: boolean) => void>();
+let reducedMotion: boolean | null = false;
+export const AccessibilityInfo = {
+  isReduceMotionEnabled: async () => {
+    if (reducedMotion === null) throw new Error('unavailable');
+    return reducedMotion;
+  },
+  addEventListener: (_: string, listener: (reduced: boolean) => void) => {
+    motionListeners.add(listener);
+    return { remove: () => motionListeners.delete(listener) };
+  },
+};
+export function setReducedMotion(value: boolean | null) {
+  reducedMotion = value;
+  if (value !== null) motionListeners.forEach(listener => listener(value));
+}
+export function motionListenerCount() { return motionListeners.size; }
 export const AppState = { currentState: 'active', addEventListener: (_: string, listener: (state: string) => void) => {
   listeners.add(listener); return { remove: () => listeners.delete(listener) };
 } };

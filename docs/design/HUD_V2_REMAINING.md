@@ -121,6 +121,11 @@ with plugin-configured checks instead of seeded success. Still open:
   (currently reads the `DOSSIER` mock).
 
 ## 4. Cockpit / signature interactions
+H18.24 native continuation (2026-10-09): a local SVG orb candidate in Chat follows
+actual TTS playback events, labels preparation separately, and cancels late playback
+after stop or a hub change. Reduced motion and background state pause animation.
+Native microphone/STT capture and physical-device acceptance remain open.
+
 - ~~**Network task‑fan**: v2 `NetworkBrain` doesn't render per‑agent task dots from `/tasks` (v1 did) —
   the old task fan exists in `network.tsx`, but the current cockpit renders `NeuralMesh`; integrate
   live `/tasks` dots into the current mesh or retire the stale `NetworkBrain`.~~

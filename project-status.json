@@ -226,7 +226,7 @@
   "tests": {
     "backend": 20985,
     "frontend": 1865,
-    "mobile": 173
+    "mobile": 186
   },
   "version": "1.0.0"
 }

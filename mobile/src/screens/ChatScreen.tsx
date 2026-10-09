@@ -1,5 +1,5 @@
 import { TextInput, Text } from '../components/ThemedText';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -9,11 +9,12 @@ import {
   View,
 } from 'react-native';
 import { saveCanvasArtifact, type HistoryTurn } from '../api/client';
-import { speak, stopSpeaking } from '../audio/tts';
+import { getSpeechState, speak, stopSpeaking, subscribeSpeech } from '../audio/tts';
 import type { ChatMessage, SaveState } from '../chat/types';
 import { AgentPicker } from '../components/AgentPicker';
 import { MessageBubble } from '../components/MessageBubble';
 import { SessionsModal } from '../components/SessionsModal';
+import { VoiceOrb } from '../components/VoiceOrb';
 import { useServer } from '../context/ServerContext';
 import { Conversation, type ConversationState } from '../chat/conversation';
 import { DEFAULT_PREFS, loadPrefs, savePrefs } from '../storage/prefs';
@@ -43,6 +44,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const [input, setInput] = useState('');
   const [agent, setAgent] = useState(DEFAULT_PREFS.agent);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const speech = useSyncExternalStore(subscribeSpeech, getSpeechState, getSpeechState);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   // A connection owns its controller. Cleanup revokes old callbacks before a new hub hydrates.
@@ -160,6 +162,15 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         </View>
       </View>
 
+      <View style={styles.speechStatus}>
+        <VoiceOrb status={speech.status === 'preparing' ? 'idle' : speech.status} size={80} />
+        <View style={styles.speechCopy}>
+          <Text style={styles.speechTitle}>Speech playback</Text>
+          {speech.status === 'preparing' ? <Text style={styles.speechNote}>Preparing speech…</Text> : null}
+          {speech.status === 'error' ? <Text style={styles.speechNote}>Speech playback unavailable. Try speaking again.</Text> : null}
+        </View>
+      </View>
+
       <FlatList
         ref={listRef}
         data={messages}
@@ -232,6 +243,10 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
   },
   toolBtnText: { color: theme.text, fontSize: 13, fontWeight: '600' },
   toolBtnDisabled: { color: theme.textDim },
+  speechStatus: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 12 },
+  speechCopy: { flex: 1 },
+  speechTitle: { color: theme.text, fontSize: 13, fontWeight: '600' },
+  speechNote: { color: theme.textDim, fontSize: 12, marginTop: 4 },
   listContent: { padding: 12, paddingBottom: 16 },
   hint: { alignItems: 'center', marginTop: 48 },
   hintText: { color: theme.textDim, fontSize: 14 },
