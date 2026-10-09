@@ -6,6 +6,14 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from agents.core.media_backends.openai_image import ENDPOINT
+
+_CLOUD_PROVIDER_FAILURES = frozenset({
+    "cloud_image_provider_error",
+    "cloud_image_response_too_large",
+    "cloud_image_invalid_response",
+})
+
 
 class ImageArtifactView(BaseModel):
     id: str
@@ -16,8 +24,26 @@ class ImageArtifactView(BaseModel):
 
 class ImageTaskView(BaseModel):
     task_id: int
-    state: Literal["awaiting_approval", "queued", "generating", "ready", "rejected", "deferred", "refused", "uncertain"]
+    state: Literal["awaiting_approval", "queued", "generating", "ready", "failed", "rejected", "deferred", "refused", "uncertain"]
     artifact: ImageArtifactView | None = None
+
+
+def _cloud_provider_response_failed(task) -> bool:
+    """Recognize only the fixed cloud provider-response failure envelope."""
+    payload = task.payload
+    execution = task.result
+    return (
+        task.kind == "plugin.egress"
+        and type(payload) is dict
+        and payload.get("plugin") == "cloud-image"
+        and payload.get("method") == "POST"
+        and payload.get("url") == ENDPOINT
+        and type(execution) is dict
+        and set(execution) == {"status", "reason"}
+        and execution["status"] == "failed"
+        and type(execution["reason"]) is str
+        and execution["reason"] in _CLOUD_PROVIDER_FAILURES
+    )
 
 
 def project_image_task(task) -> ImageTaskView:
@@ -26,6 +52,13 @@ def project_image_task(task) -> ImageTaskView:
               "deferred": "deferred", "quarantined": "refused"}
     result = ImageTaskView(task_id=task.id, state=states.get(task.status, "uncertain"))
     if task.status != "done":
+        return result
+    if _cloud_provider_response_failed(task):
+        result.state = "failed"
+        return result
+    # Cloud completion is established only by CloudImageRuntime.recover, which
+    # checks the durable artifact. A local-tool-shaped result is not cloud proof.
+    if task.kind == "plugin.egress":
         return result
     try:
         execution = task.result

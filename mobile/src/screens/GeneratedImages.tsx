@@ -12,7 +12,7 @@ import { useThemeStyles, type Theme } from '../theme';
 
 const STATE_LABEL: Record<ImageTask['state'], string> = {
   awaiting_approval: 'awaiting approval', queued: 'queued', generating: 'generating',
-  ready: 'ready', rejected: 'rejected by owner', deferred: 'deferred',
+  ready: 'ready', failed: 'provider response failed', rejected: 'rejected by owner', deferred: 'deferred',
   refused: 'refused by guard', uncertain: 'uncertain — execution result could not be verified',
 };
 let imageFileSequence = 0;
@@ -239,6 +239,7 @@ function ScopedGeneratedImages({ onGoToApprovals }: { onGoToApprovals: () => voi
       {record?.kind === 'task' ? (
         <>
           <Text style={styles.info}>Task {record.taskId} · {task ? STATE_LABEL[task.state] : 'status not checked'}</Text>
+          {task?.state === 'failed' ? <Text style={styles.warning}>No usable image was verified. Check this task before proposing another.</Text> : null}
           {!config.adminToken.trim() ? <Text style={styles.warning}>Admin token required in Settings to check this task.</Text> : null}
           {config.adminToken.trim() ? <Pressable accessibilityRole="button" disabled={busy !== null} style={styles.secondary} onPress={() => void refreshTask(record, epoch.current)}><Text style={styles.info}>Refresh task</Text></Pressable> : null}
           {task?.state === 'ready' && task.artifact ? (

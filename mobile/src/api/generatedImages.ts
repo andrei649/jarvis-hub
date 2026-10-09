@@ -5,7 +5,7 @@ const JSON_LIMIT = 64 * 1024;
 const IMAGE_LIMIT = 16 * 1024 * 1024;
 const TASK_LIMIT = Number.MAX_SAFE_INTEGER;
 const ARTIFACT_ID = /^[a-f0-9]{32}$/;
-const STATES = new Set(['awaiting_approval', 'queued', 'generating', 'ready', 'rejected', 'deferred', 'refused', 'uncertain']);
+const STATES = new Set(['awaiting_approval', 'queued', 'generating', 'ready', 'failed', 'rejected', 'deferred', 'refused', 'uncertain']);
 
 export class GeneratedImageError extends Error {
   constructor(message: string, readonly outcome: 'transport' | 'unknown' | 'auth' | 'invalid' = 'transport') {
@@ -16,7 +16,7 @@ export class GeneratedImageError extends Error {
 
 export type ImageStatus = { configured: boolean; reachable: boolean | null; reason: string };
 export type ImageArtifact = { id: string; bytes: number; width: number; height: number };
-export type ImageTask = { taskId: number; state: 'awaiting_approval' | 'queued' | 'generating' | 'ready' | 'rejected' | 'deferred' | 'refused' | 'uncertain'; artifact: ImageArtifact | null };
+export type ImageTask = { taskId: number; state: 'awaiting_approval' | 'queued' | 'generating' | 'ready' | 'failed' | 'rejected' | 'deferred' | 'refused' | 'uncertain'; artifact: ImageArtifact | null };
 export type ImageProposal = { kind: 'queued'; taskId: number } | { kind: 'refused'; reason: string };
 
 function headers(config: ServerConfig, accept = 'application/json', json = false): Record<string, string> {

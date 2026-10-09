@@ -3480,7 +3480,7 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "397c72607fae07e7d7275c521b0de858ad80792b2b2cc8b7b775e0727bfd6306"
+          "sha256": "951926c9d4db115c85a125f9459d6abcf55421b48f9ebaeb2399fb2bbe423dfa"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -3820,7 +3820,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "9d797dc9994705c15d952695cf13e38cf52e6ab132f7f0a7130c319447127957"
+          "sha256": "4922e23d111b3aefd68baad277ce94c778d11523c76748060f8c36e91ef1491c"
         },
         {
           "path": "docs/plans/2026-10-08-selected-ollama-vision.md",
@@ -4519,7 +4519,7 @@
         },
         {
           "path": "agents/core/image_generation_view.py",
-          "sha256": "ef72a07e7858cdb782cb479dc8ecd4ca58b5871542033d73a378b2ef5d1520aa"
+          "sha256": "4e862bf7a76c8f55e554875fe06e9f87cda8462a25fe58f3642c02efbb9ffb64"
         },
         {
           "path": "agents/core/routers/multimodal.py",
@@ -8715,7 +8715,7 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "397c72607fae07e7d7275c521b0de858ad80792b2b2cc8b7b775e0727bfd6306"
+          "sha256": "951926c9d4db115c85a125f9459d6abcf55421b48f9ebaeb2399fb2bbe423dfa"
         },
         {
           "path": "tests/test_h513_interactive_local_vision.py",
@@ -8920,7 +8920,7 @@
         },
         {
           "path": "frontend/src/panels/images.tsx",
-          "sha256": "51b24bbc62edb9a4aedd089a00ab51f970de5e2aa1518ef74f766d308f4b102b"
+          "sha256": "1b6de98c1c54752fa28cd039b300728bfbb95512353625b49da4f22456096dd9"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -8952,11 +8952,11 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "397c72607fae07e7d7275c521b0de858ad80792b2b2cc8b7b775e0727bfd6306"
+          "sha256": "951926c9d4db115c85a125f9459d6abcf55421b48f9ebaeb2399fb2bbe423dfa"
         },
         {
           "path": "tests/test_cloud_image.py",
-          "sha256": "8c2481e7bdec5d664361291dfe3698d2648ba47ef84c5fea5428e2f843a8d850"
+          "sha256": "2f30bc86ee546ac63a89f3466e3fcecf619ddbdf5d4df2a4aa2f23871571f94a"
         },
         {
           "path": "docs/cloud-image-generation.md",
@@ -8964,15 +8964,15 @@
         },
         {
           "path": "frontend/src/api/images.ts",
-          "sha256": "89b0993e9167b5a0457777fe2f2e416f0ea3697ccc804c75ea02d29fdd7c6a11"
+          "sha256": "be025129f293c37ddd27cd772ed3bf4a4fa3a06a2ae17f308c7e9939977afbd8"
         },
         {
           "path": "frontend/src/test/images-api.test.ts",
-          "sha256": "9788ae4e3e159704ce25d14ed9ac6a6dd0e1b6e7035f80c930ff1f9cec7a8301"
+          "sha256": "d2ea6a6958bab166ecda5e5958f2adbdd8e543785280d903abde02e529b58cee"
         },
         {
           "path": "frontend/src/test/images-panel.test.tsx",
-          "sha256": "1962fbfa7b85ed2c601930617d88e7890571e6f0bc34834f3a4b4106a7ad7eca"
+          "sha256": "6d806e2422b83697d0388335dc831ed23d543cbe21a3dda8ed36912c618e8d23"
         },
         {
           "path": "frontend/src/test/decision-inbox-panel.test.tsx",
@@ -9073,19 +9073,19 @@
         },
         {
           "path": "frontend/src/api/images.ts",
-          "sha256": "89b0993e9167b5a0457777fe2f2e416f0ea3697ccc804c75ea02d29fdd7c6a11"
+          "sha256": "be025129f293c37ddd27cd772ed3bf4a4fa3a06a2ae17f308c7e9939977afbd8"
         },
         {
           "path": "frontend/src/panels/images.tsx",
-          "sha256": "51b24bbc62edb9a4aedd089a00ab51f970de5e2aa1518ef74f766d308f4b102b"
+          "sha256": "1b6de98c1c54752fa28cd039b300728bfbb95512353625b49da4f22456096dd9"
         },
         {
           "path": "frontend/src/test/images-api.test.ts",
-          "sha256": "9788ae4e3e159704ce25d14ed9ac6a6dd0e1b6e7035f80c930ff1f9cec7a8301"
+          "sha256": "d2ea6a6958bab166ecda5e5958f2adbdd8e543785280d903abde02e529b58cee"
         },
         {
           "path": "frontend/src/test/images-panel.test.tsx",
-          "sha256": "1962fbfa7b85ed2c601930617d88e7890571e6f0bc34834f3a4b4106a7ad7eca"
+          "sha256": "6d806e2422b83697d0388335dc831ed23d543cbe21a3dda8ed36912c618e8d23"
         },
         {
           "path": "tests/test_h517_local_provider.py",
@@ -9226,7 +9226,7 @@
         },
         {
           "path": "frontend/src/panels/images.tsx",
-          "sha256": "51b24bbc62edb9a4aedd089a00ab51f970de5e2aa1518ef74f766d308f4b102b"
+          "sha256": "1b6de98c1c54752fa28cd039b300728bfbb95512353625b49da4f22456096dd9"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -9290,11 +9290,11 @@
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "397c72607fae07e7d7275c521b0de858ad80792b2b2cc8b7b775e0727bfd6306"
+          "sha256": "951926c9d4db115c85a125f9459d6abcf55421b48f9ebaeb2399fb2bbe423dfa"
         },
         {
           "path": "tests/test_cloud_image.py",
-          "sha256": "8c2481e7bdec5d664361291dfe3698d2648ba47ef84c5fea5428e2f843a8d850"
+          "sha256": "2f30bc86ee546ac63a89f3466e3fcecf619ddbdf5d4df2a4aa2f23871571f94a"
         },
         {
           "path": "docs/cloud-image-generation.md",
@@ -9315,11 +9315,11 @@
         },
         {
           "path": "agents/core/image_generation_view.py",
-          "sha256": "ef72a07e7858cdb782cb479dc8ecd4ca58b5871542033d73a378b2ef5d1520aa"
+          "sha256": "4e862bf7a76c8f55e554875fe06e9f87cda8462a25fe58f3642c02efbb9ffb64"
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "397c72607fae07e7d7275c521b0de858ad80792b2b2cc8b7b775e0727bfd6306"
+          "sha256": "951926c9d4db115c85a125f9459d6abcf55421b48f9ebaeb2399fb2bbe423dfa"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
@@ -10312,11 +10312,11 @@
         },
         {
           "path": "agents/core/image_generation_view.py",
-          "sha256": "ef72a07e7858cdb782cb479dc8ecd4ca58b5871542033d73a378b2ef5d1520aa"
+          "sha256": "4e862bf7a76c8f55e554875fe06e9f87cda8462a25fe58f3642c02efbb9ffb64"
         },
         {
           "path": "agents/core/routers/multimodal.py",
-          "sha256": "397c72607fae07e7d7275c521b0de858ad80792b2b2cc8b7b775e0727bfd6306"
+          "sha256": "951926c9d4db115c85a125f9459d6abcf55421b48f9ebaeb2399fb2bbe423dfa"
         },
         {
           "path": "tests/test_image_mediation_composition.py",
@@ -10336,7 +10336,7 @@
         },
         {
           "path": "frontend/src/panels/images.tsx",
-          "sha256": "51b24bbc62edb9a4aedd089a00ab51f970de5e2aa1518ef74f766d308f4b102b"
+          "sha256": "1b6de98c1c54752fa28cd039b300728bfbb95512353625b49da4f22456096dd9"
         }
       ]
     },

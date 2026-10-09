@@ -11136,7 +11136,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "awaiting_approval" | "queued" | "generating" | "ready" | "rejected" | "deferred" | "refused" | "uncertain";
+            state: "awaiting_approval" | "queued" | "generating" | "ready" | "failed" | "rejected" | "deferred" | "refused" | "uncertain";
             artifact?: components["schemas"]["ImageArtifactView"] | null;
         };
         /** InstallSkillBody */

@@ -101,6 +101,37 @@ it('shows refusal and uncertain separately and writes preview only on explicit r
   expect(api.png).not.toHaveBeenCalled();
 });
 
+it('shows provider-response failure separately from uncertain and never reads PNG or proposes on task restore', async () => {
+  records.set('jarvis.generated-image.scope-one', JSON.stringify({ kind: 'task', taskId: 42, prompt: 'moon' }));
+  api.task.mockResolvedValue({ taskId: 42, state: 'failed', artifact: null });
+  const ui = mount();
+  await waitFor(() => expect(ui.getByText(/Task 42.*provider response failed/i)).toBeTruthy());
+  expect(ui.getByText(/no usable image was verified.*Check this task before proposing another/i)).toBeTruthy();
+  expect(ui.queryByText(/execution result could not be verified/i)).toBeNull();
+  expect(api.png).not.toHaveBeenCalled();
+  expect(api.propose).not.toHaveBeenCalled();
+  expect(written).toHaveLength(0);
+});
+
+it('deletes an old preview when task refresh reports provider-response failure', async () => {
+  const artifact = { id: 'a'.repeat(32), bytes: 18, width: 512, height: 512 };
+  records.set('jarvis.generated-image.scope-one', JSON.stringify({ kind: 'task', taskId: 42, prompt: 'moon' }));
+  api.task.mockResolvedValueOnce({ taskId: 42, state: 'ready', artifact })
+    .mockResolvedValueOnce({ taskId: 42, state: 'failed', artifact: null });
+  const ui = mount();
+  await waitFor(() => expect(ui.getByText('Preview PNG')).toBeTruthy());
+  fireEvent.click(ui.getByText('Preview PNG'));
+  await waitFor(() => expect(ui.getByText('Save copy')).toBeTruthy());
+  const oldUri = written[0];
+  fireEvent.click(ui.getByText('Refresh task'));
+  await waitFor(() => expect(ui.getByText(/Task 42.*provider response failed/i)).toBeTruthy());
+  expect(ui.queryByLabelText('Generated PNG preview')).toBeNull();
+  expect(ui.queryByText('Save copy')).toBeNull();
+  expect(deleted).toContain(oldUri);
+  expect(api.png).toHaveBeenCalledTimes(1);
+  expect(api.propose).not.toHaveBeenCalled();
+});
+
 it('previews authenticated PNG and saves an explicit app-private copy', async () => {
   const artifact = { id: 'a'.repeat(32), bytes: 18, width: 512, height: 512 };
   api.task.mockResolvedValue({ taskId: 42, state: 'ready', artifact });

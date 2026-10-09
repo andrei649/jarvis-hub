@@ -132,6 +132,19 @@ describe('owner image transport', () => {
     vi.mocked(fetch).mockResolvedValue(reply({ task_id: 17, state: 'ready', artifact: { ...artifact, path: 'PRIVATE' }, payload: 'PRIVATE' }));
     expect(await imageTask(17)).toEqual({ task_id: 17, state: 'ready', artifact });
   });
+  it('accepts only the finite failed projection with no artifact or leaked provider detail', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(reply({ task_id: 17, state: 'failed', artifact: null, reason: 'PRIVATE', prompt: 'PRIVATE' }));
+    expect(await imageTask(17)).toEqual({ task_id: 17, state: 'failed', artifact: null });
+    for (const value of [
+      { task_id: 17, state: 'failed', artifact },
+      { task_id: 18, state: 'failed', artifact: null },
+      { task_id: 17, state: 'failure', artifact: null },
+    ]) {
+      vi.mocked(fetch).mockResolvedValueOnce(reply(value));
+      await expect(imageTask(17)).rejects.toMatchObject({ code: 'unavailable' });
+    }
+    expect(fetch).toHaveBeenCalledTimes(4);
+  });
 });
 
 it('binds configured backend, model, reference blend and upscale in one proposal', async () => {

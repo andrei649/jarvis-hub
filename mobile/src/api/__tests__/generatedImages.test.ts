@@ -80,6 +80,20 @@ describe('native generated image transport', () => {
     fetchMock.mockResolvedValueOnce(reply({ task_id: 42, state: 'queued' }));
     await expect(fetchGeneratedTask(config, 42, new AbortController().signal)).rejects.toMatchObject({ outcome: 'invalid' });
   });
+  it('accepts failed only as an exact task with null artifact and never reads image bytes', async () => {
+    fetchMock.mockResolvedValueOnce(reply({ task_id: 42, state: 'failed', artifact: null, reason: 'PRIVATE', prompt: 'PRIVATE' }));
+    await expect(fetchGeneratedTask(config, 42, new AbortController().signal)).resolves.toEqual({ taskId: 42, state: 'failed', artifact: null });
+    for (const value of [
+      { task_id: 43, state: 'failed', artifact: null },
+      { task_id: 42, state: 'failed', artifact: { id: 'a'.repeat(32), bytes: 8, width: 1, height: 1 } },
+      { task_id: 42, state: 'failure', artifact: null },
+    ]) {
+      fetchMock.mockResolvedValueOnce(reply(value));
+      await expect(fetchGeneratedTask(config, 42, new AbortController().signal)).rejects.toMatchObject({ outcome: 'invalid' });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls.every(([url]) => String(url).endsWith('/api/media/generation-tasks/42'))).toBe(true);
+  });
 
   it('rejects non-PNG, oversized, and mismatched artifact downloads before preview', async () => {
     const id = 'a'.repeat(32);

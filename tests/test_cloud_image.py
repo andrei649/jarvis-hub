@@ -410,6 +410,9 @@ async def test_catalog_opt_out_and_real_runtime_restart(cloud, monkeypatch):
     )
     assert restarted.recover(task) == task.result
     assert restarted.project(task).state == "ready"
+    # A verified completion outranks even a contrary stored failure envelope.
+    task.result = {"status": "failed", "reason": "cloud_image_provider_error"}
+    assert restarted.project(task).state == "ready"
     assert len(cloud.requests) == 1
 
 
@@ -695,6 +698,10 @@ async def test_a_provider_failure_is_a_failure_under_its_own_reason(cloud, respo
     cloud.state.response = bodies[response]
     task = await finish(cloud)
     assert task.result == {"status": "failed", "reason": reason}
+    assert task.status == "done"
+    assert cloud.runtime.project(task).model_dump() == {
+        "task_id": task.id, "state": "failed", "artifact": None,
+    }
     assert len(cloud.requests) == 1
     assert not list((cloud.root / "media" / "generated").glob("*.png"))
     assert _outcomes(cloud) == (0, 1)
