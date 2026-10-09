@@ -116,6 +116,22 @@ def _action(
 
 # Explicit product decisions.  A drift test pins this key set to ACTION_REGISTRY.
 ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
+    "research": _action(
+        "research",
+        "Run a read-only research task through configured websearch network egress; "
+        "the optional payload query falls back to the task title.",
+        risk="read_only",
+        supports=("search",),
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Reject a blocked research task before websearch dispatch.",
+            limitations=(
+                "Approved or running work has no guaranteed cancellation; a dispatched "
+                "network request and its returned results cannot be retracted or reversed."
+            ),
+        ),
+        implementation="agents.core.autonomy_coordinator:AutonomyCoordinator.build_executor",
+    ),
     "node.dispatch": _action(
         "node.dispatch",
         "Dispatch an allowlisted operation to a registered execution node.",

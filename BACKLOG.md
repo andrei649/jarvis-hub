@@ -5418,6 +5418,13 @@ exactly what landed and what did not.
   DRA-59 remains open for other real task kinds, scheduled producer migration, operational visibility
   and program acceptance; this is a bounded local implementation, not a blanket classifier fallback.
 
+  **Manifest dependency correction 2026-10-09:** the first full-backend follow-up found two
+  failures because the exact research registry entry lacked its capability manifest. The manifest
+  now describes optional query/title fallback, configured websearch egress, unearned confidence and
+  cancellation limited to a blocked task before dispatch. Its WIRED readiness snapshot and exact
+  verification counts are reconciled; no authority rule changes. The broader capability/research
+  focused union passes **172/172**. See [correction evidence](docs/plans/2026-10-09-research-manifest.md).
+
 - [ ] 🟡 **DRA-60 — Independent-integrator acceptance enforcement in repository controls (issues #906 and
   #846 steps 3-4).** #906 is state=open, assigned to andrei649; #846 is state=open (last updated
   2026-08-29). *Remaining: Partially done — the AI-buildable half has already landed and the critic missed

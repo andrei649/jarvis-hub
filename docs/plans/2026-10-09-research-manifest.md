@@ -1,0 +1,15 @@
+# Research action manifest coverage
+
+Generated 2026-10-09 UTC. Base/head before edit: `c424e9a2559e4da5a912aaf5e22e3b51b39ef8b5`; branch `codex/research-manifest-20261009`.
+
+Goal: restore exact capability-manifest coverage after the governed `research` action was added to `ACTION_REGISTRY`. The manifest must describe the real `AutonomyCoordinator.build_executor` research handler: payload `query` is optional and falls back to task title; configured websearch is required; the read-only task makes real network egress; cancellation is only meaningful before dispatch. Confidence remains unearned at `0.0`.
+
+Scope/path: add only the `research` entry in `agents/core/capability_manifests.py`; a narrow `tests/test_research_manifest.py` regression pins the optional query and resolvable executor owner. The existing two failures in `tests/test_h27_capability_manifests.py` are the red baseline. The expanded focused run exposed three deterministic dependent assertions: add `action:research` as `wired` in `tests/_snapshots/capability_readiness.json` and advance the exact reality-case/pair counts in `tests/test_h27_capability_verification.py` from 31 to 32 and 108 to 109. These two path additions were explicitly authorized by the integration owner. No kernel policy, task queue, worker, websearch implementation, action-auth classification, unknown-kind handling, or provider invocation changes.
+
+Verification: run capability manifests, registry/readiness/verification and research/mediation/matrix/web-tools suites with JUnit at `/workspace/scratch/research-manifest-focused.xml`, plus Ruff for the touched source/tests. Inspect implementation references and avoid pointing to the nested `_research` function, which is not a public importable symbol. Root owns full backend and ledgers. Rollback removes this manifest entry with its snapshot and count updates plus narrow test; the registry still enforces exact research mediation, while completeness tests would return red until a truthful replacement is provided.
+
+Focused proof: the two original H27 tests and the new exact-research test failed before the manifest entry. The first expanded run exposed the three snapshot/count dependencies above; the authorized corrections left the readiness state at `wired`, with no new verification promotion. The final 12-file focused union passed 172 tests, 0 failed/errors/skipped. Ruff and `git diff --check` passed. JUnit: `/workspace/scratch/research-manifest-focused.xml`. The full backend rerun remains with the integration owner.
+
+Independent gpt-6-sol/high review found no Critical/Important finding. Only the previously current capability-manifest pins for H517/H613 were refreshed after bounded collateral review; their speech authority, confidence and remaining text are unchanged. The local inventory adds one narrow test: backend 21,013, frontend 1,962, mobile 284. Expanded full-backend execution belongs to the combined MCP candidate; no standalone full pass is claimed here.
+
+Final metadata checks passed: status/Hermes regressions86/86, generated freshness and whitespace. The final combined full-suite result will be recorded separately.
