@@ -8,10 +8,10 @@
 - Branch/worktree: codex/anthropic-prompt-completeness-20261009,
   /workspace/jarvis-hub-anthropic-prompt-completeness.
 - Delivery: autonomous local development, no publication or live inference.
-- State: source frozen after meaningful RED, focused/integration GREEN and
-  independent production review.
-- Next action: source commit, one serial full backend milestone and bounded
-  collateral/proof review before a local documentation commit.
+- Tested source: 5538f559b81ff2793f08e6b592686271ea848871.
+- State: local implementation, independent reviews and full milestone complete.
+- Next action: retain this checkpoint and select the next verified local gap
+  from a clean final head; no publication follows from this unit.
 
 ## Evidence and contract
 
@@ -128,4 +128,10 @@ one new TokenUsage field/documentation, anthropic_usage, _sum_usage,
 _record_context_anchor and remember_usage only. Other providers and methods
 remain unchanged. Seven source/test hashes are frozen in the scratch manifest.
 Canonical collection is 21,654 backend (+28), with unchanged client counts
-2,009/306 reused, 555 routes and 18 agents. Full milestone results remain pending.
+2,009/306 reused, 555 routes and 18 agents. One serial full milestone passes:
+21,617 passed, 37 skipped, zero failures/errors, 297.802s, exit 0. The 37 skip
+IDs are identical to the preceding Gemini milestone; executed-count, Hermes
+and generated status guards pass. Eighteen formerly-current pins are refreshed,
+46 preexisting-stale orchestrator pins preserved, two H673 tests added and all
+226 statuses retained. Independent collateral review confirms bounded claims
+and same-target citations. Final proof: docs/project-anthropic-prompt-completeness-20261009.md.
