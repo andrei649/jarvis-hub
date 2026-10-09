@@ -3472,7 +3472,7 @@
         },
         {
           "path": "agents/core/routers/autonomy.py",
-          "sha256": "bca4ade9355f7e7747cf08be80d45ec747dacf9b0a25f7d8db32504079ec024e"
+          "sha256": "753a2bd2eaa3b6f349d7c0d595165af73a919da1e13614c30f9338b586be99d6"
         },
         {
           "path": "agents/core/routers/models_llm.py",
@@ -3808,19 +3808,19 @@
         },
         {
           "path": "tests/_snapshots/route_surface.json",
-          "sha256": "0e93990a5a877cd6af3d34afc38653f2ccb56718b9742c8cbf95eb60758d3759"
+          "sha256": "0070d02eb5d432e673ecf4fef1f7c6d432d94ee32df2c4de0d82cb16743c3cdf"
         },
         {
           "path": "tests/_snapshots/route_auth.json",
-          "sha256": "3673c0bc076f0f09b456e9b40326dba8822317628bcd1ba6407c26d6f5dac76d"
+          "sha256": "106b60e6ab67ed3b7ddd87ac3a4f0a8a8cd51e9ec991d3a674f8cb0b739c4a47"
         },
         {
           "path": "tests/_snapshots/openapi_surface.json",
-          "sha256": "0892a35a4b305c461c4e070989ddcea864e6050ef953ed3f26135e66826253a0"
+          "sha256": "ff3ab1f92972e7f1431b427101e16ab5ca7b38c5f4c75cf60452b4aaf8ee94a7"
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "3a4c4e08589542dad03300f83ca80bb2adffe0e1c9801c49b0d640cf96491aed"
+          "sha256": "9d797dc9994705c15d952695cf13e38cf52e6ab132f7f0a7130c319447127957"
         },
         {
           "path": "docs/plans/2026-10-08-selected-ollama-vision.md",
@@ -7807,7 +7807,7 @@
         },
         {
           "path": "agents/core/routers/autonomy.py",
-          "sha256": "bca4ade9355f7e7747cf08be80d45ec747dacf9b0a25f7d8db32504079ec024e"
+          "sha256": "753a2bd2eaa3b6f349d7c0d595165af73a919da1e13614c30f9338b586be99d6"
         },
         {
           "path": "agents/core/routers/actions.py",

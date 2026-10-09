@@ -255,6 +255,7 @@
   "GET /autonomy/approvals": "autonomy_approvals_autonomy_approvals_get",
   "GET /autonomy/brief": "autonomy_brief_autonomy_brief_get",
   "GET /autonomy/interrupts": "autonomy_interrupts_autonomy_interrupts_get",
+  "GET /autonomy/mediation": "autonomy_mediation_status_autonomy_mediation_get",
   "GET /autonomy/mode": "autonomy_get_mode_autonomy_mode_get",
   "GET /autonomy/observer": "autonomy_observer_status_autonomy_observer_get",
   "GET /autonomy/policy": "autonomy_get_policy_autonomy_policy_get",

@@ -46,6 +46,7 @@ import React, { useState } from 'react';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, actA, inpS, taS, Json } from '../panel-kit';
 
 const STATUS_PATH = '/autonomy/status';
+const MEDIATION_PATH = '/autonomy/mediation';
 const OBSERVER_PATH = '/autonomy/observer';
 const OBSERVER_RUN_PATH = '/autonomy/observer/run';
 const SUGGESTIONS_PATH = '/autonomy/preferences/suggestions';
@@ -82,8 +83,38 @@ const readHint = (msg, on503) => {
 
 const ORCH_503 = 'the route\'s single 503 branch: {"error": "not initialized"} — get_orch() is falsy, so the orchestrator (and with it the queue, the budget and the preference store) is not up. Unavailable, NOT zero.';
 
+const MEDIATION_COUNTS = [
+  ['authorized_enqueue', 'Authorized enqueue events'],
+  ['governed', 'Governed events'],
+  ['refused_unmediated', 'Refused unmediated events'],
+  ['ungoverned_detected', 'Ungoverned events detected'],
+] as const;
+
+type MediationMode = 'off' | 'hold' | 'enforce';
+type MediationSnapshot = {
+  mode: MediationMode;
+  valid: boolean;
+  stats: Record<(typeof MEDIATION_COUNTS)[number][0], number> | null;
+};
+
+function mediationSnapshot(value: unknown): MediationSnapshot | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (row.mode !== 'off' && row.mode !== 'hold' && row.mode !== 'enforce') return null;
+  if (row.valid === false) {
+    return row.stats === null ? { mode: row.mode, valid: false, stats: null } : null;
+  }
+  if (row.valid !== true || !row.stats || typeof row.stats !== 'object' || Array.isArray(row.stats)) return null;
+  const stats = row.stats as Record<string, unknown>;
+  if (!MEDIATION_COUNTS.every(([key]) => Number.isSafeInteger(stats[key]) && (stats[key] as number) >= 0)) return null;
+  return { mode: row.mode, valid: true, stats: Object.fromEntries(
+    MEDIATION_COUNTS.map(([key]) => [key, stats[key] as number]),
+  ) as MediationSnapshot['stats'] };
+}
+
 export function AutonomyControlPanel() {
   const status = useApi(STATUS_PATH, true, true);            // admin-tier read
+  const mediation = useApi(MEDIATION_PATH, true, true);      // admin-tier read
   const obs = useApi(OBSERVER_PATH, true, true);             // admin-tier read
   const sug = useApi(SUGGESTIONS_PATH, true, true);          // admin-tier read
 
@@ -93,6 +124,7 @@ export function AutonomyControlPanel() {
   const sd: any = status.e ? null : status.d;
   const od: any = obs.e ? null : obs.d;
   const gd: any = sug.e ? null : sug.d;
+  const md = mediation.loading || mediation.e ? null : mediationSnapshot(mediation.d);
 
   const stats: Record<string, any> = (sd && sd.stats) || {};
   const statKeys = Object.keys(stats);
@@ -146,8 +178,28 @@ export function AutonomyControlPanel() {
       title="AUTONOMY CONTROL"
       live={asLive(!!sd)}
       sub={sd ? `${total} task(s) in the queue · ${pending.length} awaiting a decision` : null}
-      onReload={() => { status.reload(); obs.reload(); sug.reload(); }}
+      onReload={() => { status.reload(); mediation.reload(); obs.reload(); sug.reload(); }}
     >
+      <section aria-label="Task mediation">
+        <div style={head}>TASK MEDIATION</div>
+        {mediation.loading || (!mediation.d && !mediation.e) ? (
+          <div style={note}>Checking mediation status…</div>
+        ) : !md ? (
+          <div style={amber}>Mediation status unavailable</div>
+        ) : (
+          <>
+            <Row><span style={mono}>Effective mode: {md.mode}</span></Row>
+            <Row><span style={mono}>Evidence: {md.valid ? 'verified' : 'unavailable or invalid'}</span></Row>
+            {md.stats && MEDIATION_COUNTS.map(([key, label]) => (
+              <Row key={key}><span style={mono}>{label}: {md.stats?.[key]}</span></Row>
+            ))}
+          </>
+        )}
+        <div style={note}>
+          Counts cover verified recorded events, not every task or proof that mediation is ready for use.
+        </div>
+      </section>
+
       {/* ── S1 · queue census + interrupt budget ─────────────────────────── */}
       <div style={head}>QUEUE CENSUS · GET {STATUS_PATH}</div>
       <State e={status.e} loading={status.loading} n={sd ? 1 : 0} />

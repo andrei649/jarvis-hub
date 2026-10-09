@@ -479,3 +479,10 @@ shows typed HTTP guard and managed token lifecycle events through `GET /api/admi
 No new route or dashboard control is added. The native audit reader remains open
 in `mobile/PARITY.md`; native bearer requests are covered by the shared server guards.
 The broader login/session/WebSocket/native-auth event contract remains incomplete.
+
+DRA-59 local observability (2026-10-09): Autonomy Control now reads admin-only
+`GET /autonomy/mediation` and displays the effective queue mode separately from
+evidence validity. Only verified recorded event counts are shown; unavailable,
+malformed and refreshing states hide numbers. The section has no enable, approval
+or raw-event control. B7 operational acceptance and broader task coverage remain
+open; native display is H18.32 in the mobile parity ledger.

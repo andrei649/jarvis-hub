@@ -17,9 +17,10 @@ the task list and approval endpoint. Leaf imports (`put_category`, `TaskQueueErr
 digest builders, …) stay inline at call time as in the originals.
 """
 
+from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import datetime, UTC
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
@@ -206,6 +207,55 @@ async def autonomy_status():
         "interrupt_budget_per_day": orch.autonomy.budget.per_day,
         "pending_decisions": [t.to_dict() for t in orch.autonomy_queue.pending_decisions()],
     })
+
+
+class MediationCounts(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authorized_enqueue: int = Field(strict=True, ge=0)
+    governed: int = Field(strict=True, ge=0)
+    refused_unmediated: int = Field(strict=True, ge=0)
+    ungoverned_detected: int = Field(strict=True, ge=0)
+
+
+class MediationStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["off", "hold", "enforce"]
+    valid: bool
+    stats: MediationCounts | None
+
+
+@router.get(
+    "/autonomy/mediation", dependencies=[Depends(admin_guard)], response_model=MediationStatus,
+)
+def autonomy_mediation_status():
+    """Read the queue's verified mediation counts off the event-loop thread."""
+    unavailable = {"error": "mediation status unavailable"}
+    try:
+        orch = get_orch()
+        queue = getattr(orch, "autonomy_queue", None) if orch is not None else None
+        if queue is None:
+            return nocache_json(unavailable, status_code=503)
+        mode = queue.mediation_mode
+        if mode not in {"off", "hold", "enforce"}:
+            return nocache_json(unavailable, status_code=503)
+
+        snapshot = queue.verified_mediation_stats()
+        if not isinstance(snapshot, Mapping) or type(snapshot.get("valid")) is not bool:
+            return nocache_json(unavailable, status_code=503)
+        if snapshot["valid"] is False:
+            return nocache_json({"mode": mode, "valid": False, "stats": None})
+
+        names = (
+            "authorized_enqueue", "governed", "refused_unmediated", "ungoverned_detected",
+        )
+        stats = {name: snapshot[name] for name in names}
+        if any(type(count) is not int or count < 0 for count in stats.values()):
+            return nocache_json(unavailable, status_code=503)
+        return nocache_json({"mode": mode, "valid": True, "stats": stats})
+    except Exception:
+        return nocache_json(unavailable, status_code=503)
 
 
 @router.get("/autonomy/observer", dependencies=[Depends(admin_guard)])

@@ -255,6 +255,7 @@
   "GET /autonomy/approvals",
   "GET /autonomy/brief",
   "GET /autonomy/interrupts",
+  "GET /autonomy/mediation",
   "GET /autonomy/mode",
   "GET /autonomy/observer",
   "GET /autonomy/policy",

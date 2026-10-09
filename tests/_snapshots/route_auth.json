@@ -255,6 +255,7 @@
   "GET /autonomy/approvals": "admin",
   "GET /autonomy/brief": "admin",
   "GET /autonomy/interrupts": "admin",
+  "GET /autonomy/mediation": "admin",
   "GET /autonomy/mode": "admin",
   "GET /autonomy/observer": "admin",
   "GET /autonomy/policy": "admin",

@@ -5417,8 +5417,9 @@ exactly what landed and what did not.
   it; B7 stays not program-accepted and E5/E8 stay blocked until #906 is provisioned or re-scoped by a
   separate owner decision. The two authority invariants are restated in the *Remaining* clause above
   (closed by #918 / R3 PASS comment 5313004564). **Remaining:** the enforce-mode classifier defect above,
-  and no route or HUD panel for `verified_mediation_stats()` / `mediation_events()`. Enabling or accepting
-  the mode operationally is not established by these local software tests.
+  and native diagnostics/raw evidence inspection. The aggregate route and owner HUD status are now
+  implemented locally below. Enabling or accepting the mode operationally is not established by
+  these local software tests.
   **Local software slice 2026-10-09 — exact research mediation:** the exact `research` kind now
   classifies as KERNEL, allowing the existing governed worker intake to persist a signed, tuple-bound
   receipt before dispatch in enforce mode. GRANT executes only with the private worker permit; QUEUE
@@ -5427,8 +5428,8 @@ exactly what landed and what did not.
   research in enforce mode; off/hold behavior is preserved. Red-first regression and the focused
   action-auth/task-mediation/web-tools matrix pass **162/162** with fake kernel/search adapters.
   No live search was invoked. See [scope and evidence](docs/plans/2026-10-09-research-task-mediation.md).
-  DRA-59 remains open for other real task kinds, scheduled producer migration, operational visibility
-  and program acceptance; this is a bounded local implementation, not a blanket classifier fallback.
+  DRA-59 remains open for other real task kinds, scheduled producer migration and program acceptance;
+  this is a bounded local implementation, not a blanket classifier fallback.
 
   **Manifest dependency correction 2026-10-09:** the first full-backend follow-up found two
   failures because the exact research registry entry lacked its capability manifest. The manifest
@@ -5436,6 +5437,14 @@ exactly what landed and what did not.
   cancellation limited to a blocked task before dispatch. Its WIRED readiness snapshot and exact
   verification counts are reconciled; no authority rule changes. The broader capability/research
   focused union passes **172/172**. See [correction evidence](docs/plans/2026-10-09-research-manifest.md).
+
+  **Local observability slice 2026-10-09:** admin-only `GET /autonomy/mediation` projects the
+  initialized queue mode and verified event counts. Unavailable or invalid evidence has no numeric
+  fallback; raw events, signatures and receipts are not returned. Autonomy Control displays mode
+  and evidence separately, clears counts during refresh/failure, and adds no enable/approval control.
+  The signed queue/tamper HTTP regressions and focused mediation union pass **183/183**; panel
+  regressions pass **27/27**. Native display is tracked as H18.32. B7 remains default-off and not
+  program-accepted. See [scope and evidence](docs/plans/2026-10-09-task-mediation-status.md).
 
 - [ ] 🟡 **DRA-60 — Independent-integrator acceptance enforcement in repository controls (issues #906 and
   #846 steps 3-4).** #906 is state=open, assigned to andrei649; #846 is state=open (last updated
@@ -8617,6 +8626,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.29 | **Native advisory approval opinions** — render H277 risk/rationale/identity and optional bounded pending polling without changing decision authority; expose read-only model-role configuration. Preserve original cards when no judge is configured and never claim connectivity from configuration. Local candidate (2026-10-09): cards display advisory score, rationale, provider/model/locality, truncation and injection warnings; pending cards invite manual pull-to-refresh while owner buttons remain available. A separate read-only roles view says connectivity has not been checked. Automatic polling is deferred. Native host tests/typecheck pass; draft #1233 decision-lifecycle integration, device and live-hub/judge acceptance remain open. | 2 | 🟡 local candidate; integration/device/live acceptance open | H18.11, H277, #1233 | mobile/docs/h1829-advisory-opinions.md |
 | H18.30 | **Native concrete conversation transitions** — follow `session_id` returned by chat/SSE after owner /new, /reset or /undo; replace or reload the visible transcript and keep resumed older IDs exact. Preserve the existing owner guard and saved histories. Browser/desktop ships in native H063 recovery. | 2 | 🟡 implemented in candidate; device/live-Hub acceptance open | H18.1, H18.5, H063 | mobile/docs/h1830-session-continuity.md |
 | H18.31 | **Native selected-image review and history** — carry the concrete conversation and selected agent through owner prepare/send; review the actual selected local Ollama model and exact image bytes, choose bounded active-image handles and invalidate pending work on topic/agent changes. Browser/desktop ships in native H277 recovery; keep owner authorization and text/provenance-only transcript persistence. | 2 | 🟡 implemented in local candidate; device/live-Hub acceptance open | H18.1, H18.30, H277 | mobile/docs/h1831-selected-images.md |
+| H18.32 | **Native task mediation status** — read the admin-guarded `GET /autonomy/mediation` aggregate snapshot; distinguish off/hold/enforce and verified/unavailable evidence, hide stale or unverifiable counts, and expose no enable/approval control or raw signed events. Browser Autonomy Control local implementation exists; native display remains open. | 1 | P3 | H18.1, DRA-59 | mobile parity |
 | H18.21 ✅ | **Native Media Director parity** — the metadata-only Media tab reads the owner-curated `/api/media/devices` registry and `/api/media/session` board, then exposes explicit user present/restore controls over the unchanged guarded API. Safe bounded normalization preserves disabled/error states and distinguishes queued, refused, unverified, and verified nested outcomes; a stale/unregistered target cannot be submitted. Device register/remove controls are isolated behind the configured admin token and no remote media is embedded. Red/green: missing client/screen contracts failed first, then mobile Jest passed (65) + `tsc --noEmit` clean. | 3 | ✅ done (2026-07-13) | O29 | PARITY.md |
 | H18.22 ✅ | **Mobile capability registry board** — folded into the existing Status tab (not a new top-level tab: 13 tabs already fill the bar) as a **Capabilities** card alongside Trust, over the same user-guarded `GET /api/capabilities` the browser's `ReadinessPanel` reads: SEAM/WIRED/VERIFIED/GA counts + the honest "harness pending — wired, not yet proven" note (never claims VERIFIED it can't back). Read-only — no action execution or token-management controls; approvals stay on H18.11. `fetchCapabilities`/`normalizeCapability` in `mobile/src/api/client.ts`. Red/green: `capabilities.test.ts` (+3: shape mapping, malformed-entry drop + honest defaults, sparse-payload normalization), mobile Jest passed (93) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-19) | H18.1, H27.8 | mobile parity |
 
