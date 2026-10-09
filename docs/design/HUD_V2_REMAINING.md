@@ -513,8 +513,14 @@ A normally returned command or refusal may have a duration. Errors, cancellation
 uninstrumented turns have none. Selection is applied by the backend from the ordinary
 Admin Settings `display.status_bar_fields` list (default `latency`; empty hides it).
 The strip clears on new work or session/agent/demo changes and is not transcript history.
-TPS, model/context/cache/compression metrics and H396 typed exit/accounting remain open;
+TPS, model/context/cache/compression metrics and H396 whole-turn exit/accounting remain open;
 future work extends the same outcome. H18.33 adds a local native current-turn strip
 using the server-selected SSE outcome, with strict validation and ephemeral state.
 It clears on work/context changes and never enters stored history; physical-device
 and live-Hub acceptance remain open. See `mobile/docs/h1833-turn-duration.md`.
+
+H396's local runtime now retains a typed tool-loop exit and emits one bounded
+diagnostic attempt after a normal return, while its legacy caller receives the
+same reply text. This internal result is not a whole-turn completion claim or a
+new HTTP/SSE field. HUD explanations, pending-result severity and accounting still
+need defined cross-agent and non-loop semantics on the shared outcome.

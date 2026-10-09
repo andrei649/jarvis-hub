@@ -27,6 +27,13 @@ Media integrity (local backend candidate, 2026-10-09): newly cloud-finalized, Co
 
 Tool profile permissions (local backend candidate, 2026-10-09): both clients inherit a live profile check before each new tool dispatch in the enabled production agent loop. A tool withdrawn since the model saw it is refused before preflight or approval intake. Existing error shapes and client controls are unchanged; already-running tools and queued approvals are outside this check (H672 partial).
 
+Tool-loop exit diagnostics (H396 local backend candidate, 2026-10-09): the runtime
+retains a typed result and a bounded diagnostic for one normal returned tool-loop
+invocation. Existing Agent callers still receive the same text. No new field is
+sent to browser/native chat; whole-turn attribution and client explanations remain
+open and must extend the shared H686 outcome after their semantics are defined.
+See [runtime evidence](../docs/project-tool-loop-exit-result-20261009.md).
+
 Session ID validation (local backend candidate, 2026-10-09): both clients inherit
 strict full-string session validation on the existing shared server boundaries.
 A terminal newline is refused before session or memory work; valid IDs retain

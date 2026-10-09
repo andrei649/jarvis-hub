@@ -57,6 +57,7 @@ from .security.quarantine import (
 )
 from .security.recall_taint import mark_turn_recall_tainted
 from .security.taint import TAINTED_RECALL_ORIGIN, is_untrusted_source
+from .tool_loop_result import ToolLoopExitReason, ToolLoopResult
 from .tool_result_store import (
     Budget,
     budget_for_context_window,
@@ -382,11 +383,36 @@ class AgentToolRuntime:
         constructor default untouched; a value is clamped to
         ``WALL_SECONDS_MIN..WALL_SECONDS_CAP`` and stays finite (Hermes absorption 5c).
         """
+        result = await self.run_result(
+            agent_id=agent_id, backend=backend, model=model, prompt=prompt, system=system,
+            max_tokens=max_tokens, temperature=temperature, event_sink=event_sink,
+            wall_seconds=wall_seconds, usage_sink=usage_sink, effective_window=effective_window,
+            before_model_call=before_model_call,
+        )
+        return result.reply
+
+    async def run_result(
+        self,
+        *,
+        agent_id: str,
+        backend: Any,
+        model: str,
+        prompt: str,
+        system: str = "",
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+        event_sink: ToolEventSink | None = None,
+        wall_seconds: float | None = None,
+        usage_sink: Callable[[TokenUsage], None] | None = None,
+        effective_window: EffectiveWindow | None = None,
+        before_model_call: Callable[[], Any] | None = None,
+    ) -> ToolLoopResult:
+        """Return the source-assigned exit after the caller-owned result settles."""
         # Each run is one model turn: calls it makes carry its token, so a tool can tell
         # what the model sent in this turn from what an earlier turn or a script wrote.
         turn = bind_tool_turn(secrets.token_hex(8))
         try:
-            return await self._run_turn(
+            result = await self._run_turn(
                 agent_id=agent_id, backend=backend, model=model, prompt=prompt, system=system,
                 max_tokens=max_tokens, temperature=temperature, event_sink=event_sink,
                 wall_seconds=wall_seconds, usage_sink=usage_sink, effective_window=effective_window,
@@ -394,6 +420,11 @@ class AgentToolRuntime:
             )
         finally:
             reset_tool_turn(turn)
+        # Only this outer owner reports a settled exit. A cancellation-resistant child
+        # detached at the deadline can never publish a second or late result.
+        with suppress(Exception):
+            logger.info("tool_loop_exit agent=%r reason=%s", _bounded_identity(agent_id), result.exit_reason.value)
+        return result
 
     async def _run_turn(
         self,
@@ -410,7 +441,7 @@ class AgentToolRuntime:
         usage_sink: Callable[[TokenUsage], None] | None = None,
         effective_window: EffectiveWindow | None = None,
         before_model_call: Callable[[], Any] | None = None,
-    ) -> str:
+    ) -> ToolLoopResult:
         # None, a bool, a non-number, a non-finite or a non-positive value all keep
         # the constructor's own deadline; only a real value is clamped into the range.
         parsed = 0.0 if isinstance(wall_seconds, bool) else _safe_float(wall_seconds, default=0.0)
@@ -420,14 +451,14 @@ class AgentToolRuntime:
             effective_wall_seconds = min(max(WALL_SECONDS_MIN, parsed), WALL_SECONDS_CAP)
         effective_window = effective_window or resolve_effective_window(backend, model)
         if not effective_window.valid:
-            return _WINDOW_REPLY
+            return ToolLoopResult(_WINDOW_REPLY, ToolLoopExitReason.WINDOW_INVALID)
         if effective_window.tokens is not None and max_tokens <= 0:
             max_tokens = max(1, effective_window.tokens // 4)
         from .llm.provider_replay import ReplayRefused, active_replay, replay_scope
         try:
             active_replay()
         except ReplayRefused:
-            return _CONTEXT_REPLY
+            return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.REPLAY_REFUSED)
         loop = self._run_loop(
             agent_id=agent_id,
             backend=backend,
@@ -452,9 +483,9 @@ class AgentToolRuntime:
                     loop, timeout=effective_wall_seconds, context=turn_context,
                 )
             except _OwnedTimeout:
-                return _DEADLINE_REPLY
+                return ToolLoopResult(_DEADLINE_REPLY, ToolLoopExitReason.DEADLINE)
             except ReplayRefused:
-                return _CONTEXT_REPLY
+                return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.REPLAY_REFUSED)
             finally:
                 self._carry_turn_taint(turn_context)
 
@@ -513,11 +544,11 @@ class AgentToolRuntime:
         usage_sink: Callable[[TokenUsage], None] | None = None,
         effective_window: EffectiveWindow | None = None,
         before_model_call: Callable[[], Any] | None = None,
-    ) -> str:
+    ) -> ToolLoopResult:
         from .conversation_clock import active_clock
         inherited_clock = active_clock()
         if inherited_clock is not None and not inherited_clock.active:
-            return _CONTEXT_REPLY
+            return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.TURN_REVOKED)
         registry_mode = self._registry_mode()
         metadata = self._server.tools()
         if registry_mode:
@@ -531,7 +562,7 @@ class AgentToolRuntime:
                             "reason": "no_registered_capability",
                         }
                     )
-                return _NO_CAPABILITY_REPLY
+                return ToolLoopResult(_NO_CAPABILITY_REPLY, ToolLoopExitReason.NO_CAPABILITY)
         metadata, decision = self._profiled(agent_id, metadata)
         if decision is not None:
             await self._emit(
@@ -549,7 +580,7 @@ class AgentToolRuntime:
                 },
             )
         if not metadata:
-            return _NO_TOOLS_REPLY
+            return ToolLoopResult(_NO_TOOLS_REPLY, ToolLoopExitReason.NO_TOOLS)
         tools, gated_tools, untrusted_tools = self._specs_for(metadata)
         messages = [
             {"role": "system", "content": system},
@@ -586,7 +617,7 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 event_sink=event_sink,
             ):
-                return _CONTEXT_REPLY
+                return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
             if len(compacted) > folds_before:
                 # H672 — a committed fold is the compaction boundary: the one moment a
                 # running turn may pick up a changed registry. The offer is re-resolved
@@ -629,7 +660,7 @@ class AgentToolRuntime:
                                 "status": refreshed.reason,
                             },
                         )
-                        return _TOOLS_WITHDRAWN_REPLY
+                        return ToolLoopResult(_TOOLS_WITHDRAWN_REPLY, ToolLoopExitReason.TOOLS_WITHDRAWN)
                     tools, gated_tools, untrusted_tools = self._specs_for(metadata)
                     schema_tokens = (
                         estimate_tokens(json.dumps([tool.as_openai() for tool in tools]))
@@ -653,7 +684,7 @@ class AgentToolRuntime:
                 )
             self._report_usage(usage_sink, turn)
             if not turn.tool_calls:
-                return turn.content
+                return ToolLoopResult(turn.content, ToolLoopExitReason.MODEL_RESPONSE)
 
             # A provider response is untrusted input. Keep at most the executable
             # fan-out plus one representative overflow call so both scheduling
@@ -662,7 +693,7 @@ class AgentToolRuntime:
             if turn.provider_replay is not None:
                 from .llm.provider_replay import replay_size
                 if len(turn.tool_calls) > self._max_tool_calls_per_turn:
-                    return _CONTEXT_REPLY
+                    return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.TOOL_CALL_LIMIT)
                 proposed = [*messages, turn.as_assistant_message()]
                 replay_size(proposed)  # Validate before any tool side effect.
                 if not await self._compact_context(
@@ -670,7 +701,7 @@ class AgentToolRuntime:
                     effective_window=known_window, schema_tokens=schema_tokens,
                     agent_id=agent_id, event_sink=event_sink,
                 ):
-                    return _CONTEXT_REPLY
+                    return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
             repeated, looping = self._note_repeats(bounded_calls, seen_calls, restated)
             if looping is not None:
                 await self._emit(
@@ -681,7 +712,7 @@ class AgentToolRuntime:
                         "limit": self._repeat_limit,
                     },
                 )
-                return _REPEAT_REPLY
+                return ToolLoopResult(_REPEAT_REPLY, ToolLoopExitReason.REPEATED_CALL)
             capped = self._note_tool_counts(bounded_calls, tool_counts)
             assistant_message = turn.as_assistant_message()
             assistant_message["tool_calls"] = [call.as_openai() for call in bounded_calls]
@@ -746,7 +777,10 @@ class AgentToolRuntime:
                     for name in _ALWAYS_RESTATED:
                         restated[name] = f"script:{scripts_run}"
             if any(result.get("reason") == "approval_required" for result, _ in observations):
-                return _approval_reply(result for result, _ in observations)
+                return ToolLoopResult(
+                    _approval_reply(result for result, _ in observations),
+                    ToolLoopExitReason.APPROVAL_REQUIRED,
+                )
             failing = self._note_failures(bounded_calls, observations, failure_streaks)
             if failing is not None:
                 call, result = failing
@@ -760,7 +794,7 @@ class AgentToolRuntime:
                         "limit": self._failure_limit,
                     },
                 )
-                return _FAILURE_REPLY
+                return ToolLoopResult(_FAILURE_REPLY, ToolLoopExitReason.FAILING_TOOL)
 
         await self._emit(
             event_sink,
@@ -771,9 +805,10 @@ class AgentToolRuntime:
                 "limit": limit,
             },
         )
-        return (
+        return ToolLoopResult(
             f"I stopped the tool loop after {limit} model turns because it reached "
-            "the safety limit."
+            "the safety limit.",
+            ToolLoopExitReason.ITERATION_LIMIT,
         )
 
     def _context_budget(self, model: str, max_tokens: int, effective_window: int | None = None) -> int:
