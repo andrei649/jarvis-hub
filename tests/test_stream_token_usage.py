@@ -160,7 +160,7 @@ async def test_terminal_without_usage_keeps_estimate(provider):
                 row['usage'] = {}
     answer, events, _, _ = await invoke(provider, rows)
     assert answer == 'answer'
-    if provider == 'lmstudio':
+    if provider in {'ollama', 'lmstudio'}:
         assert len(events) == 1 and not events[0].reported
         assert getattr(events[0], 'counts_complete', None) is False
     else:

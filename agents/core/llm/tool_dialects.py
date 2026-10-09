@@ -194,12 +194,18 @@ def _local_count(data: Mapping[str, Any], key: str) -> int:
 def ollama_usage(data: Mapping[str, Any]) -> TokenUsage:
     """/api/chat totals; prompt_eval_count already includes cached prompt tokens.
 
+    Only an exact nonnegative integer pair supplies complete observed counters.
+    Missing or malformed counters do not discard a valid sibling or answer.
     Protocol: https://docs.ollama.com/api/chat (reviewed 2026-09-15).
     """
     if not isinstance(data, Mapping):
-        return TokenUsage()
+        return TokenUsage(counts_complete=False)
+    prompt = data.get("prompt_eval_count")
+    completion = data.get("eval_count")
     return TokenUsage(input_tokens=_local_count(data, "prompt_eval_count"),
-                      output_tokens=_local_count(data, "eval_count"))
+                      output_tokens=_local_count(data, "eval_count"),
+                      counts_complete=(type(prompt) is int and prompt >= 0
+                                       and type(completion) is int and completion >= 0))
 
 
 def lmstudio_usage(data: Mapping[str, Any]) -> TokenUsage:

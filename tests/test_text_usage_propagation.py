@@ -83,7 +83,7 @@ async def test_failed_or_malformed_metadata_never_fabricates_usage(provider, mal
     events = []
     try:
         answer = await agent_for().generate_response(backend, 'model', 'hello', '', 128, .2, usage_sink=events.append)
-        if malformed and provider in {'lmstudio', 'compatible'}:
+        if malformed and provider in {'ollama', 'lmstudio', 'compatible'}:
             assert len(events) == 1
             assert events[0].as_dict() == {
                 'input_tokens': 0, 'output_tokens': 0, 'cache_read': 0, 'cache_write': 0,
