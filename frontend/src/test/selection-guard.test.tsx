@@ -6,7 +6,7 @@
    unsaved, and any other refusal still shows the hub's own reason. fetch is mocked. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, fireEvent, cleanup, within } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent, cleanup, within } from '@testing-library/react';
 import { SettingsPanel } from '../gap';
 import { JobsPanel } from '../panels/jobs';
 import { guardFlags, guardRefusal } from '../selection-guard';
@@ -55,15 +55,14 @@ beforeEach(() => {
 });
 
 const puts = () => calls.filter((c) => c.method === 'PUT' && c.url === '/api/admin/settings/llm');
-// The resend runs after the typed phrase and a re-render; a loaded runner can take past waitFor's 1 s.
-const SLOW = { timeout: 5000 };
-
 async function editModel() {
   render(<SettingsPanel />);
   const field = await screen.findByDisplayValue('claude-sonnet-4-6');
   fireEvent.change(field, { target: { value: FABLE } });
   fireEvent.click(screen.getByText(/save 1 change/));
-  return screen.findByRole('alertdialog', { name: 'confirm the model choice' });
+  const dialog = await screen.findByRole('alertdialog', { name: 'confirm the model choice' });
+  await act(async () => {}); // settle the confirmation's phrase-reset effect before typing
+  return dialog;
 }
 
 describe('selection guards — H378', () => {
@@ -73,10 +72,13 @@ describe('selection guards — H378', () => {
     const confirm = within(dialog).getByRole('button', { name: /choose it anyway/ });
     expect(confirm.disabled).toBe(true);                                       // typed, like a money action
     fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: FABLE } });
-    fireEvent.click(confirm);
-    await waitFor(() => expect(puts()).toHaveLength(2), SLOW);
+    expect(confirm.disabled).toBe(false);
+    // The mock replies on settled promises. Flush that request and its React
+    // updates directly; polling for 5 s consumes the whole test timeout.
+    await act(async () => { fireEvent.click(confirm); });
+    expect(puts()).toHaveLength(2);
     expect(puts()[1].body).toEqual({ values: { claude_model: FABLE }, confirm_expensive: true });
-    await waitFor(() => expect(screen.queryByText(/save 1 change/)).toBeNull(), SLOW);   // saved, the edit is gone
+    expect(screen.queryByText(/save 1 change/)).toBeNull();   // saved, the edit is gone
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
@@ -103,10 +105,13 @@ describe('selection guards — H378', () => {
     fireEvent.change(screen.getByLabelText('job model'), { target: { value: FABLE } });
     fireEvent.click(screen.getByRole('button', { name: 'arm' }));
     const dialog = await screen.findByRole('alertdialog', { name: 'confirm the model choice' });
+    await act(async () => {}); // settle the confirmation's phrase-reset effect before typing
     fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: FABLE } });
-    fireEvent.click(within(dialog).getByRole('button', { name: /choose it anyway/ }));
+    const confirm = within(dialog).getByRole('button', { name: /choose it anyway/ });
+    expect(confirm.disabled).toBe(false);
+    await act(async () => { fireEvent.click(confirm); });
     const posts = () => calls.filter((c) => c.method === 'POST' && c.url === '/api/jobs');
-    await waitFor(() => expect(posts()).toHaveLength(2), SLOW);
+    expect(posts()).toHaveLength(2);
     expect(posts()[1].body.confirm_expensive).toBe(true);
     expect(posts()[1].body.options).toEqual({ model: FABLE });
     expect(posts()[1].body.blueprint).toBe('digest');
