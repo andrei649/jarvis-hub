@@ -1,9 +1,9 @@
 /* H18.25 — the briefing wall's state contract, ported to native.
  *
  * `frontend/src/wall.tsx` is a canvas-composed board (neural firing field from
- * burst.tsx, stat cards, a spoken line). As with the orb (H18.24), only the
- * **pure state contract** is portable: React Native has no canvas, and the
- * neural field needs a graphics surface this app deliberately does not depend on.
+ * burst.tsx, stat cards, a spoken line). Native BriefingWall uses this same state
+ * contract with a bounded SVG field and independently validated source evidence;
+ * it does not require the browser's canvas implementation.
  *
  * `wallState` is that contract — the single word + tone the wall announces,
  * derived from voice state, agent activity, running tasks and server reachability.

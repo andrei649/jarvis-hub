@@ -126,8 +126,11 @@ actual TTS playback events, labels preparation separately, and cancels late play
 after stop or a hub change. Reduced motion and background state pause animation.
 Native Chat now has a local explicit dictation candidate: bounded capture, fresh
 mic trust and permission checks, stopping state, and local STT draft insertion.
-The H18.25 wall renderer and physical-device/live STT acceptance remain open; see
-`mobile/docs/native-push-to-talk.md`.
+The H18.25 local wall candidate now adds a bounded SVG tier field, source-backed
+stat cards and chips, and a default-hidden spoken line in Chat. It preserves
+unknown-source semantics and cancels background/scope-stale updates. Physical
+device/live STT acceptance and browser-only attention/model/capability cards remain
+open; see `mobile/docs/h1825-briefing-wall.md`.
 
 - ~~**Network task‑fan**: v2 `NetworkBrain` doesn't render per‑agent task dots from `/tasks` (v1 did) —
   the old task fan exists in `network.tsx`, but the current cockpit renders `NeuralMesh`; integrate

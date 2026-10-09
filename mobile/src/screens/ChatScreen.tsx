@@ -21,6 +21,7 @@ import { Conversation, type ConversationState } from '../chat/conversation';
 import { DEFAULT_PREFS, loadPrefs, savePrefs } from '../storage/prefs';
 import { useThemeStyles, type Theme } from '../theme';
 import { waitForMicrophoneIdle, type DictationState } from '../voice/pushToTalk';
+import { BriefingWall } from './BriefingWall';
 
 const EMPTY_CONVERSATION: ConversationState = { sessionId: null, messages: [], ready: false, sending: false };
 
@@ -48,8 +49,10 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const speech = useSyncExternalStore(subscribeSpeech, getSpeechState, getSpeechState);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [briefing, setBriefing] = useState({ open: false, epoch: 0 });
+  const [dictatedLine, setDictatedLine] = useState<{ context: string; text: string | null }>({ context: '', text: null });
   const speechGeneration = useRef(0);
-  const dictationContext = JSON.stringify([chatScope, connectionEpoch, state.sessionId, agent]);
+  const dictationContext = JSON.stringify([chatScope, connectionEpoch, state.sessionId, agent, briefing.epoch, briefing.open]);
   const currentDictationContext = useRef(dictationContext);
   currentDictationContext.current = dictationContext;
   const dictationDisabled = sending || !state.ready || sessionsOpen || speakingId !== null;
@@ -77,6 +80,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const onTranscript = useCallback((text: string) => {
     if (currentDictationContext.current !== dictationContext || !canAcceptDictation.current || !text.trim()) return;
     setInput(previous => previous ? `${previous}\n${text}` : text);
+    setDictatedLine({ context: dictationContext, text });
   }, [dictationContext]);
   const listRef = useRef<FlatList<ChatMessage>>(null);
   // A connection owns its controller. Cleanup revokes old callbacks before a new hub hydrates.
@@ -97,6 +101,18 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   }, [ready, config, chatScope]);
 
   useEffect(() => { void loadPrefs().then(p => setAgent(p.agent)); }, []);
+  useEffect(() => {
+    setBriefing(previous => previous.open ? { open: false, epoch: previous.epoch + 1 } : previous);
+  }, [chatScope, connectionEpoch]);
+
+  const changeBriefing = useCallback((open: boolean) => {
+    speechGeneration.current++;
+    stopSpeaking();
+    setSpeakingId(null);
+    setSessionsOpen(false);
+    setDictatedLine({ context: '', text: null });
+    setBriefing(previous => ({ open, epoch: previous.epoch + 1 }));
+  }, []);
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
@@ -189,6 +205,17 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     );
   }
 
+  const dictationControl = <PushToTalk contextKey={dictationContext} disabled={dictationDisabled}
+    onStart={onDictationStart} onState={onDictationState} onTranscript={onTranscript} />;
+  if (briefing.open) {
+    const status = dictation?.active || dictation?.state.status === 'error'
+      ? dictation.state.status : speech.status === 'preparing' ? 'idle' : speech.status;
+    return <BriefingWall contextKey={dictationContext}
+      voice={{ status, error: status === 'error', level: dictation?.state.status === 'listening' ? dictation.state.level : undefined }}
+      transcript={dictatedLine.context === dictationContext ? dictatedLine.text : null}
+      onExit={() => changeBriefing(false)}>{dictationControl}</BriefingWall>;
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.flex}
@@ -198,6 +225,9 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
       <View style={styles.toolbar}>
         <AgentPicker value={agent} onChange={changeAgent} />
         <View style={styles.toolbarActions}>
+          <Pressable style={styles.toolBtn} onPress={() => changeBriefing(true)} hitSlop={6} disabled={!state.ready || sending}>
+            <Text style={styles.toolBtnText}>Briefing</Text>
+          </Pressable>
           <Pressable style={styles.toolBtn} onPress={() => setSessionsOpen(true)} hitSlop={6}>
             <Text style={styles.toolBtnText}>History</Text>
           </Pressable>
@@ -264,8 +294,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         )}
       </View>
 
-      <PushToTalk contextKey={dictationContext} disabled={dictationDisabled}
-        onStart={onDictationStart} onState={onDictationState} onTranscript={onTranscript} />
+      {dictationControl}
 
       <SessionsModal visible={sessionsOpen} onClose={() => setSessionsOpen(false)} onResumed={onResumed} />
     </KeyboardAvoidingView>
@@ -276,6 +305,8 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   toolbar: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 8,
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
