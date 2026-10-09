@@ -5,7 +5,9 @@
 - Base/initial head: 33e542bd474fb25afa8908dd0e99fe0e1d247966.
 - Branch/worktree: codex/turn-latency-readout-20261009, /workspace/jarvis-hub-turn-latency-readout.
 - Delivery: autonomous local development; no new publication or live inference.
-- State: design settled, tests next. Next action: demonstrate missing outcome and readout before production edits.
+- Tested source: 43fba70bc7d7592d2d4b6646107666b22c7068a0.
+- State: local implementation, independent reviews and full verification complete.
+- Next action: retain this checkpoint and choose the next verified local gap. No publication follows from this unit.
 
 ## Contract and scope
 
@@ -33,3 +35,5 @@ Rollback: revert this coherent source/test/docs unit; no database migration (ord
 ## Browser finding during integration
 
 The new compiled-HUD regression passed at 1280px but failed at 390px: the duration output had x=-127. The focus-chat column inherited the composer min-content width and could not shrink. This unit also applies the existing cockpit wrapping/input shrink rules to `.chat-col` and gives that column `min-width:0`; no global layout redesign. Root owns this bounded styles.css repair and its real browser regression.
+
+Final verification (2026-10-09T14:24:01.735919+00:00): full backend 21641 passed/37 skipped/21678 total (295.465 s), same 37 skip identities as the prior milestone; full frontend/native 2027/2027; browser 2/2; app/E2E typecheck and production build passed. The initial full run had one old exact-JSON warmup expectation missing outcome:null; only that expectation changed before the successful repeat.

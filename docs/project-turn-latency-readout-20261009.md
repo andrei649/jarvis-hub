@@ -54,8 +54,10 @@ keeps the metric visible at both tested widths. The value is not persisted.
   21678 cases: 21640 passed, 37 skipped and one failed (296.840 s). The sole
   failure was the warmup test's exact ChatResponse dictionary missing the new
   `outcome: null` field. Its expected dictionary was updated without changing
-  production code; the warmup/readout suites pass after that update. A second
-  serial full backend run will verify the final test contract before completion.
+  production code; the warmup/readout suites pass after that update. The second
+  serial full backend run on `43fba70bc7d7592d2d4b6646107666b22c7068a0` passed: **21641 passed,
+  37 skipped, 21678 total**, zero failures/errors, 295.465 s. All 37 skipped
+  test identities exactly match the previous Anthropic prompt milestone.
 
 Artifacts: `/workspace/scratch/h686-turn-latency-*` contains RED/green/focused,
 full-client JSON, browser logs, OpenAPI input, exact-base pin inventories,
@@ -77,3 +79,7 @@ without upgrading their broader claims. All 226 review status/identity values an
 the immutable inventory hash remain unchanged. No capability is marked complete
 from latency alone. Rollback is this coherent unit; the additive ordinary setting
 may remain unused after code rollback, with no chat-state migration required.
+
+Final verification generated: 2026-10-09T14:24:01.735919+00:00. The 28 source/test/built-artifact hashes
+match tested commit `43fba70bc7d7592d2d4b6646107666b22c7068a0`. Backend executed-count verification,
+Hermes projection and generated project status checks accompany the final result.
