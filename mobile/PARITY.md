@@ -23,6 +23,16 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 Camera parity is read/search parity over the same bounded metadata API. Admin ONVIF onboarding is
 intentionally owner-HUD-only; native clients expose no discovery, frame, stream, or private URL.
 
+## Combined local mobile candidate — 2026-10-09
+
+The local integration branch combines session continuity, command discovery, connected memory,
+advisory approval opinions, generated images, selected-image review/history, voice orb,
+push-to-talk and briefing sources. Full mobile284/native137, TypeScript and Android/iOS
+exports pass. Photo selection and dictation retain separate explicit controls; switching
+modes revokes stale capture/review callbacks. Physical-device and live-Hub acceptance
+remain open, so the partial rows below do not become shipped. Details and source commits:
+[combined evidence](docs/mobile-integration-20261009.md).
+
 ## Parity matrix
 
 | Surface | API (agents/web.py) | Browser | Mobile | Task |
