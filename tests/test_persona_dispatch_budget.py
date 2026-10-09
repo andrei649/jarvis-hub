@@ -306,10 +306,10 @@ async def test_bound_cache_prefix_plus_rebuilt_tail_refuses_before_model(tmp_pat
     def enlarged_prefix(system, history):
         material = prepare(system, history)
         limit = int(0.85 * (4096 - cloud_cap(512)))
-        fixed = estimate_tokens(material.system_instruction) + sum(
-            estimate_tokens(part) for part in material.history[1:]
-        )
+        fixed = estimate_tokens(material.system_instruction)
         low, high = 0, 1000
+        while fixed + estimate_tokens(material.history[0] + " verified detail" * high) <= limit:
+            high *= 2
         while low < high:
             mid = (low + high + 1) // 2
             if fixed + estimate_tokens(material.history[0] + " verified detail" * mid) <= limit:
@@ -320,7 +320,10 @@ async def test_bound_cache_prefix_plus_rebuilt_tail_refuses_before_model(tmp_pat
         assert low > 0 and fixed + estimate_tokens(prefix) <= limit
         return GuardedCacheMaterial(
             system_instruction=material.system_instruction,
-            history=(prefix, *material.history[1:]),
+            # The binding caches this one transformed history part. Its own
+            # material fits, but the independently rebuilt current turn must
+            # push cached prefix plus tail past the dispatch allowance.
+            history=(prefix,),
             policy_fingerprint=material.policy_fingerprint,
         )
 

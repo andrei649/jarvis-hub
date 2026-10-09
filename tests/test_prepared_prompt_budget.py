@@ -40,7 +40,9 @@ async def test_budget_counts_canonical_history_and_cache_floor_without_double_co
     backend = Backend()
     router = router_for(backend)
     with planning_scope("s"):
-        route = await prepared_for(router, "old context " * 1200)
+        # cl100k tokenizes this phrase into fewer tokens than the character
+        # fallback. Keep the canonical prompt oversized in either mode.
+        route = await prepared_for(router, "old context " * 1800)
         ceiling = int(0.85 * route.input_budget)
         assert estimate_tokens(route.prompt) > ceiling
         with pytest.raises(RouteRefused):

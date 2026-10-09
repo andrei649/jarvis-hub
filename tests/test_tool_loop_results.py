@@ -128,7 +128,9 @@ async def test_exact_terminal_branches(case, reason, reply, monkeypatch):
     if case == "window":
         kwargs["effective_window"] = EffectiveWindow(valid=False)
     elif case == "context":
-        kwargs["prompt"] = "x" * 20_000
+        # cl100k packs repeated characters more tightly than the fallback
+        # estimator; this must exceed the window under either tokenizer.
+        kwargs["prompt"] = "x" * 40_000
         kwargs["effective_window"] = EffectiveWindow(tokens=4096)
     elif case == "revoked":
         from agents.core import conversation_clock
