@@ -3472,7 +3472,7 @@
         },
         {
           "path": "agents/core/routers/autonomy.py",
-          "sha256": "753a2bd2eaa3b6f349d7c0d595165af73a919da1e13614c30f9338b586be99d6"
+          "sha256": "d5345f10be385e1c52eed8c264c6b36c905d91f73f6cfd059ed685c43c73a6e2"
         },
         {
           "path": "agents/core/routers/models_llm.py",
@@ -7807,7 +7807,7 @@
         },
         {
           "path": "agents/core/routers/autonomy.py",
-          "sha256": "753a2bd2eaa3b6f349d7c0d595165af73a919da1e13614c30f9338b586be99d6"
+          "sha256": "d5345f10be385e1c52eed8c264c6b36c905d91f73f6cfd059ed685c43c73a6e2"
         },
         {
           "path": "agents/core/routers/actions.py",

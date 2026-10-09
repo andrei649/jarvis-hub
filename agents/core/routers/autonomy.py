@@ -233,9 +233,8 @@ def autonomy_mediation_status():
     """Read the queue's verified mediation counts off the event-loop thread."""
     unavailable = {"error": "mediation status unavailable"}
     try:
-        orch = get_orch()
-        queue = getattr(orch, "autonomy_queue", None) if orch is not None else None
-        if queue is None:
+        _, queue, err = require_component("autonomy_queue", unavailable["error"])
+        if err is not None:
             return nocache_json(unavailable, status_code=503)
         mode = queue.mediation_mode
         if mode not in {"off", "hold", "enforce"}:
