@@ -43,7 +43,7 @@
         },
         {
           "path": "tests/test_nerva_oneshot.py",
-          "sha256": "10bc16c0e5130c46f0427068ec217145a124e3adcfbed636b992f2d5b1b3cba6"
+          "sha256": "057f51b950d530fb49cd9acba3220ab4d1c2423bf17434acf30bd57bbe633a2d"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -72,7 +72,7 @@
       "evidence": [
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -516,11 +516,11 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "30bda671b2208996df4d677d4eabc96d9eb0e347b8a46cbf44e6c6d1381697c8"
+          "sha256": "98722e639dbcd37f841d9f8e6e307b829a357fe3e5a9d718b8413e95d0674a37"
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "939f341535ec0372c86d975c1d77fb680584dace1062ff36c429a80e2b7b84a8"
+          "sha256": "38ed73c554e65c8eeb00100d80dac13aad7a2bb52aa7885bb68cc1658d519931"
         },
         {
           "path": "agents/core/retention.py",
@@ -1623,7 +1623,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "frontend/src/panels/logs.tsx",
@@ -2039,7 +2039,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "agents/web/static/admin.js",
@@ -2757,7 +2757,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -2794,7 +2794,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "agents/cli/client.py",
@@ -3210,7 +3210,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "agents/cli/client.py",
@@ -3363,7 +3363,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
+          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
         },
         {
           "path": "agents/core/heartbeat.py",
@@ -3472,7 +3472,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "30bda671b2208996df4d677d4eabc96d9eb0e347b8a46cbf44e6c6d1381697c8"
+          "sha256": "98722e639dbcd37f841d9f8e6e307b829a357fe3e5a9d718b8413e95d0674a37"
         },
         {
           "path": "agents/core/routers/autonomy.py",
@@ -3853,7 +3853,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
+          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
         },
         {
           "path": "deploy/systemd/jarvis-hub.service",
@@ -4256,7 +4256,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
+          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -5064,7 +5064,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "agents/core/skills/curator.py",
@@ -5240,7 +5240,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "tests/test_h350_skill_validator.py",
@@ -5371,7 +5371,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "939f341535ec0372c86d975c1d77fb680584dace1062ff36c429a80e2b7b84a8"
+          "sha256": "38ed73c554e65c8eeb00100d80dac13aad7a2bb52aa7885bb68cc1658d519931"
         },
         {
           "path": "agents/core/llm/anthropic.py",
@@ -5520,7 +5520,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "939f341535ec0372c86d975c1d77fb680584dace1062ff36c429a80e2b7b84a8"
+          "sha256": "38ed73c554e65c8eeb00100d80dac13aad7a2bb52aa7885bb68cc1658d519931"
         },
         {
           "path": "agents/core/llm/anthropic.py",
@@ -5795,7 +5795,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "frontend/src/selection-guard.tsx",
@@ -6219,7 +6219,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "tests/test_nerva_cli.py",
@@ -6654,7 +6654,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
+          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -7338,7 +7338,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "frontend/src/panels/company-room.tsx",
@@ -7399,7 +7399,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "tests/test_h465_refine.py",
@@ -7835,7 +7835,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "frontend/src/gap.tsx",
@@ -8056,7 +8056,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
+          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
@@ -8563,7 +8563,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
+          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -9052,7 +9052,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
+          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
         },
         {
           "path": "tests/test_agent_model_lease.py",
@@ -9975,7 +9975,7 @@
       "id": "H586",
       "row_sha256": "a646388648bea8ee51e2dbc209ecd437f580d53d44f063bb435d33f944d6941d",
       "status": "equivalent",
-      "summary": "Both halves of the accepted adaptation are delivered: the HUD composer and the terminal. useComposerImages (frontend/src/composer-images.tsx) takes image paste and drag-drop (frontend/src/composer-images.tsx:51-52) plus a file chooser. It accepts at most eight PNG/JPEG/GIF/WebP images of up to 4 MiB each, and the shared InputBar wires it in (frontend/src/cockpit.tsx:246). App.submit sends an image draft to runVision (frontend/src/app.tsx:410, frontend/src/app.tsx:385). runVision posts to the user-guarded POST /api/vlm/composer/describe (agents/core/routers/composer_vision.py:221, registered at agents/web.py:1529). The route checks data-URI signatures and bounds raster decoding (validate_raster, agents/core/routers/composer_vision.py:53). It binds the request to the reviewed destination/model revision and refuses a non-local VLM unless the owner has acknowledged it (agents/core/routers/composer_vision.py:251). It then calls VLMBackend.generate_vision_checked (agents/core/llm/vlm.py:354). Since H513 the binding also covers the credential and the data policy, the H378 selection guards refuse a flagged model before any client is built (409), the configuration and the wire are checked again at the request and after cleanup (a change is never an answer: it is a 409 vlm_destination_changed, or a 502 vlm_generation_failed when the changed configuration is no longer a valid vision destination, such as a non-http(s) URL), and the status and the answer carry the data-policy warning, which the composer and the vision reply show (nerva chat --image does not print it). Images reach only the configured VLM, never the text chat model. The taint governance holds through isolation rather than a taint flag. The vision answer is a client-only transcript entry, and ordinary turns post only {message, agent} to /chat/stream (frontend/src/app.tsx:336), so no tool plan can be derived from image content. tests/test_composer_vision.py (33 passed) covers validation, auth, binding, the remote acknowledgement and error shapes, and, since H513, the warning on a pure status, a key rotation that revises the binding, a policy rotated during client construction, a key rotated during cleanup, the H378 selection refusal and a cancelled generation that closes the client. Intake and the vision turn are covered by frontend/src/test/composer-images.test.tsx, frontend/src/test/composer-vision-turn.test.tsx and frontend/e2e/composer-images.spec.ts, (the two vitest files, 12 cases, pass; the Playwright spec was not run here). The terminal: `nerva chat --image PATH` (repeatable, up to eight) and `--clipboard-image` (agents/cli/nerva.py:353) turn the chat verb into the same vision turn (_vision_turn, agents/cli/nerva.py:2400), dispatched before any /chat body is built (agents/cli/nerva.py:2047). Each file is opened once without blocking, must be a regular file, is read up to 4 MiB and sent by the type its signature says, never its name (_image_mime, agents/cli/nerva.py:2143; _read_image, agents/cli/nerva.py:2153). The clipboard is read by the platform's own reader with a fixed argv, no shell, its output read no further than the bound against a 10 s deadline, in a session of its own whose whole process group is killed at the deadline, past the bound or on an interrupt, so a descendant holding the pipe cannot stretch it (_run_reader, agents/cli/nerva.py:2253): wl-paste on Wayland, xclip on X11, pngpaste or else osascript on macOS, Windows PowerShell from the system directory, else the first powershell.exe or pwsh.exe in an absolute PATH entry that is not the current directory (never shutil.which, which puts the current directory back on Windows), on Windows, and through interop under WSL (the /mnt/c default, else the PATH's powershell.exe) (_clipboard_command, agents/cli/nerva.py:2228; _clipboard_image, agents/cli/nerva.py:2338). The verb reads GET /api/vlm/composer/status, sends that destination and binding with the images, so a model changed in between is refused (409), and a destination off the hub's machine is used only when --remote-vision names it, the terminal's form of the HUD's per-destination acknowledgement (agents/cli/nerva.py:2470). The describe call waits up to 240 s (the hub gives the model 180 s), and a timeout after the status answered is a failed turn, not a missing hub; the reply is checked as the HUD checks it (ok, a string answer of at most 128 KiB); a status without its destination, binding or local sends nothing. The --remote-vision address is compared as the hub names it (scheme and host in any case, the default port, a trailing slash); one with a user name, query or fragment is refused as a look-alike, and --remote-vision without an image is refused. A body the route refuses is answered with its first reason as {error, reason}, never FastAPI's default 422 that echoed the images back (_BoundedValidationRoute, agents/core/routers/composer_vision.py:22), and the CLI prints it, with the field a validation reason names; hub text is filtered before it reaches the terminal. --agent, --session and --reasoning are refused with images: the turn goes to the vision model only, never to /chat, an agent or a session. -z, --json and --usage-file keep their meaning. tests/test_nerva_chat_image.py (31 cases) covers the route taken, the real route answering the CLI, a model changed in between, each raster kind, the remote acknowledgement, the refusals before any request, the hub's answers and the clipboard readers; its 20 mutants are all caught. The first adversarial review (0 major, 6 minor, 9 nits) found the 30 s timeout reported as no hub, the clipboard buffered whole, the route's refusal without its reason, PowerShell resolved from the current directory, 16 surviving mutants of its own, and macOS/WSL gaps; all are fixed, and tests/test_h586b_image_review.py (50 cases) pins them, its 35 mutants all caught. Test manual: CHT-115, CHT-116. The second review (0 major, 4 minor, 8 nits) found an oversized clipboard image reported as empty, the deadline stretched by a descendant, the Windows fallback still reaching the current directory through shutil.which, and 8 real survivors; all are fixed, tests/test_h586c_image_review.py (23 cases, real processes for the deadline, the group kill, the exit code and the bound) pins them, and its 16 mutants are all caught but one equivalent. Known limits: the receipt's model stays null for an image turn, and the route's own 403 (no acknowledgement) is told apart from an auth 403 by its message, a case the binding already makes unreachable. Composer image recovery review (2026-10-02): enabled recovery is exposed by paired validated empty_retries/retry_notice metadata. HUD renders the notice before remote consent and resets acknowledgment on binding changes; CLI validates and prints the notice before acknowledgment/send. Default shapes and stdout/JSON stay unchanged. Actual CLI and web composer tests, full1847 frontend tests, typecheck, E2E TypeScript compilation and build pass; browser E2E execution was not run. Native composer normalization review (2026-10-02): VLM validates and normalizes compatible replies on both budget-disabled and active governed paths. Useful typed reasoning supplies an answer without an extra call; malformed envelopes remain failures. CLI/HUD entrypoints, acknowledgment and public shapes are unchanged. Parent696 integration includes composer/policy tests; frontend/schema/assets match the prior1847-test verified snapshot. Existing equivalent status preserved. Publication review correction (2026-10-02): agents/core/llm/native_response.py:72 now admits only legacy untyped, reasoning.text and reasoning.summary details. Encrypted, opaque, unknown and malformed typed details are skipped even if they contain string summary/content/text. Seven actual governed image/video regressions failed before the fix; the corrected normalization and empty-recovery union passed all163 cases. Opaque-only video refuses in one call without granting retry authority. All base evidence hashes were current before this two-file correction; unchanged authority, transport, route and UI contracts retain their existing assessment.",
+      "summary": "Both halves of the accepted adaptation are delivered: the HUD composer and the terminal. useComposerImages (frontend/src/composer-images.tsx) takes image paste and drag-drop (frontend/src/composer-images.tsx:51-52) plus a file chooser. It accepts at most eight PNG/JPEG/GIF/WebP images of up to 4 MiB each, and the shared InputBar wires it in (frontend/src/cockpit.tsx:246). App.submit sends an image draft to runVision (frontend/src/app.tsx:410, frontend/src/app.tsx:385). runVision posts to the user-guarded POST /api/vlm/composer/describe (agents/core/routers/composer_vision.py:221, registered at agents/web.py:1529). The route checks data-URI signatures and bounds raster decoding (validate_raster, agents/core/routers/composer_vision.py:53). It binds the request to the reviewed destination/model revision and refuses a non-local VLM unless the owner has acknowledged it (agents/core/routers/composer_vision.py:251). It then calls VLMBackend.generate_vision_checked (agents/core/llm/vlm.py:354). Since H513 the binding also covers the credential and the data policy, the H378 selection guards refuse a flagged model before any client is built (409), the configuration and the wire are checked again at the request and after cleanup (a change is never an answer: it is a 409 vlm_destination_changed, or a 502 vlm_generation_failed when the changed configuration is no longer a valid vision destination, such as a non-http(s) URL), and the status and the answer carry the data-policy warning, which the composer and the vision reply show (nerva chat --image does not print it). Images reach only the configured VLM, never the text chat model. The taint governance holds through isolation rather than a taint flag. The vision answer is a client-only transcript entry, and ordinary turns post only {message, agent} to /chat/stream (frontend/src/app.tsx:336), so no tool plan can be derived from image content. tests/test_composer_vision.py (33 passed) covers validation, auth, binding, the remote acknowledgement and error shapes, and, since H513, the warning on a pure status, a key rotation that revises the binding, a policy rotated during client construction, a key rotated during cleanup, the H378 selection refusal and a cancelled generation that closes the client. Intake and the vision turn are covered by frontend/src/test/composer-images.test.tsx, frontend/src/test/composer-vision-turn.test.tsx and frontend/e2e/composer-images.spec.ts, (the two vitest files, 12 cases, pass; the Playwright spec was not run here). The terminal: `nerva chat --image PATH` (repeatable, up to eight) and `--clipboard-image` (agents/cli/nerva.py:353) turn the chat verb into the same vision turn (_vision_turn, agents/cli/nerva.py:2403), dispatched before any /chat body is built (agents/cli/nerva.py:2050). Each file is opened once without blocking, must be a regular file, is read up to 4 MiB and sent by the type its signature says, never its name (_image_mime, agents/cli/nerva.py:2146; _read_image, agents/cli/nerva.py:2156). The clipboard is read by the platform's own reader with a fixed argv, no shell, its output read no further than the bound against a 10 s deadline, in a session of its own whose whole process group is killed at the deadline, past the bound or on an interrupt, so a descendant holding the pipe cannot stretch it (_run_reader, agents/cli/nerva.py:2256): wl-paste on Wayland, xclip on X11, pngpaste or else osascript on macOS, Windows PowerShell from the system directory, else the first powershell.exe or pwsh.exe in an absolute PATH entry that is not the current directory (never shutil.which, which puts the current directory back on Windows), on Windows, and through interop under WSL (the /mnt/c default, else the PATH's powershell.exe) (_clipboard_command, agents/cli/nerva.py:2231; _clipboard_image, agents/cli/nerva.py:2341). The verb reads GET /api/vlm/composer/status, sends that destination and binding with the images, so a model changed in between is refused (409), and a destination off the hub's machine is used only when --remote-vision names it, the terminal's form of the HUD's per-destination acknowledgement (agents/cli/nerva.py:2473). The describe call waits up to 240 s (the hub gives the model 180 s), and a timeout after the status answered is a failed turn, not a missing hub; the reply is checked as the HUD checks it (ok, a string answer of at most 128 KiB); a status without its destination, binding or local sends nothing. The --remote-vision address is compared as the hub names it (scheme and host in any case, the default port, a trailing slash); one with a user name, query or fragment is refused as a look-alike, and --remote-vision without an image is refused. A body the route refuses is answered with its first reason as {error, reason}, never FastAPI's default 422 that echoed the images back (_BoundedValidationRoute, agents/core/routers/composer_vision.py:22), and the CLI prints it, with the field a validation reason names; hub text is filtered before it reaches the terminal. --agent, --session and --reasoning are refused with images: the turn goes to the vision model only, never to /chat, an agent or a session. -z, --json and --usage-file keep their meaning. tests/test_nerva_chat_image.py (31 cases) covers the route taken, the real route answering the CLI, a model changed in between, each raster kind, the remote acknowledgement, the refusals before any request, the hub's answers and the clipboard readers; its 20 mutants are all caught. The first adversarial review (0 major, 6 minor, 9 nits) found the 30 s timeout reported as no hub, the clipboard buffered whole, the route's refusal without its reason, PowerShell resolved from the current directory, 16 surviving mutants of its own, and macOS/WSL gaps; all are fixed, and tests/test_h586b_image_review.py (50 cases) pins them, its 35 mutants all caught. Test manual: CHT-115, CHT-116. The second review (0 major, 4 minor, 8 nits) found an oversized clipboard image reported as empty, the deadline stretched by a descendant, the Windows fallback still reaching the current directory through shutil.which, and 8 real survivors; all are fixed, tests/test_h586c_image_review.py (23 cases, real processes for the deadline, the group kill, the exit code and the bound) pins them, and its 16 mutants are all caught but one equivalent. Known limits: the receipt's model stays null for an image turn, and the route's own 403 (no acknowledgement) is told apart from an auth 403 by its message, a case the binding already makes unreachable. Composer image recovery review (2026-10-02): enabled recovery is exposed by paired validated empty_retries/retry_notice metadata. HUD renders the notice before remote consent and resets acknowledgment on binding changes; CLI validates and prints the notice before acknowledgment/send. Default shapes and stdout/JSON stay unchanged. Actual CLI and web composer tests, full1847 frontend tests, typecheck, E2E TypeScript compilation and build pass; browser E2E execution was not run. Native composer normalization review (2026-10-02): VLM validates and normalizes compatible replies on both budget-disabled and active governed paths. Useful typed reasoning supplies an answer without an extra call; malformed envelopes remain failures. CLI/HUD entrypoints, acknowledgment and public shapes are unchanged. Parent696 integration includes composer/policy tests; frontend/schema/assets match the prior1847-test verified snapshot. Existing equivalent status preserved. Publication review correction (2026-10-02): agents/core/llm/native_response.py:72 now admits only legacy untyped, reasoning.text and reasoning.summary details. Encrypted, opaque, unknown and malformed typed details are skipped even if they contain string summary/content/text. Seven actual governed image/video regressions failed before the fix; the corrected normalization and empty-recovery union passed all163 cases. Opaque-only video refuses in one call without granting retry authority. All base evidence hashes were current before this two-file correction; unchanged authority, transport, route and UI contracts retain their existing assessment.",
       "remaining": "",
       "evidence": [
         {
@@ -10008,7 +10008,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "tests/test_composer_vision.py",
@@ -10915,7 +10915,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "frontend/src/todo-tree.ts",
@@ -11012,7 +11012,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "tests/test_tool_rpc_runtime.py",
@@ -11036,12 +11036,12 @@
       "id": "H670",
       "row_sha256": "6918c8f480eda6ae370128e54db3018f6bc5ba777026f02c3726f25c4f5f0a35",
       "status": "equivalent",
-      "summary": "The shared identity band exists. agents/_identity/IDENTITY.md is one behaviour contract: the reply-sizing rule (match length to the weight of the ask), earned depth, the named prohibitions (no filler, no restating the request, no re-summarizing, no narrating visible tool calls), the anti-sycophancy line ('agree because it is right, not because the owner said it') and 'say when you do not know'. Its reply rules govern the agent's own replies to the owner: text drafted in someone else's voice (an email, a post, a message written as the owner) keeps that voice, greetings and sign-offs included, and a persona's warmth or curiosity lives inside the answer (review-H670 m-5); its honesty rules hold for everything an agent writes, drafted text included (review-H670b m-1). Its leading maintainer note (stripped before the model sees it, _strip_maintainer_note, agents/core/agent.py:453) says never to add 'be targeted and efficient in your exploration', and why. The repo-root SOUL.md mirrors the text, so agents working on the repo read the contract the product ships; a test keeps the two equal. identity_path (agents/core/agent.py:438) resolves it as soul_path_for does a persona: the data home's souls/IDENTITY.local.md, then a gitignored agents/_identity/IDENTITY.local.md, then the shipped file. read_identity (agents/core/agent.py:481) runs it through the same H387 helpers as a SOUL (the injection scan on the uncapped body, then the cap), announces a flagged or truncated contract (its blocked and quarantined stubs name the contract, not a persona), caps it at its own 4,000 characters (IDENTITY_MAX_CHARS, never above the persona's cap, so the two bands stay within the persona cap plus 4,000), and reads it once per settled file signature for the whole process. An override that cannot be read (not UTF-8, a directory, no permission) is reported at ERROR and the shipped contract used instead, cached against the shipped file's signature so an edit of it is seen; a contract that cannot be located or read at all leaves the agent without it; none of these stops an agent from being built. Agent.system_prompt (agents/core/agent.py:572) is the contract, then the agent's persona (either may be empty; an agent without a SOUL still gets the contract). Every place a system prompt is built uses it: Agent.process (agents/core/agent.py:1026) and the synthesis path in agent.py, and the orchestrator's two sites (agents/core/orchestrator.py:2342, agents/core/orchestrator.py:4066) through _system_prompt_of (agents/core/orchestrator.py:485). At a compaction boundary refresh_soul (agents/core/agent.py:730) re-reads the contract as it re-reads the persona (_refresh_identity, agents/core/agent.py:599): a few stats when unchanged; when the file that resolves is absent, vanishes before the read or cannot be read, the contract in force is kept, reported at the boundary as failed-open and warned once per episode (an override absent for an instant resolves to the shipped file for that boundary, as a persona's does); and a moved contract reported as rebuilt, so an edit reaches running agents without a restart. The contract in force at start is committed to the prompt VC (SoulVersionStore) as _identity (_record_identity_version, agents/core/orchestrator.py:467), a no-op when unchanged or empty, so its history is recorded and diffable through /api/admin/prompts/_identity/... beside the personas; what is served is the file (a rollback in the VC does not change it), and an edit picked up at a boundary is recorded at the next start. The prompt-size report counts it as a shared component every call pays (identity_component, agents/core/prompt_size.py:136), and the packaged build ships it through its agents/*/*.md glob (overrides, *.local.md, never ship). IDENTITY.md and its .local overlay are in the H506 instruction-file class (INSTRUCTION_BASE_NAMES, agents/core/file_tools.py:259), so a file write to them asks as an instruction file; a test derives the class from every name the contract's and a persona's loaders can resolve. The data home's README lists souls/IDENTITY.local.md. Persona SOULs and Persona.prompt_block (agents/core/cognition/persona.py:142) stay the character layer on top. tests/test_identity_contract.py (18 cases) covers every rule's presence, the banned line's absence and the kept warning, the mirror, the scan verdict, every active agent's system prompt starting with the contract (and exactly contract then persona), an agent without a persona, the orchestrator's helper and all four sites, both overrides and their order, the scan and the cap on an override, an edit reaching a running agent at the boundary, the one-stat unchanged path, a failed re-read keeping the last-good contract, the version record (once, and a failing store never stopping a start) and one read shared across agents; tests/test_h670b_identity_review.py (21 cases) covers the first review: the instruction-file class, a contract absent or vanishing at a boundary, a non-UTF-8 or unreadable override, the contract's own cap, no empty version, the start-time record, the contract's scope, a mid-file comment, the prompt-size component, the ERROR on a flagged contract, the stubs' wording and CHT-117; tests/test_h670c_identity_review.py (14 cases) covers the second review: honesty unscoped, a shipped contract that stops being UTF-8, a vanish before the real read, the hub's start recording the contract, one warning per episode and a second one, a reader that raises, the fallback following a shipped edit, a directory override, a permission error at load and at a boundary, the fallback rules once when both bands are blocked, and the docs. The first review (one major: the contract was outside the instruction-file class; seven minors: a missing contract emptied at a boundary, a non-UTF-8 override stopped every agent, the two bands exceeded the cap, the VC's rollback and A/B claim, the contract's unscoped rules against drafting personas and trait directives, six untested survivors, CHT-117 naming a retired agent; six nits) is answered; its six real survivors are pinned. The feature's 17 mutants were caught but one equivalent; the first review round's 15 were caught, one only against a stand-in (the vanish case, now driven through the real read). The second review (no major; three minors: the scope lifted the honesty rules from drafted text, a shipped contract that stopped being UTF-8 emptied the contract at a boundary, three real survivors; eight nits) is answered; its 31 mutants' three real survivors are pinned, and this round's 10 were all caught, two after their cases were added (a reader that raises, a second warning episode). Known limits: the prompt-size report measures the shipped contract, not an override in force (as it measures shipped personas); PromptRefresh.text is still the persona alone; the contract's scan verdict is reported only in the log (a persona's also reaches GET /api/agents/{id}/soul); the data home's README is written once, so an existing install does not get its new row. Test manual: CHT-117; docs/ARCHITECTURE.md names the band. Local auxiliary diff review (2026-10-02,aa4865b5): the claimed behavior is outside the four changed producer methods. Parent AST comparison and re-read source/citations confirm unchanged mechanisms; the cited backend test modules pass in the frozen full run. Existing frontend evidence remains tied to unchanged source. No new capability or mutation claim is added. Architecture citation review (2026-10-02): only the LLM video paragraph was corrected from declaration-only to current approved ToolRPC dispatch. Shared identity text, loader, prompt composition and cited identity behavior are unchanged; no status promotion.",
+      "summary": "The shared identity band exists. agents/_identity/IDENTITY.md is one behaviour contract: the reply-sizing rule (match length to the weight of the ask), earned depth, the named prohibitions (no filler, no restating the request, no re-summarizing, no narrating visible tool calls), the anti-sycophancy line ('agree because it is right, not because the owner said it') and 'say when you do not know'. Its reply rules govern the agent's own replies to the owner: text drafted in someone else's voice (an email, a post, a message written as the owner) keeps that voice, greetings and sign-offs included, and a persona's warmth or curiosity lives inside the answer (review-H670 m-5); its honesty rules hold for everything an agent writes, drafted text included (review-H670b m-1). Its leading maintainer note (stripped before the model sees it, _strip_maintainer_note, agents/core/agent.py:453) says never to add 'be targeted and efficient in your exploration', and why. The repo-root SOUL.md mirrors the text, so agents working on the repo read the contract the product ships; a test keeps the two equal. identity_path (agents/core/agent.py:438) resolves it as soul_path_for does a persona: the data home's souls/IDENTITY.local.md, then a gitignored agents/_identity/IDENTITY.local.md, then the shipped file. read_identity (agents/core/agent.py:481) runs it through the same H387 helpers as a SOUL (the injection scan on the uncapped body, then the cap), announces a flagged or truncated contract (its blocked and quarantined stubs name the contract, not a persona), caps it at its own 4,000 characters (IDENTITY_MAX_CHARS, never above the persona's cap, so the two bands stay within the persona cap plus 4,000), and reads it once per settled file signature for the whole process. An override that cannot be read (not UTF-8, a directory, no permission) is reported at ERROR and the shipped contract used instead, cached against the shipped file's signature so an edit of it is seen; a contract that cannot be located or read at all leaves the agent without it; none of these stops an agent from being built. Agent.system_prompt (agents/core/agent.py:572) is the contract, then the agent's persona (either may be empty; an agent without a SOUL still gets the contract). Every place a system prompt is built uses it: Agent.process (agents/core/agent.py:1050) and the synthesis path in agent.py, and the orchestrator's two sites (agents/core/orchestrator.py:2342, agents/core/orchestrator.py:4066) through _system_prompt_of (agents/core/orchestrator.py:485). At a compaction boundary refresh_soul (agents/core/agent.py:730) re-reads the contract as it re-reads the persona (_refresh_identity, agents/core/agent.py:599): a few stats when unchanged; when the file that resolves is absent, vanishes before the read or cannot be read, the contract in force is kept, reported at the boundary as failed-open and warned once per episode (an override absent for an instant resolves to the shipped file for that boundary, as a persona's does); and a moved contract reported as rebuilt, so an edit reaches running agents without a restart. The contract in force at start is committed to the prompt VC (SoulVersionStore) as _identity (_record_identity_version, agents/core/orchestrator.py:467), a no-op when unchanged or empty, so its history is recorded and diffable through /api/admin/prompts/_identity/... beside the personas; what is served is the file (a rollback in the VC does not change it), and an edit picked up at a boundary is recorded at the next start. The prompt-size report counts it as a shared component every call pays (identity_component, agents/core/prompt_size.py:136), and the packaged build ships it through its agents/*/*.md glob (overrides, *.local.md, never ship). IDENTITY.md and its .local overlay are in the H506 instruction-file class (INSTRUCTION_BASE_NAMES, agents/core/file_tools.py:259), so a file write to them asks as an instruction file; a test derives the class from every name the contract's and a persona's loaders can resolve. The data home's README lists souls/IDENTITY.local.md. Persona SOULs and Persona.prompt_block (agents/core/cognition/persona.py:142) stay the character layer on top. tests/test_identity_contract.py (18 cases) covers every rule's presence, the banned line's absence and the kept warning, the mirror, the scan verdict, every active agent's system prompt starting with the contract (and exactly contract then persona), an agent without a persona, the orchestrator's helper and all four sites, both overrides and their order, the scan and the cap on an override, an edit reaching a running agent at the boundary, the one-stat unchanged path, a failed re-read keeping the last-good contract, the version record (once, and a failing store never stopping a start) and one read shared across agents; tests/test_h670b_identity_review.py (21 cases) covers the first review: the instruction-file class, a contract absent or vanishing at a boundary, a non-UTF-8 or unreadable override, the contract's own cap, no empty version, the start-time record, the contract's scope, a mid-file comment, the prompt-size component, the ERROR on a flagged contract, the stubs' wording and CHT-117; tests/test_h670c_identity_review.py (14 cases) covers the second review: honesty unscoped, a shipped contract that stops being UTF-8, a vanish before the real read, the hub's start recording the contract, one warning per episode and a second one, a reader that raises, the fallback following a shipped edit, a directory override, a permission error at load and at a boundary, the fallback rules once when both bands are blocked, and the docs. The first review (one major: the contract was outside the instruction-file class; seven minors: a missing contract emptied at a boundary, a non-UTF-8 override stopped every agent, the two bands exceeded the cap, the VC's rollback and A/B claim, the contract's unscoped rules against drafting personas and trait directives, six untested survivors, CHT-117 naming a retired agent; six nits) is answered; its six real survivors are pinned. The feature's 17 mutants were caught but one equivalent; the first review round's 15 were caught, one only against a stand-in (the vanish case, now driven through the real read). The second review (no major; three minors: the scope lifted the honesty rules from drafted text, a shipped contract that stopped being UTF-8 emptied the contract at a boundary, three real survivors; eight nits) is answered; its 31 mutants' three real survivors are pinned, and this round's 10 were all caught, two after their cases were added (a reader that raises, a second warning episode). Known limits: the prompt-size report measures the shipped contract, not an override in force (as it measures shipped personas); PromptRefresh.text is still the persona alone; the contract's scan verdict is reported only in the log (a persona's also reaches GET /api/agents/{id}/soul); the data home's README is written once, so an existing install does not get its new row. Test manual: CHT-117; docs/ARCHITECTURE.md names the band. Local auxiliary diff review (2026-10-02,aa4865b5): the claimed behavior is outside the four changed producer methods. Parent AST comparison and re-read source/citations confirm unchanged mechanisms; the cited backend test modules pass in the frozen full run. Existing frontend evidence remains tied to unchanged source. No new capability or mutation claim is added. Architecture citation review (2026-10-02): only the LLM video paragraph was corrected from declaration-only to current approved ToolRPC dispatch. Shared identity text, loader, prompt composition and cited identity behavior are unchanged; no status promotion.",
       "remaining": "",
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
+          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -11077,7 +11077,7 @@
         },
         {
           "path": "docs/ARCHITECTURE.md",
-          "sha256": "44ba9a9704bd954a7e282930e7a357ec63ca5870e297eb0f27bef9465d2f7355"
+          "sha256": "72e38fcd432cbfabe9f9ece3f3e121603dee6ee799fb3394cdb7967b6b03cbb1"
         },
         {
           "path": "agents/core/file_tools.py",
@@ -11106,7 +11106,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
+          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -11118,7 +11118,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "939f341535ec0372c86d975c1d77fb680584dace1062ff36c429a80e2b7b84a8"
+          "sha256": "38ed73c554e65c8eeb00100d80dac13aad7a2bb52aa7885bb68cc1658d519931"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -11222,7 +11222,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "tests/test_session_continuation.py",
@@ -11275,8 +11275,8 @@
       "id": "H673",
       "row_sha256": "c5bd6cf6579dbaaa46364098d0fb86af4e3393eace03718122604158115844cf",
       "status": "partial",
-      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact. Ollama and LM Studio structured tool turns now retain the provider-reported input/output token counts. Strict count normalization preserves valid answers when usage metadata is absent or malformed. Tool-loop usage accumulates for metering while context anchors replace with the latest request count; unavailable input does not erase a prior anchor. Gemini structured turns now retain inclusive prompt counts and disjoint candidate/thought output counts; explicitly OpenAI-compatible profiles retain standard prompt/completion totals without adding nested breakdowns. Complete context anchors now include Anthropic disjoint input/cache-read/cache-write counts, including cache-only requests, while totals-only mappings count the full prompt once. Legacy provider billing semantics remain unchanged. Complete non-stream text replies now publish provider usage through closed request-local observers. Non-stream agent gathers retain per-agent measurements and complete-prefix anchors; ToolRuntime remains the single structured-turn reporter. Retries publish only accepted response usage; cancellation and inherited late tasks cannot outlive the observer. Public string/stream signatures and guardrails are unchanged. OpenRouter inherited streaming reports its single complete text request once. Ollama, LM Studio and Anthropic actual streams now publish one measurement only after confirmed completion: literal done=true, usage-only snapshot plus [DONE], or valid start/final cumulative message_delta usage plus message_stop respectively. Errors, interruption, malformed frames/containers and missing final usage do not reuse intermediate counts. Retry state resets, disjoint cache categories and text callbacks remain intact. Gemini streams now retain a terminal response's own validated prompt/candidate/thought counts after clean HTTP exhaustion and response close. Known single-candidate completion or explicit blocked-prompt semantics are required; errors, raw trailers, cancellation, conflicting response identities and nonzero/malformed candidate indices invalidate the whole attempt. Retries remain isolated and answer callbacks are unchanged. Pinned ask jobs now resolve and freeze their model/window before history construction, cap completion, and omit an unrelated prior usage anchor; unchanged default models retain their existing estimate. Ordinary tool turns now also use immutable configured/cached backend capacity forwarded before guardrails; known limits include completion, initial/later transcript, schemas and structured tool-call arguments. Unknown capacity remains estimated rather than discovered. Reasoning integration was reviewed against previously-current grid33165622 evidence: request-shaping refusals/empty controls do not change this row's cache, session or context/usage semantics. Existing focused regressions are retained. Responses completed text/tool turns and validated terminal streams now retain reported input/output usage. Inclusive input totals split cached_tokens once into disjoint uncached input and cache_read; output reasoning detail is not added to output totals. Missing/malformed metadata does not invent counts. Stream errors, incomplete/contradictory terminal items, cancellation or failed close do not publish usage; request-local sinks preserve existing single-publication semantics. The xAI Responses dialect inherits the same strict reported input/output/cache split and complete terminal accounting, while its own completed-response acceptance rechecks reasoning/replay lifetimes. Reasoning token detail is not added twice to output totals. Opaque function replay preserves main-loop provider usage without introducing ciphertext persistence, per-vendor prices or cache discount assumptions. Shared history compression now preplans each actual governed specialist route and its finite or dynamic completion reserve instead of borrowing the router default model. The strictest input budget stages one shared summary; final prompts/routes are revalidated through at most three monotonically tightening passes before a single accepted clock/history publication. Prepared text/SSE dispatch preserves backend/model/session/lifetime identity, policy gates and known-versus-estimated context metadata. Selected Ollama resolves its own context. Usage anchors require matching backend/model, session generation and retained-history digest; unmanaged old anchors are not promoted to exact managed measurements. Existing disabled-compression behavior and direct local auto output remain unchanged. Since H672 the accepted clock/history publication is followed by the persona re-read (`_refresh_souls_at_boundary`, after the CAS): it changes nothing in how pressure is measured or anchored, but on the staged shared-route path `_shared_route_plan` measured `agent.soul` while planning and the refresh runs in `accept()` → `publish()`, so a persona that grew at that boundary is sent that turn with a budget planned for the old size — bounded by `_soul_max_chars`, and the next response's usage anchor measures the real prompt. #1188's edit to `orchestrator.py` is the pairing store's registry path, nothing on this row. Compatible counter availability follow-up (2026-10-09): canonical prompt/completion counters are complete only when both are exact nonnegative integers; valid siblings survive malformed/missing fields. Text/tool observers forward explicit complete/incomplete zero values, and a clean LM Studio terminal without usage now emits an incomplete observation. Error and interruption gates remain. Aggregation retains numeric lower bounds and stays incomplete for mixed or incomplete observations. Accounting labels these values estimated and floors estimates at observed input/cache and output counts; a positive prompt anchor remains useful independently. Explicit complete zero is retained; legacy producers keep their nonzero predicate. See docs/project-usage-counter-availability-20261009.md for frozen source and tests.",
-      "remaining": "A model with no num_ctx parameter and no operator configuration remains unresolved (server environment/running context is not probed). Fixed image estimates remain incomplete. For Gemini streams, usage-only final frames, absent terminal-local counts, unknown terminal semantics and ambiguous multi-candidate streams deliberately remain unreported. Synthesis/compression/background model calls are deliberately outside conversational usage attribution. Cache discounts/write premiums and undocumented vendor-specific usage mappings are not modeled by the new totals-only adapters. No live provider or billing proof. Responses accounting is limited to supported API-key GPT-4.1 and exact xAI Grok4.5/4.6 dialects, not Codex subscription usage or general OpenAI reasoning-model replay. Cache counts do not establish live discounts, prices or physical context occupancy. Actual specialist planning applies to the existing opt-in shared-compression path; disabled/unmanaged callers retain their existing behavior. Unknown capacity remains a conservative planning estimate, not verified provider metadata. Counter availability proves only the parsed response pair, not physical retries, failed requests with no observation, auxiliary work or a complete turn bill. Other providers retain legacy availability behavior.",
+      "summary": "Configured Ollama num_ctx is sent on generate/tool/stream; /api/show model parameters can resolve a cached effective ceiling, ignoring architectural model_info maxima. Shared-history compression clamps to that ceiling, hard threshold cannot exceed 85%, and a Gemini compaction model reserves its concrete cloud output cap including auto=8192. Review repair: effective soft/hard thresholds are normalized together and actual compression target stays below the effective hard trigger, including soft=hard=1 configurations; protected head/tail remains intact. Ollama and LM Studio structured tool turns now retain the provider-reported input/output token counts. Strict count normalization preserves valid answers when usage metadata is absent or malformed. Tool-loop usage accumulates for metering while context anchors replace with the latest request count; unavailable input does not erase a prior anchor. Gemini structured turns now retain inclusive prompt counts and disjoint candidate/thought output counts; explicitly OpenAI-compatible profiles retain standard prompt/completion totals without adding nested breakdowns. Complete context anchors now include Anthropic disjoint input/cache-read/cache-write counts, including cache-only requests, while totals-only mappings count the full prompt once. Legacy provider billing semantics remain unchanged. Complete non-stream text replies now publish provider usage through closed request-local observers. Non-stream agent gathers retain per-agent measurements and complete-prefix anchors; ToolRuntime remains the single structured-turn reporter. Retries publish only accepted response usage; cancellation and inherited late tasks cannot outlive the observer. Public string/stream signatures and guardrails are unchanged. OpenRouter inherited streaming reports its single complete text request once. Ollama, LM Studio and Anthropic actual streams now publish one measurement only after confirmed completion: literal done=true, usage-only snapshot plus [DONE], or valid start/final cumulative message_delta usage plus message_stop respectively. Errors, interruption, malformed frames/containers and missing final usage do not reuse intermediate counts. Retry state resets, disjoint cache categories and text callbacks remain intact. Gemini streams now retain a terminal response's own validated prompt/candidate/thought counts after clean HTTP exhaustion and response close. Known single-candidate completion or explicit blocked-prompt semantics are required; errors, raw trailers, cancellation, conflicting response identities and nonzero/malformed candidate indices invalidate the whole attempt. Retries remain isolated and answer callbacks are unchanged. Pinned ask jobs now resolve and freeze their model/window before history construction, cap completion, and omit an unrelated prior usage anchor; unchanged default models retain their existing estimate. Ordinary tool turns now also use immutable configured/cached backend capacity forwarded before guardrails; known limits include completion, initial/later transcript, schemas and structured tool-call arguments. Unknown capacity remains estimated rather than discovered. Reasoning integration was reviewed against previously-current grid33165622 evidence: request-shaping refusals/empty controls do not change this row's cache, session or context/usage semantics. Existing focused regressions are retained. Responses completed text/tool turns and validated terminal streams now retain reported input/output usage. Inclusive input totals split cached_tokens once into disjoint uncached input and cache_read; output reasoning detail is not added to output totals. Missing/malformed metadata does not invent counts. Stream errors, incomplete/contradictory terminal items, cancellation or failed close do not publish usage; request-local sinks preserve existing single-publication semantics. The xAI Responses dialect inherits the same strict reported input/output/cache split and complete terminal accounting, while its own completed-response acceptance rechecks reasoning/replay lifetimes. Reasoning token detail is not added twice to output totals. Opaque function replay preserves main-loop provider usage without introducing ciphertext persistence, per-vendor prices or cache discount assumptions. Shared history compression now preplans each actual governed specialist route and its finite or dynamic completion reserve instead of borrowing the router default model. The strictest input budget stages one shared summary; final prompts/routes are revalidated through at most three monotonically tightening passes before a single accepted clock/history publication. Prepared text/SSE dispatch preserves backend/model/session/lifetime identity, policy gates and known-versus-estimated context metadata. Selected Ollama resolves its own context. Usage anchors require matching backend/model, session generation and retained-history digest; unmanaged old anchors are not promoted to exact managed measurements. Existing disabled-compression behavior and direct local auto output remain unchanged. The shared planner still measures pre-refresh system text before the accepted CAS. Prepared text/SSE dispatch now checks the refreshed rendered system, canonical and actual prompt, live tool-schema estimate and bound-cache floor against the selected estimated input allowance. Growth beyond that bound returns a fixed context refusal before model dispatch. The initial check precedes residency/checkpoint and Gemini lease/cache work; later checks include policy cache material and its bound tail. Accepted clock/history/persona remains committed on a post-CAS refusal, while a failed CAS still migrates none of it. Parallel per-agent refusals await peer settlement without counting an agent failure. Observed usage anchors require an actual response. #1188's edit to `orchestrator.py` is the pairing store's registry path, nothing on this row. Compatible counter availability follow-up (2026-10-09): canonical prompt/completion counters are complete only when both are exact nonnegative integers; valid siblings survive malformed/missing fields. Text/tool observers forward explicit complete/incomplete zero values, and a clean LM Studio terminal without usage now emits an incomplete observation. Error and interruption gates remain. Aggregation retains numeric lower bounds and stays incomplete for mixed or incomplete observations. Accounting labels these values estimated and floors estimates at observed input/cache and output counts; a positive prompt anchor remains useful independently. Explicit complete zero is retained; legacy producers keep their nonzero predicate. See docs/project-usage-counter-availability-20261009.md for frozen source and tests.",
+      "remaining": "A model with no num_ctx parameter and no operator configuration remains unresolved (server environment/running context is not probed). Fixed image estimates remain incomplete. For Gemini streams, usage-only final frames, absent terminal-local counts, unknown terminal semantics and ambiguous multi-candidate streams deliberately remain unreported. Synthesis/compression/background model calls are deliberately outside conversational usage attribution. Cache discounts/write premiums and undocumented vendor-specific usage mappings are not modeled by the new totals-only adapters. No live provider or billing proof. Responses accounting is limited to supported API-key GPT-4.1 and exact xAI Grok4.5/4.6 dialects, not Codex subscription usage or general OpenAI reasoning-model replay. Cache counts do not establish live discounts, prices or physical context occupancy. Actual specialist planning applies to the existing opt-in shared-compression path; disabled/unmanaged callers retain their existing behavior. Unknown capacity remains a conservative planning estimate, not verified provider metadata. Counter availability proves only the parsed response pair, not physical retries, failed requests with no observation, auxiliary work or a complete turn bill. Other providers retain legacy availability behavior. Prepared dispatch checks are a final containment guard, not prospective persona/identity planning. A post-CAS refusal retains the accepted summary, clock and refreshed instructions; it does not reallocate history or automatically reload another file edit. Bounds use the existing token estimator and selected effective/estimated window, not exact provider wire tokenization. Unmanaged calls, synthesis and later tool turns retain their separate behavior.",
       "evidence": [
         {
           "path": "agents/core/agent.py",
@@ -11292,7 +11292,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "939f341535ec0372c86d975c1d77fb680584dace1062ff36c429a80e2b7b84a8"
+          "sha256": "38ed73c554e65c8eeb00100d80dac13aad7a2bb52aa7885bb68cc1658d519931"
         },
         {
           "path": "agents/core/llm/base.py",
@@ -11440,7 +11440,7 @@
         },
         {
           "path": "agents/core/route_compaction.py",
-          "sha256": "0720b773b969ebfa25543929447a60d061792f31fef143ce65e14a8a22f04917"
+          "sha256": "d7a19bcc582cd01e9d11adaf3ff08f91f835dcae8c85c1a4c7c3d32bddca5d19"
         },
         {
           "path": "tests/test_route_compaction.py",
@@ -11457,6 +11457,14 @@
         {
           "path": "tests/test_usage_counter_accounting.py",
           "sha256": "7a8da5a17852f74fb4a130640f0b1a5ae31778661ba6888352ebc1b96e1dced9"
+        },
+        {
+          "path": "tests/test_prepared_prompt_budget.py",
+          "sha256": "6ecaf5e4d03f21324dd7eec93d5182fcd259e4641acde56b71263827c829bf2f"
+        },
+        {
+          "path": "tests/test_persona_dispatch_budget.py",
+          "sha256": "e0abc596a194ffef1cd18b808f0f11cb9f0f8aca315c77e5c9d6bc80270b4ff9"
         }
       ]
     },
@@ -11661,7 +11669,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
+          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -11673,7 +11681,7 @@
         },
         {
           "path": "agents/core/conversation_clock.py",
-          "sha256": "939f341535ec0372c86d975c1d77fb680584dace1062ff36c429a80e2b7b84a8"
+          "sha256": "38ed73c554e65c8eeb00100d80dac13aad7a2bb52aa7885bb68cc1658d519931"
         },
         {
           "path": "agents/core/llm/anthropic.py",
@@ -12047,7 +12055,7 @@
         },
         {
           "path": "agents/cli/nerva.py",
-          "sha256": "738919e6779d3d0fde4bbdd90447da1f27121f22a86a88e95f6e29b575ff1ef5"
+          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
         },
         {
           "path": "frontend/src/panels/jobs.tsx",

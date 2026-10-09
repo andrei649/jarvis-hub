@@ -3,12 +3,13 @@
 - Generated: 2026-10-09 UTC.
 - Goal: stop shared-compaction routes sending an initial prompt that exceeds the
   selected estimated input allowance after persona/identity refresh.
-- Base/HEAD: e711b432161ca3ec25b500718a351d1669df2daa.
+- Base: e711b432161ca3ec25b500718a351d1669df2daa.
+- Tested source: 42013de7435c08f7bee91257d7c7f7fd2091366c.
 - Branch/worktree: codex/persona-dispatch-budget-20261009,
   /workspace/jarvis-hub-persona-dispatch-budget.
 - Delivery: autonomous local fix, no remote publication or live providers.
-- Next action: implementation and focused verification are complete; freeze the
-  source for one serial full backend milestone, then finalize evidence.
+- Status: implementation, independent review, full backend verification and
+  evidence/status finalization complete. No further action within this unit.
 
 ## Scope and decisions
 
@@ -101,4 +102,9 @@ before correction. Final writer coverage passes 267/267; disjoint downstream
 integration passes 376/376; three further actual managed Gemini cache controls
 pass in the final 12/12 consumer module. Combined: 646 distinct passing cases,
 zero errors/skips. Independent frozen-source review has no Critical/Important
-finding. Full backend and evidence/status finalization remain pending.
+finding. The frozen-source full backend milestone passes: 21,372 passed,
+37 skipped, zero failures/errors, 312.491 seconds, exit 0. All 37 skipped case
+IDs match the preceding counter-availability milestone. The executed count
+matches the canonical 21,409 backend cases. Hermes/status checks and diff checks
+pass; client counts are reused without claiming a new client run. See
+[final evidence](../project-persona-dispatch-budget-20261009.md).
