@@ -3,6 +3,8 @@
 Generated 2026-10-09 UTC. Base `ca1b0d5e09c5439ee4211bc68d985fe05a78e89d`;
 branch `codex/file-mutation-receipts-20261009`. Local only; PR #1247 contains
 only the earlier published mobile-session work.
+Tested source: `145c0a6881c7028b2e83a54e7fba8d3180067d31`; the closing commit
+updates only this proof and its plan.
 
 Returned FileTools mutation handlers now add `mutation_receipt` with exactly
 `path`, `op` and `outcome`. Seven existing returns after allowed non-root path
@@ -62,10 +64,15 @@ schema changes. The new observation is result data, not a new log/tool event.
 - AST comparison proves the entire file-tools module equals the base after
   removing the pure helper and unwrapping seven result calls. Independent source
   and ten-row collateral reviews found no Critical/Important issue.
-- Collection: **21733 backend** (28 added), **2039 frontend/native**, **316 mobile**,
-  555 routes, 18 agents. Client counts are reused from the prior verified unit;
-  no client code changed. Full backend verification is pending; collection is
-  not a passing full run. No live provider/device test was run.
+- Full backend at the tested source: **21733 cases: 21696 passed, 37 JUnit-skipped,
+  zero failures/errors**, 293.568 s, exit 0. All 37 skipped identities equal the
+  previous H396 full run (36 guarded skips and one existing source-integration
+  xfail). The actual executed-count guard passes at 21733. All three frozen
+  source/test hashes match the tested commit and disk.
+- Canonical counts: **21733 backend** (28 added), **2039 frontend/native**,
+  **316 mobile**, 555 routes, 18 agents. Client counts are reused from the prior
+  verified unit because no client code changed. Ruff, diff, generated status
+  and Hermes checks pass. No live provider/device test was run.
 
 Eleven base-fresh evidence pins refresh after named review: ten file-tools claims
 and H670's architecture identity-band claim. Moved H507/H661 citations retain
@@ -74,7 +81,9 @@ pins are added. All 226 stored review statuses/identities and the inventory hash
 remain unchanged; older unrelated stale evidence stays stale. H396 stays partial.
 
 Artifacts `/workspace/scratch/mutation-receipts-*` retain RED/green/integration,
-source/AST/line maps, pin inventory and reviews. Two gpt-6-sol/high agents owned
+full-suite results, source/AST/line maps, pin inventory and reviews. The final
+verification artifact records counts, unchanged skip identities and tested-source
+digest checks. Two gpt-6-sol/high agents owned
 direct source/tests and execution tests/review; gpt-6-luna/medium performed the
 read-only inventory. Root owned scope, RED release, integration, metadata and git;
 maximum four active, no nested delegation.

@@ -17,10 +17,16 @@ its gated model-loop path only requests approval and never invokes the handler.
 **Base/head before changes:** `ca1b0d5e09c5439ee4211bc68d985fe05a78e89d`.
 **Branch/worktree:** `codex/file-mutation-receipts-20261009`,
 `/workspace/jarvis-hub-file-mutation-receipts`.
-**State/next action:** implemented and independently reviewed; 498 distinct focused
-and integration cases pass. Source is frozen; next run the full backend milestone
-on committed source. Parent baseline: 21668 passed, 37 JUnit-skipped (36 guarded
-+1 existing xfail). No passing new full run is claimed yet.
+**Tested source:** `145c0a6881c7028b2e83a54e7fba8d3180067d31`; closing changes
+only this plan and the proof document.
+**Changed paths:** FileTools, two new test modules, H396 evidence/build queue,
+architecture/parity notes, generated project counts and this plan/proof.
+**State/next action:** completed locally and independently reviewed; 498 distinct
+focused/integration cases pass. Full backend: 21696 passed, the same 37
+JUnit-skipped cases (36 guarded +1 existing xfail), zero failures/errors,
+293.568 s. Source/test hashes match the tested commit and disk; executed-count,
+Ruff, diff, generated status and Hermes checks pass. Continue the local backlog;
+whole-turn attribution, unknown/lost attempts and mutation supersession remain open.
 
 ## Contract and global constraints
 
@@ -105,11 +111,11 @@ Own new `tests/test_file_mutation_receipt_execution.py`, tests only.
 - [x] Review ten base-fresh file_tools pins before refreshing; add narrow H396
   evidence/remaining, architecture/build queue/parity notes and generated counts.
   Keep all stored ledger statuses/identities and preexisting stale pins unchanged.
-- [ ] Freeze source/tests, run combined focused regressions, Ruff/diff/status/
+- [x] Freeze source/tests, run combined focused regressions, Ruff/diff/status/
   Hermes and one serial full backend milestone. Compare exact skipped identities
   with `h396-backend-final.xml`; run actual executed-count guard. Client counts
   2039 frontend/native and 316 mobile are reused because clients do not change.
-- [ ] Save proof, manifests and clean local commit; report limits truthfully.
+- [x] Save proof, manifests and clean local commit; report limits truthfully.
 
 Rollback: revert this additive result/test/docs unit; no migration or persisted
 schema change. An absent receipt remains unknown to any future consumer.
