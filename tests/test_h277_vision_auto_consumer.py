@@ -34,6 +34,7 @@ def route(monkeypatch, tmp_path):
     monkeypatch.setenv("JARVIS_USER_TOKEN", "image-test")
     monkeypatch.setenv("JARVIS_ADMIN_TOKEN", "image-admin")
     monkeypatch.setattr(web, "USER_TOKEN", "image-test")
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "image-admin")
     monkeypatch.setattr(web.app, "dependency_overrides", {})
     store = NousAuthStore(tmp_path / "nous.sqlite3", cipher=SecretStore(tmp_path / "cipher", key=KEY))
     monkeypatch.setattr(nous_auth, "NousAuthStore", lambda: store)

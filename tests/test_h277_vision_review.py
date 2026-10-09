@@ -5,7 +5,8 @@ import pytest
 from agents.core.llm.vision_review import VisionReviewRefused, VisionReviewStore
 
 
-def _issue(store, *, session="session-a", prompt="What is shown?", route="local"):
+def _issue(store, *, session="session-a", prompt="What is shown?", route="local",
+           principal=("owner", "image-test")):
     return store.issue(
         session_id=session,
         agent_id="jarvis",
@@ -13,11 +14,12 @@ def _issue(store, *, session="session-a", prompt="What is shown?", route="local"
         model="vision-model",
         route=route,
         binding=("lm-studio", "http://127.0.0.1:1234/v1", "vision-model", "secret-key"),
+        principal=principal,
     )
 
 
 def _consume(store, token, *, session="session-a", prompt="What is shown?",
-             route="local", binding=None, agent="jarvis"):
+             route="local", binding=None, agent="jarvis", principal=("owner", "image-test")):
     store.consume(
         token,
         session_id=session,
@@ -26,6 +28,7 @@ def _consume(store, token, *, session="session-a", prompt="What is shown?",
         model="vision-model",
         route=route,
         binding=binding or ("lm-studio", "http://127.0.0.1:1234/v1", "vision-model", "secret-key"),
+        principal=principal,
     )
 
 
@@ -57,6 +60,15 @@ def test_cross_agent_review_is_refused_and_burned():
     token = _issue(store)
     with pytest.raises(VisionReviewRefused, match="vlm_destination_changed"):
         _consume(store, token, agent="athena")
+    with pytest.raises(VisionReviewRefused, match="vlm_review_unavailable"):
+        _consume(store, token)
+
+
+def test_cross_principal_review_is_refused_and_burned():
+    store = VisionReviewStore()
+    token = _issue(store)
+    with pytest.raises(VisionReviewRefused, match="vlm_destination_changed"):
+        _consume(store, token, principal=("owner", "another-user"))
     with pytest.raises(VisionReviewRefused, match="vlm_review_unavailable"):
         _consume(store, token)
 

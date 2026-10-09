@@ -102,7 +102,7 @@ def validate_seed(row):
 
 
 def seed_json(turns):
-    from .memory.conversation import restored_media
+    from .memory.conversation import validated_media
 
     if not isinstance(turns, list) or not 0 < len(turns) <= MAX_TURNS:
         raise ContinuationRefused("invalid_or_oversized_history")
@@ -132,9 +132,14 @@ def seed_json(turns):
         tools = _tool_names(turn.get("tools"))   # H441: names only, absent when none
         if tools:
             carried["tools"] = tools
-        media = restored_media(turn.get("media"))
-        if media is not None:
-            carried["media"] = media
+        raw_media = turn.get("media")
+        if raw_media is not None:
+            # Snapshot loading may drop corrupted optional metadata; a new
+            # continuation must reject it instead of certifying edited seed.
+            try:
+                carried["media"] = validated_media(raw_media)
+            except ValueError:
+                raise ContinuationRefused("invalid_history") from None
         result.append(carried)
     try:
         value = json.dumps(result, ensure_ascii=False, allow_nan=False, separators=(",", ":"))

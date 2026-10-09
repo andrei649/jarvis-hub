@@ -174,7 +174,10 @@ async def test_signed_worker_carries_only_fixed_history_marker(composed, monkeyp
         assert (await client.get(url)).status_code == 401
         response = await client.get(url, headers={"X-Admin-Token": "history-admin"})
     assert response.status_code == 200
-    assert response.json() == {"task_id": task_id, "state": "failed", "artifact": None}
+    assert response.json() == {
+        "task_id": task_id, "state": "failed", "artifact": None,
+        "resume_available": False, "enhance_available": False,
+    }
     assert "no-store" in response.headers["cache-control"]
     assert "PRIVATE-SENTINEL" not in json.dumps(row.result) + response.text
     assert "comfyui_history_error_v1" not in response.text
@@ -281,7 +284,10 @@ async def test_signed_worker_other_outcomes_remain_uncertain(composed, monkeypat
         response = await client.get(f"/api/media/generation-tasks/{task_id}",
                                     headers={"X-Admin-Token": "history-admin"})
     assert response.status_code == 200
-    assert response.json() == {"task_id": task_id, "state": "uncertain", "artifact": None}
+    assert response.json() == {
+        "task_id": task_id, "state": "uncertain", "artifact": None,
+        "resume_available": False, "enhance_available": False,
+    }
     assert "no-store" in response.headers["cache-control"]
     assert "PRIVATE-SENTINEL" not in response.text
     assert sum(req.url.path == "/prompt" for req in calls) == 1

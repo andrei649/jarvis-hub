@@ -330,7 +330,10 @@ async def test_observed_local_provider_response_has_fixed_durable_evidence(rig, 
         projected = await client.get(f'/api/media/generation-tasks/{task_id}')
         assert projected.status_code == 200
         assert projected.headers['cache-control'].find('no-store') >= 0
-        assert projected.json() == {'task_id': task_id, 'state': 'failed', 'artifact': None}
+        assert projected.json() == {
+            'task_id': task_id, 'state': 'failed', 'artifact': None,
+            'resume_available': False, 'enhance_available': False,
+        }
         assert not any(value in projected.text for value in (reason, _RESPONSE_FAILURE_MARKER, 'PRIVATE', 'blue boat'))
         assert len(rig.requests) == 1 and rig.requests[0].method == 'POST'
         assert list(rig.root.rglob('*.png')) == []
@@ -375,7 +378,10 @@ async def test_ambiguous_policy_and_publication_outcomes_have_no_response_marker
         await rig.worker.tick()
         projected = await client.get(f'/api/media/generation-tasks/{task_id}')
         assert projected.status_code == 200
-        assert projected.json() == {'task_id': task_id, 'state': 'uncertain', 'artifact': None}
+        assert projected.json() == {
+            'task_id': task_id, 'state': 'uncertain', 'artifact': None,
+            'resume_available': False, 'enhance_available': False,
+        }
     task = rig.queue.get(task_id)
     assert task.status == 'done' and task.result['reason'] == reason
     assert 'provider_response_failed' not in task.result['result']
@@ -412,7 +418,10 @@ async def test_post_response_guard_with_matching_failure_reason_is_not_provider_
         await rig.worker.tick()
         projected = await client.get(f'/api/media/generation-tasks/{task_id}')
         assert projected.status_code == 200
-        assert projected.json() == {'task_id': task_id, 'state': 'uncertain', 'artifact': None}
+        assert projected.json() == {
+            'task_id': task_id, 'state': 'uncertain', 'artifact': None,
+            'resume_available': False, 'enhance_available': False,
+        }
     task = rig.queue.get(task_id)
     assert task.status == 'done' and task.result['reason'] == 'backend_http_error'
     assert task.result['result'] == {'ok': False, 'reason': 'backend_http_error'}

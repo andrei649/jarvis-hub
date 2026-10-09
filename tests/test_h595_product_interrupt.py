@@ -152,9 +152,12 @@ async def test_telegram_pre_lane_only_signals_current_admitted_conversation(tmp_
 
 
 @pytest.mark.asyncio
-async def test_gateway_channel_handler_signals_only_after_admission_and_pending_intercept():
-    orch = object.__new__(Orchestrator)
+async def test_gateway_channel_handler_signals_only_after_admission_and_pending_intercept(tmp_path):
+    from tests.test_channel_handler_session_wiring import _bare_orchestrator
+
+    orch, _ = _bare_orchestrator()
     orch._session_id_default = "shared"
+    orch._session_lifecycle_path = tmp_path / "routes.sqlite"
     orch._runtime_settings = {}
     orch.channel_manager = SimpleNamespace(channels={})
     orch._delivery_router = SimpleNamespace(resolve=lambda source, text: SimpleNamespace(send=False))
@@ -162,7 +165,7 @@ async def test_gateway_channel_handler_signals_only_after_admission_and_pending_
     orch._channel_sessions = {build_session_key(source): "actual-discord-session"}
     async def fake_turn(*args, **kwargs):
         return "done"
-    orch._session_channel_input = fake_turn
+    orch._run_channel_session_turn = fake_turn
     pairing = SimpleNamespace(
         is_allowed=lambda channel, sender: True,
         gate_inbound=lambda channel, sender, code=None: {"allowed": sender == "99"},

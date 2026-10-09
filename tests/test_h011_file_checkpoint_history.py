@@ -235,7 +235,10 @@ async def test_oversized_preimage_refuses_without_effect(tmp_path):
         handle.truncate(history_module.MAX_CAPTURE_BYTES + 1)
     tools = FileTools(FileScope([root]), snapshots=SnapshotStore(tmp_path / "snapshots"))
     result = await tools.write_file({"path": str(target), "content": "agent"}, approved=True)
-    assert result == {"ok": False, "reason": "checkpoint_too_large"}
+    assert result == {
+        "ok": False, "reason": "checkpoint_too_large",
+        "mutation_receipt": {"path": str(target), "op": "write", "outcome": "refused"},
+    }
     assert target.stat().st_size == history_module.MAX_CAPTURE_BYTES + 1
     assert tools.history.list_entries() == []
 
@@ -266,5 +269,8 @@ async def test_fifo_preimage_refuses_without_blocking(tmp_path):
     result = await asyncio.wait_for(
         tools.delete_file({"path": str(fifo)}, approved=True), timeout=2
     )
-    assert result == {"ok": False, "reason": "not_a_file"}
+    assert result == {
+        "ok": False, "reason": "not_a_file",
+        "mutation_receipt": {"path": str(fifo), "op": "delete", "outcome": "refused"},
+    }
     assert fifo.exists() and tools.history.list_entries() == []

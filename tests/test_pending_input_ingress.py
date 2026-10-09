@@ -270,7 +270,9 @@ async def test_pending_resolution_binds_actual_inbound_origin_and_principal(tmp_
         assert len(captured) == 1 and captured[0][0] == "inbound"
         assert captured[0][1].channel == "telegram"
         assert captured[0][1].sender == "42"
-        assert not captured[0][1].admin
+        # The fixture binds sender 42 to the Telegram owner, so the pending
+        # reply must carry that verified authority rather than a guest default.
+        assert captured[0][1].admin
         assert current_principal().sender is None
         assert answers[0][0]["result"]["user_response"] == "Remote"
     finally:
