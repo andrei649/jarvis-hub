@@ -10,19 +10,19 @@
 pyyaml>=6.0.3
 apscheduler>=3.11.3
 httpx>=0.28.1
-websockets>=17.1,<18
+websockets>=17.2,<18
 pillow>=12.3.0,<13
-cryptography>=50.0.1
+cryptography>=50.0.2
 defusedxml>=0.7.1  # hardened parsing of untrusted RSS/Atom feeds (news + digest)
-python-dotenv>=1.2.3
-ollama>=0.6.2
+python-dotenv>=1.2.4
+ollama>=0.6.3
 # fastapi 0.137 wraps include_router results in an opaque _IncludedRouter instead of
 # flattening them into app.routes. The app is unaffected (routes serve + appear in
 # OpenAPI); the route-parity / auth-matrix guards now flatten the wrappers via
 # tests/_route_introspect.iter_effective_routes. starlette is pinned below the 1.x
 # major (untested with this fastapi). Background:
 # docs/research/2026-06-19-fastapi-0.137-include-router-regression.md
-fastapi>=0.141.1,<0.142
+fastapi>=0.142.2,<0.143
 starlette>=1.7.0,<2.0
 uvicorn>=0.54.0
 psutil>=7.2.2

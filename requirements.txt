@@ -6,12 +6,12 @@
 pyyaml>=6.0.3
 apscheduler>=3.11.3
 httpx>=0.28.1
-websockets>=17.1,<18
+websockets>=17.2,<18
 pillow>=12.3.0,<13
-python-dotenv>=1.2.3
+python-dotenv>=1.2.4
 
 # LLM
-ollama>=0.6.2
+ollama>=0.6.3
 
 # Web
 # Pin <0.137: 0.137.0 regressed app.include_router (mounted routers add 0 routes
@@ -19,12 +19,12 @@ ollama>=0.6.2
 # fastapi 0.137 route-introspection change handled by tests/_route_introspect.py;
 # starlette pinned below the untested 1.x major. See
 # docs/research/2026-06-19-fastapi-0.137-include-router-regression.md
-fastapi>=0.141.1,<0.142
+fastapi>=0.142.2,<0.143
 starlette>=1.7.0,<2.0
 uvicorn>=0.54.0
 
 # Security
-cryptography>=50.0.1
+cryptography>=50.0.2
 # defusedxml: hardened parsing of untrusted RSS/Atom feeds (news + digest plugins);
 # stdlib xml.etree is unsafe on hostile XML (entity-expansion DoS).
 defusedxml>=0.7.1
