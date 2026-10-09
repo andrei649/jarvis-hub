@@ -1525,7 +1525,7 @@
         },
         {
           "path": "mobile/src/screens/StatusScreen.tsx",
-          "sha256": "63a31c1e492a20777c3e2c8461e0d09a57fe7735980a2e9cc34ba8f025660ae6"
+          "sha256": "68280bba3aba7563218fc94f3e511ed8c7d4c9392314be05acab86a08c42c31b"
         },
         {
           "path": "mobile/src/screens/TasksScreen.tsx",
