@@ -136,7 +136,17 @@ The finite late-auth diagnostic reproduces the original failure and passes after
 the test-only correction. The corrected test requires the exact persisted,
 disabled HTTP 200 response and exactly one SETTINGS_CHANGE naming the plugin,
 setting key and disabled action. The focused H285/auth/image/route/metadata union
-passes; the independent reviewer confirms the H285 claim and its existing case
-count remain valid. Its previously current test pin alone is refreshed. A fresh
-complete backend run will verify integration after this demonstrated correction;
-the earlier failed run remains recorded separately.
+passes 297/297; the independent reviewer confirms the H285 claim and its existing
+case count remain valid. Its previously current test pin alone is refreshed.
+
+The fresh complete backend run at correction
+`a0b50a1fd049f6b4eca33321d1a0fdd34cbd23c4` passes: 21,117 passed,37 skipped,
+zero failures/errors,21,154 total,267.123 seconds. Its skipped IDs match both
+the earlier failed run and the preceding task-mediation milestone. The earlier
+failed run remains recorded separately. All frontend/mobile/build/browser and
+schema checks above remain valid; the repair changes no product or client code.
+Root verifies 23 formerly current assessment pin replacements in total (22 feature
+and one H285 test); all claims/verdicts and the four already-stale changed-path
+pins remain unchanged. Full evidence is linked above. Physical/live-generator
+acceptance and typed local-provider failure evidence remain open; no remote
+publication or activation occurred.

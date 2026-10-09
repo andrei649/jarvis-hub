@@ -4,6 +4,8 @@
 - Goal: distinguish a narrowly proven provider-response failure from an uncertain
   image-task result, without claiming no remote work, no charge or safe retry.
 - Base / HEAD before edits: `d48f6f4dfa07070ae2518075224a889f261a8dbc`.
+- Feature source: `af75de269e4e012d06351401db04bc359f9ede42`.
+- Audit-test correction: `a0b50a1fd049f6b4eca33321d1a0fdd34cbd23c4`.
 - Branch/worktree: `codex/image-provider-failure-state-20261009`,
   `/workspace/jarvis-hub-image-failure-state`.
 - Delivery: local; draft PR #1247 remains a separate previously published unit.
@@ -56,8 +58,39 @@ failures. Native TypeScript, browser app TypeScript and E2E TypeScript pass.
 The complete default frontend/native suite passes **2,009/2,009**, 225 files,
 no skips/todo/failures: **1,844 HUD cases /206 files** and **165 native cases
 /19 files**. Full backend collection succeeds at **21,154 cases** (+25) in 1,023
-files. The full backend execution milestone is pending below. No physical
-device or live provider was used.
+files. No physical device or live provider was used.
+
+## Full backend and audit-order correction
+
+The first full run at feature source `af75de2` reported **21,116 passed,
+37 skipped, one failed**, zero errors (21,154 total; 267.217 seconds). The only
+failure was `test_h285_load_set.py::test_a_toggle_writes_an_audit_row`: its
+last-call assertion observed AUTH_SUCCESS instead of SETTINGS_CHANGE. The same
+original case passed in isolation. The authentication guard queues its audit
+asynchronously while the plugin handler awaits its own settings audit; their
+completion order is not a contract.
+
+A scratch-only diagnostic with a finite barrier delivered that request's real
+authentication audit after the handler and reproduced the original failure.
+The test-only correction requires the exact persisted-disabled HTTP 200 response,
+exactly one SETTINGS_CHANGE among all calls, and the plugin, setting key and
+disabled action. The same late-auth diagnostic then passed. No application,
+authentication or audit code changed. The H285/auth/image/route/metadata union
+passed **297/297**, zero skips/failures/errors (11.941 seconds). Ruff and generated
+project/Hermes status checks also pass.
+
+The subsequent full backend run at correction `a0b50a1` passed: **21,117 passed,
+37 skipped, zero failures/errors**, 21,154 total in 267.123 seconds. The repaired
+H285 case passes in that complete run. All 37 skipped test IDs match both the
+first run and the preceding task-mediation milestone; no new skip was introduced.
+The failed first run remains recorded separately; the test correction does not
+reclassify it. The command for both complete runs was:
+
+```sh
+python /workspace/scratch/pytest-subreaper.py \
+  /workspace/scratch/backend-copy-venv/bin/python -m pytest tests/ \
+  -n 4 --dist loadfile --timeout=90 -q --tb=short --junitxml=<report>.xml
+```
 
 ## Browser and generated contract
 
@@ -85,11 +118,15 @@ Two gpt-6-sol/high writers implemented separate backend and client files and
 cross-reviewed the final changes. No Critical/Important issue remained. A
 read-only gpt-6-luna/medium inventory and named claim reviews were checked against
 the base. Root's final all-changed-path inventory includes test pins omitted from
-the initial source-only inventory: **22 previously current pins** are refreshed;
+the initial source-only inventory: **22 previously current feature pins** are refreshed;
 **four already-stale changed-path pins** are preserved. Unchanged snapshot pins
 need no refresh. All assessment summaries, statuses and remaining-work text stay
 identical. H312's stale router pin remains stale while its current view pin is
-reviewed and refreshed independently.
+reviewed and refreshed independently. The separate audit-test correction refreshes
+one additional formerly current H285 test pin after a bounded claim review,
+bringing the total to **23**. Root verifies every old pin against the base and
+every replacement against its current file; the H285 claim and case count stay
+unchanged.
 
 The router comparison finds only `media_generation_task` changed; its other
 23 top-level symbols are structurally unchanged. Image proposal controls, VLM/
@@ -102,7 +139,12 @@ Reports in `/workspace/scratch/`: `image-provider-failure-backend-focused.xml`,
 `image-failure-mobile-final.json`, `image-failure-mobile-tsc-final.log`,
 `image-failure-build-final.log`, `image-failure-browser-final.log` (missing runtime),
 `image-failure-browser-install.log`, `image-failure-browser-verified.log`,
-`image-failure-frontend-final.json`, and `image-failure-backend-collection.log`.
+`image-failure-frontend-final.json`, `image-failure-backend-collection.log`,
+`image-failure-backend-final.{xml,log}` (first full run),
+`image-failure-audit-repro.{xml,log}` (isolated original),
+`image-failure-audit-forced-red.log`, `image-failure-audit-forced-green.{xml,log}`,
+`image-failure-audit-repair-focused.{xml,log}`, and
+`image-failure-backend-repaired.{xml,log}`.
 
 H18.27 remains partial for local terminal-failure evidence and physical-device/
 live-generator acceptance. This increment adds no activation or remote publication.
