@@ -5389,23 +5389,33 @@ exactly what landed and what did not.
   B7 design doc gained an "Operating the mode" section naming the env var, the head file, the durability
   ordering and the honest limit (it defends against DB rollback, not against rewriting the whole data
   directory).
-  **Remaining — and this is why the row is not ticked: the mode this now makes reachable does not work.**
-  With `JARVIS_TASK_MEDIATION=enforce`, a plain `enqueue(agent=…, kind='note', …)` raises
-  `TaskQueueError: classified task requires mediation`, because `kernel.registry.classify()` returns None
-  for essentially every real task kind (note, reminder, email_send, message, research, memory_write,
-  channel_send, prompt_optimization, agent_promotion, skill_install, calendar_event — only `kg.write`
-  classifies) while `queue.py:934-942` refuses whenever the classification `is not False`, and
-  `worker.py:769-781`'s intended "record it as ASK, then raise" is dead code because the enqueue raises
-  first. The default (unset → off) is unaffected, which is why the suite is green. Either the classifier
-  fallback is fixed, or the `orchestrator.py:415-418` comment must stop reading as "the mode is now
-  reachable in production".
+  **Remaining: enforce mode still refuses unclassified ordinary task kinds.** With
+  `JARVIS_TASK_MEDIATION=enforce`, a plain `enqueue(agent=…, kind='note', …)` raises
+  `TaskQueueError: classified task requires mediation`. `kernel.registry.classify()` still returns None
+  for note, reminder, email_send, message, memory_write, channel_send, prompt_optimization,
+  agent_promotion, skill_install and calendar_event. `kg.write` and the exact `research` task classify;
+  their governed intake needs valid kernel authority and persisted evidence. Raw enqueue remains
+  refused for these mediated kinds too. The default (unset → off) is unaffected. Each further kind
+  needs an effect-specific classification and governed producer migration; an unknown-to-direct
+  fallback would weaken the fail-closed boundary and is not the intended repair.
   **Owner decision 2026-09-01:** #918 (merge `b5e52c6`, reviewed source `6eed5a7`) is **RETAINED** on
   `main` under a bounded default-off exception — no revert, no successor PR; #757/#778/#818 reconciled to
   it; B7 stays not program-accepted and E5/E8 stay blocked until #906 is provisioned or re-scoped by a
   separate owner decision. The two authority invariants are restated in the *Remaining* clause above
   (closed by #918 / R3 PASS comment 5313004564). **Remaining:** the enforce-mode classifier defect above,
-  and no route or HUD panel for `verified_mediation_stats()` / `mediation_events()`: it would show
-  all-zero counters for a mode nobody has enabled.
+  and no route or HUD panel for `verified_mediation_stats()` / `mediation_events()`. Enabling or accepting
+  the mode operationally is not established by these local software tests.
+  **Local software slice 2026-10-09 — exact research mediation:** the exact `research` kind now
+  classifies as KERNEL, allowing the existing governed worker intake to persist a signed, tuple-bound
+  receipt before dispatch in enforce mode. GRANT executes only with the private worker permit; QUEUE
+  retains owner acceptance; DENY, unavailable authority and tuple tampering refuse. Unknown kinds,
+  including `research.extra`, stay unclassified. The raw scheduled-job enqueue path still refuses
+  research in enforce mode; off/hold behavior is preserved. Red-first regression and the focused
+  action-auth/task-mediation/web-tools matrix pass **162/162** with fake kernel/search adapters.
+  No live search was invoked. See [scope and evidence](docs/plans/2026-10-09-research-task-mediation.md).
+  DRA-59 remains open for other real task kinds, scheduled producer migration, operational visibility
+  and program acceptance; this is a bounded local implementation, not a blanket classifier fallback.
+
 - [ ] 🟡 **DRA-60 — Independent-integrator acceptance enforcement in repository controls (issues #906 and
   #846 steps 3-4).** #906 is state=open, assigned to andrei649; #846 is state=open (last updated
   2026-08-29). *Remaining: Partially done — the AI-buildable half has already landed and the critic missed
