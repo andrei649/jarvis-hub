@@ -8,8 +8,8 @@
   /workspace/jarvis-hub-usage-counter-availability.
 - Scope: autonomous local parser/observer/accounting fix; no publication or live
   provider use. No CLI receipt or public response-schema additions.
-- Next action: freeze the passing implementation, run one full backend milestone,
-  then finalize the bounded evidence and generated status.
+- Outcome: implemented and verified locally. Full source/test head: 93c386e909bebd46e9888428a654d071071899be.
+- Next action: this rollback unit is complete; continue backlog work from the final documentation commit.
 
 ## Evidence contract
 
@@ -71,7 +71,7 @@ and per-turn pricing/CLI accounting remain explicitly outside this fix.
   Root then releases production edits. No overlapping file writers. Each reviews
   the other's frozen contract; root owns integration and critical review.
 - wall_contracts (gpt-6-luna/medium): read-only evidence-pin/citation inventory.
-- Root: the existing cloud-tool-turn missing-usage equality expectation,
+- Root: the existing cloud-tool-turn and LM Studio missing-usage equality expectations,
   documentation, backlog/parity/status, integration and git. At most four
   active agents; no nested delegation or live provider/device calls.
 
@@ -96,4 +96,12 @@ RED 39 failures of 107; consumer RED 14 of 14, zero errors. Two later consumer
 refinements also reproduced before correction. Frozen focused coverage passes
 107 foundation + 251 consumer/runtime + 345 disjoint integration = 703 distinct
 cases, zero failures/errors/skips. Independent cross-review found no Critical or
-Important issue. Full-suite evidence and fresh-pin reconciliation remain pending.
+Important issue. The first full run found two old LM Studio equality
+expectations (21,347 passed, 2 failed, 37 skipped); their explicit incomplete
+markers are corrected in 93c386e, with the 44-case protocol module passing.
+Production remains identical to a0e4272. Focused total is now 747 distinct
+passing cases. Repeated full-suite run passed 21,349 cases with 37 unchanged
+skips, zero failures/errors, 291.509 seconds, exit 0. Executed count matches
+21,386 collected backend cases. Fresh-pin reconciliation is complete with 45
+refreshed, 67 pre-existing stale preserved and no status change. Final evidence:
+[compatible counter availability](../project-usage-counter-availability-20261009.md).
