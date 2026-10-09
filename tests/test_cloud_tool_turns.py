@@ -862,7 +862,8 @@ async def test_gemini_blocked_prompt_is_a_filtered_empty_turn():
 
     turn = await _turn(backend)
 
-    assert turn == ToolTurn(content="", finish_reason="content_filter")
+    assert turn == ToolTurn(content="", finish_reason="content_filter",
+                            usage=TokenUsage(counts_complete=False))
 
 
 @pytest.mark.asyncio

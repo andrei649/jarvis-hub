@@ -247,14 +247,28 @@ def gemini_usage(data: Mapping[str, Any]) -> TokenUsage:
     """Gemini inclusive prompt total and disjoint candidates/thoughts output.
 
     https://ai.google.dev/api/generate-content#UsageMetadata
-    Do not add cached, total, modality or tool-use prompt detail counts.
+    Do not add cached, total, modality or tool-use prompt counts. This mapping
+    is complete only with explicit mapped counters and zero tool-use input;
+    a supplied total must agree with the documented four-category sum.
     """
     raw = data.get("usageMetadata") if isinstance(data, Mapping) else None
     if not isinstance(raw, Mapping):
-        return TokenUsage()
-    return TokenUsage(input_tokens=_local_count(raw, "promptTokenCount"),
-                      output_tokens=_local_count(raw, "candidatesTokenCount")
-                      + _local_count(raw, "thoughtsTokenCount"))
+        return TokenUsage(counts_complete=False)
+    keys = ("promptTokenCount", "candidatesTokenCount", "thoughtsTokenCount",
+            "toolUsePromptTokenCount")
+    observed = {key: raw.get(key) for key in keys}
+    complete = (
+        all(type(observed[key]) is int and observed[key] >= 0 for key in keys[:3])
+        and type(observed["toolUsePromptTokenCount"]) is int
+        and observed["toolUsePromptTokenCount"] == 0
+    )
+    if complete and "totalTokenCount" in raw:
+        total = raw.get("totalTokenCount")
+        complete = type(total) is int and total >= 0 and total == sum(observed.values())
+    return TokenUsage(input_tokens=_local_count(observed, "promptTokenCount"),
+                      output_tokens=_local_count(observed, "candidatesTokenCount")
+                      + _local_count(observed, "thoughtsTokenCount"),
+                      counts_complete=complete)
 
 
 def anthropic_usage(data: Mapping[str, Any]) -> TokenUsage:

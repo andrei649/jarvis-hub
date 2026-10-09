@@ -66,9 +66,10 @@ class TokenUsage:
     zeros mean no nonzero counts were observed; ``counts_complete=True`` can mark
     an explicitly supplied zero pair. Neither proves the whole turn was free.
 
-    ``counts_complete`` describes only whether a parsed response supplied its
-    required counters. It does not account for retries or other model requests.
-    None leaves legacy producers' observation behavior unchanged.
+    ``counts_complete`` describes whether a parsed response supplies the
+    counters this adapter needs for its measured accounting mapping. It does
+    not make optional provider fields wire-required, or account for retries
+    and other model requests. None leaves legacy producers unchanged.
     """
 
     input_tokens: int = 0
