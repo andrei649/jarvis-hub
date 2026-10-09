@@ -25,7 +25,7 @@ import { useThemeStyles, type Theme } from '../theme';
 import { waitForMicrophoneIdle, type DictationState } from '../voice/pushToTalk';
 import { BriefingWall } from './BriefingWall';
 
-const EMPTY_CONVERSATION: ConversationState = { sessionId: null, messages: [], ready: false, sending: false };
+const EMPTY_CONVERSATION: ConversationState = { sessionId: null, messages: [], ready: false, sending: false, turnOutcome: null };
 
 /** Flatten Markdown to plain text so TTS doesn't read syntax characters aloud. */
 function toPlain(md: string): string {
@@ -42,15 +42,17 @@ function toPlain(md: string): string {
 export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const { theme, styles } = useThemeStyles(makeStyles);
   const { config, configured, ready, chatScope, connectionEpoch } = useServer();
-  const [snapshot, setSnapshot] = useState({ scope: '', state: EMPTY_CONVERSATION });
-  const conversation = useRef<{ scope: string; chat: Conversation } | null>(null);
-  const state = snapshot.scope === chatScope ? snapshot.state : EMPTY_CONVERSATION;
+  const [snapshot, setSnapshot] = useState({ scope: '', connectionEpoch: -1, state: EMPTY_CONVERSATION });
+  const conversation = useRef<{ scope: string; connectionEpoch: number; chat: Conversation } | null>(null);
+  const state = snapshot.scope === chatScope && snapshot.connectionEpoch === connectionEpoch
+    ? snapshot.state : EMPTY_CONVERSATION;
   const { messages, sending } = state;
   const [input, setInput] = useState('');
   const draftVersion = useRef(0);
   const commandsOpenVersion = useRef(0);
   const commandsOpenContext = useRef('');
   const [agent, setAgent] = useState(DEFAULT_PREFS.agent);
+  const agentRef = useRef(DEFAULT_PREFS.agent);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const speech = useSyncExternalStore(subscribeSpeech, getSpeechState, getSpeechState);
   const [sessionsOpen, setSessionsOpen] = useState(false);
@@ -103,9 +105,9 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   // A connection owns its controller. Cleanup revokes old callbacks before a new hub hydrates.
   useEffect(() => {
     if (!ready) return;
-    const chat = new Conversation(config, chatScope, next => setSnapshot({ scope: chatScope, state: next }));
-    conversation.current = { scope: chatScope, chat };
-    setSnapshot({ scope: chatScope, state: chat.state });
+    const chat = new Conversation(config, chatScope, next => setSnapshot({ scope: chatScope, connectionEpoch, state: next }));
+    conversation.current = { scope: chatScope, connectionEpoch, chat };
+    setSnapshot({ scope: chatScope, connectionEpoch, state: chat.state });
     setSessionsOpen(false);
     setCommandsOpen(false);
     setSelectedOpen(false);
@@ -117,9 +119,20 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
       if (conversation.current?.chat === chat) conversation.current = null;
       stopSpeaking();
     };
-  }, [ready, config, chatScope]);
+  }, [ready, config, chatScope, connectionEpoch]);
 
-  useEffect(() => { void loadPrefs().then(p => setAgent(p.agent)); }, []);
+  useEffect(() => {
+    let active = true;
+    void loadPrefs().then(p => {
+      if (!active) return;
+      if (p.agent !== agentRef.current) {
+        agentRef.current = p.agent;
+        conversation.current?.chat.clearTurnOutcome();
+      }
+      setAgent(p.agent);
+    });
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     setBriefing(previous => previous.open ? { open: false, epoch: previous.epoch + 1 } : previous);
   }, [chatScope, connectionEpoch]);
@@ -143,6 +156,12 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   useEffect(scrollToEnd, [messages, scrollToEnd]);
 
   const changeAgent = useCallback((id: string) => {
+    if (id !== agentRef.current) {
+      agentRef.current = id;
+      if (conversation.current?.scope === chatScope && conversation.current.connectionEpoch === connectionEpoch) {
+        conversation.current.chat.clearTurnOutcome();
+      }
+    }
     revokeDictation();
     commandsOpenContext.current = '';
     speechGeneration.current++;
@@ -152,7 +171,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     setSelectedOpen(false);
     setAgent(id);
     savePrefs({ agent: id });
-  }, [revokeDictation]);
+  }, [chatScope, connectionEpoch, revokeDictation]);
 
   const openCommands = useCallback(() => {
     revokeDictation();
@@ -346,6 +365,13 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         }
       />
 
+      {!sending && state.turnOutcome && Number.isSafeInteger(state.turnOutcome.latency_ms)
+        && state.turnOutcome.latency_ms >= 0 ? (
+        <Text accessibilityLabel={`Turn duration: ${state.turnOutcome.latency_ms} ms`} style={styles.turnDuration}>
+          Turn duration: {state.turnOutcome.latency_ms} ms
+        </Text>
+      ) : null}
+
       {selectedOpen && conversation.current?.scope === chatScope ? <SelectedImages
         key={`${chatScope}:${connectionEpoch}:${state.sessionId ?? 'none'}:${agent}`}
         config={config} scope={chatScope} connectionEpoch={connectionEpoch} sessionId={state.sessionId}
@@ -416,6 +442,7 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
   speechTitle: { color: theme.text, fontSize: 13, fontWeight: '600' },
   speechNote: { color: theme.textDim, fontSize: 12, marginTop: 4 },
   listContent: { padding: 12, paddingBottom: 16 },
+  turnDuration: { color: theme.textDim, fontSize: 12, paddingHorizontal: 12, paddingVertical: 6 },
   hint: { alignItems: 'center', marginTop: 48 },
   hintText: { color: theme.textDim, fontSize: 14 },
   inputBar: {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { streamChat } from '../client';
+import { normalizeTurnOutcome } from '../../chat/turnOutcome';
 
 const config = { baseUrl: 'http://hub.local', token: '', adminToken: '' };
 
@@ -104,6 +105,52 @@ describe('streamChat session continuity', () => {
     const { xhr, handlers } = start();
     xhr.emit({ type: 'end', text: 'reply', session_id: 'new_thread' });
     expect(handlers.onDone).toHaveBeenCalledWith('reply', 'new_thread');
+  });
+
+  it('passes only a validated current-turn duration from an explicit end', () => {
+    const { xhr, handlers } = start('old_thread');
+    xhr.emit({ type: 'token', text: 'partial', outcome: { latency_ms: 999 } });
+    xhr.emit({ type: 'end', text: 'reply', session_id: 'new_thread',
+      outcome: { latency_ms: 137, token: 'never forward' } });
+    expect(handlers.onToken).toHaveBeenCalledWith('partial');
+    expect(handlers.onDone).toHaveBeenCalledTimes(1);
+    expect(handlers.onDone).toHaveBeenCalledWith('reply', 'new_thread', { latency_ms: 137 });
+    xhr.emit({ type: 'end', text: 'late', session_id: 'other', outcome: { latency_ms: 555 } });
+    expect(handlers.onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts exact zero and omits a third argument for absent or invalid measurements', () => {
+    const zero = start();
+    zero.xhr.emit({ type: 'end', text: 'zero', outcome: { latency_ms: 0 } });
+    expect(zero.handlers.onDone).toHaveBeenCalledWith('zero', undefined, { latency_ms: 0 });
+    for (const invalid of [undefined, null, {}, [], true, '12',
+      { latency_ms: null }, { latency_ms: true }, { latency_ms: '12' },
+      { latency_ms: -1 }, { latency_ms: 1.5 }, { latency_ms: Number.MAX_SAFE_INTEGER + 1 },
+      { latency_ms: Infinity }]) {
+      const { xhr, handlers } = start();
+      xhr.emit({ type: 'end', text: 'reply', outcome: invalid });
+      expect(handlers.onDone).toHaveBeenCalledTimes(1);
+      expect(handlers.onDone.mock.calls[0]).toEqual(['reply', undefined]);
+    }
+  });
+
+  it('never invents duration when the 200 stream closes without an end frame', () => {
+    const { xhr, handlers } = start();
+    xhr.emit({ type: 'token', text: 'partial' });
+    xhr.close();
+    expect(handlers.onDone.mock.calls).toEqual([['', undefined]]);
+    xhr.emit({ type: 'end', text: 'late', outcome: { latency_ms: 13 } });
+    expect(handlers.onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires an own safe-integer latency and projects no extra fields', () => {
+    const inherited = Object.create({ latency_ms: 7 });
+    expect(normalizeTurnOutcome(inherited)).toBeNull();
+    expect(normalizeTurnOutcome({ latency_ms: Number.NaN })).toBeNull();
+    expect(normalizeTurnOutcome({ latency_ms: 0.0, payload: 'secret' })).toEqual({ latency_ms: 0 });
+    expect(normalizeTurnOutcome({ latency_ms: Number.MAX_SAFE_INTEGER })).toEqual({
+      latency_ms: Number.MAX_SAFE_INTEGER,
+    });
   });
 
   it('preserves null and ignores absent or malformed end IDs', () => {

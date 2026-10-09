@@ -46,6 +46,84 @@ test('first response binds and persists the actual server session', async () => 
   expect(chat.state.messages.at(-1)?.pending).toBe(false);
 });
 
+test('current duration is ephemeral, projected only after a measured end and excluded from persistence', async () => {
+  const chat = await opened();
+  expect((chat.state as any).turnOutcome).toBeNull();
+  chat.send('Hello', 'jarvis');
+  handlers.onDone('Hello back', 'server-session', { latency_ms: 0 });
+  expect(chat.state.sessionId).toBe('server-session');
+  expect((chat.state as any).turnOutcome).toEqual({ latency_ms: 0 });
+  expect(saveConversation).toHaveBeenLastCalledWith('connection-1', {
+    sessionId: 'server-session', messages: chat.state.messages,
+  });
+  expect(JSON.stringify(jest.mocked(saveConversation).mock.calls.at(-1)![1])).not.toContain('latency_ms');
+  chat.send('Next', 'jarvis');
+  expect((chat.state as any).turnOutcome).toBeNull();
+  handlers.onDone('Reply', 'server-session', { latency_ms: 154 });
+  expect((chat.state as any).turnOutcome).toEqual({ latency_ms: 154 });
+});
+
+test('absent duration, stop, error, resume, selected-image start and disposal clear current metric', async () => {
+  const chat = await opened();
+  chat.send('First', 'jarvis');
+  handlers.onDone('First reply', 'one', { latency_ms: 7 });
+  chat.send('No metric', 'jarvis');
+  handlers.onDone('Second reply', 'one');
+  expect((chat.state as any).turnOutcome).toBeNull();
+  chat.send('Third', 'jarvis');
+  handlers.onDone('Third reply', 'one', { latency_ms: 8 });
+  chat.send('Stop this', 'jarvis');
+  chat.stop();
+  expect((chat.state as any).turnOutcome).toBeNull();
+  chat.send('Error', 'jarvis');
+  handlers.onError('offline');
+  expect((chat.state as any).turnOutcome).toBeNull();
+  chat.send('Measured', 'jarvis');
+  handlers.onDone('Answer', 'one', { latency_ms: 9 });
+  chat.resume('two', turns);
+  expect((chat.state as any).turnOutcome).toBeNull();
+  chat.send('Measured again', 'jarvis');
+  handlers.onDone('Answer', 'two', { latency_ms: 10 });
+  const selected = chat.beginSelectedImage('two', chat.revision);
+  expect(selected).not.toBeNull();
+  expect((chat.state as any).turnOutcome).toBeNull();
+  selected!.release();
+  chat.send('Final', 'jarvis');
+  handlers.onDone('Final answer', 'two', { latency_ms: 11 });
+  chat.dispose();
+  expect((chat.state as any).turnOutcome).toBeNull();
+});
+
+test('agent change clears only duration while old stream reply still settles, even after A-to-B-to-A', async () => {
+  const chat = await opened();
+  chat.send('From A', 'agent_a');
+  const old = handlers;
+  (chat as any).clearTurnOutcome();
+  (chat as any).clearTurnOutcome();
+  old.onDone('A completed reply', 'session_a', { latency_ms: 44 });
+  expect(chat.state.messages.at(-1)?.text).toBe('A completed reply');
+  expect(chat.state.sessionId).toBe('session_a');
+  expect((chat.state as any).turnOutcome).toBeNull();
+  expect(cancel).not.toHaveBeenCalled();
+  chat.send('From A again', 'agent_a');
+  handlers.onDone('Current reply', 'session_a', { latency_ms: 55 });
+  expect((chat.state as any).turnOutcome).toEqual({ latency_ms: 55 });
+});
+
+test.each(['/new', '/reset', '/undo'])
+('%s rollover hides its timing but a refused command in place may keep it', async command => {
+  const chat = await opened();
+  chat.resume('old', turns);
+  jest.mocked(resumeSession).mockResolvedValue({ ok: false, session: '', turns: [] });
+  chat.send(command, 'jarvis');
+  handlers.onDone('Created', 'fresh', { latency_ms: 13 });
+  expect(chat.state.sessionId).toBe('fresh');
+  expect((chat.state as any).turnOutcome).toBeNull();
+  chat.send(command, 'jarvis');
+  handlers.onDone('Denied', 'fresh', { latency_ms: 14 });
+  expect((chat.state as any).turnOutcome).toEqual({ latency_ms: 14 });
+});
+
 test('startup restores the session together with its messages before sending', async () => {
   let resolve!: (value: any) => void;
   jest.mocked(loadConversation).mockReturnValueOnce(new Promise(r => { resolve = r; }));

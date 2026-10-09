@@ -514,4 +514,7 @@ uninstrumented turns have none. Selection is applied by the backend from the ord
 Admin Settings `display.status_bar_fields` list (default `latency`; empty hides it).
 The strip clears on new work or session/agent/demo changes and is not transcript history.
 TPS, model/context/cache/compression metrics and H396 typed exit/accounting remain open;
-future work extends the same outcome. Native display is tracked by H18.33.
+future work extends the same outcome. H18.33 adds a local native current-turn strip
+using the server-selected SSE outcome, with strict validation and ephemeral state.
+It clears on work/context changes and never enters stored history; physical-device
+and live-Hub acceptance remain open. See `mobile/docs/h1833-turn-duration.md`.

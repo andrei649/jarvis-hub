@@ -1,5 +1,6 @@
 import type { ServerConfig } from '../storage/settings';
 import { SseDecoder } from './sse';
+import { normalizeTurnOutcome, type TurnOutcome } from '../chat/turnOutcome';
 
 /**
  * Thin client for the Jarvis hub HTTP API (agents/web.py).
@@ -2491,7 +2492,7 @@ function blobToBase64(blob: Blob): Promise<string> {
 export type StreamHandlers = {
   onStart?: (agent: string) => void;
   onToken: (text: string) => void;
-  onDone: (full: string, sessionId?: string | null) => void;
+  onDone: (full: string, sessionId?: string | null, outcome?: TurnOutcome) => void;
   onError: (message: string) => void;
 };
 
@@ -2566,7 +2567,11 @@ export function streamChat(
       else if (evt.type === 'end') {
         finished = true;
         const endSessionId = evt.session_id === null ? null : validSessionId(evt.session_id) ? evt.session_id : undefined;
-        finish(() => handlers.onDone(evt.text || '', endSessionId));
+        const outcome = normalizeTurnOutcome(evt.outcome);
+        finish(() => {
+          if (outcome) handlers.onDone(evt.text || '', endSessionId, outcome);
+          else handlers.onDone(evt.text || '', endSessionId);
+        });
       }
     }
   };

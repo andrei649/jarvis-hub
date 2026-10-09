@@ -225,8 +225,8 @@
   "routes": 555,
   "tests": {
     "backend": 21678,
-    "frontend": 2027,
-    "mobile": 306
+    "frontend": 2039,
+    "mobile": 316
   },
   "version": "1.0.0"
 }
