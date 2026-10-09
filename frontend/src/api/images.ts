@@ -1,7 +1,7 @@
 import { apiFetchOnce } from './client';
 
 export type ImageArtifact = { id: string; bytes: number; width: number; height: number };
-export type ImageState = 'awaiting_approval' | 'queued' | 'generating' | 'ready' | 'rejected' | 'deferred' | 'refused' | 'uncertain';
+export type ImageState = 'awaiting_approval' | 'queued' | 'generating' | 'ready' | 'failed' | 'rejected' | 'deferred' | 'refused' | 'uncertain';
 export type ImageTask = { task_id: number; state: ImageState; artifact: ImageArtifact | null };
 export type CloudImageOptions = {size: '1024x1024' | '1536x1024' | '1024x1536'; quality: 'low' | 'medium' | 'high'};
 export type CloudImageCapability = {configured:boolean; provider:'openai'; model:'gpt-image-1.5'};
@@ -33,7 +33,7 @@ export const editValid = (value: any): value is ImageEdit => {
   if (value.model !== undefined && !modelValid(value.model)) return false;
   return value.upscale === undefined || value.upscale === 2;
 };
-const states: ImageState[] = ['awaiting_approval', 'queued', 'generating', 'ready', 'rejected', 'deferred', 'refused', 'uncertain'];
+const states: ImageState[] = ['awaiting_approval', 'queued', 'generating', 'ready', 'failed', 'rejected', 'deferred', 'refused', 'uncertain'];
 
 async function boundedBody(response: Response, limit: number, signal: AbortSignal): Promise<Uint8Array> {
   signal.throwIfAborted();

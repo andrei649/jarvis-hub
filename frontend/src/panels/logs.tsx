@@ -34,14 +34,14 @@ export function logsPath(f: { file?: string; level?: string; component?: string;
 export function levelColor(level: string): string {
   if (level === 'ERROR' || level === 'CRITICAL') return 'var(--red)';
   if (level === 'WARNING') return 'var(--amber)';
-  if (level === 'DEBUG') return 'var(--ink-3)';
+  if (level === 'DEBUG') return 'var(--ink-2)';
   return 'var(--ink)';
 }
 
 function Segmented({ label, options, value, onChange }: { label: string; options: any[]; value: any; onChange: (v: any) => void }) {
   return (
     <div role="group" aria-label={label} style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-      <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginRight: 4 }}>{label}</span>
+      <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginRight: 4 }}>{label}</span>
       {options.map((opt) => (
         <button key={String(opt)} className="tool-btn" aria-pressed={opt === value}
           onClick={() => onChange(opt)}
@@ -92,7 +92,7 @@ export function LogsPanel() {
     <Card title="Hub log" sub={d?.file ? `${d.file} · newest first` : 'the hub’s own log'}
       live={showLive ? 'live' : undefined} onReload={reload}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 8 }}>
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>
+        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>
           File{' '}
           <select aria-label="File" value={file || d?.file || ''} style={inpS}
             onChange={(ev) => setFile(ev.target.value)} disabled={!files.length}>
@@ -100,7 +100,7 @@ export function LogsPanel() {
           </select>
         </label>
         <Segmented label="Level" options={LOG_LEVELS} value={level} onChange={setLevel} />
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>
+        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>
           Component{' '}
           <select aria-label="Component" value={component} style={inpS}
             onChange={(ev) => setComponent(ev.target.value)}>
@@ -109,7 +109,7 @@ export function LogsPanel() {
           </select>
         </label>
         <Segmented label="Lines" options={LOG_LINES} value={lines} onChange={setLines} />
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', display: 'flex', gap: 4, alignItems: 'center' }}>
+        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', display: 'flex', gap: 4, alignItems: 'center' }}>
           <input type="checkbox" aria-label="Auto-refresh every 5 s" checked={live}
             onChange={(ev) => setLive(ev.target.checked)} />
           auto-refresh 5 s
@@ -121,7 +121,7 @@ export function LogsPanel() {
       {d?.note && <div role="note" style={{ fontSize: 12, color: d.enabled ? 'var(--ink-2)' : 'var(--amber)', margin: '6px 0' }}>{d.note}</div>}
       {d && !status && !d.note && !entries.length && <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>No records match these filters.</div>}
       {!status && d?.truncated && (
-        <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', margin: '4px 0' }}>
+        <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', margin: '4px 0' }}>
           only the last {Math.round(Number(d.scanned_bytes || 0) / 1024)} KiB of the file were read
         </div>
       )}

@@ -30,7 +30,7 @@ def is_valid_session_id(session_id: object) -> bool:
     return (
         isinstance(session_id, str)
         and 0 < len(session_id) <= _MAX_SESSION_ID_LEN
-        and _SESSION_ID_RE.match(session_id) is not None
+        and _SESSION_ID_RE.fullmatch(session_id) is not None
     )
 
 

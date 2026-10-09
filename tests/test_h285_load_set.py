@@ -478,9 +478,19 @@ def test_a_toggle_writes_an_audit_row(monkeypatch):
     from agents.core.security.types import SecurityEventType
 
     client, orch = _toggle_client(monkeypatch)
-    client.put("/plugins/weather/toggle", headers={"X-Admin-Token": _TOKEN})
-    event = orch.audit.log.call_args.args[0]
-    assert event.event_type == SecurityEventType.SETTINGS_CHANGE
+    response = client.put("/plugins/weather/toggle", headers={"X-Admin-Token": _TOKEN})
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": "weather", "enabled": False, "action": "disabled", "persisted": True,
+    }
+    # Authentication is audited asynchronously and may be recorded after the toggle.
+    events = [
+        call.args[0] for call in orch.audit.log.call_args_list
+        if call.args[0].event_type == SecurityEventType.SETTINGS_CHANGE
+    ]
+    assert len(events) == 1
+    event = events[0]
+    assert event.action_taken == "plugin_disabled"
     assert "weather" in event.content_preview and "plugins.weather" in event.content_preview
 
 

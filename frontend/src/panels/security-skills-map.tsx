@@ -82,10 +82,10 @@ const Refusal = ({ text }: { text: string }) => (
 );
 
 const Head = ({ children }) => (
-  <div style={{ ...mono, fontSize: 10, letterSpacing: '.06em', color: 'var(--ink-3)', margin: '10px 0 4px' }}>{children}</div>
+  <div style={{ ...mono, fontSize: 10, letterSpacing: '.06em', color: 'var(--ink-2)', margin: '10px 0 4px' }}>{children}</div>
 );
 const Note = ({ c, children }: { c?: any; children?: any }) => (
-  <div style={{ ...mono, fontSize: 10, lineHeight: 1.5, color: c || 'var(--ink-3)', marginTop: 4 }}>{children}</div>
+  <div style={{ ...mono, fontSize: 10, lineHeight: 1.5, color: c || 'var(--ink-2)', marginTop: 4 }}>{children}</div>
 );
 
 export function SecuritySkillsMapPanel() {
@@ -155,7 +155,7 @@ export function SecuritySkillsMapPanel() {
         <Row key={t.id ?? i}>
           <span style={{ ...mono, color: 'var(--ink-2)', minWidth: 92 }}>{t.id}</span>
           <span style={{ ...mono, color: 'var(--ink)' }}>{t.name}</span>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginLeft: 'auto', textAlign: 'right' }}>{t.summary}</span>
+          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginLeft: 'auto', textAlign: 'right' }}>{t.summary}</span>
         </Row>
       ))}
 
@@ -164,7 +164,7 @@ export function SecuritySkillsMapPanel() {
         <Row key={f.id ?? i}>
           <span style={{ ...mono, color: 'var(--ink-2)', minWidth: 92 }}>{f.id}</span>
           <span style={{ ...mono, color: 'var(--ink)' }}>{f.name}</span>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginLeft: 'auto', textAlign: 'right' }}>{f.summary}</span>
+          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginLeft: 'auto', textAlign: 'right' }}>{f.summary}</span>
         </Row>
       ))}
 
@@ -192,10 +192,10 @@ export function SecuritySkillsMapPanel() {
         onChange={(ev) => setBehavior(ev.target.value)}
       />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-        <span style={{ ...mono, fontSize: 10, color: behavior.length >= BEHAVIOR_MAX ? 'var(--amber)' : 'var(--ink-3)' }}>
+        <span style={{ ...mono, fontSize: 10, color: behavior.length >= BEHAVIOR_MAX ? 'var(--amber)' : 'var(--ink-2)' }}>
           {behavior.length}/{BEHAVIOR_MAX}
         </span>
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }} htmlFor="ssm-topk">top_k</label>
+        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }} htmlFor="ssm-topk">top_k</label>
         <input
           id="ssm-topk"
           type="number"
@@ -221,7 +221,7 @@ export function SecuritySkillsMapPanel() {
 
       {mapRes && !mapErr && (
         <div style={{ marginTop: 6 }}>
-          <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>
+          <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>
             {cands.length} candidate(s) shown · heuristic {String((mapRes as any).heuristic)} · top_k {mapSent} · count (post-slice) {String((mapRes as any).count)}
           </div>
           {cands.length === mapSent && (
@@ -245,7 +245,7 @@ export function SecuritySkillsMapPanel() {
                   <Tag>score {String(c.score)}</Tag>
                 </span>
               </div>
-              <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', paddingLeft: 22 }}>
+              <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', paddingLeft: 22 }}>
                 matched: {arr(c.evidence).join(', ')}
               </div>
             </div>
@@ -289,7 +289,7 @@ export function SecuritySkillsMapPanel() {
                 </span>
               </div>
               {arr(r.countermeasures).map((cm: any, j: number) => (
-                <div key={cm.id ?? j} style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', paddingLeft: 14 }}>
+                <div key={cm.id ?? j} style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', paddingLeft: 14 }}>
                   {cm.id} · {cm.name} ({cm.d3fend_tactic})
                 </div>
               ))}
@@ -302,7 +302,7 @@ export function SecuritySkillsMapPanel() {
             </Note>
           )}
 
-          <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+          <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
             CSF reached by this curated mapping: {coverage.join(', ') || 'none'}
           </div>
           <div style={{ ...mono, fontSize: 10, color: 'var(--amber)' }}>

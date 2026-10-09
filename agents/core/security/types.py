@@ -20,6 +20,11 @@ class RedactionMode(str, Enum):
 
 
 class SecurityEventType(str, Enum):
+    AUTH_SUCCESS = "auth_success"
+    AUTH_FAILURE = "auth_failure"
+    TOKEN_ISSUED = "token_issued"  # nosec B105 - audit event label, not a credential.
+    TOKEN_ROTATED = "token_rotated"  # nosec B105 - audit event label, not a credential.
+    TOKEN_REVOKED = "token_revoked"  # nosec B105 - audit event label, not a credential.
     SECRET_DETECTED = "secret_detected"
     PII_DETECTED = "pii_detected"
     SSRF_BLOCKED = "ssrf_blocked"

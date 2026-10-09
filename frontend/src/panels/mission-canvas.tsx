@@ -98,12 +98,12 @@ const reason = (err: any): string => {
 const RED = 'var(--red)';
 const AMBER = 'var(--amber)';
 const GREEN = 'var(--green)';
-const INK3 = 'var(--ink-3)';
+const INK2 = 'var(--ink-2)';
 
 const missionColor = (s: string) => s === 'active' ? GREEN : s === 'paused' ? AMBER
-  : s === 'failed' ? RED : s === 'done' ? 'var(--accent-light)' : INK3;
+  : s === 'failed' ? RED : s === 'done' ? 'var(--accent-light)' : INK2;
 const stepColor = (s: string) => s === 'running' ? AMBER : s === 'done' ? GREEN
-  : s === 'failed' ? RED : INK3;
+  : s === 'failed' ? RED : INK2;
 
 /* Why a mission that is not active gets three different sentences, not one.
 
@@ -135,11 +135,11 @@ const notActiveHint = (raw: any): string => {
   return head + '.';
 };
 
-const note = (children: any, c = INK3) => (
+const note = (children: any, c = INK2) => (
   <div style={{ ...mono, fontSize: 10, lineHeight: 1.5, color: c, padding: '4px 0' }}>{children}</div>
 );
 const foot = (children: any) => (
-  <div style={{ ...mono, fontSize: 9.5, color: INK3, marginTop: 8, lineHeight: 1.5 }}>{children}</div>
+  <div style={{ ...mono, fontSize: 9.5, color: INK2, marginTop: 8, lineHeight: 1.5 }}>{children}</div>
 );
 
 export function MissionCanvasPanel() {
@@ -253,7 +253,7 @@ export function MissionCanvasPanel() {
                     return (
                       <div key={si} data-depth={depth} style={depth ? { paddingLeft: depth * 14 } : undefined}>
                         <Row>
-                          <span style={{ ...mono, color: INK3 }}>#{idx}</span>
+                          <span style={{ ...mono, color: INK2 }}>#{idx}</span>
                           <span style={{ ...mono, color: 'var(--ink-2)' }}>{s.title || '(untitled step)'}</span>
                           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                             <Tag c={stepColor(s.status)}>{s.status}</Tag>
@@ -342,15 +342,15 @@ export function MissionCanvasPanel() {
               <span style={{ ...mono, color: 'var(--ink-2)' }}>all agents</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                 <Tag>{els.length} total</Tag>
-                <Tag c={pinnedTotal > 0 ? AMBER : INK3}>{pinnedTotal} pinned</Tag>
+                <Tag c={pinnedTotal > 0 ? AMBER : INK2}>{pinnedTotal} pinned</Tag>
               </span>
             </Row>
             {authors.map((a) => (
               <Row key={a}>
-                <span style={{ ...mono, color: INK3 }}>{a}</span>
+                <span style={{ ...mono, color: INK2 }}>{a}</span>
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                   <Tag>{counts[a].n} total</Tag>
-                  <Tag c={counts[a].p > 0 ? AMBER : INK3}>{counts[a].p} pinned</Tag>
+                  <Tag c={counts[a].p > 0 ? AMBER : INK2}>{counts[a].p} pinned</Tag>
                 </span>
               </Row>
             ))}
@@ -367,7 +367,7 @@ export function MissionCanvasPanel() {
             <option value="">all agents</option>
             {authors.map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
-          <label style={{ ...mono, fontSize: 10, color: INK3, display: 'flex', gap: 4, alignItems: 'center' }}>
+          <label style={{ ...mono, fontSize: 10, color: INK2, display: 'flex', gap: 4, alignItems: 'center' }}>
             <input
               type="checkbox"
               aria-label="keep pinned elements"

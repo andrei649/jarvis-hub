@@ -22,6 +22,7 @@
  "plugin.egress": "kernel",
  "repo.sync": "kernel",
  "report.export": "kernel",
+ "research": "kernel",
  "settings.voice_command": "kernel",
  "skill.install": "kernel",
  "social.*": "kernel",

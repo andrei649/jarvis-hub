@@ -47,6 +47,7 @@ from .action_origin import (
     reset_action_origin,
 )
 from .turn_approvals import bind_turn_approvals, reset_turn_approvals
+from .turn_outcome import measure_turn_latency
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .commands import Principal, build_default_registry
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
@@ -314,22 +315,35 @@ _session_is_shared: contextvars.ContextVar = contextvars.ContextVar(
 
 
 def _sum_usage(running, incoming):
-    """Add one model turn's reported counts to an agent's running total.
+    """Add one model turn's observed counts to an agent's running total.
 
     A tool loop makes several requests for one answer, so what the turn cost is the
     sum, not the last request. Returns a new value rather than mutating: the caller
     stores it back into a per-turn map, and a mutable accumulator shared across
-    agents is how one agent ends up billed for another's tokens.
+    agents is how one agent ends up billed for another's tokens. Availability is
+    true only for all explicitly complete observations; mixed or incomplete
+    evidence stays incomplete while the known numeric lower bounds still add.
+    A sum of two or more requests is never one prompt prefix, so its prompt
+    anchor marker is False independently of the accounting conjunction.
     """
     from .llm.tool_protocol import TokenUsage
 
     if running is None:
         return incoming
+    prior_complete = getattr(running, "counts_complete", None)
+    next_complete = getattr(incoming, "counts_complete", None)
+    complete = (
+        True if prior_complete is True and next_complete is True
+        else None if prior_complete is None and next_complete is None
+        else False
+    )
     return TokenUsage(
         input_tokens=running.input_tokens + incoming.input_tokens,
         output_tokens=running.output_tokens + incoming.output_tokens,
         cache_read=running.cache_read + incoming.cache_read,
         cache_write=running.cache_write + incoming.cache_write,
+        counts_complete=complete,
+        prompt_counts_complete=False,
     )
 
 
@@ -346,9 +360,15 @@ def _billable_from_usage(usage) -> tuple[int, int, int] | None:
     been checked against would be worse than a known, stated under-report. It errs
     the safe way: the bill reads slightly low, never the saving high.
 
-    ``None`` means nothing was reported and the caller keeps its estimate.
+    Explicitly incomplete counts return ``None`` even when a valid sibling is
+    nonzero, so the caller estimates with that known lower bound. Explicitly
+    complete zero counts are a provider observation, while legacy unflagged
+    all-zero usage remains unreported. ``None`` tells the caller to estimate.
     """
-    if usage is None or not getattr(usage, "reported", False):
+    if usage is None or getattr(usage, "counts_complete", None) is False:
+        return None
+    if (getattr(usage, "counts_complete", None) is not True
+            and not getattr(usage, "reported", False)):
         return None
     billable_input = usage.input_tokens + usage.cache_read + usage.cache_write
     return billable_input, usage.output_tokens, usage.cache_read
@@ -1996,6 +2016,7 @@ class Orchestrator:
         # had.
         self._meter_store()["_last_reported_usage"] = dict(value or {})
 
+    @measure_turn_latency
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                            session_id: str = None) -> str:
         from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
@@ -2208,6 +2229,7 @@ class Orchestrator:
         )
         return synthesized
 
+    @measure_turn_latency
     async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                   agent_override: str = None, session_id: str = None) -> str:
         from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
@@ -2431,6 +2453,11 @@ class Orchestrator:
                         backend, router_model, route_name = self.llm_router.select_backend(agent_id, prompt)
                     if router_model:
                         model = router_model
+                    if prepared is not None:
+                        from .conversation_clock import render_snapshot
+
+                        rendered_system = render_snapshot(system_prompt, prompt_clock.get())
+                        agent._check_prepared_budget(prepared, prompt, rendered_system)
                     # Reasoning models on the deep slot need a far larger budget:
                     # 1–2k tokens is consumed by chain-of-thought before any
                     # answer, so a small cap truncates mid-thought.
@@ -2475,6 +2502,17 @@ class Orchestrator:
                                 system_prompt,
                                 history_parts,
                             )
+                            if prepared is not None:
+                                material_tokens = estimate_tokens(cache_material.system_instruction) + sum(
+                                    estimate_tokens(part) for part in cache_material.history
+                                )
+                                # The full canonical prompt was checked above. A
+                                # cache material check uses an empty tail so the
+                                # same history is not counted a second time.
+                                agent._check_prepared_budget(
+                                    prepared, "", rendered_system,
+                                    cached_input_tokens=material_tokens,
+                                )
                             cache_binding = await self.context_cache.acquire_binding(
                                 session_id=self.session_id,
                                 model=model,
@@ -2523,6 +2561,11 @@ class Orchestrator:
                                         : cache_binding.cached_prefix_count
                                     ]
                                 )
+                                if prepared is not None:
+                                    agent._check_prepared_budget(
+                                        prepared, prompt, rendered_system,
+                                        cached_input_tokens=cached_tok,
+                                    )
                             else:
                                 self._spawn_cache_task(
                                     self._async_create_cache(
@@ -2551,6 +2594,8 @@ class Orchestrator:
                         if inspect.isawaitable(emitted):
                             await emitted
                     return msg
+                except CompactionClockRefused:
+                    raise
                 except RuntimeError:
                     msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream")
@@ -2598,6 +2643,8 @@ class Orchestrator:
                         usage_sink=_meter,
                         session_id=self.session_id,
                         clock_snapshot=prompt_clock.get(),
+                        **({"prepared_route": prepared, "cached_input_tokens": cached_tok}
+                           if prepared is not None else {}),
                     )
                 synthesized = response
                 self._last_routes[agent_id] = route_name or ""
@@ -3962,6 +4009,8 @@ class Orchestrator:
         than clearing it: the transcript did not shrink because one backend
         stayed quiet.
         """
+        if getattr(usage, "prompt_counts_complete", None) is False:
+            return
         # TokenUsage stores disjoint input/cache categories. Cached prefixes
         # occupy context too; totals-only adapters leave both cache fields zero.
         prompt_tokens = sum(getattr(usage, key, 0) for key in
@@ -4346,6 +4395,8 @@ class Orchestrator:
                 else:
                     reply = f"[{agent_id} timeout]"
                 return agent_id, reply, 0.0, current_action_origin()
+            except CompactionClockRefused:
+                return agent_id, CONTEXT_REFUSED_REPLY, 0.0, current_action_origin()
             except Exception as e:
                 self.agents[agent_id]._record_failure(str(e))
                 log_error(logger, E_INTERNAL_UNEXPECTED, component=f"agent:{agent_id}", detail=str(e))
@@ -4547,8 +4598,22 @@ class Orchestrator:
                 # estimate below. Before this the meter had no way to hear it — the
                 # Anthropic client never read `usage` and Gemini's is dropped in
                 # `_extract_text` — so `cached` was a rate no cloud route could earn.
-                reported = _billable_from_usage(
-                    getattr(self, "_last_reported_usage", {}).get(agent_id))
+                observed = getattr(self, "_last_reported_usage", {}).get(agent_id)
+                reported = _billable_from_usage(observed)
+                incomplete = getattr(observed, "counts_complete", None) is False
+                if reported is not None:
+                    input_tokens, output_tokens = reported[:2]
+                else:
+                    input_tokens = (getattr(self, "_last_prompt_tokens", {}).get(agent_id)
+                                    or estimate_tokens(text))
+                    output_tokens = estimate_tokens(resp)
+                    if incomplete:
+                        known_input = sum(getattr(observed, key, 0) for key in
+                                          ("input_tokens", "cache_read", "cache_write"))
+                        input_tokens = max(input_tokens, known_input)
+                        output_tokens = max(output_tokens, observed.output_tokens)
+                cached_tokens = (reported[2] if reported is not None
+                                 else 0 if incomplete else cached_prefix)
                 metadata = {
                     # CDX-2: record the real origin (web/telegram/discord/voice/
                     # autonomy/…) instead of always "web", so the %-local/cloud
@@ -4561,17 +4626,12 @@ class Orchestrator:
                     # reporting zero. `cached_tokens <= input_tokens` holds by
                     # construction, which is what stops the estimator inventing a
                     # saving on tokens that were never sent.
-                    "input_tokens": (
-                        reported[0] if reported else (
-                            getattr(self, "_last_prompt_tokens", {}).get(agent_id)
-                            or estimate_tokens(text)
-                        )
-                    ),
-                    "output_tokens": reported[1] if reported else estimate_tokens(resp),
-                    "cached_tokens": reported[2] if reported else cached_prefix,
-                    "cache_hit": (reported[2] if reported else cached_prefix) > 0,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "cached_tokens": cached_tokens,
+                    "cache_hit": cached_tokens > 0,
                     # So a reader of the ledger can tell a measurement from a guess.
-                    "usage_source": "provider" if reported else "estimate",
+                    "usage_source": "provider" if reported is not None else "estimate",
                 }
                 self.learning.record(
                     agent_id=agent_id,

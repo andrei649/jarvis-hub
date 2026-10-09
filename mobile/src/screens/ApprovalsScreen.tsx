@@ -12,6 +12,7 @@ import {
 import { useServer } from '../context/ServerContext';
 import { useThemeStyles, type Theme } from '../theme';
 import { approvalPolicy } from './approvalPolicy';
+import { AdvisoryOpinion, ModelRolesView } from './AdvisoryApproval';
 
 type Busy = { id: number; action: ApprovalAction } | null;
 
@@ -103,6 +104,7 @@ function ApprovalCard({
       </View>
 
       {preview && <Text style={styles.payload}>{preview}</Text>}
+      <AdvisoryOpinion task={task} />
 
       {!policy.canApprove && (
         <Text style={styles.approvalBoundary}>Approval unavailable in mobile app · continue in Owner HUD</Text>
@@ -184,6 +186,7 @@ export function ApprovalsScreen({ onGoToSettings }: { onGoToSettings: () => void
         <CountPill label="reversible" value={counts.reversible} color={theme.ok} />
         <CountPill label="irreversible" value={counts.irreversible} color={theme.warn} />
       </View>
+      <ModelRolesView />
 
       {error && (
         <View style={styles.errorBox}>

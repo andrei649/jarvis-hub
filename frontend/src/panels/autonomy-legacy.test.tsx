@@ -26,12 +26,16 @@ const STATUS_OK = {
 };
 
 const OBSERVER_OK = { enabled: true, probes: 5, tracked: 5, unhealthy: [{ key: 'qdrant', detail: 'qdrant unreachable on :6333', severity: 'CRITICAL' }] };
+const MEDIATION_OK = {
+  mode: 'enforce', valid: true,
+  stats: { authorized_enqueue: 2, governed: 3, refused_unmediated: 4, ungoverned_detected: 5 },
+};
 
 function mockRoutes(handler) {
   const fn = vi.fn(async (url, init) => {
     const u = String(url);
     const method = String((init && init.method) || 'GET').toUpperCase();
-    const r = handler(u, method, init) || { status: 200, body: {} };
+    const r = (await handler(u, method, init)) || { status: 200, body: {} };
     return { ok: r.status < 400, status: r.status, json: async () => r.body };
   });
   global.fetch = fn;
@@ -42,6 +46,7 @@ function mockRoutes(handler) {
 const baseline = (over = {}) => (u, m) => {
   const o: any = over;
   if (u === '/autonomy/status') return o.status || { status: 200, body: STATUS_OK };
+  if (u === '/autonomy/mediation') return o.mediation || { status: 200, body: MEDIATION_OK };
   if (u === '/autonomy/observer' && m === 'GET') return o.observer || { status: 200, body: OBSERVER_OK };
   if (u === '/autonomy/preferences/suggestions') return o.suggestions || { status: 200, body: { suggestions: [] } };
   if (u === '/autonomy/observer/run' && m === 'POST') return o.run || { status: 200, body: { ok: true, summary: { sampled: 0, findings: 0, submitted: 0, unhealthy: [] } } };
@@ -57,6 +62,98 @@ const lastPost = (fn, path) => {
 beforeEach(() => {
   try { localStorage.clear(); localStorage.setItem('hud.admin_token', 'adm'); } catch { /* ignore */ }
   vi.restoreAllMocks();
+});
+
+describe('AutonomyControlPanel — mediation evidence status', () => {
+  it.each(['off', 'hold', 'enforce'])('shows effective %s mode and four verified event counts through the admin GET', async (mode) => {
+    const fn = mockRoutes(baseline({ mediation: { status: 200, body: { ...MEDIATION_OK, mode } } }));
+    render(<AutonomyControlPanel />);
+    await waitFor(() => expect(screen.getByText(`Effective mode: ${mode}`)).toBeTruthy());
+    expect(screen.getByText('Evidence: verified')).toBeTruthy();
+    for (const label of ['Authorized enqueue events: 2', 'Governed events: 3', 'Refused unmediated events: 4', 'Ungoverned events detected: 5']) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+    expect(screen.getByText(/verified recorded events, not every task or proof that mediation is ready for use/i)).toBeTruthy();
+    const calls = fn.mock.calls.filter(([path]) => String(path) === '/autonomy/mediation');
+    expect(calls).toHaveLength(1);
+    expect(calls[0][1].method).toBe('GET');
+    expect(calls[0][1].headers['X-Admin-Token']).toBe('adm');
+    expect(fn.mock.calls.every(([, init]) => init.method === 'GET')).toBe(true);
+  });
+
+  it('shows invalid evidence and effective mode without queue placeholder counts', async () => {
+    mockRoutes(baseline({ mediation: { status: 200, body: { mode: 'hold', valid: false, stats: null } } }));
+    render(<AutonomyControlPanel />);
+    await waitFor(() => expect(screen.getByText('Evidence: unavailable or invalid')).toBeTruthy());
+    expect(screen.getByText('Effective mode: hold')).toBeTruthy();
+    expect(screen.queryByText(/Authorized enqueue events:/)).toBeNull();
+    expect(screen.queryByText(/Governed events:/)).toBeNull();
+  });
+
+  it.each([
+    { ...MEDIATION_OK, mode: 'future' },
+    { ...MEDIATION_OK, stats: { authorized_enqueue: 2, governed: 3, refused_unmediated: 4 } },
+    { ...MEDIATION_OK, stats: { ...MEDIATION_OK.stats, governed: true } },
+    { ...MEDIATION_OK, stats: { ...MEDIATION_OK.stats, governed: -1 } },
+    { ...MEDIATION_OK, stats: { ...MEDIATION_OK.stats, governed: 1.5 } },
+    { ...MEDIATION_OK, stats: { ...MEDIATION_OK.stats, governed: '3' } },
+    { mode: 'off', valid: false, stats: { ...MEDIATION_OK.stats } },
+  ])('hides all values for a malformed mediation snapshot', async (body) => {
+    mockRoutes(baseline({ mediation: { status: 200, body } }));
+    render(<AutonomyControlPanel />);
+    await waitFor(() => expect(screen.getByText('Mediation status unavailable')).toBeTruthy());
+    expect(screen.queryByText(/Effective mode:/)).toBeNull();
+    expect(screen.queryByText(/Evidence: verified/)).toBeNull();
+    expect(screen.queryByText(/Authorized enqueue events:/)).toBeNull();
+  });
+
+  it.each([401, 403, 503])('hides counts after HTTP %i', async (status) => {
+    mockRoutes(baseline({ mediation: { status, body: { error: 'unavailable' } } }));
+    render(<AutonomyControlPanel />);
+    await waitFor(() => expect(screen.getByText('Mediation status unavailable')).toBeTruthy());
+    expect(screen.queryByText(/Effective mode:/)).toBeNull();
+    expect(screen.queryByText(/Authorized enqueue events:/)).toBeNull();
+  });
+
+  it('hides the last valid counts immediately during reload and keeps them hidden after network failure', async () => {
+    let failRefresh;
+    const pending = new Promise((_resolve, reject) => { failRefresh = reject; });
+    let reads = 0;
+    const fn = mockRoutes((path, method, init) => {
+      if (path === '/autonomy/mediation') {
+        reads += 1;
+        return reads === 1 ? { status: 200, body: MEDIATION_OK } : pending;
+      }
+      return baseline()(path, method, init);
+    });
+    render(<AutonomyControlPanel />);
+    await waitFor(() => expect(screen.getByText('Authorized enqueue events: 2')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+    expect(screen.queryByText(/Authorized enqueue events:/)).toBeNull();
+    expect(screen.getByText('Checking mediation status…')).toBeTruthy();
+    expect(fn.mock.calls.filter(([path]) => String(path) === '/autonomy/mediation')).toHaveLength(2);
+    failRefresh(new Error('offline'));
+    await waitFor(() => expect(screen.getByText('Mediation status unavailable')).toBeTruthy());
+    expect(screen.queryByText(/Authorized enqueue events:/)).toBeNull();
+  });
+
+  it('replaces a previous valid count snapshot with no counts when verification becomes unavailable', async () => {
+    let reads = 0;
+    mockRoutes((path, method, init) => {
+      if (path === '/autonomy/mediation') {
+        reads += 1;
+        return { status: 200, body: reads === 1 ? MEDIATION_OK : { mode: 'enforce', valid: false, stats: null } };
+      }
+      return baseline()(path, method, init);
+    });
+    render(<AutonomyControlPanel />);
+    await waitFor(() => expect(screen.getByText('Authorized enqueue events: 2')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+    await waitFor(() => expect(screen.getByText('Evidence: unavailable or invalid')).toBeTruthy());
+    expect(screen.getByText('Effective mode: enforce')).toBeTruthy();
+    expect(screen.queryByText(/Authorized enqueue events:/)).toBeNull();
+    expect(screen.queryByText(/Governed events:/)).toBeNull();
+  });
 });
 
 describe('AutonomyControlPanel — the queue census, the observer and the governed call request', () => {

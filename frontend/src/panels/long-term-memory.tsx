@@ -13,9 +13,9 @@ export const UNDO_PATH = '/api/memory/core/undo';
 function Facts({ title, facts }: { title: string; facts: string[] }) {
   return (
     <div style={{ marginBottom: 8 }}>
-      <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-3)', letterSpacing: '.08em' }}>{title} · {facts.length}</div>
+      <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em' }}>{title} · {facts.length}</div>
       {facts.length === 0
-        ? <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>nothing saved</div>
+        ? <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>nothing saved</div>
         : facts.map((fact, i) => <Row key={i}><span style={{ fontSize: 12 }}>{fact}</span></Row>)}
     </div>
   );
@@ -38,7 +38,7 @@ export function LongTermMemoryPanel() {
     <Card title="LONG-TERM MEMORY" live={asLive(d, enabled)} sub={d ? (enabled ? `${undoable.length} undoable` : 'off') : null} onReload={reload}>
       <State e={e} loading={loading} n={d ? 1 : 0} />
       {d && !enabled && (
-        <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+        <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>
           Memory is switched off (cognition.enabled and cognition.memory_enabled).
         </div>
       )}
@@ -46,8 +46,8 @@ export function LongTermMemoryPanel() {
         <>
           <Facts title="AGENT NOTES" facts={arr(d, 'memory')} />
           <Facts title="USER PROFILE" facts={arr(d, 'user')} />
-          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-3)', letterSpacing: '.08em', marginTop: 6 }}>RECENT WRITES</div>
-          {undoable.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>none to undo</div>}
+          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em', marginTop: 6 }}>RECENT WRITES</div>
+          {undoable.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>none to undo</div>}
           {undoable.map((w: any) => (
             <Row key={w.ref}>
               <span style={{ ...mono }}>{w.ref}</span>

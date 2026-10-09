@@ -31,7 +31,7 @@ export function RecapView({ recap, session }: { recap: any; session: string }) {
   const exchanges = Array.isArray(recap?.exchanges) ? recap.exchanges : [];
   const total = Number(recap?.total) || exchanges.length;
   return <div data-testid="session-recap" style={{ marginTop: 8, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
-    <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', marginBottom: 4 }}>
+    <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-2)', marginBottom: 4 }}>
       RESUMED {session} · {exchanges.length < total ? `LAST ${exchanges.length} OF ${total} EXCHANGES` : `${total} EXCHANGE${total === 1 ? '' : 'S'}`}
     </div>
     {exchanges.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>This conversation has no turns yet.</div>}
@@ -39,9 +39,9 @@ export function RecapView({ recap, session }: { recap: any; session: string }) {
       {(Array.isArray(ex) ? ex : []).map((t: any, j: number) => (
         <div key={j} style={{ fontSize: 11, lineHeight: 1.45, color: t.role === 'user' ? 'var(--amber)' : 'var(--ink)' }}>
           <span aria-hidden="true">{t.role === 'user' ? '● ' : '◆ '}</span>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>{t.role === 'user' ? 'you' : (t.agent || 'nerva')}: </span>
+          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{t.role === 'user' ? 'you' : (t.agent || 'nerva')}: </span>
           {String(t.text ?? '')}
-          {toolLine(t) && <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}> {toolLine(t)}</span>}
+          {toolLine(t) && <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}> {toolLine(t)}</span>}
         </div>
       ))}
     </div>)}
@@ -99,11 +99,11 @@ export function SessionsPanel() {
         {/* H413: the session's title (its first words, then the local model's name); the id stays visible. */}
         {s?.title
           ? <span style={{ fontSize: 12, color: 'var(--ink)' }} title={sid}>{s.title}
-              <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-3)', marginLeft: 6 }}>{sid.slice(0, 8)}</span></span>
+              <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', marginLeft: 6 }}>{sid.slice(0, 8)}</span></span>
           : <span style={{ ...mono, color: 'var(--accent-light)' }}>{sid}</span>}
         {pinned && <span data-testid="pinned-badge" title={`pinned ${s.pinned_at}`}
           style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>pinned</span>}
-        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{s?.turns ?? s?.count ?? ''}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{s?.turns ?? s?.count ?? ''}</span>
         {sid && (pinned
           ? <button className="tool-btn" disabled={!!busy} aria-label={`unpin ${sid}`} onClick={() => unpin(sid)}>unpin</button>
           : <button className="tool-btn" disabled={!!busy} aria-label={`pin ${sid}`} onClick={() => pin(sid)}>pin</button>)}

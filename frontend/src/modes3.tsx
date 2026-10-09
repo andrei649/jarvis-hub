@@ -12,14 +12,14 @@ function SubH3({ children, style }: { children?: any; style?: any }){ return <di
  * this cycle (keys/backups/channels/host have no seed fallback any more). */
 function NotConnected({ what }: { what?: string }){
   return (
-    <div style={{ fontFamily:'var(--font-mono)', fontSize:9, letterSpacing:'.08em', color:'var(--ink-3)', padding:'3px 0' }}>
+    <div style={{ fontFamily:'var(--font-mono)', fontSize:9, letterSpacing:'.08em', color:'var(--ink-2)', padding:'3px 0' }}>
       not connected{what ? ` · ${what}` : ''}
     </div>
   );
 }
 
 /* ============ CHAT · distraction-free ============ */
-function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, lang, t, agent, sessionId, selectedTurn }: any){
+function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, lang, t, agent, sessionId, selectedTurn, outcome }: any){
   return (
     <div className="chat-wrap">
       <div className="chat-col">
@@ -29,7 +29,7 @@ function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, l
           <span className="chat-live"><span className="sdot active"></span>local</span>
         </div>
         <Conversation messages={messages} thinking={thinking} onStop={onStop} onProv={onProv} lang={lang} t={t}/>
-        <InputBar onSubmit={onSubmit} mic={mic} setMic={setMic} t={t} agent={agent} sessionId={sessionId} selectedTurn={selectedTurn}/>
+        <InputBar onSubmit={onSubmit} mic={mic} setMic={setMic} t={t} agent={agent} sessionId={sessionId} selectedTurn={selectedTurn} outcome={outcome}/>
       </div>
     </div>
   );
@@ -173,10 +173,16 @@ function EstopCard(){
   const [busy,setBusy]=uS3(false);
   const [reason,setReason]=uS3('');
   uE3(()=>{ let alive=true;
-    getEstopStatus().then(r=>{ if(alive&&r) setSt(r); }).catch(()=>{ if(alive) setErr(true); });
+    getEstopStatus().then(r=>{
+      if (!alive) return;
+      if (r && typeof r.engaged === 'boolean') setSt(r);
+      else setErr(true);
+    }).catch(()=>{ if(alive) setErr(true); });
     return ()=>{ alive=false; };
   },[]);
   const engaged = !!st?.engaged;
+  // This reports only the EstopCard request, not all Admin data refreshed by live.ts.
+  const readiness = busy || (!err && st==null) ? 'pending' : err ? 'unavailable' : 'ready';
   // H168: the pause is the tier-1 two-step ConfirmAction; it stays open until the hub answers.
   const doEngage = () => {
     if (busy) return false;
@@ -195,7 +201,7 @@ function EstopCard(){
       .finally(()=>setBusy(false));
   };
   return (
-    <div style={{border:'1px solid '+(engaged?'var(--red)':'var(--panel-line)'),borderRadius:4,padding:10,marginTop:8,background:'var(--surface-2)'}}>
+    <div data-testid="estop-card" data-estop-readiness={readiness} aria-busy={readiness==='pending'} style={{border:'1px solid '+(engaged?'var(--red)':'var(--panel-line)'),borderRadius:4,padding:10,marginTop:8,background:'var(--surface-2)'}}>
       {err ? <NotConnected what="estop state unavailable"/> : st==null ? <NotConnected what="checking estop…"/> : engaged ? (<>
         <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.1em',color:'var(--red)'}}>PAUSED · new autonomous work held</div>
         <div className="mdl-meta" style={{margin:'6px 0'}}>

@@ -89,17 +89,36 @@ def input_items(messages, *, allow_provider_replay=False):
 
 def usage(raw):
     if not isinstance(raw, dict):
-        return TokenUsage()
+        return TokenUsage(counts_complete=False)
+
+    def valid(value):
+        return type(value) is int and 0 <= value <= 2**63 - 1
 
     def count(value):
-        return value if type(value) is int and 0 <= value <= 2**63 - 1 else 0
+        return value if valid(value) else 0
 
     total, output = count(raw.get("input_tokens")), count(raw.get("output_tokens"))
     details = raw.get("input_tokens_details")
     cached = count(details.get("cached_tokens")) if isinstance(details, dict) else 0
+    complete = (
+        valid(raw.get("input_tokens"))
+        and valid(raw.get("output_tokens"))
+        and isinstance(details, dict)
+        and valid(details.get("cached_tokens"))
+        and details["cached_tokens"] <= total
+        and type(details.get("cache_write_tokens")) is int
+        and details["cache_write_tokens"] == 0
+        and (
+            "total_tokens" not in raw
+            or (valid(raw["total_tokens"]) and raw["total_tokens"] == total + output)
+        )
+    )
     if cached > total:
         cached = 0
-    return TokenUsage(input_tokens=total - cached, output_tokens=output, cache_read=cached)
+    return TokenUsage(
+        input_tokens=total - cached, output_tokens=output,
+        cache_read=cached, counts_complete=complete,
+    )
 
 
 def parse_response(value):

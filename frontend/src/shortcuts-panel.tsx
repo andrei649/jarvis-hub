@@ -52,7 +52,7 @@ export function ShortcutsPanel({ overrides, onChange, onClose }: {
           if (!rows.length) return null;
           return (
             <section key={category} aria-label={category} style={{ marginBottom: 12 }}>
-              <h3 style={{ fontSize: 11, letterSpacing: '.12em', color: 'var(--ink-3)', margin: '6px 0' }}>{category.toUpperCase()}</h3>
+              <h3 style={{ fontSize: 11, letterSpacing: '.12em', color: 'var(--ink-2)', margin: '6px 0' }}>{category.toUpperCase()}</h3>
               {rows.map((b) => {
                 const also = conflictsFor(b.id, b.current, list);
                 return (
@@ -73,8 +73,8 @@ export function ShortcutsPanel({ overrides, onChange, onClose }: {
             </section>
           );
         })}
-        {!shown.length && <div style={{ color: 'var(--ink-3)' }}>No shortcut matches “{query}”.</div>}
-        <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 8 }}>
+        {!shown.length && <div style={{ color: 'var(--ink-2)' }}>No shortcut matches “{query}”.</div>}
+        <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 8 }}>
           Approvals and decisions have no shortcut: they are always a click on the card.
         </div>
       </div>

@@ -438,7 +438,8 @@ class ToolRPCServer:
 
     # ── the RPC entry point ──────────────────────────────────────────────────
 
-    async def handle(self, request: dict, *, actor: Optional[str] = None) -> dict:
+    async def handle(self, request: dict, *, actor: Optional[str] = None,
+                     _execution_check: Callable[[str, Mapping], bool] | None = None) -> dict:
         effective_actor = actor or self.agent
         name = str((request or {}).get("tool", ""))
         args = (request or {}).get("args") or {}
@@ -453,6 +454,17 @@ class ToolRPCServer:
         if spec is None:
             # Not on the allowlist — the sandbox cannot reach it.
             return {"ok": False, "reason": "tool_not_allowed", "tool": name}
+
+        # The agent loop alone supplies this private callback out of band. It
+        # rechecks the current profile synchronously, after the independent job
+        # restriction and before preflight, approval intake, or a handler can act.
+        if _execution_check is not None:
+            try:
+                allowed = _execution_check(name, {"name": name, "gated": spec["gated"]})
+            except Exception:
+                allowed = False
+            if allowed is not True:
+                return {"ok": False, "reason": "tool_not_allowed", "tool": name}
 
         args, denial = self._run_preflight(spec, args, name)
         if denial is not None:

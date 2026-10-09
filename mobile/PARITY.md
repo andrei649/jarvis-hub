@@ -23,24 +23,72 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 Camera parity is read/search parity over the same bounded metadata API. Admin ONVIF onboarding is
 intentionally owner-HUD-only; native clients expose no discovery, frame, stream, or private URL.
 
+Media integrity (local backend candidate, 2026-10-09): newly cloud-finalized, ComfyUI and local OpenAI PNG `md-*` catalog rows bind their producer digest for shared delivery and export. Both clients inherit a refusal for mismatched bytes on those catalog URLs. Existing blob headers and gallery controls are unchanged; verified/unbound status is export metadata only. New ComfyUI, local OpenAI and cloud standalone generated-image URLs and edit references also verify an expected sidecar digest through the shared server reader; mismatches and invalid bindings use the existing opaque refusal. These built-in producers share the reserved-ID publisher, while cloud task recovery keeps its independent completion hash. Missing sidecars retain legacy availability without digest verification. Legacy/other unsupplied catalog rows retain their own limits. Native wire shapes and UI stay unchanged (H477 partial).
+
+Tool profile permissions (local backend candidate, 2026-10-09): both clients inherit a live profile check before each new tool dispatch in the enabled production agent loop. A tool withdrawn since the model saw it is refused before preflight or approval intake. Existing error shapes and client controls are unchanged; already-running tools and queued approvals are outside this check (H672 partial).
+
+Tool-loop exit diagnostics (H396 local backend candidate, 2026-10-09): the runtime
+retains a typed result and a bounded diagnostic for one normal returned tool-loop
+invocation. Existing Agent callers still receive the same text. No new field is
+sent to browser/native chat; whole-turn attribution and client explanations remain
+open and must extend the shared H686 outcome after their semantics are defined.
+See [runtime evidence](../docs/project-tool-loop-exit-result-20261009.md).
+Returned approved file execution now also carries an additive per-attempt mutation
+receipt in its existing task result. It does not add a browser/native chat field
+or mutation footer; missing/cancelled results and cross-task attribution remain
+open. See [receipt evidence](../docs/project-file-mutation-receipts-20261009.md).
+
+Document extraction limit (H444/H576 local backend candidate, 2026-10-09):
+parser-backed file_read refuses observed PDF/DOCX input above 50,000,000 bytes
+before parser discovery. Raw byte paging remains available; this is an observed
+input-size check, not a parser memory bound. Existing chat/tool result handling
+carries the named refusal; no new native presentation is required. See
+[document input evidence](../docs/project-document-input-limit-20261009.md).
+
+PDF text coverage (H444/H576 local backend candidate, 2026-10-09): significant
+no-text page ranges now appear as bounded metadata in the existing file_read
+result, with preceding source quotes and explicit omission counts. Extracted
+content and byte pagination are unchanged. Both clients inherit the model-side
+warning; there is no new HTTP/SSE field or dedicated native PDF warning card.
+See [coverage evidence](../docs/project-pdf-text-coverage-20261009.md).
+
+Session ID validation (local backend candidate, 2026-10-09): both clients inherit
+strict full-string session validation on the existing shared server boundaries.
+A terminal newline is refused before session or memory work; valid IDs retain
+their exact value. Native JavaScript validation already rejects this input.
+No wire shape or UI change; device/live-Hub acceptance remains open. See
+[backend evidence](../docs/project-session-id-validation-20261009.md).
+
+## Combined local mobile candidate — 2026-10-09
+
+The local integration branch combines session continuity, command discovery, connected memory,
+advisory approval opinions, generated images, selected-image review/history, voice orb,
+push-to-talk and briefing sources. Full mobile284/native137, TypeScript and Android/iOS
+exports pass. Photo selection and dictation retain separate explicit controls; switching
+modes revokes stale capture/review callbacks. Physical-device and live-Hub acceptance
+remain open, so the partial rows below do not become shipped. Details and source commits:
+[combined evidence](docs/mobile-integration-20261009.md).
+
 ## Parity matrix
 
 | Surface | API (agents/web.py) | Browser | Mobile | Task |
 |---------|---------------------|:-------:|:------:|------|
 | Chat (streaming) | `POST /chat/stream`, `POST /chat` | ✅ | ✅ | H18.1 |
+| Current-turn duration (H686 first slice) | optional `outcome.latency_ms` on `/chat` and SSE end; owner `display.status_bar_fields` | ✅ local cockpit and focus-chat readout; normal returned turns only, ephemeral | 🟡 local current-turn readout from validated explicit SSE end; clears on work/context changes and never persists; physical-device/live-Hub acceptance open | H18.33 / H686; [evidence](docs/h1833-turn-duration.md) |
 
-| Selected Ollama image turns and active history | owner GET active-images and POST selected-prepare/selected-chat under /api/vlm/composer | ✅ all active HUD composers, exact model/session review and stale-response fences | ⬜ selected route review, active-history choices and concrete session binding | H18.31 / H277 |
+| Selected Ollama image turns and active history | owner GET active-images and POST selected-prepare/selected-chat under /api/vlm/composer | ✅ all active HUD composers, exact model/session review and stale-response fences | 🟡 local candidate: frozen picker snapshots, exact session/agent/model review, explicit send, active-image choices and durable unknown-delivery handling; device/live-Hub acceptance open | H18.31 / H277 |
 
-| Owner quick commands | existing chat slash dispatch and Admin commands.quick_commands JSON | ✅ existing Admin configuration, /help and approval tasks | ✅ typed aliases/fixed commands use the same governed chat path; native catalog discovery remains open | H078 / H18.26 |
+| Owner quick commands | existing chat slash dispatch and Admin commands.quick_commands JSON | ✅ existing Admin configuration, /help and approval tasks | ✅ typed aliases/fixed commands use the same governed chat path; native live catalog implemented locally, device acceptance open | H078 / H18.26 |
 
-| Session command ID transitions (/new, /reset, /undo) | POST /chat and /chat/stream return session_id; existing POST /sessions/resume | ✅ concrete topic state, old-topic reopening and desktop sync | ⬜ follow returned ID and refresh/reset visible transcript; current resume API stays compatible | H18.30 |
+| Session command ID transitions (/new, /reset, /undo) | POST /chat and /chat/stream return session_id; existing POST /sessions/resume | ✅ concrete topic state, old-topic reopening and desktop sync | 🟡 implemented: exact selected ID, scoped restart persistence, governed New/reset and undo refresh; unit/mounted-host verified, device acceptance open | H18.30 |
 
 | Code execution project context and persistence | existing admin settings and sandbox status/reset | ✅ existing Admin settings and sandbox surface | ➖ operator configuration stays on the owner HUD; chat tools use the same governed backend | H595/H660, remote transports remain partial |
-| Chat-command catalog (live registry, filtered by chat principal) | `GET /api/commands` | ✅ quickbar menu | ⬜ discovery menu; typed commands still use chat | H18.26 |
+| Chat-command catalog (live registry, filtered by chat principal) | `GET /api/commands` | ✅ quickbar menu | 🟡 native Chat modal lists live command, usage, description and owner tier; loading, empty, error and unavailable states, retry, and composer insertion are host-tested. Device/live-Hub acceptance open; Send stays on governed chat path | H18.26 |
+| Chat/session protocol discovery | `GET /v1/capabilities` | ➖ machine-readable client contract; no HUD control | ➖ available to authenticated clients; current native transport remains fixed to its tested contract, runtime negotiation is not implemented | H477 partial |
 | Chat history persistence | — (client-side) | ✅ | ✅ | H18.2 |
 | Agent selection | `GET /api/agents`, `agent` param | ✅ | ✅ | H18.3 |
 | Markdown rendering | — (client-side) | ✅ | ✅ | H18.4 |
-| Status / telemetry | `GET /status` | ✅ | ✅ | H18.1 |
+| Status / telemetry | `GET /status` | ✅ | ✅; local refresh-order fix protects model/Trust/brief data and loading/error state from older responses | H18.1; [refresh evidence](docs/native-status-refresh-order.md) |
 | Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ✅ | H18.5 |
 | Voice / TTS | `POST /tts` | ✅ | ✅ | H18.5 |
 | Approved speech command configuration | `GET/POST /api/admin/voice/commands` | ✅ Settings → Voice → Command providers; independent named TTS/STT, signed registration, human approval, revisioned clear and STT selection | ⬜ native provider configuration; hub TTS playback remains available | H517 / H613; vendor/plugin breadth remains open |
@@ -51,9 +99,10 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Skills browser | `GET /skills` | ✅ | ✅ | H18.15 |
 | Memory / notes | read legs only: `GET /memory`, `GET /api/notes` | ✅ | ✅ | H18.16 |
 | Knowledge graph | read legs only: `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, `GET /api/kg/facts/{as-of,history}` | ✅ | ✅ existing native entity list/detail and relation rows | H18.17 |
-| Memory neighborhood navigation | user `GET /api/kg/entities`, `GET /api/kg/entities/{name}` | ✅ live search, selectable connections, bounded reads; samples only in explicit Demo | 🟡 entity list/detail exists; connected-neighbor navigation and request-bound parity remain | DW-1 / H18.28 |
+| Memory neighborhood navigation | user/admin-superset `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, plus KG fact reads | ✅ live search, selectable connections, bounded reads; samples only in explicit Demo | 🟡 local Graph code: connected navigation outside first 50, cancellable ten-second reads, post-body one-MiB verification, 100-row caps, stale-read guards and explicit unavailable states; device/live-Hub acceptance open | DW-1 / H18.28 |
 | Action approval queue + rollback story | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 / H27.6 |
-| Advisory approval model opinions (H277) | Optional `judge` / `judge_pending` on blocked tasks; `GET /api/llm/roles` configuration | ✅ Decision Inbox opinion, bounded polling and model roles viewer | ⬜ opinion rendering and role configuration; existing decisions remain usable | H18.29 / H277 |
+| Task mediation evidence status | admin `GET /autonomy/mediation` | ✅ local Autonomy Control candidate: effective mode and verified aggregate counts; invalid/unavailable evidence hides counts | 🟡 local Status card after Trust: strict counters, mode/evidence separation, refresh and connection/read-order fences; device/live-hub acceptance open | [H18.32 evidence](docs/h1832-task-mediation-status.md) / DRA-59 |
+| Advisory approval model opinions (H277) | Optional `judge` / `judge_pending` on blocked tasks; `GET /api/llm/roles` configuration | ✅ Decision Inbox opinion, bounded polling and model roles viewer | 🟡 local candidate: advisory opinion and read-only roles view; pending says pull to refresh; no automatic polling; #1233 integration and device/live acceptance open | H18.29 / H277 |
 | Capability registry board | `GET /api/capabilities` | ✅ | ✅ | H18.22 / H27.8 |
 | WorldView bridge (World tab: liveness + recon read data) | `GET /api/worldview/status`, `GET /api/worldview/overview` | ✅ | ⬜ | |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
@@ -67,7 +116,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | First-run command center (0.19) | `GET /api/onboarding/command-center` | ✅ | ✅ | H18.19 |
 | Artifacts workspace (Canvas) | `GET /api/canvas`, `POST /api/canvas/post`, `POST /api/canvas/{id}/pin`, `DELETE /api/canvas/{id}` | ✅ | ✅ | H18.20 |
 | Media Director (O29, default-off) | `GET /api/media/devices`, `POST /api/media/devices`, `DELETE /api/media/devices/{device_id}`, `GET /api/media/session`, `POST /api/media/present`, `POST /api/media/restore/{device_id}` | ✅ | ✅ | H18.21 |
-| Local image generation (ComfyUI and configured images API, default-off) | `GET /api/media`, `POST /api/media/generate`, admin-only `GET /api/media/generation-tasks/{task_id}`, user-guarded `GET /api/media/generated/{artifact_id}` | ✅ Console → Build → Images: backend/model selection with per-backend edit/upscale capabilities, exact prompt, existing Inbox approval, one-task state, authenticated PNG preview/download and opt-in gallery; resume by task ID. Live service proof pending | ⬜ image status/composer and authenticated previews; existing approval queue remains available | H18.27 / HA-4i-image / H517 |
+| Local image generation (ComfyUI and configured images API, default-off) | `GET /api/media`, `POST /api/media/generate`, admin-only `GET /api/media/generation-tasks/{task_id}`, user-guarded `GET /api/media/generated/{artifact_id}` | ✅ Console → Build → Images: backend/model selection with per-backend edit/upscale capabilities, exact prompt, existing Inbox approval, one-task state, authenticated PNG preview/download and opt-in gallery; resume by task ID. Typed local API/ComfyUI history errors and proven cloud response failures stay distinct from uncertain outcomes; live service proof pending | 🟡 local candidate: exact-prompt local proposals, scoped task restoration, manual refresh, authenticated PNG preview and saved copy; shared reader distinguishes typed local API/ComfyUI history errors and narrowly proven cloud response failures, with no preview/resubmission; legacy/incomplete/ambiguous results stay uncertain and real-device/live-generator acceptance remains open | H18.27 / HA-4i-image / H517 |
 | House Brain (H30.5, default-off) | `GET /api/house/state`, `POST /api/house/control/{light,climate,security}`, admin-only `/api/house/security/{task_id}/{challenge,confirm}` | ✅ | ✅ | H30.5 |
 | Camera Intelligence (H31.5, default-off, metadata-only) | `GET /api/cameras/{status,events}`, `POST /api/cameras/search`, admin-only `POST /api/cameras/onvif/discover` | ✅ | ✅ | H31.5 |
 | Governed Capability Acquisition (H32.6, default-off) | user `GET /api/acquisition/{status,events}`; admin-only revoke, rollback, ledger export/purge | ✅ | ✅ | H32.6 |
@@ -81,8 +130,8 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Governed browser policy / plan preview | `POST /api/browser/check`, `POST /api/browser/plan/preview` | ✅ | ➖ | — |
 | Windows server-host desktop Operator | `POST /api/desktop/preview`, `POST /api/desktop/run` | ✅ | ➖ | — |
 | Host capability probe (what this host can honestly offer the operator, and why not) | `GET /api/host/probe` | ⬜ route shipped, no HUD panel yet | ➖ hub-host capability (the probe describes the hub box, not a phone) | — |
-| Voice orb (particle sphere bound to the voice state machine) | — (client-side, reads the existing `POST /api/voice/stt` + `POST /tts` loop) | ✅ | 🟡 contract ported | H18.24 — the **state→visual contract** (`orbVisual`) is ported to `mobile/src/voice/orbVisual.ts` and proven identical to the browser's against 80 shared vectors (`tests/_fixtures/orb_visual_vectors.json`, asserted by both suites). The **particle renderer** is not ported: RN has no canvas, so it needs a graphics dependency (react-native-svg / Skia) plus on-device validation. Native also cannot yet reach `listening`/`transcribing` — there is no mobile mic-capture pipeline, only TTS playback (H18.5). |
-| Briefing wall (neural field + stat board + hold-to-talk) | — (client-side, composed from `/api/agents`, `/tasks`, `/api/trust/status`, `/api/analytics/locality`) | ✅ (responsive: portrait layout under 820px) | 🟡 contract ported | H18.25 — the **state contract** (`wallState`: the word + tone the wall announces) is ported to `mobile/src/voice/wallState.ts` and proven identical to the browser's against **500 shared vectors** (`tests/_fixtures/wall_state_vectors.json`, asserted by both suites). The **neural-field canvas + stat board chrome** is not ported (RN has no canvas → graphics dependency + device validation), and **hold-to-talk cannot exist yet**: there is no mobile mic-capture pipeline at all, only TTS playback (H18.5). |
+| Voice orb (particle sphere bound to the voice state machine) | — (client-side, native `POST /tts` playback and `POST /api/voice/stt` dictation) | ✅ | 🟡 local renderer + voice candidate | H18.24 — shared 80-vector visual contract retained; native SVG, real TTS events and explicit dictation now drive Chat. Listening uses confirmed native recording and optional measured dBFS; preparation/stopping are distinct from measured activity. STT appends to the draft only. Scope/background/permission cancellation and serialized recorder cleanup implemented; physical-device/live STT acceptance remains open. See [orb](docs/h1824-native-orb.md) and [dictation](docs/native-push-to-talk.md) evidence. |
+| Briefing wall (neural field + stat board + hold-to-talk) | — (client-side; health, agents, running tasks, trust, locality, approvals, dashboard, status, voice capabilities, heartbeat status reads) | ✅ (responsive: portrait layout under 820px) | 🟡 local wall candidates | H18.25 — Chat opens a bounded native SVG tier field, source-backed cards/chips/rail and explicit dictation-to-draft. Ten bounded sources include returned decisions, calendar sample, model/voice reports and heartbeat schedules; private task/event/provider details are discarded. Transcript hidden per visit; refresh/background/scope clear evidence. Empty calendar and unknown model residency stay unknown; task/approval counts are bounded feeds and locality excludes unknown routes. Shared 500-vector state contract retained. Device/live-Hub acceptance remains open. See [wall evidence](docs/h1825-briefing-wall.md) and [additional sources](docs/h1825-briefing-sources.md). |
 | Auth (user/admin tokens) | `X-User-Token`, `X-Admin-Token` headers | ✅ | ✅ | H18.1 / H18.11 |
 | Global emergency stop (pause new autonomous work; hermes v2026.8.27 port) | user `GET /api/ops/estop`; admin `POST /api/ops/estop/engage`, `POST /api/ops/estop/resume` | ✅ | 🟡 read-only card on Status (engaged/reason/engaged_at); engage/resume intentionally owner-HUD-only | — |
 | Ambient Capture (opt-in surfaces, each record deletable) | `GET /api/capture`, `GET /api/capture/status`, **`GET /api/capture/export`** (new), `POST /api/capture/clear`, `DELETE /api/capture/{rec_id}` | ✅ | ✅ | T-0.26 — native **Capture** tab (`mobile/src/screens/CaptureScreen.tsx`): inspect every record, forget one, clear the inbox, and take the portable export off the box. **Arming stays off the phone by decision, not by permission** — `POST /api/capture/surfaces` and `POST /api/capture/ingest` are user-guarded and reachable, and are deliberately absent: enabling a surface arms an ambient recorder on a machine you are not sitting at, so a lost or borrowed handset must not be a way to start recording someone else's desk. Deleting is safe in the direction that matters (worst case: losing a record you wanted, never gaining one nobody consented to). The master switch and the per-surface opt-ins are carried through **unflattened** — a surface on with capture off records nothing, and the screen says so in its own words rather than rendering it as "capturing" — and a failed fetch reads as *unknown*, never as "off", which would be the most reassuring possible lie here. |
@@ -96,6 +145,7 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 | Nightly reflection (status + manual run) | `GET /api/reflection/status`, `POST /api/reflection/run` | ✅ | ⬜ | |
 | Security skills browser (ATT&CK tactics → curated techniques, read-only) | `GET /api/security-skills/tactics`, `GET /api/security-skills/techniques` | ✅ | ⬜ | |
 | Prompt-injection scan | `POST /api/security/scan-injection` | ✅ | ⬜ | |
+| Authentication audit events (H512) | Admin `GET /api/admin/audit`; typed guard/token lifecycle rows | ✅ existing admin audit reader | ⬜ intentionally owner-HUD/CLI only in this local slice; native requests are logged server-side | H512 |
 | Audit-chain verification (tamper-evidence read) | `GET /api/security/audit/intent`, `GET /api/security/audit/verify` | ✅ | ⬜ | |
 | Channel pairing ceremony | admin `GET /api/channels/pairing`, `POST /api/channels/pairing/code`, `POST /api/channels/pairing/decide` | ✅ | ➖ admin ceremony run from the owner HUD (triage 2026-09-01) | — |
 | Governed social drafts (draft-before-send) | `GET/POST /api/integrations/social` | ✅ | ⬜ | |
@@ -316,3 +366,11 @@ Responsive-web Trust also exposes the separate camera-description model-data rol
 Acknowledgment is independent of household consent and does not enable capture or
 remote inference. Native camera role controls, supported owner camera provisioning
 and live-device acceptance remain open.
+
+The 2026-10-09 local HUD contrast candidate moves secondary browser text away from
+the decorative `--ink-3` token. It changes no native API or interaction; native
+screens use their own theme and require separate contrast/device evidence. See
+`docs/hud-muted-text-contrast-20261009.md` at the repository root for measured
+browser scope and exclusions; no full native accessibility claim is made.
+
+Browser accessibility readiness (2026-10-09): the HUD Admin EstopCard exposes its pending state to assistive technology and its browser scan. This changes no native endpoint or control; native device accessibility remains separately unverified.

@@ -101,6 +101,18 @@ async def test_lmstudio_usage_snapshots_replace_not_sum():
 
 
 @pytest.mark.asyncio
+async def test_lmstudio_late_malformed_usage_replaces_valid_earlier_snapshot():
+    rows = frames('lmstudio')
+    rows.insert(-1, {'choices': [], 'usage': {'prompt_tokens': 42,
+                                             'completion_tokens': True}})
+    answer, events, tokens, _ = await invoke('lmstudio', rows)
+    assert answer == ''.join(tokens) == 'answer'
+    assert len(events) == 1
+    assert (events[0].input_tokens, events[0].output_tokens) == (42, 0)
+    assert getattr(events[0], 'counts_complete', None) is False
+
+
+@pytest.mark.asyncio
 async def test_anthropic_cache_only_start_is_preserved():
     rows = frames('anthropic')
     rows[0]['message']['usage']['input_tokens'] = 0
@@ -147,7 +159,12 @@ async def test_terminal_without_usage_keeps_estimate(provider):
             if row.get('type') == 'message_delta':
                 row['usage'] = {}
     answer, events, _, _ = await invoke(provider, rows)
-    assert answer == 'answer' and events == []
+    assert answer == 'answer'
+    if provider in {'ollama', 'lmstudio'}:
+        assert len(events) == 1 and not events[0].reported
+        assert getattr(events[0], 'counts_complete', None) is False
+    else:
+        assert events == []
 
 
 @pytest.mark.asyncio
@@ -220,7 +237,12 @@ async def test_lmstudio_retry_clears_staged_usage_from_previous_attempt():
         answer = await agent_for().generate_response(backend, 'model', 'hello', '', 128, .2,
             on_token=lambda text: None, usage_sink=events.append)
         assert answer == 'answer' and len(attempts) == 2
-        assert events == []
+        # The abandoned first attempt's counters never escape. The accepted
+        # clean terminal has no usage pair, so it reports unavailable counts.
+        assert len(events) == 1 and events[0].as_dict() == {
+            'input_tokens': 0, 'output_tokens': 0, 'cache_read': 0, 'cache_write': 0,
+        }
+        assert getattr(events[0], 'counts_complete', None) is False
     finally:
         await backend.client.aclose()
 

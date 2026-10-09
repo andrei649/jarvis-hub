@@ -41,7 +41,7 @@ logger = logging.getLogger("jarvis.llm.gemini")
 
 
 def _stream_terminal_usage(data: Any) -> TokenUsage | None:
-    """Accept only a supported terminal response's own complete measurement."""
+    """Validate terminal eligibility and core counters before mapping usage."""
     if not isinstance(data, dict) or "error" in data:
         return None
     candidates = data.get("candidates")

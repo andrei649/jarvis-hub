@@ -219,12 +219,31 @@ def test_an_empty_answer_is_not_an_answer(png):
 
 def test_the_receipt_and_json(png, tmp_path):
     receipt = tmp_path / "spend.json"
-    hub = Fake()
+    class VisionReplyWithSession(Fake):
+        def post(self, path, body=None, *, timeout=None):
+            return {**super().post(path, body, timeout=timeout), "session_id": "vision-looking-id"}
+
+    hub = VisionReplyWithSession()
     assert _run(["-z", "--image", str(png), "--usage-file", str(receipt), "what?"], hub)[0] == nerva.EXIT_OK
     report = json.loads(receipt.read_text())
     assert report["status"] == "completed" and report["completed"] is True
+    assert report["session_id"] is None and report["requested_session_id"] is None
+    assert [(method, path) for method, path, _ in hub.calls] == [
+        ("GET", "/api/vlm/composer/status"), ("POST", "/api/vlm/composer/describe")]
     code, out, _err = _run(["--json", "--image", str(png), "what?"], hub)
     assert code == nerva.EXIT_OK and json.loads(out)["response"] == "A screenshot."
+
+
+def test_image_session_option_receipt_keeps_intent_without_claiming_a_chat_session(png, tmp_path):
+    receipt = tmp_path / "spend.json"
+    hub = Fake()
+    code, out, err = _run(["-z", "--image", str(png), "--session", "wanted-7",
+                           "--usage-file", str(receipt), "what?"], hub)
+    assert code == nerva.EXIT_USAGE and out == "" and "--session" in err
+    assert hub.calls == []
+    report = json.loads(receipt.read_text())
+    assert report["status"] == "usage" and report["completed"] is False
+    assert report["session_id"] is None and report["requested_session_id"] == "wanted-7"
 
 
 # ── the clipboard ────────────────────────────────────────────────────────────────

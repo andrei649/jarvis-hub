@@ -1,5 +1,5 @@
 import { TextInput, Text } from '../components/ThemedText';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -8,19 +8,24 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { saveCanvasArtifact, streamChat, type HistoryTurn } from '../api/client';
-import { speak, stopSpeaking } from '../audio/tts';
+import { saveCanvasArtifact, type HistoryTurn } from '../api/client';
+import { getSpeechState, speak, stopSpeaking, subscribeSpeech } from '../audio/tts';
 import type { ChatMessage, SaveState } from '../chat/types';
 import { AgentPicker } from '../components/AgentPicker';
+import { CommandsModal } from '../components/CommandsModal';
 import { MessageBubble } from '../components/MessageBubble';
 import { SessionsModal } from '../components/SessionsModal';
+import { VoiceOrb } from '../components/VoiceOrb';
+import { PushToTalk } from '../components/PushToTalk';
+import { SelectedImages } from '../components/SelectedImages';
 import { useServer } from '../context/ServerContext';
-import { clearHistory, loadHistory, saveHistory } from '../storage/chat';
+import { Conversation, type ConversationState } from '../chat/conversation';
 import { DEFAULT_PREFS, loadPrefs, savePrefs } from '../storage/prefs';
 import { useThemeStyles, type Theme } from '../theme';
+import { waitForMicrophoneIdle, type DictationState } from '../voice/pushToTalk';
+import { BriefingWall } from './BriefingWall';
 
-let idSeq = 0;
-const nextId = () => `m${Date.now()}_${idSeq++}`;
+const EMPTY_CONVERSATION: ConversationState = { sessionId: null, messages: [], ready: false, sending: false, turnOutcome: null };
 
 /** Flatten Markdown to plain text so TTS doesn't read syntax characters aloud. */
 function toPlain(md: string): string {
@@ -36,102 +41,212 @@ function toPlain(md: string): string {
 
 export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const { theme, styles } = useThemeStyles(makeStyles);
-  const { config, configured } = useServer();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const { config, configured, ready, chatScope, connectionEpoch } = useServer();
+  const [snapshot, setSnapshot] = useState({ scope: '', connectionEpoch: -1, state: EMPTY_CONVERSATION });
+  const conversation = useRef<{ scope: string; connectionEpoch: number; chat: Conversation } | null>(null);
+  const state = snapshot.scope === chatScope && snapshot.connectionEpoch === connectionEpoch
+    ? snapshot.state : EMPTY_CONVERSATION;
+  const { messages, sending } = state;
   const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
+  const draftVersion = useRef(0);
+  const commandsOpenVersion = useRef(0);
+  const commandsOpenContext = useRef('');
   const [agent, setAgent] = useState(DEFAULT_PREFS.agent);
+  const agentRef = useRef(DEFAULT_PREFS.agent);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const speech = useSyncExternalStore(subscribeSpeech, getSpeechState, getSpeechState);
   const [sessionsOpen, setSessionsOpen] = useState(false);
-  const listRef = useRef<FlatList<ChatMessage>>(null);
-  const cancelRef = useRef<(() => void) | null>(null);
-
-  // Restore persisted thread + agent preference once.
-  useEffect(() => {
-    loadHistory().then((h) => h.length && setMessages(h));
-    loadPrefs().then((p) => setAgent(p.agent));
+  const [commandsOpen, setCommandsOpen] = useState(false);
+  const [selectedOpen, setSelectedOpen] = useState(false);
+  const [interactionEpoch, setInteractionEpoch] = useState(0);
+  const [briefing, setBriefing] = useState({ open: false, epoch: 0 });
+  const [dictatedLine, setDictatedLine] = useState<{ context: string; text: string | null }>({ context: '', text: null });
+  const speechGeneration = useRef(0);
+  const dictationContext = JSON.stringify([chatScope, connectionEpoch, state.sessionId, agent,
+    briefing.epoch, briefing.open, interactionEpoch, commandsOpen, selectedOpen]);
+  const currentDictationContext = useRef(dictationContext);
+  currentDictationContext.current = dictationContext;
+  const commandContext = JSON.stringify([chatScope, connectionEpoch, state.sessionId, agent]);
+  const dictationDisabled = sending || !state.ready || sessionsOpen || commandsOpen || selectedOpen || speakingId !== null;
+  const canAcceptDictation = useRef(false);
+  canAcceptDictation.current = !dictationDisabled;
+  const revokeDictation = useCallback(() => {
+    // Fence callbacks synchronously, before React commits a mode change.
+    currentDictationContext.current = '';
+    canAcceptDictation.current = false;
+    setInteractionEpoch(value => value + 1);
   }, []);
-
-  // Persist the thread whenever it settles (never mid-stream).
+  const [dictationSnapshot, setDictationSnapshot] = useState({ context: '', state: { status: 'off' } as DictationState, active: false });
+  const dictationRef = useRef(dictationSnapshot);
+  const dictation = dictationSnapshot.context === dictationContext ? dictationSnapshot : null;
+  const onDictationState = useCallback((next: DictationState) => {
+    if (currentDictationContext.current !== dictationContext) return;
+    const previous = dictationRef.current.context === dictationContext ? dictationRef.current : null;
+    const terminal = next.status === 'off' || next.status === 'error' ||
+      (next.status === 'idle' && previous?.state.status === 'transcribing');
+    const snapshot = { context: dictationContext, state: next, active: !terminal };
+    dictationRef.current = snapshot;
+    setDictationSnapshot(snapshot);
+  }, [dictationContext]);
+  const onDictationStart = useCallback(() => {
+    if (currentDictationContext.current !== dictationContext) return;
+    speechGeneration.current++;
+    stopSpeaking();
+    setSpeakingId(null);
+    onDictationState({ status: 'idle' });
+  }, [dictationContext, onDictationState]);
+  const onTranscript = useCallback((text: string) => {
+    if (currentDictationContext.current !== dictationContext || !canAcceptDictation.current || !text.trim()) return;
+    ++draftVersion.current;
+    setInput(previous => previous ? `${previous}\n${text}` : text);
+    setDictatedLine({ context: dictationContext, text });
+  }, [dictationContext]);
+  const listRef = useRef<FlatList<ChatMessage>>(null);
+  // A connection owns its controller. Cleanup revokes old callbacks before a new hub hydrates.
   useEffect(() => {
-    if (!sending) saveHistory(messages);
-  }, [messages, sending]);
+    if (!ready) return;
+    const chat = new Conversation(config, chatScope, next => setSnapshot({ scope: chatScope, connectionEpoch, state: next }));
+    conversation.current = { scope: chatScope, connectionEpoch, chat };
+    setSnapshot({ scope: chatScope, connectionEpoch, state: chat.state });
+    setSessionsOpen(false);
+    setCommandsOpen(false);
+    setSelectedOpen(false);
+    setSpeakingId(null);
+    void chat.hydrate();
+    return () => {
+      speechGeneration.current++;
+      chat.dispose();
+      if (conversation.current?.chat === chat) conversation.current = null;
+      stopSpeaking();
+    };
+  }, [ready, config, chatScope, connectionEpoch]);
 
-  // Stop any audio when leaving the screen.
-  useEffect(() => () => stopSpeaking(), []);
+  useEffect(() => {
+    let active = true;
+    void loadPrefs().then(p => {
+      if (!active) return;
+      if (p.agent !== agentRef.current) {
+        agentRef.current = p.agent;
+        conversation.current?.chat.clearTurnOutcome();
+      }
+      setAgent(p.agent);
+    });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    setBriefing(previous => previous.open ? { open: false, epoch: previous.epoch + 1 } : previous);
+  }, [chatScope, connectionEpoch]);
+
+  const changeBriefing = useCallback((open: boolean) => {
+    revokeDictation();
+    commandsOpenContext.current = '';
+    speechGeneration.current++;
+    stopSpeaking();
+    setSpeakingId(null);
+    setSessionsOpen(false);
+    setCommandsOpen(false);
+    setSelectedOpen(false);
+    setDictatedLine({ context: '', text: null });
+    setBriefing(previous => ({ open, epoch: previous.epoch + 1 }));
+  }, [revokeDictation]);
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
-
-  const patch = useCallback((id: string, updater: (m: ChatMessage) => ChatMessage) => {
-    setMessages((prev) => prev.map((m) => (m.id === id ? updater(m) : m)));
-  }, []);
+  useEffect(scrollToEnd, [messages, scrollToEnd]);
 
   const changeAgent = useCallback((id: string) => {
-    setAgent(id);
-    savePrefs({ agent: id });
-  }, []);
-
-  const send = useCallback(() => {
-    const text = input.trim();
-    if (!text || sending || !configured) return;
-
-    const userMsg: ChatMessage = { id: nextId(), role: 'user', text };
-    const botId = nextId();
-    const botMsg: ChatMessage = { id: botId, role: 'assistant', text: '', pending: true };
-    setMessages((prev) => [...prev, userMsg, botMsg]);
-    setInput('');
-    setSending(true);
-    scrollToEnd();
-
-    cancelRef.current = streamChat(config, text, agent, {
-      // remember which agent ACTUALLY answered, so an explicit save attributes
-      // the artifact to the real responder (not just the selected agent)
-      onStart: (a) => patch(botId, (m) => ({ ...m, agent: a || agent })),
-      onToken: (t) => {
-        patch(botId, (m) => ({ ...m, text: m.text + t, pending: true }));
-        scrollToEnd();
-      },
-      onDone: (full) => {
-        patch(botId, (m) => ({ ...m, text: full || m.text, pending: false }));
-        setSending(false);
-        cancelRef.current = null;
-        scrollToEnd();
-      },
-      onError: (err) => {
-        // an empty bubble becomes an error placeholder (never saveable);
-        // partial streamed text stays as a real (kept) reply
-        patch(botId, (m) => ({ ...m, text: m.text || `⚠ ${err}`, pending: false, error: !m.text }));
-        setSending(false);
-        cancelRef.current = null;
-      },
-    });
-  }, [agent, config, configured, input, patch, scrollToEnd, sending]);
-
-  const stop = useCallback(() => {
-    cancelRef.current?.();
-    cancelRef.current = null;
-    setSending(false);
-  }, []);
-
-  const newChat = useCallback(() => {
-    stop();
+    if (id !== agentRef.current) {
+      agentRef.current = id;
+      if (conversation.current?.scope === chatScope && conversation.current.connectionEpoch === connectionEpoch) {
+        conversation.current.chat.clearTurnOutcome();
+      }
+    }
+    revokeDictation();
+    commandsOpenContext.current = '';
+    speechGeneration.current++;
     stopSpeaking();
     setSpeakingId(null);
-    setMessages([]);
-    clearHistory();
-  }, [stop]);
+    setCommandsOpen(false);
+    setSelectedOpen(false);
+    setAgent(id);
+    savePrefs({ agent: id });
+  }, [chatScope, connectionEpoch, revokeDictation]);
+
+  const openCommands = useCallback(() => {
+    revokeDictation();
+    speechGeneration.current++;
+    stopSpeaking();
+    setSpeakingId(null);
+    setSelectedOpen(false);
+    commandsOpenVersion.current = draftVersion.current;
+    commandsOpenContext.current = commandContext;
+    setCommandsOpen(true);
+  }, [commandContext, revokeDictation]);
+  const closeCommands = useCallback(() => {
+    revokeDictation();
+    commandsOpenContext.current = '';
+    setCommandsOpen(false);
+  }, [revokeDictation]);
+  const toggleImages = useCallback(() => {
+    revokeDictation();
+    commandsOpenContext.current = '';
+    speechGeneration.current++;
+    stopSpeaking();
+    setSpeakingId(null);
+    setCommandsOpen(false);
+    setSelectedOpen(value => !value);
+  }, [revokeDictation]);
+  const closeImages = useCallback(() => {
+    revokeDictation();
+    setSelectedOpen(false);
+  }, [revokeDictation]);
+  const chooseCommand = useCallback((command: string) => {
+    // A user can still edit the composer while a modal is open. Keep that newer draft.
+    if (commandContext === commandsOpenContext.current && draftVersion.current === commandsOpenVersion.current) {
+      ++draftVersion.current;
+      setInput(command);
+    }
+  }, [commandContext]);
+
+  const send = useCallback(() => {
+    if (!configured || conversation.current?.scope !== chatScope) return;
+    if (conversation.current.chat.send(input, agent)) { ++draftVersion.current; setInput(''); }
+  }, [agent, configured, input, chatScope]);
+
+  const stop = useCallback(() => {
+    if (conversation.current?.scope === chatScope) conversation.current.chat.stop();
+  }, [chatScope]);
+
+  const newChat = useCallback(() => {
+    if (!configured || conversation.current?.scope !== chatScope) return;
+    revokeDictation();
+    commandsOpenContext.current = '';
+    speechGeneration.current++;
+    stopSpeaking();
+    setSpeakingId(null);
+    setCommandsOpen(false);
+    setSelectedOpen(false);
+    // Only a successful governed /new response changes the transcript and session.
+    conversation.current.chat.send('/new', agent);
+  }, [agent, configured, chatScope, revokeDictation]);
 
   const handleSpeak = useCallback(
     (m: ChatMessage) => {
+      if (dictationRef.current.context === currentDictationContext.current && dictationRef.current.active) return;
+      const generation = ++speechGeneration.current;
       if (speakingId === m.id) {
         stopSpeaking();
         setSpeakingId(null);
         return;
       }
       setSpeakingId(m.id);
-      speak(config, toPlain(m.text), 'ro', () => setSpeakingId(null)).catch(() => setSpeakingId(null));
+      const context = currentDictationContext.current;
+      const current = () => generation === speechGeneration.current && context === currentDictationContext.current;
+      void waitForMicrophoneIdle().then(async () => {
+        if (!current()) return;
+        await speak(config, toPlain(m.text), 'ro', () => { if (current()) setSpeakingId(null); });
+      }).catch(() => { if (current()) setSpeakingId(null); });
     },
     [config, speakingId],
   );
@@ -156,19 +271,17 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     [agent, config],
   );
 
-  const onResumed = useCallback(
-    (_sid: string, turns: HistoryTurn[]) => {
-      stop();
-      const msgs: ChatMessage[] = turns.map((t) => ({
-        id: nextId(),
-        role: t.role === 'user' ? 'user' : 'assistant',
-        text: t.content,
-      }));
-      setMessages(msgs);
-      scrollToEnd();
-    },
-    [scrollToEnd, stop],
-  );
+  const onResumed = useCallback((sid: string, turns: HistoryTurn[]) => {
+    if (conversation.current?.scope !== chatScope) return;
+    revokeDictation();
+    commandsOpenContext.current = '';
+    speechGeneration.current++;
+    stopSpeaking();
+    setSpeakingId(null);
+    setCommandsOpen(false);
+    setSelectedOpen(false);
+    conversation.current.chat.resume(sid, turns);
+  }, [chatScope, revokeDictation]);
 
   if (!configured) {
     return (
@@ -182,6 +295,17 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     );
   }
 
+  const dictationControl = <PushToTalk contextKey={dictationContext} disabled={dictationDisabled}
+    onStart={onDictationStart} onState={onDictationState} onTranscript={onTranscript} />;
+  if (briefing.open) {
+    const status = dictation?.active || dictation?.state.status === 'error'
+      ? dictation.state.status : speech.status === 'preparing' ? 'idle' : speech.status;
+    return <BriefingWall contextKey={dictationContext}
+      voice={{ status, error: status === 'error', level: dictation?.state.status === 'listening' ? dictation.state.level : undefined }}
+      transcript={dictatedLine.context === dictationContext ? dictatedLine.text : null}
+      onExit={() => changeBriefing(false)}>{dictationControl}</BriefingWall>;
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.flex}
@@ -191,12 +315,35 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
       <View style={styles.toolbar}>
         <AgentPicker value={agent} onChange={changeAgent} />
         <View style={styles.toolbarActions}>
+          <Pressable style={styles.toolBtn} onPress={() => changeBriefing(true)} hitSlop={6} disabled={!state.ready || sending}>
+            <Text style={styles.toolBtnText}>Briefing</Text>
+          </Pressable>
+          <Pressable style={styles.toolBtn} onPress={openCommands} hitSlop={6}
+            disabled={!state.ready || sending} accessibilityLabel="Browse chat commands">
+            <Text style={[styles.toolBtnText, (!state.ready || sending) && styles.toolBtnDisabled]}>Commands</Text>
+          </Pressable>
+          <Pressable style={styles.toolBtn} onPress={toggleImages}
+            disabled={!state.ready || sending} accessibilityLabel="Selected images" hitSlop={6}>
+            <Text style={[styles.toolBtnText, (!state.ready || sending) && styles.toolBtnDisabled]}>Images</Text>
+          </Pressable>
           <Pressable style={styles.toolBtn} onPress={() => setSessionsOpen(true)} hitSlop={6}>
             <Text style={styles.toolBtnText}>History</Text>
           </Pressable>
-          <Pressable style={styles.toolBtn} onPress={newChat} hitSlop={6} disabled={!messages.length}>
-            <Text style={[styles.toolBtnText, !messages.length && styles.toolBtnDisabled]}>New</Text>
+          <Pressable style={styles.toolBtn} onPress={newChat} hitSlop={6} disabled={!messages.length || sending || !state.ready}>
+            <Text style={[styles.toolBtnText, (!messages.length || sending || !state.ready) && styles.toolBtnDisabled]}>New</Text>
           </Pressable>
+        </View>
+      </View>
+
+      <View style={styles.speechStatus}>
+        <VoiceOrb status={dictation?.active || dictation?.state.status === 'error'
+          ? dictation.state.status === 'stopping' ? 'idle' : dictation.state.status
+          : speech.status === 'preparing' ? 'idle' : speech.status}
+          level={dictation?.state.status === 'listening' ? dictation.state.level : undefined} size={80} />
+        <View style={styles.speechCopy}>
+          <Text style={styles.speechTitle}>Voice</Text>
+          {!dictation?.active && speech.status === 'preparing' ? <Text style={styles.speechNote}>Preparing speech…</Text> : null}
+          {!dictation?.active && speech.status === 'error' ? <Text style={styles.speechNote}>Speech playback unavailable. Try speaking again.</Text> : null}
         </View>
       </View>
 
@@ -205,7 +352,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         data={messages}
         keyExtractor={(m) => m.id}
         renderItem={({ item }) => (
-          <MessageBubble message={item} onSpeak={() => handleSpeak(item)} speaking={speakingId === item.id}
+          <MessageBubble message={item} onSpeak={dictation?.active ? undefined : () => handleSpeak(item)} speaking={speakingId === item.id}
             onSave={() => handleSave(item)} saveState={saveStates[item.id]} />
         )}
         contentContainerStyle={styles.listContent}
@@ -218,15 +365,28 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         }
       />
 
+      {!sending && state.turnOutcome && Number.isSafeInteger(state.turnOutcome.latency_ms)
+        && state.turnOutcome.latency_ms >= 0 ? (
+        <Text accessibilityLabel={`Turn duration: ${state.turnOutcome.latency_ms} ms`} style={styles.turnDuration}>
+          Turn duration: {state.turnOutcome.latency_ms} ms
+        </Text>
+      ) : null}
+
+      {selectedOpen && conversation.current?.scope === chatScope ? <SelectedImages
+        key={`${chatScope}:${connectionEpoch}:${state.sessionId ?? 'none'}:${agent}`}
+        config={config} scope={chatScope} connectionEpoch={connectionEpoch} sessionId={state.sessionId}
+        agent={agent} chat={conversation.current.chat} sending={sending}
+        onClose={closeImages} onInspectHistory={() => setSessionsOpen(true)} /> : null}
+
       <View style={styles.inputBar}>
         <TextInput
           style={styles.input}
           value={input}
-          onChangeText={setInput}
-          placeholder="Message Jarvis…"
+          onChangeText={text => { ++draftVersion.current; setInput(text); }}
+          placeholder={state.ready ? 'Message Jarvis…' : 'Restoring conversation…'}
           placeholderTextColor={theme.textDim}
           multiline
-          editable={!sending}
+          editable={!sending && state.ready}
           onSubmitEditing={send}
           returnKeyType="send"
         />
@@ -236,16 +396,19 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
           </Pressable>
         ) : (
           <Pressable
-            style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
+            style={[styles.sendBtn, (!input.trim() || !state.ready) && styles.sendBtnDisabled]}
             onPress={send}
-            disabled={!input.trim()}
+            disabled={!input.trim() || !state.ready}
           >
             <Text style={styles.sendText}>Send</Text>
           </Pressable>
         )}
       </View>
 
+      {dictationControl}
+
       <SessionsModal visible={sessionsOpen} onClose={() => setSessionsOpen(false)} onResumed={onResumed} />
+      <CommandsModal visible={commandsOpen} onClose={closeCommands} onChoose={chooseCommand} />
     </KeyboardAvoidingView>
   );
 }
@@ -254,6 +417,8 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
   flex: { flex: 1 },
   toolbar: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 8,
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
@@ -272,7 +437,12 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
   },
   toolBtnText: { color: theme.text, fontSize: 13, fontWeight: '600' },
   toolBtnDisabled: { color: theme.textDim },
+  speechStatus: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 12 },
+  speechCopy: { flex: 1 },
+  speechTitle: { color: theme.text, fontSize: 13, fontWeight: '600' },
+  speechNote: { color: theme.textDim, fontSize: 12, marginTop: 4 },
   listContent: { padding: 12, paddingBottom: 16 },
+  turnDuration: { color: theme.textDim, fontSize: 12, paddingHorizontal: 12, paddingVertical: 6 },
   hint: { alignItems: 'center', marginTop: 48 },
   hintText: { color: theme.textDim, fontSize: 14 },
   inputBar: {

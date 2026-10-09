@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import gzip
 import json
 import struct
 import zlib
@@ -289,6 +290,133 @@ async def test_bad_response_consumes_one_attempt_and_restart_cannot_retry(rig, i
         assert list(rig.root.rglob("*.png")) == []
     # A generation that broke is a failure (the contrast to the withheld class below).
     assert _outcomes(rig.queue) == (0, 1)
+
+
+@pytest.mark.parametrize('kind, reason', [
+    ('http_error', 'backend_http_error'), ('wrong_type', 'invalid_response'),
+    ('too_large', 'response_too_large'), ('invalid_body', 'invalid_response'),
+    ('invalid_png', 'invalid_image'), ('wrong_dimensions', 'image_dimensions_mismatch'),
+])
+@pytest.mark.asyncio
+async def test_observed_local_provider_response_has_fixed_durable_evidence(rig, kind, reason):
+    from agents.core.media_backends.local_openai_image import _RESPONSE_FAILURE_MARKER
+
+    async def negative(_request):
+        if kind == 'http_error':
+            return httpx.Response(503, json={'error': 'PRIVATE'})
+        if kind == 'wrong_type':
+            return httpx.Response(200, headers={'content-type': 'text/plain'}, content=b'PRIVATE')
+        if kind == 'too_large':
+            return httpx.Response(200, headers={'content-type': 'application/json',
+                                                 'content-length': '999999999'})
+        if kind == 'invalid_body':
+            return httpx.Response(200, json={'data': [{'url': 'PRIVATE'}]})
+        if kind == 'invalid_png':
+            return httpx.Response(200, json={'data': [{'b64_json': base64.b64encode(b'not png').decode()}]})
+        return httpx.Response(200, json={'data': [{'b64_json': base64.b64encode(canvas(64, 64)).decode()}]})
+
+    rig.hooks.response = negative
+    async with rig.client() as client:
+        task_id = await propose(rig, client)
+        await accept(client, task_id)
+        await rig.worker.tick()
+        task = rig.queue.get(task_id)
+        assert task.status == 'done'
+        assert task.result == {
+            'status': 'failed', 'reason': reason, 'tool': 'image_generate',
+            'result': {'ok': False, 'reason': reason,
+                       'provider_response_failed': _RESPONSE_FAILURE_MARKER},
+        }
+        projected = await client.get(f'/api/media/generation-tasks/{task_id}')
+        assert projected.status_code == 200
+        assert projected.headers['cache-control'].find('no-store') >= 0
+        assert projected.json() == {'task_id': task_id, 'state': 'failed', 'artifact': None}
+        assert not any(value in projected.text for value in (reason, _RESPONSE_FAILURE_MARKER, 'PRIVATE', 'blue boat'))
+        assert len(rig.requests) == 1 and rig.requests[0].method == 'POST'
+        assert list(rig.root.rglob('*.png')) == []
+        assert (await client.get('/api/media/catalog')).json()['items'] == []
+        attempt = next((rig.root / 'media' / 'image_approvals').glob('*.attempt'))
+        before = attempt.read_bytes()
+        rig.wire()
+        replay = await rig.coordinator._approved_image_tool_rpc_execute(task)
+        assert replay['status'] == 'failed'
+        await rig.worker.tick()
+        assert len(rig.requests) == 1 and attempt.read_bytes() == before
+
+
+@pytest.mark.parametrize('kind, reason', [
+    ('timeout', 'submission_unknown'), ('redirect', 'redirect_refused'),
+    ('encoding', 'content_encoding_refused'), ('publication', 'artifact_write_failed'),
+])
+@pytest.mark.asyncio
+async def test_ambiguous_policy_and_publication_outcomes_have_no_response_marker(
+    rig, monkeypatch, kind, reason,
+):
+    from agents.core.media_backends import local_openai_image
+    from agents.core.media_backends.comfyui import ImageGenerationError
+
+    async def response(request):
+        if kind == 'timeout':
+            raise httpx.ReadTimeout('PRIVATE', request=request)
+        if kind == 'redirect':
+            return httpx.Response(307, headers={'location': 'http://127.0.0.1:8765/elsewhere'})
+        if kind == 'encoding':
+            return httpx.Response(200, headers={'content-encoding': 'gzip'}, content=gzip.compress(b'PRIVATE'))
+        return httpx.Response(200, json={'data': [{'b64_json': base64.b64encode(PNG).decode()}]})
+
+    if kind == 'publication':
+        def fail_publication(*_args, **_kwargs):
+            raise ImageGenerationError('artifact_write_failed')
+        monkeypatch.setattr(local_openai_image, 'save_artifact', fail_publication)
+    rig.hooks.response = response
+    async with rig.client() as client:
+        task_id = await propose(rig, client)
+        await accept(client, task_id)
+        await rig.worker.tick()
+        projected = await client.get(f'/api/media/generation-tasks/{task_id}')
+        assert projected.status_code == 200
+        assert projected.json() == {'task_id': task_id, 'state': 'uncertain', 'artifact': None}
+    task = rig.queue.get(task_id)
+    assert task.status == 'done' and task.result['reason'] == reason
+    assert 'provider_response_failed' not in task.result['result']
+    assert len(rig.requests) == 1 and list(rig.root.rglob('*.png')) == []
+    await rig.worker.tick()
+    assert len(rig.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_post_response_guard_with_matching_failure_reason_is_not_provider_evidence(
+    rig, monkeypatch,
+):
+    from agents.core import image_generation_runtime
+    from agents.core.media_backends.comfyui import ImageGenerationError
+
+    provider_answered = False
+    original_config = image_generation_runtime.LocalImageRuntime._config
+
+    def guard_config(self, options=None):
+        if provider_answered:
+            raise ImageGenerationError('backend_http_error')
+        return original_config(self, options)
+
+    async def response(_request):
+        nonlocal provider_answered
+        provider_answered = True
+        return httpx.Response(200, json={'data': [{'b64_json': base64.b64encode(PNG).decode()}]})
+
+    monkeypatch.setattr(image_generation_runtime.LocalImageRuntime, '_config', guard_config)
+    rig.hooks.response = response
+    async with rig.client() as client:
+        task_id = await propose(rig, client)
+        await accept(client, task_id)
+        await rig.worker.tick()
+        projected = await client.get(f'/api/media/generation-tasks/{task_id}')
+        assert projected.status_code == 200
+        assert projected.json() == {'task_id': task_id, 'state': 'uncertain', 'artifact': None}
+    task = rig.queue.get(task_id)
+    assert task.status == 'done' and task.result['reason'] == 'backend_http_error'
+    assert task.result['result'] == {'ok': False, 'reason': 'backend_http_error'}
+    assert len(rig.requests) == 1 and list(rig.root.rglob('*.png')) == []
 
 
 @pytest.mark.parametrize("option", [{"seed": 7}, {"steps": 5}, {"reference": "a" * 32},

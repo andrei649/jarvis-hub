@@ -46,6 +46,7 @@ import React, { useState } from 'react';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, actA, inpS, taS, Json } from '../panel-kit';
 
 const STATUS_PATH = '/autonomy/status';
+const MEDIATION_PATH = '/autonomy/mediation';
 const OBSERVER_PATH = '/autonomy/observer';
 const OBSERVER_RUN_PATH = '/autonomy/observer/run';
 const SUGGESTIONS_PATH = '/autonomy/preferences/suggestions';
@@ -66,8 +67,8 @@ const PROVIDERS = [
 ];
 
 const amber = { color: 'var(--amber)', fontSize: 11 };
-const note = { color: 'var(--ink-3)', fontSize: 10.5, lineHeight: 1.5, margin: '4px 0 0' };
-const head = { ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-3)', margin: '10px 0 4px' };
+const note = { color: 'var(--ink-2)', fontSize: 10.5, lineHeight: 1.5, margin: '4px 0 0' };
+const head = { ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', margin: '10px 0 4px' };
 
 /* The ONLY thing a failed apiGet carries is `GET <path> -> <status>`; the guard's own
    detail string is unreachable on a GET. So the hint names the handler branch that
@@ -82,8 +83,38 @@ const readHint = (msg, on503) => {
 
 const ORCH_503 = 'the route\'s single 503 branch: {"error": "not initialized"} — get_orch() is falsy, so the orchestrator (and with it the queue, the budget and the preference store) is not up. Unavailable, NOT zero.';
 
+const MEDIATION_COUNTS = [
+  ['authorized_enqueue', 'Authorized enqueue events'],
+  ['governed', 'Governed events'],
+  ['refused_unmediated', 'Refused unmediated events'],
+  ['ungoverned_detected', 'Ungoverned events detected'],
+] as const;
+
+type MediationMode = 'off' | 'hold' | 'enforce';
+type MediationSnapshot = {
+  mode: MediationMode;
+  valid: boolean;
+  stats: Record<(typeof MEDIATION_COUNTS)[number][0], number> | null;
+};
+
+function mediationSnapshot(value: unknown): MediationSnapshot | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (row.mode !== 'off' && row.mode !== 'hold' && row.mode !== 'enforce') return null;
+  if (row.valid === false) {
+    return row.stats === null ? { mode: row.mode, valid: false, stats: null } : null;
+  }
+  if (row.valid !== true || !row.stats || typeof row.stats !== 'object' || Array.isArray(row.stats)) return null;
+  const stats = row.stats as Record<string, unknown>;
+  if (!MEDIATION_COUNTS.every(([key]) => Number.isSafeInteger(stats[key]) && (stats[key] as number) >= 0)) return null;
+  return { mode: row.mode, valid: true, stats: Object.fromEntries(
+    MEDIATION_COUNTS.map(([key]) => [key, stats[key] as number]),
+  ) as MediationSnapshot['stats'] };
+}
+
 export function AutonomyControlPanel() {
   const status = useApi(STATUS_PATH, true, true);            // admin-tier read
+  const mediation = useApi(MEDIATION_PATH, true, true);      // admin-tier read
   const obs = useApi(OBSERVER_PATH, true, true);             // admin-tier read
   const sug = useApi(SUGGESTIONS_PATH, true, true);          // admin-tier read
 
@@ -93,6 +124,7 @@ export function AutonomyControlPanel() {
   const sd: any = status.e ? null : status.d;
   const od: any = obs.e ? null : obs.d;
   const gd: any = sug.e ? null : sug.d;
+  const md = mediation.loading || mediation.e ? null : mediationSnapshot(mediation.d);
 
   const stats: Record<string, any> = (sd && sd.stats) || {};
   const statKeys = Object.keys(stats);
@@ -139,15 +171,35 @@ export function AutonomyControlPanel() {
   const cred = (PROVIDERS.find((p) => p.id === provider) || {} as any).credential;
 
   const suggestions = arr(gd, 'suggestions');
-  const tierColor = (n) => (n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-3)');
+  const tierColor = (n) => (n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-2)');
 
   return (
     <Card
       title="AUTONOMY CONTROL"
       live={asLive(!!sd)}
       sub={sd ? `${total} task(s) in the queue · ${pending.length} awaiting a decision` : null}
-      onReload={() => { status.reload(); obs.reload(); sug.reload(); }}
+      onReload={() => { status.reload(); mediation.reload(); obs.reload(); sug.reload(); }}
     >
+      <section aria-label="Task mediation">
+        <div style={head}>TASK MEDIATION</div>
+        {mediation.loading || (!mediation.d && !mediation.e) ? (
+          <div style={note}>Checking mediation status…</div>
+        ) : !md ? (
+          <div style={amber}>Mediation status unavailable</div>
+        ) : (
+          <>
+            <Row><span style={mono}>Effective mode: {md.mode}</span></Row>
+            <Row><span style={mono}>Evidence: {md.valid ? 'verified' : 'unavailable or invalid'}</span></Row>
+            {md.stats && MEDIATION_COUNTS.map(([key, label]) => (
+              <Row key={key}><span style={mono}>{label}: {md.stats?.[key]}</span></Row>
+            ))}
+          </>
+        )}
+        <div style={note}>
+          Counts cover verified recorded events, not every task or proof that mediation is ready for use.
+        </div>
+      </section>
+
       {/* ── S1 · queue census + interrupt budget ─────────────────────────── */}
       <div style={head}>QUEUE CENSUS · GET {STATUS_PATH}</div>
       <State e={status.e} loading={status.loading} n={sd ? 1 : 0} />
@@ -155,7 +207,7 @@ export function AutonomyControlPanel() {
         <div style={amber}>{readHint(status.e, ORCH_503)}</div>
       )}
       {sd && ordered.length === 0 && (
-        <div style={{ color: 'var(--ink-3)', fontSize: 11 }}>
+        <div style={{ color: 'var(--ink-2)', fontSize: 11 }}>
           queue empty · stats {'{}'} — no rows in the tasks table. A true zero, not an outage.
         </div>
       )}
@@ -163,7 +215,7 @@ export function AutonomyControlPanel() {
         <Row>
           <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
             {ordered.map((k) => (
-              <Tag key={k} c={k === 'blocked' || k === 'proposed' ? 'var(--amber)' : k === 'failed' || k === 'quarantined' ? 'var(--red)' : 'var(--ink-3)'}>
+              <Tag key={k} c={k === 'blocked' || k === 'proposed' ? 'var(--amber)' : k === 'failed' || k === 'quarantined' ? 'var(--red)' : 'var(--ink-2)'}>
                 {k} {stats[k]}
               </Tag>
             ))}
@@ -176,7 +228,7 @@ export function AutonomyControlPanel() {
           <Row>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>interrupt budget</span>
             <span style={{ marginLeft: 'auto' }}>
-              <Tag c={remaining === 0 ? 'var(--amber)' : 'var(--ink-3)'}>
+              <Tag c={remaining === 0 ? 'var(--amber)' : 'var(--ink-2)'}>
                 {remaining == null ? '—' : String(remaining)} / {perDay == null ? '—' : String(perDay)} interrupts left today
               </Tag>
             </span>
@@ -189,13 +241,13 @@ export function AutonomyControlPanel() {
           </div>
           <div style={head}>AWAITING A DECISION · {pending.length} row(s)</div>
           {pending.length === 0 && (
-            <div style={{ color: 'var(--ink-3)', fontSize: 11 }}>nothing blocked or proposed.</div>
+            <div style={{ color: 'var(--ink-2)', fontSize: 11 }}>nothing blocked or proposed.</div>
           )}
           {pending.slice(0, 8).map((t: any, i: number) => (
             <Row key={t.id ?? i}>
               <span style={{ ...mono, color: 'var(--ink-2)' }}>#{t.id} · {t.title || t.kind || 'task'}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-                <Tag c={t.status === 'proposed' ? 'var(--amber)' : 'var(--ink-3)'}>{t.status}</Tag>
+                <Tag c={t.status === 'proposed' ? 'var(--amber)' : 'var(--ink-2)'}>{t.status}</Tag>
                 {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
                 {t.agent && <Tag>{t.agent}</Tag>}
                 {t.origin && <Tag>{t.origin}</Tag>}
@@ -252,13 +304,13 @@ export function AutonomyControlPanel() {
         </Row>
       ))}
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-3)' }}>sample the host now (admin)</span>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>sample the host now (admin)</span>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={busy} onClick={sample}>
           {busy ? 'sampling…' : 'sample now'}
         </button>
       </Row>
       {busy && (
-        <div style={{ color: 'var(--ink-3)', fontSize: 11 }}>
+        <div style={{ color: 'var(--ink-2)', fontSize: 11 }}>
           sampling… every probe is a live TCP connect (Qdrant, Neo4j, n8n, LM Studio, Ollama) — this can take
           several seconds against a box where they are down.
         </div>
@@ -282,8 +334,8 @@ export function AutonomyControlPanel() {
         <>
           <Row>
             <Tag>sampled {summary.sampled}</Tag>
-            <Tag c={Number(summary.findings) > 0 ? 'var(--amber)' : 'var(--ink-3)'}>findings {summary.findings}</Tag>
-            <Tag c={Number(summary.submitted) > 0 ? 'var(--amber)' : 'var(--ink-3)'}>submitted {summary.submitted}</Tag>
+            <Tag c={Number(summary.findings) > 0 ? 'var(--amber)' : 'var(--ink-2)'}>findings {summary.findings}</Tag>
+            <Tag c={Number(summary.submitted) > 0 ? 'var(--amber)' : 'var(--ink-2)'}>submitted {summary.submitted}</Tag>
             {runUnhealthy.length > 0 && <span style={{ marginLeft: 'auto', ...mono, color: 'var(--amber)' }}>{runUnhealthy.join(' · ')}</span>}
           </Row>
           {Number(summary.submitted) > 0 && (
@@ -321,7 +373,7 @@ export function AutonomyControlPanel() {
               <Tag>approval_rate {String(s.approval_rate)} over {s.samples} sample(s)</Tag>
             </span>
           </Row>
-          <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', padding: '0 0 4px' }}>{s.suggestion}</div>
+          <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)', padding: '0 0 4px' }}>{s.suggestion}</div>
         </div>
       ))}
       {gd && (
@@ -350,7 +402,7 @@ export function AutonomyControlPanel() {
       <textarea style={taS as any} maxLength={2000} placeholder="message to be spoken on the call (≤ 2000 chars)"
         value={message} onChange={(ev) => setMessage(ev.target.value)} />
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-3)' }}>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>
           {to.trim() === '' || message.trim() === '' ? 'to + message are required by the broker' : `provider ${provider} · credential ${cred}`}
         </span>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!canCall} onClick={request}>
@@ -371,12 +423,12 @@ export function AutonomyControlPanel() {
           {res.preview && (
             <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
               <Tag c={tierColor(res.preview.risk_tier)}>tier {String(res.preview.risk_tier)}</Tag>
-              <Tag c={res.preview.irreversible ? 'var(--red)' : 'var(--ink-3)'}>{res.preview.irreversible ? 'irreversible' : 'reversible'}</Tag>
-              <Tag c={res.preview.requires_approval ? 'var(--amber)' : 'var(--ink-3)'}>{res.preview.requires_approval ? 'approval required' : 'auto-approvable'}</Tag>
+              <Tag c={res.preview.irreversible ? 'var(--red)' : 'var(--ink-2)'}>{res.preview.irreversible ? 'irreversible' : 'reversible'}</Tag>
+              <Tag c={res.preview.requires_approval ? 'var(--amber)' : 'var(--ink-2)'}>{res.preview.requires_approval ? 'approval required' : 'auto-approvable'}</Tag>
             </div>
           )}
           {res.preview && res.preview.summary && (
-            <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10.5 }}>{String(res.preview.summary)}</div>
+            <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10.5 }}>{String(res.preview.summary)}</div>
           )}
         </div>
       )}

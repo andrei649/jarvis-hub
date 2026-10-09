@@ -33,6 +33,7 @@ OPERATOR = Path(__file__).resolve().parent.parent / "frontend" / "src" / "operat
 RULES = [
     # served shells / infra
     ("/v2", "shell"),
+    ("/v1/capabilities", "NOT_IN_HUD"),  # external-client chat/session protocol discovery
     ("/v1", "shell"),
     ("/static", "shell"),
     ("/favicon", "shell"),
@@ -475,6 +476,9 @@ _CLIENT_GLOBS = (
 # inheriting a bare list. The audit's own count came down from 86 to 68 precisely because
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
+    "/v1/capabilities":
+        "protocol discovery for external HTTP chat/session clients; packaged HUD/native "
+        "clients retain their fixed tested contract, with no discovery control",
     "/sessions/continue":
         "explicit owner CLI creation via `nerva sessions continue`; the returned child is "
         "addressed by `nerva chat --session` without changing the HUD default session",

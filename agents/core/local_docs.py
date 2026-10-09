@@ -28,6 +28,85 @@ SUPPORTED_EXTS = TEXT_EXTS | DOC_EXTS
 RememberFn = Callable[[str, dict], Awaitable[Optional[str]]]
 
 
+def extract_pdf_pages(path: Path) -> list[str] | None:
+    """Extract each PDF page's text once, or refuse the entire failed traversal."""
+    try:
+        import pypdf  # type: ignore
+
+        reader = pypdf.PdfReader(str(path))
+        pages: list[str] = []
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            if not isinstance(text, str):
+                return None
+            pages.append(text)
+        return pages
+    except Exception:
+        return None  # Missing parser or unreadable/partially failed PDF.
+
+
+def pdf_coverage_warning(pages: list[str]) -> dict | None:
+    """Describe significant gaps in extracted PDF text, never inferred visuals."""
+    total = len(pages)
+    missing = 0
+    gap_count = 0
+    gaps: list[dict] = []
+    gap_start: int | None = None
+    last_text_page: int | None = None
+    last_after = ""
+    last_after_truncated = False
+    gap_after_page: int | None = None
+    gap_after = ""
+    gap_after_truncated = False
+
+    def close_gap(end_page: int) -> None:
+        nonlocal gap_count
+        gap_count += 1
+        if len(gaps) < 16:
+            gaps.append({
+                "start_page": gap_start,
+                "end_page": end_page,
+                "after_page": gap_after_page,
+                "after": gap_after,
+                "after_truncated": gap_after_truncated,
+            })
+
+    for number, text in enumerate(pages, 1):
+        if not text.strip():
+            missing += 1
+            if gap_start is None:
+                gap_start = number
+                gap_after_page = last_text_page
+                gap_after = last_after
+                gap_after_truncated = last_after_truncated
+            continue
+        if gap_start is not None:
+            close_gap(number - 1)
+            gap_start = None
+        trimmed = text.rstrip()
+        last_text_page = number
+        last_after = trimmed[-160:]
+        last_after_truncated = len(trimmed) > 160
+    if gap_start is not None:
+        close_gap(total)
+    if not total or (missing * 5 <= total and missing < 10):
+        return None
+    omitted = gap_count - len(gaps)
+    return {
+        "reason": "pdf_text_layer_gaps",
+        "detail": (
+            "Some PDF pages yielded no extractable text. Do not assume the document "
+            "is silent on a topic; inspect only the relevant page gaps."
+        ),
+        "total_pages": total,
+        "pages_without_text": missing,
+        "gap_count": gap_count,
+        "gaps": gaps,
+        "omitted_gap_count": omitted,
+        "gaps_truncated": omitted > 0,
+    }
+
+
 def extract_text(path: Path) -> Optional[str]:
     """Return the document's text, or None if unreadable / parser missing."""
     ext = path.suffix.lower()
@@ -38,12 +117,8 @@ def extract_text(path: Path) -> Optional[str]:
             logger.debug("read failed for %s: %s", path, exc)
             return None
     if ext == ".pdf":
-        try:
-            import pypdf  # type: ignore
-            reader = pypdf.PdfReader(str(path))
-            return "\n".join((pg.extract_text() or "") for pg in reader.pages)
-        except Exception:
-            return None  # parser missing or corrupt PDF → skip
+        pages = extract_pdf_pages(path)
+        return "\n".join(pages) if pages is not None else None
     if ext == ".docx":
         try:
             import docx  # type: ignore

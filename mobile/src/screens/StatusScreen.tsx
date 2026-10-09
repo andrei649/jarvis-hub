@@ -1,5 +1,6 @@
 import { Text } from '../components/ThemedText';
-import React, { useCallback, useEffect, useState } from 'react';
+import { TaskMediationCard } from '../components/TaskMediationCard';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import {
   ApiError,
@@ -96,9 +97,12 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
   const [briefError, setBriefError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [mediationRefreshKey, setMediationRefreshKey] = useState(0);
+  const loadGeneration = useRef(0);
 
   const load = useCallback(async () => {
     if (!configured) return;
+    const generation = ++loadGeneration.current;
     setLoading(true);
     setError(null);
     try {
@@ -107,6 +111,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
         fetchDashboard(config).catch(() => ({ calendar: [], notifications: [] })),
         fetchTicker(config).catch(() => ({ ticker: [] })),
       ]);
+      if (generation !== loadGeneration.current) return;
       setStatus(statusOut);
       setDashboard(dashboardOut);
       setTicker(tickerOut);
@@ -120,7 +125,9 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
         fetchEstop(config).catch(() => null),
         fetchSystemMap(config).catch(() => null),
       ]);
+      if (generation !== loadGeneration.current) return;
       const briefOut = await fetchAutonomyBrief(config).catch(() => null);
+      if (generation !== loadGeneration.current) return;
       setBrief(briefOut);
       setGovernance(governanceOut);
       setPosture(postureOut);
@@ -131,6 +138,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setEstop(estopOut);
       setSystemMap(mapOut);
     } catch (e) {
+      if (generation !== loadGeneration.current) return;
       setError(e instanceof ApiError ? e.message : 'Failed to load status');
       setStatus(null);
       setDashboard(null);
@@ -145,12 +153,13 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       setSystemMap(null);
       setBrief(null);
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration.current) setLoading(false);
     }
   }, [config, configured]);
 
   useEffect(() => {
-    load();
+    void load();
+    return () => { ++loadGeneration.current; };
   }, [load]);
 
   if (!configured) {
@@ -173,7 +182,10 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
     <ScrollView
       style={styles.flex}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={theme.accent} />}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={() => {
+        setMediationRefreshKey(key => key + 1);
+        void load();
+      }} tintColor={theme.accent} />}
     >
       {error && (
         <View style={styles.errorBox}>
@@ -259,6 +271,8 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
           <Text style={styles.emptyText}>No trust data</Text>
         )}
       </Card>
+
+      <TaskMediationCard onGoToSettings={onGoToSettings} refreshKey={mediationRefreshKey} />
 
       <Card title="System map">
         {systemMap && systemMap.nodes.length > 0 ? (

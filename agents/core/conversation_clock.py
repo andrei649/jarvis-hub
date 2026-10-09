@@ -182,11 +182,11 @@ class ClockSnapshot:
     instance_id: str = ""
 
 
-CONTEXT_REFUSED_REPLY = "I stopped this turn because its context compaction could not be safely committed. Please retry."
+CONTEXT_REFUSED_REPLY = "I stopped this turn because its context could not be safely prepared. Please retry; if this persists, reduce the context size."
 
 
 class CompactionClockRefused(RuntimeError):
-    """An unaccepted compaction must not become an oversized model request."""
+    """Context preparation or a prepared-dispatch budget check refused the turn."""
 
 
 @dataclass

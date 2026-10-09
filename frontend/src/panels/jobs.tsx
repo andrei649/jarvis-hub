@@ -58,10 +58,10 @@ const Note = ({ c, children }: { c?: any; children?: any }) => (
 );
 
 const stateOf = (job: any): { label: string; color: string } => {
-  if (job?.options?.repeat && job.attempts >= job.options.repeat) return { label: 'complete', color: 'var(--ink-3)' };
-  if (job?.one_shot && job.attempts >= 1) return { label: 'done', color: 'var(--ink-3)' };   // H450: ran its one time
+  if (job?.options?.repeat && job.attempts >= job.options.repeat) return { label: 'complete', color: 'var(--ink-2)' };
+  if (job?.one_shot && job.attempts >= 1) return { label: 'done', color: 'var(--ink-2)' };   // H450: ran its one time
   if (job?.paused_reason) return { label: 'paused', color: 'var(--amber)' };
-  if (job?.enabled === false) return { label: 'off', color: 'var(--ink-3)' };
+  if (job?.enabled === false) return { label: 'off', color: 'var(--ink-2)' };
   return { label: 'on', color: 'var(--green)' };
 };
 
@@ -240,8 +240,8 @@ export function JobsPanel() {
             <Row>
               <span style={mono}>{job.name || EM}</span>
               <Tag c={st.color}>{st.label}</Tag>
-              <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{job.schedule_text || job.cron || ''}{job.one_shot ? ` · ${onceAt(job)}` : ''}</span>
-              <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{job.action?.type || ''}</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{job.schedule_text || job.cron || ''}{job.one_shot ? ` · ${onceAt(job)}` : ''}</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{job.action?.type || ''}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
                 <button className="tool-btn" title="run now" onClick={() => drive(id, 'run')}>▶ now</button>
                 {job.paused_reason
@@ -270,7 +270,7 @@ export function JobsPanel() {
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button className="tool-btn" onClick={() => saveEdit(id)}>save</button>
                   <button className="tool-btn" onClick={() => setEditing((m) => ({ ...m, [id]: null }))}>cancel</button>
-                  <span style={{ fontSize: 10, color: 'var(--ink-3)', alignSelf: 'center' }}>
+                  <span style={{ fontSize: 10, color: 'var(--ink-2)', alignSelf: 'center' }}>
                     editing a paused job leaves it paused
                   </span>
                 </div>
@@ -314,7 +314,7 @@ export function JobsPanel() {
             <OptionsEditor toolsets={arr(toolCatalog.d, 'toolsets')} value={options} onChange={setOptions}/>
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="tool-btn" onClick={arm}>arm</button>
-              <span style={{ fontSize: 10, color: 'var(--ink-3)', alignSelf: 'center' }}>a task-type job still crosses the approval queue; a reminder never touches the model</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-2)', alignSelf: 'center' }}>a task-type job still crosses the approval queue; a reminder never touches the model</span>
             </div>
           </div>
         )}

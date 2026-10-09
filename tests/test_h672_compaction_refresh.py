@@ -23,12 +23,12 @@ fails CLOSED: a resolver that cannot answer withdraws every tool and the loop
 ends with a named reason, because holding a possibly-revoked capability open is
 strictly worse than "nothing changes until restart".
 
-Between folds nothing moves. A tool set that shifts under a turn makes the
-model's own plan invalid, so between two folds the registry is not consulted at
-all, and that is pinned here on purpose. (Hermes's inventory row says "mid-turn
-tool sets stay stable"; Nerva's fold happens *inside* one user turn, between two
-model iterations, so the honest reading of the same rule here is *between
-folds*, not *mid-turn*.)
+Between folds the offered tool set stays stable. A tool set that shifts under a
+turn makes the model's own plan invalid, so the registry is not consulted again
+until a fold. Dispatch independently rechecks the current profile, so a tool
+revoked after it was offered cannot start another action. (Hermes's inventory
+row says "mid-turn tool sets stay stable"; Nerva's fold happens *inside* one user
+turn, between two model iterations, so the offer is stable *between folds*.)
 
 The independent review of the first cut found three things this file now pins
 as well: the conversation-level boundary is every turn once a session is over
@@ -797,17 +797,18 @@ async def test_a_tool_withdrawn_by_the_profile_is_refused_by_the_gate_map_not_th
 
 
 @pytest.mark.asyncio
-async def test_between_folds_a_profile_revocation_is_not_enforced_by_the_executor_either():
-    """This pins a LIMIT the H672 row names, not a guarantee. `ToolRPCServer.handle`
-    checks the job toolset, registration and the gate — never the tool profile — and
-    the executor checks `offered` against the gate map built at the top of the run
-    (or at a fold). So in a loop that never folds (small results, the common shape) a
-    tool the profile withdrew mid-turn stays offered AND executes until the loop
-    ends. Pre-existing, and the boundary in this slice does not change it. When the
-    executor learns to consult the profile per call, delete this test and rewrite
-    the row's remaining in the same commit."""
+async def test_between_folds_profile_revocation_blocks_dispatch_without_changing_offer():
+    """A stable model offer does not authorize a freshly revoked tool's execution."""
     server = _server(payload_chars=100)  # never folds
     withheld: set[str] = set()
+    ran: list[dict] = []
+    original = server._tools["shell"]["handler"]
+
+    async def observed(args):
+        ran.append(args)
+        return await original(args)
+
+    server._tools["shell"]["handler"] = observed
 
     def profile(agent_id, metadata):
         return [t for t in metadata if t["name"] not in withheld], None
@@ -817,10 +818,15 @@ async def test_between_folds_a_profile_revocation_is_not_enforced_by_the_executo
 
     backend = _Backend(tool_calls=2, hooks={1: revoke_via_profile}, names={2: "shell"})
     events: list[dict] = []
-    answer = await _run(_runtime(server, tool_profile=profile), backend, events)
+    answer = await _run(
+        _runtime(server, tool_profile=profile, execution_profile=profile), backend, events,
+    )
 
     assert answer == "done"
     assert not any(e["event"] == "tool_context_compacted" for e in events)
+    assert all(offer == ["blob", "shell"] for offer in backend.offers)
+    assert len(backend.offers) == 3
     final = backend.calls[-1]
     result = json.loads(next(m["content"] for m in final if m.get("tool_call_id") == "call-2"))
-    assert result["ok"] is True and result["result"] == {"ran": {"n": 2}}
+    assert result == {"ok": False, "reason": "tool_not_allowed", "tool": "shell"}
+    assert ran == []

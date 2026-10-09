@@ -57,7 +57,29 @@ def test_totals_and_details_are_not_counted_twice(provider):
     orch._ctx_turns_at_build = 6
     orch._record_context_anchor('jarvis', usage)
     assert orch._usage_anchor(6).prompt_tokens == 123
-    assert _billable_from_usage(usage) == (123, expected_output, 0)
+    if provider == 'gemini':
+        # Tool-use prompt tokens are a separate, still-unmapped input category.
+        assert usage.counts_complete is False
+        assert _billable_from_usage(usage) is None
+    else:
+        assert _billable_from_usage(usage) == (123, expected_output, 0)
+
+
+@pytest.mark.parametrize('include_total', [False, True])
+def test_gemini_explicit_zero_tool_use_has_complete_supported_categories(include_total):
+    from agents.core.orchestrator import _billable_from_usage
+
+    data = response('gemini')
+    metadata = data['usageMetadata']
+    metadata['toolUsePromptTokenCount'] = 0
+    if include_total:
+        metadata['totalTokenCount'] = 123 + 17 + 3
+    else:
+        metadata.pop('totalTokenCount')
+    usage = normalize('gemini', data)
+    assert (usage.input_tokens, usage.output_tokens, usage.cache_read, usage.cache_write) == (123, 20, 0, 0)
+    assert usage.counts_complete is True
+    assert _billable_from_usage(usage) == (123, 20, 0)
 
 
 @pytest.mark.parametrize('bad', [True, -4, '17', None, {}, 1.5])

@@ -24,7 +24,12 @@ import json
 import pytest
 
 from agents.core.webhooks import WebhookStore, compute_signature, delivery_event, render_prompt
-from tests.test_h10_8_webhooks import _ADMIN, _hook, hub  # noqa: F401  (hub is a fixture)
+from tests.test_h10_8_webhooks import (  # noqa: F401  (hub is a fixture)
+    _ADMIN,
+    _action_events,
+    _hook,
+    hub,
+)
 
 
 def _post(client, hook, body, **headers):
@@ -197,7 +202,7 @@ def test_an_event_list_is_validated(hub, events):
     client, events_log, _turns = hub
     reply = client.post("/api/webhooks", json={"target": "jarvis", "events": events}, headers=_ADMIN)
     assert reply.status_code == 422
-    assert events_log == []
+    assert _action_events(events_log) == []
 
 
 def test_an_event_list_is_stored_without_duplicates(hub):
@@ -274,7 +279,7 @@ def test_a_templated_delivery_is_still_an_inbound_turn(hub, monkeypatch):
 def test_a_template_is_validated(hub, prompt):
     client, events, _turns = hub
     assert client.post("/api/webhooks", json={"target": "jarvis", "prompt": prompt}, headers=_ADMIN).status_code == 422
-    assert events == []
+    assert _action_events(events) == []
 
 
 # ── changing a subscription ──────────────────────────────────────────────────────
@@ -287,8 +292,9 @@ def test_events_and_template_can_be_changed_and_the_change_is_audited(hub):
     changed = reply.json()["webhook"]
     assert changed["events"] == ["push"] and changed["prompt"] == "{event}!" and changed["enabled"] is True
     assert "token" not in changed and "signing_secret" not in changed
-    assert events[-1].action_taken == "webhook_update"
-    assert 'events=["push"]' in events[-1].content_preview and "prompt=8 chars" in events[-1].content_preview
+    update = _action_events(events)[-1]
+    assert update.action_taken == "webhook_update"
+    assert 'events=["push"]' in update.content_preview and "prompt=8 chars" in update.content_preview
     assert _post(client, hook, {}, **{"X-GitHub-Event": "push"}).status_code == 200 and turns == ["push!"]
     cleared = client.patch(f"/api/webhooks/{hook['id']}", json={"events": [], "prompt": ""}, headers=_ADMIN).json()
     assert cleared["webhook"]["events"] == [] and cleared["webhook"]["prompt"] == ""
@@ -315,14 +321,14 @@ def test_an_update_is_validated(hub, body):
     client, events, _turns = hub
     hook = _hook(client)
     assert client.patch(f"/api/webhooks/{hook['id']}", json=body, headers=_ADMIN).status_code == 422
-    assert [e.action_taken for e in events] == ["webhook_create"]
+    assert [e.action_taken for e in _action_events(events)] == ["webhook_create"]
 
 
 def test_a_switch_alone_is_still_audited_as_a_switch(hub):
     client, events, _turns = hub
     hook = _hook(client)
     client.patch(f"/api/webhooks/{hook['id']}", json={"enabled": False}, headers=_ADMIN)
-    assert events[-1].action_taken == "webhook_disable"
+    assert _action_events(events)[-1].action_taken == "webhook_disable"
 
 
 def test_the_store_keeps_events_and_template_across_a_restart(tmp_path):
@@ -355,8 +361,9 @@ def test_a_switch_and_a_filter_change_together_are_audited_as_an_update(hub):
     client, events, _turns = hub
     hook = _hook(client)
     client.patch(f"/api/webhooks/{hook['id']}", json={"enabled": False, "events": ["push"]}, headers=_ADMIN)
-    assert events[-1].action_taken == "webhook_update"
-    assert events[-1].content_preview.endswith("enabled=False")
+    update = _action_events(events)[-1]
+    assert update.action_taken == "webhook_update"
+    assert update.content_preview.endswith("enabled=False")
 
 
 def test_an_unreadable_event_list_skips_every_delivery(hub):

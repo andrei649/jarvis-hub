@@ -205,10 +205,10 @@ curl.exe http://127.0.0.1:8080/status
 
 <!-- project-status:jarvis-stats:start -->
 - 18 active agents; registry-derived
-- 553 HTTP routes; parity-snapshot-derived
-- Tests: backend **20,985** · frontend **1,859** · mobile **142**
-- Version: **v1.0.0** · source commit `cb3b164f4009`
-- Backlog ledger: 289 done · 18 open or blocked of 307 horizon rows — proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist
+- 555 HTTP routes; parity-snapshot-derived
+- Tests: backend **21,785** · frontend **2,039** · mobile **316**
+- Version: **v1.0.0** · source commit `304ae4babf1c`
+- Backlog ledger: 289 done · 20 open or blocked of 309 horizon rows — proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist
 - H23 roll-up: 28/30 done, 1 blocked, 1 open; release gates: A1, A3, A4, A6
 <!-- project-status:jarvis-stats:end -->
 

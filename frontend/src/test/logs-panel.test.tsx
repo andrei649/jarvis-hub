@@ -186,8 +186,8 @@ describe('LogsPanel', () => {
     expect(screen.queryByText('LIVE')).toBeNull();
   });
 
-  it('names a 403 like a 401, dims DEBUG, and keeps a chosen component listed', async () => {
-    expect(levelColor('DEBUG')).toBe('var(--ink-3)');
+  it('names a 403 like a 401, keeps DEBUG readable, and keeps a chosen component listed', async () => {
+    expect(levelColor('DEBUG')).toBe('var(--ink-2)');
     render(<LogsPanel />);
     await waitFor(() => expect(screen.getByText(/newer/)).toBeTruthy());
     answer = { ...ON, components: ['jarvis.web'] };

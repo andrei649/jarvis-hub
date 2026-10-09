@@ -58,6 +58,27 @@ describe('Images panel', () => {
     expect(api.imageTask).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Propose image' })).toBeNull();
   });
+  it('shows a verified provider-response failure separately from uncertainty without reading PNG or proposing again', async () => {
+    vi.mocked(api.imageTask).mockResolvedValue({ task_id: 17, state: 'failed', artifact: null } as api.ImageTask);
+    render(<ImagesPanel />); await propose();
+    await screen.findByText(/Provider response failed; no usable image was verified/);
+    expect(screen.queryByText(/Result uncertain/)).toBeNull();
+    expect(api.imageBlob).not.toHaveBeenCalled();
+    expect(api.proposeImage).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('img', { name: 'Generated image' })).toBeNull();
+  });
+  it('removes a previous preview when a manual task check reports failed', async () => {
+    vi.mocked(api.imageTask).mockResolvedValueOnce({ task_id: 17, state: 'ready', artifact })
+      .mockResolvedValueOnce({ task_id: 17, state: 'failed', artifact: null } as api.ImageTask);
+    render(<ImagesPanel />); await propose();
+    await screen.findByRole('img', { name: 'Generated image' });
+    fireEvent.click(screen.getByRole('button', { name: 'Check status' }));
+    await screen.findByText(/Provider response failed; no usable image was verified/);
+    expect(screen.queryByRole('img', { name: 'Generated image' })).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:owned-image');
+    expect(api.imageBlob).toHaveBeenCalledTimes(1);
+    expect(api.proposeImage).toHaveBeenCalledTimes(1);
+  });
   it('uses a validated artifact blob for preview and download, and revokes on unmount', async () => {
     vi.mocked(api.imageTask).mockResolvedValue({ task_id: 17, state: 'ready', artifact });
     const { unmount } = render(<ImagesPanel />); await propose();

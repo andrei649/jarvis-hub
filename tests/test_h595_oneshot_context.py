@@ -81,8 +81,14 @@ async def test_worker_cancel_reaps_process_before_return(tmp_path, monkeypatch, 
         monkeypatch.setattr(sandbox, "_build_wasm_command",
                             lambda filename: [sys.executable, str(sandbox.work_dir / filename)])
     pid_file = tmp_path / "native.pid"
+    pid_temp = tmp_path / "native.pid.tmp"
     task = asyncio.create_task(sandbox.execute_python(
-        f"import os, time\nopen({str(pid_file)!r}, 'w').write(str(os.getpid()))\ntime.sleep(10)"))
+        "import os, time\n"
+        f"with open({str(pid_temp)!r}, 'w') as pid_handle:\n"
+        "    pid_handle.write(str(os.getpid()))\n"
+        f"os.replace({str(pid_temp)!r}, {str(pid_file)!r})\n"
+        "time.sleep(10)"))
+    pid: int | None = None
     try:
         for _ in range(150):
             if pid_file.exists():
@@ -99,9 +105,9 @@ async def test_worker_cancel_reaps_process_before_return(tmp_path, monkeypatch, 
         if not task.done():
             task.cancel()
         await asyncio.gather(task, return_exceptions=True)
-        if pid_file.exists():
+        if pid is not None:
             with contextlib.suppress(ProcessLookupError):
-                os.kill(int(pid_file.read_text()), 9)
+                os.kill(pid, 9)
 
 
 @pytest.mark.asyncio

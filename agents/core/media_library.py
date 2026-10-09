@@ -6,7 +6,7 @@ import stat
 from pathlib import Path
 
 from .artifact_store import MAX_UPLOAD, BinaryArtifactStore, sniff
-from .media_catalog import MediaCatalog
+from .media_catalog import MediaCatalog, _valid_sha256
 from .paths import data_root
 
 CATALOG_ID = re.compile(r'md-[a-f0-9]{12}')
@@ -94,14 +94,35 @@ def _mime_hint(data):
 
 
 def read_catalog_blob(item_id, root=None, *, records=None, max_bytes=MAX_UPLOAD):
+    if not isinstance(item_id, str) or not CATALOG_ID.fullmatch(item_id):
+        raise ValueError('artifact_not_found')
     root = Path(root) if root is not None else data_root()
-    path = catalog_path(item_id, root, records=records)
+    if records is None:
+        records, _ = catalog_snapshot(root)
+    if not isinstance(records, dict):
+        raise ValueError('artifact_not_found')
+    selected = records.get(item_id)
+    if not isinstance(selected, dict) or selected.get('id') != item_id:
+        raise ValueError('artifact_not_found')
+    # Freeze this row once: path and expected digest must come from the same
+    # validated catalog view, even when a caller supplied a mutable mapping.
+    row = dict(selected)
+    expected = row.get('sha256')
+    if 'sha256' in row and not _valid_sha256(expected):
+        raise ValueError('artifact_not_found')
+    path = catalog_path(item_id, root, records={item_id: row})
     try:
         data, _ = _read_bytes(path, min(MAX_UPLOAD, max_bytes))
         mime = sniff(data)
     except (OSError, ValueError):
         raise ValueError('artifact_not_found') from None
-    return {'id': item_id, 'mime': mime, 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()}, data
+    actual = hashlib.sha256(data).hexdigest()
+    if expected is not None and actual != expected:
+        raise ValueError('artifact_not_found')
+    return {
+        'id': item_id, 'mime': mime, 'size': len(data), 'sha256': actual,
+        'digest_status': 'verified' if expected is not None else 'unbound',
+    }, data
 
 
 def gallery(root=None, *, generated=False, attached=False):

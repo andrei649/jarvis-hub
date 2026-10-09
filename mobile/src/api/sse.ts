@@ -11,6 +11,8 @@ export type SseEvent = {
   type: 'start' | 'token' | 'end' | string;
   text?: string;
   agent?: string;
+  session_id?: unknown;
+  outcome?: unknown;
 };
 
 /**

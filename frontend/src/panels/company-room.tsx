@@ -59,7 +59,7 @@ const STATUS_COLOR: Record<string, string> = {
   blocked: 'var(--amber)',
   stopping: 'var(--amber)',
   exhausted: 'var(--amber)',
-  stopped: 'var(--ink-3)',
+  stopped: 'var(--ink-2)',
   failed: 'var(--red)',
 };
 
@@ -175,7 +175,7 @@ export function CompanyRoomPanel() {
                   <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                     <Tag c="var(--amber)">{waitedFor(ask.waiting_seconds)}</Tag>
                     {/* No durable task means no decision can ever answer this ask. */}
-                    <Tag c={ask.answerable ? 'var(--ink-3)' : 'var(--red)'}>
+                    <Tag c={ask.answerable ? 'var(--ink-2)' : 'var(--red)'}>
                       {ask.answerable ? `task ${ask.task_id}` : 'no task to decide'}
                     </Tag>
                   </span>
@@ -194,7 +194,7 @@ export function CompanyRoomPanel() {
                     {run.title || EM}
                   </span>
                   <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-                    <Tag c={STATUS_COLOR[String(run.status)] || 'var(--ink-3)'}>
+                    <Tag c={STATUS_COLOR[String(run.status)] || 'var(--ink-2)'}>
                       {run.status || 'unknown'}
                     </Tag>
                     {run.waiting_on && <Tag c="var(--amber)">waiting</Tag>}
@@ -237,7 +237,7 @@ export function CompanyRoomPanel() {
                             {step.outcome}
                           </Tag>
                           {/* No task id means nothing authorised this step. Say it. */}
-                          <Tag c={step.task_id ? 'var(--ink-3)' : 'var(--red)'}>
+                          <Tag c={step.task_id ? 'var(--ink-2)' : 'var(--red)'}>
                             {step.task_id ? `task ${step.task_id}` : 'no approved task'}
                           </Tag>
                         </span>

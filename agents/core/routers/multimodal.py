@@ -532,14 +532,15 @@ async def media_generation_task(task_id: int = PathParam(..., ge=1, le=2**63 - 1
     if error is not None:
         return error
     task = queue.get(task_id)
+    if task is None or type(task.id) is not int or task.id < 1 or task.id != task_id:
+        return nocache_json({"error": "image task not found"}, status_code=404)
     from agents.core.cloud_image_runtime import matches
     if matches(task):
         runtime = getattr(get_orch(), 'cloud_images', None)
         if runtime is None:
             return nocache_json({'error': 'cloud image runtime unavailable'}, status_code=503)
         return nocache_json(runtime.project(task).model_dump())
-    if (task is None or task.id != task_id
-            or task.kind not in {"toolrpc.image_generate", "tool.rpc"}
+    if (task.kind not in {"toolrpc.image_generate", "tool.rpc"}
             or not isinstance(task.payload, dict) or task.payload.get("tool") != "image_generate"
             or (task.kind == "tool.rpc" and task.payload.get("target") != "image_generate")):
         return nocache_json({"error": "image task not found"}, status_code=404)

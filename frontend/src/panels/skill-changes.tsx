@@ -67,7 +67,7 @@ export function decisionOutcome(reply: any, proposalId: string, approved: boolea
 function ChangeDiff({ text }: { text: string }) {
   const color = (l: string) => l.startsWith('@@') ? 'var(--accent-light)'
     : (l.startsWith('+') && !l.startsWith('+++')) ? 'var(--green)'
-    : (l.startsWith('-') && !l.startsWith('---')) ? 'var(--red)' : 'var(--ink-3)';
+    : (l.startsWith('-') && !l.startsWith('---')) ? 'var(--red)' : 'var(--ink-2)';
   return <pre data-testid="skill-change-diff" style={{ ...mono, fontSize: 10.5, lineHeight: 1.45, whiteSpace: 'pre-wrap',
     overflowWrap: 'anywhere', maxHeight: 320, overflow: 'auto', margin: '6px 0 0', padding: 8,
     background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
@@ -96,7 +96,7 @@ export function SkillChangesInbox({ reply, error, onDecided }:
   };
   return (
     <div style={{ marginTop: 10 }}>
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', letterSpacing: 1 }}>
+      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', letterSpacing: 1 }}>
         SKILL CHANGES · {total} awaiting you
       </div>
       {rows.slice(0, SKILL_CHANGES_SHOWN).map((p, i) => (
@@ -123,7 +123,7 @@ export function SkillChangesInbox({ reply, error, onDecided }:
           </div>}
         </div>
       ))}
-      {total > SKILL_CHANGES_SHOWN && <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>
+      {total > SKILL_CHANGES_SHOWN && <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
         {total - Math.min(rows.length, SKILL_CHANGES_SHOWN)} more after these are decided
       </div>}
     </div>

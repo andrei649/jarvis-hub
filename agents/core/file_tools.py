@@ -100,7 +100,7 @@ from agents.core import project_context
 from agents.core.automation_contracts import ContractTemplate, predicate
 from agents.core.env_config import env_flag, env_int, env_list
 from agents.core.environments import SECRET_ENV_SUBSTRINGS
-from agents.core.local_docs import DOC_EXTS, extract_text
+from agents.core.local_docs import DOC_EXTS, extract_pdf_pages, extract_text, pdf_coverage_warning
 from agents.core.paths import data_path
 from agents.core.tool_result_store import SPILL_DIRNAME as _SPILL_DIRNAME
 from agents.core.tool_result_store import is_reference as _is_spill_reference
@@ -115,6 +115,7 @@ FLAG = "JARVIS_FILE_TOOLS"
 ROOTS_ENV = "JARVIS_FILE_ROOTS"
 MAX_BYTES_ENV = "JARVIS_FILE_MAX_BYTES"
 DEFAULT_MAX_BYTES = 2_000_000
+MAX_DOCUMENT_BYTES = 50_000_000
 MAX_PATH_CHARS = 4096
 #: The largest ``file_read`` offset (H661): the largest integer every JSON reader holds
 #: exactly, and far past any file. Above it an offset is refused as ``bad_offset``
@@ -589,6 +590,19 @@ def _valid_offset(value: object) -> bool:
             and 0 <= value <= MAX_OFFSET)
 
 
+def _mutation_result(result: dict, target: Path, op: str, outcome: str) -> dict:
+    """Preserve legacy fields and add this resolved attempt's limited observation.
+
+    Refused never submitted ``_apply``; applied means it returned, without
+    read-back; unknown means its OSError handler ran. Cancellation and escaping
+    errors return no receipt. A ToolRPC-scrubbed path is not a stable identity.
+    """
+    return {
+        **result,
+        "mutation_receipt": {"path": str(target), "op": op, "outcome": outcome},
+    }
+
+
 async def _with_project_context(result: dict, target: Path) -> dict:
     """H594 — a read tool's result carries the convention files of *target*'s directory
     chain the turn has not been given (tainted, so the loop fences it); off the loop. A
@@ -1003,9 +1017,12 @@ class FileTools:
         try:
             snap = await asyncio.to_thread(_snapshot)
         except OSError as exc:
-            return {"ok": False, "reason": "snapshot_failed", "detail": exc.__class__.__name__}
+            return _mutation_result(
+                {"ok": False, "reason": "snapshot_failed", "detail": exc.__class__.__name__},
+                target, op, "refused",
+            )
         if isinstance(snap, str):
-            return {"ok": False, "reason": snap}
+            return _mutation_result({"ok": False, "reason": snap}, target, op, "refused")
 
         payload = {
             "kind": KIND,
@@ -1020,7 +1037,10 @@ class FileTools:
         if not decision.admissible:
             reason = decision.reason or "contract_denied"
             self._record("file.contract_denied", f"{op} {target}: {reason}", ok=False)
-            return {"ok": False, "reason": reason, "snapshot_ref": snap.ref}
+            return _mutation_result(
+                {"ok": False, "reason": reason, "snapshot_ref": snap.ref},
+                target, op, "refused",
+            )
 
         # H506 — does this write steer a future run? Checked on both the resolved
         # target and the name the caller spelled, because a symlink can hide one
@@ -1033,7 +1053,10 @@ class FileTools:
         denied = self._authorize(op, target, payload, approved=approved)
         if denied is not None:
             self._record("file.kernel_denied", f"{op} {target}: {denied}", ok=False)
-            return {"ok": False, "reason": denied, "snapshot_ref": snap.ref}
+            return _mutation_result(
+                {"ok": False, "reason": denied, "snapshot_ref": snap.ref},
+                target, op, "refused",
+            )
         # A floor on *this API surface*, for any caller that reaches write_file /
         # delete_file directly: such a call must say ``approved=True`` for an
         # instruction file, whatever the kernel says and whether or not it is on.
@@ -1049,12 +1072,12 @@ class FileTools:
         # in-process caller, not the braces the owner sees.
         if steers and not approved:
             self._record("file.instruction_floor", f"{op} {target}", ok=False)
-            return {
+            return _mutation_result({
                 "ok": False,
                 "reason": "approval_required",
                 "class": INSTRUCTION_CLASS,
                 "snapshot_ref": snap.ref,
-            }
+            }, target, op, "refused")
 
         def _apply() -> None:
             if op == "delete":
@@ -1067,19 +1090,19 @@ class FileTools:
             await asyncio.to_thread(_apply)
         except OSError as exc:
             self._record(f"file.{op}", f"{target}: io_error", ok=False)
-            return {
+            return _mutation_result({
                 "ok": False, "reason": "io_error", "detail": exc.__class__.__name__,
                 "snapshot_ref": snap.ref,
-            }
+            }, target, op, "unknown")
         self._record(f"file.{op}", str(target), ok=True, snapshot_ref=snap.ref)
-        return {
+        return _mutation_result({
             "ok": True,
             "op": op,
             "path": str(target),
             "bytes": len(data),
             "existed": snap.existed,
             "snapshot_ref": snap.ref,
-        }
+        }, target, op, "applied")
 
     def _authorize(self, op: str, target: Path, payload: dict, *, approved: bool) -> str | None:
         """Ask the injected kernel hook. Returns a refusal reason or ``None``."""
@@ -1293,12 +1316,24 @@ def _page(data: bytes, *, offset: int, total: int) -> dict:
 
 
 def _read_document(target: Path, size: int, limit: int, offset: int = 0) -> dict:
-    """The text of a .pdf / .docx, bounded like any read; a named refusal otherwise.
+    """Extract a bounded text page from an admitted .pdf / .docx input.
 
     ``offset`` counts bytes of the *extracted text* (UTF-8), not of the file: that is
     the text the reader was shown, so it is the only thing a page number can mean.
-    ``size`` stays the file's size on disk and ``text_size`` names the text's.
+    ``size`` is the observed on-disk input size; refuse above 50,000,000 bytes
+    before probing a parser. ``text_size`` names the extracted text's byte size.
     """
+    if size > MAX_DOCUMENT_BYTES:
+        return {
+            "ok": False,
+            "reason": "document_too_large",
+            "size": size,
+            "max_document_bytes": MAX_DOCUMENT_BYTES,
+            "detail": (
+                "document extraction is limited to 50000000 bytes (50 MB); "
+                "raw=true returns a bounded byte page"
+            ),
+        }
     suffix = target.suffix.lower()
     if not _parser_available(suffix):
         return {
@@ -1306,13 +1341,21 @@ def _read_document(target: Path, size: int, limit: int, offset: int = 0) -> dict
             "reason": "parser_missing",
             "detail": f"reading {suffix} needs the {_DOCUMENT_PARSERS[suffix]} package; raw=true returns the bytes",
         }
-    text = extract_text(target)
+    coverage = None
+    if suffix == ".pdf":
+        pages = extract_pdf_pages(target)
+        text = "\n".join(pages) if pages is not None else None
+        if pages is not None:
+            coverage = pdf_coverage_warning(pages)
+    else:
+        text = extract_text(target)
     if text is None:
         return {"ok": False, "reason": "extraction_failed", "detail": "the file could not be parsed"}
     data = text.encode("utf-8")
     return {
         "ok": True,
         "path": str(target),
+        **({"coverage_warning": coverage} if coverage is not None else {}),
         **_page(data[offset:offset + limit], offset=offset, total=len(data)),
         "size": size,
         "text_size": len(data),
@@ -1504,7 +1547,9 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
             "Read one UTF-8 file inside the owner's file roots (bounded bytes); a .pdf or "
             ".docx is returned as its extracted text (raw=true for the bytes). offset "
             "starts the read at that byte; a read that stops early returns next_offset — "
-            "pass it back as offset to page through a large file or a spilled tool result."
+            "pass it back as offset to page through a large file or a spilled tool result. "
+            "PDF/DOCX extraction accepts at most 50 MB (50,000,000 bytes); raw=true pages bytes. "
+            "PDF page gaps without extracted text are reported separately from content."
         ),
         "gated": False,
         "trusted_execution": False,

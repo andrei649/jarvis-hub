@@ -2,9 +2,8 @@
  *
  * `frontend/src/orb.tsx` splits the orb into two halves: a **pure view-model**
  * (`orbVisual`) and a Canvas-2D particle renderer. Only the first half is
- * portable — React Native has no canvas, and the browser renderer's particle
- * sphere needs a graphics surface (react-native-svg / Skia) that this app
- * deliberately does not depend on.
+ * directly shared with the browser. The native particle renderer lives in
+ * `components/VoiceOrb.tsx` and uses a bounded react-native-svg surface.
  *
  * This is that pure half, byte-for-byte equivalent to the browser's. Both
  * implementations are asserted against the SAME vector file
