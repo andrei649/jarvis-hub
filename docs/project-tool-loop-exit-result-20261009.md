@@ -3,6 +3,8 @@
 Generated 2026-10-09 UTC. Base `ad571c36f78253be9b3f0ede220ca699d42f9636`;
 branch `codex/tool-loop-exit-result-20261009`. This unit is local. PR #1247
 continues to contain only its earlier published mobile-session change.
+Tested source: `354d6830aae27a03fb4028290d843aac59837a19`; the closing commit
+updates only this proof and its plan.
 
 The runtime now retains why one tool loop returned. `run_result` returns frozen,
 slotted `ToolLoopResult(reply, exit_reason)`; legacy `run` unwraps the identical
@@ -67,14 +69,23 @@ dependency, data migration or authority change is introduced.
   diagnostic was observed. The exact failure reproduced under global INFO. The
   test now clears its preliminary capture before the concurrent pair: targeted
   1/1 and its complete 9/9 module pass under global INFO. Production code is
-  unchanged. Repeat full verification is pending; first-run artifacts and source
-  manifest are preserved.
-  Collection adds 27; frontend/native **2039** and mobile **316** are
+  unchanged. First-run artifacts and source manifest are preserved. Independent
+  follow-up review confirms the capture boundary and unchanged production bytes.
+- Repeat full backend on `354d6830aae27a03fb4028290d843aac59837a19` passes
+  **21705 cases: 21668 passed, 37 JUnit-skipped, zero failures/errors**, 302.471 s,
+  exit 0. All 37 skipped identities exactly match the previous H686 full run:
+  36 guarded skips and one existing source-integration xfail. No new skip hides
+  a regression. The actual executed-count guard passes at 21705. All four frozen
+  source/test hashes match the tested commit and disk; Ruff, diff, generated
+  status and Hermes checks pass.
+- Collection adds 27; frontend/native **2039** and mobile **316** are
   reused from the previous completed unit because client code is unchanged.
   Routes remain 555 and agents 18. No live provider or device test was run.
 
 Artifacts: `/workspace/scratch/h396-*` contains the design, RED/green/focused
-results, AST/source manifests, exact-base pin inventory and independent reviews.
+results, both full runs, AST/source manifests, exact-base pin inventory and
+independent reviews. `h396-full-verification.json` records the repeat counts,
+unchanged skip identities and tested-source digest check.
 Two gpt-6-sol/high agents split source/branch tests and lifecycle tests, then
 reviewed independently; gpt-6-luna/medium performed the read-only pin inventory.
 Root owned contract, RED release, critical integration, metadata and git; maximum
