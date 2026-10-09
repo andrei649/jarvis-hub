@@ -2,12 +2,13 @@
 
 - Generated: 2026-10-09 UTC.
 - Goal: partial disjoint Anthropic usage categories must not become measured zeros.
-- Base/HEAD: 1c1f5ccb4821beebc42b7e1c1309fead256c2edd.
+- Base: 1c1f5ccb4821beebc42b7e1c1309fead256c2edd.
+- Tested source: de64dacc824c49e126ce8d378338e29425350f03.
 - Branch/worktree: codex/anthropic-counter-availability-20261009,
   /workspace/jarvis-hub-anthropic-counter-availability.
 - Delivery: autonomous local development; no publication or live model calls.
-- Next action: frozen parser and focused/integration checks pass; finish
-  independent collateral review and the local evidence commit.
+- Status: implementation, independent reviews, focused/integration verification
+  and canonical evidence complete. No further action within this unit.
 
 ## Contract and tradeoff
 
@@ -97,3 +98,7 @@ no Critical/Important finding. Only anthropic_usage changes; the other 28
 functions and all other module AST are identical. Canonical collection is
 21,485 backend cases (+35); unchanged client counts are reused. No new full
 backend run is claimed for this parser-only unit.
+Independent collateral review also has no Critical/Important finding. Ten
+previously-current pins are refreshed and two H673 test pins added, preserving
+all 226 capability statuses. Final Hermes/status, Ruff and diff checks pass.
+See [final evidence](../project-anthropic-counter-availability-20261009.md).
