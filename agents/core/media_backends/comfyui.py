@@ -542,4 +542,5 @@ def save_artifact(output_root, data, width, height, *, prompt_id=None, guard=Non
             with contextlib.suppress(OSError):
                 temporary.unlink(missing_ok=True)
     return {"path": str(destination), "artifact_id": artifact_id, "prompt_id": prompt_id,
-            "bytes": len(data), "width": width, "height": height}
+            "bytes": len(data), "width": width, "height": height,
+            "sha256": hashlib.sha256(data).hexdigest()}

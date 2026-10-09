@@ -23,7 +23,7 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 Camera parity is read/search parity over the same bounded metadata API. Admin ONVIF onboarding is
 intentionally owner-HUD-only; native clients expose no discovery, frame, stream, or private URL.
 
-Media integrity (local backend candidate, 2026-10-09): newly cloud-finalized `md-*` catalog rows bind their expected digest for shared delivery and export. Both clients inherit a refusal for mismatched bytes on those catalog URLs. Existing blob headers and gallery controls are unchanged; verified/unbound status is export metadata only. Legacy/local catalog rows and standalone generated-image URLs keep their separate limits (H477 partial).
+Media integrity (local backend candidate, 2026-10-09): newly cloud-finalized, ComfyUI and local OpenAI PNG `md-*` catalog rows bind their producer digest for shared delivery and export. Both clients inherit a refusal for mismatched bytes on those catalog URLs. Existing blob headers and gallery controls are unchanged; verified/unbound status is export metadata only. Legacy/other unsupplied catalog rows and standalone generated-image URLs keep their separate limits (H477 partial).
 
 ## Combined local mobile candidate — 2026-10-09
 

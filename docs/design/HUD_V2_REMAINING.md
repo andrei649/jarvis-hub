@@ -16,7 +16,7 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
-Media catalog integrity (local backend candidate, 2026-10-09): new cloud-completion catalog rows carry an expected SHA-256 checked on `md-*` delivery/export. Gallery previews remain metadata hints until download; export metadata distinguishes verified and unbound rows. No new HUD control or native negotiation is added, and ordinary local/legacy rows plus standalone generated URLs remain outside this digest binding. H477 stays partial.
+Media catalog integrity (local backend candidate, 2026-10-09): new cloud-completion, ComfyUI and local OpenAI PNG catalog rows carry their producer SHA-256 checked on `md-*` delivery/export. Gallery previews remain metadata hints until download; export metadata distinguishes verified and unbound rows. No new HUD control or native negotiation is added, and legacy/other unsupplied producer rows plus standalone generated URLs remain outside this digest binding. H477 stays partial.
 
 Client protocol discovery (local candidate, 2026-10-09): `GET /v1/capabilities` now exposes the mounted chat/session wire contracts for external clients. This is a machine-readable API, with no new HUD control; existing browser and native transports keep their tested contracts. Live readiness remains `/api/capabilities`, and `/v1` remains the legacy HUD. Wider API discovery and compatibility negotiation remain open under H477.
 

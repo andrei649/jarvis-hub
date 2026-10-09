@@ -1963,6 +1963,8 @@
 
 - 2026-10-09 H477 local media-integrity continuation: newly finalized cloud-image catalog records retain the already-verified completion SHA-256. Delivery and export through `md-*` compare that expected digest against the same returned bytes; legacy and general local-producer rows stay explicitly unbound. Stable-ID retries do not silently migrate old rows. `ba-*` keeps its existing digest validation; standalone generated IDs remain separate. This narrows the artifact gap without closing H477. See [catalog integrity evidence](docs/plans/2026-10-09-media-catalog-digest.md).
 
+- 2026-10-09 H477 local-producer continuation: ComfyUI and local OpenAI image publication now returns a digest of the same validated PNG bytes and passes it into new catalog rows. `md-*` read/export inherits the existing mismatch refusal; legacy results omit the hash, while malformed present values cannot silently become unbound rows. Guarded publication, no-replay and typed artifact views stay intact. The standalone generated-ID reader remains a separate gap. See [local producer proof](docs/plans/2026-10-09-local-media-digest.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
   Reassess inherited judgments, finish the full accepted
