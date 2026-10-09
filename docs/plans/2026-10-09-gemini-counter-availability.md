@@ -6,9 +6,10 @@
 - Branch/worktree: codex/gemini-counter-availability-20261009,
   /workspace/jarvis-hub-gemini-counter-availability.
 - Delivery: autonomous local development, no publication or live inference.
-- State: source frozen after verified RED and focused/integration GREEN.
-- Next action: commit frozen source, run one serial full backend milestone,
-  then finish bounded evidence/status review and a local documentation commit.
+- Tested source: 28aa7dc3d2b88ad01f22ed121038909331bba8fa.
+- State: local implementation, independent review and full milestone complete.
+- Next action: retain this checkpoint; select the next verified local software
+  gap from a clean final head. No publication follows from this unit.
 
 ## Evidence and bounded accounting contract
 
@@ -116,5 +117,11 @@ passing cases, zero errors/skips. Independent frozen-source review finds no
 Critical/Important issue. AST comparison confirms only gemini_usage changes
 runtime behavior; both other source changes are docstrings. Ruff/diff pass.
 The source/test SHA-256 manifest and review reports are in /workspace/scratch
-with the gemini-counter-availability prefix. Full-suite results will be recorded
-in docs/project-gemini-counter-availability-20261009.md after execution.
+with the gemini-counter-availability prefix. One serial full backend milestone
+passes on the frozen source: 21,502 passed and 37 skipped, zero failures/errors,
+295.954s, exit 0. All 37 skip IDs match the preceding persona milestone.
+Canonical and executed totals agree at 21,539 (+54); unchanged client counts
+2,009/306 are reused. Hermes/status checks and independent collateral review
+pass. Thirty-three formerly-current pins are refreshed, two H673 tests added,
+and all 226 statuses/unrelated stale pins retained. Final proof and limitations
+are in docs/project-gemini-counter-availability-20261009.md.
