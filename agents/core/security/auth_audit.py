@@ -91,7 +91,7 @@ def record_auth_event(
     kind: SecurityEventType | str, *, tier: str, outcome: str = "",
     reason: str, client: object = "", token: object = None,
     count: int | None = None, revoke_env: bool = False,
-    sink: Any = None, **meta: object,
+    sink: Any = None, surface: object = None, **meta: object,
 ) -> None:
     """Append one whitelist-only event; drop secrets and arbitrary metadata.
 
@@ -100,14 +100,14 @@ def record_auth_event(
     """
     _record_auth_event(
         kind, time.time(), tier=tier, reason=reason, client=client,
-        count=count, revoke_env=revoke_env, sink=sink,
+        count=count, revoke_env=revoke_env, sink=sink, surface=surface,
     )
 
 
 def _record_auth_event(
     kind: SecurityEventType | str, event_time: float, /, *, tier: str,
     reason: str, client: object = "", count: int | None = None,
-    revoke_env: bool = False, sink: Any = None,
+    revoke_env: bool = False, sink: Any = None, surface: object = None,
 ) -> None:
     """Internal writer; ``event_time`` is captured by our submitter, never input."""
     try:
@@ -126,6 +126,8 @@ def _record_auth_event(
         }
         if event_type in (SecurityEventType.AUTH_SUCCESS, SecurityEventType.AUTH_FAILURE):
             fields["client"] = _safe_client(client)
+            if type(surface) is str and surface == "mcp":
+                fields["surface"] = "mcp"
         else:
             fields["count"] = max(0, min(int(count or 0), 1_000_000))
             fields["revoke_env"] = bool(revoke_env)
@@ -183,6 +185,9 @@ def submit_auth_event(kind: SecurityEventType | str, **fields: object) -> None:
             "count": max(0, min(int(fields.get("count") or 0), 1_000_000)),
             "revoke_env": bool(fields.get("revoke_env", False)),
         }
+        if (event_type in (SecurityEventType.AUTH_SUCCESS, SecurityEventType.AUTH_FAILURE)
+                and type(fields.get("surface")) is str and fields["surface"] == "mcp"):
+            safe_fields["surface"] = "mcp"
         # The orchestrator may be replaced between submission and writing. Keep
         # the request's original sink rather than routing its row into a new one.
         sink = fields.get("sink")

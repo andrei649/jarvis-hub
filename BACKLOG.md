@@ -1957,6 +1957,8 @@
 
 - 2026-10-09 H512 local auth-audit continuation: HTTP user/admin allow and deny decisions plus managed token issue/rotate/revoke now emit value-free typed events to the existing hash chain, including offline CLI mutations. Separate SQLite connections serialize the chain tail and append in one write transaction. Best-effort dispatch preserves authorization and token results when the audit sink fails or stalls. The full login/session/WebSocket/native-app event contract remains open; this is a partial local candidate, with no push or deployment. See [implementation evidence](docs/hermes/evidence/2026-10-09-auth-events.md).
 
+- 2026-10-09 H512 MCP continuation: the RPC transport now submits value-free auth decisions through the bounded audit queue, including OAuth, legacy credentials and localhost/network outcomes. Existing access predicates, response/challenge and server identity are preserved. Only the literal `surface=mcp` is added to these auth rows; no token, subject, RPC content or validation error is retained. Focused tests pass **121/121**; the broader H512 lifecycle, attribution and delivery contract stays partial. See [MCP audit evidence](docs/plans/2026-10-09-mcp-auth-audit.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
   Reassess inherited judgments, finish the full accepted

@@ -137,6 +137,8 @@ Implemented: typed HTTP user/admin allow/deny/local-bypass events and committed 
 
 Remaining: the frozen contract's login/logout/refresh/session/WebSocket/native-app event coverage is absent. These bearer events identify route tier and validated peer address, not a particular credential or person. Per-credential attribution and success deduplication from the earlier draft plan are not implemented; no token fingerprint is retained. Queue saturation, sink outages and process exit can lose best-effort rows. The broader contract and any stronger delivery/attribution policy must be implemented and tested before H512 can count as equivalent; this local slice does not close it.
 
+MCP transport continuation: OAuth, legacy user/admin credentials and localhost/network auth outcomes now submit fixed-field events via the same bounded queue, marked only with literal `surface=mcp`. Existing auth predicates/status/challenge/identity are unchanged; absent/disabled MCP emits no auth decision. Fifteen new cases plus existing MCP/H273e/H512 suites pass121/121. No token/subject/RPC/error values are retained. Current source has no WebSocket routes, and session selectors already use the HTTP guards; `/api/mcp/token` issuance remains a separate lifecycle gap. See [scope and evidence](../plans/2026-10-09-mcp-auth-audit.md).
+
 ## H526
 
 Closed in #1207 (equivalent): its plan was built. The row's record: `python3 scripts/hermes_status.py show H526`.
