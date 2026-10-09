@@ -108,6 +108,10 @@ with plugin-configured checks instead of seeded success. Still open:
   The sample graph, recalls, topic freshness bars and historical slider appear only in explicit
   Demo. Live decay ranking and bitemporal as-of navigation remain open. Relationships are
   presented without directional or semantic-distance claims; this is no 3D embedding map.
+  Native H18.28 has local Graph navigation and stale-read guards over the same KG routes;
+  focused native/API tests pass, while device/live-Hub acceptance and integration remain open.
+  React Native verifies the one-MiB response bound after `Response.text()` on transports
+  without a reliable stream reader, and rejects an oversized `Content-Length` before reading.
 - **Trust**: real `%‑local` meter (needs a locality/cost summary endpoint, §6).
 - **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).
 - **Comms**: rooms + registered **Discord/Slack** channel status now feed the mode. The Console now

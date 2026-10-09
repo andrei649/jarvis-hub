@@ -1,5 +1,5 @@
 import { TextInput, Text } from '../components/ThemedText';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -13,10 +13,6 @@ import {
   ApiError,
   deleteCanvasArtifact,
   fetchCanvasArtifacts,
-  fetchKgEntities,
-  fetchKgEntity,
-  fetchKgFactHistory,
-  fetchKgFacts,
   fetchMemory,
   fetchNotes,
   normalizeBaseUrl,
@@ -30,6 +26,7 @@ import {
   type MemoryTurn,
   type NotesResponse,
 } from '../api/client';
+import { fetchGraphEntities, fetchGraphEntity, fetchGraphFacts, fetchGraphHistory } from '../api/knowledgeGraph';
 import { Markdown } from '../markdown/Markdown';
 import { useServer } from '../context/ServerContext';
 import { useThemeStyles, type Theme } from '../theme';
@@ -186,10 +183,18 @@ function GraphView({
   entities,
   entityTotal,
   selected,
+  selectedName,
   facts,
   history,
   loading,
   error,
+  detailError,
+  historyError,
+  factsError,
+  detailLoading,
+  relationsClipped,
+  historyClipped,
+  factsClipped,
   search,
   onSearchChange,
   onSearch,
@@ -198,25 +203,36 @@ function GraphView({
   entities: KnowledgeEntity[];
   entityTotal: number;
   selected: KgEntityResponse | null;
+  selectedName: string;
   facts: KnowledgeFact[];
   history: KnowledgeFact[];
   loading: boolean;
   error: string | null;
+  detailError: string | null;
+  historyError: string | null;
+  factsError: string | null;
+  detailLoading: boolean;
+  relationsClipped: boolean;
+  historyClipped: boolean;
+  factsClipped: boolean;
   search: string;
   onSearchChange: (value: string) => void;
   onSearch: () => void;
-  onSelectEntity: (entity: KnowledgeEntity) => void;
+  onSelectEntity: (name: string) => void;
 }) {
   const { theme, styles } = useThemeStyles(makeStyles);
-  const selectedName = selected?.entity?.name ?? '';
   const relations = selected?.relations ?? [];
+  const neighbors = selected?.entity
+    ? [...new Set(relations.map(relation => relation.source === selected.entity!.name ? relation.target : relation.source))]
+        .filter(name => name !== selectedName)
+    : [];
 
   return (
     <>
       <View style={styles.summary}>
-        <SummaryCell label="entities" value={entityTotal || entities.length} />
-        <SummaryCell label="relations" value={relations.length} />
-        <SummaryCell label="facts" value={facts.length} />
+        <SummaryCell label="entities" value={error || (loading && entities.length === 0) ? '—' : entityTotal || entities.length} />
+        <SummaryCell label="relations" value={detailError || detailLoading || error ? '—' : relations.length} />
+        <SummaryCell label="facts" value={factsError || loading ? '—' : facts.length} />
       </View>
 
       <View style={styles.searchRow}>
@@ -240,6 +256,8 @@ function GraphView({
         </View>
       )}
 
+      {factsError && <View style={styles.errorBox}><Text style={styles.errorText}>Current facts unavailable: {factsError}</Text></View>}
+
       {loading && entities.length === 0 && (
         <View style={styles.loading}>
           <ActivityIndicator color={theme.accent} />
@@ -256,9 +274,11 @@ function GraphView({
           key={entity.name}
           entity={entity}
           selected={entity.name === selectedName}
-          onPress={() => onSelectEntity(entity)}
+          onPress={() => onSelectEntity(entity.name)}
         />
       ))}
+
+      {entityTotal > entities.length && !error ? <Text style={styles.meta}>Showing {entities.length} of {entityTotal} entities.</Text> : null}
 
       {!loading && entities.length === 0 && !error && (
         <View style={styles.clearBox}>
@@ -267,33 +287,43 @@ function GraphView({
         </View>
       )}
 
-      {selected?.entity ? (
+      {selectedName ? (
         <View style={styles.card}>
           <View style={styles.cardTop}>
             <View style={styles.cardTitleWrap}>
               <Text style={styles.sectionTitle}>Relations</Text>
-              <Text style={styles.meta}>{selected.entity.name}</Text>
+              <Text style={styles.meta}>{selectedName}</Text>
             </View>
           </View>
-          {relations.length ? (
+          {detailLoading ? <Text style={styles.emptyText}>Loading connections for {selectedName}…</Text> : null}
+          {detailError ? <Text style={styles.errorText}>Connections unavailable: {detailError}</Text> : null}
+          {selected?.entity && neighbors.length > 0 ? (
+            <>
+              <Text style={styles.sectionTitle}>Connected entities</Text>
+              {neighbors.map(name => <Pressable key={name} style={styles.kgRow} onPress={() => onSelectEntity(name)} accessibilityLabel={`Explore ${name}`}><Text style={styles.entityName}>{name}</Text></Pressable>)}
+            </>
+          ) : null}
+          {selected?.entity && relations.length ? (
             relations.map((relation, index) => (
               <RelationRow key={`${relation.source}-${relation.relation}-${relation.target}-${index}`} relation={relation} />
             ))
-          ) : (
+          ) : selected?.entity && !detailError && !detailLoading ? (
             <Text style={styles.emptyText}>No relations returned for this entity.</Text>
-          )}
+          ) : null}
+          {relationsClipped ? <Text style={styles.meta}>Showing first 100 relations; more are stored.</Text> : null}
         </View>
       ) : null}
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Current Facts</Text>
         {facts.length ? (
-          facts.slice(0, 8).map((fact, index) => (
+          facts.map((fact, index) => (
             <FactRow key={`${fact.subject}-${fact.predicate}-${fact.object}-${fact.id ?? index}`} fact={fact} />
           ))
-        ) : (
+        ) : !factsError && !loading ? (
           <Text style={styles.emptyText}>No current facts returned by the hub.</Text>
-        )}
+        ) : null}
+        {factsClipped ? <Text style={styles.meta}>Showing first 100 current facts.</Text> : null}
       </View>
 
       {selectedName ? (
@@ -304,13 +334,15 @@ function GraphView({
               <Text style={styles.meta}>{selectedName}</Text>
             </View>
           </View>
+          {historyError ? <Text style={styles.errorText}>History unavailable: {historyError}</Text> : null}
           {history.length ? (
             history.map((fact, index) => (
               <FactRow key={`history-${fact.subject}-${fact.predicate}-${fact.object}-${fact.id ?? index}`} fact={fact} />
             ))
-          ) : (
+          ) : !historyError && !detailLoading ? (
             <Text style={styles.emptyText}>No fact history returned for this subject.</Text>
-          )}
+          ) : null}
+          {historyClipped ? <Text style={styles.meta}>Showing first 100 history facts.</Text> : null}
         </View>
       ) : null}
     </>
@@ -474,7 +506,7 @@ function ArtifactCard({
 
 export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const { theme, styles } = useThemeStyles(makeStyles);
-  const { config, configured } = useServer();
+  const { config, configured, chatScope } = useServer();
   const [mode, setMode] = useState<ViewMode>('turns');
   const [memory, setMemory] = useState<MemoryResponse | null>(null);
   const [notes, setNotes] = useState<NotesResponse | null>(null);
@@ -485,10 +517,21 @@ export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void })
   const [kgEntities, setKgEntities] = useState<KnowledgeEntity[]>([]);
   const [kgEntityTotal, setKgEntityTotal] = useState(0);
   const [selectedKgEntity, setSelectedKgEntity] = useState<KgEntityResponse | null>(null);
+  const [selectedKgName, setSelectedKgName] = useState('');
   const [kgFacts, setKgFacts] = useState<KnowledgeFact[]>([]);
   const [kgHistory, setKgHistory] = useState<KnowledgeFact[]>([]);
   const [kgError, setKgError] = useState<string | null>(null);
+  const [kgDetailError, setKgDetailError] = useState<string | null>(null);
+  const [kgHistoryError, setKgHistoryError] = useState<string | null>(null);
+  const [kgFactsError, setKgFactsError] = useState<string | null>(null);
+  const [kgRelationsClipped, setKgRelationsClipped] = useState(false);
+  const [kgHistoryClipped, setKgHistoryClipped] = useState(false);
+  const [kgFactsClipped, setKgFactsClipped] = useState(false);
   const [kgLoading, setKgLoading] = useState(false);
+  const [kgDetailLoading, setKgDetailLoading] = useState(false);
+  const [kgIdentity, setKgIdentity] = useState('');
+  const kgOperation = useRef<{ id: number; controller: AbortController | null }>({ id: 0, controller: null });
+  const currentKgIdentity = chatScope;
   const [artifacts, setArtifacts] = useState<CanvasArtifact[]>([]);
   const [artifactsError, setArtifactsError] = useState<string | null>(null);
   const [artifactsLoading, setArtifactsLoading] = useState(false);
@@ -555,71 +598,104 @@ export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void })
     }
   }, [config, configured]);
 
-  const selectKgEntity = useCallback(
-    async (entity: KnowledgeEntity) => {
-      if (!configured) return;
-      setKgLoading(true);
-      setKgError(null);
-      try {
-        const [detailResult, historyResult] = await Promise.allSettled([
-          fetchKgEntity(config, entity.name),
-          fetchKgFactHistory(config, entity.name),
-        ]);
-        setSelectedKgEntity(
-          detailResult.status === 'fulfilled' ? detailResult.value : { entity, relations: [] },
-        );
-        setKgHistory(historyResult.status === 'fulfilled' ? historyResult.value.history : []);
-      } finally {
-        setKgLoading(false);
-      }
-    },
-    [config, configured],
-  );
+  const cancelKg = useCallback(() => {
+    kgOperation.current.id += 1;
+    kgOperation.current.controller?.abort();
+    kgOperation.current.controller = null;
+  }, []);
+
+  const beginKg = useCallback(() => {
+    cancelKg();
+    const controller = new AbortController();
+    kgOperation.current.controller = controller;
+    return { id: kgOperation.current.id, controller };
+  }, [cancelKg]);
+
+  const loadKgSelection = useCallback(async (name: string, operation: { id: number; controller: AbortController }) => {
+    const current = () => !operation.controller.signal.aborted && kgOperation.current.id === operation.id;
+    setSelectedKgName(name);
+    setSelectedKgEntity(null);
+    setKgHistory([]);
+    setKgDetailError(null);
+    setKgHistoryError(null);
+    setKgRelationsClipped(false);
+    setKgHistoryClipped(false);
+    setKgDetailLoading(true);
+    const [detail, history] = await Promise.allSettled([
+      fetchGraphEntity(config, name, operation.controller.signal),
+      fetchGraphHistory(config, name, operation.controller.signal),
+    ]);
+    if (!current()) return;
+    if (detail.status === 'fulfilled') {
+      setSelectedKgEntity(detail.value);
+      setKgRelationsClipped(detail.value.clipped);
+    } else setKgDetailError(detail.reason instanceof ApiError ? detail.reason.message : 'Could not load connections');
+    if (history.status === 'fulfilled') {
+      setKgHistory(history.value.history);
+      setKgHistoryClipped(history.value.clipped);
+    } else setKgHistoryError(history.reason instanceof ApiError ? history.reason.message : 'Could not load history');
+    setKgDetailLoading(false);
+  }, [config]);
+
+  const selectKgEntity = useCallback(async (name: string) => {
+    if (!configured || mode !== 'graph') return;
+    const operation = beginKg();
+    setKgLoading(true);
+    try { await loadKgSelection(name, operation); }
+    finally { if (kgOperation.current.id === operation.id) setKgLoading(false); }
+  }, [beginKg, configured, loadKgSelection, mode]);
 
   const loadGraph = useCallback(async () => {
     if (!configured) return;
+    const operation = beginKg();
+    const current = () => !operation.controller.signal.aborted && kgOperation.current.id === operation.id;
+    setKgIdentity(currentKgIdentity);
     setKgLoading(true);
     setKgError(null);
+    setKgFactsError(null);
+    setKgEntities([]);
+    setKgEntityTotal(0);
+    setKgFacts([]);
+    setKgFactsClipped(false);
+    setSelectedKgName('');
+    setSelectedKgEntity(null);
+    setKgHistory([]);
+    setKgDetailError(null);
+    setKgHistoryError(null);
     try {
       const [entitiesResult, factsResult] = await Promise.allSettled([
-        fetchKgEntities(config, { query: kgQuery, limit: 50 }),
-        fetchKgFacts(config),
+        fetchGraphEntities(config, kgQuery, operation.controller.signal),
+        fetchGraphFacts(config, operation.controller.signal),
       ]);
+      if (!current()) return;
       const nextEntities = entitiesResult.status === 'fulfilled' ? entitiesResult.value.entities : [];
       setKgEntities(nextEntities);
       setKgEntityTotal(entitiesResult.status === 'fulfilled' ? entitiesResult.value.total : 0);
       setKgFacts(factsResult.status === 'fulfilled' ? factsResult.value.facts : []);
+      if (factsResult.status === 'fulfilled') setKgFactsClipped(factsResult.value.clipped);
+      else setKgFactsError(factsResult.reason instanceof ApiError ? factsResult.reason.message : 'Could not load current facts');
       if (entitiesResult.status === 'rejected') {
         const err = entitiesResult.reason;
         setKgError(err instanceof ApiError ? err.message : 'Failed to load knowledge graph');
       }
       const firstEntity = nextEntities[0];
       if (firstEntity) {
-        const [detailResult, historyResult] = await Promise.allSettled([
-          fetchKgEntity(config, firstEntity.name),
-          fetchKgFactHistory(config, firstEntity.name),
-        ]);
-        setSelectedKgEntity(
-          detailResult.status === 'fulfilled' ? detailResult.value : { entity: firstEntity, relations: [] },
-        );
-        setKgHistory(historyResult.status === 'fulfilled' ? historyResult.value.history : []);
-      } else {
-        setSelectedKgEntity(null);
-        setKgHistory([]);
+        await loadKgSelection(firstEntity.name, operation);
       }
     } finally {
-      setKgLoading(false);
+      if (current()) setKgLoading(false);
     }
-  }, [config, configured, kgQuery]);
+  }, [beginKg, config, configured, currentKgIdentity, kgQuery, loadKgSelection]);
 
   const runKgSearch = useCallback(() => {
     const nextQuery = kgSearch.trim();
+    cancelKg();
     if (nextQuery === kgQuery) {
       void loadGraph();
       return;
     }
     setKgQuery(nextQuery);
-  }, [kgQuery, kgSearch, loadGraph]);
+  }, [cancelKg, kgQuery, kgSearch, loadGraph]);
 
   useEffect(() => {
     loadTurns();
@@ -627,7 +703,8 @@ export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void })
 
   useEffect(() => {
     if (mode === 'graph') void loadGraph();
-  }, [loadGraph, mode]);
+    return cancelKg;
+  }, [cancelKg, loadGraph, mode]);
 
   useEffect(() => {
     if (mode === 'artifacts') void loadArtifacts();
@@ -645,6 +722,7 @@ export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void })
   const refreshing = mode === 'graph' ? kgLoading : mode === 'artifacts' ? artifactsLoading : loading;
   const refresh = mode === 'graph' ? loadGraph : mode === 'artifacts' ? loadArtifacts : loadTurns;
   const hubBase = normalizeBaseUrl(config.baseUrl);
+  const kgFresh = kgIdentity === currentKgIdentity;
 
   return (
     <ScrollView
@@ -653,9 +731,9 @@ export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void })
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.accent} />}
     >
       <View style={styles.segments}>
-        <SegmentButton label="Turns" active={mode === 'turns'} onPress={() => setMode('turns')} />
+        <SegmentButton label="Turns" active={mode === 'turns'} onPress={() => { cancelKg(); setMode('turns'); }} />
         <SegmentButton label="Graph" active={mode === 'graph'} onPress={() => setMode('graph')} />
-        <SegmentButton label="Artifacts" active={mode === 'artifacts'} onPress={() => setMode('artifacts')} />
+        <SegmentButton label="Artifacts" active={mode === 'artifacts'} onPress={() => { cancelKg(); setMode('artifacts'); }} />
       </View>
 
       {mode === 'artifacts' ? (
@@ -735,18 +813,26 @@ export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void })
         </>
       ) : (
         <GraphView
-          entities={kgEntities}
-          entityTotal={kgEntityTotal}
-          selected={selectedKgEntity}
-          facts={kgFacts}
-          history={kgHistory}
-          loading={kgLoading}
-          error={kgError}
+          entities={kgFresh ? kgEntities : []}
+          entityTotal={kgFresh ? kgEntityTotal : 0}
+          selected={kgFresh ? selectedKgEntity : null}
+          selectedName={kgFresh ? selectedKgName : ''}
+          facts={kgFresh ? kgFacts : []}
+          history={kgFresh ? kgHistory : []}
+          loading={kgLoading || !kgFresh}
+          error={kgFresh ? kgError : null}
+          detailError={kgFresh ? kgDetailError : null}
+          historyError={kgFresh ? kgHistoryError : null}
+          factsError={kgFresh ? kgFactsError : null}
+          detailLoading={kgFresh && kgDetailLoading}
+          relationsClipped={kgFresh && kgRelationsClipped}
+          historyClipped={kgFresh && kgHistoryClipped}
+          factsClipped={kgFresh && kgFactsClipped}
           search={kgSearch}
           onSearchChange={setKgSearch}
           onSearch={runKgSearch}
-          onSelectEntity={(entity) => {
-            void selectKgEntity(entity);
+          onSelectEntity={(name) => {
+            void selectKgEntity(name);
           }}
         />
       )}
