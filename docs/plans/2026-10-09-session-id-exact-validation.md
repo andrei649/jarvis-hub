@@ -4,11 +4,12 @@
 - Goal: reject a final newline in a session ID at every existing shared-validator
   call site, preserving the documented ASCII alphabet and 1–128 character bound.
 - Base / HEAD before edits: 19128484c4c2aabd893a0831151152481323434f.
+- Tested source / integration HEAD: 30e0e53d4c65a435317048f0ee61fb05acf2d5a1.
 - Branch/worktree: codex/session-id-exact-validation-20261009,
   /workspace/jarvis-hub-session-id-validation.
 - Scope: autonomous local bug fix; no publication or live providers.
-- Next action: focused and collateral checks are green at frozen source; finish
-  canonical count refresh, then run the serial full backend milestone.
+- Next action: this local fix is verified; retain its evidence and continue
+  separately scoped software work.
 
 ## Contract and scope
 
@@ -68,4 +69,12 @@ passing cases with zero skips, errors or failures. Portable persistence traps
 verify refusal before directory access without requiring newline filenames.
 Frozen independent review has no Critical/Important findings. Ruff, whitespace
 and exact text/AST scope checks pass. Production changes one matching operation;
-no assessment pins refer to either changed Python file. Full milestone pending.
+no assessment pins refer to either changed Python file.
+
+The serial full backend milestone at 30e0e53d4c65a435317048f0ee61fb05acf2d5a1
+passed **21,277 tests with 37 skipped**, 21,314 total, zero failures/errors,
+286.005 seconds and exit 0. Skipped IDs match the preceding full run. The
+executed count matches canonical collection: backend 21,314 (+14),
+frontend/native 2,009 and mobile 306; 555 routes and 18 agents. Production and
+tests stayed frozen throughout. No new client, live provider or device run is
+claimed. Final proof is in docs/project-session-id-validation-20261009.md.

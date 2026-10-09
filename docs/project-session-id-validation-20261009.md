@@ -2,6 +2,7 @@
 
 - Generated: 2026-10-09 UTC.
 - Base: 19128484c4c2aabd893a0831151152481323434f.
+- Tested source / integration HEAD: 30e0e53d4c65a435317048f0ee61fb05acf2d5a1.
 - Branch/worktree: codex/session-id-exact-validation-20261009,
   /workspace/jarvis-hub-session-id-validation.
 - Goal: make the shared session validator enforce its complete-input contract.
@@ -50,8 +51,14 @@ guards. Together these are **451 distinct passing cases**.
 Ruff passes both changed Python files. Root's text and AST comparison confirms
 the only production edit is the session helper's match-to-fullmatch operation;
 all other module code is identical. Independent review reports no Critical or
-Important finding at the frozen hashes below. The full backend milestone is
-pending; earlier full results are not relabeled as this source's result.
+Important finding at the frozen hashes below.
+
+The full backend suite at **30e0e53d4c65a435317048f0ee61fb05acf2d5a1** passed:
+**21,277 passed, 37 skipped, zero failures or errors, 21,314 total** in
+**286.005 seconds**, exit 0. It ran through the subreaper with four workers,
+loadfile distribution and a 90-second test timeout. The 37 skipped test IDs are
+identical to the preceding full model-generation-lease run; no live test was
+enabled. No production or test file changed after source freeze.
 
 Canonical collection records **21,314 backend cases** (+14), unchanged
 frontend/native 2,009 and mobile 306 inventories, 555 routes and 18 agents.
@@ -66,7 +73,9 @@ Frozen SHA-256 values:
 Scratch evidence: session-id-validation-{red,focused,integration}.{xml,log},
 session-id-validation-{design-review,code-review}.md,
 session-id-validation-pin-inventory.{json,md},
-session-id-validation-ast-review.json and session-id-validation-status-sync.log.
+session-id-validation-ast-review.json, session-id-validation-status-sync.log and
+session-id-validation-backend-final.{xml,log}. The full run's executed count
+matches the tracked backend inventory.
 
 ## Review and evidence freshness
 
