@@ -115,6 +115,7 @@ FLAG = "JARVIS_FILE_TOOLS"
 ROOTS_ENV = "JARVIS_FILE_ROOTS"
 MAX_BYTES_ENV = "JARVIS_FILE_MAX_BYTES"
 DEFAULT_MAX_BYTES = 2_000_000
+MAX_DOCUMENT_BYTES = 50_000_000
 MAX_PATH_CHARS = 4096
 #: The largest ``file_read`` offset (H661): the largest integer every JSON reader holds
 #: exactly, and far past any file. Above it an offset is refused as ``bad_offset``
@@ -1315,12 +1316,24 @@ def _page(data: bytes, *, offset: int, total: int) -> dict:
 
 
 def _read_document(target: Path, size: int, limit: int, offset: int = 0) -> dict:
-    """The text of a .pdf / .docx, bounded like any read; a named refusal otherwise.
+    """Extract a bounded text page from an admitted .pdf / .docx input.
 
     ``offset`` counts bytes of the *extracted text* (UTF-8), not of the file: that is
     the text the reader was shown, so it is the only thing a page number can mean.
-    ``size`` stays the file's size on disk and ``text_size`` names the text's.
+    ``size`` is the observed on-disk input size; refuse above 50,000,000 bytes
+    before probing a parser. ``text_size`` names the extracted text's byte size.
     """
+    if size > MAX_DOCUMENT_BYTES:
+        return {
+            "ok": False,
+            "reason": "document_too_large",
+            "size": size,
+            "max_document_bytes": MAX_DOCUMENT_BYTES,
+            "detail": (
+                "document extraction is limited to 50000000 bytes (50 MB); "
+                "raw=true returns a bounded byte page"
+            ),
+        }
     suffix = target.suffix.lower()
     if not _parser_available(suffix):
         return {
@@ -1526,7 +1539,8 @@ FILE_TOOL_SPECS: dict[str, dict[str, Any]] = {
             "Read one UTF-8 file inside the owner's file roots (bounded bytes); a .pdf or "
             ".docx is returned as its extracted text (raw=true for the bytes). offset "
             "starts the read at that byte; a read that stops early returns next_offset — "
-            "pass it back as offset to page through a large file or a spilled tool result."
+            "pass it back as offset to page through a large file or a spilled tool result. "
+            "PDF/DOCX extraction accepts at most 50 MB (50,000,000 bytes); raw=true pages bytes."
         ),
         "gated": False,
         "trusted_execution": False,

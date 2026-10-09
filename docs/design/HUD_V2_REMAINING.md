@@ -527,3 +527,12 @@ need defined cross-agent and non-loop semantics on the shared outcome.
 The local file mutation receipt describes returned approved-task attempts only;
 its scrubbed path and task status are insufficient for a same-turn mutation footer.
 Task/attempt correlation, missing/unknown effects and ordering remain open.
+
+
+### H444/H576 document input limit — 2026-10-09 local candidate
+
+Parser-backed file_read now refuses observed PDF/DOCX inputs above 50,000,000
+bytes before parser discovery. Existing tool-result handling carries the named
+refusal and raw byte paging remains available. This is a backend admission check;
+scanned-page coverage warnings and any corresponding presentation remain open.
+See `docs/project-document-input-limit-20261009.md`.

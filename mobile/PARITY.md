@@ -38,6 +38,13 @@ receipt in its existing task result. It does not add a browser/native chat field
 or mutation footer; missing/cancelled results and cross-task attribution remain
 open. See [receipt evidence](../docs/project-file-mutation-receipts-20261009.md).
 
+Document extraction limit (H444/H576 local backend candidate, 2026-10-09):
+parser-backed file_read refuses observed PDF/DOCX input above 50,000,000 bytes
+before parser discovery. Raw byte paging remains available; this is an observed
+input-size check, not a parser memory bound. Existing chat/tool result handling
+carries the named refusal; no new native presentation is required. See
+[document input evidence](../docs/project-document-input-limit-20261009.md).
+
 Session ID validation (local backend candidate, 2026-10-09): both clients inherit
 strict full-string session validation on the existing shared server boundaries.
 A terminal newline is refused before session or memory work; valid IDs retain
