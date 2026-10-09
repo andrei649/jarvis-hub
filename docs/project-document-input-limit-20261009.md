@@ -68,7 +68,15 @@ H444 and H576 stay partial; their other documented gaps remain open.
   both cases change from two failures to **2/2 passing**, 2.074 s. The complete
   H595 module passes **14/14**, 2.911 s. Cancellation/reaping assertions and sandbox
   production code are unchanged; this adds no permanent test cases.
-  Full backend verification after the test synchronization correction is pending.
+  Second full backend run at `9a51a01f2f5dfea743448448eaaa9a3c79b32a46`:
+  **21721 passed, 37 JUnit-skipped, zero failures/errors**, 292.459 s, exit 0.
+  All 37 skipped identities match the preceding mutation-receipts milestone and
+  the first run. The executed-count guard confirms 21758 reported JUnit cases.
+  The manifest matches all four source/test files in the tested commit and clean
+  worktree. Final proof/plan edits change documentation only. Ruff, diff, generated
+  status and Hermes consistency checks pass. The 489 feature/integration cases
+  plus 14 H595 cases are **503 distinct focused cases**; the injected two-case
+  reproduction is reported separately and does not inflate that count.
   No live provider/device or real large-document parser run was performed.
 
 Twelve exact-base-fresh pins refresh after named review: eleven file-tools claims
@@ -87,4 +95,5 @@ registered-tool tests/review; gpt-6-luna/medium performed read-only inventory.
 Root owned scope, RED release, critical integration, metadata and git; maximum
 four active, no nested delegation.
 
-Rollback is this guard/test/docs unit; no migration is needed.
+Rollback is this guard/test/docs unit; the H595 test synchronization correction
+is a separate commit and can be reverted independently. No migration is needed.

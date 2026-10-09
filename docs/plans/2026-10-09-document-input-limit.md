@@ -13,11 +13,12 @@ existing path/stat/offset checks, raw byte paging, optional parsers and output c
 **Base/head before changes:** `d12e6f2d20862d69b8c128f5c625c83fb96bfd16`.
 **Worktree/branch:** `/workspace/jarvis-hub-document-input-limit`,
 `codex/document-input-limit-20261009`.
-**State/next action:** implemented and independently reviewed; 489 distinct focused
-and integration cases pass. First full backend run at `a24766b` exposed the existing
-H595 test's PID publication race (21720 pass, 37 skipped, one failure). Correct only
-that test's synchronization after deterministic reproduction, then repeat the full
-backend milestone. The document guard remains frozen; no full pass is claimed yet.
+**State/next action:** complete locally. Tested source commit
+`9a51a01f2f5dfea743448448eaaa9a3c79b32a46`: 21721 backend passed, 37 JUnit-skipped,
+zero failures/errors, 292.459 s, exit 0; unchanged skip identities. The first run's
+H595 test race is reproduced and corrected; 503 distinct focused cases pass.
+Source/test hashes match the tested commit. The closing proof/plan commit changes
+documentation only; continue the backlog from this verified local checkpoint.
 
 ## Contract and global constraints
 
@@ -95,11 +96,11 @@ Own new `tests/test_file_document_input_limit_rpc.py`, tests only.
   clause changes narrowly, preserve scanned-coverage/format/reparse/paging limits.
   Add test evidence, update architecture/parity/counts, keep stored statuses
   and inventory identities unchanged. No backlog checkbox closure from this guard.
-- [ ] Freeze source/tests, run focused adjacent tests and one serial full backend
+- [x] Freeze source/tests, run focused adjacent tests and one serial full backend
   milestone; compare skip identities to mutation-receipts-backend-final.xml and
   run executed-count guard. Parent baseline 21696 pass +37 JUnit-skipped. Reuse
   unchanged frontend/native2039 and mobile316 counts. Ruff/diff/status/Hermes.
-- [ ] Record proof/manifests and clean local commit. Rollback this additive guard
+- [x] Record proof/manifests and clean local commit. Rollback this additive guard
   and tests/docs; no migration. Report observed-size limits without a RAM claim.
 
 ## Full-suite test synchronization correction
@@ -111,5 +112,5 @@ Own new `tests/test_file_document_input_limit_rpc.py`, tests only.
   replacement, and use the cached PID for cleanup. Keep bounded startup waiting
   and actual cancellation/reaping assertions. Same injected race passes 2/2 and
   the full H595 module passes 14/14; no permanent test-count increase.
-- [ ] Independently review the test correction, refresh its one previously fresh
+- [x] Independently review the test correction, refresh its one previously fresh
   H595 evidence pin, freeze the new commit and repeat the serial backend milestone.
