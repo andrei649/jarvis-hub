@@ -16,6 +16,14 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
+H277 recovery (2026-10-08): the active chat, floating chat and cockpit image composers now review the actual selected local Ollama agent/model/session. Reviewable prior image handles are bounded to that session and cleared on restart/reload. A selected turn with an unresolved conversation ID stays disabled; changing topic or agent invalidates pending work. Owner-only selected prepare/send/history routes preserve legacy standalone VLM behavior. Native clients still need selected-image review/history controls (H18.31).
+
+H078 recovery (2026-10-08): existing Admin Settings exposes commands.quick_commands as an initially empty JSON map. Owner /help lists valid aliases and fixed commands. Execution queues through existing approval tasks and terminal gates; no new command editor or argument templates are added. The existing native command-catalog gap H18.26 remains open.
+
+H063 recovery (2026-10-08): typed /new, /reset and /undo are owner commands. Chat follows the concrete ID returned by /chat or the SSE end event; Sessions reopens the exact selected transcript, and desktop synchronization keeps the selected topic. Admin exposes reset policy, channel/type overrides and stall settings. Old transcripts are retained; empty sessions restart correctly and malformed snapshots fail closed. Direct web/CLI automatic reset/stall observation and native mobile ID transitions remain open.
+
+H595/H660 recovery (2026-10-08): existing Admin settings now expose the execute-code opt-in, persistent-session setting, digest-pinned session image, project/strict mode, project directory and allowed environment names. Existing sandbox status/reset remains the operator surface. Complete project context is projected read-only; unconfirmed one-shot Docker teardown retains its snapshot and reports uncertainty. Native mobile configuration and live Windows Docker acceptance remain open.
+
 Hermes runtime (2026-10-06, PR #1233): Admin now has private runtime start/stop,
 session/RPC/event controls and exact queued-action approve/deny controls. The
 operator CLI uses the same authenticated API. This is intentionally owner desktop

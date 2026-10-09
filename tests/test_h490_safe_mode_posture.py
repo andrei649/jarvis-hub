@@ -193,6 +193,11 @@ _NUMBERS_NOT_FORCED = {
     "memory.compression_max_tokens", "memory.compression_keep_first",
     "memory.compaction_protect_last", "memory.backup_keep", "memory.compression_summary_max_tokens",
     "memory.compression_max_turn_hold_seconds", "memory.compression_summary_idle_seconds",
+    # Owner-configured conversation cadence and index retention affect routing,
+    # not tool authority or transcript deletion. Stall notice frequency cannot
+    # send in safe mode because outbound sends are disabled there.
+    "sessions.idle_minutes", "sessions.daily_hour", "sessions.store_max_age_days",
+    "sessions.stall_seconds",
     # the size and cadence of one review (how many a day is forced)
     "learning.review_max_tokens", "learning.review_every_n", "learning.review_idle_gap_s",
     "learning.review_max_facts",

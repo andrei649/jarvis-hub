@@ -239,7 +239,7 @@ def test_reset_with_sessions_off_names_the_switch_rather_than_claiming_success(
 ):
     _owner(monkeypatch)
     _bind(monkeypatch, _orch(tmp_path, settings={"llm.execute_code": True,
-                                               "llm.execute_code_sessions": False}, kernels=None))
+                                                "llm.execute_code_sessions": False}, kernels=None))
     body = client.post("/sandbox/kernels/reset").json()
     assert body == {"reset": False, "mode": "one_shot", "reason": "sessions_disabled"}
 

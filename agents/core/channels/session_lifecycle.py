@@ -63,6 +63,30 @@ class ChannelSessionLifecycle:
         except (OverflowError, ValueError, OSError):
             raise SessionResetError("Invalid session clock") from None
 
+    def _existing_empty_snapshot(self, key: str) -> bool:
+        from ..memory.persistence import load_memory_snapshot, memory_dir
+
+        path = memory_dir() / f"{key}.json"
+        if not path.exists() or path.is_symlink():
+            return False
+        snapshot = load_memory_snapshot(key)
+        return snapshot.get("session_id") == key and snapshot.get("turns") == []
+
+    async def _new_memory_session(self, key: str, *, prior_route: bool) -> str:
+        from ..memory.persistence import memory_dir
+
+        conversation = getattr(self.orch.memory, "conversation", None)
+        persistent = bool(getattr(conversation, "persist", False))
+        if (persistent and (prior_route or (memory_dir() / f"{key}.json").exists())
+                and not self._existing_empty_snapshot(key)):
+            raise SessionResetError("Existing transcript unavailable")
+        selected = await self.orch.memory.new_session(key)
+        if persistent:
+            conversation._save_snapshot(selected)
+            if not self._existing_empty_snapshot(selected):
+                raise SessionResetError("New transcript could not be saved")
+        return selected
+
     def reset_requested(self, text: str) -> bool:
         triggers = self.orch.get_setting("sessions.reset_triggers", ["/new", "/reset"])
         if (not isinstance(triggers, list) or len(triggers) > 32
@@ -76,16 +100,31 @@ class ChannelSessionLifecycle:
             raise SessionResetError("Session lifecycle is closed")
         episode = self.stalls.begin(base)
         token = _activity.set(lambda: self.stalls.progress(base, episode))
+        watcher = asyncio.create_task(self._watch_stall(base, episode))
         try:
             yield
         finally:
+            watcher.cancel()
             self.stalls.finish(base, episode)
             _activity.reset(token)
 
+    async def _watch_stall(self, base: str, episode: int) -> None:
+        try:
+            while self.stalls.matches(base, episode):
+                seconds = self.orch.get_setting("sessions.stall_seconds", 300)
+                if type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds <= 0:
+                    return
+                await asyncio.sleep(min(float(seconds), 60.0))
+                await self.check_stalls()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            logger.warning("session stall watcher stopped", exc_info=True)
+
     async def run(self, source: SessionSource, text: str, *, observe_only=False, draft=None,
                   shared=False, authorize_reset=None):
-        from ..memory.manager import RewindRefused
         from ..orchestrator import TURN_BUSY_REPLY
+        from ..memory.manager import RewindRefused
 
         base = self.orch._session_id_default if shared else build_session_key(source)
         kind = session_type(source)
@@ -119,18 +158,22 @@ class ChannelSessionLifecycle:
                         elif await self.orch.memory.resume_session(key):
                             selected = key
                         else:
-                            selected = await self.orch.memory.new_session(key)
+                            selected = await self._new_memory_session(
+                                key, prior_route=state.active and not reset)
                     actual_held = await leases.enter_async_context(self.orch.turn_lease(selected))
                     if not actual_held:
                         return TURN_BUSY_REPLY
                     # Prepare the new memory session before committing the route.
                     # A refused create/resume must leave the old route intact.
                     if reset:
-                        if authorize_reset is not None and authorize_reset() is not True:
+                        # The owner configured idle/daily rollover; only an explicit
+                        # command needs the turn's authority rechecked at commit.
+                        if explicit and authorize_reset is not None and authorize_reset() is not True:
                             raise SessionResetError("Reset authority changed")
                         state = self.store.rotate(base, now, source.channel, kind)
                     self.store.touch(base, now, source.channel, kind)
-                    self.orch._channel_sessions[base] = selected
+                    if not (shared and state.generation == 0):
+                        self.orch._channel_sessions[base] = selected
                     if explicit:
                         return RESET_ACK
                     try:
@@ -148,23 +191,70 @@ class ChannelSessionLifecycle:
             logger.warning("channel session lifecycle unavailable")
             return UNAVAILABLE
 
+    async def undo(self, source: SessionSource, *, shared=False) -> str:
+        """Start a fresh route from the transcript before its last user exchange."""
+        from ..orchestrator import TURN_BUSY_REPLY
+
+        base = self.orch._session_id_default if shared else build_session_key(source)
+        kind = session_type(source)
+        try:
+            async with self.orch.turn_lease(base) as acquired:
+                if not acquired:
+                    return TURN_BUSY_REPLY
+                state = self.store.state(base)
+                actual = self.orch._channel_sessions.get(
+                    base, self.orch._session_id_default if shared and state.generation == 0
+                    else generation_key(base, state.generation))
+                async with self.orch.turn_lease(actual) as held:
+                    if not held:
+                        return TURN_BUSY_REPLY
+                    if (actual not in self.orch.memory.conversation.sessions
+                            and not await self.orch.memory.resume_session(actual)):
+                        return "There is no conversation to undo; nothing changed."
+                    turns = await self.orch.memory.get_history(actual)
+                    last_user = next((i for i in range(len(turns) - 1, -1, -1)
+                                      if turns[i].get("role") == "user"), None)
+                    if last_user is None:
+                        return "There is no conversation to undo; nothing changed."
+                    new_key = generation_key(base, state.generation + 1)
+                    async with self.orch.turn_lease(new_key) as new_held:
+                        if not new_held:
+                            return TURN_BUSY_REPLY
+                        new_actual = await self._new_memory_session(new_key, prior_route=False)
+                        for turn in turns[:last_user]:
+                            await self.orch.memory.add_turn(
+                                new_actual, turn["role"], turn["content"],
+                                agent_id=turn.get("agent_id"), tools=turn.get("tools"))
+                        self.store.rotate(base, self.now(), source.channel, kind)
+                        self.orch._channel_sessions[base] = new_actual
+                        return "Removed the last exchange. Earlier conversation is preserved."
+        except (SessionResetError, OSError, ValueError, KeyError, TypeError):
+            logger.warning("channel session undo unavailable", exc_info=True)
+            return UNAVAILABLE
+
     async def _observe(self, source, text, *, base, kind, draft, shared):
         """Context-only ingress keeps the existing no-turn-lease contract.
 
-        It never rotates a generation or overwrites a route selected while the
-        memory call awaited. Conversation memory serializes its own append.
+        It never rotates a generation. A memory await may overlap expiry or a
+        normal turn, so select from the current generation and winning route.
         """
-        state = self.store.state(base)
-        key = generation_key(base, state.generation)
-        selected = self.orch._channel_sessions.get(base)
-        if selected is None:
-            if shared and state.generation == 0:
-                selected = self.orch._session_id_default
-            elif await self.orch.memory.resume_session(key):
-                selected = key
-            else:
-                selected = await self.orch.memory.new_session(key)
-            self.orch._channel_sessions.setdefault(base, selected)
+        while True:
+            state = self.store.state(base)
+            key = generation_key(base, state.generation)
+            selected = self.orch._channel_sessions.get(base)
+            if selected is None:
+                if shared and state.generation == 0:
+                    selected = self.orch._session_id_default
+                elif await self.orch.memory.resume_session(key):
+                    selected = key
+                else:
+                    selected = await self._new_memory_session(key, prior_route=state.active)
+                current = self.store.state(base)
+                if (current.generation, current.active) != (state.generation, state.active):
+                    continue
+                if not (shared and state.generation == 0):
+                    selected = self.orch._channel_sessions.setdefault(base, selected)
+            break
         self.store.touch(base, self.now(), source.channel, kind)
         return await self.orch._run_channel_session_turn(
             selected, text, source.channel, observe_only=True, draft=draft)

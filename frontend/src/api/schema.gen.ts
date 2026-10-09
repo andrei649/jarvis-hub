@@ -590,26 +590,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/vlm/composer/active-images": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Composer Active Images
-         * @description List private, process-local image handles for the displayed conversation.
-         */
-        get: operations["composer_active_images_api_vlm_composer_active_images_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/vlm/composer/prepare": {
         parameters: {
             query?: never;
@@ -681,6 +661,57 @@ export interface paths {
         put?: never;
         /** Composer Describe */
         post: operations["composer_describe_api_vlm_composer_describe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vlm/composer/active-images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Composer Active Images */
+        get: operations["composer_active_images_api_vlm_composer_active_images_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vlm/composer/selected-prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Composer Selected Prepare */
+        post: operations["composer_selected_prepare_api_vlm_composer_selected_prepare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vlm/composer/selected-chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Composer Selected Chat */
+        post: operations["composer_selected_chat_api_vlm_composer_selected_chat_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11771,6 +11802,8 @@ export interface components {
         ChatResponse: {
             /** Reply */
             reply: string;
+            /** Session Id */
+            session_id?: string | null;
             /**
              * Pending Approvals
              * @default []
@@ -13141,6 +13174,53 @@ export interface components {
              */
             action: "lock" | "unlock" | "arm_home" | "arm_away" | "disarm" | "open" | "close";
         };
+        /** SelectedImagePrepare */
+        SelectedImagePrepare: {
+            /** Prompt */
+            prompt: string;
+            /** Agent */
+            agent: string;
+            /** Session Id */
+            session_id: string;
+            /** Image Digests */
+            image_digests?: string[];
+            /** Active Image Handles */
+            active_image_handles?: string[];
+        };
+        /** SelectedImageSend */
+        SelectedImageSend: {
+            /** Prompt */
+            prompt: string;
+            /** Images */
+            images?: string[];
+            /** Expected Destination */
+            expected_destination: string;
+            /** Expected Binding */
+            expected_binding: string;
+            /**
+             * Remote Ack
+             * @default false
+             */
+            remote_ack: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /** Agent */
+            agent: string;
+            /** Session Id */
+            session_id: string;
+            /** Review Token */
+            review_token: string;
+            /** Active Image Handles */
+            active_image_handles?: string[];
+        };
         /** SessionBody */
         SessionBody: {
             /** Cards */
@@ -14456,38 +14536,6 @@ export interface operations {
             };
         };
     };
-    composer_active_images_api_vlm_composer_active_images_get: {
-        parameters: {
-            query?: {
-                session_id?: string | null;
-                agent?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     composer_prepare_api_vlm_composer_prepare_post: {
         parameters: {
             query?: {
@@ -14599,6 +14647,104 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ComposerVisionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    composer_active_images_api_vlm_composer_active_images_get: {
+        parameters: {
+            query?: {
+                session_id?: string | null;
+                agent?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    composer_selected_prepare_api_vlm_composer_selected_prepare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectedImagePrepare"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    composer_selected_chat_api_vlm_composer_selected_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectedImageSend"];
             };
         };
         responses: {

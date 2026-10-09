@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import sys
 import venv
 
@@ -147,7 +148,7 @@ async def test_owner_vouched_skill_view_grants_only_same_actor_session(tmp_path)
 async def test_backend_local_interpreter_selection_reexec_and_strict_default(tmp_path):
     environment = tmp_path / 'venv'
     venv.EnvBuilder(with_pip=False).create(environment)
-    candidate = environment / 'bin' / 'python'
+    candidate = environment / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     _, tool = _session_tool(tmp_path / 'runtime')
     tool._environment_registry = CodeEnvRegistry()
     tool._environment_source = {'VIRTUAL_ENV': str(environment)}

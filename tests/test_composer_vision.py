@@ -91,6 +91,17 @@ def test_status_and_actual_model_provenance(setup):
     assert setup.closed == 1
 
 
+def test_user_token_can_still_prepare_standalone_vision(setup):
+    preview = setup.client.post("/api/vlm/composer/prepare", json={"prompt": "What is shown?"})
+    assert preview.status_code == 200, preview.text
+    status = preview.json()
+    response = setup.client.post("/api/vlm/composer/describe-prepared", json={
+        **body(setup), "review_token": status["review_token"],
+    })
+    assert response.status_code == 200, response.text
+    assert len(setup.calls) == 1
+
+
 @pytest.mark.parametrize(
     "change",
     [

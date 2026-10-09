@@ -616,5 +616,7 @@
   "PUT /api/notes": "notes_set_api_notes_put",
   "PUT /api/preferences/appearance": "appearance_put_api_preferences_appearance_put",
   "PUT /api/workflows/{pipeline_id}": "update_workflow_api_workflows__pipeline_id__put",
-  "PUT /plugins/{plugin_id}/toggle": "toggle_plugin_plugins__plugin_id__toggle_put"
+  "PUT /plugins/{plugin_id}/toggle": "toggle_plugin_plugins__plugin_id__toggle_put",
+  "POST /api/vlm/composer/selected-chat": "composer_selected_chat_api_vlm_composer_selected_chat_post",
+  "POST /api/vlm/composer/selected-prepare": "composer_selected_prepare_api_vlm_composer_selected_prepare_post"
 }

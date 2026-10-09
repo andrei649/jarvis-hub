@@ -66,7 +66,9 @@ async def cold_command_host(tmp_path, context, *, shared=False):
     await message(gateway, "keep")
     await message(gateway, "remove")
     route_base = first._session_id_default if shared else topic_base
-    sid = first._channel_sessions[route_base]
+    # Generation zero of the shared route uses the default session directly;
+    # it intentionally has no entry in the channel route cache.
+    sid = first._channel_sessions.get(route_base, route_base)
     root = context[2]
     transcript = root / f"{sid}.json"
     assert transcript.is_file()

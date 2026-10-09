@@ -32,6 +32,7 @@ def route(monkeypatch, tmp_path):
     monkeypatch.setenv("JARVIS_ROLE_VISION_EMPTY_RETRIES", "0")
     monkeypatch.setenv("JARVIS_NOUS_CLIENT_ID", "nerva-auto-test-client")
     monkeypatch.setenv("JARVIS_USER_TOKEN", "image-test")
+    monkeypatch.setenv("JARVIS_ADMIN_TOKEN", "image-admin")
     monkeypatch.setattr(web, "USER_TOKEN", "image-test")
     monkeypatch.setattr(web.app, "dependency_overrides", {})
     store = NousAuthStore(tmp_path / "nous.sqlite3", cipher=SecretStore(tmp_path / "cipher", key=KEY))
@@ -53,7 +54,9 @@ def route(monkeypatch, tmp_path):
         return llm_async_client(provider, transport=httpx.MockTransport(respond), **kwargs)
 
     monkeypatch.setattr(vlm, "llm_async_client", factory)
-    state.client = TestClient(web.app, headers={"X-User-Token": "image-test"})
+    state.client = TestClient(web.app, headers={"X-User-Token": "image-test",
+                                               "X-Admin-Token": "image-admin"})
+    state.user_client = TestClient(web.app, headers={"X-User-Token": "image-test"})
     return state
 
 

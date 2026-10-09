@@ -264,7 +264,7 @@
   "GET /api/trust/status": "open",
   "GET /api/vault": "user",
   "GET /api/vault/{vault_id}": "user",
-  "GET /api/vlm/composer/active-images": "user",
+  "GET /api/vlm/composer/active-images": "admin",
   "GET /api/vlm/composer/status": "user",
   "GET /api/vlm/status": "user",
   "GET /api/voice/capabilities": "open",
@@ -620,5 +620,7 @@
   "PUT /api/notes": "user",
   "PUT /api/preferences/appearance": "user",
   "PUT /api/workflows/{pipeline_id}": "admin",
-  "PUT /plugins/{plugin_id}/toggle": "admin"
+  "PUT /plugins/{plugin_id}/toggle": "admin",
+  "POST /api/vlm/composer/selected-chat": "admin",
+  "POST /api/vlm/composer/selected-prepare": "admin"
 }

@@ -621,6 +621,11 @@ class PipeKernelBackend:
                    "interpreter_env": context.get("interpreter_env", {}),
                    "staging_dir": staging,
                    "cwd": ("/nerva-project" if container else project) if project else staging}
+        if os.name == "nt" and not container:
+            from .code_context import resolve_child_context
+
+            selected = resolve_child_context({**payload, "env": payload["interpreter_env"]})
+            argv[0] = selected["python"]
         config.update(execution_context=payload, base_env=self._child_env(), worker_source=source)
         return config
 

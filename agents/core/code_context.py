@@ -111,6 +111,194 @@ _READ_FLAGS = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLO
 _DIR_FLAGS = _READ_FLAGS | getattr(os, "O_DIRECTORY", 0)
 
 
+def _windows_project_handle(path: Path, *, directory: bool = False,
+                            shared_writes: bool = False):
+    """Open one Windows object without following its final reparse point."""
+    import ctypes
+    from ctypes import wintypes
+
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    create = api.CreateFileW
+    create.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                       wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+    create.restype = wintypes.HANDLE
+    close = api.CloseHandle
+    close.argtypes = (wintypes.HANDLE,)
+    close.restype = wintypes.BOOL
+    final_name = api.GetFinalPathNameByHandleW
+    final_name.argtypes = (wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD)
+    final_name.restype = wintypes.DWORD
+    attributes = api.GetFileInformationByHandleEx
+    attributes.argtypes = (wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD)
+    attributes.restype = wintypes.BOOL
+
+    class AttributeTagInfo(ctypes.Structure):
+        _fields_ = (("attributes", wintypes.DWORD), ("tag", wintypes.DWORD))
+
+    flags = 0x00200000 | (0x02000000 if directory else 0)  # OPEN_REPARSE_POINT, BACKUP_SEMANTICS
+    share = 0x1 | (0x2 | 0x4 if shared_writes else 0)
+    handle = create(str(path), 0x80000000, share, None, 3, flags, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ProjectSnapshotError("source_changed")
+    try:
+        info = AttributeTagInfo()
+        if not attributes(handle, 9, ctypes.byref(info), ctypes.sizeof(info)):
+            raise ProjectSnapshotError("source_changed")
+        if info.attributes & 0x400:  # FILE_ATTRIBUTE_REPARSE_POINT
+            raise ProjectSnapshotError("source_changed")
+        buffer = ctypes.create_unicode_buffer(32768)
+        length = final_name(handle, buffer, len(buffer), 0)
+        if not length or length >= len(buffer):
+            raise ProjectSnapshotError("source_changed")
+        name = buffer.value
+        if name.startswith("\\\\?\\UNC\\"):
+            name = "\\\\" + name[8:]
+        elif name.startswith("\\\\?\\"):
+            name = name[4:]
+        return handle, os.path.normcase(os.path.normpath(name)), close
+    except BaseException:
+        close(handle)
+        raise
+
+
+def _prepare_windows_project(root, destination, *, redact, max_files, max_bytes):
+    """Copy only files whose opened handles still resolve inside the selected root."""
+    import msvcrt
+
+    root_handle = None
+    close = None
+    try:
+        # Pin and inspect the exact configured directory before FileScope's
+        # canonicalization could erase a junction at the root itself.
+        source = Path(root).expanduser().absolute()
+        root_handle, root_name, close = _windows_project_handle(source, directory=True)
+        scope = FileScope([root])
+        source = scope.resolve(str(scope.roots[0]))
+        if os.path.normcase(os.path.normpath(str(source))) != root_name:
+            raise ProjectSnapshotError("source_changed")
+        destination = Path(destination).expanduser().absolute()
+        if destination.exists() or destination.is_symlink():
+            raise ProjectSnapshotError("destination_exists")
+        if not destination.parent.is_dir():
+            raise ProjectSnapshotError("missing_destination_parent")
+    except ProjectSnapshotError:
+        if root_handle is not None:
+            close(root_handle)
+        raise
+    except (OSError, ValueError) as exc:
+        if root_handle is not None:
+            close(root_handle)
+        raise ProjectSnapshotError("invalid_root") from exc
+
+    files = []
+    directories = []
+    skipped = 0
+    total_bytes = 0
+
+    def inside_root(final):
+        try:
+            return os.path.commonpath((root_name, final)) == root_name and final != root_name
+        except ValueError:
+            return False
+
+    def open_file(path, expected):
+        handle, final, _ = _windows_project_handle(path)
+        try:
+            if not inside_root(final):
+                raise ProjectSnapshotError("source_changed")
+            fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+        except BaseException:
+            close(handle)
+            raise
+        try:
+            current = os.fstat(fd)
+            if (current.st_dev, current.st_ino, current.st_size) != expected:
+                raise ProjectSnapshotError("source_changed")
+            return _read_file(fd, expected[2])
+        finally:
+            os.close(fd)
+
+    def scan(directory, relative):
+        nonlocal skipped, total_bytes
+        with os.scandir(directory) as entries:
+            children = sorted(entries, key=lambda item: item.name)
+        for item in children:
+            name = item.name
+            if looks_secret_name(name) or name.lower() in _EXCLUDED_DIRS:
+                skipped += 1
+                continue
+            parts = (*relative, name)
+            path = source.joinpath(*parts)
+            try:
+                scope.resolve(str(path))
+            except FileScopeError:
+                skipped += 1
+                continue
+            try:
+                entry = path.lstat()
+            except OSError as exc:
+                raise ProjectSnapshotError("source_changed") from exc
+            if stat.S_ISLNK(entry.st_mode) or getattr(entry, "st_file_attributes", 0) & 0x400:
+                skipped += 1
+                continue
+            if stat.S_ISDIR(entry.st_mode):
+                child_handle, final, _ = _windows_project_handle(path, directory=True)
+                try:
+                    if not inside_root(final):
+                        raise ProjectSnapshotError("source_changed")
+                    directories.append(parts)
+                    scan(path, parts)
+                finally:
+                    close(child_handle)
+                continue
+            if not stat.S_ISREG(entry.st_mode):
+                skipped += 1
+                continue
+            if len(files) >= max_files:
+                raise ProjectSnapshotError("file_limit")
+            if entry.st_size > max_bytes - total_bytes:
+                raise ProjectSnapshotError("byte_limit")
+            expected = (entry.st_dev, entry.st_ino, entry.st_size)
+            if redact is not None:
+                data = open_file(path, expected)
+                try:
+                    content = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    pass
+                else:
+                    if redact(content) != content:
+                        skipped += 1
+                        continue
+            files.append((parts, expected))
+            total_bytes += entry.st_size
+
+    try:
+        scan(source, ())
+        destination.mkdir(mode=0o700)
+        try:
+            for parts in directories:
+                destination.joinpath(*parts).mkdir(mode=0o700)
+            for parts, expected in files:
+                data = open_file(source.joinpath(*parts), expected)
+                if redact is not None:
+                    try:
+                        content = data.decode("utf-8")
+                    except UnicodeDecodeError:
+                        pass
+                    else:
+                        if redact(content) != content:
+                            raise ProjectSnapshotError("source_changed")
+                destination.joinpath(*parts).write_bytes(data)
+        except BaseException:
+            shutil.rmtree(destination)
+            raise
+    except OSError as exc:
+        raise ProjectSnapshotError("source_changed") from exc
+    finally:
+        close(root_handle)
+    return {"files": len(files), "bytes": total_bytes, "skipped": skipped}
+
+
 def _source_file(root_fd: int, parts: tuple[str, ...]) -> int:
     """Open an entry through no-follow directory fds anchored at the root."""
     parent_fd = os.dup(root_fd)
@@ -159,6 +347,9 @@ def prepare_project(
         raise ProjectSnapshotError("invalid_limits")
     if redact is not None and not callable(redact):
         raise ProjectSnapshotError("invalid_redactor")
+    if os.name == "nt":
+        return _prepare_windows_project(root, destination, redact=redact,
+                                        max_files=max_files, max_bytes=max_bytes)
     if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
         raise ProjectSnapshotError("no_follow_unavailable")
     try:

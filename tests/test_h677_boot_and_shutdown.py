@@ -191,13 +191,15 @@ def test_a_turn_served_while_warming_is_marked(monkeypatch):
     from agents import web
 
     mock = MagicMock()
+    mock.session_id = "warmup_session"
     mock.handle_input = AsyncMock(return_value="Salut!")
     monkeypatch.setattr(web, "orch", mock)
     client = TestClient(web.app)
     assert client.post("/chat", json={"message": "hi"}).json()["warming"] is False
     lb.WARMUP.track(asyncio.Future(loop=asyncio.new_event_loop()))
     reply = client.post("/chat", json={"message": "hi"}).json()
-    assert reply == {"reply": "Salut!", "pending_approvals": [], "warming": True, "notices": []}
+    assert reply == {"reply": "Salut!", "session_id": "warmup_session",
+                     "pending_approvals": [], "warming": True, "notices": []}
 
 
 def test_a_streamed_turn_served_while_warming_is_marked(monkeypatch):

@@ -6,9 +6,9 @@ const MAX_BYTES=4*1024*1024, MAX_IMAGES=8;
 type SelectionNeed='acknowledge_training'|'confirm_expensive';
 type SelectionRequirement={needs:SelectionNeed;message:string};
 type ActiveImage={handle:string;count:number;question:string};
-export type VisionDraft={images:string[];names:string[];active_image_handles?:string[];expected_destination:string;expected_binding:string;review_token:string;agent:string;session_id:string;selected_turn:true;selected_main?:true;remote_ack:boolean;acknowledge_training?:true;confirm_expensive?:true};
+export type VisionDraft={images:string[];names:string[];active_image_handles?:string[];expected_destination:string;expected_binding:string;review_token:string;agent:string;session_id:string;selected_turn?:true;selected_main?:true;selected_ollama?:true;remote_ack:boolean;acknowledge_training?:true;confirm_expensive?:true};
 type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;data?:string;error?:string};
-type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;data_policy_note?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[];session_id?:string;selected_turn?:boolean;active_image_count?:number};
+type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;data_policy_note?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[];session_id?:string;selected_turn?:boolean;selected_ollama?:boolean;active_image_count?:number};
 
 const AUTO_SOURCES=new Set(['auto:main','auto:override','auto:openrouter','auto:nous','auto:deepinfra']);
 const PROVIDER_NAMES:Record<string,string>={openrouter:'OpenRouter',nous:'Nous',deepinfra:'DeepInfra',anthropic:'Anthropic Claude',gemini:'Google Gemini','openai-responses':'OpenAI Responses',xai:'xAI Grok',lmstudio:'LM Studio',ollama:'Ollama',custom:'Custom'};
@@ -37,7 +37,7 @@ function validSelectionRequirements(data:Destination){
   return true;
 }
 
-export function useComposerImages(prompt='',agent='jarvis'){
+export function useComposerImages(prompt='',agent='jarvis',sessionId='',selectedTurn=false){
   const records=useRef<Draft[]>([]), serial=useRef(0);
   const activeRequest=useRef<AbortController|null>(null);
   const [images,setImages]=useState<Draft[]>([]),[note,setNote]=useState('');
@@ -56,13 +56,14 @@ export function useComposerImages(prompt='',agent='jarvis'){
   const publish=()=>setImages([...records.current]);
   const dispose=(entry:Draft)=>{entry.reader.onload=null;entry.reader.onerror=null;entry.reader.onabort=null;if(entry.reader.readyState===1)entry.reader.abort();if(entry.url)URL.revokeObjectURL(entry.url);};
   const clear=()=>{activeRequest.current?.abort();records.current.forEach(dispose);records.current=[];publish();setActiveImages([]);setSelectedHandles([]);setActiveSession('');setActiveState('idle');invalidateReview();setNote('');};
+  useEffect(()=>{clear();},[sessionId,agent,selectedTurn]); // eslint-disable-line react-hooks/exhaustive-deps
   const remove=(id:number)=>{const entry=records.current.find(item=>item.id===id);records.current=records.current.filter(item=>item.id!==id);if(entry){dispose(entry);invalidateReview();}publish();};
   const loadActiveImages=async()=>{
     activeRequest.current?.abort();
     const controller=new AbortController();activeRequest.current=controller;
     setActiveState('loading');setActiveImages([]);setSelectedHandles([]);setActiveSession('');invalidateReview();
     try {
-      const response=await apiFetchOnce(`/api/vlm/composer/active-images?agent=${encodeURIComponent(agent)}`,{signal:controller.signal});
+      const response=await apiFetchOnce(`/api/vlm/composer/active-images?agent=${encodeURIComponent(agent)}${sessionId?`&session_id=${encodeURIComponent(sessionId)}`:''}`,{signal:controller.signal});
       if(!response.ok)throw new Error('active images unavailable');
       const text=await response.text();if(text.length>8192)throw new Error('invalid active images');
       const data=JSON.parse(text) as {session_id?:unknown;images?:unknown};
@@ -73,6 +74,7 @@ export function useComposerImages(prompt='',agent='jarvis'){
         !Number.isInteger(row.count)||row.count<1||row.count>8||typeof row.question!=='string'||
         row.question.length>120||/[\x00-\x1f\x7f]/.test(row.question))||
         new Set(rows.map(row=>row.handle)).size!==rows.length)throw new Error('invalid active images');
+      if(sessionId&&data.session_id!==sessionId)throw new Error('active image session changed');
       if(!controller.signal.aborted){setActiveImages(rows);setActiveSession(data.session_id);setActiveState(rows.length?'ready':'unavailable');}
     } catch {if(!controller.signal.aborted){setActiveImages([]);setActiveSession('');setActiveState('unavailable');}}
     finally {if(activeRequest.current===controller)activeRequest.current=null;}
@@ -115,7 +117,7 @@ export function useComposerImages(prompt='',agent='jarvis'){
   const selectionKey=`${images.map(image=>image.id).join(',')}|${selectedHandles.join(',')}`;
   useEffect(()=>{
     setAck('');setConsents({});setDestination(null);setReviewedSelection(null);
-    if(!enabled||selectedHandles.length>0&&!prompt.trim()||
+    if(!enabled||selectedTurn&&!sessionId||selectedHandles.length>0&&!prompt.trim()&&!selectedTurn||
       activeCount+images.length>MAX_IMAGES||!images.every(image=>!!image.data&&!image.error))return;
     const controller=new AbortController();let active=true;
     const timer=setTimeout(async()=>{
@@ -127,37 +129,46 @@ export function useComposerImages(prompt='',agent='jarvis'){
           return Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,'0')).join('');
         }));
         if(!active)return;
-        const statusPath='/api/vlm/composer/prepare'+(refreshCatalog.current?'?refresh_catalog=true':'');
+        let response:Response;
+        let selectedOllama=false;
+        if(selectedTurn&&sessionId){
+          response=await apiFetchOnce('/api/vlm/composer/selected-prepare',{method:'POST',body:{prompt:reviewPrompt,agent,session_id:sessionId,image_digests,active_image_handles:selectedHandles},signal:controller.signal});
+          selectedOllama=response.ok;
+        }else response=new Response(null,{status:409});
+        if(!selectedOllama){
+          const statusPath='/api/vlm/composer/prepare'+(refreshCatalog.current?'?refresh_catalog=true':'');
+          response=await apiFetchOnce(statusPath,{method:'POST',body:{prompt:reviewPrompt,agent,selected_turn:true,
+            ...(sessionId?{session_id:sessionId}:{}),...(images.length?{image_digests}:{}),...(selectedHandles.length?{active_image_handles:selectedHandles}:{})},signal:controller.signal});
+        }
         refreshCatalog.current=false;
-        const response=await apiFetchOnce(statusPath,{method:'POST',body:{prompt:reviewPrompt,agent,selected_turn:true,
-          ...(images.length?{image_digests}:{}),...(selectedHandles.length?{active_image_handles:selectedHandles}:{})},signal:controller.signal});
         const text=await response.text();if(text.length>8192)throw new Error('Invalid vision status');
         const data=JSON.parse(text) as Destination&{reason?:string};
+        if(selectedOllama){data.binding=data.review_token;data.selected_turn=true;data.selected_ollama=true;}
         if(!response.ok){
           if(active&&selectedHandles.length&&response.status===409&&data.reason==='vlm_active_image_unavailable'){
             setActiveImages([]);setSelectedHandles([]);setActiveSession('');setActiveState('unavailable');
           }
           throw new Error('Vision status unavailable');
         }
-        if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!/^\w{64}$/.test(data.binding||'')||!/^[-\w]{20,128}$/.test(data.review_token||'')))throw new Error('Invalid vision status');
+        if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!(selectedOllama?/^[-_A-Za-z0-9]{20,128}$/.test(data.binding||''):/^\w{64}$/.test(data.binding||''))||!/^[-\w]{20,128}$/.test(data.review_token||'')))throw new Error('Invalid vision status');
         if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision status');
         if(data.data_policy_note!==undefined&&(typeof data.data_policy_note!=='string'||data.data_policy_note.length>500))throw new Error('Invalid vision status');
         if(data.configured&&(data.selected_turn!==true||typeof data.session_id!=='string'||data.session_id.length>128||!/^[-_A-Za-z0-9]+$/.test(data.session_id)))throw new Error('Invalid vision status');
         if(data.selection_source!==undefined&&(!AUTO_SOURCES.has(data.selection_source)||
           data.selection_source==='auto:override'&&data.backend!=='custom'||
           !['auto:main','auto:override'].includes(data.selection_source)&&data.selection_source!==`auto:${data.backend}`))throw new Error('Invalid vision status');
-        if(selectedHandles.length&&(data.selection_source!=='auto:main'||data.session_id!==activeSession||
-          data.active_image_count!==activeCount))throw new Error('Invalid active image selection');
+        if(selectedHandles.length&&(!data.selected_ollama&&data.selection_source!=='auto:main'||data.session_id!==activeSession||
+          data.active_image_count!==undefined&&data.active_image_count!==activeCount))throw new Error('Invalid active image selection');
         if(!validRetryMetadata(data)||!validSelectionRequirements(data))throw new Error('Invalid vision status');
         if(active){setDestination(data);setReviewedSelection(selectionKey);}
       } catch {if(active)setDestination({configured:false});}
     },200);
     return()=>{active=false;clearTimeout(timer);controller.abort();};
-  },[images,selectedHandles,refreshId,prompt,agent,activeSession]);
+  },[images,selectedHandles,refreshId,prompt,agent,activeSession,sessionId,selectedTurn]);
   const requirements=destination?.selection_requirements||[];
   const xaiUnsupported=destination?.backend==='xai'&&images.some(image=>
     !!image.data&&!/^data:image\/(png|jpeg);base64,/.test(image.data));
-  const ready=enabled&&(!selectedHandles.length||!!prompt.trim())&&reviewedSelection===selectionKey&&
+  const ready=enabled&&(!selectedHandles.length||!!prompt.trim()||selectedTurn)&&reviewedSelection===selectionKey&&
     activeCount+images.length<=MAX_IMAGES&&images.every(image=>!!image.data&&!image.error)&&destination?.configured&&
     !xaiUnsupported&&(destination.local===true||ack===destination.binding)&&requirements.every(item=>consents[item.needs]===destination.binding);
   const submission=():VisionDraft|null=>ready?{
@@ -167,12 +178,13 @@ export function useComposerImages(prompt='',agent='jarvis'){
     expected_destination:destination!.destination!,expected_binding:destination!.binding!,review_token:destination!.review_token!,agent,
     selected_turn:true,session_id:destination!.session_id!,
     ...(destination!.selection_source==='auto:main'?{selected_main:true as const}:{}),
+    ...(destination!.selected_ollama?{selected_ollama:true as const}:{}),
     remote_ack:destination!.local!==true&&ack===destination!.binding,
     ...(requirements.some(item=>item.needs==='acknowledge_training')?{acknowledge_training:true as const}:{}),
     ...(requirements.some(item=>item.needs==='confirm_expensive')?{confirm_expensive:true as const}:{}),
   }:null;
   return {images,note,destination,ack,consents,ready,xaiUnsupported,addFiles,onPaste,onDrop,clear,remove,submission,
-    activeImages,selectedHandles,activeState,activeCount,enabled,loadActiveImages,toggleActive,
+    activeImages,selectedHandles,activeState,activeCount,enabled,loadActiveImages,toggleActive,sessionId,selectedTurn,
     acknowledge:(checked:boolean)=>setAck(checked?destination?.binding||'':''),
     confirm:(need:SelectionNeed,checked:boolean)=>setConsents(current=>({...current,[need]:checked?destination?.binding||'':''})),
     refresh:()=>{refreshCatalog.current=true;setConsents({});setRefreshId(id=>id+1);}};
@@ -181,7 +193,7 @@ export function useComposerImages(prompt='',agent='jarvis'){
 export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImages>}){
   const d=draft.destination;
   return <div style={{padding:'6px 8px',fontSize:11}}>
-    <button type="button" className="tool-btn" onClick={draft.loadActiveImages}>Reuse earlier images</button>
+    <button type="button" className="tool-btn" onClick={draft.loadActiveImages}>Use previous image</button>
     {draft.activeState==='loading'&&<span role="status"> Checking earlier images…</span>}
     {draft.activeState==='unavailable'&&<span role="status"> Earlier images are unavailable in this session. Attach them again if needed.</span>}
     {draft.activeState==='ready'&&<div style={{display:'flex',gap:8,overflowX:'auto',marginTop:5}}>
@@ -197,7 +209,7 @@ export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImage
       <button className="tool-btn" onClick={()=>draft.remove(image.id)} aria-label={`Remove ${image.name}`}>Remove</button>
       {!image.data&&!image.error&&<span> Reading…</span>}{image.error&&<span>{image.error}</span>}
     </div>)}</div>
-    {(draft.enabled||draft.note)&&<div role="status">{draft.note || (!d?'Checking vision configuration…':!d.configured?'Vision model unavailable. Remove image selections to send text.':`${d.selection_source?`Automatically selected ${PROVIDER_NAMES[d.backend||'']||d.backend} · `:''}${d.model} · ${d.destination} · ${d.local?'loopback':'remote'} · reachability not probed`)}</div>}
+    {(draft.enabled||draft.note)&&<div role="status">{draft.note || (draft.selectedTurn&&!draft.sessionId?'Selecting conversation…':!d?'Checking vision configuration…':!d.configured?'Vision model unavailable. Remove image selections to send text.':`${d.selection_source?`Automatically selected ${PROVIDER_NAMES[d.backend||'']||d.backend} · `:''}${d.model} · ${d.destination} · ${d.local?'loopback':'remote'} · reachability not probed`)}</div>}
     {draft.xaiUnsupported&&<div role="status" style={{color:'var(--amber)'}}>xAI accepts PNG or JPEG images. Remove GIF/WebP images before sending.</div>}
     {d?.configured&&d.warning&&<div style={{color:'var(--amber)'}}>{d.warning}</div>}
     {d?.configured&&d.backend==='openai-responses'&&d.data_policy_note&&<div>{d.data_policy_note}</div>}

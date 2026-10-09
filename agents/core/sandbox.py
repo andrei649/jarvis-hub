@@ -29,6 +29,10 @@ class SandboxError(Exception):
     pass
 
 
+class ContextTeardownUnconfirmed(SandboxError):
+    pass
+
+
 def _bind_mount(source: str, target: str, *, readonly: bool) -> list[str]:
     """A Docker bind mount as ``--mount``, never ``-v``: a ``:`` in the host path (a data
     root such as ``/srv/a:b``) split ``-v`` into the wrong fields (review-H667 nit 4).
@@ -421,6 +425,7 @@ if __name__ == "__main__":
         metadata_dir = context_dir / "metadata"
         metadata_dir.mkdir(mode=0o700, parents=True)
         metadata_file = metadata_dir / "result.json"
+        keep_context = False
         try:
             if mode == "project" and context.get("project_root"):
                 source_root = Path(context["project_root"]).expanduser().resolve()
@@ -459,20 +464,39 @@ if __name__ == "__main__":
                 )
             result.execution_context = self._read_context_metadata(metadata_file)
             return result
+        except ContextTeardownUnconfirmed:
+            keep_context = True
+            return SandboxResult(stderr="Execution context teardown unconfirmed",
+                                 refusal_reason="context_teardown_unconfirmed")
         except ProjectSnapshotError as exc:
             return SandboxResult(stderr="Project projection refused",
                                  refusal_reason=str(exc))
         finally:
-            shutil.rmtree(context_dir, ignore_errors=True)
+            if not keep_context:
+                shutil.rmtree(context_dir, ignore_errors=True)
 
     @staticmethod
     def _read_context_metadata(path: Path) -> dict | None:
         """Read an untrusted, bounded informational sidecar without following links."""
-        if not hasattr(os, "O_NOFOLLOW"):
-            return None
-        flags = os.O_RDONLY | os.O_NOFOLLOW
+        from .code_context import ProjectSnapshotError
+
         try:
-            fd = os.open(path, flags)
+            if os.name == "nt":
+                import msvcrt
+
+                from .code_context import _windows_project_handle
+
+                root, root_name, close = _windows_project_handle(path.parent, directory=True)
+                try:
+                    handle, final, _ = _windows_project_handle(path)
+                    if os.path.commonpath((root_name, final)) != root_name:
+                        close(handle)
+                        return None
+                    fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+                finally:
+                    close(root)
+            else:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
             try:
                 metadata_stat = os.fstat(fd)
                 if not stat.S_ISREG(metadata_stat.st_mode) or metadata_stat.st_size > 4096:
@@ -483,7 +507,7 @@ if __name__ == "__main__":
             if len(raw) > 4096:
                 return None
             value = json.loads(raw)
-        except (OSError, UnicodeError, ValueError, TypeError):
+        except (OSError, UnicodeError, ValueError, TypeError, ProjectSnapshotError):
             return None
         if not isinstance(value, dict) or value.get("mode") not in ("project", "strict"):
             return None
@@ -707,6 +731,11 @@ if __name__ == "__main__":
                     duration=duration,
                 )
             except asyncio.TimeoutError:
+                if context_run:
+                    await self._stop_docker_context(proc, container_name)
+                    return SandboxResult(stderr=f"Execution timed out after {self.timeout}s",
+                                         exit_code=-1, duration=time.monotonic() - start,
+                                         timed_out=True)
                 proc.kill()
                 await proc.wait()
                 # Killing the docker *client* detaches it; the daemon-side
@@ -728,6 +757,9 @@ if __name__ == "__main__":
                     duration=duration, timed_out=True,
                 )
             except asyncio.CancelledError:
+                if context_run:
+                    await self._stop_docker_context(proc, container_name)
+                    raise
                 # A caller (e.g. the file-RPC runtime's outer service window)
                 # cancelled us. Kill the child AND the named container so neither
                 # is orphaned, then propagate the cancellation. (contextlib.suppress
@@ -784,6 +816,8 @@ if __name__ == "__main__":
                        "input to fall back to.",
                 exit_code=-1,
             )
+        except ContextTeardownUnconfirmed:
+            raise
         except Exception as e:
             if context_run and proc is not None:
                 await self._stop_docker_context(proc, container_name)
@@ -795,19 +829,38 @@ if __name__ == "__main__":
             )
 
     @staticmethod
-    async def _stop_docker_context(proc, container_name: str) -> None:
-        """Stop both Docker CLI and container before projection cleanup."""
-        with contextlib.suppress(Exception):
+    async def _stop_docker_context(proc, container_name: str, *, timeout: float = 5) -> None:
+        """Bound teardown and prove the named container is no longer running."""
+        with contextlib.suppress(ProcessLookupError):
             proc.kill()
-        with contextlib.suppress(Exception):
-            await proc.wait()
-        with contextlib.suppress(Exception):
-            killer = await asyncio.create_subprocess_exec(
-                "docker", "kill", container_name,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            await killer.wait()
+        try:
+            await asyncio.wait_for(proc.wait(), timeout)
+        except (OSError, asyncio.TimeoutError) as exc:
+            raise ContextTeardownUnconfirmed from exc
+
+        async def docker(*args):
+            cli = await asyncio.wait_for(asyncio.create_subprocess_exec(
+                "docker", *args, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL), timeout)
+            try:
+                output, _ = await asyncio.wait_for(cli.communicate(), timeout)
+            except asyncio.TimeoutError:
+                with contextlib.suppress(ProcessLookupError):
+                    cli.kill()
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(cli.wait(), timeout)
+                raise
+            return cli.returncode, output
+
+        try:
+            with contextlib.suppress(OSError, asyncio.TimeoutError):
+                await docker("kill", container_name)
+            status, running = await docker(
+                "ps", "--filter", f"name=^/{container_name}$", "--format", "{{.ID}}")
+            if status != 0 or running.strip():
+                raise ContextTeardownUnconfirmed
+        except (OSError, asyncio.TimeoutError) as exc:
+            raise ContextTeardownUnconfirmed from exc
 
     async def _execute_context_test_subprocess(self, bootstrap: str, filename: str,
                                                startup: bytes, check_current,
@@ -859,12 +912,18 @@ if __name__ == "__main__":
     @staticmethod
     async def _stop_host_context(proc) -> None:
         """Test-only host worker and its selected-interpreter descendant form one group."""
-        if os.name != "nt" and getattr(proc, "pid", None):
+        if os.name == "nt" and getattr(proc, "pid", None):
+            with contextlib.suppress(OSError):
+                killer = await asyncio.create_subprocess_exec(
+                    "taskkill", "/PID", str(proc.pid), "/T", "/F",
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL)
+                await asyncio.wait_for(killer.wait(), 5)
+        elif getattr(proc, "pid", None):
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(proc.pid, signal.SIGKILL)
-        else:
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
         with contextlib.suppress(Exception):
             await proc.wait()
 

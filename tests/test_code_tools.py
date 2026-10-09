@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -393,7 +394,7 @@ async def test_a_run_that_stays_under_the_byte_budget_can_still_be_shaped(tmp_pa
     result = await _run(tool, "for i in range(40000): print(i)")
 
     assert result["truncated"] is True
-    lines = result["stdout"].rstrip("\n").split("\n")
+    lines = result["stdout"].splitlines()
     assert len(lines) <= code_tools.MAX_OUTPUT_LINES + 1
     assert lines[0] == "0"
     assert lines[-1] == "39999", "the tail is the half that says what happened"
@@ -411,7 +412,7 @@ async def test_one_enormous_line_is_elided_in_the_middle_not_dropped(tmp_path):
 
     assert result["truncated"] is True
     assert result["stdout"].startswith("ab")
-    assert result["stdout"].rstrip("\n").endswith("bc")
+    assert result["stdout"].rstrip("\r\n").endswith("bc")
     assert "chars omitted" in result["stdout"]
     assert len(result["stdout"]) < 9_002
 
@@ -727,9 +728,9 @@ async def test_the_spill_is_kept_by_byte_count_not_by_this_layers_truncated_flag
     result = await _run(tool, "for _ in range(150): print('q' * 1500)")
 
     assert result["truncated"] is False, "this layer cut nothing — the sandbox did"
-    assert result["stdout_bytes"] == 150 * 1501
-    assert Path(result["stdout_file"]).read_bytes() == b"q" * 1500 + b"\n" + \
-        (b"q" * 1500 + b"\n") * 149
+    line = b"q" * 1500 + os.linesep.encode()
+    assert result["stdout_bytes"] == 150 * len(line)
+    assert Path(result["stdout_file"]).read_bytes() == line * 150
 
 
 @pytest.mark.asyncio
@@ -862,7 +863,7 @@ async def test_the_stdout_notice_is_a_call_that_pages_the_whole_stream_back(tmp_
             break
         args["offset"] = reply["result"]["next_offset"]
     assert len(pages) > 1
-    assert "".join(pages) == Path(result["stdout_file"]).read_text(encoding="utf-8")
+    assert "".join(pages) == Path(result["stdout_file"]).read_bytes().decode("utf-8")
     assert "".join(pages).count("\n") >= 20_000, "every line, the middle included"
 
 
@@ -891,7 +892,7 @@ async def test_a_runaway_stdout_spill_stops_at_its_ceiling_and_says_so(tmp_path)
     assert raw[:100_000] == b"z" * 100_000
     assert raw[100_000:].count(b"[... spill capped at 100000 bytes") == 1
     assert result["stdout_spill_capped"] is True
-    assert result["stdout_bytes"] == 300_001, "what the script printed, not what was kept"
+    assert result["stdout_bytes"] == 300_000 + len(os.linesep.encode()), "what the script printed, not what was kept"
     assert result["stdout_file_bytes"] == len(raw)
     assert result["stdout_kept_bytes"] == 100_000, "the stream's bytes, not the marker's"
     assert result["stdout_sha256"] == hashlib.sha256(raw).hexdigest()

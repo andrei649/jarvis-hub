@@ -185,7 +185,10 @@ def test_store_rejects_path_replaced_with_symlink(tmp_path):
     other = tmp_path / "other.db"
     SessionResetStore(other)
     path.unlink()
-    path.symlink_to(other)
+    try:
+        path.symlink_to(other)
+    except OSError:
+        pytest.skip("creating a symlink requires a Windows privilege")
     with pytest.raises(SessionResetError):
         store.state("route")
 

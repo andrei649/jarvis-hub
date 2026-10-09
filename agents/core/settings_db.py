@@ -145,6 +145,18 @@ DEFAULTS: list[dict[str, Any]] = [
     # general
     dict(category="general", key="timezone",         value="Europe/Bucharest",    label="Timezone",           kind="select",  opts=["Europe/Bucharest","UTC","US/Eastern"]),
     dict(category="general", key="wake_words",       value=["nerva","jarvis","hub"], label="Wake words",      kind="tags"),
+    dict(category="commands", key="quick_commands", value={}, label="Owner quick commands — JSON aliases or fixed shell commands (execution always needs approval)", kind="json"),
+    # H063 — durable channel route generations. The reset policy is off by default;
+    # explicit owner /new and /reset remain available regardless of this mode.
+    dict(category="sessions", key="reset_mode", value="none", label="Conversation reset mode", kind="select", opts=["none", "idle", "daily", "both"]),
+    dict(category="sessions", key="idle_minutes", value=1440, label="Idle minutes before a new conversation", kind="number"),
+    dict(category="sessions", key="daily_hour", value=4, label="Daily conversation reset hour", kind="number"),
+    dict(category="sessions", key="reset_by_type", value={}, label="Conversation reset overrides by chat type", kind="json"),
+    dict(category="sessions", key="reset_by_channel", value={}, label="Conversation reset overrides by channel", kind="json"),
+    dict(category="sessions", key="reset_triggers", value=["/new", "/reset"], label="Owner commands that start a new conversation", kind="tags"),
+    dict(category="sessions", key="stall_seconds", value=300, label="No-progress notice after seconds", kind="number"),
+    dict(category="sessions", key="stall_channel", value="telegram", label="No-progress notice channel", kind="select", opts=["telegram", "ntfy", "web"]),
+    dict(category="sessions", key="store_max_age_days", value=90, label="Retire idle route indexes after days (0 disables)", kind="number"),
     # product — owner-consented posture, default OFF. O26-P2.4 wave 1 wakes the
     # "knows you" stack only after the onboarding/product setting selects it.
     dict(category="product", key="posture", value="off", label="Product posture", kind="select", opts=["off", "companion_wave1", "design_partner"]),
@@ -198,6 +210,14 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm", key="kanban_max_workers_per_agent", value=1, label="Maximum concurrent Kanban workers per agent", kind="number"),
     dict(category="llm", key="operating_guidance", value={"enabled": True, "flags": {}, "platform_overrides": {}, "agents": {}},
          label="Model operating guidance: enabled, independent flags, per-agent overrides and channel presentation", kind="json"),
+    # Native execute_code remains owner opt-in. Sessions follow that switch by default;
+    # the image is needed only for persistent Docker kernels, not one-shot execution.
+    dict(category="llm", key="execute_code", value=False, label="Offer native code execution to the owner", kind="toggle"),
+    dict(category="llm", key="execute_code_sessions", value=True, label="Keep native code variables across cells when enabled", kind="toggle"),
+    dict(category="llm", key="execute_code_image", value="", label="Digest-pinned Docker image for persistent code sessions", kind="text"),
+    dict(category="llm", key="execute_code_mode", value="project", label="Native code context mode", kind="select", opts=["project", "strict"]),
+    dict(category="llm", key="execute_code_project_root", value="", label="Absolute project folder available to owner code execution (empty = no project copy)", kind="text"),
+    dict(category="llm", key="execute_code_env_passthrough", value=[], label="Host environment variable names allowed for declared code skills (names only)", kind="tags"),
     dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),
     dict(category="llm",     key="tool_loop_context_tokens", value=0,               label="Agent tool-loop context budget (tokens; 0 = 75% of the model window)", kind="number"),
     dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap; todo is not capped)", kind="number"),
@@ -505,7 +525,7 @@ def _read_persisted_values() -> dict[tuple[str, str], Any] | None:
     if not DB_PATH.exists():
         return None
     try:
-        conn = sqlite3.connect(DB_PATH.resolve().as_uri() + "?mode=ro", uri=True, timeout=0)
+        conn = sqlite3.connect(DB_PATH.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
         try:
             if conn.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 raise sqlite3.DatabaseError("integrity check failed")
@@ -895,6 +915,21 @@ def bounded_learning_int(key: str, raw: Any, default: int) -> int:
 
 def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     """Return an error string if *value* violates the *kind*'s schema, else None."""
+    if key == "execute_code_project_root" and (
+            not isinstance(value, str) or len(value) > 2048 or "\x00" in value
+            or (value != "" and (value != value.strip() or not os.path.isabs(value)))):
+        return f"{key}: expected an absolute project folder path or empty"
+    if key == "execute_code_env_passthrough":
+        from .code_env import _passable_name
+
+        if (not isinstance(value, list) or len(value) > 64
+                or not all(_passable_name(name) for name in value)
+                or len(set(value)) != len(value)):
+            return f"{key}: expected up to 64 distinct safe environment variable names"
+    if key == "execute_code_image" and (
+            not isinstance(value, str) or (value != "" and re.fullmatch(
+                r"[a-zA-Z0-9][a-zA-Z0-9./:_-]*@sha256:[0-9a-fA-F]{64}", value) is None)):
+        return f"{key}: expected a Docker image pinned by sha256 digest or empty"
     if key == "stt_command_provider":
         from .voice.provider_store import valid_provider_id
         if value != "" and not valid_provider_id(value):
@@ -955,6 +990,33 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
     return None
 
 
+def _session_setting_problem(key: str, value: Any) -> str | None:
+    """Apply the same bounds the route lifecycle reads, before an owner write."""
+    from .channels.session_reset import ResetPolicy, SessionResetError, resolve_policy
+
+    try:
+        if key in {"reset_mode", "idle_minutes", "daily_hour"}:
+            field = "mode" if key == "reset_mode" else key
+            ResetPolicy(**{field: value})
+        elif key in {"reset_by_type", "reset_by_channel"}:
+            resolve_policy(lambda name, default: value if name == f"sessions.{key}" else default,
+                           "telegram", "private")
+        elif key == "reset_triggers":
+            if not isinstance(value, list) or len(value) > 32 or any(
+                not isinstance(item, str) or not item.strip() or len(item) > 120 for item in value
+            ):
+                return f"{key}: expected up to 32 non-empty commands of at most 120 characters"
+        elif key == "stall_seconds":
+            if type(value) not in (int, float) or not math.isfinite(value) or not 1 <= value <= 86400:
+                return f"{key}: expected a number between 1 and 86400 seconds"
+        elif key == "store_max_age_days":
+            if type(value) is not int or not 0 <= value <= 36500:
+                return f"{key}: expected an integer between 0 and 36500 days"
+    except SessionResetError as exc:
+        return f"{key}: {exc}"
+    return None
+
+
 #: Declared settings one route writes, never a generic settings write (review-H329 F1):
 #: switching a skill back on widens what the hub does, so it goes through the skill switch
 #: route, which records it in the intent log and refuses when it cannot. A settings write,
@@ -993,6 +1055,12 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
             errors.append(f"{key}: value is not JSON-serializable")
             continue
         err = _validate_value(key, value, spec.get("kind", "text"), spec.get("opts", []) or [])
+        if err is None and cat == "sessions":
+            err = _session_setting_problem(key, value)
+        if err is None and (cat, key) == ("commands", "quick_commands"):
+            from .quick_commands import configuration_problem
+
+            err = configuration_problem(value)
         if err is None and (cat, key) == ("skills", "template_vars"):
             err = _template_vars_problem(value)
         if err is None and (cat, key) == ("skills", "channel_disabled"):

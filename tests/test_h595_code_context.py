@@ -100,8 +100,14 @@ def test_project_projection_imports_data_and_excludes_sensitive_paths(tmp_path: 
     (root / "safe.txt").write_text("safe", encoding="utf-8")
     outside = tmp_path / "outside.txt"
     outside.write_text("outside", encoding="utf-8")
-    (root / "escape.txt").symlink_to(outside)
-    (root / "linkdir").symlink_to(tmp_path, target_is_directory=True)
+    links = []
+    try:
+        (root / "escape.txt").symlink_to(outside)
+        (root / "linkdir").symlink_to(tmp_path, target_is_directory=True)
+        links = ["escape.txt", "linkdir"]
+    except OSError:
+        if os.name != "nt":
+            raise
     destination = tmp_path / "snapshot"
     result = prepare_project(root, destination, redact=lambda text: text.replace("replace-me", "[redacted]"))
     assert result["files"] == 4
@@ -112,8 +118,7 @@ def test_project_projection_imports_data_and_excludes_sensitive_paths(tmp_path: 
         capture_output=True, text=True, check=True,
     )
     assert imported.stdout.strip() == "7"
-    for name in (".env", ".git", ".config/gcloud", "api_token.txt", "redacted.txt",
-                 "escape.txt", "linkdir"):
+    for name in (".env", ".git", ".config/gcloud", "api_token.txt", "redacted.txt", *links):
         assert not (destination / name).exists()
 
 
@@ -141,6 +146,8 @@ def test_destination_inside_root_is_not_recursively_copied(tmp_path: Path) -> No
 
 
 def test_source_swapped_to_symlink_during_projection_is_refused(tmp_path: Path) -> None:
+    if os.name == "nt":
+        pytest.skip("Windows symlink privilege is unavailable; junction swap is covered below")
     root = tmp_path / "root"
     root.mkdir()
     source = root / "ordinary.txt"
@@ -157,3 +164,95 @@ def test_source_swapped_to_symlink_during_projection_is_refused(tmp_path: Path) 
     with pytest.raises(ProjectSnapshotError, match="source_changed"):
         prepare_project(root, destination, redact=swap)
     assert not destination.exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction boundary")
+def test_windows_junction_swap_is_refused_before_outside_read(tmp_path: Path, monkeypatch) -> None:
+    from agents.core import code_context
+
+    root = tmp_path / "root"
+    folder = root / "folder"
+    folder.mkdir(parents=True)
+    (root / "a.txt").write_text("ordinary", encoding="utf-8")
+    source = folder / "data.txt"
+    source.write_text("inside", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "data.txt").write_text("outside-secret", encoding="utf-8")
+    opened = code_context._windows_project_handle
+    read = code_context._read_file
+    reads = []
+    seen = 0
+
+    def read_spy(fd, size):
+        data = read(fd, size)
+        reads.append(data)
+        return data
+
+    def swap(path, *, directory=False):
+        nonlocal seen
+        if path == source:
+            seen += 1
+            if seen == 2:
+                source.unlink()
+                folder.rmdir()
+                subprocess.run(["cmd", "/c", "mklink", "/J", str(folder), str(outside)],
+                               check=True, capture_output=True)
+        return opened(path, directory=directory)
+
+    monkeypatch.setattr(code_context, "_read_file", read_spy)
+    monkeypatch.setattr(code_context, "_windows_project_handle", swap)
+    destination = tmp_path / "snapshot"
+    try:
+        with pytest.raises(ProjectSnapshotError, match="source_changed"):
+            prepare_project(root, destination, redact=lambda value: value)
+        assert b"outside-secret" not in reads
+        assert not destination.exists()
+    finally:
+        if folder.exists():
+            folder.rmdir()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows root handle boundary")
+def test_windows_initial_root_junction_is_refused(tmp_path: Path, monkeypatch) -> None:
+    from agents.core import code_context
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "data.txt").write_text("outside-secret", encoding="utf-8")
+    root = tmp_path / "root"
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(root), str(outside)],
+                   check=True, capture_output=True)
+    reads = []
+    monkeypatch.setattr(code_context, "_read_file", lambda *args: reads.append(args))
+    destination = tmp_path / "snapshot"
+    try:
+        with pytest.raises(ProjectSnapshotError, match="source_changed"):
+            prepare_project(root, destination)
+        assert reads == []
+        assert not destination.exists()
+    finally:
+        root.rmdir()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows root handle boundary")
+def test_windows_root_cannot_be_replaced_by_junction_while_projecting(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "data.txt").write_text("inside", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "data.txt").write_text("outside-secret", encoding="utf-8")
+    attempted = []
+
+    def swap(text):
+        attempted.append(True)
+        with pytest.raises(OSError):
+            root.rename(tmp_path / "moved-root")
+        return text
+
+    destination = tmp_path / "snapshot"
+    assert prepare_project(root, destination, redact=swap)["files"] == 1
+    assert attempted
+    assert (destination / "data.txt").read_text(encoding="utf-8") == "inside"
+    assert not (tmp_path / "moved-root").exists()

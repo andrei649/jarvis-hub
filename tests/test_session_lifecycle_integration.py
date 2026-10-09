@@ -19,7 +19,9 @@ def host(tmp_path, settings=None, *, resumable=()):
     clock = {"now": datetime(2026, 10, 5, 1, tzinfo=UTC).timestamp()}
     orch._session_clock = lambda: clock["now"]
     orch._session_progress_clock = lambda: clock["now"]
-    orch._telegram_owner_settings = lambda: {}
+    orch._telegram_owner_settings = lambda: {
+        "autonomy.owner_chat_id": "123", "autonomy.owner_user_ids": [42],
+    }
     return orch, cap, clock
 
 
@@ -49,6 +51,17 @@ async def test_explicit_reset_acknowledges_without_running_the_model(tmp_path, t
     assert "new conversation" in reply.lower()
     assert cap["new_session_ids"][-1].endswith("_g1")
     assert cap["sent"][-1][1] == reply
+
+
+@pytest.mark.asyncio
+async def test_non_owner_explicit_reset_is_refused_without_rotating(tmp_path):
+    orch, cap, _ = host(tmp_path)
+    await incoming(orch)
+    orch._telegram_owner_settings = lambda: {"autonomy.owner_user_ids": [999]}
+    reply = await incoming(orch, "/new")
+    assert "owner command" in reply
+    assert len(cap["new_session_ids"]) == 1
+    assert len(cap["sessions"]) == 1
 
 
 @pytest.mark.asyncio
@@ -241,6 +254,11 @@ async def test_observe_only_reset_is_context_and_never_rotates_or_replies(tmp_pa
 @pytest.mark.asyncio
 async def test_workspace_reset_ack_keeps_the_existing_inbox_approval_path(tmp_path):
     orch, cap, _ = host(tmp_path)
+    orch._runtime_settings["channels.owner_senders"] = {"ntfy": ["home"]}
+    orch.channels = {"ntfy": SimpleNamespace(
+        _running=True, inbound=True, topic="home",
+        pairing=SimpleNamespace(is_allowed=lambda channel, sender: True),
+    )}
     requests = []
 
     def request(message_id, text, **kwargs):
@@ -312,8 +330,8 @@ def test_session_lifecycle_jobs_are_registered_on_the_existing_scheduler():
     scheduler = SimpleNamespace(add_job=lambda *args, **kwargs: jobs.append((args, kwargs)))
     service = SchedulerService(SimpleNamespace(heartbeat_scheduler=SimpleNamespace(scheduler=scheduler)))
     service.schedule_session_lifecycle()
-    assert {job[1]["id"]: job[1]["seconds"] for job in jobs} == {
-        "channel-session-expiry": 300, "channel-session-stalls": 30,
+    assert {job[1]["id"]: job[1].get("seconds", 60 * job[1].get("minutes", 0)) for job in jobs} == {
+        "channel-session-expiry": 60, "channel-session-stalls": 30,
     }
 
 

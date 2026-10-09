@@ -1,10 +1,12 @@
 """Private active image parts must never become durable conversation content."""
 
 import importlib
+import json
 
 import pytest
 
-from agents.core.memory.conversation import ConversationMemory
+from agents.core.memory.conversation import ConversationMemory, Turn
+from agents.core.session_continuation import seed_json
 
 
 def _history(**kwargs):
@@ -94,3 +96,12 @@ async def test_conversation_clear_drops_active_images_without_persisting_them():
     assert memory.active_image_instance("selected_s") != instance
     with pytest.raises(_history()[1]):
         memory.active_images.resolve("selected_s", instance, "jarvis", [handle])
+
+
+def test_session_continuation_keeps_only_bounded_image_provenance():
+    media = {"kind": "image", "count": 1, "model": "vision-model",
+             "backend": "ollama", "local": True}
+    turn = Turn("assistant", "A red door.", media=media)
+    assert json.loads(seed_json([turn.to_dict()]))[0]["media"] == media
+    bad = {**turn.to_dict(), "media": {**media, "bytes": "private"}}
+    assert "media" not in json.loads(seed_json([bad]))[0]

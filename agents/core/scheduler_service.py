@@ -204,14 +204,17 @@ class SchedulerService:
             logger.warning(f"Failed to schedule retention sweep: {e}")
 
     def schedule_session_lifecycle(self):
-        """H063: index/reset maintenance and genuine-progress stall notices."""
+        """Advance session routes and check for genuine-progress stalls."""
         sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
         if sched is None:
             return
-        sched.add_job(self.run_session_expiry, "interval", seconds=300,
-                      id="channel-session-expiry", replace_existing=True)
-        sched.add_job(self.run_session_stalls, "interval", seconds=30,
-                      id="channel-session-stalls", replace_existing=True)
+        try:
+            sched.add_job(self.run_session_expiry, "interval", minutes=1,
+                          id="channel-session-expiry", replace_existing=True)
+            sched.add_job(self.run_session_stalls, "interval", seconds=30,
+                          id="channel-session-stalls", replace_existing=True)
+        except Exception:
+            logger.warning("Failed to schedule channel session maintenance", exc_info=True)
 
     async def run_session_expiry(self):
         from .channels.session_lifecycle import lifecycle
@@ -219,7 +222,7 @@ class SchedulerService:
         try:
             return await lifecycle(self._orch).expire()
         except Exception:
-            logger.warning("Session route maintenance failed")
+            logger.warning("Channel session expiry failed", exc_info=True)
             return {"_scheduler_status": "failed"}
 
     async def run_session_stalls(self):
@@ -228,7 +231,7 @@ class SchedulerService:
         try:
             return {"notified": await lifecycle(self._orch).check_stalls()}
         except Exception:
-            logger.warning("Session stall check failed")
+            logger.warning("Session stall check failed", exc_info=True)
             return {"_scheduler_status": "failed"}
 
     def schedule_exec_cache_prune(self):

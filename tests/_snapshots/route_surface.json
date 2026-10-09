@@ -568,6 +568,8 @@
   "POST /api/vlm/composer/describe",
   "POST /api/vlm/composer/describe-prepared",
   "POST /api/vlm/composer/prepare",
+  "POST /api/vlm/composer/selected-chat",
+  "POST /api/vlm/composer/selected-prepare",
   "POST /api/vlm/describe",
   "POST /api/voice/mic/arm",
   "POST /api/voice/mic/pause",

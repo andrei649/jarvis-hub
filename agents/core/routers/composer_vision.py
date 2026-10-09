@@ -10,7 +10,7 @@ import logging
 import secrets
 import sqlite3
 import time
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from typing import Annotated
 from urllib.parse import urlsplit, urlunsplit
 
@@ -19,8 +19,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
+from agents.core.commands import Principal
 from agents.core.llm.vision_review import VisionReviewRefused, VisionReviewStore
-from agents.core.routers._deps import user_guard
+from agents.core.routers._deps import admin_guard, owner_web_principal, user_guard
 from agents.core.web_helpers import nocache_json
 
 
@@ -48,6 +49,7 @@ class _BoundedValidationRoute(APIRoute):
 router = APIRouter(tags=["multimodal"], dependencies=[Depends(user_guard)],
                    route_class=_BoundedValidationRoute)
 _REVIEWS = VisionReviewStore()
+_SELECTED_REVIEWS = VisionReviewStore()
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 MAX_URI = 4 * ((MAX_IMAGE_BYTES + 2) // 3) + 32
 # Accept ordinary 4K screenshots/panoramas, bound decode before allocation, then
@@ -405,6 +407,23 @@ def _selected_resolver(turn, *, active_check=None):
     return resolve_vlm_config()
 
 
+@asynccontextmanager
+async def _selected_owner_scope(request: Request, selected_turn: bool):
+    """The legacy prepared route may stay user-facing; session turns are owner-only."""
+    if not selected_turn:
+        yield
+        return
+    from agents.core.orchestrator import bind_turn_principal, reset_turn_principal
+
+    await admin_guard(request)
+    principal = await owner_web_principal(request, None)
+    token = bind_turn_principal(principal)
+    try:
+        yield
+    finally:
+        reset_turn_principal(token)
+
+
 @router.get("/api/vlm/composer/status")
 async def composer_status(refresh_catalog: bool = False):
     from agents.core.llm.vision_policy import VisionPolicyUnavailable
@@ -421,28 +440,14 @@ async def composer_status(refresh_catalog: bool = False):
         )
 
 
-@router.get("/api/vlm/composer/active-images")
-async def composer_active_images(session_id: str | None = None, agent: str = "jarvis"):
-    """List private, process-local image handles for the displayed conversation."""
-    from agents.core.app_state import get_orch
-    from agents.core.validation import is_valid_session_id
-
-    orch = get_orch()
-    if orch is None:
-        return nocache_json({"error": "Conversation unavailable",
-                             "reason": "vlm_orchestrator_unavailable"}, status_code=503)
-    sid = session_id or orch.session_id
-    if sid != orch.session_id or not is_valid_session_id(sid) or agent not in orch.agents:
-        return nocache_json({"error": "Image session changed",
-                             "reason": "vlm_session_changed"}, status_code=409)
-    conversation = orch.memory.conversation
-    instance = conversation.active_image_instance(sid)
-    rows = conversation.active_images.list(sid, instance, agent) if instance else []
-    return nocache_json({"session_id": sid, "images": rows})
-
-
 @router.post("/api/vlm/composer/prepare")
-async def composer_prepare(body: ComposerPrepareBody, refresh_catalog: bool = False):
+async def composer_prepare(body: ComposerPrepareBody, request: Request,
+                           refresh_catalog: bool = False):
+    async with _selected_owner_scope(request, body.selected_turn):
+        return await _composer_prepare(body, refresh_catalog)
+
+
+async def _composer_prepare(body: ComposerPrepareBody, refresh_catalog: bool):
     """Review one prompt's configured destination before image bytes are sent."""
     from agents.core.app_state import get_orch
     from agents.core.llm.vision_history import ActiveImageUnavailable
@@ -471,6 +476,7 @@ async def composer_prepare(body: ComposerPrepareBody, refresh_catalog: bool = Fa
             route=_review_route(config, turn),
             binding=_review_binding(identity, turn=turn, image_digests=body.image_digests,
                                     active_signature=active_signature),
+            principal=("web-user",),
         )
         return nocache_json(dict(configured=True, reachable=None,
                                  review_token=token,
@@ -490,7 +496,12 @@ async def composer_prepare(body: ComposerPrepareBody, refresh_catalog: bool = Fa
 
 
 @router.post("/api/vlm/composer/describe-prepared")
-async def composer_describe_prepared(body: PreparedComposerVisionBody):
+async def composer_describe_prepared(body: PreparedComposerVisionBody, request: Request):
+    async with _selected_owner_scope(request, body.selected_turn):
+        return await _composer_describe_prepared(body)
+
+
+async def _composer_describe_prepared(body: PreparedComposerVisionBody):
     """Consume a reviewed route before invoking the existing physical guard."""
     from agents.core.llm.vision_policy import VisionPolicyUnavailable
     from agents.core.llm.vlm import VLMNotConfigured
@@ -552,6 +563,7 @@ async def _consume_prepared_review(body: PreparedComposerVisionBody, *, require_
                 image_digests=[hashlib.sha256(image.encode("utf-8")).hexdigest()
                                for image in body.images] if turn is not None else None,
             ),
+            principal=("web-user",),
         )
         def active_check(orch):
             if active_signature is not None:
@@ -569,6 +581,11 @@ async def _consume_prepared_review(body: PreparedComposerVisionBody, *, require_
 
 @router.post("/api/vlm/composer/chat-prepared")
 async def composer_chat_prepared(body: PreparedComposerVisionBody, request: Request):
+    async with _selected_owner_scope(request, body.selected_turn):
+        return await _composer_chat_prepared(body, request)
+
+
+async def _composer_chat_prepared(body: PreparedComposerVisionBody, request: Request):
     """Commit one reviewed selected image reply to the actual conversation."""
     from agents.core.app_state import get_orch
     from agents.core.llm.vision_policy import VisionPolicyUnavailable
@@ -763,3 +780,320 @@ async def _composer_describe_with_config(body, config, *, resolve_config, image_
         return nocache_json(
             {"error": "Vision analysis failed", "reason": "vlm_generation_failed"}, status_code=502
         )
+
+
+class SelectedImagePrepare(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    prompt: str = Field(min_length=1, max_length=4000)
+    agent: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
+    session_id: str
+    image_digests: list[Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]] = Field(
+        default_factory=list, max_length=8)
+    active_image_handles: list[Annotated[str, Field(min_length=20, max_length=128)]] = Field(
+        default_factory=list, max_length=8)
+
+    @field_validator("prompt")
+    @classmethod
+    def question(cls, value):
+        if not value.strip():
+            raise ValueError("image question is empty")
+        return value
+
+    @field_validator("session_id")
+    @classmethod
+    def session(cls, value):
+        from agents.core.validation import is_valid_session_id
+        if not is_valid_session_id(value):
+            raise ValueError("invalid image session")
+        return value
+
+    @model_validator(mode="after")
+    def images_selected(self):
+        if not self.image_digests and not self.active_image_handles:
+            raise ValueError("selected images are required")
+        if len(set(self.active_image_handles)) != len(self.active_image_handles):
+            raise ValueError("duplicate active image")
+        return self
+
+
+class SelectedImageSend(ComposerVisionBody):
+    images: list[Annotated[str, Field(max_length=MAX_URI)]] = Field(default_factory=list, max_length=8)
+    expected_binding: str = Field(min_length=20, max_length=128, pattern=r"^[-_A-Za-z0-9]+$")
+    agent: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
+    session_id: str
+    review_token: str = Field(min_length=20, max_length=128)
+    active_image_handles: list[Annotated[str, Field(min_length=20, max_length=128)]] = Field(
+        default_factory=list, max_length=8)
+
+    @field_validator("session_id")
+    @classmethod
+    def session(cls, value):
+        from agents.core.validation import is_valid_session_id
+        if not is_valid_session_id(value):
+            raise ValueError("invalid image session")
+        return value
+
+    @model_validator(mode="after")
+    def images_selected(self):
+        if not self.images and not self.active_image_handles:
+            raise ValueError("selected images are required")
+        if len(set(self.active_image_handles)) != len(self.active_image_handles):
+            raise ValueError("duplicate active image")
+        return self
+
+
+def _selected_destination(turn):
+    from agents.core.llm import selection_guards as sg
+    from agents.core.llm.base import OllamaBackend
+    from agents.core.llm.direct_transport import require_direct_async_transport
+    from agents.core.llm.model_roles import public_local_origin, same_origin
+
+    backend = turn.backend
+    if type(backend) is not OllamaBackend or not turn.route.startswith("local"):
+        raise ValueError("selected route is not Ollama")
+    if not isinstance(turn.model, str) or not 0 < len(turn.model) <= 512 or any(
+            ord(char) < 33 or ord(char) == 127 for char in turn.model):
+        raise ValueError("invalid selected model")
+    findings = sg.evaluate([sg.Choice("vision.model", "ollama", turn.model)])
+    if findings:
+        raise VisionReviewRefused("vlm_selection_changed")
+    origin = public_local_origin(backend.base_url)
+    parts = urlsplit(backend.base_url)
+    client_parts = urlsplit(str(backend.client.base_url))
+    if (not origin or not same_origin(origin, str(backend.client.base_url))
+            or parts.username or parts.password or parts.query or parts.fragment
+            or parts.path not in ("", "/") or client_parts.username or client_parts.password
+            or client_parts.query or client_parts.fragment or client_parts.path not in ("", "/")):
+        raise ValueError("selected Ollama destination is not local")
+    expected = backend.client.build_request("POST", "/api/chat", json={"model": turn.model})
+    if (not same_origin(origin, str(expected.url)) or backend.client.cookies
+            or backend.client.headers.get("Authorization") or backend.client.headers.get("Cookie")
+            or getattr(backend.client, "_auth", None) is not None):
+        raise ValueError("selected Ollama client changed")
+    require_direct_async_transport(backend.client, expected.url)
+    return origin
+
+
+def _active_selection(orch, session_id, agent_id, handles):
+    if not handles:
+        return (), ()
+    conversation = orch.memory.conversation
+    instance = conversation.active_image_instance(session_id)
+    if instance is None:
+        raise ValueError("active image unavailable")
+    turns = conversation.active_images.resolve_turns(session_id, instance, agent_id, handles)
+    signature = (instance, tuple(handles), tuple(
+        (row.question, row.answer, tuple(hashlib.sha256(image).hexdigest() for image in row.images))
+        for row in turns))
+    return turns, signature
+
+
+async def _selected_turn(orch, body):
+    from agents.core.llm.vision_turn import prepare_selected_image_turn
+
+    try:
+        turn = await prepare_selected_image_turn(
+            orch, question=body.prompt, agent_id=body.agent, session_id=body.session_id)
+        return turn, _selected_destination(turn)
+    except ValueError:
+        raise VisionReviewRefused("vlm_destination_changed") from None
+
+
+def _selected_binding(turn, origin, image_digests, active_signature):
+    return ("ollama-selected-v1", turn.history_digest, turn.prompt_digest, origin,
+            tuple(image_digests), active_signature)
+
+
+def _owner_profile(principal):
+    """The web owner's resolved role, without copying a credential into review state."""
+    if principal.channel != "web" or not principal.admin:
+        raise VisionReviewRefused("vlm_owner_required")
+    return (principal.channel, principal.sender, principal.admin, principal.chat)
+
+
+@router.get("/api/vlm/composer/active-images")
+async def composer_active_images(principal: Annotated[Principal, Depends(owner_web_principal)],
+                                 session_id: str | None = None,
+                                 agent: str = "jarvis"):
+    from agents.core.app_state import get_orch
+    from agents.core.validation import is_valid_session_id
+
+    _owner_profile(principal)
+    orch = get_orch()
+    session_id = session_id or (orch.session_id if orch is not None else None)
+    if orch is None or not is_valid_session_id(session_id) or agent not in orch.agents:
+        return nocache_json({"error": "Image session unavailable", "reason": "vlm_session_changed"}, status_code=409)
+    conversation = orch.memory.conversation
+    instance = conversation.active_image_instance(session_id)
+    rows = conversation.active_images.list(session_id, instance, agent) if instance else []
+    return nocache_json({"session_id": session_id, "images": rows})
+
+
+@router.post("/api/vlm/composer/selected-prepare")
+async def composer_selected_prepare(body: SelectedImagePrepare,
+                                    principal: Annotated[Principal, Depends(owner_web_principal)]):
+    from agents.core.app_state import get_orch
+    from agents.core.orchestrator import bind_turn_principal, reset_turn_principal
+
+    profile = _owner_profile(principal)
+    orch = get_orch()
+    if orch is None:
+        return nocache_json({"error": "Conversation unavailable", "reason": "vlm_orchestrator_unavailable"}, status_code=503)
+    principal_token = bind_turn_principal(principal)
+    try:
+        turn, destination = await _selected_turn(orch, body)
+        active_turns, signature = _active_selection(
+            orch, body.session_id, body.agent, body.active_image_handles)
+        count = len(body.image_digests) + sum(len(row.images) for row in active_turns)
+        if count > 8:
+            raise ValueError("too many images")
+        token = _SELECTED_REVIEWS.issue(
+            session_id=body.session_id, agent_id=body.agent, prompt=body.prompt,
+            model=turn.model, route=turn.route,
+            binding=_selected_binding(turn, destination, body.image_digests, signature),
+            principal=profile)
+        return nocache_json({"configured": True, "reachable": None, "review_token": token,
+                             "session_id": body.session_id, "destination": destination,
+                             "model": turn.model, "backend": "ollama", "local": True,
+                             "active_image_count": count - len(body.image_digests)})
+    except (ValueError, VisionReviewRefused):
+        return nocache_json({"error": "Selected Ollama vision unavailable",
+                             "reason": "vlm_selected_unavailable"}, status_code=409)
+    finally:
+        reset_turn_principal(principal_token)
+
+
+async def _composer_selected_chat(body: SelectedImageSend, request: Request, profile):
+    from agents.core.app_state import get_orch
+    from agents.core.llm.data_handling import physical_request_scope
+    from agents.core.llm.direct_transport import require_direct_async_transport
+    from agents.core.llm.vision_ollama_wire import chat_answer, chat_payload
+    from agents.core.llm.vision_turn import history_fingerprint
+    from agents.core.llm.vlm import encode_image_block
+
+    orch = get_orch()
+    if orch is None:
+        return nocache_json({"error": "Conversation unavailable", "reason": "vlm_orchestrator_unavailable"}, status_code=503)
+    async with orch.turn_lease(body.session_id) as acquired:
+        if not acquired:
+            return nocache_json({"error": "Conversation is busy", "reason": "vlm_turn_busy"}, status_code=409)
+        try:
+            turn, destination = await _selected_turn(orch, body)
+            if (body.expected_destination != destination or body.expected_binding != body.review_token
+                    or body.remote_ack):
+                raise VisionReviewRefused("vlm_destination_changed")
+            try:
+                active_turns, signature = _active_selection(
+                    orch, body.session_id, body.agent, body.active_image_handles)
+            except ValueError:
+                raise VisionReviewRefused("vlm_active_image_unavailable") from None
+            images = [base64.b64decode(image.partition(",")[2]) for image in body.images]
+            count = len(images) + sum(len(row.images) for row in active_turns)
+            if count > 8:
+                raise VisionReviewRefused("vlm_image_limit")
+            digests = [hashlib.sha256(image.encode("utf-8")).hexdigest() for image in body.images]
+            _SELECTED_REVIEWS.consume(
+                body.review_token, session_id=body.session_id, agent_id=body.agent,
+                prompt=body.prompt, model=turn.model, route=turn.route,
+                binding=_selected_binding(turn, destination, digests, signature),
+                principal=profile)
+            messages = []
+            for prior in active_turns:
+                messages.append({"role": "user", "content": [
+                    {"type": "text", "text": prior.question},
+                    *(encode_image_block(image) for image in prior.images)]})
+                messages.append({"role": "assistant", "content": prior.answer})
+            messages.append({"role": "user", "content": [
+                {"type": "text", "text": turn.prompt},
+                *(encode_image_block(image) for image in images)]})
+            payload = chat_payload({"model": turn.model, "messages": messages,
+                                    "max_tokens": 1024, "temperature": 0.2})
+            if len(json.dumps(payload, separators=(",", ":")).encode()) > 20_000_000:
+                raise VisionReviewRefused("vlm_image_limit")
+            client = turn.backend.client
+            expected = client.build_request("POST", "/api/chat", json=payload)
+
+            def check():
+                if history_fingerprint(orch, body.session_id) != turn.history_digest:
+                    raise VisionReviewRefused("vlm_destination_changed")
+                current, model, route = orch.llm_router.select_backend(body.agent, turn.prompt)
+                if current is not turn.backend or model != turn.model or route != turn.route:
+                    raise VisionReviewRefused("vlm_destination_changed")
+                try:
+                    if _selected_destination(turn) != destination or turn.backend.client is not client:
+                        raise VisionReviewRefused("vlm_destination_changed")
+                except ValueError:
+                    raise VisionReviewRefused("vlm_destination_changed") from None
+                if signature:
+                    try:
+                        current_signature = _active_selection(
+                            orch, body.session_id, body.agent, body.active_image_handles)[1]
+                    except ValueError:
+                        raise VisionReviewRefused("vlm_active_image_unavailable") from None
+                    if current_signature != signature:
+                        raise VisionReviewRefused("vlm_active_image_unavailable")
+                require_direct_async_transport(client, expected.url)
+
+            def request_check(wire):
+                if (wire.method != "POST" or wire.url != expected.url or
+                        wire.content != expected.content or wire.headers.get("Authorization") or
+                        wire.headers.get("Cookie")):
+                    raise VisionReviewRefused("vlm_destination_changed")
+
+            check()
+            if await request.is_disconnected():
+                raise VisionReviewRefused("vlm_client_disconnected")
+            started = time.perf_counter()
+            with physical_request_scope(check, request_check=request_check):
+                async with client.stream("POST", "/api/chat", json=payload, follow_redirects=False) as response:
+                    response.raise_for_status()
+                    result = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        result.extend(chunk)
+                        if len(result) > 128 * 1024:
+                            raise ValueError("vision response too large")
+            check()
+            if await request.is_disconnected():
+                raise VisionReviewRefused("vlm_client_disconnected")
+            answer = chat_answer(json.loads(result))
+            if not answer:
+                raise ValueError("empty vision answer")
+            check()
+            await orch.complete_selected_image_turn(
+                session_id=body.session_id, agent_id=body.agent, question=body.prompt,
+                answer=answer, image_count=count, model=turn.model,
+                backend="ollama", local=True, route_name=turn.route, latency=time.perf_counter() - started)
+            instance = orch.memory.conversation.active_image_instance(body.session_id)
+            try:
+                handle = orch.memory.conversation.active_images.remember(
+                    body.session_id, instance, body.agent, body.prompt, answer,
+                    [image for prior in active_turns for image in prior.images] + images)
+            except ValueError:
+                handle = None
+            return nocache_json({"ok": True, "committed": True, "response": answer,
+                                 "model": turn.model, "backend": "ollama",
+                                 "destination": destination, "local": True,
+                                 "active_image_handle": handle})
+        except VisionReviewRefused as exc:
+            with suppress(VisionReviewRefused):
+                _SELECTED_REVIEWS.cancel(body.review_token, session_id=body.session_id)
+            return nocache_json({"error": "Vision review changed; review it again",
+                                 "reason": exc.reason}, status_code=409)
+        except Exception:
+            with suppress(VisionReviewRefused):
+                _SELECTED_REVIEWS.cancel(body.review_token, session_id=body.session_id)
+            return nocache_json({"error": "Vision analysis failed",
+                                 "reason": "vlm_generation_failed"}, status_code=502)
+
+
+@router.post("/api/vlm/composer/selected-chat")
+async def composer_selected_chat(body: SelectedImageSend, request: Request,
+                                 principal: Annotated[Principal, Depends(owner_web_principal)]):
+    from agents.core.orchestrator import bind_turn_principal, reset_turn_principal
+
+    profile = _owner_profile(principal)
+    principal_token = bind_turn_principal(principal)
+    try:
+        return await _composer_selected_chat(body, request, profile)
+    finally:
+        reset_turn_principal(principal_token)

@@ -72,6 +72,7 @@ async def test_runtime_project_context_real_worker_import_data_and_env(tmp_path:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", ["native", "wasm"])
+@pytest.mark.skipif(os.name == "nt", reason="POSIX pid liveness check")
 async def test_worker_cancel_reaps_process_before_return(tmp_path, monkeypatch, backend):
     sandbox = _test_host_sandbox(tmp_path)
     if backend == "wasm":
@@ -296,7 +297,7 @@ async def test_revoked_after_backend_start_never_transmits_payload(tmp_path: Pat
             writes.append(data)
 
     class Proc:
-        returncode = -1
+        returncode = 0
         stdin = Stdin()
 
         def kill(self):
@@ -304,6 +305,9 @@ async def test_revoked_after_backend_start_never_transmits_payload(tmp_path: Pat
 
         async def wait(self):
             return None
+
+        async def communicate(self):
+            return b"", b""
 
     async def fake_exec(*argv, **kwargs):
         calls.append(argv)
@@ -323,11 +327,13 @@ async def test_revoked_after_backend_start_never_transmits_payload(tmp_path: Pat
     assert result.refusal_reason == "context_stale"
     assert checks == 2
     assert writes == []
-    assert len(calls) == 2  # docker run, then docker kill
+    assert len(calls) == 3  # docker run, kill, then absence check
     assert calls[1][:2] == ("docker", "kill")
+    assert calls[2][:2] == ("docker", "ps")
     assert not list((sandbox.work_dir.parent / ".h595_context").glob("run-*"))
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows symlink privilege is unavailable")
 def test_context_metadata_symlink_is_never_followed(tmp_path: Path) -> None:
     outside = tmp_path / "outside.json"
     outside.write_text('{"mode":"project","cwd":"/tmp","python":"/python"}',
@@ -338,7 +344,9 @@ def test_context_metadata_symlink_is_never_followed(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_docker_startup_drain_timeout_stops_container_before_cleanup(tmp_path, monkeypatch):
+@pytest.mark.parametrize("probe_status", [0, 1])
+async def test_docker_startup_drain_timeout_stops_container_before_cleanup(tmp_path, monkeypatch,
+                                                                           probe_status):
     sandbox = Sandbox(work_dir=str(tmp_path / "run"), timeout=0.05)
     sandbox._has_docker = True
     calls = []
@@ -360,9 +368,15 @@ async def test_docker_startup_drain_timeout_stops_container_before_cleanup(tmp_p
         async def wait(self):
             return self.returncode
 
+    class CLI(Proc):
+        returncode = probe_status
+
+        async def communicate(self):
+            return b"", b""
+
     async def spawn(*argv, **kwargs):
         calls.append(argv)
-        return Proc()
+        return CLI() if argv[1] in ("kill", "ps") else Proc()
 
     monkeypatch.setattr("agents.core.sandbox.asyncio.create_subprocess_exec", spawn)
     try:
@@ -373,6 +387,30 @@ async def test_docker_startup_drain_timeout_stops_container_before_cleanup(tmp_p
     except TimeoutError:
         pytest.fail("Docker startup drain exceeded the execution timeout")
     assert not result.success
-    assert "timed out" in result.stderr
+    assert ("timed out" if probe_status == 0 else "teardown unconfirmed") in result.stderr
     assert any(argv[:2] == ("docker", "kill") for argv in calls)
-    assert not list((sandbox.work_dir.parent / ".h595_context").glob("run-*"))
+    assert bool(list((sandbox.work_dir.parent / ".h595_context").glob("run-*"))) is (probe_status != 0)
+
+
+@pytest.mark.asyncio
+async def test_docker_cleanup_hung_probe_is_bounded_and_unconfirmed(monkeypatch):
+    from agents.core.sandbox import ContextTeardownUnconfirmed
+
+    class Proc:
+        returncode = 0
+
+        def kill(self):
+            pass
+
+        async def wait(self):
+            return 0
+
+        async def communicate(self):
+            await asyncio.Future()
+
+    async def spawn(*argv, **kwargs):
+        return Proc()
+
+    monkeypatch.setattr("agents.core.sandbox.asyncio.create_subprocess_exec", spawn)
+    with pytest.raises(ContextTeardownUnconfirmed):
+        await asyncio.wait_for(Sandbox._stop_docker_context(Proc(), "synthetic", timeout=.01), .3)

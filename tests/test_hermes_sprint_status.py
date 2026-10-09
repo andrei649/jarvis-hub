@@ -326,7 +326,9 @@ def test_real_inventory_covers_exactly_697_rows_and_reports_are_current():
 def test_current_images_and_sdk_are_not_mistaken_for_full_inventory_parity():
     ledger, data = hs.load()
     rows = {row["id"]: row for row in hs.assess(ledger, data, hs.REPO)}
-    assert rows["H515"]["status"] == rows["H598"]["status"] == "partial"
+    # Source drift can require review; neither state proves complete image parity.
+    assert rows["H515"]["status"] in {"partial", "needs_review"}
+    assert rows["H598"]["status"] in {"partial", "needs_review"}
     assert rows["H566"]["status"] == "partial"
     # K2 built the resident interpreter, so H660 is no longer `missing` — and it is
     # not done either: the remote kernel and K3's operator controls are unwritten, and

@@ -79,7 +79,7 @@ _BACKEND_ID = re.compile(r"[a-z][a-z0-9_-]{0,63}\Z")
 
 
 def validated_media(value: object) -> dict:
-    """Copy only bounded, secret-free provenance; image bytes remain transient."""
+    """Keep bounded image provenance in history; never keep image bytes there."""
     if not isinstance(value, dict) or set(value) != {"kind", "count", "model", "backend", "local"}:
         raise ValueError("invalid image provenance")
     count, model, backend, local = (value[key] for key in ("count", "model", "backend", "local"))
@@ -94,10 +94,8 @@ def validated_media(value: object) -> dict:
 
 
 def restored_media(value: object) -> dict | None:
-    if value is None:
-        return None
     try:
-        return validated_media(value)
+        return validated_media(value) if value is not None else None
     except ValueError:
         return None
 
@@ -128,14 +126,14 @@ class ConversationMemory:
         if sessions:
             sid = sessions[0]
             snapshot = load_memory_snapshot(sid)
-            turns_data = snapshot.get("turns", [])
-            if snapshot.get("instance_id"):
-                self.instances[sid] = snapshot["instance_id"]
-            self.revisions[sid] = snapshot.get("revision", 0)
-            if snapshot.get("rewound") is True:
-                self.pending_rewinds.add(sid)
-                return
-            if turns_data or snapshot.get("rewound") is True:
+            turns_data = snapshot.get("turns")
+            if snapshot.get("session_id") == sid and isinstance(turns_data, list):
+                if snapshot.get("instance_id"):
+                    self.instances[sid] = snapshot["instance_id"]
+                self.revisions[sid] = snapshot.get("revision", 0)
+                if snapshot.get("rewound") is True:
+                    self.pending_rewinds.add(sid)
+                    return
                 self.sessions[sid] = []
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
@@ -158,7 +156,7 @@ class ConversationMemory:
             return sid
 
     def active_image_instance(self, session_id: str) -> str | None:
-        """Process-local identity; never persisted or inferred from a reused ID."""
+        """Separate process-local image history from any durable session ID reuse."""
         if session_id not in self.sessions:
             return None
         return self._active_image_instances.setdefault(session_id, secrets.token_urlsafe(24))
@@ -179,14 +177,14 @@ class ConversationMemory:
             if session_id not in self.sessions:
                 self.invalidate_active_images(session_id)
                 snapshot = load_memory_snapshot(session_id)
-                turns_data = snapshot.get("turns", [])
+                turns_data = snapshot.get("turns")
+                if snapshot.get("session_id") != session_id or not isinstance(turns_data, list):
+                    return False
                 if snapshot.get("instance_id"):
                     self.instances[session_id] = snapshot["instance_id"]
                 if snapshot.get("rewound") is True:
                     self.pending_rewinds.add(session_id)
                     raise UnverifiedRewind("conversation rewind head unverified")
-                if not turns_data:
-                    return False
                 self.sessions[session_id] = []
                 self.revisions[session_id] = snapshot.get("revision", 0)
                 for t in turns_data:

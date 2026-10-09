@@ -23,7 +23,7 @@ import { noticeMessages } from './turn-notices';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
-import { postStream, apiGet, apiFetchOnce } from './api/client';
+import { postStream, apiGet, apiPost, apiFetchOnce } from './api/client';
 import { pendingQuestion, PendingQuestion, type Question, type QuestionAnswer } from './pending-question';
 import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
 import { NeuralMesh } from './mesh';
@@ -55,6 +55,19 @@ const FamilyMode = lazy(() => import('./modes4').then(m => ({ default: m.FamilyM
 const ConsoleOverlay = lazy(() => import('./gap').then(m => ({ default: m.ConsoleOverlay })));
 const FirstRunGate = lazy(() => import('./gap').then(m => ({ default: m.FirstRunGate })));
 const ProjectsMode = lazy(() => import('./gap').then(m => ({ default: m.ProjectsMode })));
+
+const CHAT_SESSION_KEY = 'nerva.chat.session_id';
+function savedChatSession(): string | null {
+  try { return sessionStorage.getItem(CHAT_SESSION_KEY); } catch { return null; }
+}
+function visibleTurns(turns: any[]): any[] {
+  return turns.map((tn: any) => {
+    const ts = fmtTimeShort(new Date(tn.timestamp || Date.now()));
+    return tn.role === 'user'
+      ? { role: 'user', text: tn.content, ts }
+      : restoreVisionTurn(tn,ts) || { role: 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts };
+  });
+}
 
 function ModeStub({ label }) {
   return (
@@ -112,8 +125,34 @@ function App({ floating = false, shortcuts, onWorld }: {
   const [activeId, setActiveId] = useState('jarvis');
   const [focusId, setFocusId] = useState(null);
   const [messages, setMessages] = useState<any[]>(demo ? V2.SEED_MESSAGES : []);
+  const sessionId = useRef<string | null>(savedChatSession());
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => sessionId.current);
+  const selectedSessionId = useCallback(() => sessionId.current, []);
+  const selectSession = useCallback((id: string, turns?: any[]) => {
+    sessionId.current = id;
+    setActiveSessionId(id);
+    try { sessionStorage.setItem(CHAT_SESSION_KEY, id); } catch { /* storage unavailable */ }
+    if (turns) setMessages(visibleTurns(turns));
+  }, []);
+  useEffect(() => {
+    const selected = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (typeof detail?.sessionId === 'string' && Array.isArray(detail.turns)) {
+        if (turnBusy.current || textTurns.current.size) {
+          abortRef.current?.abort(); abortRef.current = null;
+          turnEpoch.current++; turnBusy.current = false;
+          for(const turn of textTurns.current.values()){turn.controller.abort();turn.settle('');}
+          setThinking(null);
+        }
+        selectSession(detail.sessionId, detail.turns);
+        setCenterTab('conversation');
+      }
+    };
+    window.addEventListener('nerva:session-selected', selected);
+    return () => window.removeEventListener('nerva:session-selected', selected);
+  }, [selectSession]);
   const [thinking, setThinking] = useState(null);
-  useDesktopConversation(setMessages, !!thinking, demo);
+  useDesktopConversation(setMessages, !!thinking, demo, selectedSessionId);
   const [trace, setTrace] = useState(null);
   const [centerTab, setCenterTab] = useState('conversation');
   // bumped after every successful explicit save so the Artifacts tab refetches
@@ -199,20 +238,24 @@ function App({ floating = false, shortcuts, onWorld }: {
   useEffect(() => {
     if (demo || _rehydrated.current) return;
     _rehydrated.current = true;
-    apiGet('/memory')
+    const savedId = savedChatSession();
+    const history = savedId
+      ? apiPost('/sessions/resume', { session_id: savedId }).catch(() => {
+          try { sessionStorage.removeItem(CHAT_SESSION_KEY); } catch { /* storage unavailable */ }
+          return apiGet('/memory');
+        })
+      : apiGet('/memory');
+    history
       .then((r: any) => {
+        if (sessionId.current && sessionId.current !== savedId) return;
+        if (typeof r?.session === 'string') selectSession(r.session);
         const turns = (r && r.turns) || [];
         if (!turns.length) return;
-        const mapped = turns.map((tn: any) => {
-          const ts = fmtTimeShort(new Date(tn.timestamp || Date.now()));
-          return tn.role === 'user'
-            ? { role: 'user', text: tn.content, ts }
-            : restoreVisionTurn(tn,ts) || { role: 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts };
-        });
+        const mapped = visibleTurns(turns);
         setMessages((cur) => (cur.length ? cur : mapped));
       })
       .catch(() => {});
-  }, [demo]);
+  }, [demo, selectSession]);
 
   // hotkeys (H209): every shortcut is an action in shortcuts.ts, rebindable from the
   // Keyboard Shortcuts panel (mod+/); nothing here spells a key.
@@ -353,7 +396,8 @@ function App({ floating = false, shortcuts, onWorld }: {
     setCenterTab('conversation');
     setThinking({ label: t.think + ' · routing', route: null });
     const updateBubble=(change:(message:any)=>any)=>setMessages((messages)=>messages.map(message=>message._turnId===id?change(message):message));
-    postStream('/chat/stream', { message: text, agent: activeId }, (evt) => {
+    postStream('/chat/stream', { message: text, agent: activeId,
+      ...(sessionId.current ? { session_id: sessionId.current } : {}) }, (evt) => {
       if(closed||epoch!==turnEpoch.current||ctl.signal.aborted)return;
       if (evt.type === 'start') {
         if(id===latestTextTurn.current)setThinking({ label: t.think, route: [String(evt.agent || activeId).toUpperCase()] });
@@ -370,7 +414,23 @@ function App({ floating = false, shortcuts, onWorld }: {
         updateBubble(message=>({...message,text:streamed}));
       } else if (evt.type === 'end') {
         const finalText = evt.text || streamed;
-        updateBubble(message=>({...message,text:finalText,who:evt.agent||activeId}));
+        const changed = typeof evt.session_id === 'string' && evt.session_id !== sessionId.current;
+        if (typeof evt.session_id === 'string') selectSession(evt.session_id);
+        if (changed && ['/new', '/reset', '/undo'].includes(text.trim())) {
+          if (text.trim() === '/undo') {
+            const commandEpoch = turnEpoch.current;
+            apiPost('/sessions/resume', { session_id: evt.session_id })
+              .then((r: any) => {
+                if (sessionId.current === evt.session_id && turnEpoch.current === commandEpoch && Array.isArray(r?.turns)) {
+                  selectSession(evt.session_id, r.turns);
+                }
+              })
+              .catch(() => {});
+          }
+          setMessages([{ role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: finalText }]);
+        } else {
+          updateBubble(message=>({...message,text:finalText,who:evt.agent||activeId}));
+        }
         // H674: what the owner should know beside the reply (e.g. the summary was deferred).
         const notes = noticeMessages(evt, fmtTimeShort(new Date()));
         if (notes.length) setMessages((m) => [...m, ...notes]);
@@ -404,7 +464,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       setMessages((m) => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()), text: '⚠ No reply — the model backend is unreachable or no model is loaded. Load a model in LM Studio, or enable ◐ DEMO to preview the interface.' }]);
       settle('');
     });
-  }).finally(() => { if (!demo) notifyDesktopConversation(); }), [t, activeId, runMock, demo, thinking]);
+  }).finally(() => { if (!demo) notifyDesktopConversation(); }), [t, activeId, runMock, demo, thinking, selectSession]);
 
   const runVision=useCallback(async(text:string,draft:VisionDraft)=>{
     if(turnBusy.current||thinking||textTurns.current.size>0)return;
@@ -431,8 +491,13 @@ function App({ floating = false, shortcuts, onWorld }: {
     abortRef.current?.abort();abortRef.current=null;turnBusy.current=false;
     timers.current.forEach(clearTimeout);timers.current=[];setThinking(null);
   },[]);
+  const selectAgent=useCallback((id:string)=>{
+    if(id!==activeId)stopTurn();
+    setActiveId(id);setDossier(id);
+  },[activeId,stopTurn]);
   const submit=useCallback((text:string,vision?:VisionDraft)=>{
     if(turnBusy.current || (vision && (thinking||textTurns.current.size>0)) || (thinking && textTurns.current.size===0))return false;
+    if(!demo&&vision?.review_token && (vision.session_id!==sessionId.current || vision.agent!==activeId))return false;
     if(vision)void runVision(text,vision);
     else {
       const now=Date.now();
@@ -441,7 +506,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       void runTurn(text);
     }
     return true;
-  },[runTurn,runVision,thinking]);
+  },[runTurn,runVision,thinking,activeId]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
   const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: (text:string)=>runTurn(text,'voice') });
   useListeningIndicator(demo, voice.active);   // H222: the tray says when Nerva is listening
@@ -545,7 +610,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     {questionPanel}
     <SafeModeBanner state={safeMode} />
     {demo && <DemoBanner onExit={exitDemo} />}
-    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
+    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} />
     {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
   </div></RouteBoundary>;
 
@@ -582,14 +647,14 @@ function App({ floating = false, shortcuts, onWorld }: {
             <RouteBoundary routeKey={`${route.path}:${demo}`}>
             {mode === 'cockpit' ? (
               <div className="workzone cockpit" style={{ flex: 1, minHeight: 0 }}>
-                <RosterColumn agents={agents} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} sys={sys} llm={llm} demo={demo} t={t} />
+                <RosterColumn agents={agents} activeId={activeId} onSelect={selectAgent} sys={sys} llm={llm} demo={demo} t={t} />
                 <div className="col" style={{ minHeight: 0 }}>
                   <div className="panel" style={{ flex: '1.3 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
                     <div className="panel-head"><Icon d={ICONS.brain} size={14} /><span className="ttl">{t.network}</span><span className="st">focus mode</span></div>
                     {/* Neural Mesh — native canvas brain of agents + models firing
                         (HUD-v3 port of v3-mesh.jsx; replaces the /brain?embed=1 iframe). */}
-                    <NeuralMesh agents={agents} tasks={tasks} activeId={activeId} onSelect={(id) => { setActiveId(id); setDossier(id); }} motion={motion} llm={llm} trust={trust} sources={sources} demo={demo} t={t} />
+                    <NeuralMesh agents={agents} tasks={tasks} activeId={activeId} onSelect={selectAgent} motion={motion} llm={llm} trust={trust} sources={sources} demo={demo} t={t} />
                   </div>
                   <div className="panel" style={{ flex: '1 1 0', minHeight: 0 }}>
                     <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -603,7 +668,7 @@ function App({ floating = false, shortcuts, onWorld }: {
                       : centerTab === 'cognition'
                         ? <CognitionStream trace={trace} t={t} />
                         : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} />}
-                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} />
+                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} />
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
@@ -614,18 +679,18 @@ function App({ floating = false, shortcuts, onWorld }: {
               </div>
             ) : mode === 'agents' ? (
               <div className="workzone wide" style={{ flex: 1, minHeight: 0 }}>
-                <AgentsMode agents={agents} onOpen={(id) => { setActiveId(id); setDossier(id); }} t={t} />
+                <AgentsMode agents={agents} onOpen={selectAgent} t={t} />
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
               </div>
             ) : mode === 'chat' ? (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} />
+                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} />
               </div>
             ) : (
               <div className="workzone full" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <LiveSourceChip state={liveSourceState(mode, demo, liveModes.live, MODE_LIVE_KEYS)} />
                 <div style={{ flex: 1, minHeight: 0 }}>
-                  {modeComponent(mode, t, { demo, live: liveModes.live, onDemo: () => setDemo(true), localPct, activeId, onOpen: (id) => { setActiveId(id); setDossier(id); } })}
+                  {modeComponent(mode, t, { demo, live: liveModes.live, onDemo: () => setDemo(true), localPct, activeId, onOpen: selectAgent })}
                 </div>
               </div>
             )}

@@ -1106,6 +1106,7 @@ class TurnNotice(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+    session_id: str | None = None
     # The turn's reply is prose ("…this action requires approval"), which names
     # nothing the client can show, poll or link to. These are the queue ids the
     # turn pushed onto the approval queue — a report, not a grant: every one of
@@ -1298,7 +1299,8 @@ async def chat(req: ChatRequest, request: Request):
             reset_turn_principal(principal_token)
             context_refs.reset_attached(attached_token)
             session_titles.reset_own_words(words_token)
-        return ChatResponse(reply=reply, pending_approvals=queued_approvals, warming=warming, notices=turn_notices)
+        return ChatResponse(reply=reply, session_id=orch.session_id if isinstance(orch.session_id, str) else None,
+                            pending_approvals=queued_approvals, warming=warming, notices=turn_notices)
     except Exception:
         # Constant reply — exception text in the client body is an
         # information-exposure pattern; the log line above keeps the specifics.
@@ -1349,7 +1351,8 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         async def end(text: str) -> None:
             queued_approvals[:] = sink
             turn_notices[:] = notices
-            await queue.put(("end", text))
+            session = orch.session_id
+            await queue.put(("end", (text, session if isinstance(session, str) else None)))
 
         try:
             with reasoning_scope(reasoning):
@@ -1411,13 +1414,14 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                 if not acknowledged.done():
                     acknowledged.set_result(True)
             elif kind == "end":
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': data, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices})}\n\n"
+                full, actual_session = data
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': full, 'session_id': actual_session, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices})}\n\n"
                 break
             elif kind == "error":
                 # Same shape on the error end event — a client that always reads the
                 # field should never have to special-case the failure branch, and a
                 # turn that queued something before failing still has to name it.
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices})}\n\n"
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'session_id': None, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices})}\n\n"
                 break
     finally:
         # Runs on normal completion AND on client disconnect (GeneratorExit). Awaiting

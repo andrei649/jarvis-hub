@@ -380,7 +380,8 @@ def test_selected_review_fingerprint_binds_agent_with_identical_route():
     store = VisionReviewStore()
     claim = {"session_id": "shared-session", "prompt": "Describe this",
              "model": "local/vision", "route": "turn:same-prompt:auto:main",
-             "binding": ("lmstudio", "http://127.0.0.1:1234/v1", "local/vision")}
+             "binding": ("lmstudio", "http://127.0.0.1:1234/v1", "local/vision"),
+             "principal": ("web", None, True, None)}
     token = store.issue(agent_id="jarvis", **claim)
     with pytest.raises(VisionReviewRefused, match="vlm_destination_changed"):
         store.consume(token, agent_id="athena", **claim)
