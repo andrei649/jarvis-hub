@@ -80,6 +80,11 @@ function ScopedBriefingWall({ voice, transcript, onExit, children }: Props) {
   const health = valueOf(snapshot?.health);
   const trust = valueOf(snapshot?.trust);
   const locality = valueOf(snapshot?.locality);
+  const approvals = valueOf(snapshot?.approvals);
+  const calendar = valueOf(snapshot?.calendar);
+  const model = valueOf(snapshot?.model);
+  const voiceCapabilities = valueOf(snapshot?.voice);
+  const heartbeat = valueOf(snapshot?.heartbeat);
   const executing = agents?.filter(agent => ['busy', 'active'].includes(agent.status.trim().toLowerCase())).length;
   const state = wallState({ agents: agents ?? [], tasks: tasks ?? [], voice, serverUp: health?.up === true });
   const stateWord = voice.status === 'stopping' ? 'stopping microphone'
@@ -123,6 +128,18 @@ function ScopedBriefingWall({ voice, transcript, onExit, children }: Props) {
       <BriefingField agents={agents ?? []} tasks={tasks ?? []} voice={voice} active={active}
         agentsAvailable={agents !== null} tasksAvailable={tasks !== null} />
 
+      <View style={styles.voice}>
+        <Text style={styles.cardTitle}>Dictate to draft</Text>
+        <Text style={styles.note}>Review the draft in Chat before sending.</Text>
+        {children}
+        {shown && transcript ? <Text style={styles.transcript}>{transcript}</Text>
+          : <Text style={styles.note}>{shown ? 'No dictated line in this visit.' : 'Transcript hidden · room mode'}</Text>}
+        <Pressable style={styles.button} disabled={!active} onPress={() => setShown(value => !value)}
+          accessibilityLabel={shown ? 'Hide room transcript' : 'Show room transcript'}>
+          <Text style={styles.buttonText}>{shown ? 'Hide transcript' : 'Show transcript'}</Text>
+        </Pressable>
+      </View>
+
       <View style={styles.cards}>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Cabinet · reported activity</Text>
@@ -143,22 +160,44 @@ function ScopedBriefingWall({ voice, transcript, onExit, children }: Props) {
           {row('Strict-local policy', trust ? trust.strictLocal ? 'on' : 'off' : null, 'Reported policy; not a locality measurement.')}
           {row('Cloud configured', trust ? trust.cloudAvailable ? 'reported' : 'none reported' : null)}
         </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Decisions · returned</Text>
+          {row('Pending decisions returned', approvals?.pending,
+            'Returned decisions, up to 100; not a global total.')}
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Calendar · sample</Text>
+          {row('Calendar events in sample', calendar?.returned,
+            'Calendar sample, up to 10 events over the next 24 hours; may be cached, freshness unknown.')}
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Local model · server report</Text>
+          {row('Server model report', model?.state === 'no_model' ? 'no model' : model?.state ?? null,
+            'Server report; not proof of responsiveness.')}
+          {row('Resident models reported', model && (model.state === 'ready' || model.state === 'no_model')
+            ? model.residentCount : null)}
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Voice · server capabilities</Text>
+          {row('Server STT capability', voiceCapabilities ? voiceCapabilities.stt ? 'yes' : 'no' : null,
+            'Server-reported capabilities; not mic permission or consent.')}
+          {row('Server TTS capability', voiceCapabilities ? voiceCapabilities.tts ? 'yes' : 'no' : null)}
+          {row('Local TTS capability', voiceCapabilities ? voiceCapabilities.ttsLocal ? 'yes' : 'no' : null)}
+          {row('Local-only voice policy', voiceCapabilities ? voiceCapabilities.localOnly ? 'yes' : 'no' : null)}
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Heartbeat · schedules</Text>
+          {row('Scheduler reported running', heartbeat ? heartbeat.running ? 'yes' : 'no' : null,
+            'Server schedule report; not past execution or notifications.')}
+          {row('Scheduled jobs', heartbeat?.scheduled)}
+          {row('Quarantined schedules', heartbeat?.blocked)}
+        </View>
       </View>
 
-      <View style={styles.voice}>
-        <Text style={styles.cardTitle}>Dictate to draft</Text>
-        <Text style={styles.note}>Review the draft in Chat before sending.</Text>
-        {children}
-        {shown && transcript ? <Text style={styles.transcript}>{transcript}</Text>
-          : <Text style={styles.note}>{shown ? 'No dictated line in this visit.' : 'Transcript hidden · room mode'}</Text>}
-        <Pressable style={styles.button} disabled={!active} onPress={() => setShown(value => !value)}
-          accessibilityLabel={shown ? 'Hide room transcript' : 'Show room transcript'}>
-          <Text style={styles.buttonText}>{shown ? 'Hide transcript' : 'Show transcript'}</Text>
-        </Pressable>
-      </View>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Source evidence</Text>
-        {(['health', 'agents', 'tasks', 'trust', 'locality'] as const).map(source => row(source, sourceLabel(snapshot?.[source])))}
+        {(['health', 'agents', 'tasks', 'trust', 'locality', 'approvals', 'calendar', 'model', 'voice', 'heartbeat'] as const)
+          .map(source => row(source, sourceLabel(snapshot?.[source])))}
         <Text style={styles.note}>Read-only updates every 15 seconds after the previous refresh finishes.</Text>
         <Pressable style={styles.button} disabled={loading || !active || !configured || !ready}
           accessibilityLabel="Refresh briefing" onPress={() => refresh.current?.()}>

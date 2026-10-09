@@ -83,8 +83,10 @@ Verification on 2026-10-09 UTC:
   No remaining Important/Critical issue was identified in the bounded review.
 
 The wall is a local candidate. Physical Android/iOS graphics, accessibility,
-microphone and live-Hub acceptance remain open. Browser attention/calendar,
-resident-model and voice-capability cards are not included yet. API validation is
+microphone and live-Hub acceptance remain open. This base unit excludes browser
+attention/calendar, resident-model and voice-capability cards; the separate
+[additional-sources candidate](h1825-briefing-sources.md) adds those reports and
+heartbeat schedule counts. API validation is
 bounded after native buffering; it does not prove streaming memory limits or
 native redirect isolation. Queue read failures that the backend masks as an empty
 list remain indistinguishable here. Next action: device/live acceptance and the

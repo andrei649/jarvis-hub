@@ -129,8 +129,10 @@ mic trust and permission checks, stopping state, and local STT draft insertion.
 The H18.25 local wall candidate now adds a bounded SVG tier field, source-backed
 stat cards and chips, and a default-hidden spoken line in Chat. It preserves
 unknown-source semantics and cancels background/scope-stale updates. Physical
-device/live STT acceptance and browser-only attention/model/capability cards remain
-open; see `mobile/docs/h1825-briefing-wall.md`.
+device/live STT acceptance remains open. The separate source-card candidate adds
+returned approvals, a calendar sample, local-model/voice reports and heartbeat
+schedule counts, with unknown data kept explicit and private details discarded;
+see `mobile/docs/h1825-briefing-wall.md` and `mobile/docs/h1825-briefing-sources.md`.
 
 - ~~**Network task‑fan**: v2 `NetworkBrain` doesn't render per‑agent task dots from `/tasks` (v1 did) —
   the old task fan exists in `network.tsx`, but the current cockpit renders `NeuralMesh`; integrate
