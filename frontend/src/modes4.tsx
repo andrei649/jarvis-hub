@@ -48,7 +48,7 @@ function FinanceMode({ t }){
           <SubH4 style={{marginTop:16}}>PENDING</SubH4>
           {F.pending.map((p,i)=>(
             <div className="pay-row" key={i}><span className="pcap">{p.who}</span><span style={{color:'var(--ink-2)'}}>{p.desc}</span>
-              <span style={{textAlign:'right',color:p.state==='approve'?'var(--amber)':'var(--ink-3)'}}>{p.amt}</span></div>
+              <span style={{textAlign:'right',color:p.state==='approve'?'var(--amber)':'var(--ink-2)'}}>{p.amt}</span></div>
           ))}
           {F.pending.length > 0 && (
             <div className="pay-pending"><span style={{color:'var(--amber)',fontFamily:'var(--font-mono)',fontSize:11}}>pending approval · {F.pending.filter(p=>p.state==='approve').length}</span></div>
@@ -85,7 +85,7 @@ function HealthMode({ t }){
         </div>
         <div className="mem-grid" style={{flex:1}}>
           {H.metrics.map((m,i)=>(
-            <div className="stat-card" key={i}><div className="sv" style={{fontSize:20}}>{m.v}</div><div className="sl">{m.k}</div><div style={{fontSize:10,color:'var(--ink-3)',marginTop:4}}>{m.sub}</div></div>
+            <div className="stat-card" key={i}><div className="sv" style={{fontSize:20}}>{m.v}</div><div className="sl">{m.k}</div><div style={{fontSize:10,color:'var(--ink-2)',marginTop:4}}>{m.sub}</div></div>
           ))}
         </div>
       </div>

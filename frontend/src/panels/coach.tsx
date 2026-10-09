@@ -92,7 +92,7 @@ const Amber = ({ children }: { children?: any }) => (
   <div style={{ ...mono, fontSize: 11, color: 'var(--amber)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
 );
 const Note = ({ children }: { children?: any }) => (
-  <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
+  <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
 );
 const Head = ({ children }: { children?: any }) => (
   <div style={{
@@ -345,16 +345,16 @@ export function CoachPanel() {
       {/* ── 2 · SESSION ──────────────────────────────────────────── */}
       <Head>TODAY&apos;S SESSION · POST /api/coach/session</Head>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0' }}>
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>new_limit</label>
+        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>new_limit</label>
         <input type="number" min={0} max={1000} style={{ ...inpS, width: 66 }}
           value={newLimit} onChange={(e) => setNewLimit(e.target.value)} />
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>max_reviews</label>
+        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>max_reviews</label>
         <input type="number" min={1} max={5000} style={{ ...inpS, width: 72 }}
           value={maxReviews} onChange={(e) => setMaxReviews(e.target.value)} />
         <button className="tool-btn" onClick={buildSession} disabled={!deck.length || busy === 'session'}>
           build session
         </button>
-        <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>now_day {today}</span>
+        <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>now_day {today}</span>
       </div>
       {!deck.length && <Note>deck is empty — add a card. (An empty deck would answer a
         true 0/0/0, which is not the same statement as &ldquo;nothing due today&rdquo;.)</Note>}
@@ -362,7 +362,7 @@ export function CoachPanel() {
       {counts && (
         <>
           <Row>
-            <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>counts</span>
+            <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>counts</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
               <Tag>due_total {num(counts.due_total)}</Tag>
               <Tag>due_selected {num(counts.due_selected)}</Tag>
@@ -466,7 +466,7 @@ export function CoachPanel() {
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0' }}>
         <button className="tool-btn" onClick={addTopic}>add topic</button>
         <button className="tool-btn" onClick={topicsFromDeck} disabled={!deck.length}>use deck as topics</button>
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>per_session</label>
+        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>per_session</label>
         <input type="number" min={1} max={100} style={{ ...inpS, width: 60 }}
           value={perSession} onChange={(e) => setPerSession(e.target.value)} />
         <button className="tool-btn" onClick={planCurriculum} disabled={!topics.length || busy === 'plan'}>
@@ -477,7 +477,7 @@ export function CoachPanel() {
       {planRes && (
         <>
           <Row>
-            <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>order</span>
+            <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>order</span>
             <span style={{ marginLeft: 'auto' }}><Tag>session_count {num(planRes.session_count)}</Tag></span>
           </Row>
           {arr(planRes, 'order').map((t: any, i: number) => (
@@ -488,7 +488,7 @@ export function CoachPanel() {
           ))}
           {arr(planRes, 'sessions').map((s: any, i: number) => (
             <Row key={`sess-${i}`}>
-              <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>session {i + 1}</span>
+              <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>session {i + 1}</span>
               <span style={{ ...mono, color: 'var(--ink-2)', marginLeft: 'auto', textAlign: 'right' }}>
                 {(Array.isArray(s) ? s : []).map(label).join(' · ')}
               </span>
@@ -509,7 +509,7 @@ export function CoachPanel() {
 
       {/* ── footer ───────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', paddingTop: 6 }}>
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', display: 'flex', gap: 4, alignItems: 'center' }}>
+        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', display: 'flex', gap: 4, alignItems: 'center' }}>
           <input type="checkbox" checked={showRaw} onChange={(e) => setShowRaw(e.target.checked)} />
           raw response
         </label>

@@ -327,3 +327,9 @@ Responsive-web Trust also exposes the separate camera-description model-data rol
 Acknowledgment is independent of household consent and does not enable capture or
 remote inference. Native camera role controls, supported owner camera provisioning
 and live-device acceptance remain open.
+
+The 2026-10-09 local HUD contrast candidate moves secondary browser text away from
+the decorative `--ink-3` token. It changes no native API or interaction; native
+screens use their own theme and require separate contrast/device evidence. See
+`docs/hud-muted-text-contrast-20261009.md` at the repository root for measured
+browser scope and exclusions; no full native accessibility claim is made.

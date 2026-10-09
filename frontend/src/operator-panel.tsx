@@ -199,7 +199,7 @@ function BrowserResult({ check, preview }: {
       )}
       {preview && (
         <div role="status" style={{ marginTop: 8 }}>
-          <div style={{ ...mono, color: 'var(--ink-3)' }}>Policy dry run · preview only</div>
+          <div style={{ ...mono, color: 'var(--ink-2)' }}>Policy dry run · preview only</div>
           <ol aria-label="browser preview result" style={{ margin: '4px 0 0', paddingLeft: 22 }}>
             {preview.map((row) => (
               <li key={`${row.index}:${row.action}`} style={mono}>
@@ -254,12 +254,12 @@ function DesktopOutcomeRegion({ value }: { value: DesktopOutcomeView | null }) {
               <span>{[step.action || 'unknown', step.status, step.reason].filter(Boolean).join(' · ')}</span>
               {step.result?.text && <div style={{ color: 'var(--ink-2)' }}>{step.result.text}</div>}
               {step.result?.element && (
-                <div style={{ color: 'var(--ink-3)' }}>
+                <div style={{ color: 'var(--ink-2)' }}>
                   {[step.result.element.role, step.result.element.name].filter(Boolean).join(' · ')}
                 </div>
               )}
               {step.result?.elements?.map((element, elementIndex) => (
-                <div key={elementIndex} style={{ color: 'var(--ink-3)' }}>
+                <div key={elementIndex} style={{ color: 'var(--ink-2)' }}>
                   {[element.role, element.name].filter(Boolean).join(' · ')}
                 </div>
               ))}
@@ -549,7 +549,7 @@ export function OperatorPanel() {
       <div className="panel-body tight">
         <fieldset style={fieldsetStyle}>
           <legend style={{ ...mono, color: 'var(--accent-light)' }}>Browser policy dry run</legend>
-          <p style={{ ...mono, color: 'var(--ink-3)' }}>
+          <p style={{ ...mono, color: 'var(--ink-2)' }}>
             Empty allowlist is fail-closed. This checks policy and previews a plan; it does not run a browser.
           </p>
           <label style={mono} htmlFor="operator-browser-url">Browser URL</label>
@@ -652,10 +652,10 @@ export function OperatorPanel() {
 
         <fieldset style={fieldsetStyle}>
           <legend style={{ ...mono, color: 'var(--accent-light)' }}>Governed desktop</legend>
-          <p style={{ ...mono, color: 'var(--ink-3)' }}>
+          <p style={{ ...mono, color: 'var(--ink-2)' }}>
             Desktop actuation is default-off and requires an explicitly enabled, isolated host.
           </p>
-          <p style={{ ...mono, color: 'var(--ink-3)' }}>
+          <p style={{ ...mono, color: 'var(--ink-2)' }}>
             Mutating work is queued through ToolRPC / Decision Inbox; this panel cannot approve it.
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 6 }}>

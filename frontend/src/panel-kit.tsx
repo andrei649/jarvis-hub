@@ -99,8 +99,8 @@ export function Card({ title, sub, live, onReload, children }: { title?: any; su
 // An error shows even while a newer request is out: a poller slower than its interval is
 // always loading, and hid every failed poll behind "loading…" (review-H153e NIT-5).
 export const State = ({ e, loading, n }) => (e ? <div style={{ color: 'var(--amber)', fontSize: 12 }}>offline · {e}</div>
-  : loading ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>loading…</div>
-  : n === 0 ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>nothing yet</div> : null);
+  : loading ? <div style={{ color: 'var(--ink-2)', fontSize: 12 }}>loading…</div>
+  : n === 0 ? <div style={{ color: 'var(--ink-2)', fontSize: 12 }}>nothing yet</div> : null);
 export const Row = ({ children }) => <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>{children}</div>;
 /* --ink-2, not --ink-3, as the uncoloured default. Computed from the tokens:
    --ink-3 is 2.79:1 on --void and 2.83:1 on --void-2 (the modal), against AA's 4.5:1;
@@ -110,9 +110,8 @@ export const Row = ({ children }) => <div style={{ display: 'flex', gap: 8, alig
    cloud model may receive context", "stored locally · cloud model may receive context",
    "external websites", "read-only"). That is consent copy — the text telling a new user
    what leaves their machine.
-   Blast radius, counted repo-wide rather than in one file: 203 uncoloured `<Tag>` uses
-   across 22 files inherit this default; the 199 that pass an explicit `c` are untouched,
-   since only the fallback branch moved. */
+   This fallback covers uncoloured `<Tag>` uses; explicit `c` values are checked at
+   their call sites because several also carried the low-contrast ink-3 text colour. */
 export const Tag = ({ c, children }: { c?: any; children?: any }) => <span style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: c || 'var(--ink-2)' }}>{children}</span>;
 export const Btn = ({ onClick, children }) => <button className="tool-btn" onClick={onClick} style={{ marginLeft: 'auto' }}>{children}</button>;
 export const act = (p, body, then?, onErr?) => apiPost(p, body)

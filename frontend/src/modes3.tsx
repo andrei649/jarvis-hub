@@ -12,7 +12,7 @@ function SubH3({ children, style }: { children?: any; style?: any }){ return <di
  * this cycle (keys/backups/channels/host have no seed fallback any more). */
 function NotConnected({ what }: { what?: string }){
   return (
-    <div style={{ fontFamily:'var(--font-mono)', fontSize:9, letterSpacing:'.08em', color:'var(--ink-3)', padding:'3px 0' }}>
+    <div style={{ fontFamily:'var(--font-mono)', fontSize:9, letterSpacing:'.08em', color:'var(--ink-2)', padding:'3px 0' }}>
       not connected{what ? ` · ${what}` : ''}
     </div>
   );

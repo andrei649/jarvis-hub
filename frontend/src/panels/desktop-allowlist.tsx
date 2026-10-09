@@ -45,7 +45,7 @@ const ALLOWLIST_PATH = '/api/desktop/allowlist';
 const Head = ({ k, note }) => (
   <div style={{ marginTop: 10, marginBottom: 2 }}>
     <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)' }}>{k}</div>
-    <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>{note}</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>{note}</div>
   </div>
 );
 
@@ -124,7 +124,7 @@ export function DesktopAllowlistPanel() {
             ))
             : <Missing k="recording" />}
 
-          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 8, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 8, lineHeight: 1.5 }}>
             User-tier read (user_guard). Constant vocabulary — no orchestrator, no desktop I/O — so this
             route has no 503 and no {'{ok:false}'} path; a blank panel above means the read itself was
             refused, not an empty allowlist.

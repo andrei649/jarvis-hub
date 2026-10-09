@@ -117,10 +117,10 @@ const why = (err: any): string => {
 };
 
 const H = ({ children }) => (
-  <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)', margin: '10px 0 5px' }}>{children}</div>
+  <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', margin: '10px 0 5px' }}>{children}</div>
 );
 const Note = ({ children }) => (
-  <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 4, lineHeight: 1.5 }}>{children}</div>
+  <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4, lineHeight: 1.5 }}>{children}</div>
 );
 const Fail = ({ msg, status }: { msg: any; status?: any }) => (
   <div role="alert" style={{ ...mono, fontSize: 10.5, marginTop: 6, color: 'var(--red)' }}>
@@ -250,7 +250,7 @@ export function MarketplaceAdminPanel() {
       {pub && (pub as any).ok === false && <Fail msg={(pub as any).msg} status={(pub as any).status} />}
       {pub && (pub as any).ok === true && (p
         ? <Good>published {p.name ?? '—'} v{p.version ?? '—'} · {p.author ?? '—'}
-            {p.description ? <span style={{ color: 'var(--ink-3)' }}> · {p.description}</span> : null}
+            {p.description ? <span style={{ color: 'var(--ink-2)' }}> · {p.description}</span> : null}
           </Good>
         : <Amber>200 ok:true but the response carried no `published` object<Json v={(pub as any).raw} max={90} /></Amber>)}
       {pub && (pub as any).ok === false && (pub as any).status === 404 && (
@@ -364,7 +364,7 @@ export function MarketplaceAdminPanel() {
         : <Note>purge was not requested: the registry row and its package blob are untouched, so the marketplace
             INSTALL control can restore the skill — through the moderation/signature gate.</Note>)}
 
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
         all three writes are <b>admin tier</b> (actA · X-Admin-Token); the installed-tree read above is GET /skills at
         user tier, and a failed read shows as “offline · …” rather than as an empty tree. Registry rows, review status
         and package rollback live in the SKILLS MARKETPLACE panel — install-zip writes no registry row, so a

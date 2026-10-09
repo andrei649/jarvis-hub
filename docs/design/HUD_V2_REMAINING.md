@@ -24,6 +24,13 @@ while the selected-photo plugin preserves the explicit dictation microphone perm
 This does not modify browser/backend behavior or close device/live-Hub acceptance.
 See mobile/docs/mobile-integration-20261009.md.
 
+HUD text contrast (local candidate, 2026-10-09): secondary text moves from the
+decorative `--ink-3` token to the existing readable `--ink-2` foreground across
+CSS and inline text, including status/consent labels and SVG text. Icon-only,
+stroke and background uses retain their decorative colour. Browser measurement
+and remaining exclusions are recorded in `docs/hud-muted-text-contrast-20261009.md`;
+this is not a claim of complete WCAG conformance or native-device parity.
+
 H277 recovery (2026-10-08): the active chat, floating chat and cockpit image composers now review the actual selected local Ollama agent/model/session. Reviewable prior image handles are bounded to that session and cleared on restart/reload. A selected turn with an unresolved conversation ID stays disabled; changing topic or agent invalidates pending work. Owner-only selected prepare/send/history routes preserve legacy standalone VLM behavior. H18.31 now has a local native candidate for bounded photo-library snapshots, exact selected model/session review, explicit send and process-local active-history choices. It records ambiguous delivery before dispatch and requires explicit History inspection before retry; no browser or backend behavior changed. Device/live-Hub acceptance remains open. See mobile/docs/h1831-selected-images.md.
 
 H078 recovery (2026-10-08): existing Admin Settings exposes commands.quick_commands as an initially empty JSON map. Owner /help lists valid aliases and fixed commands. Execution queues through existing approval tasks and terminal gates; no new command editor or argument templates are added. Native H18.26 catalog code is locally implemented; device/live-Hub acceptance remains open.

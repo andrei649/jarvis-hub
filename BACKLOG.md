@@ -6046,15 +6046,19 @@ three times as much**, which is the more useful fact:
       pushes the node to y=1122. And in the other direction AGENTS' `scrollable-region-focusable`
       **disappears at 1920×1080**, because the panel stops overflowing. No single viewport sees
       everything; two is a floor, not a proof.
-- [ ] 🔴 **`--ink-3` is a systemic contrast failure, not three sites.** The token composites to
-      `#52585f` on `--void` = **2.80:1**. Counted on the shipped bundle in demo at 1440×900:
-      **276 text-bearing elements** carry it (cockpit 59 · agents 61 · observe 43 · autonomy 32 ·
-      comms 22 · memory 20 · trust 18 · build 13 · interop 4 · chat 4), from 89 uses in
-      `styles.css` plus ~220 inline. This slice fixed the ones axe could resolve; the rest are
-      invisible to it because axe parks contrast it cannot compute over a gradient in
-      `incomplete`, not `violations` (e.g. `.timeslider .tlab`, measured **2.88:1** from real
-      screenshot pixels). The spec now writes `incomplete` and a counts tally into its artifact so
-      the backlog is visible; **retiring `--ink-3` as a text colour is its own slice.**
+- [x] ✅ **`--ink-3` retired from HUD text — local candidate (2026-10-09).**
+      The original measurement found about 2.80:1 and 276 text-bearing elements;
+      83 CSS foreground occurrences and 453 TSX literals now use readable `--ink-2`.
+      Decorative strokes/icons/backgrounds retain their existing token. System-map
+      off/unknown/unmapped text is separated from dim outlines; the enabled voice-settings
+      gear keeps a readable foreground instead of whole-button opacity.
+      Token regression covers both looks; full HUD 1,867 tests and targeted final fixes pass.
+      Chromium painted chrome has zero failing measured decisions (46 measured runs,
+      3 unpainted, 48 excluded); all 27 comparable previously failing text labels now pass.
+      Four live/demo mode walks cover 16 modes at two viewports without critical/serious
+      violations. Excluded, clipped and axe-incomplete cases remain unproven; no global WCAG
+      conformance claim. Local only, not published; proof and precise denominators:
+      [HUD contrast evidence](docs/hud-muted-text-contrast-20261009.md).
 - [x] ✅ **Coverage is now 16 of 16 rail modes.** The number hotkeys reach ten; `projects`,
       `finance`, `health`, `knowledge`, `family` and `admin` have none, so they were reachable
       only by clicking the rail — which no spec did. The row above said all six "were walked
@@ -6262,9 +6266,10 @@ three times as much**, which is the more useful fact:
       A run with its own `text-shadow` is measured and flagged `ownShadow` — CSS paints a text
       shadow *beneath* the glyph fill, so shot B is still what the fill composited over, but that
       backdrop includes the run's own halo (`.clock-time`, PASS at 6.69:1, is the only one here).
-      **The 🔴 above stays open**: this slice makes the debt legible and costs it, it does not pay
-      it. Retiring `--ink-3` as a text colour is a palette decision for the owner, and this row —
-      not `docs/OWNER_TASKS.md`, which carries no palette packet — is where it is costed.
+      This measurement-only slice originally left the `--ink-3` text debt open. The separate
+      2026-10-09 local contrast candidate above implements the foreground correction under the
+      current autonomous-local-development directive. The remaining measurement exclusions and
+      broader theme/overlay/non-text coverage are still not proof of conformance.
 - [x] ✅ **Coverage is 10 of 16 rail modes.** The number hotkeys do not reach `projects`,
       `finance`, `health`, `knowledge`, `family` or `admin`. All six were walked manually via the
       rail at 1440×900, live and demo, and came back clean — but no spec covers them.

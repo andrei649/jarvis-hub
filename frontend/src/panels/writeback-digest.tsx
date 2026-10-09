@@ -67,7 +67,7 @@ const DIGEST_PATH = '/api/digest/run';
 
 const AMBER = 'var(--amber)';
 const GREEN = 'var(--green)';
-const INK3 = 'var(--ink-3)';
+const INK2 = 'var(--ink-2)';
 
 /* WIDGET hints only — never a source of field NAMES. Every input this panel renders is
    generated from the selected entry's own `required`/`optional` arrays as returned by
@@ -83,11 +83,11 @@ const PROSE_FIELDS = new Set(['content', 'body', 'description', 'text']);
 const Head = ({ k, note }: { k: any; note?: any }) => (
   <div style={{ marginTop: 12, marginBottom: 4 }}>
     <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--accent-light)' }}>{k}</div>
-    {note && <div style={{ fontSize: 10, color: INK3, marginTop: 2, lineHeight: 1.45 }}>{note}</div>}
+    {note && <div style={{ fontSize: 10, color: INK2, marginTop: 2, lineHeight: 1.45 }}>{note}</div>}
   </div>
 );
 const Note = ({ c, children }: { c?: any; children?: any }) => (
-  <div style={{ fontSize: 10.5, lineHeight: 1.5, color: c || INK3, marginTop: 6 }}>{children}</div>
+  <div style={{ fontSize: 10.5, lineHeight: 1.5, color: c || INK2, marginTop: 6 }}>{children}</div>
 );
 const Right = ({ children }: { children?: any }) => (
   <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>{children}</span>
@@ -247,7 +247,7 @@ export function WritebackDigestPanel() {
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
             <button className="tool-btn" disabled={!ready || sending} onClick={queue}>queue write-back</button>
-            <span style={{ fontSize: 10, color: INK3 }}>
+            <span style={{ fontSize: 10, color: INK2 }}>
               {ready ? 'validates, then holds it for your approval — no external call happens here' : 'every required field must be filled'}
             </span>
           </div>
@@ -265,7 +265,7 @@ export function WritebackDigestPanel() {
             host defers it instead (a result this route never reports back).
           </Note>
           {wbOut.preview && wbOut.preview.summary && (
-            <div style={{ ...mono, fontSize: 10, color: INK3, marginTop: 4 }}>{String(wbOut.preview.summary)}</div>
+            <div style={{ ...mono, fontSize: 10, color: INK2, marginTop: 4 }}>{String(wbOut.preview.summary)}</div>
           )}
           <Json v={wbOut.preview} />
         </div>
@@ -303,10 +303,10 @@ export function WritebackDigestPanel() {
             <div style={{ ...mono, fontSize: 10, color: AMBER }}>missing: {wbErr.body.missing.join(', ')}</div>
           )}
           {wbErr.body && Array.isArray(wbErr.body.required) && (
-            <div style={{ ...mono, fontSize: 10, color: INK3 }}>required: {wbErr.body.required.join(', ')}</div>
+            <div style={{ ...mono, fontSize: 10, color: INK2 }}>required: {wbErr.body.required.join(', ')}</div>
           )}
           {wbErr.body && Array.isArray(wbErr.body.supported) && (
-            <div style={{ ...mono, fontSize: 10, color: INK3 }}>supported: {wbErr.body.supported.join(', ')}</div>
+            <div style={{ ...mono, fontSize: 10, color: INK2 }}>supported: {wbErr.body.supported.join(', ')}</div>
           )}
           {/* The backend's own body, untouched — covers the free-form Action-Kernel deny
               reason, FastAPI's {"detail":[…]} and the JARVIS-* error envelopes. */}
@@ -357,7 +357,7 @@ export function WritebackDigestPanel() {
         <button className="tool-btn" disabled={!canRun} onClick={runDigest}>{running ? 'running…' : 'run digest'}</button>
         {!limitOk && <span style={{ fontSize: 10, color: AMBER }}>limit must be a whole number 1–50 (the route&rsquo;s own ge/le bounds)</span>}
         {noneSelected && <span style={{ fontSize: 10, color: AMBER }}>select at least one source — an empty list would silently run all of them</span>}
-        {limitOk && !noneSelected && !res && !dErr && <span style={{ fontSize: 10, color: INK3 }}>not run yet</span>}
+        {limitOk && !noneSelected && !res && !dErr && <span style={{ fontSize: 10, color: INK2 }}>not run yet</span>}
       </div>
 
       {dErr && (
@@ -371,7 +371,7 @@ export function WritebackDigestPanel() {
 
       {res && (
         <div style={{ marginTop: 8 }}>
-          <div style={{ ...mono, fontSize: 10, color: INK3 }}>
+          <div style={{ ...mono, fontSize: 10, color: INK2 }}>
             {String(res.count)} items · sources composed: {arr(res, 'sources').join(', ') || '—'}
             {res.topic ? ` · topic "${String(res.topic)}"` : ' · no topic'}
           </div>

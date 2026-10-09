@@ -116,7 +116,7 @@ function abs(tsSec: any): string | null {
   try { return new Date(n * 1000).toLocaleString(); } catch { return null; }
 }
 
-const dim = { ...mono, fontSize: 10, color: 'var(--ink-3)' };
+const dim = { ...mono, fontSize: 10, color: 'var(--ink-2)' };
 const amber = { ...mono, fontSize: 10.5, color: 'var(--amber)', lineHeight: 1.5 };
 const red = { ...mono, fontSize: 10.5, color: 'var(--red)', lineHeight: 1.5 };
 

@@ -73,7 +73,7 @@ function ModeStub({ label }) {
     <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
       <div className="panel" style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-        <div style={{ textAlign: 'center', color: 'var(--ink-3)', maxWidth: 360 }}>
+        <div style={{ textAlign: 'center', color: 'var(--ink-2)', maxWidth: 360 }}>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.18em', color: 'var(--accent-light)' }}>{String(label).toUpperCase()}</div>
           <div style={{ marginTop: 12, fontSize: 13, color: 'var(--ink-2)' }}>Mode wiring in progress — ported from the prototype next.</div>
           <div style={{ marginTop: 8, fontFamily: 'var(--font-mono)', fontSize: 10 }}>P0 · shell + cockpit live · build green</div>
@@ -748,9 +748,9 @@ function ProvModal({ prov, onClose }) {
       <div className="pal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px,92vw)' }}>
         <div className="pal-input" style={{ borderBottom: '1px solid var(--panel-line)' }}><span className="pc"><Icon d={ICONS.shield} size={16} /></span><span style={{ fontSize: 14, letterSpacing: '.04em' }}>PROVENANCE</span><span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--green)' }}>conf {prov.conf}</span></div>
         <div style={{ padding: 18 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)', marginBottom: 8 }}>AGENTS CONSULTED</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', marginBottom: 8 }}>AGENTS CONSULTED</div>
           <div className="dep-links" style={{ marginBottom: 16 }}>{prov.agents.map((a) => <span key={a} className="dep-link" style={{ cursor: 'default' }}><Glyph id={a} size={12} />{a}</span>)}</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)', marginBottom: 8 }}>PLUGIN READS</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', marginBottom: 8 }}>PLUGIN READS</div>
           <div className="dep-links" style={{ marginBottom: 16 }}>{prov.plugins.map((p) => <span key={p} className="dep-link" style={{ cursor: 'default' }}>{p}</span>)}</div>
           <div className="verified-row"><Icon d={ICONS.shield} size={13} /> {prov.local === true ? '100% on-device · no cloud egress' : prov.local === false ? 'cloud-assisted' : 'locality not reported'}</div>
         </div>
@@ -778,7 +778,7 @@ function ModeEmpty({ mode, onDemo }) {
     <div className="workzone full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div className="panel" style={{ maxWidth: 460, textAlign: 'center', padding: '30px 26px' }}>
         <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.2em', color: 'var(--ink-3)', marginBottom: 10 }}>{(MODE_LABELS[mode] || mode).toUpperCase()}</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.2em', color: 'var(--ink-2)', marginBottom: 10 }}>{(MODE_LABELS[mode] || mode).toUpperCase()}</div>
         <div style={{ fontSize: 14, color: 'var(--ink)', marginBottom: 8 }}>{wired ? 'Not connected' : 'Design preview'}</div>
         <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5, marginBottom: 18 }}>
           {wired

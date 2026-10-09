@@ -146,7 +146,7 @@ export function SignalGovernancePanel() {
               {flag
                 ? `${flag} is not set — the bridge queues nothing until the owner sets it.`
                 : 'the flag is not set — the bridge queues nothing until the owner sets it. (the response named no flag)'}
-              <div style={{ color: 'var(--ink-3)', marginTop: 3 }}>
+              <div style={{ color: 'var(--ink-2)', marginTop: 3 }}>
                 This is the documented default state, not a fault. No route sets or clears
                 it and the bridge reads the environment once when Nerva starts, so there is
                 deliberately no toggle here: enabling it is an owner-side env change plus a
@@ -156,7 +156,7 @@ export function SignalGovernancePanel() {
           )}
 
           {note && (
-            <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 6 }}>{note}</div>
+            <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 6 }}>{note}</div>
           )}
 
           {/* Only the DISABLED branch needs this: with the flag unset the bridge queues
@@ -166,7 +166,7 @@ export function SignalGovernancePanel() {
               be an invented cause. On the ENABLED branch the row above is already the
               whole truth and this note would be a lie about the live queue. */}
           {!enabled && pending != null && pending > 0 && (
-            <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 6 }}>
+            <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 6 }}>
               The bridge queues nothing while the flag is unset, so this count is of items
               already in the inbox — the response does not say when, or by what, they were
               queued.
@@ -177,12 +177,12 @@ export function SignalGovernancePanel() {
 
       {/* ── The submit control ───────────────────────────────────────────────── */}
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-3)' }}>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>
           submit the sidecar's live world brief (GET /briefs/world, fetched server-side)
         </span>
         <Btn onClick={submit}>{busy ? 'submitting…' : 'submit brief → inbox'}</Btn>
       </Row>
-      <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 4 }}>
+      <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
         Nothing is typed here: the route takes no request body. The recommendations come
         from the Signal Layer sidecar's own brief, and every accepted item lands BLOCKED —
         nothing is approved, executed or scheduled by this control.
@@ -196,7 +196,7 @@ export function SignalGovernancePanel() {
       {out && out.t === 'body' && <SubmitOutcome r={out.r} flag={flag} />}
       {out && out.t === 'err' && <SubmitFailure err={out.err} />}
 
-      <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 8, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
+      <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 8, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
         user-tier read and write (user_guard) — nothing on this panel is admin. `pending` is
         counted over the queue's first 100 pending decisions (limit=100, id ASC), and a
         failed read is collapsed to 0 server-side, so it is a lower bound, not a total.
@@ -227,7 +227,7 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
           Nothing was queued. The string above is the backend's own reason, printed as sent.
         </div>
         {dropped && (
-          <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 4 }}>
+          <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
             The router forwards only this status — the sidecar's `error` detail (which holds
             the failed path) and its `provider` are dropped before the response, so nothing
             more can honestly be said about the cause here.
@@ -309,7 +309,7 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
         )}
         {str(r.note) && <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>{str(r.note)}</div>}
         {skipped != null && skipped > 0 && (
-          <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 4 }}>
+          <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
             {skipped} not queued — these were either non-actionable or refused by the
             recommendation contract. That split is not in the response, so it is not guessed
             here; failures are counted separately above and are never folded into this number.
@@ -318,7 +318,7 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
         {/* "Each id above" is only true when there ARE ids, and the swallow caveat is
             already carried by the queued-0 line, so neither is printed unconditionally. */}
         {ids.length > 0 && (
-          <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 4 }}>
+          <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
             Each id above is BLOCKED with decision=await_human_approval, waiting in the
             decision inbox. A per-item enqueue failure is reported separately as `failed`
             rather than silently shrinking this list.
@@ -356,7 +356,7 @@ function SubmitFailure({ err }: { err: any }) {
       </div>
       {line != null && <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>{line}</div>}
       {b && b.detail != null && typeof b.detail !== 'string' && <Json v={b.detail} />}
-      <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 4 }}>
+      <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
         The request did not reach the bridge — nothing was queued.
       </div>
     </div>

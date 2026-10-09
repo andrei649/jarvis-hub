@@ -68,13 +68,13 @@ export function SkillSwitchesPanel() {
         const onEverywhere = !!s.disabled && !!where;
         return (
           <Row key={n}>
-            <span style={{ ...mono, color: offHere ? 'var(--ink-3)' : 'var(--accent-light)' }}>{n}</span>
+            <span style={{ ...mono, color: offHere ? 'var(--ink-2)' : 'var(--accent-light)' }}>{n}</span>
             {s.essential && <Tag>essential</Tag>}
             {s.readiness === 'unsupported' && <Tag c="var(--red)">{s.readiness_reason || 'unsupported here'}</Tag>}
             {s.disabled && <Tag c="var(--amber)">off everywhere</Tag>}
             {!s.disabled && chans.map((c: string) => <Tag key={c} c="var(--amber)">off on {c}</Tag>)}
             {s.essential
-              ? <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>always on</span>
+              ? <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>always on</span>
               : <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!channelOk || busy !== null}
                   aria-label={`${offHere ? 'switch on' : 'switch off'} ${n}`}
                   onClick={() => flip({ skill: n }, !!offHere, onEverywhere ? '' : where)}>
@@ -84,7 +84,7 @@ export function SkillSwitchesPanel() {
       })}
       {categories.length > 0 && (
         <>
-          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-3)', letterSpacing: '.08em', marginTop: 8 }}>BY CATEGORY</div>
+          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em', marginTop: 8 }}>BY CATEGORY</div>
           {categories.map((c: string) => (
             <Row key={c}>
               <span style={{ ...mono }}>{c}</span>
@@ -96,7 +96,7 @@ export function SkillSwitchesPanel() {
           ))}
         </>
       )}
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6, lineHeight: 1.5 }}>
         A switched-off skill stays installed, signed and approved; the model is not told about it and a command
         naming it is refused. Switching back on is recorded in the intent log.
       </div>

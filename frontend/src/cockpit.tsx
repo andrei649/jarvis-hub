@@ -76,7 +76,7 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
           <div className="msg agent" key={i}>
             <div className="mtag"><span className="who">VISION ANALYSIS</span><span className="ts">{m.ts}</span></div>
             <div className="bubble"><Bubble text={m.text} /></div>
-            <div style={{fontSize:11,color:'var(--ink-3)'}}>{m.model} · {m.backend} · {m.destination} · {m.local?'loopback':'remote'}</div>
+            <div style={{fontSize:11,color:'var(--ink-2)'}}>{m.model} · {m.backend} · {m.destination} · {m.local?'loopback':'remote'}</div>
             {m.warning&&<div style={{fontSize:11,color:'var(--amber)'}}>{m.warning}</div>}
           </div>
         ) : (
@@ -239,7 +239,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
     : voice && voice.status==='speaking' ? 'speaking…' : 'voice on';
   const row = (lbl,node) => (
     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'4px 0'}}>
-      <span style={{color:'var(--ink-3)',fontFamily:'var(--font-mono)',fontSize:10,letterSpacing:'.1em'}}>{lbl}</span>{node}
+      <span style={{color:'var(--ink-2)',fontFamily:'var(--font-mono)',fontSize:10,letterSpacing:'.1em'}}>{lbl}</span>{node}
     </div>
   );
   return (
@@ -269,7 +269,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
           {row('SPEAK', <Seg cur={cfg.tts} opts={[{v:'server',l:'SERVER'},{v:'browser',l:'LOCAL'},{v:'off',l:'OFF'}]} on={(v)=>onCfg({tts:v})} />)}
           {row('LANG', <Seg cur={cfg.lang} opts={[{v:'auto',l:'AUTO'},{v:'ro',l:'RO'},{v:'en',l:'EN'}]} on={(v)=>onCfg({lang:v})} />)}
           {row('BARGE-IN', <Seg cur={cfg.barge||'off'} opts={[{v:'off',l:'OFF'},{v:'on',l:'ON'}]} on={(v)=>onCfg({barge:v})} />)}
-          {cfg.barge==='on' && <div style={{marginTop:4,color:'var(--ink-3)',fontSize:9,fontFamily:'var(--font-mono)'}}>experimental — talk over the reply to interrupt; needs echo cancellation</div>}
+          {cfg.barge==='on' && <div style={{marginTop:4,color:'var(--ink-2)',fontSize:9,fontFamily:'var(--font-mono)'}}>experimental — talk over the reply to interrupt; needs echo cancellation</div>}
           {voice && voice.caps && voice.caps.stt===false && <div style={{marginTop:6,color:'var(--amber)',fontSize:10,fontFamily:'var(--font-mono)'}}>local STT not installed — pip install faster-whisper</div>}
           <MicLeases />
         </div>
@@ -286,7 +286,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
           <button className={'mic'+(mic?' on':'')} onClick={()=>setMic && setMic()}
             title={micMuted ? 'mic muted — unmute NERVA' : (voice && voice.supported===false ? 'voice not supported in this browser' : (cfg && cfg.mode==='ptt' ? 'push-to-talk' : 'hands-free voice'))}
             style={micMuted?{opacity:.4}:undefined}><Icon d={ICONS.mic} size={15}/></button>
-          {cfg && onCfg && <button className="mic" onClick={()=>setCfgOpen(o=>!o)} title="voice settings" style={{opacity:cfgOpen?1:.6,fontSize:13,lineHeight:1}}>⚙</button>}
+          {cfg && onCfg && <button className="mic" onClick={()=>setCfgOpen(o=>!o)} title="voice settings" style={{color:cfgOpen?'var(--accent-light)':'var(--ink-2)',fontSize:13,lineHeight:1}}>⚙</button>}
         </div>
         <button className="transmit" disabled={draft.images.length>0&&!draft.ready} onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
       </div>

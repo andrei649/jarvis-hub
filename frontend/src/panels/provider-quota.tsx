@@ -32,7 +32,7 @@ export function ProviderQuotaPanel() {
   return (
     <Card title="PROVIDER QUOTA" live={asLive(d.e ? null : d.d)} sub={held ? `${held} held after a 429` : `${rows.length} seen`} onReload={d.reload}>
       <State e={d.e} loading={d.loading} n={rows.length} />
-      {!d.e && !d.loading && !rows.length ? <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>it is read from each cloud provider's responses</div> : null}
+      {!d.e && !d.loading && !rows.length ? <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>it is read from each cloud provider's responses</div> : null}
       {rows.map((row: any) => (
         <div key={`${row.backend}:${row.key}:${row.model || ''}`} style={{ marginBottom: 6 }}>
           <Row>
@@ -41,10 +41,10 @@ export function ProviderQuotaPanel() {
           </Row>
           {Object.entries(row.quota || {}).map(([kind, q]: [string, any]) => (
             <Row key={kind}>
-              <span style={{ fontSize: 10, color: 'var(--ink-3)', minWidth: 90 }}>{kind}</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-2)', minWidth: 90 }}>{kind}</span>
               <Bar left={q.left} />
               <span style={{ ...mono, fontSize: 10 }}>{q.remaining ?? '?'}{q.limit != null ? `/${q.limit}` : ''}</span>
-              {q.resets_in != null ? <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>resets in {secs(q.resets_in)}</span> : null}
+              {q.resets_in != null ? <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>resets in {secs(q.resets_in)}</span> : null}
             </Row>
           ))}
         </div>

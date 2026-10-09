@@ -94,7 +94,7 @@ function MediaOutcome({ value }) {
 function HouseOutcome({ value }) {
   if (!value) return null;
   if (value.status === 'sending') {
-    return <div role="status" style={{ ...mono, color: 'var(--ink-3)', marginTop: 8 }}>submitting governed proposal…</div>;
+    return <div role="status" style={{ ...mono, color: 'var(--ink-2)', marginTop: 8 }}>submitting governed proposal…</div>;
   }
   if (value.status === 'queued' && value.strong_confirmation_required) {
     return <div role="status" style={{ ...mono, color: 'var(--amber)', marginTop: 8 }}>
@@ -122,10 +122,10 @@ function HouseOutcome({ value }) {
 }
 function DiffView({ text }) {
   if (text == null) return null;
-  if (text === '') return <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6 }}>identical · no changes</div>;
+  if (text === '') return <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)', marginTop: 6 }}>identical · no changes</div>;
   const color = (l) => l.startsWith('@@') ? 'var(--accent-light)'
     : (l.startsWith('+') && !l.startsWith('+++')) ? 'var(--green)'
-    : (l.startsWith('-') && !l.startsWith('---')) ? 'var(--red)' : 'var(--ink-3)';
+    : (l.startsWith('-') && !l.startsWith('---')) ? 'var(--red)' : 'var(--ink-2)';
   return <pre style={{ ...mono, fontSize: 10.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', maxHeight: 220, overflow: 'auto', margin: '6px 0 0', padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
     {text.split('\n').map((l, i) => <div key={i} style={{ color: color(l) }}>{l || ' '}</div>)}
   </pre>;
@@ -159,7 +159,7 @@ export function CapturePanel() {
         </Row>
       ))}
       {recs.length > 0 && <div style={{ marginTop: 8 }}><button className="tool-btn" onClick={clearAll}>clear all</button></div>}
-      {recs.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>nothing captured · opt-in surfaces stream here, each deletable</div>}
+      {recs.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>nothing captured · opt-in surfaces stream here, each deletable</div>}
     </Card>
   );
 }
@@ -238,7 +238,7 @@ export function KgPanel() {
         <textarea value={ingestText} onChange={(ev) => setIngestText(ev.target.value)} placeholder="text to extract triples from…" style={{ ...taS, minHeight: 48 }} />
         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
           <button className="tool-btn" onClick={ingest}>ingest</button>
-          <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>extraction is heuristic — the written triples are listed below, not just counted</span>
+          <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>extraction is heuristic — the written triples are listed below, not just counted</span>
         </div>
       </div>
       {triples.slice(0, 10).map((t, i) => (
@@ -285,7 +285,7 @@ export function MemoryWritePanel() {
         <button className="tool-btn" onClick={remember}>remember</button>
       </div>
       {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
         Long-term vector memory. Without an embedder the route still answers 200 — this card says
         "not stored" for that case rather than claiming a write that did not happen.
       </div>
@@ -320,7 +320,7 @@ export function MemoryHygienePanel() {
         </Row>
       ))}
       <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
-        <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>threshold</span>
+        <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>threshold</span>
         <input
           type="number" step="0.1" min="0" value={threshold}
           onChange={(ev) => setThreshold(Number(ev.target.value) || 0)}
@@ -328,7 +328,7 @@ export function MemoryHygienePanel() {
         />
       </div>
       {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
         ACT-R activation below the threshold — ✕ forgets the item AND its dependents.
       </div>
     </Card>
@@ -415,9 +415,9 @@ export function DataSpacesPanel() {
   const optionSpaces = spaces.map(spaceName).filter(Boolean);
   return <Card title="DATA SPACES" live={asLive(d)} sub={spaces.length} onReload={reload}>
     <State e={e} loading={loading} n={spaces.length} />
-    {spaces.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{spaceName(s)}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{(s.sources || s.categories || []).join?.(', ')}</span><Btn onClick={() => apiDelete('/api/memory/spaces/' + spaceName(s), { admin: true }).then(reload).catch(() => {})}>✕</Btn></Row>)}
+    {spaces.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{spaceName(s)}</span><span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{(s.sources || s.categories || []).join?.(', ')}</span><Btn onClick={() => apiDelete('/api/memory/spaces/' + spaceName(s), { admin: true }).then(reload).catch(() => {})}>✕</Btn></Row>)}
     {assignmentRows.length > 0 && <div style={{ marginTop: 8 }}>
-      <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, marginBottom: 4 }}>ASSIGNMENTS</div>
+      <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, marginBottom: 4 }}>ASSIGNMENTS</div>
       {assignmentRows.slice(0, 16).map((r, i) => <Row key={`${r.agent}:${r.space}:${i}`}>
         <span style={{ ...mono, color: 'var(--ink-2)' }}>{r.agent}</span>
         <Tag c="var(--accent-light)">{r.space}</Tag>
@@ -438,7 +438,7 @@ export function DataSpacesPanel() {
       <button className="tool-btn" onClick={assign}>assign</button>
     </div>
     {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>per-agent read scope (H10.26) · default-open</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>per-agent read scope (H10.26) · default-open</div>
   </Card>;
 }
 function LocalDocsPanel() {
@@ -565,7 +565,7 @@ export function NoteDocsPanel() {
         </div>
       </div>}
       {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
         Stable block ids · ✕ on a block removes its whole subtree · inserting never renumbers siblings.
       </div>
     </Card>
@@ -624,7 +624,7 @@ export function VaultPanel() {
         <Row key={it.id}>
           <span style={{ color: 'var(--accent-light)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name || it.id}</span>
           <Tag>{it.kind}</Tag>
-          <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{it.bytes}B</span>
+          <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{it.bytes}B</span>
           <button className="tool-btn" onClick={() => download(it.id, it.name)}>get</button>
           <button className="tool-btn" onClick={() => del(it.id)}>del</button>
         </Row>
@@ -638,8 +638,8 @@ export function VaultPanel() {
         <input type="file" onChange={(ev) => setFile(ev.target.files && ev.target.files[0])} style={{ fontSize: 10, flex: 1 }} />
         <button className="tool-btn" disabled={!file} onClick={storeFile}>store file</button>
       </div>
-      {note && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>{note}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>encrypted at rest · included in your own data export, erased on forget</div>
+      {note && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>{note}</div>}
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>encrypted at rest · included in your own data export, erased on forget</div>
     </Card>
   );
 }
@@ -651,12 +651,12 @@ function ReflectionPanel() {
   return <Card title="NIGHTLY REFLECTION" live={asLive(d, d?.enabled)} onReload={reload}>
     <State e={e} loading={loading} n={d ? 1 : 0} />
     {d && <div style={{ ...mono, fontSize: 11 }}>
-      <Row><span>enabled</span><span style={{ marginLeft: 'auto', color: d.enabled ? 'var(--green)' : 'var(--ink-3)' }}>{String(!!d.enabled)}</span></Row>
-      <Row><span>last run</span><span style={{ marginLeft: 'auto', color: 'var(--ink-3)' }}>{d.last_run || 'never'}</span></Row>
+      <Row><span>enabled</span><span style={{ marginLeft: 'auto', color: d.enabled ? 'var(--green)' : 'var(--ink-2)' }}>{String(!!d.enabled)}</span></Row>
+      <Row><span>last run</span><span style={{ marginLeft: 'auto', color: 'var(--ink-2)' }}>{d.last_run || 'never'}</span></Row>
     </div>}
     <button className="tool-btn" style={{ marginTop: 6 }} onClick={run}>run now</button>
     {out != null && <Json v={out} max={120} />}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>last 60 turns → entities/relations/lessons → KG (H5.15)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>last 60 turns → entities/relations/lessons → KG (H5.15)</div>
   </Card>;
 }
 
@@ -706,7 +706,7 @@ export function PairingPanel() {
         {' '}{Math.round((link.ttl_seconds || 0) / 60)} min.
       </div>
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>unknown senders are held until you decide (H12.19)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>unknown senders are held until you decide (H12.19)</div>
   </Card>;
 }
 function InjectionScanPanel() {
@@ -719,7 +719,7 @@ function InjectionScanPanel() {
     {out && <div style={{ ...mono, fontSize: 11, marginTop: 6, color: out.suspicious ? 'var(--red)' : 'var(--green)' }}>
       {out.suspicious ? '⚠ ' + (out.flags || []).length + ' pattern(s): ' + (out.flags || []).join(', ') : '✓ clean — no injection patterns'}
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>prompt-injection detector (H17.1) — same engine as the quarantine gate</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>prompt-injection detector (H17.1) — same engine as the quarantine gate</div>
   </Card>;
 }
 function SecretsPanel() {
@@ -736,7 +736,7 @@ function SecretsPanel() {
       <input value={vl} onChange={(ev) => setVl(ev.target.value)} placeholder="value" type="password" style={{ ...inp, flex: 1 }} />
       <button className="tool-btn" onClick={store}>store</button>
     </div>
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>just-in-time {'{{secret:NAME}}'} injection at approval time</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>just-in-time {'{{secret:NAME}}'} injection at approval time</div>
   </Card>;
 }
 export function KillSwitchPanel() {
@@ -808,9 +808,9 @@ export function SecuritySkillsPanel() {
             <span style={{ marginLeft: 'auto' }}><Tag>{open === t.id ? '▾' : '▸'}</Tag></span>
           </Row>
           {open === t.id && techs.slice(0, 10).map((tech, j) => (
-            <div key={tech.id ?? j} style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', padding: '2px 0 2px 14px' }}>{tech.id} · {tech.name}</div>
+            <div key={tech.id ?? j} style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', padding: '2px 0 2px 14px' }}>{tech.id} · {tech.name}</div>
           ))}
-          {open === t.id && techs.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-3)', padding: '2px 0 2px 14px' }}>no curated techniques for this tactic</div>}
+          {open === t.id && techs.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', padding: '2px 0 2px 14px' }}>no curated techniques for this tactic</div>}
         </div>
       ))}
     </Card>
@@ -846,7 +846,7 @@ export function CapabilitiesPanel() {
       <button className="tool-btn" onClick={issue}>issue</button>
     </div>
     {issued.length > 0 && <div style={{ marginTop: 8 }}>
-      <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, marginBottom: 4 }}>RECENT GRANTS</div>
+      <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, marginBottom: 4 }}>RECENT GRANTS</div>
       {issued.map((t, i) => <Row key={t.id || i}>
         <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.id}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -861,9 +861,9 @@ export function CapabilitiesPanel() {
     </div>
     {checkOut && <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
       <Tag c={checkOut.allowed ? 'var(--green)' : 'var(--red)'}>{checkOut.allowed ? 'allowed' : 'blocked'}</Tag>
-      <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>{checkOut.reason || 'token grants capability'}</span>
+      <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{checkOut.reason || 'token grants capability'}</span>
     </div>}
-    {out && <pre style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', whiteSpace: 'pre-wrap', marginTop: 6 }}>{out.slice(0, 200)}</pre>}
+    {out && <pre style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', whiteSpace: 'pre-wrap', marginTop: 6 }}>{out.slice(0, 200)}</pre>}
   </Card>;
 }
 
@@ -880,7 +880,7 @@ export function KernelMetricsPanel() {
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c="var(--green)">{v.grant || 0} grant</Tag>
             <Tag c="var(--amber)">{v.queue || 0} queue</Tag>
-            <Tag c={(v.deny || 0) > 0 ? 'var(--red)' : 'var(--ink-3)'}>{v.deny || 0} deny</Tag>
+            <Tag c={(v.deny || 0) > 0 ? 'var(--red)' : 'var(--ink-2)'}>{v.deny || 0} deny</Tag>
           </span>
         </Row>
       )}
@@ -890,7 +890,7 @@ export function KernelMetricsPanel() {
           <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(dn.reason || '').slice(0, 48)}</span>
         </Row>
       ))}
-      {d && d.total === 0 && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_ACTION_KERNEL is on</div>}
+      {d && d.total === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_ACTION_KERNEL is on</div>}
     </Card>
   );
 }
@@ -903,7 +903,7 @@ export function ReadinessPanel() {
   const bs = (d && d.by_state) || {};
   const caps = (d && d.capabilities) || [];
   const pending = d && d.harness_pending;
-  const stateColor = (s) => (s === 'verified' || s === 'ga') ? 'var(--green)' : s === 'wired' ? 'var(--accent-light)' : 'var(--ink-3)';
+  const stateColor = (s) => (s === 'verified' || s === 'ga') ? 'var(--green)' : s === 'wired' ? 'var(--accent-light)' : 'var(--ink-2)';
   return (
     <Card title="VERIFICATION FABRIC" live={asLive(d)} sub={d ? `${d.total} capabilities` : null} onReload={reload}>
       <State e={e} loading={loading} n={d ? d.total : 0} />
@@ -911,10 +911,10 @@ export function ReadinessPanel() {
         <Row>
           <span style={mono}>readiness</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-            <Tag c="var(--ink-3)">{bs.seam || 0} seam</Tag>
+            <Tag c="var(--ink-2)">{bs.seam || 0} seam</Tag>
             <Tag c="var(--accent-light)">{bs.wired || 0} wired</Tag>
-            <Tag c={(bs.verified || 0) > 0 ? 'var(--green)' : 'var(--ink-3)'}>{bs.verified || 0} verified</Tag>
-            <Tag c={(bs.ga || 0) > 0 ? 'var(--green)' : 'var(--ink-3)'}>{bs.ga || 0} ga</Tag>
+            <Tag c={(bs.verified || 0) > 0 ? 'var(--green)' : 'var(--ink-2)'}>{bs.verified || 0} verified</Tag>
+            <Tag c={(bs.ga || 0) > 0 ? 'var(--green)' : 'var(--ink-2)'}>{bs.ga || 0} ga</Tag>
           </span>
         </Row>
       )}
@@ -928,12 +928,12 @@ export function ReadinessPanel() {
           <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{c.id}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
-              <Tag c={c.risk === 'irreversible_or_money' ? 'var(--red)' : c.risk === 'sensitive' ? 'var(--amber)' : 'var(--ink-3)'}>{c.risk || 'read_only'}</Tag>
+              <Tag c={c.risk === 'irreversible_or_money' ? 'var(--red)' : c.risk === 'sensitive' ? 'var(--amber)' : 'var(--ink-2)'}>{c.risk || 'read_only'}</Tag>
               <Tag c={stateColor(c.state)}>{c.state}</Tag>
-              <Tag c={Number(c.confidence) > 0 ? 'var(--green)' : 'var(--ink-3)'}>{confidence}</Tag>
+              <Tag c={Number(c.confidence) > 0 ? 'var(--green)' : 'var(--ink-2)'}>{confidence}</Tag>
             </span>
           </div>
-          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-3)', marginTop: 3 }}>{supports}</div>
+          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', marginTop: 3 }}>{supports}</div>
         </div>;
       })}
     </Card>
@@ -1016,7 +1016,7 @@ export function PosturePanel() {
           </Row>
           <Row><span style={mono}>skill signing</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-              <Tag c={sk.require_signed ? 'var(--green)' : 'var(--ink-3)'}>{sk.require_signed ? 'required' : 'optional'}</Tag>
+              <Tag c={sk.require_signed ? 'var(--green)' : 'var(--ink-2)'}>{sk.require_signed ? 'required' : 'optional'}</Tag>
               <Tag c={(sk.untrusted ?? 0) > 0 ? 'var(--amber)' : 'var(--green)'}>{sk.trusted ?? 0}/{sk.total ?? 0} trusted</Tag>
             </span>
           </Row>
@@ -1064,7 +1064,7 @@ export function AuditAnchorsPanel() {
           <Row><span style={mono}>chain</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {n === 0
-                ? <Tag c="var(--ink-3)">nothing anchored yet</Tag>
+                ? <Tag c="var(--ink-2)">nothing anchored yet</Tag>
                 : v.ok === false
                   ? <Tag c="var(--red)">chain broken @ #{v.bad_seq ?? '?'}</Tag>
                   : <Tag c="var(--green)">anchor chain intact · {n} receipt(s)</Tag>}
@@ -1073,7 +1073,7 @@ export function AuditAnchorsPanel() {
           {anchors.slice(0, 10).map((a, i) => (
             <Row key={a.anchor_hash || i}>
               <span style={{ ...mono, color: 'var(--accent-light)' }}>#{a.seq}</span>
-              <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{when(a.ts)}</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{when(a.ts)}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                 <Tag>{a.source || '—'}</Tag>
                 <Tag>root {short(a.root)}</Tag>
@@ -1082,7 +1082,7 @@ export function AuditAnchorsPanel() {
             </Row>
           ))}
           <Row>
-            <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>anchor the current chain head into the transparency log</span>
+            <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>anchor the current chain head into the transparency log</span>
             <button
               className="tool-btn" style={{ marginLeft: 'auto' }} title="anchor now (admin)"
               onClick={() => actA('/api/security/audit/anchor', {},
@@ -1091,7 +1091,7 @@ export function AuditAnchorsPanel() {
             >anchor now</button>
           </Row>
           {note && <div role="alert" style={{ ...mono, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
-          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
             Receipts are hash-linked, so a rewritten anchor log is detectable — but the log is
             local: anchoring pins ordering, it does not publish to a third party (H17.4).
           </div>
@@ -1128,30 +1128,30 @@ export function SelfImprovementPanel() {
           </Row>
           <Row><span style={mono}>observer</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-              <Tag c={observer.enabled ? 'var(--green)' : 'var(--ink-3)'}>{observer.enabled ? 'on' : 'off'}</Tag>
+              <Tag c={observer.enabled ? 'var(--green)' : 'var(--ink-2)'}>{observer.enabled ? 'on' : 'off'}</Tag>
               <Tag>{(observer.unhealthy || []).length} unhealthy</Tag>
             </span>
           </Row>
           <Row><span style={mono}>capability acquisition</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-              <Tag c={acquisition.enabled ? 'var(--green)' : 'var(--ink-3)'}>{acquisition.enabled ? 'on' : 'off'}</Tag>
+              <Tag c={acquisition.enabled ? 'var(--green)' : 'var(--ink-2)'}>{acquisition.enabled ? 'on' : 'off'}</Tag>
               <Tag>{acquisition.status || '—'}</Tag>
             </span>
           </Row>
           <Row><span style={mono}>ambient monitors</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-              <Tag c={ambient.enabled ? 'var(--green)' : 'var(--ink-3)'}>{ambient.enabled ? 'on' : 'off'}</Tag>
+              <Tag c={ambient.enabled ? 'var(--green)' : 'var(--ink-2)'}>{ambient.enabled ? 'on' : 'off'}</Tag>
               <Tag>{ambient.monitors ?? 0} monitor(s)</Tag>
             </span>
           </Row>
           <Row><span style={mono}>tech scout</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-              <Tag c={techScout.enabled ? 'var(--green)' : 'var(--ink-3)'}>{techScout.enabled ? 'on' : 'off'}</Tag>
+              <Tag c={techScout.enabled ? 'var(--green)' : 'var(--ink-2)'}>{techScout.enabled ? 'on' : 'off'}</Tag>
               <Tag>{techScout.last_run ? 'ran' : 'never run'}</Tag>
             </span>
           </Row>
           {!allOn && (
-            <Row><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>flip the documented owner opt-ins</span>
+            <Row><span style={{ fontSize: 10, color: 'var(--ink-2)' }}>flip the documented owner opt-ins</span>
               <Btn onClick={() => actA('/api/self-improvement/enable', {}, reload)}>enable bundle</Btn></Row>
           )}
         </>
@@ -1184,7 +1184,7 @@ export function PendingSkillsPanel() {
           <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(s.description || '').slice(0, 40)}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c="var(--amber)">quarantined</Tag>
-            {arr(s, 'agents').length > 0 && <Tag c="var(--ink-3)">{arr(s, 'agents').length} agent(s)</Tag>}
+            {arr(s, 'agents').length > 0 && <Tag c="var(--ink-2)">{arr(s, 'agents').length} agent(s)</Tag>}
             <button
               className="tool-btn"
               title="approve — sign and activate this generated skill"
@@ -1193,7 +1193,7 @@ export function PendingSkillsPanel() {
           </span>
         </Row>
       ))}
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
         LLM-authored code, never exec&apos;d in-process until approved — ✓ signs and activates it (CDX-8).
         No reject action: leaving a skill here is the safe outcome.
       </div>
@@ -1253,7 +1253,7 @@ export function CognitionPanel() {
         <>
           <Row><span style={mono}>master</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-              <Tag c={st.d.enabled ? 'var(--green)' : 'var(--ink-3)'}>{st.d.enabled ? 'on' : 'off'}</Tag>
+              <Tag c={st.d.enabled ? 'var(--green)' : 'var(--ink-2)'}>{st.d.enabled ? 'on' : 'off'}</Tag>
               <Tag>{arr(st.d, 'modules').length} module(s) registered</Tag>
             </span>
           </Row>
@@ -1261,12 +1261,12 @@ export function CognitionPanel() {
             <Row key={k}>
               <span style={mono}>{k.replace(/_enabled$/, '')}</span>
               <span style={{ marginLeft: 'auto' }}>
-                <Tag c={flags[k] ? 'var(--green)' : 'var(--ink-3)'}>{flags[k] ? 'on' : 'off'}</Tag>
+                <Tag c={flags[k] ? 'var(--green)' : 'var(--ink-2)'}>{flags[k] ? 'on' : 'off'}</Tag>
               </span>
             </Row>
           ))}
           <CogModule label="honesty index" s={hon.d}>
-            <Tag c={hon.d && hon.d.alerting ? 'var(--amber)' : 'var(--ink-3)'}>sycophancy {num(hon.d && hon.d.sycophancy_index)}</Tag>
+            <Tag c={hon.d && hon.d.alerting ? 'var(--amber)' : 'var(--ink-2)'}>sycophancy {num(hon.d && hon.d.sycophancy_index)}</Tag>
             {hon.d && hon.d.alerting ? <Tag c="var(--red)">alerting</Tag> : null}
             <Tag>{(hon.d && hon.d.n) ?? 0} sample(s)</Tag>
           </CogModule>
@@ -1288,7 +1288,7 @@ export function CognitionPanel() {
             <Tag>{arr(ens.d, 'agents').length} agent(s)</Tag>
             <Tag>diversity {num(ens.d && ens.d.diversity)}</Tag>
           </CogModule>
-          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
             The modules are registered and reporting even while the flags are off — the flags
             gate cognition behaviour, not these reads. No toggle here: the cognition flags are
             admin settings (cognition.*), not an endpoint.
@@ -1359,7 +1359,7 @@ export function SwarmPanel() {
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
               {locks.available ? knownDev.map((name) => {
                 const on = lockedAgents.some((l) => l.agent === name && !l.stale);
-                return <Tag key={name} c={on ? 'var(--green)' : 'var(--ink-3)'}>{name}</Tag>;
+                return <Tag key={name} c={on ? 'var(--green)' : 'var(--ink-2)'}>{name}</Tag>;
               }) : <Tag>no lock data</Tag>}
             </span>
           </Row>
@@ -1613,7 +1613,7 @@ export function SubAgentsPanel() {
               title="confirm this model and send the same request again" onClick={confirmGuard}
             >confirm ({guard.needs.join(', ')}) and send</button>
           )}
-          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
             Spawning is long-running, not fire-and-forget: the POST runs the sub-agent inline and
             the request stays open until the sub-agent&apos;s turn finishes. Cap, recursion-depth and
             budget refusals all answer 429 — the capacity row above says which limit is tight.
@@ -1681,7 +1681,7 @@ export function SystemMapPanel() {
                     stroke={hot ? 'var(--accent-light)' : 'var(--line)'} strokeWidth={1.6} />
                   {act && (
                     <text x={(ax + bx) / 2} y={(ay === by ? ay : (ay + by) / 2) - 7}
-                      textAnchor="middle" fill={hot ? 'var(--accent-light)' : 'var(--ink-3)'}
+                      textAnchor="middle" fill={hot ? 'var(--accent-light)' : 'var(--ink-2)'}
                       style={{ font: '11px var(--font-mono)' }}>{act.count}</text>
                   )}
                 </g>
@@ -1690,24 +1690,26 @@ export function SystemMapPanel() {
             {topoNodes.map((n) => {
               const info = nodes[n.id] || { status: 'unknown', stats: {} };
               const stroke = MAP_STATUS_COLOR[info.status] || 'var(--ink-3)';
+              const statusTextColor = stroke === 'var(--ink-3)' ? 'var(--ink-2)' : stroke;
               return (
                 <g key={n.id} style={{ cursor: n.href ? 'pointer' : 'default' }}
-                  opacity={info.status === 'off' ? 0.55 : 1}
                   onClick={() => { if (n.href) window.open(internalLink(n.href), '_blank', 'noopener'); }}>
                   <title>{`${n.label} — ${info.status}\n${Object.entries(info.stats || {}).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('\n')}`}</title>
                   <rect x={n.pos[0]} y={n.pos[1]} width={n.size[0]} height={n.size[1]} rx={6}
                     fill="var(--panel, rgba(255,255,255,0.03))" stroke={stroke} strokeWidth={1.6}
+                    opacity={info.status === 'off' ? 0.55 : 1}
                     strokeDasharray={info.status === 'unknown' ? '4 3' : undefined} />
                   <text x={n.pos[0] + n.size[0] / 2} y={n.pos[1] + 27} textAnchor="middle"
                     fill="var(--ink-1, var(--ink-2))" style={{ font: '600 13px var(--font-mono)' }}>{n.label}</text>
                   <text x={n.pos[0] + n.size[0] / 2} y={n.pos[1] + 45} textAnchor="middle"
-                    fill={stroke} style={{ font: '11px var(--font-mono)' }}>{info.status}</text>
+                    fill={statusTextColor}
+                    style={{ font: '11px var(--font-mono)' }}>{info.status}</text>
                 </g>
               );
             })}
           </svg>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-            <span style={{ ...mono, color: 'var(--ink-3)', fontSize: 10 }}>topology {topo.version} · unknown never renders green</span>
+            <span style={{ ...mono, color: 'var(--ink-2)', fontSize: 10 }}>topology {topo.version} · unknown never renders green</span>
             <a className="tool-btn" href={internalLink("/map")} target="_blank" rel="noopener noreferrer">open wall map →</a>
           </div>
         </>
@@ -1730,12 +1732,12 @@ export function ArenaPanel() {
           <span style={{ ...mono, color: 'var(--ink-2)' }}>{i + 1}. {m.model}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c="var(--accent-light)">{Math.round(m.elo)} elo</Tag>
-            <Tag c={(m.win_rate ?? 0) >= 0.5 ? 'var(--green)' : 'var(--ink-3)'}>{Math.round((m.win_rate || 0) * 100)}%</Tag>
+            <Tag c={(m.win_rate ?? 0) >= 0.5 ? 'var(--green)' : 'var(--ink-2)'}>{Math.round((m.win_rate || 0) * 100)}%</Tag>
             <Tag>{m.games ?? ((m.wins || 0) + (m.losses || 0))} games</Tag>
           </span>
         </Row>
       ))}
-      {rows.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>no matches yet · run an arena comparison to rank models</div>}
+      {rows.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>no matches yet · run an arena comparison to rank models</div>}
     </Card>
   );
 }
@@ -1854,7 +1856,7 @@ export function SatellitesPanel() {
         <input value={sid} onChange={(ev) => setSid(ev.target.value)} placeholder="device id (pair a phone as a mic)" style={{ ...inpS, flex: 1 }} />
         <button className="tool-btn" onClick={pair}>pair</button>
       </div>
-      {sats.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>no satellites · pair a phone/device to use it as a mic</div>}
+      {sats.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>no satellites · pair a phone/device to use it as a mic</div>}
     </Card>
   );
 }
@@ -1869,7 +1871,7 @@ export function A2AInboxPanel() {
         <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approve: true }, reload)}>✓</button>
         <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approve: false }, reload)}>✕</button>
       </span></Row>)}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>verified peer tasks land here; never auto-execute (H16.2)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>verified peer tasks land here; never auto-execute (H16.2)</div>
   </Card>;
 }
 /* DRA-37 — package rollback lives HERE, not in SkillHistoryPanel. Rollback reads the
@@ -1898,7 +1900,7 @@ export function MarketplacePanel() {
         <button className="tool-btn" title="roll back to the previous package" onClick={() => actA(`/api/skills/marketplace/${encodeURIComponent(s.name)}/rollback`, {}, (r) => { setNote(`${s.name} · restored ${(r && r.restored_version) || '?'} ← ${(r && r.previous_version) || '?'}`); reload(); }, (err) => setNote(`refused · ${refusalReason(err, 'rollback failed')}`))}>⟲</button>
       </span></Row>)}
     {note && <div role="alert" style={{ ...mono, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>signed + moderated — ✓/✕ sets review status (anti-ClawHub, H12.12).
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>signed + moderated — ✓/✕ sets review status (anti-ClawHub, H12.12).
       ⟲ reverts the registry package to its archived prior version and is itself reversible; the
       installed skill is unchanged until it is re-installed through the moderation gate.</div>
   </Card>;
@@ -1925,11 +1927,11 @@ function EvalPanel() {
     <State e={e} loading={loading} n={ds.length} />
     {ds.slice(0, 8).map((x, i) => <Row key={i}>
       <span style={{ ...mono, cursor: 'pointer', color: open === x.name ? 'var(--accent)' : 'var(--ink)' }} onClick={() => showRuns(x.name)} title="show recent runs">{x.name}</span>
-      <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>v{x.latest_version ?? x.version ?? '?'} · {x.cases ?? x.count ?? '?'}</span>
+      <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>v{x.latest_version ?? x.version ?? '?'} · {x.cases ?? x.count ?? '?'}</span>
       <Btn onClick={() => act('/api/eval/datasets/run', { name: x.name }, reload)}>run</Btn></Row>)}
     {open && <div style={{ marginTop: 6 }}>
-      <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)' }}>{open.toUpperCase()} · RECENT RUNS</div>
-      {runs.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>no recorded runs</div>}
+      <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)' }}>{open.toUpperCase()} · RECENT RUNS</div>
+      {runs.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>no recorded runs</div>}
       {runs.map((r, i) => <Row key={i}><span style={mono}>{(r.run_id || r.id || r.ts || '').toString().slice(0, 19)}</span>
         <span style={{ marginLeft: 'auto', ...mono, fontSize: 10, color: 'var(--accent-light)' }}>μ {r.mean_score ?? r.score ?? '—'}</span></Row>)}
       {runs.length >= 2 && <button className="tool-btn" style={{ marginTop: 6 }} onClick={compare}>compare last two</button>}
@@ -1938,7 +1940,7 @@ function EvalPanel() {
             names) — the old `regressions`/`improvements` keys made a real
             regression render as "0 regression(s)". */}
         <span style={{ color: (cmp.score_delta ?? 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>Δ score {cmp.score_delta ?? '—'}</span>
-        <span style={{ color: 'var(--ink-3)' }}> · {(cmp.regressed || []).length} regression(s) · {(cmp.improved || []).length} improvement(s)</span>
+        <span style={{ color: 'var(--ink-2)' }}> · {(cmp.regressed || []).length} regression(s) · {(cmp.improved || []).length} improvement(s)</span>
         {(cmp.regressed || []).slice(0, 4).map((g, i) => <div key={i} style={{ color: 'var(--red)' }}>− {(typeof g === 'string' ? g : g.case || g.prompt || g.id || '').toString().slice(0, 48)}</div>)}
       </div>}
     </div>}
@@ -1974,7 +1976,7 @@ export function ReviewPanel() {
           <button className="tool-btn" onClick={() => act(`/api/review/${id}/vote`, { verdict: 'down' }, reload)}>👎</button>
         </span></Row>;
     })}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
       ⇪ promotes a reviewed turn into the `review_flagged` eval dataset (H9.3b). An item with no
       prompt is refused rather than replayed empty (WFL-088); a refusal shows on its own row.
     </div>
@@ -2011,8 +2013,8 @@ function HeartbeatPanel() {
     <State e={e} loading={loading} n={list.length} />
     {list.slice(0, 12).map((h, i) => { const id = h.agent_id || h.agent || h.id; const on = h.running ?? h.active ?? (h.status === 'running' || h.status === 'started'); return <Row key={i}>
       <span style={mono}>{id}</span>
-      <Tag c={on ? 'var(--green)' : 'var(--ink-3)'}>{on ? 'running' : 'stopped'}</Tag>
-      <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{h.schedule || h.interval || ''}</span>
+      <Tag c={on ? 'var(--green)' : 'var(--ink-2)'}>{on ? 'running' : 'stopped'}</Tag>
+      <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{h.schedule || h.interval || ''}</span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
         <button className="tool-btn" title="run once now" onClick={() => hb(id, 'run')}>▶ now</button>
         {on ? <button className="tool-btn" title="stop schedule" onClick={() => hb(id, 'stop')}>⏹</button>
@@ -2031,12 +2033,12 @@ function TranscriptPanel() {
       <input value={src} onChange={(ev) => setSrc(ev.target.value)} placeholder="source (optional)" style={{ ...inpS, flex: 1 }} />
       <button className="tool-btn" onClick={ingest}>ingest</button>
     </div>
-    {out != null && (typeof out === 'string' ? <div style={{ ...mono, fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>{out}</div>
+    {out != null && (typeof out === 'string' ? <div style={{ ...mono, fontSize: 11, color: 'var(--ink-2)', marginTop: 6 }}>{out}</div>
       : <div style={{ ...mono, fontSize: 11, color: 'var(--accent-light)', marginTop: 6 }}>
         {(out.items || out.tasks || []).length} action item(s) {out.enqueued != null ? `· ${out.enqueued} queued for approval` : '· preview only (queue offline)'}
         {(out.items || out.tasks || []).slice(0, 5).map((it, i) => <div key={i} style={{ color: 'var(--ink-2)' }}>· {(it.title || it.text || it).toString().slice(0, 60)}</div>)}
       </div>)}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>governed — every item is an ask-tier task you approve (H12.25)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>governed — every item is an ask-tier task you approve (H12.25)</div>
   </Card>;
 }
 function EscalationPanel() {
@@ -2052,8 +2054,8 @@ function EscalationPanel() {
       <input value={msg} onChange={(ev) => setMsg(ev.target.value)} placeholder="escalation message" onKeyDown={(ev) => { if (ev.key === 'Enter') send(); }} style={{ ...inpS, flex: 1 }} />
       <button className="tool-btn" onClick={send}>send</button>
     </div>
-    {out && <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6 }}>{JSON.stringify(out).slice(0, 140)}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>governed channels only (H12.11) · admin</div>
+    {out && <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)', marginTop: 6 }}>{JSON.stringify(out).slice(0, 140)}</div>}
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>governed channels only (H12.11) · admin</div>
   </Card>;
 }
 function TemplatesPanel() {
@@ -2064,10 +2066,10 @@ function TemplatesPanel() {
   const inst = (tpl) => act('/api/agent-templates/instantiate', { template: tpl.id || tpl.name || tpl, name: name || undefined }, (r) => setOut(r.config || r));
   return <Card title="AGENT TEMPLATES" live={asLive(d)} sub={tpls.length} onReload={reload}>
     <State e={e} loading={loading} n={tpls.length} />
-    {tpls.slice(0, 8).map((tp, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{tp.id || tp.name || tp}</span><span style={{ fontSize: 10, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(tp.description || tp.role || '').slice(0, 36)}</span><Btn onClick={() => inst(tp)}>instantiate</Btn></Row>)}
+    {tpls.slice(0, 8).map((tp, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{tp.id || tp.name || tp}</span><span style={{ fontSize: 10, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(tp.description || tp.role || '').slice(0, 36)}</span><Btn onClick={() => inst(tp)}>instantiate</Btn></Row>)}
     <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="new agent name (optional)" style={{ ...inpS, width: '100%', marginTop: 8 }} />
     {out && <Json v={out} />}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>renders an agents.yaml config + SOUL skeleton — save via the normal agent flow (H10.29)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>renders an agents.yaml config + SOUL skeleton — save via the normal agent flow (H10.29)</div>
   </Card>;
 }
 
@@ -2188,7 +2190,7 @@ export function WorkflowBuilderPanel() {
       <button className="tool-btn" type="button" disabled={!gen} onClick={addStep} aria-label="add step to draft">add step to draft</button>
     </div>
     {gen != null && <Json v={gen} max={110} />}
-    <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px' }}>DRAFT</div>
+    <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '10px 0 4px' }}>DRAFT</div>
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
       <select aria-label="workflow to edit" value={existing ? wid : ''} onChange={(ev) => pick(ev.target.value)} style={inpS}>
         <option value="">new workflow…</option>
@@ -2209,7 +2211,7 @@ export function WorkflowBuilderPanel() {
       {existing ? 'save workflow (update)' : 'save workflow'}
     </button>
     {note && <div role="status" style={{ ...mono, fontSize: 10, color: note.startsWith('refused') || note.startsWith('steps must') ? 'var(--red)' : 'var(--accent-light)', marginTop: 6 }}>{note}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>generate → add to draft → save (admin) · the steps JSON is the editor of record for router/critic/loop/subflow configs (H10.7)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>generate → add to draft → save (admin) · the steps JSON is the editor of record for router/critic/loop/subflow configs (H10.7)</div>
   </Card>;
 }
 /* DRA-08 Phase 3, console half. `SandboxExecuteBody.tools` was added so the governed
@@ -2276,7 +2278,7 @@ export function SandboxPanel() {
     <textarea value={code} onChange={(ev) => setCode(ev.target.value)} placeholder={lang === 'python' ? 'print("hello from the sandbox")' : 'echo hello'} style={taS} spellCheck={false} />
     <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
       <select value={lang} onChange={(ev) => setLang(ev.target.value)} style={inpS}><option value="python">python</option><option value="shell">shell</option></select>
-      <label style={{ ...mono, fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, color: rpcAvailable ? 'var(--ink-2)' : 'var(--ink-3)' }}
+      <label style={{ ...mono, fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, color: rpcAvailable ? 'var(--ink-2)' : 'var(--ink-2)' }}
         title={rpcAvailable ? 'run through the governed ToolRPC pipeline (python only)' : 'the governed runtime is not attached on this server — the route would refuse with 503'}>
         <input type="checkbox" checked={tools} disabled={!rpcAvailable} onChange={(ev) => setTools(ev.target.checked)} />
         governed tools
@@ -2303,7 +2305,7 @@ export function SandboxPanel() {
     {ks && <div style={{ marginTop: 8, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
       <Row><span style={mono}>session kernel</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-          <Tag c={sessionMode ? 'var(--green)' : 'var(--ink-3)'}>{ks.mode || 'unknown'}</Tag>
+          <Tag c={sessionMode ? 'var(--green)' : 'var(--ink-2)'}>{ks.mode || 'unknown'}</Tag>
           {!sessionMode && ks.reason && <Tag>{ks.reason}</Tag>}
         </span>
       </Row>
@@ -2316,13 +2318,13 @@ export function SandboxPanel() {
           </Tag>
         </span>
       </Row>
-        : <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>
+        : <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
           {sessionMode ? 'no kernel yet — the first cell starts one' : 'each call runs in its own container'}
         </div>}
       {sessionMode && <button className="tool-btn" style={{ marginTop: 6 }} onClick={resetKernel}>reset kernel</button>}
       {resetNote && <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>{resetNote}</div>}
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
       Docker-isolated execution, audited (DEV_MODE gate){rpc && !rpcAvailable ? ' · governed tools unavailable on this server' : ''}
     </div>
   </Card>;
@@ -2423,7 +2425,7 @@ export function ScreenReflexPanel() {
         onChange={(ev) => { const f = ev.target.files && ev.target.files[0]; if (f) readBlob(f, f.name); }}
         style={{ ...inpS, width: '100%' }}
       />
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>
+      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
         {img ? `loaded · ${imgName}` : 'pick a screenshot, or paste one here (⌘/Ctrl+V)'}
       </div>
     </div>
@@ -2452,10 +2454,10 @@ export function ScreenReflexPanel() {
       </Row>
     ))}
     {out && !generated && (
-      <div role="alert" style={{ ...mono, fontSize: 11, color: 'var(--ink-3)', marginTop: 8 }}>{typeof out.reason === 'string' && out.reason.trim() ? out.reason.slice(0, 500) : 'no answer'}</div>
+      <div role="alert" style={{ ...mono, fontSize: 11, color: 'var(--ink-2)', marginTop: 8 }}>{typeof out.reason === 'string' && out.reason.trim() ? out.reason.slice(0, 500) : 'no answer'}</div>
     )}
     {note && <div role="status" style={{ ...mono, fontSize: 10, color: note.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 6 }}>{note}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
       screen bytes are held in memory and sent to the local VLM on the Nerva server · the global hotkey + OS-level grab stay host-gated
     </div>
   </Card>;
@@ -2475,7 +2477,7 @@ export function LearningPanel() {
   const promote = (id) => { if (!id) return; actA('/learning/promote', { bench_agent: id }, (r) => { setNote(r?.promoted ? 'promoted ' + id : 'not promoted'); setAgent(''); reload(); }); };
   return <Card title="LEARNING · BENCH" live={asLive(d)} sub={cands.length} onReload={reload}>
     <State e={e} loading={loading} n={cands.length} />
-    {cands.slice(0, 8).map((c, i) => { const id = c.agent || c.bench_agent || c.id || (typeof c === 'string' ? c : ''); return <Row key={i}><span style={mono}>{id}</span><span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{c.trigger || c.reason || c.uses || ''}</span><Btn onClick={() => promote(id)}>promote</Btn></Row>; })}
+    {cands.slice(0, 8).map((c, i) => { const id = c.agent || c.bench_agent || c.id || (typeof c === 'string' ? c : ''); return <Row key={i}><span style={mono}>{id}</span><span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{c.trigger || c.reason || c.uses || ''}</span><Btn onClick={() => promote(id)}>promote</Btn></Row>; })}
     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
       <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="bench agent id (e.g. bruce)" style={{ ...inpS, flex: 1 }} />
       <button className="tool-btn" onClick={() => promote(agent.trim().toLowerCase())}>promote</button>
@@ -2497,7 +2499,7 @@ export function LearningPanel() {
         }}
       >propose prompt optimizations</button>
       {note && <span style={{ fontSize: 10, color: 'var(--green)' }}>{note}</span>}
-      {evolveNote && <span role="status" style={{ fontSize: 10, color: evolveNote.startsWith('refused') ? 'var(--red)' : 'var(--ink-3)' }}>{evolveNote}</span>}
+      {evolveNote && <span role="status" style={{ fontSize: 10, color: evolveNote.startsWith('refused') ? 'var(--red)' : 'var(--ink-2)' }}>{evolveNote}</span>}
     </div>
   </Card>;
 }
@@ -2531,7 +2533,7 @@ export function LMStudioPanel() {
       const status = localModelStatus(m);
       const statusColor = status === 'loaded' ? 'var(--green)'
         : status.includes('unknown') ? 'var(--amber)'
-          : 'var(--ink-3)';
+          : 'var(--ink-2)';
       const controls = m.controls || {};
       return <Row key={key}>
         <span style={{ ...mono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{id}</span>
@@ -2557,13 +2559,13 @@ export function LMStudioPanel() {
         </span>
       </Row>;
     })}
-    {note && <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', marginTop: 6 }}>{note}</div>}
-    {vlmD && <div role="status" style={{ ...mono, fontSize: 10, color: vlmD.configured ? 'var(--ink-2)' : 'var(--ink-3)', marginTop: 6 }}>
+    {note && <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)', marginTop: 6 }}>{note}</div>}
+    {vlmD && <div role="status" style={{ ...mono, fontSize: 10, color: vlmD.configured ? 'var(--ink-2)' : 'var(--ink-2)', marginTop: 6 }}>
       VLM · {vlmD.configured
         ? `${vlmD.backend} · ${vlmD.default_model || 'no default model'} · ${vlmD.local ? 'local' : 'remote'} · reachable not probed`
         : `off · ${vlmD.reason || 'not configured'}`}
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>configured routing is independent from provider-reported residency · lifecycle actions follow backend capabilities</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>configured routing is independent from provider-reported residency · lifecycle actions follow backend capabilities</div>
   </Card>;
 }
 /* DRA-29 — browser-picked images are sent as data: URIs to the strict-loopback
@@ -2638,7 +2640,7 @@ export function VlmDescribePanel() {
       </div>
     )}
     {configured && isLocal && (
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginBottom: 6 }}>
+      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginBottom: 6 }}>
         {destination} · loopback · reachable not probed
       </div>
     )}
@@ -2678,16 +2680,16 @@ export function VlmDescribePanel() {
         onClick={describe}
         title={configured && !isLocal ? 'refused · destination must be loopback' : 'describe the picked image(s)'}
       >describe</button>
-      <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>{images.length}/{VLM_MAX_IMAGES} image(s)</span>
+      <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{images.length}/{VLM_MAX_IMAGES} image(s)</span>
     </div>
     {described && (
       <>
         <div style={{ ...mono, fontSize: 11, color: 'var(--ink)', marginTop: 8, whiteSpace: 'pre-wrap' }}>{out.response}</div>
-        <div style={{ ...mono, fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>model · {out.model || 'unnamed'}</div>
+        <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>model · {out.model || 'unnamed'}</div>
       </>
     )}
     {note && <div role="status" style={{ ...mono, fontSize: 10, color: /^(refused|describe failed)/.test(note) ? 'var(--red)' : 'var(--amber)', marginTop: 6 }}>{note}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
       images are read in the browser into data: URIs — the backend rejects file paths, so no host file can be smuggled through this control
     </div>
   </Card>;
@@ -2702,12 +2704,12 @@ export function AuthProfilesPanel() {
     <State e={e} loading={loading} n={list.length} />
     {list.slice(0, 8).map((p, i) => <Row key={i}>
       <span style={mono}>{p.provider || p.name || '?'}</span>
-      <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{p.active || p.current || ''}</span>
+      <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{p.active || p.current || ''}</span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
         <Tag c={(p.healthy ?? p.ok ?? true) ? 'var(--green)' : 'var(--red)'}>{p.keys != null ? p.keys + ' key(s)' : (p.healthy ?? p.ok ?? true) ? 'healthy' : 'failing'}</Tag>
         {p.cooldown ? <Tag c="var(--amber)">cooldown</Tag> : null}
       </span></Row>)}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>masked rotation/failover pools (H12.20) · keys never shown</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>masked rotation/failover pools (H12.20) · keys never shown</div>
   </Card>;
 }
 export function OAuthPanel() {
@@ -2719,7 +2721,7 @@ export function OAuthPanel() {
     <State e={e} loading={loading} n={svcs.length} />
     {svcs.slice(0, 8).map((s, i) => <Row key={i}><span style={mono}>{s.service || s.label || s.key}</span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-        <Tag c={s.connected ? 'var(--green)' : 'var(--ink-3)'}>{s.connected ? 'connected' : 'disconnected'}</Tag>
+        <Tag c={s.connected ? 'var(--green)' : 'var(--ink-2)'}>{s.connected ? 'connected' : 'disconnected'}</Tag>
         {s.connected ? <button className="tool-btn" onClick={() => act('/api/oauth/refresh?service=' + (s.service || s.key), {}, reload)}>refresh</button>
           : s.auth_url ? <button className="tool-btn" onClick={() => window.open(s.auth_url, '_blank')}>connect</button> : null}
       </span></Row>)}
@@ -2830,7 +2832,7 @@ export function SettingsPanel() {
     <div style={{ maxHeight: 300, overflow: 'auto' }}>
       {shownCats.map(([cat, items]) => (
         <div key={cat} style={{ marginBottom: 6 }}>
-          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', margin: '6px 0 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-2)', margin: '6px 0 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>{String(cat).toUpperCase()}</span>
             {(cats[cat] || []).some((it) => it.source !== 'undeclared') && (
               <span style={{ marginLeft: 'auto' }}><ResetCategory cat={cat} count={(cats[cat] || []).length} onDone={(c) => afterReset([c])} /></span>
@@ -2857,7 +2859,7 @@ export function SettingsPanel() {
               {it.written_by
                 ? <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
                     <span style={{ ...mono, fontSize: 11 }}>{shownSetting(it.value)}</span>
-                    <span style={{ display: 'block', fontSize: 9.5, color: 'var(--ink-3)' }}>change it in {it.written_by}</span>
+                    <span style={{ display: 'block', fontSize: 9.5, color: 'var(--ink-2)' }}>change it in {it.written_by}</span>
                   </span>
                 : <span style={{ marginLeft: 'auto' }}>{settingsField(it, valOf(cat, it), (v) => setVal(cat, it.key, v),
                     cat === 'voice' && it.key === 'tts_voice' ? voiceChoices : undefined)}</span>}
@@ -2916,7 +2918,7 @@ function PromptsPanel() {
         <span onClick={() => toggle(vn)} style={{ ...mono, cursor: 'pointer', color: slot ? 'var(--accent)' : 'var(--accent-light)' }} title="pick A/B">v{vn}</span>
         {slot && <Tag c="var(--accent)">{slot}</Tag>}
         {v.is_current && <Tag c="var(--green)">current</Tag>}
-        <span style={{ fontSize: 10, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v.message}>{(v.message || v.author || v.hash || '').slice(0, 22)}</span>
+        <span style={{ fontSize: 10, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v.message}>{(v.message || v.author || v.hash || '').slice(0, 22)}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
           <button className="tool-btn" onClick={() => loadEdit(vn)} title="edit → new version">✎</button>
           {!v.is_current && <button className="tool-btn" onClick={() => rollback(vn)} title="rollback to this">⟲</button>}
@@ -2930,11 +2932,11 @@ function PromptsPanel() {
     </div>
     {diff != null && <DiffView text={diff === '…' ? '' : diff} />}
     {ab && <div style={{ ...mono, fontSize: 10.5, marginTop: 8, padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
-      <div style={{ color: 'var(--ink-3)', letterSpacing: '.1em' }}>A/B · v{ab.a} vs v{ab.b} · split {Math.round((ab.split ?? 0.5) * 100)}% → B</div>
-      {[ab.a, ab.b].map((ver) => { const r = (ab.results || {})[ver] || {}; const m = (ab.means || {})[ver]; return <Row key={ver}><span>v{ver}{ab.winner === ver ? ' ★' : ''}</span><span style={{ marginLeft: 'auto', color: 'var(--ink-3)' }}>n={r.n ?? 0} · μ={m == null ? '—' : m}</span></Row>; })}
+      <div style={{ color: 'var(--ink-2)', letterSpacing: '.1em' }}>A/B · v{ab.a} vs v{ab.b} · split {Math.round((ab.split ?? 0.5) * 100)}% → B</div>
+      {[ab.a, ab.b].map((ver) => { const r = (ab.results || {})[ver] || {}; const m = (ab.means || {})[ver]; return <Row key={ver}><span>v{ver}{ab.winner === ver ? ' ★' : ''}</span><span style={{ marginLeft: 'auto', color: 'var(--ink-2)' }}>n={r.n ?? 0} · μ={m == null ? '—' : m}</span></Row>; })}
     </div>}
     {edit && <div style={{ marginTop: 8 }}>
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 4 }}>editing from v{edit.version} → commits a NEW version (non-destructive)</div>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginBottom: 4 }}>editing from v{edit.version} → commits a NEW version (non-destructive)</div>
       <textarea value={edit.content} onChange={(ev) => setEdit({ ...edit, content: ev.target.value })} style={{ width: '100%', minHeight: 110, ...inp }} />
       <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
         <input value={edit.message} onChange={(ev) => setEdit({ ...edit, message: ev.target.value })} placeholder="commit message" style={{ ...inp, flex: 1, minWidth: 120 }} />
@@ -2948,7 +2950,7 @@ function PromptsPanel() {
         <DiffView text={preview.diff} />
       </div>}
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>click v# to pick A/B · ✎ edit · ⟲ rollback (an agent's rollback is live) · commit saves a version, apply makes it live (H10.22, H156)</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>click v# to pick A/B · ✎ edit · ⟲ rollback (an agent's rollback is live) · commit saves a version, apply makes it live (H10.22, H156)</div>
   </Card>;
 }
 export function RoomsPanel() {
@@ -2967,7 +2969,7 @@ export function RoomsPanel() {
   };
   return <Card title="ROOMS" live={asLive(d)} sub={rooms.length} onReload={reload}>
     <State e={e} loading={loading} n={rooms.length} />
-    {rooms.slice(0, 10).map((r, i) => <Row key={i}><span style={{ ...mono, color: sel === (r.id || r.name) ? 'var(--accent)' : 'var(--accent-light)', cursor: 'pointer' }} onClick={() => setSel(r.id || r.name)}>{r.name || r.id}</span><span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{(r.agents || []).join(', ')}</span></Row>)}
+    {rooms.slice(0, 10).map((r, i) => <Row key={i}><span style={{ ...mono, color: sel === (r.id || r.name) ? 'var(--accent)' : 'var(--accent-light)', cursor: 'pointer' }} onClick={() => setSel(r.id || r.name)}>{r.name || r.id}</span><span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{(r.agents || []).join(', ')}</span></Row>)}
     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
       <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="new room" style={inp} />
       <button className="tool-btn" onClick={create}>+ room</button>
@@ -2978,7 +2980,7 @@ export function RoomsPanel() {
     </div>}
     {sel && <div style={{ marginTop: 8, padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-        <span style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-3)' }}>HISTORY · {sel}</span>
+        <span style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)' }}>HISTORY · {sel}</span>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} title="reload room history" onClick={hist.reload}>↻</button>
       </div>
       <State e={hist.e} loading={hist.loading} n={turns.length} />
@@ -2987,9 +2989,9 @@ export function RoomsPanel() {
         const text = t.content || t.message || t.text || '';
         const ts = t.at || t.created_at || t.ts || '';
         return <Row key={i}>
-          <Tag c={t.role === 'assistant' ? 'var(--accent-light)' : 'var(--ink-3)'}>{label}</Tag>
+          <Tag c={t.role === 'assistant' ? 'var(--accent-light)' : 'var(--ink-2)'}>{label}</Tag>
           <span style={{ ...mono, color: 'var(--ink-2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{text}</span>
-          {ts && <span style={{ ...mono, marginLeft: 'auto', fontSize: 9.5, color: 'var(--ink-3)' }}>{String(ts).slice(0, 19)}</span>}
+          {ts && <span style={{ ...mono, marginLeft: 'auto', fontSize: 9.5, color: 'var(--ink-2)' }}>{String(ts).slice(0, 19)}</span>}
         </Row>;
       })}
     </div>}
@@ -3016,11 +3018,11 @@ export function ActivityTimelinePanel() {
   return <Card title="ACTIVITY · what it did" live={asLive(audit.d)} sub={items.length} onReload={() => { audit.reload(); tasks.reload(); }}>
     <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>{fbtn('all', 'all')}{fbtn('audit', 'audit')}{fbtn('task', 'tasks')}</div>
     <State e={audit.e} loading={audit.loading} n={items.length} />
-    {items.length === 0 && !audit.loading && <Row><span style={{ ...mono, color: 'var(--ink-3)' }}>no activity yet — actions and decisions will appear here</span></Row>}
+    {items.length === 0 && !audit.loading && <Row><span style={{ ...mono, color: 'var(--ink-2)' }}>no activity yet — actions and decisions will appear here</span></Row>}
     {items.map((it, i) => <Row key={i}>
-      <Tag c={it.src === 'task' ? 'var(--accent-light)' : 'var(--ink-3)'}>{it.kind}</Tag>
+      <Tag c={it.src === 'task' ? 'var(--accent-light)' : 'var(--ink-2)'}>{it.kind}</Tag>
       <span style={{ ...mono, color: 'var(--ink-2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{it.text}</span>
-      <span style={{ ...mono, marginLeft: 'auto', fontSize: 9.5, color: 'var(--ink-3)' }}>{String(it.ts).slice(0, 19)}</span>
+      <span style={{ ...mono, marginLeft: 'auto', fontSize: 9.5, color: 'var(--ink-2)' }}>{String(it.ts).slice(0, 19)}</span>
     </Row>)}
   </Card>;
 }
@@ -3031,7 +3033,7 @@ export function ActivityTimelinePanel() {
 // Reuses the existing panels (their data layer already works); this is the layout.
 export function ProjectsMode(_props: any) {
   return <div style={{ padding: '16px 20px', maxWidth: 1440, margin: '0 auto' }}>
-    <div style={{ ...mono, fontSize: 11, letterSpacing: '.16em', color: 'var(--ink-3)', marginBottom: 12 }}>PROJECTS · rooms = topic threads with history · missions = governed workspaces · sessions = reopen a past chat</div>
+    <div style={{ ...mono, fontSize: 11, letterSpacing: '.16em', color: 'var(--ink-2)', marginBottom: 12 }}>PROJECTS · rooms = topic threads with history · missions = governed workspaces · sessions = reopen a past chat</div>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
       <RoomsPanel />
       <MissionsPanel />
@@ -3079,7 +3081,7 @@ export function NetworkMonitorPanel() {
           <span style={mono}>egress</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c={ext > 0 ? 'var(--amber)' : 'var(--green)'}>{ext} external</Tag>
-            <Tag c={model == null ? 'var(--ink-3)' : model > 0 ? 'var(--amber)' : 'var(--green)'}>
+            <Tag c={model == null ? 'var(--ink-2)' : model > 0 ? 'var(--amber)' : 'var(--green)'}>
               {model == null ? 'model —' : `${model} model`}
             </Tag>
             <Tag c={clean ? 'var(--green)' : 'var(--red)'}>{clean ? 'clean' : 'violation'}</Tag>
@@ -3124,7 +3126,7 @@ export function FeedbackPanel() {
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c="var(--green)">{d.promoters || 0} prom</Tag>
             <Tag c="var(--red)">{d.detractors || 0} detr</Tag>
-            <Tag c={nps == null ? 'var(--ink-3)' : (nps >= 0 ? 'var(--green)' : 'var(--red)')}>{nps == null ? '—' : nps}</Tag>
+            <Tag c={nps == null ? 'var(--ink-2)' : (nps >= 0 ? 'var(--green)' : 'var(--red)')}>{nps == null ? '—' : nps}</Tag>
           </span>
         </Row>
       )}
@@ -3270,7 +3272,7 @@ export function DecisionInboxPanel() {
       .then((r) => setPreview({ id, data: r || {} }))
       .catch(() => setPreview({ id, data: { error: 'preview unavailable' } }));
   };
-  const tierColor = (n) => n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-3)';
+  const tierColor = (n) => n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-2)';
   const isCloudImageProposal = (task) => task.kind === 'plugin.egress'
     && task.payload?.plugin === 'cloud-image' && task.payload?.method === 'POST'
     && task.payload?.url === 'https://api.openai.com/v1/images/generations';
@@ -3342,14 +3344,14 @@ export function DecisionInboxPanel() {
           </div>}
           {preview && preview.id === t.id && (
             <div style={{ margin: '4px 0 8px 12px', fontSize: 10 }}>
-              {preview.data === null ? <span style={{ color: 'var(--ink-3)' }}>previewing…</span>
+              {preview.data === null ? <span style={{ color: 'var(--ink-2)' }}>previewing…</span>
                 : preview.data.error ? <span style={{ color: 'var(--amber)' }}>{preview.data.error}</span>
                 : (
                   <>
                     <div style={{ color: 'var(--ink-2)' }}>{preview.data.summary || preview.data.title || 'dry run'}</div>
                     <div style={{ display: 'flex', gap: 5, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
                       {preview.data.irreversible && <Tag c="var(--red)">irreversible</Tag>}
-                      <Tag c={preview.data.would_execute ? 'var(--green)' : 'var(--ink-3)'}>{preview.data.would_execute ? 'would execute' : 'would queue'}</Tag>
+                      <Tag c={preview.data.would_execute ? 'var(--green)' : 'var(--ink-2)'}>{preview.data.would_execute ? 'would execute' : 'would queue'}</Tag>
                       {(preview.data.effects || []).slice(0, 4).map((ef, k) => (
                         <Tag key={k}>{typeof ef === 'string' ? ef : (ef.field || ef.summary || 'effect')}</Tag>
                       ))}
@@ -3383,7 +3385,7 @@ export function DecisionInboxPanel() {
 export function MissionsPanel() {
   const { d, e, loading, reload } = useApi('/api/missions');
   const missions = arr(d, 'missions');
-  const statusColor = (s) => s === 'active' ? 'var(--green)' : s === 'paused' ? 'var(--amber)' : s === 'failed' ? 'var(--red)' : s === 'done' ? 'var(--accent-light)' : 'var(--ink-3)';
+  const statusColor = (s) => s === 'active' ? 'var(--green)' : s === 'paused' ? 'var(--amber)' : s === 'failed' ? 'var(--red)' : s === 'done' ? 'var(--accent-light)' : 'var(--ink-2)';
   // contextual transitions, matching the missions state machine (planned→active→paused→done)
   const actionsFor = (s) => s === 'planned' ? ['start'] : s === 'active' ? ['pause', 'complete', 'cancel'] : s === 'paused' ? ['resume', 'cancel'] : [];
   return (
@@ -3418,7 +3420,7 @@ export function AgentAutonomyPanel() {
   const [agent, setAgent] = useState('');
   const [mode, setMode] = useState('ask');
   const setPolicy = (ag, m) => actA('/autonomy/policy', { agent: ag, mode: m }, reload);
-  const modeColor = (m) => m === 'auto' ? 'var(--green)' : m === 'ask' ? 'var(--amber)' : m === 'off' ? 'var(--red)' : 'var(--ink-3)';
+  const modeColor = (m) => m === 'auto' ? 'var(--green)' : m === 'ask' ? 'var(--amber)' : m === 'off' ? 'var(--red)' : 'var(--ink-2)';
   return (
     <Card title="PER-AGENT AUTONOMY" live={asLive(d)} sub={d ? `global: ${globalMode}` : null} onReload={reload}>
       <State e={e} loading={loading} n={entries.length} />
@@ -3431,7 +3433,7 @@ export function AgentAutonomyPanel() {
           </span>
         </Row>
       ))}
-      {entries.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>no overrides · every agent follows the global mode ({globalMode})</div>}
+      {entries.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>no overrides · every agent follows the global mode ({globalMode})</div>}
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
         <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="agent" style={{ ...inpS, flex: 1 }} />
         <select value={mode} onChange={(ev) => setMode(ev.target.value)} style={{ ...inpS }}>
@@ -3509,7 +3511,7 @@ export function TodayPanel() {
           <span style={{ fontSize: 11, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {it.kind === 'action' ? (it.title || `#${it.id}`) : `${it.key}: ${it.value}`}
           </span>
-          <span style={{ marginLeft: 'auto', ...mono, fontSize: 9.5, color: 'var(--ink-3)' }}>{fmt(it.ts)}</span>
+          <span style={{ marginLeft: 'auto', ...mono, fontSize: 9.5, color: 'var(--ink-2)' }}>{fmt(it.ts)}</span>
         </Row>
       ))}
     </Card>
@@ -3528,7 +3530,7 @@ export function SkillHistoryPanel() {
   return (
     <Card title="SKILL HISTORY" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} events` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={events.length} />
-      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_SKILL_HISTORY is on — rollback does not depend on this ledger; its control is in SKILLS MARKETPLACE</div>}
+      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_SKILL_HISTORY is on — rollback does not depend on this ledger; its control is in SKILLS MARKETPLACE</div>}
       {enabled && Object.keys(byAction).length > 0 && (
         <Row>
           <span style={mono}>actions</span>
@@ -3540,7 +3542,7 @@ export function SkillHistoryPanel() {
       {events.slice(0, 8).map((ev, i) => (
         <Row key={ev.id || i}>
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{ev.name}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{ev.action} · {ev.version}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{ev.action} · {ev.version}</span>
         </Row>
       ))}
     </Card>
@@ -3568,7 +3570,7 @@ export function MediaGalleryPanel() {
     <Card title="MEDIA GALLERY" live={d ? (enabled ? 'live' : 'seed') : undefined}
       sub={d ? (enabled ? `${d.page ? `${d.page.catalog_total} retained · ` : ''}${items.length} matches loaded · ${scanned} scanned` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={items.length} />
-      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_MEDIA_CATALOG is on</div>}
+      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_MEDIA_CATALOG is on</div>}
       {!!d?.page?.invalid_count && <p>Some catalog records are invalid and could not be listed.</p>}
       {enabled && Object.keys(byKind).length > 0 && (
         <Row><span style={mono}>latest page kinds</span>
@@ -3691,12 +3693,12 @@ export function MediaDirectorPanel() {
         n={loaded && !enabled ? undefined : devices.length + sessions.length}
       />
       {loaded && !enabled && (
-        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
           off by default · set JARVIS_MEDIA_DIRECTOR=1 to enable governed presentation
         </div>
       )}
       {enabled && <>
-        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '4px 0' }}>DEVICES</div>
+        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '4px 0' }}>DEVICES</div>
         {devices.map((device, i) => (
           <Row key={device.id || i}>
             <span style={{ ...mono, color: 'var(--accent-light)' }}>{device.name || device.id}</span>
@@ -3706,17 +3708,17 @@ export function MediaDirectorPanel() {
             </span>
           </Row>
         ))}
-        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px' }}>SESSIONS</div>
+        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '10px 0 4px' }}>SESSIONS</div>
         {sessions.map((session, i) => (
           <Row key={session.device_id || i}>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{session.device_id}</span>
-            <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>
+            <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>
               {session.state || 'unknown'} · {session.content?.type || 'content'}:{String(session.content?.value || '').slice(0, 80)}
             </span>
             <button className="tool-btn" aria-label={`restore ${session.device_id}`} onClick={() => restore(session.device_id)}>restore</button>
           </Row>
         ))}
-        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px' }}>USER · PRESENT</div>
+        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '10px 0 4px' }}>USER · PRESENT</div>
         <form onSubmit={present} style={{ display: 'grid', gap: 6 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 6 }}>
             <select aria-label="content type" value={contentType} onChange={(ev) => { setContentType(ev.target.value); setContentValue(''); }} style={inpS}>
@@ -3753,11 +3755,11 @@ export function MediaDirectorPanel() {
         </form>
         <MediaOutcome value={outcome} />
         <section aria-label="media admin controls">
-          <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '12px 0 4px' }}>ADMIN · DEVICE REGISTRY</div>
+          <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '12px 0 4px' }}>ADMIN · DEVICE REGISTRY</div>
           {devices.map((device, i) => (
             <Row key={`admin:${device.id || i}`}>
               <span style={{ ...mono, color: 'var(--ink-2)' }}>{device.id}</span>
-              <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{device.name}</span>
+              <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{device.name}</span>
               <button className="tool-btn" aria-label={`remove ${device.id}`} onClick={() => removeDevice(device.id)}>remove</button>
             </Row>
           ))}
@@ -3775,7 +3777,7 @@ export function MediaDirectorPanel() {
               <button className="tool-btn" type="submit" disabled={!deviceId.trim() || !deviceName.trim()}>register device</button>
             </div>
           </form>
-          {adminMessage && <div role="status" style={{ ...mono, color: 'var(--ink-3)', marginTop: 6 }}>{adminMessage}</div>}
+          {adminMessage && <div role="status" style={{ ...mono, color: 'var(--ink-2)', marginTop: 6 }}>{adminMessage}</div>}
         </section>
       </>}
     </Card>
@@ -3887,7 +3889,7 @@ export function HousePanel() {
     >
       <State e={house.e} loading={house.loading} n={loaded && !enabled ? undefined : rooms.length + devices.length + presence.length} />
       {loaded && !enabled && (
-        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
           House Brain is off · owner opt-in is required on the hub
         </div>
       )}
@@ -3897,7 +3899,7 @@ export function HousePanel() {
         </div>
       )}
       {enabled && <>
-        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '4px 0' }}>ROOMS & DEVICES</div>
+        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '4px 0' }}>ROOMS & DEVICES</div>
         {rooms.map((room) => (
           <Row key={room.room_id}>
             <span style={{ ...mono, color: 'var(--accent-light)' }}>{room.name || room.room_id}</span>
@@ -3912,23 +3914,23 @@ export function HousePanel() {
             </span>
           </Row>
         ))}
-        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '10px 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>PRESENCE · PSEUDONYMOUS</span>
           <Tag c={data.presence_status === 'live' ? 'var(--green)' : data.presence_status === 'degraded' ? 'var(--amber)' : undefined}>
             {data.presence_status || 'unknown'}
           </Tag>
         </div>
         {data.presence_status === 'off' && (
-          <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>presence writer is off · owner opt-in via house.presence_enabled / JARVIS_HOUSE_PRESENCE</div>
+          <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>presence writer is off · owner opt-in via house.presence_enabled / JARVIS_HOUSE_PRESENCE</div>
         )}
         {data.presence_status === 'unavailable' && (
-          <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>presence writer idle · live house state unavailable</div>
+          <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>presence writer idle · live house state unavailable</div>
         )}
         {data.presence_status === 'degraded' && (
           <div role="alert" style={{ fontSize: 10, color: 'var(--amber)' }}>presence write failed · list may be stale</div>
         )}
         {data.presence_status === 'live' && presence.length === 0 && (
-          <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>no occupants detected</div>
+          <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>no occupants detected</div>
         )}
         {presence.map((item) => (
           <Row key={item.occupant_id}>
@@ -3942,7 +3944,7 @@ export function HousePanel() {
         ))}
       </>}
       {live && <>
-        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '12px 0 4px' }}>GOVERNED CONTROLS · PROPOSALS</div>
+        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '12px 0 4px' }}>GOVERNED CONTROLS · PROPOSALS</div>
         {lights.length > 0 && <form onSubmit={proposeLight} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px auto', gap: 6, marginBottom: 6 }}>
           <select aria-label="light target" value={selectedLight} onChange={(event) => setLightTarget(event.target.value)} style={inpS}>
             {lights.map((device) => <option key={device.entity_id} value={device.entity_id}>{device.entity_id}</option>)}
@@ -3974,7 +3976,7 @@ export function HousePanel() {
         </form>}
         <HouseOutcome value={outcome} />
         {hasAdmin && <section aria-label="owner security confirmation">
-          <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '12px 0 4px' }}>ADMIN · STRONG CONFIRMATION</div>
+          <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '12px 0 4px' }}>ADMIN · STRONG CONFIRMATION</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
             <input aria-label="security task id" type="number" min="1" value={securityTaskId} onChange={(event) => setSecurityTaskId(event.target.value)} placeholder="durable task id" style={inpS} />
             <button className="tool-btn" type="button" onClick={mintChallenge} aria-label="Mint owner challenge">mint owner challenge</button>
@@ -4017,12 +4019,12 @@ export function AmbientWatchPanel() {
     >
       <State e={ambient.e} loading={ambient.loading} n={loaded && !enabled ? undefined : monitors.length} />
       {loaded && !enabled && (
-        <div style={{ fontSize: 10, color: data.status === 'degraded' ? 'var(--amber)' : 'var(--ink-3)', marginTop: 6 }}>
+        <div style={{ fontSize: 10, color: data.status === 'degraded' ? 'var(--amber)' : 'var(--ink-2)', marginTop: 6 }}>
           {data.status === 'degraded' ? 'Ambient runtime degraded' : 'Ambient intelligence is off'} · {data.reason || 'owner opt-in required'}
         </div>
       )}
       {enabled && <>
-        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '4px 0 8px' }}>
+        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '4px 0 8px' }}>
           REDACTED TRANSPARENCY · subjects and event content stay private
         </div>
         <Row>
@@ -4052,7 +4054,7 @@ export function AmbientWatchPanel() {
             <Row key={monitor.monitor_id}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ ...mono, color: 'var(--accent-light)' }}>{monitor.monitor_id}</div>
-                <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 3 }}>
+                <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 3 }}>
                   {monitor.source} · {monitor.schema} · v{monitor.version} · {monitor.state || 'waiting'}
                 </div>
                 {decision && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
@@ -4066,8 +4068,8 @@ export function AmbientWatchPanel() {
             </Row>
           );
         })}
-        {!monitors.length && <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>No owner-defined monitors yet.</div>}
-        {last && <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 9, marginTop: 8 }}>
+        {!monitors.length && <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>No owner-defined monitors yet.</div>}
+        {last && <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 9, marginTop: 8 }}>
           LAST DECISION · {last.monitor_id} · {last.rung} · {last.attention_mode}
         </div>}
       </>}
@@ -4127,12 +4129,12 @@ export function CameraPanel() {
     >
       <State e={status.e || recent.e} loading={status.loading || recent.loading} n={loaded && !enabled ? undefined : events.length} />
       {loaded && !enabled && (
-        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
           Camera Intelligence is off · {data.reason || 'owner opt-in and household consent are required'}
         </div>
       )}
       {enabled && <>
-        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '4px 0' }}>
+        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '4px 0' }}>
           METADATA ONLY · {data.source?.status || 'source unavailable'} · {Number(data.source?.camera_count || 0)} cameras
         </div>
         <form onSubmit={search} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, marginBottom: 8 }}>
@@ -4150,7 +4152,7 @@ export function CameraPanel() {
         </form>
         {searchError && <div role="alert" style={{ ...mono, color: 'var(--danger)' }}>{searchError}</div>}
         {searchResult && events.length === 0 && (
-          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 6 }}>No matching camera events.</div>
+          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginBottom: 6 }}>No matching camera events.</div>
         )}
         {events.map((item) => {
           const occurred = Number(item.occurred_at);
@@ -4166,10 +4168,10 @@ export function CameraPanel() {
                   {item.room_id && <Tag>{item.room_id}</Tag>}
                   <Tag>{confidence}%</Tag>
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 3 }}>{when}</div>
+                <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 3 }}>{when}</div>
                 {item.description && <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{item.description}</div>}
                 {item.description_provenance && (
-                  <div style={{ ...mono, fontSize: 9, color: 'var(--ink-3)', marginTop: 2 }}>
+                  <div style={{ ...mono, fontSize: 9, color: 'var(--ink-2)', marginTop: 2 }}>
                     {String(item.description_provenance).split('_').join(' ')}
                   </div>
                 )}
@@ -4194,7 +4196,7 @@ export function CameraPanel() {
                 degraded · {discovery.reason || 'discovery_failed'}
               </div>
             ) : (
-              <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 5 }}>no ONVIF devices found</div>
+              <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 5 }}>no ONVIF devices found</div>
             )
           )}
           {arr(discovery, 'devices').slice(0, 64).map((device) => (
@@ -4302,7 +4304,7 @@ export function AcquisitionPanel() {
     >
       <State e={status.e || audit.e} loading={status.loading || audit.loading} n={loaded && !enabled ? undefined : packages.length + events.length} />
       {loaded && !enabled && (
-        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
           Capability Acquisition is off · {data.reason || 'owner enablement is required'}
         </div>
       )}
@@ -4320,7 +4322,7 @@ export function AcquisitionPanel() {
             {data.audit?.chain_valid ? 'chain verified' : 'chain degraded'}
           </Tag>
         </div>
-        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '4px 0' }}>SIGNED · SANDBOX-ONLY PACKAGES</div>
+        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '4px 0' }}>SIGNED · SANDBOX-ONLY PACKAGES</div>
         {packages.map((item) => (
           <Row key={item.name}>
             <span style={{ ...mono, color: 'var(--accent-light)' }}>{item.name}</span>
@@ -4333,7 +4335,7 @@ export function AcquisitionPanel() {
             </span>
           </Row>
         ))}
-        <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px' }}>HASH-ONLY AUDIT · LATEST</div>
+        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '10px 0 4px' }}>HASH-ONLY AUDIT · LATEST</div>
         {events.map((item) => (
           <Row key={`${item.sequence}:${item.event_hash || item.event_type}`}>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>#{Number(item.sequence || 0)} · {item.event_type}</span>
@@ -4344,7 +4346,7 @@ export function AcquisitionPanel() {
           <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
             <button className="tool-btn" type="button" onClick={exportLedger} aria-label="Export acquisition ledger">export ledger</button>
           </div>
-          <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10, margin: '10px 0 4px' }}>OPEN CAPABILITY GAPS</div>
+          <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '10px 0 4px' }}>OPEN CAPABILITY GAPS</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, marginBottom: 6 }}>
             <input
               aria-label="acquisition drive entrypoint"
@@ -4364,7 +4366,7 @@ export function AcquisitionPanel() {
           {requests.e
             ? <div role="alert" style={{ ...mono, color: 'var(--red)', fontSize: 10 }}>offline · {requests.e}</div>
             : gaps.length === 0
-            ? <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10 }}>no open capability gaps</div>
+            ? <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10 }}>no open capability gaps</div>
             : gaps.map((item) => (
               <Row key={item.request_id}>
                 <span style={{ ...mono, color: 'var(--accent-light)' }}>{String(item.request_id || '').slice(0, 8)}</span>
@@ -4402,7 +4404,7 @@ export function ProvenancePanel() {
   return (
     <Card title="PROVENANCE" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} recs · ${(d.stats && d.stats.runs) || 0} runs` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={records.length} />
-      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_PROVENANCE is on</div>}
+      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_PROVENANCE is on</div>}
       {enabled && Object.keys(bySource).length > 0 && (
         <Row>
           <span style={mono}>sources</span>
@@ -4414,7 +4416,7 @@ export function ProvenancePanel() {
       {records.slice(0, 8).map((r, i) => (
         <Row key={r.id || i}>
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{r.source}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{r.phase} · {(r.content_hash || '').slice(0, 8)}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{r.phase} · {(r.content_hash || '').slice(0, 8)}</span>
         </Row>
       ))}
     </Card>
@@ -4432,11 +4434,11 @@ export function CommsRatePanel() {
   return (
     <Card title="SEND RATE LIMITS" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `cap ${(d && d.global_cap) || 0}/${(d && d.window_seconds) || 60}s` : 'unlimited') : null} onReload={reload}>
       <State e={e} loading={loading} n={channels.length} />
-      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>unlimited until JARVIS_CHANNEL_SEND_RATE(S) is set</div>}
+      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>unlimited until JARVIS_CHANNEL_SEND_RATE(S) is set</div>}
       {channels.slice(0, 10).map((c, i) => (
         <Row key={c.channel || i}>
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{c.channel}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{c.used}/{c.cap > 0 ? c.cap : '∞'}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{c.used}/{c.cap > 0 ? c.cap : '∞'}</span>
         </Row>
       ))}
     </Card>
@@ -4488,7 +4490,7 @@ export function SafeCommsDraftPanel() {
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{t.label || `${t.platform}.${t.action}`}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag>{t.kind || `${t.platform}.${t.action}`}</Tag>
-            {t.credential && <Tag c="var(--ink-3)">{t.credential}</Tag>}
+            {t.credential && <Tag c="var(--ink-2)">{t.credential}</Tag>}
           </span>
         </Row>
       ))}
@@ -4502,7 +4504,7 @@ export function SafeCommsDraftPanel() {
       <textarea value={text} onChange={(ev) => setText(ev.target.value)} placeholder="draft text" style={{ ...taS, marginTop: 6, minHeight: 58 }} />
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
         <button className="tool-btn" disabled={!selected || !text.trim()} onClick={queue}>queue draft</button>
-        <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>approval queue · no direct send</span>
+        <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>approval queue · no direct send</span>
       </div>
       {note && <div style={{ ...mono, fontSize: 10.5, color: out?.ok === false ? 'var(--amber)' : 'var(--green)', marginTop: 6 }}>{note}</div>}
     </Card>
@@ -4521,11 +4523,11 @@ export function ModelInfoPanel() {
   return (<>
     <Card title="MODEL FINGERPRINTS" live={asLive(d, enabled)} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} models` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={models.length} />
-      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>empty until JARVIS_MODEL_INFO is on</div>}
+      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_MODEL_INFO is on</div>}
       {models.slice(0, 10).map((m, i) => (
         <Row key={m.id || i}>
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{m.id}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{[m.quant, (m.sha256 || '').slice(0, 8)].filter(Boolean).join(' · ')}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{[m.quant, (m.sha256 || '').slice(0, 8)].filter(Boolean).join(' · ')}</span>
         </Row>
       ))}
     </Card>
@@ -4564,12 +4566,12 @@ export function DesignManifestPanel() {
         <>
           <Row>
             <span style={mono}>source</span>
-            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>{d.source}</span>
+            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{d.source}</span>
           </Row>
           <Row>
             <span style={mono}>variants</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              {variants.length ? variants.map((v) => <Tag key={v}>{v}</Tag>) : <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>none</span>}
+              {variants.length ? variants.map((v) => <Tag key={v}>{v}</Tag>) : <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>none</span>}
             </span>
           </Row>
         </>
@@ -4625,13 +4627,13 @@ export function PublishReadinessPanel() {
         <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>{arr(out, 'violations').join(' · ')}</div>
       )}
       {out && out.ready_for_approval != null && (
-        <div style={{ fontSize: 10.5, marginTop: 6, color: out.ready_for_approval ? 'var(--green)' : 'var(--ink-3)' }}>
+        <div style={{ fontSize: 10.5, marginTop: 6, color: out.ready_for_approval ? 'var(--green)' : 'var(--ink-2)' }}>
           {out.ready_for_approval
             ? 'ready to REQUEST approval — still not published'
             : 'not ready · release payload withheld'}
         </div>
       )}
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>never uploads · publishing stays approval-held (owner-gated OAuth)</div>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>never uploads · publishing stays approval-held (owner-gated OAuth)</div>
     </Card>
   );
 }
@@ -4667,18 +4669,18 @@ export function PacksPanel() {
         </span>
       </Row>
       {types.filter((t) => !t.supported && t.reason).map((t) => (
-        <div key={t.type} style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>{t.type}: {t.reason}</div>
+        <div key={t.type} style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>{t.type}: {t.reason}</div>
       ))}
       {packs.slice(0, 12).map((p, i) => (
         <Row key={i}>
           <Tag>{p.pack_type}</Tag>
           <span style={{ color: 'var(--accent-light)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-          {p.version && <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>v{p.version}</span>}
+          {p.version && <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>v{p.version}</span>}
           {p.pack_type === 'knowledge' && <button className="tool-btn" onClick={() => verify(p.key)}>verify</button>}
         </Row>
       ))}
       {check && (
-        <div style={{ fontSize: 10, marginTop: 6, color: check.loading ? 'var(--ink-3)' : check.ok ? 'var(--green)' : 'var(--amber)' }}>
+        <div style={{ fontSize: 10, marginTop: 6, color: check.loading ? 'var(--ink-2)' : check.ok ? 'var(--green)' : 'var(--amber)' }}>
           {check.loading ? `verifying ${check.key}…`
             : check.ok ? `${check.key}: intact (${check.v.checked} file(s) checked)`
             : `${check.key}: ${check.reason || 'discrepancies'} — ${[
@@ -4689,7 +4691,7 @@ export function PacksPanel() {
         </div>
       )}
       {unmanifested.length > 0 && (
-        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
           {unmanifested.length} configured folder(s) without a manifest — drop-folders, not packs
         </div>
       )}
@@ -4724,7 +4726,7 @@ export function SignalRoutingPanel() {
     <Card title="WORLD SIGNALS" live={asLive(d, available)} sub={available ? `${counts.routed || 0}/${counts.signals || 0} routed` : (d ? 'no sidecar' : null)} onReload={reload}>
       <State e={e} loading={loading} n={available ? signals.length : 0} />
       {d && !available && (
-        <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
           signal layer unavailable{d.reason ? ` · ${d.reason}` : ''} — configure the sidecar to populate this feed
         </div>
       )}
@@ -4751,7 +4753,7 @@ export function SignalRoutingPanel() {
       {slice && (
         <Row>
           <span style={mono}>{slice.agent}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-3)' }}>
+          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>
             {slice.loading ? 'loading…' : slice.error ? 'slice unavailable'
               : `${slice.signals.length} signal(s) · ${(slice.domains || []).join(', ') || 'no domains'}`}
           </span>
@@ -4816,7 +4818,7 @@ export function WatchlistPanel() {
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{w.symbol}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             {(w.low != null || w.high != null) && <Tag>{w.low ?? '−∞'}–{w.high ?? '+∞'}</Tag>}
-            {w.note && <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{String(w.note).slice(0, 24)}</span>}
+            {w.note && <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{String(w.note).slice(0, 24)}</span>}
             <button className="tool-btn" title="remove" onClick={() => del(w.symbol)}>✕</button>
           </span>
         </Row>
@@ -4867,7 +4869,7 @@ export function SystemProfilePanel() {
             {part('cpu', comps.cpu === 'measured', `${detected.cpu_threads} threads`)}
             {part('ram', comps.ram === 'measured', `${detected.ram_total_gb} GB`)}
           </div>
-          <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>
+          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
             spec-based score (VRAM/threads/RAM as reported) — not a throughput benchmark · the recommendation is advisory, selection stays JARVIS_SYSTEM_PROFILE
           </div>
         </div>
@@ -5233,7 +5235,7 @@ export function ConsoleOverlay({ onClose, panelId = null }: { onClose: () => voi
       <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(1120px,95vw)', maxHeight: '90vh', overflow: 'auto', background: 'var(--void-2)', border: '1px solid var(--border-active, var(--panel-line))', borderRadius: 'var(--radius)', padding: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14, gap: 12 }}>
           <span style={{ fontFamily: 'var(--font-mono)', letterSpacing: '.14em', color: 'var(--accent-light)' }}>CONSOLE</span>
-          <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>Tools and settings</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>Tools and settings</span>
           <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={onClose}>esc ✕</button>
         </div>
         <ActionFailureBanner />

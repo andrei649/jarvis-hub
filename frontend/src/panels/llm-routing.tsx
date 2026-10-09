@@ -100,7 +100,7 @@ function Verdict({ out }: { out: any }) {
     );
   }
   return (
-    <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 6 }}>
+    <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 6 }}>
       collapses_tiers: true — this model supports thinking mode; the backend judged THIS
       prompt simple enough for /no_think.
     </div>
@@ -135,7 +135,7 @@ export function LlmRoutingPanel() {
       live={asLive(out)}
       sub={out ? `${String(out.model)} · ${String(out.directive)}` : null}
     >
-      <div style={{ ...mono, color: 'var(--ink-3)', marginBottom: 6 }}>
+      <div style={{ ...mono, color: 'var(--ink-2)', marginBottom: 6 }}>
         Computes the H13.4 thinking / non-thinking decision for one prompt: which directive,
         how big a token budget, and whether the model can collapse the fast/deep tier split.
       </div>
@@ -146,28 +146,28 @@ export function LlmRoutingPanel() {
         placeholder="prompt to route (e.g. explain why the router picked this backend)"
         onChange={(e) => setPrompt(e.target.value)}
       />
-      <div style={{ ...mono, color: 'var(--ink-3)', margin: '3px 0 6px' }}>
+      <div style={{ ...mono, color: 'var(--ink-2)', margin: '3px 0 6px' }}>
         {prompt.length} chars · backend cap {PROMPT_CAP}
       </div>
 
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-3)' }}>model</span>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>model</span>
         <input
           style={{ ...inpS, flex: 1 }}
           value={model}
           placeholder={DEFAULT_MODEL}
           onChange={(e) => setModel(e.target.value)}
         />
-        <span style={{ ...mono, color: 'var(--ink-3)' }}>cap {MODEL_CAP}</span>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>cap {MODEL_CAP}</span>
         <button className="tool-btn" disabled={!ready} onClick={preview}>PREVIEW ROUTE</button>
       </Row>
-      <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 4 }}>
+      <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
         free text — no route lists the backend's MoE registry, so this panel does not invent
         one; "{DEFAULT_MODEL}" is the backend's own default and each answer's collapses_tiers
         reports whether the model it used is in that registry.
       </div>
       {prompt.trim() === '' && !busy && (
-        <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 4 }}>type a prompt to preview</div>
+        <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>type a prompt to preview</div>
       )}
 
       <State e={null} loading={busy} n={null} />
@@ -177,7 +177,7 @@ export function LlmRoutingPanel() {
       {out != null && (
         <div style={{ marginTop: 6 }}>
           <Row>
-            <Tag c={out.directive === '/think' ? 'var(--green)' : 'var(--ink-3)'}>{String(out.directive)}</Tag>
+            <Tag c={out.directive === '/think' ? 'var(--green)' : 'var(--ink-2)'}>{String(out.directive)}</Tag>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>thinking: {String(out.thinking)}</span>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>max_tokens: {String(out.max_tokens)}</span>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>model: {String(out.model)}</span>
@@ -187,10 +187,10 @@ export function LlmRoutingPanel() {
         </div>
       )}
 
-      <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 8 }}>
+      <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 8 }}>
         POST {MOE_PATH} · admin tier (X-Admin-Token).
       </div>
-      <div style={{ ...mono, color: 'var(--ink-3)', marginTop: 2 }}>
+      <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 2 }}>
         Preview only: this request computes the decision and changes nothing on the running
         router — the live router selects its backend elsewhere.
       </div>

@@ -86,13 +86,13 @@ function WorldViewSurfaceRow({ status }: { status: WvOverview | null }) {
         <a className="tool-btn" href="http://localhost:3000" target="_blank" rel="noreferrer">open</a>
       </div>
       {status !== null && !status.connected && (
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--ink-3)', padding: '4px 0 2px' }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--ink-2)', padding: '4px 0 2px' }}>
           start it: <code>cd worldview &amp;&amp; ./quickstart.sh</code>
         </div>
       )}
       {status?.connected && recon?.status === 'ok' && (
         <div style={{ padding: '4px 0 2px' }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: dueCount > 0 ? 'var(--amber)' : 'var(--ink-3)' }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: dueCount > 0 ? 'var(--amber)' : 'var(--ink-2)' }}>
             {windows.length} recon window{windows.length === 1 ? '' : 's'} · {dueCount} due alert{dueCount === 1 ? '' : 's'}
           </div>
           {windows.slice(0, 3).map((w: any, i: number) => (
@@ -103,7 +103,7 @@ function WorldViewSurfaceRow({ status }: { status: WvOverview | null }) {
         </div>
       )}
       {status?.connected && recon != null && recon.status !== 'ok' && (
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--ink-3)', padding: '4px 0 2px' }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--ink-2)', padding: '4px 0 2px' }}>
           connected · no recon data
         </div>
       )}
@@ -228,7 +228,7 @@ function WorldIntelligenceMode({ t }) {
               {signals.map((signal) => (
                 <button key={signal.id} onClick={() => setSelected(signal)}
                   style={{ textAlign: 'left', background: selected?.id === signal.id ? 'var(--accent-faint)' : 'var(--surface-2)', border: `1px solid ${selected?.id === signal.id ? 'var(--accent-dim)' : 'var(--panel-line)'}`, color: 'var(--ink)', borderRadius: 'var(--radius)', padding: 12 }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--ink-3)', letterSpacing: '.08em', textTransform: 'uppercase' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em', textTransform: 'uppercase' }}>
                     <span>{signal.type}</span><span>·</span><span>{signal.severity}</span><span>·</span><span>{signal.confidence} confidence</span>
                     <span className={'cap-tag ' + sevClass(signal.severity)} style={{ marginLeft: 'auto' }}>{signal.claimStatus || 'unknown'}</span>
                   </div>
@@ -278,7 +278,7 @@ function Metric({ k, v, tone = 'var(--ink)' }) {
 }
 
 function Empty({ text }) {
-  return <div style={{ color: 'var(--ink-3)', fontSize: 11, textAlign: 'center', padding: '16px 0', fontFamily: 'var(--font-mono)', letterSpacing: '.05em' }}>{text}</div>;
+  return <div style={{ color: 'var(--ink-2)', fontSize: 11, textAlign: 'center', padding: '16px 0', fontFamily: 'var(--font-mono)', letterSpacing: '.05em' }}>{text}</div>;
 }
 
 export { WorldIntelligenceMode };

@@ -66,8 +66,8 @@ const PROVIDERS = [
 ];
 
 const amber = { color: 'var(--amber)', fontSize: 11 };
-const note = { color: 'var(--ink-3)', fontSize: 10.5, lineHeight: 1.5, margin: '4px 0 0' };
-const head = { ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-3)', margin: '10px 0 4px' };
+const note = { color: 'var(--ink-2)', fontSize: 10.5, lineHeight: 1.5, margin: '4px 0 0' };
+const head = { ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', margin: '10px 0 4px' };
 
 /* The ONLY thing a failed apiGet carries is `GET <path> -> <status>`; the guard's own
    detail string is unreachable on a GET. So the hint names the handler branch that
@@ -139,7 +139,7 @@ export function AutonomyControlPanel() {
   const cred = (PROVIDERS.find((p) => p.id === provider) || {} as any).credential;
 
   const suggestions = arr(gd, 'suggestions');
-  const tierColor = (n) => (n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-3)');
+  const tierColor = (n) => (n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-2)');
 
   return (
     <Card
@@ -155,7 +155,7 @@ export function AutonomyControlPanel() {
         <div style={amber}>{readHint(status.e, ORCH_503)}</div>
       )}
       {sd && ordered.length === 0 && (
-        <div style={{ color: 'var(--ink-3)', fontSize: 11 }}>
+        <div style={{ color: 'var(--ink-2)', fontSize: 11 }}>
           queue empty · stats {'{}'} — no rows in the tasks table. A true zero, not an outage.
         </div>
       )}
@@ -163,7 +163,7 @@ export function AutonomyControlPanel() {
         <Row>
           <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
             {ordered.map((k) => (
-              <Tag key={k} c={k === 'blocked' || k === 'proposed' ? 'var(--amber)' : k === 'failed' || k === 'quarantined' ? 'var(--red)' : 'var(--ink-3)'}>
+              <Tag key={k} c={k === 'blocked' || k === 'proposed' ? 'var(--amber)' : k === 'failed' || k === 'quarantined' ? 'var(--red)' : 'var(--ink-2)'}>
                 {k} {stats[k]}
               </Tag>
             ))}
@@ -176,7 +176,7 @@ export function AutonomyControlPanel() {
           <Row>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>interrupt budget</span>
             <span style={{ marginLeft: 'auto' }}>
-              <Tag c={remaining === 0 ? 'var(--amber)' : 'var(--ink-3)'}>
+              <Tag c={remaining === 0 ? 'var(--amber)' : 'var(--ink-2)'}>
                 {remaining == null ? '—' : String(remaining)} / {perDay == null ? '—' : String(perDay)} interrupts left today
               </Tag>
             </span>
@@ -189,13 +189,13 @@ export function AutonomyControlPanel() {
           </div>
           <div style={head}>AWAITING A DECISION · {pending.length} row(s)</div>
           {pending.length === 0 && (
-            <div style={{ color: 'var(--ink-3)', fontSize: 11 }}>nothing blocked or proposed.</div>
+            <div style={{ color: 'var(--ink-2)', fontSize: 11 }}>nothing blocked or proposed.</div>
           )}
           {pending.slice(0, 8).map((t: any, i: number) => (
             <Row key={t.id ?? i}>
               <span style={{ ...mono, color: 'var(--ink-2)' }}>#{t.id} · {t.title || t.kind || 'task'}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-                <Tag c={t.status === 'proposed' ? 'var(--amber)' : 'var(--ink-3)'}>{t.status}</Tag>
+                <Tag c={t.status === 'proposed' ? 'var(--amber)' : 'var(--ink-2)'}>{t.status}</Tag>
                 {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
                 {t.agent && <Tag>{t.agent}</Tag>}
                 {t.origin && <Tag>{t.origin}</Tag>}
@@ -252,13 +252,13 @@ export function AutonomyControlPanel() {
         </Row>
       ))}
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-3)' }}>sample the host now (admin)</span>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>sample the host now (admin)</span>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={busy} onClick={sample}>
           {busy ? 'sampling…' : 'sample now'}
         </button>
       </Row>
       {busy && (
-        <div style={{ color: 'var(--ink-3)', fontSize: 11 }}>
+        <div style={{ color: 'var(--ink-2)', fontSize: 11 }}>
           sampling… every probe is a live TCP connect (Qdrant, Neo4j, n8n, LM Studio, Ollama) — this can take
           several seconds against a box where they are down.
         </div>
@@ -282,8 +282,8 @@ export function AutonomyControlPanel() {
         <>
           <Row>
             <Tag>sampled {summary.sampled}</Tag>
-            <Tag c={Number(summary.findings) > 0 ? 'var(--amber)' : 'var(--ink-3)'}>findings {summary.findings}</Tag>
-            <Tag c={Number(summary.submitted) > 0 ? 'var(--amber)' : 'var(--ink-3)'}>submitted {summary.submitted}</Tag>
+            <Tag c={Number(summary.findings) > 0 ? 'var(--amber)' : 'var(--ink-2)'}>findings {summary.findings}</Tag>
+            <Tag c={Number(summary.submitted) > 0 ? 'var(--amber)' : 'var(--ink-2)'}>submitted {summary.submitted}</Tag>
             {runUnhealthy.length > 0 && <span style={{ marginLeft: 'auto', ...mono, color: 'var(--amber)' }}>{runUnhealthy.join(' · ')}</span>}
           </Row>
           {Number(summary.submitted) > 0 && (
@@ -321,7 +321,7 @@ export function AutonomyControlPanel() {
               <Tag>approval_rate {String(s.approval_rate)} over {s.samples} sample(s)</Tag>
             </span>
           </Row>
-          <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-3)', padding: '0 0 4px' }}>{s.suggestion}</div>
+          <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)', padding: '0 0 4px' }}>{s.suggestion}</div>
         </div>
       ))}
       {gd && (
@@ -350,7 +350,7 @@ export function AutonomyControlPanel() {
       <textarea style={taS as any} maxLength={2000} placeholder="message to be spoken on the call (≤ 2000 chars)"
         value={message} onChange={(ev) => setMessage(ev.target.value)} />
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-3)' }}>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>
           {to.trim() === '' || message.trim() === '' ? 'to + message are required by the broker' : `provider ${provider} · credential ${cred}`}
         </span>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!canCall} onClick={request}>
@@ -371,12 +371,12 @@ export function AutonomyControlPanel() {
           {res.preview && (
             <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
               <Tag c={tierColor(res.preview.risk_tier)}>tier {String(res.preview.risk_tier)}</Tag>
-              <Tag c={res.preview.irreversible ? 'var(--red)' : 'var(--ink-3)'}>{res.preview.irreversible ? 'irreversible' : 'reversible'}</Tag>
-              <Tag c={res.preview.requires_approval ? 'var(--amber)' : 'var(--ink-3)'}>{res.preview.requires_approval ? 'approval required' : 'auto-approvable'}</Tag>
+              <Tag c={res.preview.irreversible ? 'var(--red)' : 'var(--ink-2)'}>{res.preview.irreversible ? 'irreversible' : 'reversible'}</Tag>
+              <Tag c={res.preview.requires_approval ? 'var(--amber)' : 'var(--ink-2)'}>{res.preview.requires_approval ? 'approval required' : 'auto-approvable'}</Tag>
             </div>
           )}
           {res.preview && res.preview.summary && (
-            <div style={{ ...mono, color: 'var(--ink-3)', fontSize: 10.5 }}>{String(res.preview.summary)}</div>
+            <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10.5 }}>{String(res.preview.summary)}</div>
           )}
         </div>
       )}

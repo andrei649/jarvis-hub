@@ -73,7 +73,7 @@ const STATE_COLOR = {
   present: 'var(--green)',
   idle: 'var(--amber)',
   away: 'var(--accent)',
-  unknown: 'var(--ink-3)',
+  unknown: 'var(--ink-2)',
 };
 
 /* since/updated_at are float UNIX SECONDS, not milliseconds. */
@@ -91,13 +91,13 @@ const ageOf = (v) => {
 /* A provenance/consequence line. Everything on screen that is not a payload value is one
    of these, so a claim and the file it was read from stay attached to each other. */
 const Note = ({ c, children }: { c?: any; children?: any }) => (
-  <div style={{ fontSize: 10, lineHeight: 1.5, color: c || 'var(--ink-3)', padding: '3px 0 5px' }}>{children}</div>
+  <div style={{ fontSize: 10, lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
 );
 
 const Head = ({ k, note }: { k: any; note?: any }) => (
   <div style={{ marginTop: 10, marginBottom: 2 }}>
     <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)' }}>{k}</div>
-    {note != null && <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>{note}</div>}
+    {note != null && <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>{note}</div>}
   </div>
 );
 
@@ -161,7 +161,7 @@ export function PresenceInboxPanel() {
         <>
           <Row>
             <span style={mono}>state</span>
-            <Right><Tag c={STATE_COLOR[p.state] || 'var(--ink-3)'}>{String(p.state)}</Tag></Right>
+            <Right><Tag c={STATE_COLOR[p.state] || 'var(--ink-2)'}>{String(p.state)}</Tag></Right>
           </Row>
 
           <Row>
@@ -169,7 +169,7 @@ export function PresenceInboxPanel() {
             <Right>
               {p.away === true
                 ? <Tag c="var(--accent)">AWAY</Tag>
-                : <Tag c="var(--ink-3)">not known to be away</Tag>}
+                : <Tag c="var(--ink-2)">not known to be away</Tag>}
             </Right>
           </Row>
           {p.away === true ? (
@@ -197,7 +197,7 @@ export function PresenceInboxPanel() {
             <Right>
               {p.stale === true
                 ? <Tag c="var(--amber)">STALE</Tag>
-                : <Tag c="var(--ink-3)">fresh</Tag>}
+                : <Tag c="var(--ink-2)">fresh</Tag>}
               <Tag>ttl {p.ttl_seconds}s</Tag>
             </Right>
           </Row>
@@ -289,7 +289,7 @@ export function PresenceInboxPanel() {
           <Row>
             <span style={mono}>threads</span>
             <Right>
-              <Tag c={unbound ? 'var(--ink-3)' : undefined}>
+              <Tag c={unbound ? 'var(--ink-2)' : undefined}>
                 {st.threads == null ? EM : String(st.threads)}{unbound ? ' (placeholder)' : ''}
               </Tag>
             </Right>
@@ -297,7 +297,7 @@ export function PresenceInboxPanel() {
           <Row>
             <span style={mono}>messages</span>
             <Right>
-              <Tag c={unbound ? 'var(--ink-3)' : undefined}>
+              <Tag c={unbound ? 'var(--ink-2)' : undefined}>
                 {st.messages == null ? EM : String(st.messages)}{unbound ? ' (placeholder)' : ''}
               </Tag>
             </Right>
@@ -305,7 +305,7 @@ export function PresenceInboxPanel() {
           <Row>
             <span style={mono}>cap</span>
             <Right>
-              <Tag c={st.max_messages == null ? 'var(--ink-3)' : undefined}>
+              <Tag c={st.max_messages == null ? 'var(--ink-2)' : undefined}>
                 {st.max_messages == null
                   ? `${EM} not in payload`
                   : `${st.max_messages} (ring buffer — older messages drop)`}
@@ -319,8 +319,8 @@ export function PresenceInboxPanel() {
               {channels.length === 0
                 ? <Tag c="var(--amber)">{EM} no channels key</Tag>
                 : <>
-                    {channels.map((c) => <Tag key={String(c)} c="var(--ink-3)">{String(c)}</Tag>)}
-                    <Tag c="var(--ink-3)">(constant list)</Tag>
+                    {channels.map((c) => <Tag key={String(c)} c="var(--ink-2)">{String(c)}</Tag>)}
+                    <Tag c="var(--ink-2)">(constant list)</Tag>
                   </>}
             </Right>
           </Row>
@@ -331,7 +331,7 @@ export function PresenceInboxPanel() {
               {active == null
                 ? <Tag c="var(--amber)">{EM} not in payload</Tag>
                 : active.length === 0
-                  ? <Tag c="var(--ink-3)">none{unbound ? ' (no store)' : ''}</Tag>
+                  ? <Tag c="var(--ink-2)">none{unbound ? ' (no store)' : ''}</Tag>
                   : <>{active.map((c) => (
                       <Tag key={String(c)} c="var(--accent-light)">
                         {String(c)}{byChannel[String(c)] != null ? ` ${String(byChannel[String(c)])}` : ''}

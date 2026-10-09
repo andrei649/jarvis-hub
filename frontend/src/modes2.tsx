@@ -238,7 +238,7 @@ function _pct(v: any){ return (v === null || v === undefined) ? '—' : `${Math.
 // List-shaped sections (traces/arena/by_agent) start each live cycle empty; a
 // silent endpoint renders this, never the demo corpus rows.
 function ObsEmpty({ what }: { what?: string }){
-  return <div style={{ fontFamily:'var(--font-mono)', fontSize:9, letterSpacing:'.08em', color:'var(--ink-3)', padding:'3px 0' }}>not connected{what ? ` · ${what}` : ''}</div>;
+  return <div style={{ fontFamily:'var(--font-mono)', fontSize:9, letterSpacing:'.08em', color:'var(--ink-2)', padding:'3px 0' }}>not connected{what ? ` · ${what}` : ''}</div>;
 }
 
 function ObserveMode({ t }){

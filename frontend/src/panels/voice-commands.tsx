@@ -77,7 +77,7 @@ function SideRow({ side, state, onDone, providerId }: { side: string; state: any
     <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>
       {side.toUpperCase()} command · {status}
       {providerId && <span> · {providerId} · revision {s.provider_revision}</span>}
-      {s.exe && <span style={{ color: 'var(--ink-3)' }}> · {s.exe}</span>}
+      {s.exe && <span style={{ color: 'var(--ink-2)' }}> · {s.exe}</span>}
       {s.pending_task != null && <span style={{ color: 'var(--amber)' }}> · waiting in the Decision Inbox (task {s.pending_task})</span>}
     </div>
     <textarea aria-label={`${side}${providerId ? ' ' + providerId : ''} command argv`} value={text} placeholder={EXAMPLE[side]} rows={2}
@@ -144,7 +144,7 @@ function NamedProviders({ data, reload }: { data: any; reload: () => void }) {
       <button className="tool-btn" onClick={saveSelection}>Save STT selection</button>
       {selectionNote && <div role={selectionNote.ok ? 'status' : 'alert'}>{selectionNote.text}</div>}
     </div>
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 4 }}>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
       Choose provider:name in TTS voice after approval. STT selection applies when the transcription mode uses a command.
       An unavailable selection stays unavailable; clearing a provider does not select another one.
     </div>
@@ -156,8 +156,8 @@ export function VoiceCommands() {
   const sides = (d && (d as any).sides) || {};
   const armed = SIDES.some((side) => sides[side]?.armed);
   return <div data-testid="voice-commands" style={{ border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, margin: '2px 0 6px' }}>
-    <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.12em', color: 'var(--ink-3)' }}>COMMAND PROVIDERS</div>
-    <div style={{ fontSize: 10, color: 'var(--ink-3)', margin: '2px 0 4px' }}>
+    <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.12em', color: 'var(--ink-2)' }}>COMMAND PROVIDERS</div>
+    <div style={{ fontSize: 10, color: 'var(--ink-2)', margin: '2px 0 4px' }}>
       A program the hub runs to speak or to transcribe. Setting one asks you in the Decision Inbox first;
       it runs only with JARVIS_VOICE_COMMANDS=1{d && !armed ? ' (not set on this hub)' : ''}, never in safe mode,
       and needs approving again if any file it runs changes.
@@ -196,6 +196,6 @@ export function VoiceCommandCard({ task }: { task: any }) {
     {preview.runs_as && <div style={{ marginTop: 2 }}>as user <span style={mono}>{String(preview.runs_as)}</span>
       {typeof preview.timeout_s === 'number' ? ` · stopped after ${preview.timeout_s}s` : ''}</div>}
     <div style={{ color: 'var(--red)', marginTop: 2 }}>runs on this machine as the hub user; cannot be undone by the hub</div>
-    <div style={{ color: 'var(--ink-3)', marginTop: 2 }}>changing any of these files needs approving again · no edit here: ask again from Settings → Voice</div>
+    <div style={{ color: 'var(--ink-2)', marginTop: 2 }}>changing any of these files needs approving again · no edit here: ask again from Settings → Voice</div>
   </div>;
 }

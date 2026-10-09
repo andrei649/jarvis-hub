@@ -62,7 +62,7 @@ const retentionKept = (r: any): string =>
 /** What a reset would change, from the hub's dry run: one line per setting (the first
     few), and the secrets it keeps and the settings the posture still forces. */
 function ResetPreview({ plan }: { plan: any }) {
-  if (!plan) return <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-3)' }}>asking the hub what would change…</span>;
+  if (!plan) return <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)' }}>asking the hub what would change…</span>;
   if (plan.error) return <span role="alert" style={{ ...mono, fontSize: 9.5, color: 'var(--red)' }}>no preview · {plan.error}</span>;
   const changes = Array.isArray(plan.changes) ? plan.changes : [];
   const kept = Array.isArray(plan.kept) ? plan.kept.length : 0;
@@ -235,7 +235,7 @@ export function SettingsTransfer({ onDone }: { onDone?: (categories: string[]) =
 
   const count = exported ? Object.values(exported.settings || {}).reduce((n: number, o: any) => n + Object.keys(o || {}).length, 0) : 0;
   return <div style={{ marginTop: 10, borderTop: '1px solid var(--panel-line)', paddingTop: 8 }}>
-    <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-3)', marginBottom: 4 }}>MOVE A CONFIGURATION</div>
+    <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-2)', marginBottom: 4 }}>MOVE A CONFIGURATION</div>
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
       <button className="tool-btn" onClick={doExport}>⬇ export JSON</button>
       <button className="tool-btn" onClick={() => fileInput.current && fileInput.current.click()}>⬆ import file</button>
@@ -260,7 +260,7 @@ export function SettingsTransfer({ onDone }: { onDone?: (categories: string[]) =
     {plan && plan.changes.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>nothing to change: every setting already has that value</div>}
     {plan && plan.changes.map((c: any) => (
       <div key={c.setting} data-testid="import-change" style={{ ...mono, fontSize: 10.5, padding: '2px 0' }}>
-        {c.setting}: <span style={{ color: 'var(--ink-3)' }}>{shown(c.from)}</span> → <span style={{ color: 'var(--accent-light)' }}>{shown(c.to)}</span>
+        {c.setting}: <span style={{ color: 'var(--ink-2)' }}>{shown(c.from)}</span> → <span style={{ color: 'var(--accent-light)' }}>{shown(c.to)}</span>
       </div>
     ))}
     {errors.map((r, i) => <div key={`${i}:${r}`} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 3 }}>{r}</div>)}
@@ -271,6 +271,6 @@ export function SettingsSearch({ value, onChange, matches }: { value: string; on
   return <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
     <input aria-label="search settings" value={value} placeholder="search every setting (key or label)"
       onChange={(e) => onChange(e.target.value)} style={{ ...inpS, flex: 1 }} />
-    {value.trim() && <span style={{ ...mono, fontSize: 10, color: 'var(--ink-3)' }}>{matches} match{matches === 1 ? '' : 'es'}</span>}
+    {value.trim() && <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{matches} match{matches === 1 ? '' : 'es'}</span>}
   </div>;
 }

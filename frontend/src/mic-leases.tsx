@@ -43,7 +43,7 @@ export function MicLeases() {
           <button className="tool-btn" style={small} onClick={() => act(MIC_RESUME, p.surface)} aria-label={`resume ${p.surface}`}>resume</button>
         </div>
       ))}
-      <div style={{ ...line, color: 'var(--ink-3)' }}>allowed: {(st.allowed || []).join(', ') || 'none'}</div>
+      <div style={{ ...line, color: 'var(--ink-2)' }}>allowed: {(st.allowed || []).join(', ') || 'none'}</div>
       {note && <div role="alert" style={{ ...line, color: 'var(--amber)' }}>{note}</div>}
     </div>
   );

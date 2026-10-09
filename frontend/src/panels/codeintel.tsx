@@ -138,19 +138,19 @@ export function CodeIntelPanel() {
               </Row>
               {errs.slice(0, 8).map((er, i) => (
                 <Row key={(er && er.file) || i}>
-                  <span style={{ ...mono, color: 'var(--ink-3)' }}>{er && er.file}</span>
+                  <span style={{ ...mono, color: 'var(--ink-2)' }}>{er && er.file}</span>
                   <span style={{ marginLeft: 'auto' }}><Tag c="var(--amber)">{er && er.error}</Tag></span>
                 </Row>
               ))}
               {errs.length > 8 && (
-                <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>+{errs.length - 8} more not shown</div>
+                <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>+{errs.length - 8} more not shown</div>
               )}
             </>
           )}
         </>
       )}
 
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', margin: '6px 0' }}>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', margin: '6px 0' }}>
         <div>
           <b>Directory scope</b> — every *.py under the repo root except .git/.hg/.svn/__pycache__/
           node_modules/.mypy_cache/.pytest_cache/.ruff_cache/build/dist, plus any directory holding a
@@ -190,7 +190,7 @@ export function CodeIntelPanel() {
       </Row>
 
       {submitted === '' ? (
-        <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '5px 0' }}>
+        <div style={{ fontSize: 12, color: 'var(--ink-2)', padding: '5px 0' }}>
           enter a symbol substring to search — nothing has been asked yet
         </div>
       ) : (
@@ -221,7 +221,7 @@ export function CodeIntelPanel() {
             </Row>
           )}
           {h && vendored > 0 && (
-            <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>
+            <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>
               {vendored} of {results.length} shown are vendored third-party code — tagged, not hidden,
               so this list always matches the count above.
             </div>
@@ -230,9 +230,9 @@ export function CodeIntelPanel() {
             <Row key={`${r && r.file}:${r && r.lineno}:${r && r.qualname}:${i}`}>
               <span style={{ ...mono, color: 'var(--accent-light)' }}>{r && r.qualname}</span>
               <Tag>{r && r.kind}</Tag>
-              <span style={{ ...mono, color: 'var(--ink-3)' }}>{r && r.file}:{r && r.lineno}</span>
+              <span style={{ ...mono, color: 'var(--ink-2)' }}>{r && r.file}:{r && r.lineno}</span>
               {r && r.doc
-                ? <span style={{ fontSize: 10, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.doc}</span>
+                ? <span style={{ fontSize: 10, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.doc}</span>
                 : null}
               {isVendored(r && r.file) && <span style={{ marginLeft: 'auto' }}><Tag>vendored</Tag></span>}
             </Row>
@@ -241,7 +241,7 @@ export function CodeIntelPanel() {
       )}
 
       <Row>
-        <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>
+        <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>
           rebuild this process's cached index (full repo walk — 3.4k files)
         </span>
         <button
@@ -255,7 +255,7 @@ export function CodeIntelPanel() {
         </div>
       )}
 
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6 }}>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
         Reads are user-tier (X-User-Token); reindex is admin-tier (X-Admin-Token). Reindex reassigns
         one in-process cache — nothing is persisted, nothing propagates to another worker, and a
         restart rebuilds it lazily on first use. The index is not watching the filesystem: it is only
