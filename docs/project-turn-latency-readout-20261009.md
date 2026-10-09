@@ -50,8 +50,12 @@ keeps the metric visible at both tested widths. The value is not persisted.
   **2/2**, 1280px and 390px, 4.2 s, including no-data response and hard reload.
   The initial browser run was 1 pass/1 measured layout failure before the CSS fix.
   Browser responses are fixtures; backend tests prove the clock/collector contract.
-- Ruff and diff checks pass. One serial full backend milestone is pending on the
-  frozen source; its exact result will be recorded below before completion.
+- Ruff and diff checks pass. The first full backend run on `e1f3b9f` collected
+  21678 cases: 21640 passed, 37 skipped and one failed (296.840 s). The sole
+  failure was the warmup test's exact ChatResponse dictionary missing the new
+  `outcome: null` field. Its expected dictionary was updated without changing
+  production code; the warmup/readout suites pass after that update. A second
+  serial full backend run will verify the final test contract before completion.
 
 Artifacts: `/workspace/scratch/h686-turn-latency-*` contains RED/green/focused,
 full-client JSON, browser logs, OpenAPI input, exact-base pin inventories,
