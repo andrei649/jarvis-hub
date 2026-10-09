@@ -18,7 +18,7 @@ from agents.core.validation import is_valid_session_id
 from agents.core.memory import persistence
 
 
-VALID = ["session_A", "my_session_123", "work-2024-12-01", "abc", "S" * 128]
+VALID = ["session_A", "my_session_123", "work-2024-12-01", "a", "abc", "S" * 128]
 HOSTILE = [
     "../../../etc/passwd",
     "..\\windows\\system32",
@@ -32,6 +32,9 @@ HOSTILE = [
     "sess.json",
     "x" * 129,         # over the length cap
     "../" * 40,
+    "session_A\n",     # Python's $ anchor matches before a final newline
+    "S" * 127 + "\n",  # still within the 128-character limit
+    "\t", "a\r", "a\x00", True,
 ]
 
 
@@ -72,6 +75,33 @@ def test_persistence_roundtrip_still_works(tmp_path, monkeypatch):
     assert persistence.load_memory("session_ok") == [{"role": "user", "content": "hi"}]
 
 
+def test_persistence_refuses_to_read_newline_named_snapshot(monkeypatch):
+    def memory_dir():
+        raise AssertionError("invalid id must not reach the memory directory")
+
+    monkeypatch.setattr(persistence, "_memory_dir", memory_dir)
+    assert persistence.load_memory("session_A\n") == []
+
+
+def test_persistence_refuses_to_save_newline_named_snapshot(tmp_path, monkeypatch):
+    memory = tmp_path / "memory"
+    monkeypatch.setattr(persistence, "MEMORY_DIR", memory)
+    def memory_dir():
+        raise AssertionError("invalid id must not reach the memory directory")
+
+    monkeypatch.setattr(persistence, "_memory_dir", memory_dir)
+    persistence.save_memory("session_A\n", [{"role": "user", "content": "should not write"}])
+    assert not memory.exists(), "an invalid id must not even create the storage directory"
+
+
+def test_persistence_refuses_to_delete_newline_named_snapshot(monkeypatch):
+    def memory_dir():
+        raise AssertionError("invalid id must not reach the memory directory")
+
+    monkeypatch.setattr(persistence, "_memory_dir", memory_dir)
+    persistence.delete_memory("session_A\n")
+
+
 def test_resume_route_rejects_traversal_with_400():
     from fastapi.testclient import TestClient
     from agents import web
@@ -80,3 +110,52 @@ def test_resume_route_rejects_traversal_with_400():
     resp = client.post("/sessions/resume", json={"session_id": "../../etc/passwd"})
     assert resp.status_code == 400
     assert "invalid" in resp.json()["error"].lower()
+
+
+def test_resume_route_rejects_final_newline_before_session_store(monkeypatch):
+    from fastapi.testclient import TestClient
+    from agents import web
+    from agents.core.routers import sessions
+
+    def downstream():
+        raise AssertionError("invalid session must not reach the session store")
+
+    monkeypatch.setattr(sessions, "get_orch", downstream)
+    resp = TestClient(web.app).post("/sessions/resume", json={"session_id": "session_A\n"})
+    assert resp.status_code == 400
+    assert resp.json() == {"error": "invalid session_id"}
+
+
+@pytest.mark.parametrize("route", ["/chat", "/chat/stream"])
+def test_chat_routes_reject_final_newline_before_orchestrator(monkeypatch, route):
+    from unittest.mock import AsyncMock, MagicMock
+    from fastapi.testclient import TestClient
+    from agents import web
+    from agents.core import session_continuation
+
+    orch = MagicMock()
+    prepare = AsyncMock()
+    monkeypatch.setattr(web, "orch", orch)
+    monkeypatch.setattr(session_continuation, "prepare_session", prepare)
+    resp = TestClient(web.app).post(route, json={"message": "hi", "session_id": "session_A\n"})
+    assert resp.status_code == 422
+    prepare.assert_not_awaited()
+    assert orch.mock_calls == []
+
+
+def test_typed_continue_rejects_final_newline_before_session_creation(monkeypatch):
+    from unittest.mock import MagicMock
+    from fastapi.testclient import TestClient
+    from agents import web
+    from agents.core.routers import sessions
+
+    get_orch = MagicMock()
+    monkeypatch.setattr(sessions, "get_orch", get_orch)
+    monkeypatch.setattr(web, "_admin_env_token", lambda: "fixture")
+    monkeypatch.setattr(web, "_env_admin_active", lambda: True)
+    resp = TestClient(web.app).post("/sessions/continue", json={
+        "source_session_id": "session_A\n",
+        "request_id": "11111111-1111-4111-8111-111111111111",
+    }, headers={"x-admin-token": "fixture"})
+    assert resp.status_code == 422
+    get_orch.assert_not_called()

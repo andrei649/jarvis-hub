@@ -27,6 +27,13 @@ Media integrity (local backend candidate, 2026-10-09): newly cloud-finalized, Co
 
 Tool profile permissions (local backend candidate, 2026-10-09): both clients inherit a live profile check before each new tool dispatch in the enabled production agent loop. A tool withdrawn since the model saw it is refused before preflight or approval intake. Existing error shapes and client controls are unchanged; already-running tools and queued approvals are outside this check (H672 partial).
 
+Session ID validation (local backend candidate, 2026-10-09): both clients inherit
+strict full-string session validation on the existing shared server boundaries.
+A terminal newline is refused before session or memory work; valid IDs retain
+their exact value. Native JavaScript validation already rejects this input.
+No wire shape or UI change; device/live-Hub acceptance remains open. See
+[backend evidence](../docs/project-session-id-validation-20261009.md).
+
 ## Combined local mobile candidate — 2026-10-09
 
 The local integration branch combines session continuity, command discovery, connected memory,
