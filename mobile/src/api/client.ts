@@ -241,6 +241,64 @@ export async function fetchAutonomyBrief(
   return normalizeBrief(res || {});
 }
 
+// ── Task mediation evidence (admin read only) ────────────────────
+
+type TaskMediationMode = 'off' | 'hold' | 'enforce';
+
+type TaskMediationCounts = {
+  authorized_enqueue: number;
+  governed: number;
+  refused_unmediated: number;
+  ungoverned_detected: number;
+};
+
+export type TaskMediationStatus =
+  | { mode: TaskMediationMode; valid: true; stats: TaskMediationCounts }
+  | { mode: TaskMediationMode; valid: false; stats: null };
+
+function taskMediationCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function normalizeTaskMediationStatus(value: unknown): TaskMediationStatus {
+  if (!isRecord(value)) throw new ApiError('Invalid task mediation status');
+  const mode = value.mode;
+  if (mode !== 'off' && mode !== 'hold' && mode !== 'enforce') {
+    throw new ApiError('Invalid task mediation status');
+  }
+  if (value.valid === false && value.stats === null) {
+    return { mode, valid: false, stats: null };
+  }
+  if (value.valid !== true || !isRecord(value.stats)) {
+    throw new ApiError('Invalid task mediation status');
+  }
+  const raw = value.stats;
+  if (!taskMediationCount(raw.authorized_enqueue)
+    || !taskMediationCount(raw.governed)
+    || !taskMediationCount(raw.refused_unmediated)
+    || !taskMediationCount(raw.ungoverned_detected)) {
+    throw new ApiError('Invalid task mediation status');
+  }
+  return {
+    mode,
+    valid: true,
+    stats: {
+      authorized_enqueue: raw.authorized_enqueue,
+      governed: raw.governed,
+      refused_unmediated: raw.refused_unmediated,
+      ungoverned_detected: raw.ungoverned_detected,
+    },
+  };
+}
+
+export async function fetchTaskMediationStatus(config: ServerConfig): Promise<TaskMediationStatus> {
+  if (!config.adminToken.trim()) throw new ApiError('Admin token required');
+  const raw = await request<unknown>(config, 'GET', '/autonomy/mediation', undefined, {
+    admin: true, timeoutMs: 15000, retries: 0,
+  });
+  return normalizeTaskMediationStatus(raw);
+}
+
 // ── Security / Trust ─────────────────────────────────────────────
 
 export type SecurityScoreBlock = {

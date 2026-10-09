@@ -485,4 +485,6 @@ DRA-59 local observability (2026-10-09): Autonomy Control now reads admin-only
 evidence validity. Only verified recorded event counts are shown; unavailable,
 malformed and refreshing states hide numbers. The section has no enable, approval
 or raw-event control. B7 operational acceptance and broader task coverage remain
-open; native display is H18.32 in the mobile parity ledger.
+open. H18.32 now provides the local native Status counterpart with strict snapshot
+validation and connection/read-order fences; physical-device/live-hub acceptance
+remains open in [native evidence](../../mobile/docs/h1832-task-mediation-status.md).
