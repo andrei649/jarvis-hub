@@ -29,3 +29,5 @@ refreshed after scoped review; H285's `_available` citation moves from line 183 
 188. Existing test pins, unrelated evidence and all verdicts remain unchanged.
 H477 narrows only the new built-in cloud standalone gap; legacy and broader
 contracts remain partial. This unit remains local and is not in PR #1247.
+
+Combined milestone (2026-10-09), verified source `5c0985c`: full backend **21,069 passed, 37 skipped, zero failures/errors** out of 21,106 cases in 266.284 seconds. Exact-count and generated freshness gates pass. This later run covers both local and cloud standalone digest units; earlier notes keep their checkpoint scope. [Integrated proof](../project-generated-image-integrity-integration-20261009.md).

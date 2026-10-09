@@ -32,3 +32,5 @@ stale and remain untouched; all assessment verdicts are preserved. H477 and the
 mobile parity note describe the new local standalone binding and its remaining
 legacy/cloud limits. Local commit is the delivery checkpoint; this unit was not
 pushed into PR #1247 or deployed.
+
+Combined milestone (2026-10-09), verified source `5c0985c`: full backend **21,069 passed, 37 skipped, zero failures/errors** out of 21,106 cases in 266.284 seconds. Exact-count and generated freshness gates pass. This later run covers both local and cloud standalone digest units; earlier notes keep their checkpoint scope. [Integrated proof](../project-generated-image-integrity-integration-20261009.md).
