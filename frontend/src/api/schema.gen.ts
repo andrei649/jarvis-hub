@@ -10783,6 +10783,7 @@ export interface components {
              * @default []
              */
             notices: components["schemas"]["TurnNotice"][];
+            outcome?: components["schemas"]["TurnOutcome"] | null;
         };
         /** ClimateControlBody */
         ClimateControlBody: {
@@ -12050,6 +12051,11 @@ export interface components {
             code: string;
             /** Text */
             text: string;
+        };
+        /** TurnOutcome */
+        TurnOutcome: {
+            /** Latency Ms */
+            latency_ms: number;
         };
         /** UninstallSkillBody */
         UninstallSkillBody: {

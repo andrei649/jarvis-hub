@@ -49,6 +49,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Surface | API (agents/web.py) | Browser | Mobile | Task |
 |---------|---------------------|:-------:|:------:|------|
 | Chat (streaming) | `POST /chat/stream`, `POST /chat` | ✅ | ✅ | H18.1 |
+| Current-turn duration (H686 first slice) | optional `outcome.latency_ms` on `/chat` and SSE end; owner `display.status_bar_fields` | ✅ local cockpit and focus-chat readout; normal returned turns only, ephemeral | ⬜ native transport currently ignores the additive outcome; no native readout or persisted metrics | H18.33 / H686 |
 
 | Selected Ollama image turns and active history | owner GET active-images and POST selected-prepare/selected-chat under /api/vlm/composer | ✅ all active HUD composers, exact model/session review and stale-response fences | 🟡 local candidate: frozen picker snapshots, exact session/agent/model review, explicit send, active-image choices and durable unknown-delivery handling; device/live-Hub acceptance open | H18.31 / H277 |
 

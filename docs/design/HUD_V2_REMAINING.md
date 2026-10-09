@@ -503,3 +503,15 @@ or raw-event control. B7 operational acceptance and broader task coverage remain
 open. H18.32 now provides the local native Status counterpart with strict snapshot
 validation and connection/read-order fences; physical-device/live-hub acceptance
 remains open in [native evidence](../../mobile/docs/h1832-task-mediation-status.md).
+
+### H686 current-turn duration — 2026-10-09 local candidate
+
+Cockpit and focus chat share a duration strip from the optional `outcome.latency_ms`
+on the current SSE end. The measured interval is the public orchestrator invocation,
+including cleanup; it is not network round-trip time or model-only generation time.
+A normally returned command or refusal may have a duration. Errors, cancellation and
+uninstrumented turns have none. Selection is applied by the backend from the ordinary
+Admin Settings `display.status_bar_fields` list (default `latency`; empty hides it).
+The strip clears on new work or session/agent/demo changes and is not transcript history.
+TPS, model/context/cache/compression metrics and H396 typed exit/accounting remain open;
+future work extends the same outcome. Native display is tracked by H18.33.

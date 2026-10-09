@@ -9,6 +9,7 @@ import { SaveArtifactButton } from './artifacts';
 import { VoiceOrb } from './orb';
 import { Markdown } from './markdown';
 import { MicLeases } from './mic-leases';
+import { StatusStrip, type TurnOutcome } from './turn-outcome';
 
 /* Per-message TTS replay (🔊) — POST /tts {text,lang} → audio. Honest states: while
    speaking shows ◼ (stop is best-effort via re-click), errors fall back silently to
@@ -220,7 +221,7 @@ function Seg({ cur, opts, on }) {
 }
 
 /* input bar — text + voice (mic toggles the useVoice loop; ⚙ opens voice settings) */
-function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t, agent, sessionId, selectedTurn }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any; agent?: string; sessionId?: string; selectedTurn?: boolean }) {
+function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t, agent, sessionId, selectedTurn, outcome }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any; agent?: string; sessionId?: string; selectedTurn?: boolean; outcome?: TurnOutcome | null }) {
   const [val,setVal]=useState('');
   const [cfgOpen,setCfgOpen]=useState(false);
   const draft=useComposerImages(val,agent,sessionId,selectedTurn);
@@ -290,6 +291,7 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
         </div>
         <button className="transmit" disabled={draft.images.length>0&&!draft.ready} onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
       </div>
+      <StatusStrip outcome={outcome} />
     </div>
   );
 }

@@ -73,7 +73,7 @@ def test_openapi_schemas_media_and_handler_gaps_are_honest():
         stream["stream_events"]["end"]
     )
     schemas = payload["components"]["schemas"]
-    assert set(schemas) == {"ChatRequest", "ChatResponse", "TurnNotice"}
+    assert set(schemas) == {"ChatRequest", "ChatResponse", "TurnNotice", "TurnOutcome"}
     assert schemas["ChatRequest"] == source["components"]["schemas"]["ChatRequest"]
     assert schemas["ChatResponse"] == source["components"]["schemas"]["ChatResponse"]
     assert schemas["TurnNotice"] == source["components"]["schemas"]["TurnNotice"]

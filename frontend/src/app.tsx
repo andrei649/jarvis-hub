@@ -20,6 +20,7 @@ import { PointerOverlay } from './pointer';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
 import { noticeMessages } from './turn-notices';
+import { turnOutcome, type TurnOutcome } from './turn-outcome';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
@@ -124,10 +125,12 @@ function App({ floating = false, shortcuts, onWorld }: {
   const [activeId, setActiveId] = useState('jarvis');
   const [focusId, setFocusId] = useState(null);
   const [messages, setMessages] = useState<any[]>(demo ? V2.SEED_MESSAGES : []);
+  const [currentOutcome, setCurrentOutcome] = useState<TurnOutcome | null>(null);
   const sessionId = useRef<string | null>(savedChatSession());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => sessionId.current);
   const selectedSessionId = useCallback(() => sessionId.current, []);
   const selectSession = useCallback((id: string, turns?: any[]) => {
+    if (id !== sessionId.current || turns) setCurrentOutcome(null);
     sessionId.current = id;
     setActiveSessionId(id);
     try { sessionStorage.setItem(CHAT_SESSION_KEY, id); } catch { /* storage unavailable */ }
@@ -137,6 +140,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     const selected = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (typeof detail?.sessionId === 'string' && Array.isArray(detail.turns)) {
+        setCurrentOutcome(null);
         if (turnBusy.current) {
           abortRef.current?.abort(); abortRef.current = null;
           turnEpoch.current++; turnBusy.current = false;
@@ -365,6 +369,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     if (thinking || turnBusy.current) { resolve(''); return; }
     turnBusy.current=true;
     const epoch=++turnEpoch.current;
+    setCurrentOutcome(null);
     timers.current.forEach(clearTimeout); timers.current = [];
     setMessages((m) => [...m, { role: 'user', text, ts: fmtTimeShort(new Date()) }]);
     setCenterTab('conversation');
@@ -393,6 +398,8 @@ function App({ floating = false, shortcuts, onWorld }: {
         const finalText = evt.text || streamed;
         const changed = typeof evt.session_id === 'string' && evt.session_id !== sessionId.current;
         if (typeof evt.session_id === 'string') selectSession(evt.session_id);
+        setCurrentOutcome(changed && ['/new', '/reset', '/undo'].includes(text.trim())
+          ? null : turnOutcome(evt.outcome));
         if (changed && ['/new', '/reset', '/undo'].includes(text.trim())) {
           if (text.trim() === '/undo') {
             const commandEpoch = turnEpoch.current;
@@ -428,6 +435,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       }
     }, { signal: ctl.signal }).catch((err) => {
       if(epoch!==turnEpoch.current){resolve('');return;}
+      setCurrentOutcome(null);
       turnBusy.current=false;abortRef.current=null;turnResolve.current=null;
       // A user Stop (AbortError) is a clean outcome, not a failure: the partial
       // text already streamed into the bubble stays, no error notice — and the
@@ -445,6 +453,7 @@ function App({ floating = false, shortcuts, onWorld }: {
   const runVision=useCallback(async(text:string,draft:VisionDraft)=>{
     if(turnBusy.current||thinking)return;
     turnBusy.current=true;
+    setCurrentOutcome(null);
     const epoch=++turnEpoch.current,controller=new AbortController();abortRef.current=controller;
     setCenterTab('conversation');
     setMessages(messages=>[...messages,{role:'user',text,imageNames:[...draft.names],ts:fmtTimeShort(new Date())}]);
@@ -462,6 +471,7 @@ function App({ floating = false, shortcuts, onWorld }: {
   },[thinking]);
   const stopTurn=useCallback(()=>{
     abortRef.current?.abort();abortRef.current=null;turnEpoch.current++;turnBusy.current=false;
+    setCurrentOutcome(null);
     turnResolve.current?.();turnResolve.current=null;
     timers.current.forEach(clearTimeout);timers.current=[];setThinking(null);
   },[]);
@@ -489,6 +499,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     abortRef.current?.abort();
     abortRef.current = null;
     turnEpoch.current++;turnBusy.current=false;turnResolve.current?.();turnResolve.current=null;
+    setCurrentOutcome(null);
     setAgents([]);
     baseAgents.current = [];
     setActiveId('jarvis');
@@ -512,14 +523,14 @@ function App({ floating = false, shortcuts, onWorld }: {
     setSources({ tasks: false, trust: false });
     setLocality(null);
   }, []);
-
   // Popstate can also take the HUD out of DEMO. A layout effect closes that
   // path before paint; the explicit Exit control clears in its event handler.
   const previousDemo = useRef(demo);
   useLayoutEffect(() => {
     if (previousDemo.current && !demo) clearDemoDerivedState();
+    else if (!previousDemo.current && demo) stopTurn();
     previousDemo.current = demo;
-  }, [clearDemoDerivedState, demo]);
+  }, [clearDemoDerivedState, demo, stopTurn]);
   const exitDemo = useCallback(() => {
     clearDemoDerivedState();
     setDemo(false);
@@ -573,7 +584,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     {appearanceNotice}
     <SafeModeBanner state={safeMode} />
     {demo && <DemoBanner onExit={exitDemo} />}
-    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} />
+    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
     {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
   </div></RouteBoundary>;
 
@@ -630,7 +641,7 @@ function App({ floating = false, shortcuts, onWorld }: {
                       : centerTab === 'cognition'
                         ? <CognitionStream trace={trace} t={t} />
                         : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} />}
-                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} />
+                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
@@ -646,7 +657,7 @@ function App({ floating = false, shortcuts, onWorld }: {
               </div>
             ) : mode === 'chat' ? (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} />
+                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
               </div>
             ) : (
               <div className="workzone full" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>

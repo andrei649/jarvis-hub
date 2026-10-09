@@ -516,7 +516,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "c4dfe0e242dc260c76e864f45fee201c4bd97b52ee869a98f32d094b54c39ab4"
+          "sha256": "79a3e0b6ae7d34a47a8ead7aad062a16358462709f5924e91664e3408e65de33"
         },
         {
           "path": "agents/core/conversation_clock.py",
@@ -556,7 +556,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "7fc8f4921ab5668410a0380d8408d353202e7fa7191448aff2cfb2faebd7126e"
+          "sha256": "3a27289c0ebbb2f0028b7eef14a12b595e29d90103111da456be3394e9f26414"
         },
         {
           "path": "agents/core/memory/conversation.py",
@@ -564,11 +564,11 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "7f5a4ed08463883b12beec58c660600f985183eb85a7f29937da0ed89d8b0358"
+          "sha256": "57e480ba9fee94eb7c1504885f4420c3eed4321aecde96b54c4c276a71ae3b92"
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "d10c54821f556fb5916fe24d0b272170fdd6606f0a2d2103ea83aa807cf62f87"
+          "sha256": "858afb7dda76b42cd0d0fca151b8d94843e02864d274200a94d15a1bb39d8978"
         },
         {
           "path": "frontend/src/desktop.tsx",
@@ -1635,7 +1635,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "7d8fc53c91cec2972d06e95cb0114e48091cc4f090809bbfbf8431bd6413a7e5"
+          "sha256": "1f5bdbbd422025dd28e5c91bb0120ca0b8a7734272e104c2d3a26b722e64b916"
         },
         {
           "path": "tests/test_log_tail.py",
@@ -1990,7 +1990,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "7d8fc53c91cec2972d06e95cb0114e48091cc4f090809bbfbf8431bd6413a7e5"
+          "sha256": "1f5bdbbd422025dd28e5c91bb0120ca0b8a7734272e104c2d3a26b722e64b916"
         },
         {
           "path": "tests/test_soul_edit_route.py",
@@ -2639,7 +2639,7 @@
       "row_sha256": "765d4e507aa22a50b7bde5a3972b342c301ef50855453885062b79b414c92f93",
       "status": "partial",
       "summary": "Spend is measured and capped. cost_tracker records each agent turn against the routed model, persists per-UTC-day rollups and flags unpriced calls (agents/core/cost_tracker.py). apm_summary (agents/core/cost_tracker.py:381) returns {totals, by_agent, by_model} (agents/core/cost_tracker.py:456), served by the admin-guarded GET /api/admin/apm (agents/core/routers/admin.py:736). agents/core/routers/analytics.py adds GET /api/analytics/cost (analytics.py:92), /api/analytics/model-tiers with local/fast/standard/heavy/unknown tiers (analytics.py:99), /api/analytics/locality (analytics.py:151) and per-agent/per-day /api/cost (analytics.py:317). The Trust-mode %-local meter reads /api/analytics/locality (frontend/src/app.tsx:470, derivation in frontend/src/locality.ts). test_h10_16_apm.py, test_cost_measurement_and_cap.py, test_h10_24_cost_trace.py and test_cost_tracker.py: 59 pass.",
-      "remaining": "The owner still cannot see where the money went. The only HUD reader, APMPanel (frontend/src/gap.tsx:1981-1988), reads d.runs, d.tokens and d.cost, but apm_summary nests those under d.totals. Every field therefore renders '—', and no per-agent or per-model breakdown is shown. /api/cost, /api/analytics/cost and /api/analytics/model-tiers have no HUD caller. No surface shows a local-vs-cloud split of spend or tokens: the %-local meter counts runs only. The Command Center has no Usage section. There is no per-session context/usage meter (tokens, context used/max/percent, cost): the /chat ChatResponse in agents/web.py carries only reply, pending_approvals, H677's warming flag and H674's notices, and the CLI usage report hard-codes cost_basis 'unavailable' (agents/cli/nerva.py:1914).",
+      "remaining": "The owner still cannot see where the money went. The only HUD reader, APMPanel (frontend/src/gap.tsx:1981-1988), reads d.runs, d.tokens and d.cost, but apm_summary nests those under d.totals. Every field therefore renders '—', and no per-agent or per-model breakdown is shown. /api/cost, /api/analytics/cost and /api/analytics/model-tiers have no HUD caller. No surface shows a local-vs-cloud split of spend or tokens: the %-local meter counts runs only. The Command Center has no Usage section. There is no per-session context/usage meter (tokens, context used/max/percent, cost): the shared ChatResponse/SSE outcome added by the H686 first slice currently carries only selected turn latency, not tokens, context or cost, and the CLI usage report hard-codes cost_basis 'unavailable' (agents/cli/nerva.py:1914). H220 must extend that same outcome and strip rather than add a separate usage payload (build-queue critic note 10).",
       "evidence": [
         {
           "path": "agents/core/cost_tracker.py",
@@ -2688,6 +2688,10 @@
         {
           "path": "tests/test_cost_tracker.py",
           "sha256": "5ee860b470356d01351fe3eca74234186d690184cf8807f3efa5f137ac12c7e7"
+        },
+        {
+          "path": "agents/core/turn_outcome.py",
+          "sha256": "9c5b2e344c1736f9ef4c211d36fafba5507ada98d0110053c62c63a17d81e316"
         }
       ]
     },
@@ -3472,7 +3476,7 @@
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "c4dfe0e242dc260c76e864f45fee201c4bd97b52ee869a98f32d094b54c39ab4"
+          "sha256": "79a3e0b6ae7d34a47a8ead7aad062a16358462709f5924e91664e3408e65de33"
         },
         {
           "path": "agents/core/routers/autonomy.py",
@@ -3488,7 +3492,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "7d8fc53c91cec2972d06e95cb0114e48091cc4f090809bbfbf8431bd6413a7e5"
+          "sha256": "1f5bdbbd422025dd28e5c91bb0120ca0b8a7734272e104c2d3a26b722e64b916"
         },
         {
           "path": "tests/test_h277_approval_judge.py",
@@ -3776,15 +3780,15 @@
         },
         {
           "path": "frontend/src/app.tsx",
-          "sha256": "d10c54821f556fb5916fe24d0b272170fdd6606f0a2d2103ea83aa807cf62f87"
+          "sha256": "858afb7dda76b42cd0d0fca151b8d94843e02864d274200a94d15a1bb39d8978"
         },
         {
           "path": "frontend/src/modes3.tsx",
-          "sha256": "338c00c84d584a72b42f3e2df883c67436e085d15f9486a5078ad69d99d91092"
+          "sha256": "724c097144f4e2049204f3230c4e77a6f1bdb40925c59e0f8047a1378a21ebe0"
         },
         {
           "path": "frontend/src/cockpit.tsx",
-          "sha256": "865acc9c58607c8cc731f86a3443823abbdc90e8ee7aebd0d23710fc936b897d"
+          "sha256": "86001178b0e1c327aa1a97ab5140520e5dee8c3e91d2a5fdc1b1cf7442a9176c"
         },
         {
           "path": "frontend/src/composer-images.tsx",
@@ -3824,7 +3828,7 @@
         },
         {
           "path": "frontend/src/api/schema.gen.ts",
-          "sha256": "4922e23d111b3aefd68baad277ce94c778d11523c76748060f8c36e91ef1491c"
+          "sha256": "265f7e234613ad3c2fdf24cb810e316cfab7fc07df26d3b3415b234aa060e160"
         },
         {
           "path": "docs/plans/2026-10-08-selected-ollama-vision.md",
@@ -5993,8 +5997,8 @@
       "id": "H396",
       "row_sha256": "763dc96cf8172d031098611b5bd1dc3c84957702549d3aa9fe59a9078e2453e3",
       "status": "partial",
-      "summary": "The tool loop now ends with eight named fixed replies instead of three: _APPROVAL_REPLY, _DEADLINE_REPLY and _CONTEXT_REPLY (agents/core/agent_runtime.py:76-78), _TOOLS_WITHDRAWN_REPLY (agents/core/agent_runtime.py:81), _WINDOW_REPLY and _REPEAT_REPLY (agents/core/agent_runtime.py:82-83), _FAILURE_REPLY (agents/core/agent_runtime.py:101), and the safety-limit string returned after a tool_loop_exhausted event (agents/core/agent_runtime.py:732-740). H672 added _TOOLS_WITHDRAWN_REPLY for an offer that comes back empty when it is re-resolved at a compaction boundary (agents/core/agent_runtime.py:605). The loop's typed events land in the bounded ToolEventLog ring (agents/core/observability/tool_events.py). They are tool_loop_repeated, tool_loop_failing, tool_cap_reached, tool_loop_exhausted, and, since H672, tool_offer_refreshed and tool_loop_withdrawn (agents/core/agent_runtime.py:577, agents/core/agent_runtime.py:600). The ring is readable through GET /api/admin/tool-events (agents/core/routers/admin.py:642-643) and `nerva tools` (agents/cli/nerva.py:977). The orchestrator names a per-agent timeout (agents/core/orchestrator.py:4126, agents/core/orchestrator.py:4128) and replaces an empty answer with a fixed cut-short message (agents/core/orchestrator.py:2543). The exit reason still exists only as prose. AgentToolRuntime.run returns a bare str (agents/core/agent_runtime.py:348), and there is no typed exit-reason enum. No diagnostic line logs why the loop ended, or that it stopped with a pending tool result. The SSE end event carries only text, pending_approvals, H677's warming flag and H674's notices (agents/web.py:1363), no exit reason. No file-mutation verifier footer, per-turn accounting line or live token-flow display exists.",
-      "remaining": "(1) A typed turn exit-reason vocabulary (completed, approval_required, deadline, context_budget, tools_withdrawn, window_invalid, repeated_call, failing_tool, iteration_limit, no_tools, no_capability, agent_timeout), returned with the reply from AgentToolRuntime.run and carried to ChatResponse and the SSE end event. (2) One diagnostic log line per turn naming the reason: INFO normally, WARNING when the loop stopped with a tool result the model never answered. (3) A consolidated user-facing completion explainer that the HUD renders from that reason, replacing the fixed strings. (4) The file-mutation footer: file_write/file_delete calls that failed this turn and were never superseded by a later success on the same path, appended to the reply so the model cannot claim every file was edited. (5) A per-turn accounting line (tool calls, failures, tokens) and cumulative output tokens shown in the HUD.",
+      "summary": "The tool loop now ends with eight named fixed replies instead of three: _APPROVAL_REPLY, _DEADLINE_REPLY and _CONTEXT_REPLY (agents/core/agent_runtime.py:76-78), _TOOLS_WITHDRAWN_REPLY (agents/core/agent_runtime.py:81), _WINDOW_REPLY and _REPEAT_REPLY (agents/core/agent_runtime.py:82-83), _FAILURE_REPLY (agents/core/agent_runtime.py:101), and the safety-limit string returned after a tool_loop_exhausted event (agents/core/agent_runtime.py:732-740). H672 added _TOOLS_WITHDRAWN_REPLY for an offer that comes back empty when it is re-resolved at a compaction boundary (agents/core/agent_runtime.py:605). The loop's typed events land in the bounded ToolEventLog ring (agents/core/observability/tool_events.py). They are tool_loop_repeated, tool_loop_failing, tool_cap_reached, tool_loop_exhausted, and, since H672, tool_offer_refreshed and tool_loop_withdrawn (agents/core/agent_runtime.py:577, agents/core/agent_runtime.py:600). The ring is readable through GET /api/admin/tool-events (agents/core/routers/admin.py:642-643) and `nerva tools` (agents/cli/nerva.py:977). The orchestrator names a per-agent timeout (agents/core/orchestrator.py:4126, agents/core/orchestrator.py:4128) and replaces an empty answer with a fixed cut-short message (agents/core/orchestrator.py:2543). The exit reason still exists only as prose. AgentToolRuntime.run returns a bare str (agents/core/agent_runtime.py:348), and there is no typed exit-reason enum. No diagnostic line logs why the loop ended, or that it stopped with a pending tool result. The H686 first slice adds a shared optional outcome carrying selected wall latency to ChatResponse and SSE end, but it carries no exit reason and does not prove successful execution. No file-mutation verifier footer, per-turn accounting line or live token-flow display exists.",
+      "remaining": "(1) A typed turn exit-reason vocabulary (completed, approval_required, deadline, context_budget, tools_withdrawn, window_invalid, repeated_call, failing_tool, iteration_limit, no_tools, no_capability, agent_timeout), returned with the reply from AgentToolRuntime.run and carried to ChatResponse and the SSE end event. (2) One diagnostic log line per turn naming the reason: INFO normally, WARNING when the loop stopped with a tool result the model never answered. (3) A consolidated user-facing completion explainer that the HUD renders from that reason, replacing the fixed strings. (4) The file-mutation footer: file_write/file_delete calls that failed this turn and were never superseded by a later success on the same path, appended to the reply so the model cannot claim every file was edited. (5) A per-turn accounting line (tool calls, failures, tokens) and cumulative output tokens shown in the HUD. Extend the common outcome and status strip from H686 (build-queue critic note 10); latency is not an exit reason or accounting evidence.",
       "evidence": [
         {
           "path": "agents/core/agent_runtime.py",
@@ -6027,6 +6031,10 @@
         {
           "path": "tests/test_tool_event_trail.py",
           "sha256": "66986d2e15aec3ea664c9470aed62723a37bbe0f903e58e845447e6a5729fc1b"
+        },
+        {
+          "path": "agents/core/turn_outcome.py",
+          "sha256": "9c5b2e344c1736f9ef4c211d36fafba5507ada98d0110053c62c63a17d81e316"
         }
       ]
     },
@@ -7638,11 +7646,11 @@
         },
         {
           "path": "agents/core/client_protocol.py",
-          "sha256": "2b022d542dc2f136bfcd1cae3d67b77515c027ee3a47ae94229f3010014ce860"
+          "sha256": "f2e58af56213d3496c5ec9e51259b90657f66802efa37916c0b30b023d7a12a9"
         },
         {
           "path": "tests/test_client_protocol.py",
-          "sha256": "8a1cdc1b5b4cc643a64cc25ad6763e9fd18b2c6152fe02e5b0596fd0beb3a98e"
+          "sha256": "7a7d2b612c31173cf32ef17036677ef47cd87c8e82c4c5b64d757bf2b754a078"
         },
         {
           "path": "agents/core/artifact_store.py",
@@ -8446,7 +8454,7 @@
         },
         {
           "path": "agents/web.py",
-          "sha256": "7f5a4ed08463883b12beec58c660600f985183eb85a7f29937da0ed89d8b0358"
+          "sha256": "57e480ba9fee94eb7c1504885f4420c3eed4321aecde96b54c4c276a71ae3b92"
         },
         {
           "path": "agents/core/security/token_store.py",
@@ -9246,7 +9254,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "7d8fc53c91cec2972d06e95cb0114e48091cc4f090809bbfbf8431bd6413a7e5"
+          "sha256": "1f5bdbbd422025dd28e5c91bb0120ca0b8a7734272e104c2d3a26b722e64b916"
         },
         {
           "path": "tests/test_image_options_extended.py",
@@ -10186,7 +10194,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "7d8fc53c91cec2972d06e95cb0114e48091cc4f090809bbfbf8431bd6413a7e5"
+          "sha256": "1f5bdbbd422025dd28e5c91bb0120ca0b8a7734272e104c2d3a26b722e64b916"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -10226,7 +10234,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "7fc8f4921ab5668410a0380d8408d353202e7fa7191448aff2cfb2faebd7126e"
+          "sha256": "3a27289c0ebbb2f0028b7eef14a12b595e29d90103111da456be3394e9f26414"
         },
         {
           "path": "agents/core/skills/tools.py",
@@ -10777,7 +10785,7 @@
         },
         {
           "path": "frontend/src/gap.tsx",
-          "sha256": "7d8fc53c91cec2972d06e95cb0114e48091cc4f090809bbfbf8431bd6413a7e5"
+          "sha256": "1f5bdbbd422025dd28e5c91bb0120ca0b8a7734272e104c2d3a26b722e64b916"
         },
         {
           "path": "frontend/src/test/sandbox-kernels.test.tsx",
@@ -10817,7 +10825,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "7fc8f4921ab5668410a0380d8408d353202e7fa7191448aff2cfb2faebd7126e"
+          "sha256": "3a27289c0ebbb2f0028b7eef14a12b595e29d90103111da456be3394e9f26414"
         },
         {
           "path": "tests/test_h660_cell_grants.py",
@@ -11077,7 +11085,7 @@
         },
         {
           "path": "docs/ARCHITECTURE.md",
-          "sha256": "21dd58ba50689c448cce9559e7434e1a02b09bcc7bc6e33e58941c797dab957d"
+          "sha256": "3f0e5c7aca7862e5db18bd8fdf2e836dd1f8f7f9a6f8bf8027359061dbc1cfff"
         },
         {
           "path": "agents/core/file_tools.py",
@@ -12021,48 +12029,80 @@
       "id": "H686",
       "row_sha256": "727b9de7f7857d8894c9d54f8a14f4e278b4590ca5c61376b098c7caa4d38090",
       "status": "partial",
-      "summary": "The per-turn data exists on the server. TokenUsage carries provider cache_read/cache_write (agents/core/llm/tool_protocol.py:83-84). The stream path sums provider usage per agent (agents/core/orchestrator.py:2442). The post-turn record writes input, output and cached tokens, a per-turn cache_hit boolean and usage_source into the learning ledger (agents/core/orchestrator.py:4343-4346). Aggregate readouts exist: /api/metrics/north-star (agents/core/routers/analytics.py:166) with %-local and p95 turn latency, shown as a HUD stat card (frontend/src/modes2.tsx:214), and the bench computes a chars/sec throughput (agents/core/bench.py:79). None of it reaches the chat surface live. The /chat/stream end event carries only agent, text, pending_approvals, H677's warming flag and H674's notices (agents/web.py:1363), and ChatResponse (agents/web.py:1090) has reply, pending_approvals, warming and notices only. No HUD component shows tokens/sec, latency, context % or cache hit for the current turn. There is no field-selection setting. Cache hit is not computed as a delta since the last invalidating event: the stored cache_hit is a per-turn boolean that does not reset on model switch or compaction. Nothing hides the readout when there are no cache reads.",
-      "remaining": "(1) Compute a per-turn readout: wall latency; output tokens/sec over generation time; context % of the resolved model window; compressions count; and cache hit as a delta since the last cache-invalidating event (model switch or accepted compaction), omitted when there were zero cache reads. Attach it to the /chat/stream end event and the /chat response, leaving fields absent when there is no data. (2) Add a display.status_bar_fields setting with a fixed field vocabulary shared by backend and HUD. (3) Add a HUD status strip on the chat surface that renders only the selected fields, hides omitted ones and colours cache hit at the 70/40 thresholds. (4) Backend and frontend tests.",
+      "summary": "2026-10-09 local first slice: both public orchestrator entrypoints measure their complete invocation through cleanup with a monotonic clock. A request-owned collector claims once, rejects nested or late publication and closes before transport projection; there is no per-session last-result cache. ChatResponse and every SSE end carry one optional outcome, currently null or {latency_ms: nonnegative integer}. Only a normal return publishes a measurement; commands and handled refusals can have a duration, while exceptions, cancellation, busy and uninstrumented paths have none. Duration does not imply successful model or tool execution. The declared display.status_bar_fields setting defaults to [latency], validates up to eight unique vocabulary entries and filters metrics server-side; an empty, invalid or unavailable selection hides the metric without breaking the answer. The existing Admin Settings editor exposes the preference. Both HUD cockpit and focus chat render one shared Turn duration strip from the current end and clear it on new work, stop, errors, session/agent changes and DEMO transitions; entering DEMO cancels an in-flight live turn. The field is not persisted in history. Mounted tests cover stale callbacks, malformed numbers and session resets; compiled browser regression covers 1280px and 390px, a no-data reply and reload. Focus composer shrink/wrap rules fix the measured 390px overflow. This is the common outcome transport requested by build-queue critic note 10; H220 context/cost and H396 exit/accounting must extend it. No token speed, model name, context percentage, cache ratio or compression counter is claimed. Native ignores the additive outcome; readout parity remains H18.33.",
+      "remaining": "Complete H686 on the existing shared outcome: source-backed output tokens/sec over a defined generation interval; resolved-model context percentage from a complete single-request prompt observation, not a multi-request cost sum; accepted-compaction counts; and cache hit over a declared denominator since verified model-switch/accepted-compaction invalidation, omitted with zero cache reads. Current disjoint provider token categories require an explicit denominator; the historic 1000 input plus 800 cached equals 80% example is not a valid disjoint-counter formula. Render only selected available fields, including the 70/40 cache thresholds when that metric exists; model/background-task/duration vocabulary entries are reserved but not implemented by this latency slice. Add truthful metric-specific backend/HUD tests. Native display is tracked by H18.33. H220 and H396 continue through the same outcome and strip, with their broader remaining scope unchanged.",
       "evidence": [
         {
+          "path": "agents/core/turn_outcome.py",
+          "sha256": "9c5b2e344c1736f9ef4c211d36fafba5507ada98d0110053c62c63a17d81e316"
+        },
+        {
           "path": "agents/core/orchestrator.py",
-          "sha256": "d6772e26d983fad2722df85491bb7534e03765bf569f7f8d1c0fe0a578ad07b5"
+          "sha256": "79a3e0b6ae7d34a47a8ead7aad062a16358462709f5924e91664e3408e65de33"
         },
         {
           "path": "agents/web.py",
-          "sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
+          "sha256": "57e480ba9fee94eb7c1504885f4420c3eed4321aecde96b54c4c276a71ae3b92"
         },
         {
-          "path": "agents/core/llm/tool_protocol.py",
-          "sha256": "f8c6c0bd1dd9306226df8ef44b76f01a3d747ccfb7f84235b4e59fead8943137"
+          "path": "agents/core/settings_db.py",
+          "sha256": "3a27289c0ebbb2f0028b7eef14a12b595e29d90103111da456be3394e9f26414"
         },
         {
-          "path": "agents/core/routers/analytics.py",
-          "sha256": "81c48b68a6950bb3c907a2be1d726d7bdbd717e20b120f27258e880522b62cf9"
+          "path": "agents/core/client_protocol.py",
+          "sha256": "f2e58af56213d3496c5ec9e51259b90657f66802efa37916c0b30b023d7a12a9"
         },
         {
-          "path": "agents/core/bench.py",
-          "sha256": "853189c84f1a6afcd6a28e3367dcd5210bbaa46682af4ef23f2ba63ee8e7d2fe"
+          "path": "frontend/src/turn-outcome.tsx",
+          "sha256": "cbc771767b63273ab43bb05621f6609794df4cbe73c69148d703bbbed3dde552"
         },
         {
-          "path": "frontend/src/modes2.tsx",
-          "sha256": "6807bfb186f7cb95df0e10142ee059c2c06c321a7c6b202f30ad6ef9a622c685"
+          "path": "frontend/src/app.tsx",
+          "sha256": "858afb7dda76b42cd0d0fca151b8d94843e02864d274200a94d15a1bb39d8978"
         },
         {
-          "path": "tests/test_north_star.py",
-          "sha256": "a19c78e123ffd10ae8d41f1902f50bf89011a064cf5dfe4681cf25c7b9016737"
+          "path": "frontend/src/cockpit.tsx",
+          "sha256": "86001178b0e1c327aa1a97ab5140520e5dee8c3e91d2a5fdc1b1cf7442a9176c"
         },
         {
-          "path": "tests/test_stream_token_usage.py",
-          "sha256": "c81cf7620191b96fcddfc05ac53161da18424e56b91cebfabd97f247d7f5f4fe"
+          "path": "frontend/src/modes3.tsx",
+          "sha256": "724c097144f4e2049204f3230c4e77a6f1bdb40925c59e0f8047a1378a21ebe0"
         },
         {
-          "path": "tests/test_cloud_token_usage.py",
-          "sha256": "1f9ded3359a818e91d278cab007f4cd4320ddfa981b6cb561f7970f6b09ef690"
+          "path": "frontend/src/gap.tsx",
+          "sha256": "1f5bdbbd422025dd28e5c91bb0120ca0b8a7734272e104c2d3a26b722e64b916"
         },
         {
-          "path": "tests/test_local_token_usage.py",
-          "sha256": "03b15917dabcbda809b21cfb63c6d5b05f312944e7a086720abeaccbbd94be4e"
+          "path": "frontend/src/styles.css",
+          "sha256": "79ccc49e07010268aaaae1382f6110c62159cbfff1c9c7367f1e0529930f60e4"
+        },
+        {
+          "path": "frontend/src/api/schema.gen.ts",
+          "sha256": "265f7e234613ad3c2fdf24cb810e316cfab7fc07df26d3b3415b234aa060e160"
+        },
+        {
+          "path": "tests/test_turn_status_readout.py",
+          "sha256": "a07b27a988b3941d3c86352a6b2e592d3c8e8ca1a36073f538607bc9e5d8fafb"
+        },
+        {
+          "path": "tests/test_client_protocol.py",
+          "sha256": "7a7d2b612c31173cf32ef17036677ef47cd87c8e82c4c5b64d757bf2b754a078"
+        },
+        {
+          "path": "tests/test_aud7_sse_hotpath.py",
+          "sha256": "a472c934b48d8ffcde31450e2744b2128ea39904ac09d25e9c9b7555b6198b8e"
+        },
+        {
+          "path": "frontend/src/test/turn-outcome-app.test.tsx",
+          "sha256": "8595d62a6575574b320820a84dc8183acd852e1e0dbebfc3f78026fddd5e7aa5"
+        },
+        {
+          "path": "frontend/e2e/turn-latency.spec.ts",
+          "sha256": "a832dbf9d84ddb64febcfe594befc0779de534feb1aa10a07041e3418cfbb514"
+        },
+        {
+          "path": "frontend/playwright.turn-latency.config.ts",
+          "sha256": "a93813509e00c13d158c0d0afa8cb93633f2384cc7cced7a5ccbfaad40d4a38b"
         }
       ]
     },
@@ -12291,7 +12331,7 @@
         },
         {
           "path": "agents/core/settings_db.py",
-          "sha256": "7fc8f4921ab5668410a0380d8408d353202e7fa7191448aff2cfb2faebd7126e"
+          "sha256": "3a27289c0ebbb2f0028b7eef14a12b595e29d90103111da456be3394e9f26414"
         },
         {
           "path": "agents/core/tool_rpc.py",

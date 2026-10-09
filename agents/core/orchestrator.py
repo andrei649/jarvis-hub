@@ -47,6 +47,7 @@ from .action_origin import (
     reset_action_origin,
 )
 from .turn_approvals import bind_turn_approvals, reset_turn_approvals
+from .turn_outcome import measure_turn_latency
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
 from .commands import Principal, build_default_registry
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
@@ -2015,6 +2016,7 @@ class Orchestrator:
         # had.
         self._meter_store()["_last_reported_usage"] = dict(value or {})
 
+    @measure_turn_latency
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                            session_id: str = None) -> str:
         from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
@@ -2227,6 +2229,7 @@ class Orchestrator:
         )
         return synthesized
 
+    @measure_turn_latency
     async def handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                   agent_override: str = None, session_id: str = None) -> str:
         from .session_continuation import CONTINUATION_REFUSED_REPLY, ContinuationRefused
