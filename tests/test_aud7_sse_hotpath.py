@@ -44,6 +44,8 @@ async def test_sse_cancels_model_turn_on_client_disconnect():
 
 async def test_sse_normal_completion_emits_start_tokens_end():
     class FakeOrch:
+        session_id = "aud7_session"
+
         async def handle_input_stream(self, message, channel, on_token, agent_override=None):
             await on_token("hel")
             await on_token("lo")
@@ -57,6 +59,7 @@ async def test_sse_normal_completion_emits_start_tokens_end():
     # do H677's `warming` (false once the boot warm-up is over) and H674's
     # `notices` (empty when the turn had nothing to say beside its reply).
     assert events[-1] == {"type": "end", "agent": "friday", "text": "hello",
+                          "session_id": "aud7_session",
                           "pending_approvals": [], "warming": False, "notices": []}
 
 

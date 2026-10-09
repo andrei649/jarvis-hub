@@ -15,7 +15,7 @@ const draft={images:['data:image/png;base64,iVBORw0KGgo='],names:['shot.png'],ex
 const answer=()=>new Response(JSON.stringify({ok:true,response:'A blue square.',model:'vision-test',backend:'custom',destination:status.destination,local:true}));
 let resolveVision:(r:Response)=>void;let requests:any[]=[];
 beforeEach(()=>{
-  localStorage.clear();history.replaceState(null,'','/v2/chat?demo=1');requests=[];
+  localStorage.clear();sessionStorage.clear();history.replaceState(null,'','/v2/chat?demo=1');requests=[];
   URL.createObjectURL=vi.fn(()=> 'blob:image');URL.revokeObjectURL=vi.fn();
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async(path,init)=>{
     requests.push({path,...init});
@@ -50,6 +50,50 @@ it('owns one turn synchronously across image and text submissions',async()=>{
   act(()=>submit('normal text'));
   await screen.findByText('Text answer');
   expect(JSON.parse(requests.find(r=>r.path==='/chat/stream').body)).toEqual({message:'normal text',agent:'jarvis'});
+});
+it('uses the returned generation after /new and reopens an exact older topic',async()=>{
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async(path,init)=>{
+    requests.push({path,...init});
+    if(path==='/chat/stream'){
+      const body=JSON.parse(init.body);
+      const fresh=body.message==='/new';
+      const id=fresh?'session_new_topic':body.session_id;
+      const text=fresh?'Started a new conversation.':'Answer in selected topic';
+      return new Response(`data: {"type":"start","agent":"jarvis"}\n\ndata: ${JSON.stringify({type:'end',text,agent:'jarvis',session_id:id})}\n\n`);
+    }
+    return new Response(JSON.stringify({configured:false,revision:'0',preferences:{}}));
+  }));
+  await mount();
+  act(()=>submit('/new'));
+  await screen.findByText('Started a new conversation.');
+  expect(sessionStorage.getItem('nerva.chat.session_id')).toBe('session_new_topic');
+  act(()=>submit('next'));
+  await screen.findByText('Answer in selected topic');
+  expect(JSON.parse(requests.filter(r=>r.path==='/chat/stream')[1].body).session_id).toBe('session_new_topic');
+  act(()=>window.dispatchEvent(new CustomEvent('nerva:session-selected',{
+    detail:{sessionId:'old_topic',turns:[{role:'user',content:'old question'},{role:'assistant',content:'old answer'}]},
+  })));
+  await screen.findByText('old answer');
+  act(()=>submit('again'));
+  await waitFor(()=>expect(requests.filter(r=>r.path==='/chat/stream')).toHaveLength(3));
+  expect(JSON.parse(requests.filter(r=>r.path==='/chat/stream')[2].body).session_id).toBe('old_topic');
+});
+it('discards a late streamed reply after selecting another topic',async()=>{
+  let release:(response:Response)=>void;
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async(path,init)=>{
+    if(path==='/chat/stream')return new Promise<Response>(resolve=>{release=resolve;});
+    return new Response(JSON.stringify({configured:false,revision:'0',preferences:{}}));
+  }));
+  await mount();
+  act(()=>submit('slow old turn'));
+  await waitFor(()=>expect(release).toBeTruthy());
+  act(()=>window.dispatchEvent(new CustomEvent('nerva:session-selected',{
+    detail:{sessionId:'other_topic',turns:[{role:'assistant',content:'Other topic answer'}]},
+  })));
+  await screen.findByText('Other topic answer');
+  await act(async()=>release(new Response('data: {"type":"end","text":"Late old reply","session_id":"old_topic"}\n\n')));
+  expect(screen.queryByText('Late old reply')).toBeNull();
+  expect(sessionStorage.getItem('nerva.chat.session_id')).toBe('other_topic');
 });
 it('stops a vision turn and ignores a late response even if transport ignores abort',async()=>{
   await mount();act(()=>submit('question',draft));

@@ -87,6 +87,8 @@ def validate_seed(row):
 
 
 def seed_json(turns):
+    from .memory.conversation import restored_media
+
     if not isinstance(turns, list) or not 0 < len(turns) <= MAX_TURNS:
         raise ContinuationRefused("invalid_or_oversized_history")
     result = []
@@ -115,6 +117,9 @@ def seed_json(turns):
         tools = _tool_names(turn.get("tools"))   # H441: names only, absent when none
         if tools:
             carried["tools"] = tools
+        media = restored_media(turn.get("media"))
+        if media is not None:
+            carried["media"] = media
         result.append(carried)
     try:
         value = json.dumps(result, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
@@ -285,7 +290,7 @@ class ContinuationStore:
 def _load_locked(orch, sid):
     """Caller holds manager then conversation lock; never switches current ID."""
     from .memory import persistence
-    from .memory.conversation import Turn
+    from .memory.conversation import Turn, restored_media
 
     conversation = orch.memory.conversation
     with orch.checkpoints._lock:
@@ -323,10 +328,11 @@ def _load_locked(orch, sid):
     for value in turns:
         turn = Turn(
             value["role"], value["content"], value.get("agent_id"), value.get("token_count", 0),
-            tools=value.get("tools"),
+            tools=value.get("tools"), media=restored_media(value.get("media")),
         )
         turn.timestamp = value["timestamp"]
         restored.append(turn)
+    conversation.invalidate_active_images(sid)
     conversation.sessions[sid] = restored
     conversation.instances[sid] = instance
     return turns

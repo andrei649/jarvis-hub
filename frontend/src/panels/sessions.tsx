@@ -60,7 +60,14 @@ export function SessionsPanel() {
   const resume = (sid: string) => {
     setBusy(sid); setError(''); setNote('');
     apiPost(RESUME_PATH, { session_id: sid })
-      .then((r: any) => setResumed({ session: r?.session || sid, recap: r?.recap || null }))
+      .then((r: any) => {
+        const sessionId = r?.session || sid;
+        setResumed({ session: sessionId, recap: r?.recap || null });
+        reload();
+        window.dispatchEvent(new CustomEvent('nerva:session-selected', {
+          detail: { sessionId, turns: Array.isArray(r?.turns) ? r.turns : [] },
+        }));
+      })
       .catch((err) => { setResumed(null); setError(`not resumed · ${refusalReason(err, 'refused')}`); })
       .finally(() => setBusy(''));
   };
@@ -107,6 +114,7 @@ export function SessionsPanel() {
           <button className="tool-btn" disabled={!!busy} aria-label={`archive ${sid}`} onClick={() => archive(sid)}>archive</button>
         </>}
         {sid && archived && <>
+          <button className="tool-btn" disabled={!!busy} aria-label={`resume ${sid}`} onClick={() => resume(sid)}>resume</button>
           <button className="tool-btn" disabled={!!busy} aria-label={`unarchive ${sid}`} onClick={() => unarchive(sid)}>unarchive</button>
           {confirming === sid
             ? <button className="tool-btn" disabled={!!busy} aria-label={`confirm delete ${sid}`} style={{ color: 'var(--red)' }}

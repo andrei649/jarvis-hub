@@ -199,6 +199,8 @@ def register_skill_tools(
     posture: Callable[[], str] = lambda: "",
     origin: Callable[[], str] | None = None,
     settings: Callable[[str, Any], Any] = lambda key, default: default,
+    environment_registry=None,
+    principal: Callable[[], Any] = lambda: None,
 ) -> tuple[str, str, str]:
     """Expose the three tools. Every getter is read per call, so a reload, a new session
     or a changed setting is seen by the next call."""
@@ -387,6 +389,35 @@ def register_skill_tools(
         if warning:
             reply["tainted"] = True
             reply["warning"] = warning
+        if file is None and environment_registry is not None:
+            try:
+                identity = principal()
+                tag = str(getattr(identity, "tag", identity) or "")
+                actor, session = _actor(), str(session_id() or "")
+                if tag == "owner" and actor and session:
+                    if warning:
+                        environment_registry.revoke(agent=actor, principal=tag,
+                                                    session_id=session, skill_id=skill.name)
+                    else:
+                        from .visibility import SOFT_GATES
+
+                        target = loader()
+                        snapshot = dict(files)
+                        names = tuple(getattr(skill, "required_env", ()) or ())
+
+                        def current_skill():
+                            return (loader() is target
+                                    and getattr(target, "skills", {}).get(skill.name) is skill
+                                    and getattr(skill, "owner_vouched", False) is True
+                                    and dict(getattr(skill, "view_files", {}) or {}) == snapshot
+                                    and tuple(getattr(skill, "required_env", ()) or ()) == names
+                                    and target.catalog_gate(skill, actor) in (None, "", *SOFT_GATES))
+
+                        environment_registry.declare(agent=actor, principal=tag, session_id=session,
+                            skill_id=skill.name, names=names, validator=current_skill)
+            except Exception:
+                # Invalid/unreadable declarations never make a view fail or grant env.
+                return reply
         return reply
 
     async def _propose(args: dict) -> dict:

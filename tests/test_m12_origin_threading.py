@@ -68,9 +68,9 @@ def test_gateway_threads_origin_from_channel():
 
 
 def test_channel_handler_origin_context_is_request_local():
-    orch = Orchestrator.__new__(Orchestrator)
-    orch._channel_sessions = {}
-    orch.get_setting = lambda *_args, **_kwargs: False
+    from tests.test_channel_handler_session_wiring import _bare_orchestrator
+
+    orch, _ = _bare_orchestrator()
     sent = []
 
     async def send(channel, response, **kwargs):

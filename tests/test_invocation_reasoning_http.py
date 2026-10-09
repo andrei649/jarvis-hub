@@ -27,7 +27,8 @@ def setup_hub(monkeypatch):
     async def stream(message, on_token, **kwargs):
         answer = await backend.generate_stream('m', message, on_token=on_token)
         return answer
-    monkeypatch.setattr(web, 'orch', SimpleNamespace(notes=None, handle_input=turn, handle_input_stream=stream))
+    monkeypatch.setattr(web, 'orch', SimpleNamespace(
+        notes=None, session_id='reasoning_session', handle_input=turn, handle_input_stream=stream))
     return TestClient(web.app), client, backend, seen
 
 
@@ -69,6 +70,10 @@ def test_http_and_sse_absence_null_and_explicit_none(monkeypatch, path, body):
             assert not seen  # cannot fall back to configured high
         else:
             assert 'answer' in response.text
+            if path == '/chat':
+                assert response.json()['session_id'] == 'reasoning_session'
+            else:
+                assert '"session_id": "reasoning_session"' in response.text
             assert seen[0]['reasoning_effort'] == 'high'
         assert backend.reasoning_effort == 'high'
     finally:
@@ -152,7 +157,8 @@ def test_http_explicit_none_disables_supported_anthropic_model(monkeypatch, path
         return await backend.generate('claude-opus-5', message, max_tokens=4096)
     async def stream(message, on_token, **kwargs):
         return await backend.generate_stream('claude-opus-5', message, max_tokens=4096, on_token=on_token)
-    monkeypatch.setattr(web, 'orch', SimpleNamespace(notes=None, handle_input=turn, handle_input_stream=stream))
+    monkeypatch.setattr(web, 'orch', SimpleNamespace(
+        notes=None, session_id='anthropic_session', handle_input=turn, handle_input_stream=stream))
     try:
         response = TestClient(web.app).post(path, json={'message': 'hi', 'reasoning': 'none'})
         assert response.status_code == 200

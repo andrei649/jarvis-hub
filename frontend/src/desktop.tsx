@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { apiGet } from './api/client';
+import { apiGet, apiPost } from './api/client';
 import { fmtTimeShort } from './primitives';
 
 type Action = 'show' | 'hide' | 'reset' | 'handoff' | 'drag' | 'resize';
@@ -23,7 +23,9 @@ export function notifyDesktopConversation() {
 }
 // Only invalidation crosses windows; credentials and messages stay in the existing
 // same-origin client/server session. Cleanup prevents a slow read replacing a turn.
-export function useDesktopConversation(setMessages: (messages: any[]) => void, busy: boolean, demo: boolean) {
+const noSelectedSession = () => null;
+export function useDesktopConversation(setMessages: (messages: any[]) => void, busy: boolean, demo: boolean,
+                                       selectedSessionId: () => string | null = noSelectedSession) {
   const sync = useRef({ busy, pending: false, generation: 0 });
   const resume = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
@@ -39,8 +41,11 @@ export function useDesktopConversation(setMessages: (messages: any[]) => void, b
       sync.current.pending = true;
       if (sync.current.busy) return;
       const request = ++sync.current.generation;
-      apiGet('/memory').then((r: any) => {
-        if (!active || sync.current.busy || request !== sync.current.generation || !Array.isArray(r?.turns)) return;
+      const selected = selectedSessionId();
+      const history = selected ? apiPost('/sessions/resume', { session_id: selected }) : apiGet('/memory');
+      history.then((r: any) => {
+        if (!active || sync.current.busy || request !== sync.current.generation ||
+            selected !== selectedSessionId() || !Array.isArray(r?.turns)) return;
         sync.current.pending = false;
         setMessages(r.turns.map((tn: any) => ({ role: tn.role === 'user' ? 'user' : 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts: fmtTimeShort(new Date(tn.timestamp || Date.now())) })));
       }).catch(() => {});
@@ -57,7 +62,7 @@ export function useDesktopConversation(setMessages: (messages: any[]) => void, b
       active = false; sync.current.generation += 1; resume.current = null;
       channel?.close(); window.removeEventListener('focus', refresh); window.removeEventListener('nerva-desktop-handoff', refresh);
     };
-  }, [setMessages, demo]);
+  }, [setMessages, demo, selectedSessionId]);
   useEffect(() => { if (!busy) resume.current?.(); }, [busy]);
 }
 export function DesktopControls({ floating = false }: { floating?: boolean }) {
