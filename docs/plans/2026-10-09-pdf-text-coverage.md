@@ -15,10 +15,12 @@ review in `/workspace/scratch/pdf-text-coverage-design-review.md`.
 **Base/head before changes:** `9d824eeb6783f7105953901056160f790ade78f8`.
 **Worktree/branch:** `/workspace/jarvis-hub-pdf-text-coverage`,
 `codex/pdf-text-coverage-20261009`.
-**State/next action:** implemented with independent source/collateral reviews;
-510 distinct focused cases pass and collection reports 21785 backend cases.
-Commit the frozen source/tests and run the full backend milestone. Existing
-PR #1247 and prior worktrees remain preserved; no new full-suite pass is claimed.
+**State/next action:** complete locally at tested source
+`f05fdaebcf99c21aa7485cd2bfeec369a7f0a161`: 21748 backend passed, 37 JUnit-skipped,
+zero failures/errors, 286.928 s, exit 0; unchanged skip identities and eight
+matching source/test hashes. The closing proof/plan commit is documentation only.
+The user requested wrap-up and GitHub synchronization; publish through the final
+integration after reconciling current main. No next feature is being started.
 
 ## Exact contract
 
@@ -121,9 +123,9 @@ Own new `tests/test_file_pdf_coverage_rpc.py` and existing
   Inventory and review only named fresh pins; update H444/H576 claims narrowly,
   preserve statuses and inventory identities. Record architecture/mobile/HUD
   applicability and test counts. No backlog checkbox closes from this slice.
-- [ ] Freeze source/tests and run one serial full backend milestone; compare exact
+- [x] Freeze source/tests and run one serial full backend milestone; compare exact
   skipped IDs with `document-input-limit-backend-final.xml` (21721 pass +37 skipped).
   Run actual-count guard, Ruff/diff/status/Hermes; reuse unchanged frontend/native
   2039 and mobile316 counts. Preserve any failed runs and investigate before retry.
-- [ ] Record proof and manifests, commit locally and verify clean final tree.
+- [x] Record proof and manifests, commit locally and verify clean final tree.
   Rollback this helper/warning/tests/docs unit; no migration or dependency needed.

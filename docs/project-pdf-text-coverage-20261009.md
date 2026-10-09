@@ -1,8 +1,8 @@
 # PDF text-layer coverage — local H444/H576 slice
 
 Generated 2026-10-09 UTC. Base `9d824eeb6783f7105953901056160f790ade78f8`;
-branch `codex/pdf-text-coverage-20261009`. Local only; original draft PR #1247
-continues to contain its earlier published mobile-session work.
+branch `codex/pdf-text-coverage-20261009`. Prepared for the user-requested GitHub
+synchronization of draft PR #1247; the final integration records publication.
 
 Interactive PDF file_read now returns a separate `coverage_warning` when more
 than 20% of successfully inspected pages or at least ten pages yield no text.
@@ -69,7 +69,12 @@ context limits still apply, so metadata ordering is not a visibility guarantee.
   Independent source review found no Critical/Important issue.
 - Collection: **21785 backend** (27 added), **2039 frontend/native**, **316 mobile**,
   555 routes and 18 agents. Client counts are reused from unchanged verified source.
-  Full backend verification is pending; collection is not a passing full run.
+  Full backend at `f05fdaebcf99c21aa7485cd2bfeec369a7f0a161`: **21748 passed,
+  37 JUnit-skipped, zero failures/errors**, 286.928 s, exit 0. All 37 skipped
+  identities match the previous document-limit milestone. The executed-count
+  guard confirms 21785 reported JUnit cases. All eight source/test manifest
+  hashes match the tested commit and clean worktree. Closing proof/plan edits
+  change documentation only. Ruff, diff, generated status and Hermes checks pass.
   No live provider/device or real PDF/OCR acceptance run was performed.
 
 Twenty-six exact-base-fresh pins refresh after named collateral review: 25 across
