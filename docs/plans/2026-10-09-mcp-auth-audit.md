@@ -22,3 +22,12 @@ not a full-suite pass; the isolated research-manifest correction must land in
 this local candidate before the final full run. Independent gpt-6-sol/high
 source review found no Critical/Important issue in the MCP audit delta and
 confirmed the nine collateral MCP claims and source coordinates.
+
+Second full-backend checkpoint after the manifest correction: 21,028 cases in
+277.278 seconds, with 20,990 passed, 37 skipped and one failure. The remaining
+failure is the inherited research kind's absent entry in the earned-autonomy
+refusal vocabulary (`test_h27_earned_autonomy.py:625`). It requires an explicit
+empty entry, preserving genuine websearch failures. This checkpoint is also
+not a full-suite pass; the vocabulary correction and reviewed client descriptor
+will be verified together at the next combined milestone. JUnit:
+`/workspace/scratch/mcp-auth-audit-backend-corrected.xml`.

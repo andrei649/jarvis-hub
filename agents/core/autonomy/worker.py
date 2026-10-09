@@ -331,6 +331,9 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     # failed to construct is ``failed`` / ``work_run_ledger_unavailable``, a failure
     # (round 4, item 5).
     "goal.approve": (),
+    # research — unavailable/configuration paths return ``noop``; a websearch
+    # exception returns ``failed`` and remains a genuine execution failure.
+    "research": (),
 }
 REFUSAL_REASONS_BY_KIND: dict[str, frozenset[str]] = {
     kind: frozenset(reasons) for kind, reasons in _REFUSALS_BY_KIND.items()}
