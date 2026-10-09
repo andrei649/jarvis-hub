@@ -462,3 +462,9 @@ explicit STT selection and exact name/revision on Inbox cards. Missing saved
 selections remain visible as unavailable. Image and speech dispatch now use the
 common registry. Full vendor/plugin/setup breadth remains open under H517/H613;
 native mobile provider configuration is still a gap.
+
+H512 authentication audit continuation (2026-10-09): the existing admin audit reader
+shows typed HTTP guard and managed token lifecycle events through `GET /api/admin/audit`.
+No new route or dashboard control is added. The native audit reader remains open
+in `mobile/PARITY.md`; native bearer requests are covered by the shared server guards.
+The broader login/session/WebSocket/native-auth event contract remains incomplete.

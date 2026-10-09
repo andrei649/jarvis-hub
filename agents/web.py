@@ -84,6 +84,7 @@ _LOCALHOSTS = {"127.0.0.1", "::1", "localhost"}
 # token_store is a leaf module (imports only agents.core.paths), so there is no
 # import edge back into web.
 from agents.core.security.token_store import get_token_store
+from agents.core.security.auth_audit import submit_auth_event
 
 
 def _admin_env_token() -> str:
@@ -245,7 +246,10 @@ def _admin_credential_ok(supplied: str) -> bool:
 
 async def _admin_guard(request: Request):
     """Authorize an /api/admin/* request or raise 401/403."""
-    if _admin_credential_ok(request.headers.get("x-admin-token", "")):
+    supplied = request.headers.get("x-admin-token", "")
+    client = request.client.host if request.client else ""
+    if _admin_credential_ok(supplied):
+        submit_auth_event("auth_success", tier="admin", reason="credential", client=client)
         return
     # No admin credential configured at all → dev posture: trust a direct-localhost
     # origin (so a fresh box can mint its first token), reject the network. Behind
@@ -254,13 +258,16 @@ async def _admin_guard(request: Request):
     # through X-Forwarded-For (the legacy JARVIS_TRUSTED_PROXY=1 means loopback only).
     if not _admin_configured():
         if _real_client_host(request) in _LOCALHOSTS:
+            submit_auth_event("auth_success", tier="admin", reason="local_bypass", client=client)
             return
+        submit_auth_event("auth_failure", tier="admin", reason="network_disabled", client=client)
         raise HTTPException(
             status_code=403,
             detail="admin disabled from network — set JARVIS_ADMIN_TOKEN to enable remote access",
         )
     # A credential is configured but none/invalid was supplied. Recovery if every
     # token is lost: the offline `token_store` CLI on the box.
+    submit_auth_event("auth_failure", tier="admin", reason="invalid" if supplied else "missing", client=client)
     raise HTTPException(status_code=401, detail="admin token required")
 
 
@@ -326,21 +333,30 @@ def _user_credential_ok(user_supplied: str = "", admin_supplied: str = "") -> bo
 
 async def _user_guard(request: Request):
     """Authorize a user-facing request or raise 401/403. See USER_TOKEN above."""
+    user_supplied = request.headers.get("x-user-token", "")
+    admin_supplied = request.headers.get("x-admin-token", "")
+    client = request.client.host if request.client else ""
     if _user_credential_required():
         if _user_credential_ok(
-            user_supplied=request.headers.get("x-user-token", ""),
-            admin_supplied=request.headers.get("x-admin-token", ""),
+            user_supplied=user_supplied,
+            admin_supplied=admin_supplied,
         ):
+            reason = "admin_credential" if admin_supplied and not user_supplied else "credential"
+            submit_auth_event("auth_success", tier="user", reason=reason, client=client)
             return
+        reason = "invalid" if (user_supplied or admin_supplied) else "missing"
+        submit_auth_event("auth_failure", tier="user", reason=reason, client=client)
         raise HTTPException(status_code=401, detail="user token required")
     # No token configured → only localhost may reach user routes. Fails closed
     # behind an untrusted reverse proxy (HF-7); only a peer listed in
     # JARVIS_TRUSTED_PROXIES may vouch for the client through X-Forwarded-For.
     if _real_client_host(request) not in _LOCALHOSTS:
+        submit_auth_event("auth_failure", tier="user", reason="network_disabled", client=client)
         raise HTTPException(
             status_code=403,
             detail="user routes disabled from network — set JARVIS_USER_TOKEN to enable remote access",
         )
+    submit_auth_event("auth_success", tier="user", reason="local_bypass", client=client)
 
 
 # ── Rate limiting (HF-2) ──────────────────────────────────────────

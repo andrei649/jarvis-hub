@@ -20,6 +20,11 @@ class RedactionMode(str, Enum):
 
 
 class SecurityEventType(str, Enum):
+    AUTH_SUCCESS = "auth_success"
+    AUTH_FAILURE = "auth_failure"
+    TOKEN_ISSUED = "token_issued"
+    TOKEN_ROTATED = "token_rotated"
+    TOKEN_REVOKED = "token_revoked"
     SECRET_DETECTED = "secret_detected"
     PII_DETECTED = "pii_detected"
     SSRF_BLOCKED = "ssrf_blocked"

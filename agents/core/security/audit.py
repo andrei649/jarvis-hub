@@ -131,15 +131,23 @@ class AuditLogger:
 
         algo = "hmac-sha256" if self._key else "sha256"
         with self._lock:
-            prev_hash = self._tail_hash_unlocked()
-            hash_input = f"{prev_hash}|{event.timestamp}|{event.event_type.value}|{findings_json}|{preview}|{event.action_taken}"
-            row_hash = self._digest(algo, hash_input)
+            # Separate AuditLogger connections (the HTTP process and offline CLI)
+            # need the same serialization point. Acquire SQLite's write lock
+            # before reading the chain tail so neither can hash the same parent.
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                prev_hash = self._tail_hash_unlocked()
+                hash_input = f"{prev_hash}|{event.timestamp}|{event.event_type.value}|{findings_json}|{preview}|{event.action_taken}"
+                row_hash = self._digest(algo, hash_input)
 
-            self._conn.execute(
-                "INSERT INTO security_events (timestamp, event_type, findings_json, content_preview, action_taken, row_hash, prev_hash, hash_algo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (event.timestamp, event.event_type.value, findings_json, preview, event.action_taken, row_hash, prev_hash, algo),
-            )
-            self._conn.commit()
+                self._conn.execute(
+                    "INSERT INTO security_events (timestamp, event_type, findings_json, content_preview, action_taken, row_hash, prev_hash, hash_algo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (event.timestamp, event.event_type.value, findings_json, preview, event.action_taken, row_hash, prev_hash, algo),
+                )
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
 
     def preview(self, text: str, limit: int = 100) -> str:
         """Redact-then-truncate for callers that cap preview length — truncating

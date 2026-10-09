@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from agents.core import soul_edit  # noqa: E402
+from agents.core.security.types import SecurityEventType  # noqa: E402
 
 SHIPPED = "You are Jarvis, the house brain.\nBe helpful and brief.\n"
 FRIDAY = "You are Friday.\n"
@@ -40,6 +41,13 @@ class _Audit:
 
     def log(self, event):
         self.rows.append(event)
+
+    @property
+    def action_rows(self):
+        # HTTP authentication is audited independently of persona mutations.
+        return [row for row in self.rows if row.event_type not in (
+            SecurityEventType.AUTH_SUCCESS, SecurityEventType.AUTH_FAILURE,
+        )]
 
 
 class _Backend:
@@ -147,7 +155,7 @@ def test_blocked_content_is_refused_and_changes_nothing(http, orch, home):
     assert not home.overlay.exists()
     assert orch.soul_versions.history("jarvis") == []
     assert "house brain" in orch.agents["jarvis"].system_prompt()
-    assert orch.audit.rows == []
+    assert orch.audit.action_rows == []
 
 
 def test_a_flagged_line_is_applied_and_named(http, orch, home):
@@ -161,7 +169,7 @@ def test_a_flagged_line_is_applied_and_named(http, orch, home):
 def test_the_audit_row_names_the_version_and_hash_never_the_content(http, orch):
     secret = "You are Jarvis. The garage code is 4411.\n"
     body = _put(http, secret).json()
-    (row,) = orch.audit.rows
+    (row,) = orch.audit.action_rows
     assert row.action_taken == "soul_apply"
     assert "jarvis" in row.content_preview and "v2" in row.content_preview
     assert body["version"]["hash"] in row.content_preview
@@ -232,7 +240,7 @@ def test_a_failed_write_leaves_the_live_persona_and_no_temp_file(http, orch, hom
     assert not any(p.name.endswith(".tmp") for p in home.overlay.parent.glob("*"))
     # What was on disk is recorded; the text that never landed is not a version.
     assert [h["version"] for h in orch.soul_versions.history("jarvis")] == [1]
-    assert "house brain" in orch.agents["jarvis"].system_prompt() and orch.audit.rows == []
+    assert "house brain" in orch.agents["jarvis"].system_prompt() and orch.audit.action_rows == []
 
 
 def test_a_direct_call_with_something_that_is_not_text_is_refused(orch, home):
@@ -290,7 +298,7 @@ def test_rollback_rewrites_the_live_file(http, orch, home):
     assert home.overlay.read_text(encoding="utf-8") == "A.\n"
     assert "A." in orch.agents["jarvis"].system_prompt()
     assert orch.soul_versions.history("jarvis")[0]["message"] == "rollback to v2"
-    assert orch.audit.rows[-1].action_taken == "soul_rollback"
+    assert orch.audit.action_rows[-1].action_taken == "soul_rollback"
 
 
 def test_rollback_to_the_shipped_text_is_applied_too(http, orch, home):
@@ -327,15 +335,15 @@ def test_the_identity_contract_and_other_keys_stay_in_the_history(http, orch, ho
         assert got.status_code == 200 and got.json()["version"]["content"] == "one"
     assert not home.overlay.exists()
     # Audited as history-only rollbacks, never with the text.
-    assert [r.action_taken for r in orch.audit.rows] == ["soul_rollback_history"] * 3
-    assert all("one" not in r.content_preview.split(":", 1)[1] for r in orch.audit.rows)
+    assert [r.action_taken for r in orch.audit.action_rows] == ["soul_rollback_history"] * 3
+    assert all("one" not in r.content_preview.split(":", 1)[1] for r in orch.audit.action_rows)
 
 
 def test_a_plain_commit_does_not_touch_the_live_persona_and_is_audited(http, orch, home):
     got = http.post("/api/admin/prompts/jarvis/commit", json={"content": "draft 4411"}, headers=HDR)
     assert got.status_code == 200
     assert not home.overlay.exists() and "house brain" in orch.agents["jarvis"].system_prompt()
-    (row,) = orch.audit.rows
+    (row,) = orch.audit.action_rows
     assert row.action_taken == "soul_commit"
     assert f"v{got.json()['version']['version']}" in row.content_preview
     assert got.json()["version"]["hash"] in row.content_preview and "4411" not in row.content_preview

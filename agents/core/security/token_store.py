@@ -39,10 +39,11 @@ _DAY = 86400
 
 
 class TokenStore:
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, audit_sink=None):
         self._path = Path(db_path) if db_path else data_path("security", "tokens.db")
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self._audit_sink = audit_sink
         self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS issued_tokens (
@@ -72,6 +73,11 @@ class TokenStore:
 
     def issue(self, scope: str, ttl_days: Optional[float] = None, label: str = "") -> str:
         """Mint a token of *scope*; store only its hash; return the raw token ONCE."""
+        raw = self._issue_unlogged(scope, ttl_days, label)
+        self._audit_mutation("token_issued", scope, "issue", count=1)
+        return raw
+
+    def _issue_unlogged(self, scope: str, ttl_days: Optional[float], label: str) -> str:
         if scope not in SCOPES:
             raise ValueError(f"unknown scope: {scope}")
         raw = secrets.token_urlsafe(32)
@@ -85,6 +91,17 @@ class TokenStore:
             )
             self._conn.commit()
         return raw
+
+    def _audit_mutation(self, kind: str, scope: str, reason: str,
+                        *, count: int, revoke_env: bool = False) -> None:
+        try:
+            from .auth_audit import submit_auth_event
+
+            submit_auth_event(kind, tier=scope, reason=reason, count=count,
+                              revoke_env=revoke_env, sink=self._audit_sink)
+        except Exception:
+            # A committed token mutation must not be undone by telemetry.
+            pass
 
     def verify(self, token: str, now: Optional[float] = None) -> Optional[str]:
         """Return the scope of a valid, unexpired token, else None."""
@@ -135,10 +152,14 @@ class TokenStore:
         if scope not in SCOPES:
             raise ValueError(f"unknown scope: {scope}")
         with self._lock:
-            self._conn.execute("DELETE FROM issued_tokens WHERE scope=?", (scope,))
+            cur = self._conn.execute("DELETE FROM issued_tokens WHERE scope=?", (scope,))
             self._mark_env_revoked(scope)
             self._conn.commit()
-        return self.issue(scope, ttl_days=ttl_days, label=label)
+            revoked_count = cur.rowcount or 0
+        raw = self._issue_unlogged(scope, ttl_days, label)
+        self._audit_mutation("token_rotated", scope, "rotate", count=revoked_count,
+                             revoke_env=True)
+        return raw
 
     def revoke_all(self, scope: Optional[str] = None, revoke_env: bool = False) -> int:
         """Delete issued tokens (of *scope*, or all). With ``revoke_env`` also
@@ -154,7 +175,11 @@ class TokenStore:
                     for s in SCOPES:
                         self._mark_env_revoked(s)
             self._conn.commit()
-            return cur.rowcount or 0
+            count = cur.rowcount or 0
+        if count or revoke_env:
+            self._audit_mutation("token_revoked", scope or "all", "revoke", count=count,
+                                 revoke_env=revoke_env)
+        return count
 
     def purge_expired(self, now: Optional[float] = None) -> int:
         now = now if now is not None else time.time()
@@ -219,14 +244,18 @@ def _main(argv: Optional[list[str]] = None) -> int:
 
     ns = parser.parse_args(argv)
     store = get_token_store()
+    from .auth_audit import wait_pending
+
     if ns.cmd in ("issue", "rotate"):
         fn = store.issue if ns.cmd == "issue" else store.rotate
         token = fn(ns.scope, ttl_days=ns.ttl_days, label=f"{ns.cmd} via CLI")
+        wait_pending(0.5)
         print(token)  # the raw token — shown ONCE
         return 0
     if ns.cmd == "revoke":
         scope = None if ns.scope == "all" else ns.scope
         n = store.revoke_all(scope, revoke_env=ns.revoke_env)
+        wait_pending(0.5)
         print(f"revoked {n} token(s)")
         return 0
     if ns.cmd == "list":
