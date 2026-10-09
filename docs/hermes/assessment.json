@@ -3359,7 +3359,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "eefc5e1eade75ce9672959d6a9937c94ccacd2e863c2b5aeb200af1c3fb05912"
+          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
         },
         {
           "path": "agents/core/heartbeat.py",
@@ -3849,7 +3849,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "eefc5e1eade75ce9672959d6a9937c94ccacd2e863c2b5aeb200af1c3fb05912"
+          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
         },
         {
           "path": "deploy/systemd/jarvis-hub.service",
@@ -4252,7 +4252,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "eefc5e1eade75ce9672959d6a9937c94ccacd2e863c2b5aeb200af1c3fb05912"
+          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -6646,7 +6646,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "eefc5e1eade75ce9672959d6a9937c94ccacd2e863c2b5aeb200af1c3fb05912"
+          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -8048,7 +8048,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "eefc5e1eade75ce9672959d6a9937c94ccacd2e863c2b5aeb200af1c3fb05912"
+          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
@@ -8555,7 +8555,7 @@
         },
         {
           "path": "agents/core/agent.py",
-          "sha256": "eefc5e1eade75ce9672959d6a9937c94ccacd2e863c2b5aeb200af1c3fb05912"
+          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
         },
         {
           "path": "agents/core/agent_runtime.py",
@@ -8899,8 +8899,8 @@
       "id": "H515",
       "row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
       "status": "partial",
-      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices. A separate cloud-image adapter now completes one exact human-approved OpenAI gpt-image-1.5 request with finite size/quality options, fail-closed secret screening, fresh DNS-bound transport and durable no-replay attempts. Validated PNG bytes persist under an opaque local ID; opt-in catalog finalization is idempotent and reaches the existing gallery/blob/export flow. Independent mocked-transport checks cover the full guarded path; no live paid generation was performed. The owner Images panel now defaults to local and exposes the fixed cloud provider with finite size/quality controls. Read-only status does not sign, write configuration, probe network or expose credentials. Cloud serialization excludes local-only options. Decision Inbox shows immutable paid-operation details and retains a visible task-return link after approval. Strict task-ID URL restoration only reads existing tasks; no automatic resubmission. Independent click-only browser tests cover a nonempty prefix, signed worker, PNG, gallery and ZIP with mocked provider transport. After the separate HUD grid repair, the actual approved cloud browser workflow also passes at1280px and Pixel7; the desktop fixture no longer avoids the reproduced overflow. The model-callable image_generate tool now accepts an explicit cloud selector with only the existing fixed OpenAI model/size/quality vocabulary. Server-owned gated intake preserves the trusted actor and turn origin and proposes one signed plugin.egress task; the agent loop stops for the same human approval. Local generation/edit remains the default. Cloud arguments cannot execute as a local tool.rpc task, and missing runtime or ambiguous enqueue does not trigger fallback or resubmission. Actual ToolRPC/approval/worker/mock-provider/PNG/catalog and cancellation/restart regressions pass. The default-off local residency manager now requires exact controller acknowledgments before confirming loads or forgetting unloaded models. Refused unloads retain prior accounting and stop replacement; request references alone never imply residency. Strict LM Studio and Ollama adapter checks, cancellation/concurrency cases and actual Agent best-effort continuation pass offline and independent review. H277 follow-up review (2026-09-27): inspected the changed shared HUD/VLM hunks; image and code-execution request controls remain unchanged. Full offline suite exercised these paths; this is not a new real-provider or Docker acceptance run. H487/H513 follow-up review (2026-09-27): shared coordinator changes are restricted to Telegram decision cards and human-reason replies; HUD changes affect approval grouping/reasons and provider posture. Image and code-execution dispatch/return controls remain unchanged. The complete frontend suite passes 1802 tests; backend milestone verification is recorded separately. Existing partial status and remaining acceptance requirements are retained. Binding-inventory follow-up: only the 14 existing coordinator source positions moved; no binding name, authority or image dispatch was added or removed. H487 shared-source review: coordinator e-stop bookkeeping now records approval expiry; image dispatch and controls are unchanged. Shared Decision Inbox adds a deadline label and three UI cases. Full frontend verification passes 1809 tests; no new real-provider acceptance. H487 milestone compatibility review: binding inventory updates only 14 coordinator source positions by eight lines, preserving names/columns; Piper timeout verification observes the actual spawned PID and reaped return code rather than depending on a child log written before its deadline. Production voice behavior is unchanged. Interactive VLM shared-source review: only VLM status/describe/screen-reflex policy and their two HUD panels changed. Image generation, code execution, task approval/deadline controls and other handlers remain unchanged. Full frontend verification passes 1815 tests; no live-provider or native-mobile acceptance is claimed. H517 local-provider follow-up: reviewed the shared image runtime, PNG publication extraction and HUD/API changes. Declarative loopback openai_images providers use the same exact human approval and durable attempt; protocol/model choices and per-backend capabilities reach the Images panel. ComfyUI workflows remain covered by focused regressions; no live provider acceptance. Additional arbitrary/vendor protocols remain unfinished. Named-provider compatibility review: existing image protocol config, option validation and transport factories now sit behind concrete shared-registry adapters; exact approval, backend/config/source binding, durable attempt and artifact publication remain enforced. Existing image/edit/API regressions pass; no new vendor or live acceptance is claimed. ComfyUI publication review (2026-10-01): re-read the only drifted image adapter and registry changes. The ComfyUI provider now forwards the runtime guard; validated downloads recheck configuration and authority, then the same guard runs after temporary-file synchronization immediately before atomic publication. Kernel/policy denials withhold the generated result and remove temporary artifacts; machinery errors retain failure outcomes. Direct backend calls remain compatible through an optional guard. Red-first backend and signed-worker regressions cover revocation after download and before publication, including off/enforce kernel modes. Independent focused code review found no blocker. This closes the dropped-guard defect only; generation is not continuously interruptible and no live ComfyUI or paid-provider acceptance was performed. Video-consumer shared-source review (2026-10-02): compared the current coordinator diff with 9d5b3add and re-read this row contract. The new registration is default-off; its signed-context checks apply to canonical video tasks. Existing image recognition, trusted tool kinds, code execution registration, spill access and session-kernel wiring are retained. The canonical media dispatcher additionally recognizes video while preserving the prior non-media refusal reason. Binding inventory edits only move existing callsite positions. No other pinned implementation source changed from this row's prior reviewed snapshot. This delta does not close any of the remaining requirements or claim new live-provider or Docker acceptance. Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review.",
-      "remaining": "The real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need explicit architecture adjudication; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation requires one cloud seam, not eight-provider fan-out. Ambiguous provider attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed. This acknowledgment foundation is not a VRAM swap: canonical aliases, production backend/controller identity, atomic per-generation leases, owner control coordination and authoritative hardware snapshots remain unresolved. Existing coarse headroom and no-victim overcommit behavior remain. ComfyUI unknown submissions need reconciliation before any future exclusive lease can safely release.",
+      "summary": "Implemented configured local ComfyUI backend aliases and allowlisted checkpoint selection, up to four opaque generated-image references blended before editing, and explicit 2x bicubic upscale. Options remain bound into the existing exact, single-use approval tuple. HUD submits and displays these choices. A separate cloud-image adapter now completes one exact human-approved OpenAI gpt-image-1.5 request with finite size/quality options, fail-closed secret screening, fresh DNS-bound transport and durable no-replay attempts. Validated PNG bytes persist under an opaque local ID; opt-in catalog finalization is idempotent and reaches the existing gallery/blob/export flow. Independent mocked-transport checks cover the full guarded path; no live paid generation was performed. The owner Images panel now defaults to local and exposes the fixed cloud provider with finite size/quality controls. Read-only status does not sign, write configuration, probe network or expose credentials. Cloud serialization excludes local-only options. Decision Inbox shows immutable paid-operation details and retains a visible task-return link after approval. Strict task-ID URL restoration only reads existing tasks; no automatic resubmission. Independent click-only browser tests cover a nonempty prefix, signed worker, PNG, gallery and ZIP with mocked provider transport. After the separate HUD grid repair, the actual approved cloud browser workflow also passes at1280px and Pixel7; the desktop fixture no longer avoids the reproduced overflow. The model-callable image_generate tool now accepts an explicit cloud selector with only the existing fixed OpenAI model/size/quality vocabulary. Server-owned gated intake preserves the trusted actor and turn origin and proposes one signed plugin.egress task; the agent loop stops for the same human approval. Local generation/edit remains the default. Cloud arguments cannot execute as a local tool.rpc task, and missing runtime or ambiguous enqueue does not trigger fallback or resubmission. Actual ToolRPC/approval/worker/mock-provider/PNG/catalog and cancellation/restart regressions pass. The default-off local residency manager now requires exact controller acknowledgments before confirming loads or forgetting unloaded models. Refused unloads retain prior accounting and stop replacement; request references alone never imply residency. Strict LM Studio and Ollama adapter checks, cancellation/concurrency cases and actual Agent best-effort continuation pass offline and independent review. H277 follow-up review (2026-09-27): inspected the changed shared HUD/VLM hunks; image and code-execution request controls remain unchanged. Full offline suite exercised these paths; this is not a new real-provider or Docker acceptance run. H487/H513 follow-up review (2026-09-27): shared coordinator changes are restricted to Telegram decision cards and human-reason replies; HUD changes affect approval grouping/reasons and provider posture. Image and code-execution dispatch/return controls remain unchanged. The complete frontend suite passes 1802 tests; backend milestone verification is recorded separately. Existing partial status and remaining acceptance requirements are retained. Binding-inventory follow-up: only the 14 existing coordinator source positions moved; no binding name, authority or image dispatch was added or removed. H487 shared-source review: coordinator e-stop bookkeeping now records approval expiry; image dispatch and controls are unchanged. Shared Decision Inbox adds a deadline label and three UI cases. Full frontend verification passes 1809 tests; no new real-provider acceptance. H487 milestone compatibility review: binding inventory updates only 14 coordinator source positions by eight lines, preserving names/columns; Piper timeout verification observes the actual spawned PID and reaped return code rather than depending on a child log written before its deadline. Production voice behavior is unchanged. Interactive VLM shared-source review: only VLM status/describe/screen-reflex policy and their two HUD panels changed. Image generation, code execution, task approval/deadline controls and other handlers remain unchanged. Full frontend verification passes 1815 tests; no live-provider or native-mobile acceptance is claimed. H517 local-provider follow-up: reviewed the shared image runtime, PNG publication extraction and HUD/API changes. Declarative loopback openai_images providers use the same exact human approval and durable attempt; protocol/model choices and per-backend capabilities reach the Images panel. ComfyUI workflows remain covered by focused regressions; no live provider acceptance. Additional arbitrary/vendor protocols remain unfinished. Named-provider compatibility review: existing image protocol config, option validation and transport factories now sit behind concrete shared-registry adapters; exact approval, backend/config/source binding, durable attempt and artifact publication remain enforced. Existing image/edit/API regressions pass; no new vendor or live acceptance is claimed. ComfyUI publication review (2026-10-01): re-read the only drifted image adapter and registry changes. The ComfyUI provider now forwards the runtime guard; validated downloads recheck configuration and authority, then the same guard runs after temporary-file synchronization immediately before atomic publication. Kernel/policy denials withhold the generated result and remove temporary artifacts; machinery errors retain failure outcomes. Direct backend calls remain compatible through an optional guard. Red-first backend and signed-worker regressions cover revocation after download and before publication, including off/enforce kernel modes. Independent focused code review found no blocker. This closes the dropped-guard defect only; generation is not continuously interruptible and no live ComfyUI or paid-provider acceptance was performed. Video-consumer shared-source review (2026-10-02): compared the current coordinator diff with 9d5b3add and re-read this row contract. The new registration is default-off; its signed-context checks apply to canonical video tasks. Existing image recognition, trusted tool kinds, code execution registration, spill access and session-kernel wiring are retained. The canonical media dispatcher additionally recognizes video while preserving the prior non-media refusal reason. Binding inventory edits only move existing callsite positions. No other pinned implementation source changed from this row's prior reviewed snapshot. This delta does not close any of the remaining requirements or claim new live-provider or Docker acceptance. Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review. Local text-generation protection (2026-10-09): Agent.process and Agent.synthesize now enter the existing model reference context before awaiting the route-aware residency hook and retain it through generation. Deterministic concurrent-request regressions reproduce the previous post-load eviction on both paths; cancellation, guard/generation failure, same-model references and unconfirmed-controller continuation retain cleanup. Settings are read after residency and load time stays outside generation latency. The manager remains default-off with unchanged exact acknowledgments and best-effort budget behavior. This is software protection for those two Agent paths, not measured hardware residency or exclusive coordination with ComfyUI/owner controls.",
+      "remaining": "The real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need explicit architecture adjudication; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation requires one cloud seam, not eight-provider fan-out. Ambiguous provider attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed. This acknowledgment foundation is not a VRAM swap: canonical aliases, production backend/controller identity, generation leases outside the two local Agent text paths, owner control coordination and authoritative hardware snapshots remain unresolved. Existing coarse headroom and no-victim overcommit behavior remain. ComfyUI unknown submissions need reconciliation before any future exclusive lease can safely release.",
       "evidence": [
         {
           "path": "agents/core/media_backends/comfyui.py",
@@ -9016,7 +9016,7 @@
         },
         {
           "path": "agents/core/llm/model_manager.py",
-          "sha256": "d1347cac96cd4c4c4251396778d9fdd618e1a7b03c4bd93be25fa6e4ad706734"
+          "sha256": "f05d556cbfba25721cd169352057ab1cd2a84264630bd9e6284541b83e863413"
         },
         {
           "path": "tests/test_model_manager_ack.py",
@@ -9041,6 +9041,14 @@
         {
           "path": "tests/test_local_image_runtime.py",
           "sha256": "c9e26a06cadc3d6e8e6be034f622dde3734852ea81d1169a5eba04c3189378c9"
+        },
+        {
+          "path": "agents/core/agent.py",
+          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
+        },
+        {
+          "path": "tests/test_agent_model_lease.py",
+          "sha256": "577156899ae5a4cc393031f616534f3e69da31125e67f57e57e8823fcea74673"
         }
       ]
     },
@@ -11025,7 +11033,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "eefc5e1eade75ce9672959d6a9937c94ccacd2e863c2b5aeb200af1c3fb05912"
+          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
         },
         {
           "path": "agents/core/orchestrator.py",
@@ -11090,7 +11098,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "eefc5e1eade75ce9672959d6a9937c94ccacd2e863c2b5aeb200af1c3fb05912"
+          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
         },
         {
           "path": "agents/core/checkpoint.py",
@@ -11637,7 +11645,7 @@
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "eefc5e1eade75ce9672959d6a9937c94ccacd2e863c2b5aeb200af1c3fb05912"
+          "sha256": "0223b1fd336acc3cb74d1a464b0fa3265439039c76920236672011f9f3d26801"
         },
         {
           "path": "agents/core/checkpoint.py",

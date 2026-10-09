@@ -1065,19 +1065,20 @@ class Agent:
 
         # H22.5 — best-effort local model residency (LRU swap fast↔deep). Default
         # OFF via JARVIS_MODEL_MANAGER; a no-op for cloud/Claude routes and when
-        # no manager is attached. ensure_resident swaps the LRU local model out
-        # before loading this one (never raises); `using()` ref-counts the model
-        # so a concurrent request can't evict it mid-generate. Both degrade to a
-        # no-op when the kill-switch is off, leaving today's behavior unchanged.
+        # no manager is attached. Enter `using()` before ensure_resident so a
+        # concurrent request cannot evict this model after it loads but before
+        # generation begins. Both degrade to a no-op when the kill-switch is off.
         manager = getattr(self.llm_router, "model_manager", None)
-        await self._ensure_resident(route_name, model)
         residency = manager.using(model) if (manager is not None and route_name.startswith("local")) else _NullCtx()
 
-        max_tokens, temperature = ((prepared.max_tokens, prepared.temperature) if prepared is not None
-                                   else self._gen_params(route_name))
         start = time.monotonic()
         try:
             async with residency:
+                await self._ensure_resident(route_name, model)
+                max_tokens, temperature = ((prepared.max_tokens, prepared.temperature) if prepared is not None
+                                           else self._gen_params(route_name))
+                # Residency loading remains outside the recorded generation latency.
+                start = time.monotonic()
                 if prepared is not None:
                     prepared.check(self.llm_router, self.id, prompt, context.get("session_id"))
                 response = await self.generate_response(
@@ -1240,15 +1241,15 @@ class Agent:
 
             # H22.5 — best-effort local model residency, same guarded pattern as
             # process(): default OFF via JARVIS_MODEL_MANAGER, a no-op for
-            # cloud/Claude routes and when no manager is attached. ensure_resident
-            # swaps the LRU local model before loading this one (never raises);
-            # using() ref-counts it so a concurrent request can't evict mid-generate.
+            # cloud/Claude routes and when no manager is attached. Enter using()
+            # before loading so a concurrent request cannot evict this model
+            # between residency confirmation and generation.
             manager = getattr(self.llm_router, "model_manager", None)
-            await self._ensure_resident(route_name, model)
             residency = manager.using(model) if (manager is not None and route_name.startswith("local")) else _NullCtx()
 
-            max_tokens, temperature = self._gen_params(route_name)
             async with residency:
+                await self._ensure_resident(route_name, model)
+                max_tokens, temperature = self._gen_params(route_name)
                 check = getattr(self.llm_router, "check_data_handling", None)
                 if callable(check):
                     check(backend, model, route_name)
