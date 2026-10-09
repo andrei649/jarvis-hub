@@ -7618,7 +7618,7 @@
         },
         {
           "path": "tests/test_hud_v2_parity.py",
-          "sha256": "845337f42fd35f50f583fc2d658f61d0ae7644a9830ceabc82f49f52e8f535e4"
+          "sha256": "1c7d2f8c03c1f9f02552174dff04d9f74817c41636184fd00fb2a95ee9003af4"
         },
         {
           "path": "tests/test_endpoints.py",
