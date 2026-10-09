@@ -6,6 +6,10 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from agents.core.media_backends.local_openai_image import (
+    _RESPONSE_FAILURE_MARKER,
+    _RESPONSE_FAILURE_REASONS,
+)
 from agents.core.media_backends.openai_image import ENDPOINT
 
 _CLOUD_PROVIDER_FAILURES = frozenset({
@@ -46,6 +50,31 @@ def _cloud_provider_response_failed(task) -> bool:
     )
 
 
+def _local_provider_response_failed(task) -> bool:
+    """Recognize only the canonical local OpenAI image response-failure marker."""
+    payload = task.payload
+    execution = task.result
+    if not (task.kind == "tool.rpc"
+            and type(payload) is dict
+            and payload.get("tool") == "image_generate"
+            and payload.get("target") == "image_generate"
+            and type(execution) is dict
+            and set(execution) == {"status", "reason", "tool", "result"}
+            and execution["status"] == "failed"
+            and execution["tool"] == "image_generate"
+            and type(execution["reason"]) is str
+            and execution["reason"] in _RESPONSE_FAILURE_REASONS):
+        return False
+    media = execution["result"]
+    return (type(media) is dict
+            and set(media) == {"ok", "reason", "provider_response_failed"}
+            and media["ok"] is False
+            and type(media["reason"]) is str
+            and media["reason"] == execution["reason"]
+            and type(media["provider_response_failed"]) is str
+            and media["provider_response_failed"] == _RESPONSE_FAILURE_MARKER)
+
+
 def project_image_task(task) -> ImageTaskView:
     states = {"blocked": "awaiting_approval", "proposed": "awaiting_approval",
               "approved": "queued", "running": "generating", "rejected": "rejected",
@@ -59,6 +88,9 @@ def project_image_task(task) -> ImageTaskView:
     # Cloud completion is established only by CloudImageRuntime.recover, which
     # checks the durable artifact. A local-tool-shaped result is not cloud proof.
     if task.kind == "plugin.egress":
+        return result
+    if _local_provider_response_failed(task):
+        result.state = "failed"
         return result
     try:
         execution = task.result

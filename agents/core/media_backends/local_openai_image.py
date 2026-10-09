@@ -23,6 +23,15 @@ from .comfyui import (
 from .registry import local_endpoint, normalize_options, registry_fingerprint, strict_json
 
 _IMPORTED_SHA = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+_RESPONSE_FAILURE_REASONS = frozenset({
+    'backend_http_error', 'invalid_response', 'response_too_large',
+    'invalid_image', 'image_dimensions_mismatch',
+})
+_RESPONSE_FAILURE_MARKER = 'local_openai_images_v1'
+
+
+class _ProviderResponseFailure(ImageGenerationError):
+    """A fixed negative response from the one local image POST."""
 
 
 @dataclass(frozen=True)
@@ -87,19 +96,19 @@ class LocalOpenAIImageBackend:
                         if 300 <= response.status_code < 400:
                             raise ImageGenerationError('redirect_refused')
                         if response.status_code != 200:
-                            raise ImageGenerationError('backend_http_error')
+                            raise _ProviderResponseFailure('backend_http_error')
                         if response.headers.get('content-type', '').split(';')[0].strip().lower() != 'application/json':
-                            raise ImageGenerationError('invalid_response')
+                            raise _ProviderResponseFailure('invalid_response')
                         length = response.headers.get('content-length')
                         if length is not None:
                             if not length.isascii() or not length.isdecimal():
-                                raise ImageGenerationError('invalid_response')
+                                raise _ProviderResponseFailure('invalid_response')
                             if len(length) > 12 or int(length) > config.max_json_bytes:
-                                raise ImageGenerationError('response_too_large')
+                                raise _ProviderResponseFailure('response_too_large')
                         data = bytearray()
                         async for chunk in response.aiter_bytes(chunk_size=65536):
                             if len(data) + len(chunk) > config.max_json_bytes:
-                                raise ImageGenerationError('response_too_large')
+                                raise _ProviderResponseFailure('response_too_large')
                             data.extend(chunk)
                 # Close is awaited before publication. From here the image was generated,
                 # so a governance change during the request (a kernel denial, a hold, a
@@ -120,10 +129,15 @@ class LocalOpenAIImageBackend:
                     if len(png) > config.max_image_bytes:
                         raise ValueError('decoded bound')
                 except (ValueError, TypeError, KeyError, UnicodeError, RecursionError, binascii.Error):
-                    raise ImageGenerationError('invalid_response') from None
-                dimensions = validate_png(png)
+                    raise _ProviderResponseFailure('invalid_response') from None
+                try:
+                    dimensions = validate_png(png)
+                except ImageGenerationError as exc:
+                    if type(exc) is not ImageGenerationError or exc.reason != 'invalid_image':
+                        raise
+                    raise _ProviderResponseFailure('invalid_image') from None
                 if dimensions != (opts['width'], opts['height']):
-                    raise ImageGenerationError('image_dimensions_mismatch')
+                    raise _ProviderResponseFailure('image_dimensions_mismatch')
                 withheld()
                 return save_artifact(config.output_root, png, *dimensions, guard=withheld)
         except TimeoutError:

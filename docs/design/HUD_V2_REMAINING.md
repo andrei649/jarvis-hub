@@ -351,12 +351,15 @@ configuration-only local status, exact-prompt proposals through the existing app
 queue, task restoration across the approval handoff, manual status refresh and
 authenticated PNG preview/save. It does not initiate cloud generation or repeat a
 proposal automatically. Real-device/live-generator acceptance stays open. The server
-now projects only three exact, normally completed cloud provider-response failures
-as `failed`, with verified artifact recovery taking precedence. Web/native readers
-state that no usable image was verified and add no preview or automatic proposal.
-Generic/local failures, malformed results, ambiguous delivery and withheld output
-remain `uncertain`; native cloud proposal controls are unchanged. See
-[bounded evidence](../project-image-provider-failure-20261009.md).
+projects three exact, normally completed cloud provider-response failures and five
+typed local OpenAI-compatible response failures as `failed`. The local adapter
+persists a fixed producer marker; legacy rows without it stay uncertain. Verified
+cloud artifact recovery keeps precedence. Web/native readers state that no usable
+image was verified and add no preview or automatic proposal. Generic/ComfyUI
+failures, malformed results, ambiguous delivery and withheld output remain
+`uncertain`; native cloud proposal controls are unchanged. See
+[cloud evidence](../project-image-provider-failure-20261009.md) and
+[typed local evidence](../project-local-image-response-20261009.md).
 
 **HA-4i-S1 declarative extension inspection (2026-09-09):** user-guarded
 `GET /api/plugins/extensions` projects already-composed acquired package declarations

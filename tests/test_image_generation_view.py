@@ -31,6 +31,12 @@ def cloud_task(*, status="done", result=None, task_id=17):
     )
 
 
+def local_response_failure(reason="invalid_response"):
+    return {"status": "failed", "reason": reason, "tool": "image_generate", "result": {
+        "ok": False, "reason": reason, "provider_response_failed": "local_openai_images_v1",
+    }}
+
+
 @pytest.fixture
 def app(monkeypatch):
     from agents.core.routers import _component
@@ -199,3 +205,76 @@ def test_local_image_failure_envelope_does_not_inherit_cloud_failure_label():
         "result": {"ok": False, "kind": "image", "reason": "cloud_image_provider_error"},
     })
     assert project_image_task(task).state == "uncertain"
+
+
+@pytest.mark.parametrize("reason", [
+    "backend_http_error", "invalid_response", "response_too_large",
+    "invalid_image", "image_dimensions_mismatch",
+])
+@pytest.mark.asyncio
+async def test_exact_local_provider_response_failure_is_redacted_and_admin_only(app, monkeypatch, reason):
+    task = image_task(kind="tool.rpc", result=local_response_failure(reason))
+    monkeypatch.setattr(multimodal, "get_orch", lambda: SimpleNamespace(
+        autonomy_queue=SimpleNamespace(get=lambda _task_id: task),
+    ))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+        assert (await client.get("/api/media/generation-tasks/17")).status_code == 401
+        response = await client.get(
+            "/api/media/generation-tasks/17", headers={"X-Admin-Token": "owner-test"},
+        )
+    assert response.status_code == 200
+    assert "no-store" in response.headers["cache-control"]
+    assert response.json() == {"task_id": 17, "state": "failed", "artifact": None}
+    assert reason not in response.text and "PRIVATE" not in response.text
+    assert "local_openai_images_v1" not in response.text
+
+
+@pytest.mark.parametrize("change", [
+    {"status": "failed"},
+    {"kind": "toolrpc.image_generate"},
+    {"kind": "plugin.egress"},
+    {"payload": {"tool": "image_generate", "target": "other"}},
+    {"payload": {"tool": "other", "target": "image_generate"}},
+    {"payload": type("PayloadDict", (dict,), {})({"tool": "image_generate", "target": "image_generate"})},
+    {"result": {"status": "failed", "reason": "invalid_response", "tool": "image_generate",
+                "result": {"ok": False, "reason": "invalid_response"}}},
+    {"result": {**local_response_failure(), "detail": "PRIVATE"}},
+    {"result": {**local_response_failure(), "tool": "other"}},
+    {"result": {**local_response_failure(), "status": "unknown"}},
+    {"result": {**local_response_failure(), "reason": "submission_unknown"}},
+    {"result": {**local_response_failure(), "reason": True}},
+    *[{"result": local_response_failure(reason)} for reason in (
+        "generation_failed", "submission_unknown", "withheld_after_generation",
+    )],
+    {"result": {**local_response_failure(), "result": {"ok": False, "reason": "invalid_response",
+                "provider_response_failed": "local_openai_images_v1", "body": "PRIVATE"}}},
+    {"result": {**local_response_failure(), "result": {"ok": True, "reason": "invalid_response",
+                "provider_response_failed": "local_openai_images_v1"}}},
+    {"result": {**local_response_failure(), "result": {"ok": 0, "reason": "invalid_response",
+                "provider_response_failed": "local_openai_images_v1"}}},
+    {"result": {**local_response_failure(), "result": {"ok": False, "reason": "other",
+                "provider_response_failed": "local_openai_images_v1"}}},
+    {"result": {**local_response_failure(), "result": {"ok": False, "reason": "invalid_response",
+                "provider_response_failed": "other"}}},
+    {"result": {**local_response_failure(), "result": {"ok": False, "reason": "invalid_response",
+                "provider_response_failed": True}}},
+    {"result": type("ResultDict", (dict,), {})(local_response_failure())},
+    {"result": {**local_response_failure(), "result": type("NestedDict", (dict,), {})(
+                local_response_failure()["result"])}},
+])
+def test_local_failure_requires_exact_canonical_envelope(change):
+    task = image_task(kind="tool.rpc", result=local_response_failure())
+    for key, value in change.items():
+        setattr(task, key, value)
+    assert project_image_task(task).model_dump() == {
+        "task_id": 17, "state": "uncertain", "artifact": None,
+    }
+
+
+def test_local_legacy_and_comfyui_failure_reasons_remain_uncertain():
+    for reason in ("generation_failed", "invalid_response", "backend_http_error"):
+        task = image_task(kind="tool.rpc", result={
+            "status": "failed", "reason": reason, "tool": "image_generate",
+            "result": {"ok": False, "reason": reason},
+        })
+        assert project_image_task(task).state == "uncertain"

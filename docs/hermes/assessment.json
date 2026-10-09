@@ -4519,7 +4519,7 @@
         },
         {
           "path": "agents/core/image_generation_view.py",
-          "sha256": "4e862bf7a76c8f55e554875fe06e9f87cda8462a25fe58f3642c02efbb9ffb64"
+          "sha256": "699601631a46bee0bd04cff324576a99828e56646f03788d59889053c030db8f"
         },
         {
           "path": "agents/core/routers/multimodal.py",
@@ -8908,7 +8908,7 @@
         },
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "3b099719f04053595a3b965ccd84c7dbaccee46b4c2dc3042fbd9ad5c87e9ed2"
+          "sha256": "6f7780915e67dcc141973bbc4adf029059576fa542056c83e59d00fc47a51ebc"
         },
         {
           "path": "agents/core/media_library.py",
@@ -9053,7 +9053,7 @@
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "3b099719f04053595a3b965ccd84c7dbaccee46b4c2dc3042fbd9ad5c87e9ed2"
+          "sha256": "6f7780915e67dcc141973bbc4adf029059576fa542056c83e59d00fc47a51ebc"
         },
         {
           "path": "agents/core/media_backends/comfyui.py",
@@ -9061,7 +9061,7 @@
         },
         {
           "path": "agents/core/media_backends/local_openai_image.py",
-          "sha256": "f3b39eedbb573f1719cef1e8ceefff5b5bbd98fbe61f6fb3d733e406116d9880"
+          "sha256": "316b8eb5295541578e8491231ce2488f6add08b0062c4d85f80358923ba41435"
         },
         {
           "path": "agents/core/media_backends/registry.py",
@@ -9089,11 +9089,11 @@
         },
         {
           "path": "tests/test_h517_local_provider.py",
-          "sha256": "b5c8e02abfc23ebc5e159f183dc7bdfce643992b1bbca7a9d0abd2b4637f9c23"
+          "sha256": "37d4e3487e1c8e98183a06d20315e50e2721bfb050516e3601457ef7acbefdf2"
         },
         {
           "path": "tests/test_h517_provider_integration.py",
-          "sha256": "d846e27c8de74229350a7d68d3f7da095557d4e36104c0af672c45fa5341202e"
+          "sha256": "a2cdaa3f8359ffa910d87cd10ee37f917cfdd22dfa76c90d2242f09e5b967c35"
         },
         {
           "path": "agents/core/kernel/registry.py",
@@ -9214,7 +9214,7 @@
         },
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "3b099719f04053595a3b965ccd84c7dbaccee46b4c2dc3042fbd9ad5c87e9ed2"
+          "sha256": "6f7780915e67dcc141973bbc4adf029059576fa542056c83e59d00fc47a51ebc"
         },
         {
           "path": "agents/core/media_library.py",
@@ -9311,11 +9311,11 @@
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "3b099719f04053595a3b965ccd84c7dbaccee46b4c2dc3042fbd9ad5c87e9ed2"
+          "sha256": "6f7780915e67dcc141973bbc4adf029059576fa542056c83e59d00fc47a51ebc"
         },
         {
           "path": "agents/core/image_generation_view.py",
-          "sha256": "4e862bf7a76c8f55e554875fe06e9f87cda8462a25fe58f3642c02efbb9ffb64"
+          "sha256": "699601631a46bee0bd04cff324576a99828e56646f03788d59889053c030db8f"
         },
         {
           "path": "agents/core/routers/multimodal.py",
@@ -10308,11 +10308,11 @@
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "3b099719f04053595a3b965ccd84c7dbaccee46b4c2dc3042fbd9ad5c87e9ed2"
+          "sha256": "6f7780915e67dcc141973bbc4adf029059576fa542056c83e59d00fc47a51ebc"
         },
         {
           "path": "agents/core/image_generation_view.py",
-          "sha256": "4e862bf7a76c8f55e554875fe06e9f87cda8462a25fe58f3642c02efbb9ffb64"
+          "sha256": "699601631a46bee0bd04cff324576a99828e56646f03788d59889053c030db8f"
         },
         {
           "path": "agents/core/routers/multimodal.py",
