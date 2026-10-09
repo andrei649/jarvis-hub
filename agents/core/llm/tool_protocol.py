@@ -70,6 +70,12 @@ class TokenUsage:
     counters this adapter needs for its measured accounting mapping. It does
     not make optional provider fields wire-required, or account for retries
     and other model requests. None leaves legacy producers unchanged.
+
+    ``prompt_counts_complete`` separately describes prompt-anchor availability:
+    True means one response's mapped prompt categories are complete; False
+    blocks a partial response or multi-response sum from anchoring; None keeps
+    legacy raw producers unchanged. The marker does not prove current system
+    or tool text, or physical context size.
     """
 
     input_tokens: int = 0
@@ -77,6 +83,7 @@ class TokenUsage:
     cache_read: int = 0
     cache_write: int = 0
     counts_complete: bool | None = None
+    prompt_counts_complete: bool | None = None
 
     @property
     def reported(self) -> bool:

@@ -87,23 +87,24 @@ def test_partial_cache_categories_estimate_with_numeric_floors_and_no_discount(m
     assert usage.counts_complete is False
 
 
-def test_positive_partial_prompt_anchors_remain_independent_of_billable_availability():
-    partial = anthropic_usage({"usage": {
-        "input_tokens": 23, "output_tokens": 17, "cache_read_input_tokens": 90,
+def test_complete_prompt_anchors_remain_independent_of_output_availability():
+    complete_prompt = anthropic_usage({"usage": {
+        "input_tokens": 23, "cache_read_input_tokens": 90,
+        "cache_creation_input_tokens": 10,
     }})
     output_only = anthropic_usage({"usage": {"output_tokens": 17}})
     orch = Orchestrator.__new__(Orchestrator)
     orch._context_anchor = {}
     orch._ctx_turns_at_build = 6
-    orch._record_context_anchor("jarvis", partial)
-    assert orch._usage_anchor(6).prompt_tokens == 113
+    orch._record_context_anchor("jarvis", complete_prompt)
+    assert orch._usage_anchor(6).prompt_tokens == 123
     orch._record_context_anchor("jarvis", output_only)
-    assert orch._usage_anchor(6).prompt_tokens == 113
+    assert orch._usage_anchor(6).prompt_tokens == 123
 
     route = SimpleNamespace(identity=object(), model="claude-test")
     rows = [{"role": "user", "content": "hello"}]
     store = OrderedDict()
-    remember_usage(store, "session", "jarvis", route, rows, "instance", partial)
-    assert trusted_anchor(store, "session", {"jarvis": route}, rows, "instance").prompt_tokens == 113
+    remember_usage(store, "session", "jarvis", route, rows, "instance", complete_prompt)
+    assert trusted_anchor(store, "session", {"jarvis": route}, rows, "instance").prompt_tokens == 123
     remember_usage(store, "session", "jarvis", route, rows, "instance", output_only)
-    assert trusted_anchor(store, "session", {"jarvis": route}, rows, "instance").prompt_tokens == 113
+    assert trusted_anchor(store, "session", {"jarvis": route}, rows, "instance").prompt_tokens == 123

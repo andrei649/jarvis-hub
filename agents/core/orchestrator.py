@@ -322,6 +322,8 @@ def _sum_usage(running, incoming):
     agents is how one agent ends up billed for another's tokens. Availability is
     true only for all explicitly complete observations; mixed or incomplete
     evidence stays incomplete while the known numeric lower bounds still add.
+    A sum of two or more requests is never one prompt prefix, so its prompt
+    anchor marker is False independently of the accounting conjunction.
     """
     from .llm.tool_protocol import TokenUsage
 
@@ -340,6 +342,7 @@ def _sum_usage(running, incoming):
         cache_read=running.cache_read + incoming.cache_read,
         cache_write=running.cache_write + incoming.cache_write,
         counts_complete=complete,
+        prompt_counts_complete=False,
     )
 
 
@@ -4003,6 +4006,8 @@ class Orchestrator:
         than clearing it: the transcript did not shrink because one backend
         stayed quiet.
         """
+        if getattr(usage, "prompt_counts_complete", None) is False:
+            return
         # TokenUsage stores disjoint input/cache categories. Cached prefixes
         # occupy context too; totals-only adapters leave both cache fields zero.
         prompt_tokens = sum(getattr(usage, key, 0) for key in

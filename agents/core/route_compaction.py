@@ -307,7 +307,8 @@ def _prefix(rows):
 
 
 def remember_usage(store, session, agent_id, route, rows, instance, usage):
-    if not isinstance(instance, str) or not instance:
+    if (not isinstance(instance, str) or not instance
+            or getattr(usage, "prompt_counts_complete", None) is False):
         return
     counts = [getattr(usage, key, 0) for key in ("input_tokens", "cache_read", "cache_write")]
     if any(type(value) is not int or value < 0 for value in counts) or not sum(counts):

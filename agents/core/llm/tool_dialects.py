@@ -281,7 +281,7 @@ def anthropic_usage(data: Mapping[str, Any]) -> TokenUsage:
     """
     raw = data.get("usage") if isinstance(data, Mapping) else None
     if not isinstance(raw, Mapping):
-        return TokenUsage(counts_complete=False)
+        return TokenUsage(counts_complete=False, prompt_counts_complete=False)
     keys = ("input_tokens", "output_tokens", "cache_read_input_tokens",
             "cache_creation_input_tokens")
     observed = {key: raw.get(key) for key in keys}
@@ -292,6 +292,10 @@ def anthropic_usage(data: Mapping[str, Any]) -> TokenUsage:
         cache_write=_local_count(observed, "cache_creation_input_tokens"),
         counts_complete=all(type(value) is int and value >= 0
                             for value in observed.values()),
+        prompt_counts_complete=all(
+            type(observed[key]) is int and observed[key] >= 0
+            for key in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+        ),
     )
 
 
