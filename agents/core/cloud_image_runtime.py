@@ -21,6 +21,7 @@ from .env_config import env_flag, env_str
 from .http_client import PluginHTTPClient, PluginTimeouts
 from .image_generation_runtime import _task_binding
 from .kernel import Action, Verdict, kernel_enabled
+from .media_backends.comfyui import implementation_fingerprint, save_artifact
 from .media_backends.openai_image import ENDPOINT, MAX_RESPONSE, decode_result, normalize_request
 from .media_catalog import MediaCatalog
 from .paths import data_root
@@ -31,6 +32,7 @@ VERSION = "openai-image-v1"
 _CODE_DIGEST = hashlib.sha256(
     Path(__file__).read_bytes()
     + (Path(__file__).parent / "media_backends" / "openai_image.py").read_bytes()
+    + implementation_fingerprint().encode("ascii")
 ).hexdigest()
 
 
@@ -147,6 +149,9 @@ class CloudImageRuntime:
         key = self.key()
         if not isinstance(key, str) or not key.strip():
             raise _Declined("credential_not_configured", "OpenAI image credential unavailable")
+        # The generation binds the helper that actually publishes PNGs. A disk
+        # edit after import cannot silently approve different loaded behavior.
+        implementation_fingerprint()
         # Only a random generation is public. The credential hash stays in a
         # private local record, so task/status metadata is not a secret oracle.
         digest = hashlib.sha256((VERSION + _CODE_DIGEST + "\0" + key).encode()).hexdigest()
@@ -480,20 +485,35 @@ class CloudImageRuntime:
             phase = "generated"
             live_check("POST", ENDPOINT)
             phase = "published"
-            artifact_id = uuid.uuid4().hex
-            destination = self.root / "media" / "generated" / (artifact_id + ".png")
-            _write(destination, data)
+            generated_root = _safe(self.root / "media" / "generated")
             width, height = map(int, task.payload["image"]["body"]["size"].split("x"))
+
+            def final_publication_guard():
+                nonlocal phase
+                # Root safety is storage, not a governance refusal. Keep its
+                # failure in the publication/unknown phase.
+                _safe(generated_root)
+                try:
+                    live_check("POST", ENDPOINT)
+                except Exception:
+                    # The provider answered, but the last live governance or
+                    # machinery recheck refused before the PNG link.
+                    phase = "generated"
+                    raise
+
+            published = save_artifact(
+                generated_root, data, width, height, guard=final_publication_guard,
+            )
             done = {
                 "binding": _task_binding(task),
                 "created_at": time.time(),
                 "catalog_requested": env_flag("JARVIS_MEDIA_CATALOG"),
-                "sha256": hashlib.sha256(data).hexdigest(),
+                "sha256": published["sha256"],
                 "artifact": {
-                    "artifact_id": artifact_id,
-                    "bytes": len(data),
-                    "width": width,
-                    "height": height,
+                    "artifact_id": published["artifact_id"],
+                    "bytes": published["bytes"],
+                    "width": published["width"],
+                    "height": published["height"],
                 },
             }
             _write(self._path(task, "complete"), json.dumps(done).encode())

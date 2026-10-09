@@ -1967,6 +1967,8 @@
 
 - 2026-10-09 H477 generated-ID continuation: new local ComfyUI and local OpenAI PNGs persist an expected SHA-256 beside the image. The shared download/edit reader refuses malformed bindings or changed bytes; cooperating local publishers reserve IDs and publish the binding before the guarded PNG link. Missing sidecars keep legacy availability without an integrity claim. Cloud publication remains separate, directory-entry sync is best effort, and no provider retry or broader H477 completion is added. See [standalone image proof](docs/plans/2026-10-09-generated-artifact-digest.md).
 
+- 2026-10-09 H477 cloud generated-ID continuation: newly approved cloud PNGs now use the same reserved-ID, sidecar-first publisher as local providers. Raw delivery and edit references verify their stored expected digest; task recovery retains its independent completion SHA. The final storage and live authority checks preserve existing unknown/withheld/failure outcomes without another provider request. Legacy sidecar-free IDs remain unbound on raw reads and are not migrated. See [cloud standalone image proof](docs/plans/2026-10-09-cloud-generated-artifact-digest.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
   Reassess inherited judgments, finish the full accepted
