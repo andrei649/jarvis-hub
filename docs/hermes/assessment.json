@@ -10314,7 +10314,7 @@
         },
         {
           "path": "tests/test_h595_oneshot_context.py",
-          "sha256": "5e40b7ad5c20a54db10a9f907e9ee60f4c97628ad502079d6a557efa78cf1962"
+          "sha256": "f9c72da18c7a9ab18086a872360d059b05e277581eba61ff23d507036d2bc74d"
         }
       ]
     },

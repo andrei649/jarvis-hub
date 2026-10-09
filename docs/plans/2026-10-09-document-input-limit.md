@@ -14,8 +14,10 @@ existing path/stat/offset checks, raw byte paging, optional parsers and output c
 **Worktree/branch:** `/workspace/jarvis-hub-document-input-limit`,
 `codex/document-input-limit-20261009`.
 **State/next action:** implemented and independently reviewed; 489 distinct focused
-and integration cases pass. Source is frozen; commit it with the bounded evidence
-and run the full backend milestone. No passing new full run is claimed yet.
+and integration cases pass. First full backend run at `a24766b` exposed the existing
+H595 test's PID publication race (21720 pass, 37 skipped, one failure). Correct only
+that test's synchronization after deterministic reproduction, then repeat the full
+backend milestone. The document guard remains frozen; no full pass is claimed yet.
 
 ## Contract and global constraints
 
@@ -99,3 +101,15 @@ Own new `tests/test_file_document_input_limit_rpc.py`, tests only.
   unchanged frontend/native2039 and mobile316 counts. Ruff/diff/status/Hermes.
 - [ ] Record proof/manifests and clean local commit. Rollback this additive guard
   and tests/docs; no migration. Report observed-size limits without a RAM claim.
+
+## Full-suite test synchronization correction
+
+- [x] Preserve the first full-run failure. Confirm the H595 test and sandbox were
+  unchanged from the base; reproduce empty final PID reads for both native and
+  simulated WASM by delaying the real child's write with a scratch-only plugin.
+- [x] Change only that test to close a sibling temporary PID file before atomic
+  replacement, and use the cached PID for cleanup. Keep bounded startup waiting
+  and actual cancellation/reaping assertions. Same injected race passes 2/2 and
+  the full H595 module passes 14/14; no permanent test-count increase.
+- [ ] Independently review the test correction, refresh its one previously fresh
+  H595 evidence pin, freeze the new commit and repeat the serial backend milestone.

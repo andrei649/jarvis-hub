@@ -58,7 +58,17 @@ H444 and H576 stay partial; their other documented gaps remain open.
   that control. It does not weaken the oversized-file regressions.
 - Collection: **21758 backend** (25 added), **2039 frontend/native**, **316 mobile**,
   555 routes and 18 agents. Client counts are reused from unchanged verified source.
-  Full backend verification is pending; collection is not a passing full run.
+  First full backend run at `a24766b02fdf87ad84ebdfbf3758b74232707354`:
+  **21720 passed, 37 JUnit-skipped, one failure, zero errors**, 288.438 s, exit 1.
+  The existing H595 cancellation test read an empty PID file after creation but
+  before the child wrote its contents; it failed before checking cancellation.
+  Both backend variants reproduce this race when the real child write is delayed.
+  A test-only correction closes a sibling temporary PID file before atomically
+  publishing it, and cleanup reuses the parsed PID. With the same injected delay,
+  both cases change from two failures to **2/2 passing**, 2.074 s. The complete
+  H595 module passes **14/14**, 2.911 s. Cancellation/reaping assertions and sandbox
+  production code are unchanged; this adds no permanent test cases.
+  Full backend verification after the test synchronization correction is pending.
   No live provider/device or real large-document parser run was performed.
 
 Twelve exact-base-fresh pins refresh after named review: eleven file-tools claims
@@ -67,6 +77,8 @@ missing-size-refusal clause and retain other limits; H303/H536 read wording now
 qualifies admitted/parseable inputs. Both primary rows gain the two new test pins.
 H507/H661/H670 coordinates map to the same statements. All 226 stored statuses,
 row identities and the inventory hash remain unchanged. No backlog checkbox closes.
+The test synchronization correction also refreshes H595's previously current test
+pin after independent review, without changing its capability or remaining scope.
 
 Artifacts `/workspace/scratch/document-input-limit-*` retain RED/green/integration,
 source/AST/line maps and reviews; initial design/pin inventory use the
