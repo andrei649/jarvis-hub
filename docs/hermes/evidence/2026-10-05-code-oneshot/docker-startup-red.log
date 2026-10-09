@@ -1,0 +1,130 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_docker_startup_drain_timeout_stops_container_before_cleanup _______
+
+self = <tests.test_h595_oneshot_context.test_docker_startup_drain_timeout_stops_container_before_cleanup.<locals>.Stdin object at 0x106b12ff0>
+
+    async def drain(self):
+>       await asyncio.Future()
+E       asyncio.exceptions.CancelledError
+
+tests/test_h595_oneshot_context.py:315: CancelledError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-3799/test_docker_startup_drain_time0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108bd1730>
+
+    @pytest.mark.asyncio
+    async def test_docker_startup_drain_timeout_stops_container_before_cleanup(tmp_path, monkeypatch):
+        sandbox = Sandbox(work_dir=str(tmp_path / "run"), timeout=0.05)
+        sandbox._has_docker = True
+        calls = []
+    
+        class Stdin:
+            def write(self, data):
+                pass
+    
+            async def drain(self):
+                await asyncio.Future()
+    
+        class Proc:
+            stdin = Stdin()
+            returncode = None
+    
+            def kill(self):
+                self.returncode = -9
+    
+            async def wait(self):
+                return self.returncode
+    
+        async def spawn(*argv, **kwargs):
+            calls.append(argv)
+            return Proc()
+    
+        monkeypatch.setattr("agents.core.sandbox.asyncio.create_subprocess_exec", spawn)
+        try:
+>           result = await asyncio.wait_for(sandbox.execute_python("pass", execution_context={
+                "mode": "strict", "env": {}, "interpreter_env": {},
+                "check_current": lambda: True,
+            }), timeout=0.5)
+
+tests/test_h595_oneshot_context.py:333: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/tasks.py:519: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Timeout [expired]>
+exc_type = <class 'asyncio.exceptions.CancelledError'>
+exc_val = CancelledError(), exc_tb = <traceback object at 0x108af41c0>
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
+        assert self._state in (_State.ENTERED, _State.EXPIRING)
+    
+        if self._timeout_handler is not None:
+            self._timeout_handler.cancel()
+            self._timeout_handler = None
+    
+        if self._state is _State.EXPIRING:
+            self._state = _State.EXPIRED
+    
+            if self._task.uncancel() <= self._cancelling and exc_type is exceptions.CancelledError:
+                # Since there are no new cancel requests, we're
+                # handling this.
+>               raise TimeoutError from exc_val
+E               TimeoutError
+
+../../../.cache/codex-runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/asyncio/timeouts.py:115: TimeoutError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/bl/8g1pgncn40x3g7d5d12zmt_m0000gn/T/pytest-of-andrei649/pytest-3799/test_docker_startup_drain_time0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108bd1730>
+
+    @pytest.mark.asyncio
+    async def test_docker_startup_drain_timeout_stops_container_before_cleanup(tmp_path, monkeypatch):
+        sandbox = Sandbox(work_dir=str(tmp_path / "run"), timeout=0.05)
+        sandbox._has_docker = True
+        calls = []
+    
+        class Stdin:
+            def write(self, data):
+                pass
+    
+            async def drain(self):
+                await asyncio.Future()
+    
+        class Proc:
+            stdin = Stdin()
+            returncode = None
+    
+            def kill(self):
+                self.returncode = -9
+    
+            async def wait(self):
+                return self.returncode
+    
+        async def spawn(*argv, **kwargs):
+            calls.append(argv)
+            return Proc()
+    
+        monkeypatch.setattr("agents.core.sandbox.asyncio.create_subprocess_exec", spawn)
+        try:
+            result = await asyncio.wait_for(sandbox.execute_python("pass", execution_context={
+                "mode": "strict", "env": {}, "interpreter_env": {},
+                "check_current": lambda: True,
+            }), timeout=0.5)
+        except asyncio.TimeoutError:
+>           pytest.fail("Docker startup drain exceeded the execution timeout")
+E           Failed: Docker startup drain exceeded the execution timeout
+
+tests/test_h595_oneshot_context.py:338: Failed
+=========================== short test summary info ============================
+FAILED tests/test_h595_oneshot_context.py::test_docker_startup_drain_timeout_stops_container_before_cleanup

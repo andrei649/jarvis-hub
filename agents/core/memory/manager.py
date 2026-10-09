@@ -5,20 +5,54 @@ knowledge graph.
 """
 
 import asyncio
+import hashlib
+import json
 import logging
 import os
+import secrets
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Optional
 
 from ..action_origin import INBOUND_ACTION_ORIGIN, origin_for_channel
 from ..security import taint
-from .conversation import ConversationMemory
+from . import persistence
+from .conversation import ConversationMemory, UnverifiedRewind
 from .graph import KnowledgeGraph, create_graph
 from .seed_graph import seed_graph
 from .store import InMemoryVectorStore, VectorStore
 
 logger = logging.getLogger("jarvis.memory")
+
+
+class RewindRefused(RuntimeError):
+    """The prepared conversation tail no longer has the same durable authority."""
+
+
+@dataclass(frozen=True)
+class RollbackRewindTicket:
+    nonce: str
+    session_id: str
+    instance_id: str
+    clock: object
+    revision: int
+    snapshot_digest: str
+    tail_digest: str
+    cut_index: int
+    removed_turns: int
+    expected_missing: bool = False
+
+
+@dataclass(frozen=True)
+class RollbackRewindResult:
+    removed_turns: int
+    revision: int
+
+
+def _turn_digest(turns: list[dict]) -> str:
+    return hashlib.sha256(json.dumps(turns, sort_keys=True, ensure_ascii=False,
+                                     separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
 
 class MemoryManager:
@@ -52,6 +86,8 @@ class MemoryManager:
         self._embed_generation = 0
         # The same, per session: bumped by a permanent session delete (H218).
         self._session_epochs: dict[str, int] = {}
+        self._rollback_tickets: dict[str, RollbackRewindTicket] = {}
+        self._rewind_inconsistent: set[str] = set()
         # Real-embeddings recall (lazy: no network/import until first use).
         self._embedder = None
         from agents.core.env_config import env_flag
@@ -70,9 +106,90 @@ class MemoryManager:
 
     def set_checkpoint_manager(self, mgr):
         self._checkpoint_mgr = mgr
+        self.conversation._rewind_checkpoint_mgr = mgr
+        # The orchestrator binds this manager before checkpoint.initialize(). A
+        # rewind is verified only when its own session is addressed, so a bad
+        # inactive snapshot cannot stop unrelated sessions from booting.
+
+    def _verified_rewind_document(self, sid):
+        cp = getattr(self, "_checkpoint_mgr", None)
+        if cp is None or cp._conn is None:
+            raise RewindRefused("conversation rewind head unavailable")
+        from ..session_continuation import history_identity, rewind_head
+
+        with cp._lock:
+            try:
+                instance, _legacy = history_identity(cp._conn, sid)
+                head = rewind_head(cp._conn, sid)
+            except Exception as exc:
+                raise RewindRefused("conversation rewind head unavailable") from exc
+            try:
+                document, digest = persistence.read_snapshot_for_rewind(sid)
+            except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                raise RewindRefused("conversation rewind snapshot unavailable") from exc
+        if (head is None or head[0] != instance
+                or document.get("instance_id") != instance
+                or document.get("rewound") is not True
+                or document.get("revision", 0) != head[1]
+                or digest != head[2]):
+            raise RewindRefused("conversation rewind head unverified")
+        return document
+
+    def _load_pending_rewind(self, sid, *, activate: bool = True):
+        document = self._verified_rewind_document(sid)
+        try:
+            current = self.conversation.current_session_id
+            self.conversation.restore_verified_rewind(sid, document)
+            if not activate:
+                self.conversation.current_session_id = current
+        except (KeyError, ValueError, TypeError) as exc:
+            raise RewindRefused("conversation rewind snapshot unavailable") from exc
+
+    def _quarantine_rewind(self, sid):
+        self._rewind_inconsistent.add(sid)
+        self.conversation.sessions.pop(sid, None)
+        self.conversation.pending_rewinds.add(sid)
+        self.conversation.invalidate_active_images(sid)
+
+    def _ensure_rewind_ready(self, sid, *, load: bool = True,
+                             activate: bool = False):
+        """Verify only the addressed session; an invalid one stays quarantined."""
+        if sid in getattr(self, "_rewind_inconsistent", ()):
+            raise RewindRefused("conversation rewind needs recovery")
+        cp = getattr(self, "_checkpoint_mgr", None)
+        if cp is None or cp._conn is None:
+            if (sid in getattr(self.conversation, "pending_rewinds", ())
+                    or sid in getattr(self.conversation, "rewound_sessions", ())):
+                raise RewindRefused("conversation rewind head unavailable")
+            return
+        from ..session_continuation import rewind_head
+
+        try:
+            with cp._lock:
+                head = rewind_head(cp._conn, sid)
+        except Exception as exc:
+            raise RewindRefused("conversation rewind head unavailable") from exc
+        if head is None:
+            if (sid in getattr(self.conversation, "pending_rewinds", ())
+                    or sid in getattr(self.conversation, "rewound_sessions", ())):
+                self._quarantine_rewind(sid)
+                raise RewindRefused("conversation rewind head unavailable")
+            return
+        try:
+            if sid in self.conversation.sessions:
+                self._check_rewind_head_before_append(sid)
+            elif load:
+                self._load_pending_rewind(sid, activate=activate)
+            else:
+                self._verified_rewind_document(sid)
+        except RewindRefused:
+            self._quarantine_rewind(sid)
+            raise
 
     async def new_session(self, session_id: str = None) -> str:
         async with self._lock:
+            if session_id is not None:
+                self._ensure_rewind_ready(session_id)
             sid = await self.conversation.new_session(session_id)
             if hasattr(self, '_checkpoint_mgr') and self._checkpoint_mgr:
                 self._checkpoint_mgr.create_session_record(sid)
@@ -81,6 +198,7 @@ class MemoryManager:
 
     async def resume_session(self, session_id: str) -> bool:
         async with self._lock:
+            self._ensure_rewind_ready(session_id, activate=True)
             manager = getattr(self, "_checkpoint_mgr", None)
             if manager is not None and manager._conn is not None:
                 from types import SimpleNamespace
@@ -91,7 +209,18 @@ class MemoryManager:
                         _load_locked(SimpleNamespace(memory=self, checkpoints=manager), session_id)
                         self.conversation.current_session_id = session_id
                         return True
-            return await self.conversation.resume_session(session_id)
+            try:
+                resumed = await self.conversation.resume_session(session_id)
+            except UnverifiedRewind:
+                try:
+                    self._load_pending_rewind(session_id)
+                except RewindRefused:
+                    self._quarantine_rewind(session_id)
+                    raise
+                resumed = True
+            if resumed and session_id in self.conversation.rewound_sessions:
+                self._check_rewind_head_before_append(session_id)
+            return resumed
 
     def _bind_history_instance(self, sid):
         manager = getattr(self, '_checkpoint_mgr', None)
@@ -107,10 +236,38 @@ class MemoryManager:
         if known == instance or (known is None and (legacy or not self.conversation.sessions.get(sid))):
             self.conversation.instances[sid] = instance
 
+    def _check_rewind_head_before_append(self, sid):
+        """A resumed stale process cannot write over a durable rewind."""
+        cp = getattr(self, "_checkpoint_mgr", None)
+        if cp is None or cp._conn is None:
+            return
+        from ..session_continuation import rewind_head
+
+        with cp._lock:
+            head = rewind_head(cp._conn, sid)
+        if head is None:
+            if sid in self.conversation.rewound_sessions:
+                raise RewindRefused("conversation rewind head unavailable")
+            return
+        rows = [turn.to_dict() for turn in self.conversation.sessions.get(sid, [])]
+        try:
+            document, digest = persistence.read_snapshot_for_rewind(sid)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise RewindRefused("conversation rewind head unavailable") from exc
+        if (self.conversation.instances.get(sid) != head[0]
+                or document.get("instance_id") != head[0]
+                or document.get("rewound") is not True
+                or document.get("revision", 0) != self.conversation.revisions.get(sid, 0)
+                or document["turns"] != rows
+                or document.get("revision", 0) != head[1]
+                or digest != head[2]):
+            raise RewindRefused("conversation changed after rewind")
+
     async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None,
                        channel: str = None, tools: list[str] | None = None,
                        media: dict | None = None):
         async with self._lock:
+            self._ensure_rewind_ready(session_id)
             manager = getattr(self, "_checkpoint_mgr", None)
             if manager is not None and manager._conn is not None:
                 with manager._lock:
@@ -124,13 +281,18 @@ class MemoryManager:
                     async with self.conversation._lock:
                         _load_locked(SimpleNamespace(memory=self, checkpoints=manager), session_id)
             self._bind_history_instance(session_id)
-            if media is not None:
-                await self.conversation.add_turn(session_id, role, content, agent_id,
-                                                 tools=tools, media=media)
-            elif tools:
-                await self.conversation.add_turn(session_id, role, content, agent_id, tools=tools)
-            else:
-                await self.conversation.add_turn(session_id, role, content, agent_id)
+            self._check_rewind_head_before_append(session_id)
+            try:
+                if tools or media is not None:
+                    await self.conversation.add_turn(session_id, role, content, agent_id,
+                                                     **({"tools": tools} if tools else {}),
+                                                     **({"media": media} if media is not None else {}))
+                else:
+                    await self.conversation.add_turn(session_id, role, content, agent_id)
+            except persistence.RewindPersistenceError as exc:
+                if exc.inconsistent:
+                    self._quarantine_rewind(session_id)
+                raise RewindRefused("conversation rewind append not persisted") from exc
 
             if hasattr(self, '_checkpoint_mgr') and self._checkpoint_mgr:
                 turn_count = len(self.conversation.sessions.get(session_id, []))
@@ -149,6 +311,154 @@ class MemoryManager:
                 if role == "user" and origin == INBOUND_ACTION_ORIGIN:
                     metadata = taint.mark(metadata, source=f"inbound:{channel}")
             self._queue_turn_embedding(content, metadata)
+
+    async def prepare_rollback_rewind(self, session_id: str, expected_instance_id: str,
+                                      expected_clock) -> RollbackRewindTicket:
+        """Pin the current last user exchange before an authorized file restore.
+
+        The selected filesystem checkpoint may be older; it does not select a chat turn.
+        The root-owned command must hold the session turn lease and intercept before
+        appending the `/rollback` command itself.
+        """
+        from ..session_continuation import ContinuationStore, history_identity
+
+        async with self._lock, self.conversation._lock:
+            cp = getattr(self, "_checkpoint_mgr", None)
+            if (cp is None or cp._conn is None or not self.conversation.persist
+                    or session_id in self._rewind_inconsistent
+                    or type(expected_instance_id) is not str or not expected_instance_id):
+                raise RewindRefused("conversation rewind unavailable")
+            self._ensure_rewind_ready(session_id)
+            current_clock = cp.clock_snapshot(session_id)
+            if (current_clock is None or current_clock != expected_clock
+                    or current_clock.instance_id != expected_instance_id):
+                raise RewindRefused("conversation clock changed")
+            with cp._lock:
+                try:
+                    instance, _legacy = history_identity(cp._conn, session_id)
+                except Exception as exc:
+                    raise RewindRefused("conversation identity changed") from exc
+            turns = self.conversation.sessions.get(session_id)
+            if (instance != expected_instance_id or turns is None
+                    or self.conversation.instances.get(session_id) != instance):
+                raise RewindRefused("conversation instance changed")
+            rows = [turn.to_dict() for turn in turns]
+            cut = next((i for i in range(len(rows) - 1, -1, -1)
+                        if rows[i].get("role") == "user"), None)
+            if cut is None:
+                raise RewindRefused("no current user exchange")
+            expected_missing = False
+            try:
+                snapshot, digest = persistence.read_snapshot_for_rewind(session_id)
+            except FileNotFoundError:
+                # A new continuation may still live only in its immutable seed.
+                # This is a read-only preparation; commit creates the first JSON head.
+                seed = ContinuationStore(cp).seed(session_id)
+                if seed is None or seed != rows:
+                    raise RewindRefused("conversation snapshot unavailable") from None
+                snapshot = {"session_id": session_id, "turns": seed,
+                            "instance_id": instance, "revision": 0}
+                digest = ""
+                expected_missing = True
+            except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                raise RewindRefused("conversation snapshot unavailable") from exc
+            revision = self.conversation.revisions.get(session_id, 0)
+            if (snapshot.get("instance_id") != instance or snapshot.get("revision", 0) != revision
+                    or snapshot["turns"] != rows):
+                raise RewindRefused("conversation snapshot changed")
+            ticket = RollbackRewindTicket(
+                secrets.token_urlsafe(24), session_id, instance, expected_clock,
+                revision, digest, _turn_digest(rows), cut, len(rows) - cut,
+                expected_missing,
+            )
+            self._rollback_tickets[ticket.nonce] = ticket
+            return ticket
+
+    async def discard_rollback_rewind(self, ticket: RollbackRewindTicket) -> bool:
+        """Release an exact unused ticket without changing the conversation."""
+        async with self._lock:
+            if (type(ticket) is not RollbackRewindTicket
+                    or self._rollback_tickets.get(ticket.nonce) is not ticket):
+                return False
+            del self._rollback_tickets[ticket.nonce]
+            return True
+
+    async def commit_rollback_rewind(self, ticket: RollbackRewindTicket, *, authorize=None) -> RollbackRewindResult:
+        """Commit a prepared suffix, rechecking optional authority after async locks."""
+        from ..session_continuation import history_identity, identity
+
+        async with self._lock, self.conversation._lock:
+            # A caller's earlier approval may have been revoked while either
+            # lock was occupied. This synchronous check precedes every write,
+            # outside the checkpoint's non-reentrant lock (the guard may read it).
+            if authorize is not None and authorize() is not True:
+                raise RewindRefused("Undo authority changed")
+            if (type(ticket) is not RollbackRewindTicket
+                    or self._rollback_tickets.pop(ticket.nonce, None) is not ticket):
+                raise RewindRefused("conversation rewind ticket unavailable")
+            sid = ticket.session_id
+            cp = getattr(self, "_checkpoint_mgr", None)
+            turns = self.conversation.sessions.get(sid)
+            if (cp is None or cp._conn is None or turns is None
+                    or sid in self._rewind_inconsistent
+                    or self.conversation.instances.get(sid) != ticket.instance_id
+                    or self.conversation.revisions.get(sid, 0) != ticket.revision):
+                raise RewindRefused("conversation changed before rewind")
+            rows = [turn.to_dict() for turn in turns]
+            if (_turn_digest(rows) != ticket.tail_digest or ticket.cut_index >= len(rows)
+                    or rows[ticket.cut_index].get("role") != "user"):
+                raise RewindRefused("conversation tail changed")
+            prefix = rows[:ticket.cut_index]
+            previous = None
+            new_digest = None
+            replaced = False
+            with cp._lock, persistence.session_snapshot_lock(sid):
+                try:
+                    conn = cp._conn
+                    conn.execute("BEGIN IMMEDIATE")
+                    bound, _legacy = history_identity(conn, sid)
+                    clock = conn.execute(
+                        "SELECT birth_at,revision,rebuilt_at,instance_id FROM session_clock "
+                        "WHERE session_id=?", (sid,),
+                    ).fetchone()
+                    if (bound != ticket.instance_id
+                            or identity(conn, sid) != (
+                                ticket.clock.started_at, ticket.clock.instance_id)
+                            or clock is None or clock[1] != ticket.clock.revision
+                            or clock[2] != ticket.clock.rebuilt_at.isoformat()
+                            or clock[3] != ticket.instance_id):
+                        raise RewindRefused("conversation clock changed")
+                    previous, new_digest = persistence.replace_memory_if_current(
+                        sid, instance_id=ticket.instance_id, revision=ticket.revision,
+                        digest=ticket.snapshot_digest, turns=prefix, already_locked=True,
+                        expected_missing=ticket.expected_missing,
+                    )
+                    replaced = True
+                    conn.execute(
+                        "INSERT INTO session_history_rewinds "
+                        "(session_id,instance_id,revision,snapshot_sha256) VALUES(?,?,?,?) "
+                        "ON CONFLICT(session_id) DO UPDATE SET instance_id=excluded.instance_id,"
+                        "revision=excluded.revision,snapshot_sha256=excluded.snapshot_sha256",
+                        (sid, ticket.instance_id, ticket.revision + 1, new_digest),
+                    )
+                    conn.execute("UPDATE sessions SET turn_count=? WHERE id=? AND instance_id=?",
+                                 (len(prefix), sid, ticket.instance_id))
+                    conn.commit()
+                except Exception as exc:
+                    conn.rollback()
+                    if replaced and not persistence.restore_memory_if_current(
+                            sid, digest=new_digest, previous=previous, already_locked=True):
+                        self._rewind_inconsistent.add(sid)
+                        raise RewindRefused("conversation rewind needs recovery") from exc
+                    raise RewindRefused("conversation rewind not persisted") from exc
+            self.conversation.sessions[sid] = turns[:ticket.cut_index]
+            self.conversation.revisions[sid] = ticket.revision + 1
+            self.conversation.rewound_sessions.add(sid)
+            self.conversation._dirty.add(sid)
+            self.conversation.invalidate_active_images(sid)
+            # Cancel only queued session embeddings by epoch; no provider operation.
+            self._session_epochs[sid] = self._session_epochs.get(sid, 0) + 1
+            return RollbackRewindResult(ticket.removed_turns, ticket.revision + 1)
 
     _EMBED_BACKLOG_MAX = 256
 
@@ -213,10 +523,12 @@ class MemoryManager:
 
     async def get_context(self, session_id: str, last_n: int = 10) -> str:
         async with self._lock:
+            self._ensure_rewind_ready(session_id)
             return await self.conversation.get_context(session_id, last_n)
 
     async def get_history(self, session_id: str, last_n: int = None) -> list[dict]:
         async with self._lock:
+            self._ensure_rewind_ready(session_id)
             return await self.conversation.get_history(session_id, last_n)
 
     async def update_agent_context(self, agent_id: str, key: str, value):

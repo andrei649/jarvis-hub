@@ -1,0 +1,56 @@
+{
+  "generated_at": "2026-10-04T04:41:25.503184+00:00",
+  "goal": "All697 pinned Hermes capabilities; owner-denial and active-judge integration milestone",
+  "base_sha": "220052441ca2befdd5a839dc98a937486e0b1cb6",
+  "source_head": "c6b24af4860ad29544c384eb7129a692ebe05ba8",
+  "source_commits": {
+    "owner_denial": "23af87a931a8f16a4c457af4436901eb527ae535",
+    "active_judge_recovery": "c6b24af4860ad29544c384eb7129a692ebe05ba8"
+  },
+  "unit_receipts": [
+    "docs/hermes/evidence/h487-native-owner-denial-progress-2026-10-04.json",
+    "docs/hermes/evidence/h277-active-judge-recovery-progress-2026-10-04.json"
+  ],
+  "affected_union": {
+    "modules": 35,
+    "tests": 1003,
+    "passed": 1003,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "777856f1ebd8d23a30a0520355877f731987a4b833a377fe8d5a18a81faee1af",
+    "log_sha256": "6038a13f848001896d4deb403cf672e6662cd0e027a601cb011b414c7710490e"
+  },
+  "record_gates": {
+    "tests": 151,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 151,
+    "junit_sha256": "12854ca087bcdc87a7c676e5810a1e388cbbb18fa56e9bde2f052ad427139370",
+    "log_sha256": "ef44940ff7b0c272c4e8bef2399712d59b6c36f9279acce8a980228659553c45"
+  },
+  "actual_collection": {
+    "backend": 22699,
+    "frontend": 1889,
+    "mobile": 185,
+    "js_count_rule": "Retained previous counts only; no fresh JS or native build/live acceptance"
+  },
+  "metric_checkpoint": {
+    "equivalent": 176,
+    "partial": 259,
+    "missing": 62,
+    "needs_review": 200,
+    "excluded": 0,
+    "reviewed_current": 134,
+    "rule": "Seven previously-current claim reviews invalidated by actual source/doc changes; substantive collateral review pending, no new equivalence credit"
+  },
+  "limits": [
+    "H277/H487 remain partial",
+    "Prior full22465 is historical and excludes newer integrated units",
+    "No new campaign proves mutation coverage for this source",
+    "No live provider/Telegram/device/terminal acceptance, activation or paid calls",
+    "No push, merge or deployment"
+  ],
+  "next_action": "Review exactly newly stale previous-current claims/citations; record reviewed collateral and regenerate status, external Graft refresh, then clean frozen serial full milestone"
+}

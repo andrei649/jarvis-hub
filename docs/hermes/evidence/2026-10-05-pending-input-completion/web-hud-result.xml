@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="60" failures="0" errors="0" time="2.084351166">
+    <testsuite name="src/test/base-path.test.ts" timestamp="2026-10-05T17:25:21.368Z" hostname="Macmini" tests="8" failures="0" errors="0" skipped="0" time="0.025038458">
+        <testcase classname="src/test/base-path.test.ts" name="prefixes API transport while preserving token headers" time="0.007171333">
+        </testcase>
+        <testcase classname="src/test/base-path.test.ts" name="writes public hrefs but keeps per-entry overlay origins logical" time="0.001963334">
+        </testcase>
+        <testcase classname="src/test/base-path.test.ts" name="initializes deep panel bookmarks and canonicalizes under the prefix" time="0.0080285">
+        </testcase>
+        <testcase classname="src/test/base-path.test.ts" name="preserves historical overlay close targets and popstate beneath a prefix" time="0.00355375">
+        </testcase>
+        <testcase classname="src/test/base-path.test.ts" name="keeps floating chat and unknown fallback inside its deployment" time="0.001381333">
+        </testcase>
+        <testcase classname="src/test/base-path.test.ts" name="matches prefix boundaries and leaves external and blob links alone" time="0.0002175">
+        </testcase>
+        <testcase classname="src/test/base-path.test.ts" name="preserves one-attempt credentials and streams from the prefixed endpoint" time="0.000783041">
+        </testcase>
+        <testcase classname="src/test/base-path.test.ts" name="refuses non-logical transport inputs instead of joining them to a deployment" time="0.000585917">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/test/chatStreamAbort.test.ts" timestamp="2026-10-05T17:25:21.370Z" hostname="Macmini" tests="2" failures="0" errors="0" skipped="0" time="0.0059085">
+        <testcase classname="src/test/chatStreamAbort.test.ts" name="postStream abort (stop generating) &gt; threads the AbortSignal into the fetch init" time="0.001471917">
+        </testcase>
+        <testcase classname="src/test/chatStreamAbort.test.ts" name="postStream abort (stop generating) &gt; rejects with AbortError and cancels the reader on mid-stream abort" time="0.002983167">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/test/composer-vision-turn.test.tsx" timestamp="2026-10-05T17:25:21.370Z" hostname="Macmini" tests="6" failures="0" errors="0" skipped="0" time="0.566806583">
+        <testcase classname="src/test/composer-vision-turn.test.tsx" name="sends a vision turn from the actual shared input and labels actual provenance" time="0.39919225">
+        </testcase>
+        <testcase classname="src/test/composer-vision-turn.test.tsx" name="owns one turn synchronously across image and text submissions" time="0.046454208">
+        </testcase>
+        <testcase classname="src/test/composer-vision-turn.test.tsx" name="stops a vision turn and ignores a late response even if transport ignores abort" time="0.054231375">
+        </testcase>
+        <testcase classname="src/test/composer-vision-turn.test.tsx" name="renders a structured vision failure without invented agent provenance" time="0.023712208">
+        </testcase>
+        <testcase classname="src/test/composer-vision-turn.test.tsx" name="aborts an owned image turn on unmount" time="0.017012125">
+        </testcase>
+        <testcase classname="src/test/composer-vision-turn.test.tsx" name="keeps a successful vision policy warning separate from its answer" time="0.024770209">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/test/decision-inbox-panel.test.tsx" timestamp="2026-10-05T17:25:21.371Z" hostname="Macmini" tests="38" failures="0" errors="0" skipped="0" time="0.432308125">
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="previews complete pending questions or explains a lost binding: true" time="0.050955167">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="previews complete pending questions or explains a lost binding: false" time="0.013832375">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="shows reusable terminal choices and sends only the exact offer revision" time="0.06940025">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="keeps ordinary once controls when a reusable offer is absent or malformed" time="0.011720375">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="keeps ordinary once controls when a reusable offer is absent or malformed" time="0.011774417">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="shows the current request deadline without changing its single-use decision" time="0.04080375">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="keeps legacy or unreadable deadlines out of the card: undefined" time="0.004936125">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="keeps legacy or unreadable deadlines out of the card: invalid-date" time="0.005960458">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="sends the human reason only with the matching decision and preserves blank requests" time="0.009941333">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — independent grouped approvals &gt; shows one card, accepts only the leader and then shows its still-pending follower" time="0.0100605">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — independent grouped approvals &gt; rejects only the displayed exact group and carries the leader reason" time="0.016209708">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — independent grouped approvals &gt; does not hide cards behind a missing leader or malformed membership" time="0.01152175">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — the north-star resolve action is live &gt; GETs the blocked queue and shows a decision with its risk tier" time="0.0057935">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — the north-star resolve action is live &gt; shows the rollback story before approval" time="0.00523325">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — the north-star resolve action is live &gt; accepts a decision (POST {action:&quot;accept&quot;}) when ✓ is clicked" time="0.004723">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — the north-star resolve action is live &gt; rejects a decision (POST {action:&quot;reject&quot;}) when ✕ is clicked" time="0.005831125">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — the north-star resolve action is live &gt; shows the honest all-clear state when nothing is blocked" time="0.002180375">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — the north-star resolve action is live &gt; edit reveals the payload as JSON and saves an edited decision (POST {action:&quot;edit&quot;,payload})" time="0.00902175">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — the north-star resolve action is live &gt; does NOT POST an edit when the payload JSON is invalid" time="0.007522209">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — the north-star resolve action is live &gt; preview GETs the dry-run and shows the consequences (effects + irreversible + would-execute)" time="0.00894925">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — the north-star resolve action is live &gt; shows the interrupt budget (used/per_day) in the header — calm by the numbers" time="0.00449525">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — the north-star resolve action is live &gt; shows an image prompt for toolrpc.image_generate without exposing approval internals or editing its bound JSON" time="0.006412291">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — the north-star resolve action is live &gt; shows an image prompt for tool.rpc without exposing approval internals or editing its bound JSON" time="0.007178292">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="DecisionInboxPanel — the north-star resolve action is live &gt; keeps ordinary canonical tool requests editable and does not treat their payload as an image" time="0.004564541">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="shows exact paid cloud proposal and immutable task return link" time="0.01160875">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="keeps a visible image return link after accepted task leaves inbox" time="0.009532042">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="H277 Decision Inbox advisory judge &gt; shows the smart deny verdict without a fabricated advisory risk score" time="0.005991917">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="H277 Decision Inbox advisory judge &gt; shows the smart escalate verdict without a fabricated advisory risk score" time="0.005145458">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="H277 Decision Inbox advisory judge &gt; labels an opted-in pending terminal review as guardian work" time="0.004008791">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="H277 Decision Inbox advisory judge &gt; renders an escaped, attributed risk opinion as advisory while keeping decisions available" time="0.011638541">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="H277 Decision Inbox advisory judge &gt; polls a pending card for a late opinion then stops once it arrives" time="0.007423875">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="H277 Decision Inbox advisory judge &gt; does not poll merely because judge is configured or a task lacks an opinion" time="0.003183667">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="H277 Decision Inbox advisory judge &gt; keeps a per-card wall deadline across unrelated refresh and still displays a later opinion" time="0.009353541">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="H277 Decision Inbox advisory judge &gt; gives a newly arriving pending card its own budget after an earlier card expires" time="0.009126584">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="H277 Decision Inbox advisory judge &gt; uses the default timeout when server metadata is missing and cleans up on unmount" time="0.005607041">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="H277 Decision Inbox advisory judge &gt; never sends a judge read after a browser-delayed timer exceeds the wall cap" time="0.00393125">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="H277 Decision Inbox advisory judge &gt; keeps approval payload unchanged despite a high-risk advisory opinion" time="0.005895792">
+        </testcase>
+        <testcase classname="src/test/decision-inbox-panel.test.tsx" name="H277 Decision Inbox advisory judge &gt; stops polling when pending clears without an opinion and resumes within the original budget" time="0.008834">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/test/pending-question.test.tsx" timestamp="2026-10-05T17:25:21.373Z" hostname="Macmini" tests="6" failures="0" errors="0" skipped="0" time="1.0542895">
+        <testcase classname="src/test/pending-question.test.tsx" name="answers the live App stream through a choice without a second model request" time="0.503224791">
+        </testcase>
+        <testcase classname="src/test/pending-question.test.tsx" name="keeps the question on a rejected Other answer and permits a corrected retry" time="0.172205875">
+        </testcase>
+        <testcase classname="src/test/pending-question.test.tsx" name="sends multiple selected options together and cancels through the answer endpoint" time="0.134014083">
+        </testcase>
+        <testcase classname="src/test/pending-question.test.tsx" name="cancels only the question and retains stream completion" time="0.069191833">
+        </testcase>
+        <testcase classname="src/test/pending-question.test.tsx" name="Stop aborts the stream and removes the pending question without posting an answer" time="0.062967916">
+        </testcase>
+        <testcase classname="src/test/pending-question.test.tsx" name="retains the next batch question when the previous answer response arrives later" time="0.111232541">
+        </testcase>
+    </testsuite>
+</testsuites>

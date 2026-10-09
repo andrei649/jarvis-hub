@@ -1,0 +1,27 @@
+{
+  "goal": "Complete local parity with all 697 pinned Hermes capabilities; H487 remains partial",
+  "generated_at": "2026-10-04",
+  "tested_head": "01191f70389208f20955a0e9729e8bfc7f2412c4",
+  "scope": "Committed integration baseline only; does not cover subsequent uncommitted consent runtime implementation",
+  "full_backend": {
+    "tests": 22093,
+    "passed": 22058,
+    "skipped": 34,
+    "xfail": 1,
+    "failures": 0,
+    "errors": 0,
+    "time_seconds": 1157.966,
+    "junit_sha256": "f9be93430938be7faa2489d196b8f47bd9ca1f33ebccda931e79fa7bf4d39778"
+  },
+  "source_freeze": {
+    "paths": 2525,
+    "changed_since_run": 0,
+    "manifest_sha256": "690a231800b1beacd6a91ef8a1300ee213d1f744cca4293fa30af47d91f38ad6",
+    "current_checkout_clean": true
+  },
+  "unfinished": [
+    "Current connected H487 changes require their own focused and full verification",
+    "Telegram reusable consent and additional accepted producers",
+    "All remaining Hermes capability mappings"
+  ]
+}

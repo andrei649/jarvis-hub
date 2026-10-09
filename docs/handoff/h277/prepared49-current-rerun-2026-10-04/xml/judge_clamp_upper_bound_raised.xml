@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.439" timestamp="2026-10-04T23:54:19.366086+03:00" hostname="Macmini"><testcase classname="tests.test_h277_approval_judge" name="test_parse_verdict_clamps" time="0.983"><failure message="assert 250 == 100&#10; +  where 250 = Verdict(score=250, rationale='x').score&#10; +    where Verdict(score=250, rationale='x') = parse_verdict('{&quot;risk&quot;: 250, &quot;why&quot;: &quot;x&quot;}')">tests/test_h277_approval_judge.py:338: in test_parse_verdict_clamps
+    assert parse_verdict('{"risk": 250, "why": "x"}').score == 100
+E   assert 250 == 100
+E    +  where 250 = Verdict(score=250, rationale='x').score
+E    +    where Verdict(score=250, rationale='x') = parse_verdict('{"risk": 250, "why": "x"}')</failure></testcase></testsuite></testsuites>

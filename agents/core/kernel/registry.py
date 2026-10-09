@@ -30,6 +30,8 @@ class Mediation(StrEnum):
 # everything else is PENDING_KERNEL until its wave lands (see the design spec's
 # migration order: brokers → plugin egress → MCP+KG → admin routes).
 ACTION_REGISTRY: dict[str, Mediation] = {
+    "hermes.runtime": Mediation.KERNEL,
+    "kanban.worker": Mediation.KERNEL,
     # The autonomy research handler reads through configured websearch egress.
     # Its exact task kind needs persisted kernel authority before dispatch;
     # related/prefixed kinds remain unclassified until their effects are audited.
@@ -116,6 +118,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # first; a durable accepted task is required before any process exists, and
     # the irreversible tier keeps this at the approval QUEUE floor.
     "terminal.exec": Mediation.KERNEL,
+    # Owner checkpoint effects still require an exact human task at the producer
+    # and executor; this classification makes their kernel crossing visible.
+    "checkpoint.restore": Mediation.KERNEL,
+    "checkpoint.maintenance": Mediation.KERNEL,
     # A governed file write/delete crosses the kernel before the bytes move; the
     # previous bytes are snapshotted so the rollback contract is real.
     "file.write": Mediation.KERNEL,
@@ -145,6 +151,10 @@ def known_broker_action_kinds() -> set[str]:
     Imports are lazy so the registry module stays cheap and cycle-free.
     """
     kinds: set[str] = set()
+    from ..hermes_runtime.policy import KIND as HERMES_KIND
+    kinds.add(HERMES_KIND)
+    from ..kanban.dispatcher import KanbanDispatcher
+    kinds.add(KanbanDispatcher.KIND)
     from ..node_mesh import KIND as NODE_KIND
     kinds.add(NODE_KIND)
     from ..autonomy.call_broker import CallBroker
@@ -161,6 +171,8 @@ def known_broker_action_kinds() -> set[str]:
     kinds.add(SKILL_INSTALL_CONTRACT_KIND)
     from ..voice.command_settings import APPROVAL_KIND as VOICE_COMMAND_KIND
     kinds.add(VOICE_COMMAND_KIND)
+    from ..checkpoint_controller import CHECKPOINT_KINDS
+    kinds.update(CHECKPOINT_KINDS)
     return kinds
 
 

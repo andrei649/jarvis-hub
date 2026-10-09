@@ -11,7 +11,7 @@ import secrets
 import sys
 import time
 import weakref
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -520,6 +520,9 @@ async def lifespan(application: FastAPI):
     )
     gateway = Gateway(
         handler=orch.channel_handler,
+        pending_handler=orch.channel_pending_handler,
+        pending_callback_handler=orch.channel_pending_callback,
+        interrupt_handler=orch.interrupt_channel_message,
         pairing=getattr(orch, "sender_pairing", None),
         inbox_store=orch.channel_inbox,
     )
@@ -565,6 +568,9 @@ async def lifespan(application: FastAPI):
         # the code read as guarded and was not.
         telegram_ch = TelegramChannel(
             token=tg_token, handler=gateway.route,
+            pending_reply_handler=gateway.route_pending,
+            pending_callback_handler=gateway.route_pending_callback,
+            pre_turn_interrupt=gateway.pre_lane_interrupt,
             allowed_user_ids=_telegram_allowed_user_ids(),
             group_policy=GroupPolicy.from_env(os.environ),
             # The one SenderPairing this process holds: the object the gateway gates
@@ -580,19 +586,25 @@ async def lifespan(application: FastAPI):
 
     discord_token = os.environ.get("DISCORD_BOT_TOKEN", "")
     if discord_token:
-        discord_ch = DiscordChannel(token=discord_token, handler=gateway.route)
+        discord_ch = DiscordChannel(
+            token=discord_token, handler=gateway.route, pairing=gateway.pairing,
+            pending_reply_handler=gateway.route_pending,
+            pending_callback_handler=gateway.route_pending_callback,
+        )
         await orch.register_channel(discord_ch)
         logger.info("Discord channel wired")
 
     # ntfy (Hermes absorption 4g): a push to the owner's phone with no bot and no account.
-    # Outbound only — nothing that arrives on a topic can become a turn. The topic is the
-    # identity on ntfy, so it is never logged.
+    # Receiving is explicitly opt-in; the topic is the identity and is never logged.
     ntfy_ch = NtfyChannel.from_env(os.environ)
     if ntfy_ch is not None and safe_mode.enabled():
         # H490: in safe mode no outbound webhook is started (ntfy, the webhook channels).
         safe_mode.note("outbound_webhooks")
         ntfy_ch = None
     if ntfy_ch is not None:
+        ntfy_ch.handler = gateway.route
+        ntfy_ch.pairing = gateway.pairing
+        ntfy_ch.pending_reply_handler = gateway.route_pending
         await orch.register_channel(ntfy_ch)
         logger.info("ntfy channel wired")
 
@@ -623,6 +635,9 @@ async def lifespan(application: FastAPI):
         slack_ch = SlackChannel(
             token=slack_token, handler=gateway.route,
             app_token=os.environ.get("SLACK_APP_TOKEN", ""),
+            pairing=gateway.pairing,
+            pending_reply_handler=gateway.route_pending,
+            pending_callback_handler=gateway.route_pending_callback,
         )
         await orch.register_channel(slack_ch)
         logger.info("Slack channel wired")
@@ -664,6 +679,8 @@ async def lifespan(application: FastAPI):
     # H161: the clean-shutdown mark first — a later step that hangs must not make this
     # stop look like an out-of-memory kill to the next start.
     resource_pressure.monitor().stop()
+    from agents.core.hermes_runtime.service import get_service as get_hermes_runtime
+    await get_hermes_runtime().stop()
     from agents.core import power
     power.KEEP_AWAKE.release_all()   # H182: no power assertion outlives the hub
     from agents.core.routers.cameras import stop_camera_ingestion
@@ -811,8 +828,8 @@ async def _rate_limit(request: Request, call_next):
 # with Starlette's last-added-runs-first order, it runs BEFORE the limiter and every
 # route (a refused request never touches a rate bucket) and INSIDE _security_headers
 # and _golden_signals, so the 400 still carries the headers and is counted.
-# Residuals, named: @app.middleware("http") does not cover WebSocket scopes — there
-# are no WebSocket routes today, so a future one must call host_accepted() itself.
+# @app.middleware("http") does not cover WebSocket scopes. Kanban's event
+# upgrade calls host_accepted() and the admin guard explicitly in its router.
 # The probe paths (_PROBE_PATHS, including the unauthenticated /metrics scrape) are
 # exempt by design so a monitor reaching the box by any name keeps working; a
 # rebound page can therefore still read the golden-signal counters.
@@ -1266,14 +1283,19 @@ async def chat(req: ChatRequest, request: Request):
                 await prepare_session(orch, req.session_id)
             except ContinuationRefused as exc:
                 return JSONResponse({"error": exc.reason}, status_code=exc.status)
+        from agents.core import code_interruptions
+        code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
         # H579: @file:path references in the owner's own message are attached for this turn:
         # the model reads them after the message, which itself goes on as typed.
         from agents.core import context_refs
-        expansion = await asyncio.to_thread(context_refs.expand, req.message)
+        from agents.core.commands import checkpoint_command_name
+
+        checkpoint_command = checkpoint_command_name(req.message) is not None
+        expansion = None if checkpoint_command else await asyncio.to_thread(context_refs.expand, req.message)
         # H10.21: inject the active session's notes as persistent context.
         message = req.message
         notes = getattr(orch, "notes", None)
-        if notes is not None:
+        if notes is not None and not checkpoint_command:
             prefix = notes.context_for(req.session_id or getattr(orch, "session_id", "web"))
             if prefix:
                 message = prefix + message
@@ -1300,8 +1322,15 @@ async def chat(req: ChatRequest, request: Request):
                         return ChatResponse(reply=TURN_BUSY_REPLY)
                     if req.session_id is not None:
                         await prepare_session(orch, req.session_id)
-                    reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None,
-                                                    **({"session_id": req.session_id} if req.session_id is not None else {}))
+                    from agents.core.routers.chat_pending import http_chat_binding
+                    async with http_chat_binding(orch, request, req.session_id or getattr(orch, "session_id", None)):
+                        conversation_token = code_interruptions.bind_conversation(
+                            str(req.session_id or getattr(orch, "session_id", None) or ""))
+                        try:
+                            reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None,
+                                                           **({"session_id": req.session_id} if req.session_id is not None else {}))
+                        finally:
+                            code_interruptions.reset_conversation(conversation_token)
         finally:
             measured_outcome = outcome_sink.close()
             reset_turn_outcome(outcome_token)
@@ -1323,7 +1352,7 @@ async def chat(req: ChatRequest, request: Request):
 
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
-                             attached=None, own_words=None):
+                             attached=None, own_words=None, pending_actor=None, pending_current=None):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -1343,6 +1372,11 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
 
     async def on_token(token: str):
         await queue.put(("token", token))
+
+    async def on_clarify(prompt):
+        acknowledged = asyncio.get_running_loop().create_future()
+        await queue.put(("clarify", (prompt, acknowledged)))
+        return await acknowledged
 
     async def runner():
         # The principal is bound inside the task: a ContextVar set on the endpoint would
@@ -1376,10 +1410,22 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                     if session_id is not None:
                         from agents.core.session_continuation import prepare_session
                         await prepare_session(orch, session_id)
-                    full = await orch.handle_input_stream(
-                        message, channel="web", on_token=on_token, agent_override=agent_override,
-                        **({"session_id": session_id} if session_id is not None else {}),
-                    )
+                    pending_service = getattr(orch, "_pending_input_service", None)
+                    runtime = (pending_service() if pending_actor is not None and callable(pending_service) else None)
+                    binding = (runtime.bind_http(pending_actor, session_id or getattr(orch, "session_id", None),
+                                                 on_clarify, pending_current)
+                               if runtime is not None else nullcontext())
+                    with binding:
+                        from agents.core import code_interruptions
+                        conversation_token = code_interruptions.bind_conversation(
+                            str(session_id or getattr(orch, "session_id", None) or ""))
+                        try:
+                            full = await orch.handle_input_stream(
+                                message, channel="web", on_token=on_token, agent_override=agent_override,
+                                **({"session_id": session_id} if session_id is not None else {}),
+                            )
+                        finally:
+                            code_interruptions.reset_conversation(conversation_token)
             await end(full)
         except asyncio.CancelledError:
             raise  # client disconnected → propagate so the turn actually stops
@@ -1411,6 +1457,11 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             kind, data = await queue.get()
             if kind == "token":
                 yield f"data: {json.dumps({'type': 'token', 'text': data})}\n\n"
+            elif kind == "clarify":
+                prompt, acknowledged = data
+                yield f"data: {json.dumps(prompt)}\n\n"
+                if not acknowledged.done():
+                    acknowledged.set_result(True)
             elif kind == "end":
                 full, actual_session, outcome = data
                 yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': full, 'session_id': actual_session, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': outcome})}\n\n"
@@ -1446,22 +1497,30 @@ async def chat_stream(req: ChatRequest, request: Request):
             await prepare_session(orch, req.session_id)
         except ContinuationRefused as exc:
             return JSONResponse({"error": exc.reason}, status_code=exc.status)
+    from agents.core import code_interruptions
+    code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
     agent_override = req.agent if req.agent != "jarvis" else None
     # H579: @file:path references are attached for the turn here too, as on /chat.
     from agents.core import context_refs
-    expansion = await asyncio.to_thread(context_refs.expand, req.message)
+    from agents.core.commands import checkpoint_command_name
+
+    checkpoint_command = checkpoint_command_name(req.message) is not None
+    expansion = None if checkpoint_command else await asyncio.to_thread(context_refs.expand, req.message)
     # H10.21 parity (Q2): the stream path injects the session's notes block the
     # same way /chat does — before this, persistent notes silently stopped
     # applying the moment the cockpit switched to streaming.
     message = req.message
     notes = getattr(orch, "notes", None)
-    if notes is not None:
+    if notes is not None and not checkpoint_command:
         prefix = notes.context_for(req.session_id or getattr(orch, "session_id", "web"))
         if prefix:
             message = prefix + message
+    from agents.core.routers.chat_pending import http_actor
+    actor = http_actor(request)
     return StreamingResponse(
         _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request), reasoning=req.reasoning, session_id=req.session_id,
-                           attached=expansion, own_words=req.message),
+                           attached=expansion, own_words=req.message, pending_actor=actor,
+                           pending_current=lambda: actor is not None and http_actor(request) == actor),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -1574,6 +1633,8 @@ app.include_router(_onboarding_router)
 from agents.core.routers.preferences import router as _preferences_router  # noqa: E402
 
 app.include_router(_preferences_router)
+from agents.core.routers.chat_pending import router as _chat_pending_router  # noqa: E402
+app.include_router(_chat_pending_router)
 # H165 — the owner's docs, read-only from an allowlist; user-guarded on the router.
 from agents.core.routers.help_docs import router as _help_docs_router  # noqa: E402
 
@@ -1593,6 +1654,8 @@ from agents.core.routers.admin import router as _admin_router  # noqa: E402
 from agents.core.routers.analytics import router as _analytics_router  # noqa: E402
 from agents.core.routers.arena import router as _arena_router  # noqa: E402
 from agents.core.routers.autonomy import router as _autonomy_router  # noqa: E402
+from agents.core.routers.kanban import router as _kanban_router  # noqa: E402
+from agents.core.routers.hermes_runtime import router as _hermes_runtime_router  # noqa: E402
 from agents.core.routers.missions import router as _missions_router  # noqa: E402
 from agents.core.routers.bench import router as _bench_router  # noqa: E402
 from agents.core.routers.ops import router as _ops_router  # noqa: E402
@@ -1706,6 +1769,8 @@ app.include_router(_packs_router)
 app.include_router(_secrets_router)
 app.include_router(_mesh_router)
 app.include_router(_autonomy_router)
+app.include_router(_kanban_router)
+app.include_router(_hermes_runtime_router)
 app.include_router(_missions_router)
 app.include_router(_models_llm_router)
 app.include_router(_oauth_router)

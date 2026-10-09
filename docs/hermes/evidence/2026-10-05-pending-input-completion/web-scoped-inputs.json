@@ -1,0 +1,11 @@
+{
+  "agents/web.py": "6e953f8ebe43be768162af0a41e1ae6555fbf11718870837ada8aaed187b235b",
+  "agents/core/channels/pending_input_runtime.py": "f8509fb5f8ae2b97b6caa48e77fd248bcf00ba5f7a753558f9600efa433538b1",
+  "agents/core/routers/chat_pending.py": "3cfb63e56557c4a2bf8ba74e086bfa50bd36f42af22884e394c1b64035c0e801",
+  "tests/test_pending_input_web.py": "cae60cf4f48ba78c1ddda01d51d226c36954c814bcd3ad5da3932f1d94948d81",
+  "frontend/src/app.tsx": "73dcabc36ece167c36d4acacc82e88d2492e25475b43edfc753399000973eb91",
+  "frontend/src/pending-question.tsx": "82f177354c4d8fac12b38ab1589d3331ec9abf09b66bd7a5e3a01ffaa488bb96",
+  "frontend/src/pending-question.css": "de95f2f38cab94187e31473696e62c7f3886d58c7ced78d0eba83b540902f2db",
+  "frontend/src/test/pending-question.test.tsx": "4d15fcf0b60de329933a20db0b5e0495b2d3194e0f11035bae4853210a0a38b8",
+  "frontend/src/api/schema.gen.ts": "b869cf2c8c1c4c5ad9cb501a8c18578c2477ab8ffe79fba5f9b76ca35dfb83e1"
+}

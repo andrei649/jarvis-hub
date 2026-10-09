@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.384" timestamp="2026-10-04T23:53:28.694935+03:00" hostname="Macmini"><testcase classname="tests.test_h277_model_roles" name="test_the_legacy_vlm_key_never_goes_to_a_foreign_role_base_url" time="1.149"><failure message="AssertionError: assert ('https://a.example/v1' == 'https://b.example/v1'&#10;  &#10;  - https://b.example/v1&#10;  ?         ^&#10;  + https://a.example/v1&#10;  ?         ^)">tests/test_h277_model_roles.py:524: in test_the_legacy_vlm_key_never_goes_to_a_foreign_role_base_url
+    assert config.base_url == "https://b.example/v1" and config.api_key == ""
+E   AssertionError: assert ('https://a.example/v1' == 'https://b.example/v1'
+E     
+E     - https://b.example/v1
+E     ?         ^
+E     + https://a.example/v1
+E     ?         ^)</failure></testcase></testsuite></testsuites>

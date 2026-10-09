@@ -1,0 +1,104 @@
+{
+  "generated_at": "2026-10-05T18:06:25.115253+00:00",
+  "goal_scope": "all697",
+  "capability": "H067",
+  "status": "partial",
+  "base_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "head_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "publication": false,
+  "implemented": [
+    "Actual POST /chat binds the existing model task to the trusted HTTP actor and session, retaining session lease, principal and context. No new model or pending store.",
+    "User-guarded GET /chat/pending exposes only live nonstream questions for the caller; optional session filter and bounded offset/limit with has_more. Both discovery and answers are no-store.",
+    "Async response background acknowledgement occurs after body send; failed sends cannot admit answers or human-wait credit. Existing actor-bound answer route resumes the original ToolRPC/model.",
+    "Expiry, revocation before/after discovery, cancelled requests and actual disconnect retire the exact wait. Owned receive watcher cancels/joins on finish without is_disconnected cancellation swallowing.",
+    "Delivery acknowledgement futures are keyed by exact prompt ID; concurrent rejection cannot cancel a FIFO neighbour."
+  ],
+  "reuse": "Existing Hermes-derived PendingInputs parser, choices/batch normalization, exact cancellation, native human-wait accounting. Only private HTTP adapter extended; no dependencies or frontend behavior added.",
+  "verification": {
+    "runs": [
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/http-poll-affected-result.xml",
+        "tests": 354,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/http-poll-gates-result.xml",
+        "tests": 54,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "counts_overlap": true,
+    "new_actual_path_cases": 10,
+    "mode": "Offline actual chat/ASGI/ToolRPC/runtime with real managed TokenStore; synthetic model. Response send failure and actual disconnect event exercised; no live accounts, CI, full suite or full coverage claim.",
+    "edge_cases": [
+      "Numeric choice, Other, cancel continue the same model once",
+      "Session-filtered discovery",
+      "Other valid token sees no questions; missing/revoked tokens refused",
+      "Answer before discovery unavailable",
+      "Failed response body send leaves offer unacknowledged",
+      "Revocation before/after polling retires wait",
+      "Unpolled expiry and request cancellation leave no prompt",
+      "Actual disconnect event leaves no watcher/pending task",
+      "Concurrent rejected clarification cannot cancel the original prompt acknowledgement"
+    ],
+    "ruff": "passed",
+    "typecheck": "passed",
+    "bandit": "0 findings/errors on three production modules",
+    "strict_gitleaks": "0 findings on five frozen source/test/typegen files; no baseline/config/inline suppression",
+    "graft": {
+      "graph_current": true,
+      "added": 0,
+      "removed": 0,
+      "changed": 0,
+      "stale": 0,
+      "context": "not initialized; graph only"
+    },
+    "final_metadata": [
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/http-poll-final-metadata-result.xml",
+        "tests": 211,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/gateway-final-records-result.xml",
+        "tests": 60,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ]
+  },
+  "shared_impact": {
+    "web_functions_changed": [
+      "chat"
+    ],
+    "other_web_functions": "AST-identical against immediate reviewed preimage, including streaming, credential verification, startup and ntfy configuration.",
+    "H099": "Only matching immediate web.py pin refreshed after AST review and affected ntfy/runtime integration. Other stale reviews untouched.",
+    "H063": "Prior HUD doc record is byte-preserved as prefix and exact previous digest verified; appended nonstream API/mobile-gap section only."
+  },
+  "files_modified": {
+    "agents/core/channels/pending_input_runtime.py": "Private poll offer/discovery/response acknowledgement on same runtime; retirement fences.",
+    "agents/core/routers/chat_pending.py": "Guarded bounded discovery plus owned request binding/disconnect lifecycle.",
+    "agents/web.py": "Bind existing nonstream model await inside existing session lease.",
+    "tests/test_pending_input_http_poll.py": "Nine actual-path behavior/regression cases.",
+    "frontend/src/api/schema.gen.ts": "Pinned offline OpenAPI generation, new GET types only.",
+    "tests/_snapshots/": "Only GET /chat/pending added; all earlier routes/guards/operation IDs preserved.",
+    "docs/test-manual/14-api-surface-sweep.md": "Generated API enumeration.",
+    "docs/design/HUD_V2_REMAINING.md": "Nonstream slice and explicit native-mobile gap.",
+    "docs/hermes/evidence/2026-10-05-pending-input-completion/": "Report, frozen inputs and scoped JUnit proof.",
+    "docs/hermes/assessment.json": "H067 partial, exact reviewed pins.",
+    "docs/hermes/autonomous-development-objective.md": "Resumable local checkpoint."
+  },
+  "remaining": [
+    "Other CLI/email and busy-control capabilities remain separate all697 work",
+    "Full integrated697 milestone and live account acceptance remain unverified"
+  ],
+  "next_action": "Accept H067 against the frozen gateway contract; continue the started H660/H515/H595 residuals. CLI/HUD extensions are not extra gates on H067.",
+  "scope_note": "This report records the HTTP adapter slice. See gateway-acceptance-report.json for final H067 canonical gateway acceptance; historical partial status here is not the final row verdict."
+}

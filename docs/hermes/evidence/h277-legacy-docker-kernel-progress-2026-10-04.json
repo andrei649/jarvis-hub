@@ -1,0 +1,83 @@
+{
+  "generated_at": "2026-10-04T03:29:43.979802+00:00",
+  "goal": "All697 pinned Hermes capabilities; manual terminal kernel integration dependency",
+  "base_sha": "e37ffa765d667d4ea8494695a5279ee698b1d06b",
+  "state": "Integrated root RED/GREEN and22-module adjacent regression; later full milestone pending",
+  "prototype_patch_sha256": "911d518a245f5861f171b7936d9fac61cb4b30ac36448222e7897c20092a3b7c",
+  "source_sha256": {
+    "agents/core/environments/execution.py": "2109367db7189c70038d047b9f06c263676e3fae097be3b1094ae5f4ebb699b4",
+    "agents/core/autonomy_coordinator.py": "66d9cd9e790a33b68a23c17ed9501dfb81788c398a99dd28e1d2e252ed27f5d3",
+    "agents/core/sandbox.py": "42bef3d5a553d6339646fe0067a9ab45ea0ec7e7c0ee9cd04b9daca92b266305",
+    "agents/core/environments/legacy_terminal_dispatch.py": "bad5094d35e31ff500b8eca2547ea743d7ead8481598b0627582b7e407c7dc53",
+    "tests/test_h277_legacy_docker_kernel.py": "e12e6d88817a993545aac108fe0a039c54bf800479ed61a950ebae73f18eaf96",
+    "tests/test_h277_smart_terminal_integration.py": "bf6c342fc71fbe55311099f2456a07ec39d1aeeca796023e837570d5bfaa0823"
+  },
+  "root_verification": {
+    "red": {
+      "tests": 19,
+      "failures": 16,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "f7ccd4a735df85d306169a22918c97c853affcd8be0c01eb7e227c6afb651435"
+    },
+    "green": {
+      "tests": 34,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "44451bc576c3b93cc9d38dd37d0c298141a960c5722e3f7c2b3fb35df7057228"
+    },
+    "broad": {
+      "tests": 349,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 7,
+      "junit_sha256": "ad91f52b573aeea94c572846d43f13cef9e4d2628513b677cc1c38752119896b"
+    }
+  },
+  "root_red_scope": "Six native behavioral assertion failures, ten expected missing new legacy_kernel_check API failures; zero setup errors",
+  "independent_review_corrections": [
+    "Post-admission parseable mediation receipt tampering was reproduced RED and refused GREEN at actual mocked spawn",
+    "Enforce-to-off downgrade before handler capture reproduced RED; original mediation provenance now prevents downgrade",
+    "Current same original running task receipt validated without consuming worker permit twice"
+  ],
+  "ruff": "Six integrated Python source/test paths pass",
+  "limits": [
+    "Prior full22465 excludes this source/test unit",
+    "No full H277 equivalent credit; no live Docker/terminal effects",
+    "No queue/kernel/proof/grant source changes",
+    "Synthetic custom Sandbox doubles do not themselves implement concrete physical hook",
+    "No-task Docker ALLOW outside manually approved task increment",
+    "No push, merge, deploy or provider activation"
+  ],
+  "next_action": "Shared counts/architecture/claim-specific collateral, fresh Graft, combined regression and later serial full milestone",
+  "original_prototype_source_sha256": {
+    "agents/core/environments/execution.py": "89a5b2660ab8bab8c5ddfcd430d2e0ac710d145dd23c4c1842b6f0eca6a8d663",
+    "agents/core/autonomy_coordinator.py": "66d9cd9e790a33b68a23c17ed9501dfb81788c398a99dd28e1d2e252ed27f5d3",
+    "agents/core/sandbox.py": "42bef3d5a553d6339646fe0067a9ab45ea0ec7e7c0ee9cd04b9daca92b266305",
+    "agents/core/environments/legacy_terminal_dispatch.py": "bad5094d35e31ff500b8eca2547ea743d7ead8481598b0627582b7e407c7dc53",
+    "tests/test_h277_legacy_docker_kernel.py": "e12e6d88817a993545aac108fe0a039c54bf800479ed61a950ebae73f18eaf96",
+    "tests/test_h277_smart_terminal_integration.py": "bf6c342fc71fbe55311099f2456a07ec39d1aeeca796023e837570d5bfaa0823"
+  },
+  "collateral_scope_correction": {
+    "finding": "Early positive unmarked task classification unintentionally changed SSH/local refusal precedence",
+    "root_red": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "9da45d70189eff4c2b1fdb04548db48e9216617a5fa750ba048edfdb1146e3ed"
+    },
+    "fix": "New legacy_manual scope only when decision.backend is docker; trusted coordinator current approval and receipt checks remain",
+    "root_green": {
+      "tests": 413,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "4d2e10e41aa1f3042f39cd09feab4e3b014da5d550501808b74c1b3062fe25fa"
+    },
+    "scope": "Whole SSH/local transport/target modules plus new Docker and smart terminal modules; zero effects, zero failures/errors/skips",
+    "initial_checkpoint_scope": "Original34/349 root checkpoint preceded this one-line classification correction; final413 verifies corrected execution source",
+    "final_bandit": "agents/scripts baseline-aware scan exit0"
+  }
+}

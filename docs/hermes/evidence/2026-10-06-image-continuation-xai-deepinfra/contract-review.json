@@ -1,0 +1,35 @@
+{
+  "scope": "Krea continuation plus xAI/DeepInfra modules, shared runtime, tool/API and HUD",
+  "findings": [
+    {
+      "issue": "Krea source approver identity was not bound",
+      "fix": "Private original execution fingerprint checked on continuation and every live request",
+      "regression": "test_resume_rejects_altered_source_before_enqueue[approver]",
+      "status": "closed"
+    },
+    {
+      "issue": "Unexecuted continuation could inherit a ready source artifact",
+      "fix": "Private continuation execution fingerprint plus actual approved execution identity required by recovery",
+      "regression": "blocked/rejected/approved-but-unexecuted sibling projection tests",
+      "status": "closed"
+    },
+    {
+      "issue": "Official xAI result host absent from restricted manifest",
+      "fix": "Explicit imgen.x.ai alongside api.x.ai in default-off manifest; credential-free GET and unadmitted-host denial",
+      "regression": "test_xai_url_result_download_is_credential_free_and_egress_admitted",
+      "status": "closed",
+      "source": "https://docs.x.ai/developers/rest-api-reference/inference/images"
+    }
+  ],
+  "reviewers": [
+    "retained xAI/frontend specialist for Krea",
+    "retained DeepInfra specialist for providers/runtime"
+  ],
+  "reclosed_read_only": true,
+  "live_provider_acceptance": false,
+  "limits": [
+    "No live/provider billing proof",
+    "DeepInfra returned CDN origin not established; deny unless admitted",
+    "Legacy Krea jobs without private execution proof do not resume"
+  ]
+}

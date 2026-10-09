@@ -1,0 +1,12 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/queue_annotate_after_decision.xml", "tests/test_h277_annotate_after_decision_regression.py::test_annotate_rejects_decided_item_even_without_active_judge"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_annotate_rejects_decided_item_even_without_active_judge _________
+tests/test_h277_annotate_after_decision_regression.py:14: in test_annotate_rejects_decided_item_even_without_active_judge
+    assert queue.annotate(item["id"], late) is None
+E   AssertionError: assert {'score': 1, 'why': 'late', 'judge': {'provider': 'lm-studio', 'model': 'test'}} is None
+E    +  where {'score': 1, 'why': 'late', 'judge': {'provider': 'lm-studio', 'model': 'test'}} = annotate('75efa6fd511d', {'score': 1, 'why': 'late', 'judge': {'provider': 'lm-studio', 'model': 'test'}})
+E    +    where annotate = <agents.core.autonomy.action_approvals.ActionApprovalQueue object at 0x1079a4290>.annotate
+=========================== short test summary info ============================
+FAILED tests/test_h277_annotate_after_decision_regression.py::test_annotate_rejects_decided_item_even_without_active_judge
+1 failed in 1.33s

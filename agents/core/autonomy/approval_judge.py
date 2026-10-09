@@ -1,4 +1,8 @@
-"""approval_judge.py — H277: a separate, small model scores a queued tool call. It decides nothing.
+"""approval_judge.py — H277: a separate, small model reviews queued tool calls.
+
+The default risk score remains advisory. With trusted smart approvals enabled, an
+eligible terminal task instead gets a typed decision bound to the live policy and
+judge route. The queue applies that decision against its exact queued task.
 
 When the owner sets ``JARVIS_ROLE_APPROVAL_JUDGE_MODEL`` (unset by default: no judge), a
 tool call queued on :class:`~agents.core.autonomy.action_approvals.ActionApprovalQueue`
@@ -507,18 +511,26 @@ class _CompatibleJudgeBackend:
                                        trust_env=False)
 
     async def generate(self, model: str, prompt: str, system: str = "", max_tokens: int = MAX_TOKENS,
-                       temperature: float = 0.0) -> str:
+                       temperature: float | None = 0.0) -> str:
         headers = {"Content-Type": "application/json"}
         if self._key:
             headers["Authorization"] = f"Bearer {self._key}"
-        payload = {"model": model, "max_tokens": max_tokens, "temperature": temperature, "stream": False,
-                   "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
+        payload = _compatible_judge_body(model, prompt, system, max_tokens, temperature)
         resp = await self.client.post("/chat/completions", json=payload, headers=headers)
         resp.raise_for_status()
         return str(resp.json()["choices"][0]["message"].get("content") or "")
 
     async def aclose(self) -> None:
         await self.client.aclose()
+
+
+def _compatible_judge_body(model: str, prompt: str, system: str, max_tokens: int,
+                           temperature: float | None) -> dict:
+    body = {"model": model, "max_tokens": max_tokens, "stream": False,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
+    if temperature is not None:
+        body["temperature"] = temperature
+    return body
 
 
 def _judge_key(status: JudgeStatus, *, env=None) -> str:
@@ -638,15 +650,20 @@ class ApprovalJudge:
                 return False
         return True
 
-    async def score(self, snapshot: Mapping, status: JudgeStatus) -> dict | None:
-        """The annotation for *snapshot*, or ``None`` when the reply is not a verdict.
-        Raises on a backend failure; the queue treats that as "no judgement"."""
+    async def score(self, snapshot: Mapping, status: JudgeStatus):
+        """Return a smart terminal decision or the default advisory annotation."""
         from ..llm.job_selection import SelectionError, current_selection
+        from .smart_approvals import smart_policy, terminal_args
 
-        # The queue runs this in a fresh context, so a caller's H681 job pin is never seen
-        # here; should one ever be, the judge is not the pinned job's model: no judgement.
         if current_selection() is not None:
             raise SelectionError("job model pins exclude the approval judge")
+
+        policy = smart_policy(self._env)
+        if policy.enabled and terminal_args(snapshot) is not None:
+            from .smart_observers import score_scope
+
+            with score_scope(snapshot):
+                return await self.smart_score(snapshot, status)
         try:
             prompt, flags, truncated = build_prompt(snapshot)
         except ValueError:
@@ -654,6 +671,112 @@ class ApprovalJudge:
             return None
         if not status.local and "nesting_too_deep" in flags:
             return None
+        text = await self._generate_text(snapshot, status, prompt=prompt, system=JUDGE_SYSTEM,
+                                         max_tokens=MAX_TOKENS)
+        verdict = parse_verdict(text)
+        if verdict is None:
+            logger.debug("approval judge reply was not a verdict; nothing stored")
+            return None
+        return {"score": verdict.score, "rationale": verdict.rationale, "flags": flags,
+                "truncated": bool(truncated), "advisory": True, "judge": status.identity(),
+                "at": time.time()}
+
+    def smart_binding_current(self, policy_revision: str, judge_revision_value: str) -> bool:
+        """Recheck only live trusted configuration; the queue checks its own request."""
+        from .smart_approvals import judge_revision, smart_policy
+
+        try:
+            policy = smart_policy(self._env)
+            status = self.status()
+            target = describe_data_target(self._router, env=self._env)
+            return (policy.enabled and policy.revision == policy_revision and status.configured
+                    and target is not None and judge_revision(status, target) == judge_revision_value)
+        except Exception:  # noqa: BLE001 — malformed live configuration never grants
+            return False
+
+    def smart_current(self, result, snapshot: Mapping) -> bool:
+        """An opinion still matches trusted configuration and terminal eligibility."""
+        from .smart_approvals import smart_policy, terminal_args
+
+        try:
+            policy = smart_policy(self._env)
+            args = terminal_args(snapshot)
+            return (args is not None and (result.verdict != "approve" or policy.permits(args["command"]))
+                    and self.smart_binding_current(result.policy_revision, result.judge_revision)
+                    and self.wants(snapshot, self.status()))
+        except Exception:  # noqa: BLE001 — uninspectable live state cannot authorize
+            return False
+
+    async def smart_score(self, snapshot: Mapping, status: JudgeStatus):
+        """Judge one eligible terminal request under trusted, revocable smart policy."""
+        from ..llm.data_handling import DataHandlingRefused
+        from ..llm.job_selection import SelectionError
+        from .smart_approvals import (
+            SmartApprovalResult,
+            build_smart_prompt,
+            judge_revision,
+            parse_smart_verdict,
+            smart_policy,
+            terminal_args,
+        )
+
+        policy = smart_policy(self._env)
+        args = terminal_args(snapshot)
+        if not policy.enabled or args is None or not status.configured or not self.wants(snapshot, status):
+            return None
+        target = describe_data_target(self._router, env=self._env)
+        if target is None:
+            return None
+        revision = judge_revision(status, target)
+
+        def result(verdict):
+            return SmartApprovalResult(verdict, policy.revision, revision, status.identity(), time.time())
+
+        def request_current():
+            try:
+                validity = _request_validity.get()
+                return (terminal_args(snapshot) == args
+                        and (validity is None or validity()))
+            except Exception:  # noqa: BLE001 — a stale queued request cannot gain a decision
+                return False
+
+        if not policy.permits(args["command"]):
+            denied = result("deny")
+            return denied if self.smart_current(denied, snapshot) and request_current() else None
+
+        try:
+            system, prompt = build_smart_prompt(snapshot, policy)
+        except Exception:  # noqa: BLE001 — malformed review data needs the owner
+            escalated = result("escalate")
+            return escalated if self.smart_current(escalated, snapshot) and request_current() else None
+
+        try:
+            from .smart_observers import requested
+
+            text = await self._generate_text(
+                snapshot, status, prompt=prompt, system=system, max_tokens=16,
+                extra_check=lambda: self.smart_current(result("escalate"), snapshot)
+                and request_current(),
+                on_request=lambda: requested(snapshot),
+            )
+        except (DataHandlingRefused, SelectionError):
+            return None
+        except Exception:  # noqa: BLE001 — no provider exception text enters the decision
+            escalated = result("escalate")
+            return escalated if self.smart_current(escalated, snapshot) and request_current() else None
+        answer = result(parse_smart_verdict(text))
+        return answer if self.smart_current(answer, snapshot) and request_current() else None
+
+    async def _generate_text(self, snapshot: Mapping, status: JudgeStatus, *, prompt: str,
+                             system: str, max_tokens: int, extra_check: Callable | None = None,
+                             on_request: Callable | None = None) -> str:
+        """Generate through the H513 physical transport and live queue validity guards."""
+        from ..llm.job_selection import SelectionError, current_selection
+
+        # The queue runs this in a fresh context, so a caller's H681 job pin is never seen
+        # here; should one ever be, the judge is not the pinned job's model: no judgement.
+        if current_selection() is not None:
+            raise SelectionError("job model pins exclude the approval judge")
         from ..llm.data_handling import (
             DataHandlingRefused,
             authorize_role_target,
@@ -681,6 +804,17 @@ class ApprovalJudge:
 
         base = httpx.URL(target.binding[4])
         expected_url = base.copy_with(raw_path=base.raw_path + path.encode().lstrip(b"/"))
+        native_compatible = (
+            target.provider == "openai-compatible" and type(backend) is _CompatibleJudgeBackend
+            and getattr(backend.generate, "__func__", None) is _CompatibleJudgeBackend.generate
+        )
+        expected_body = (_compatible_judge_body(model, prompt, system, max_tokens, 0)
+                         if native_compatible else None)
+        body_fingerprint = (json.dumps(expected_body, sort_keys=True, separators=(",", ":"),
+                                       ensure_ascii=False, allow_nan=False)
+                            if expected_body is not None else None)
+        request_hooks = tuple(backend.client.event_hooks.get("request", ())) if native_compatible else ()
+        physical_attempts = 0
 
         def check():
             if current_selection() is not None:
@@ -690,6 +824,8 @@ class ApprovalJudge:
             if (not current.configured or current.model != model or configured != target
                     or not self.wants(snapshot, current) or (validity is not None and not validity())):
                 raise DataHandlingRefused("approval judge configuration or request changed")
+            if extra_check is not None and not extra_check():
+                raise DataHandlingRefused("approval judge smart binding changed")
             try:
                 endpoint, authorization = _wire_identity(backend, target.provider)
                 actual = _data_target(target.provider, model, target.mode, endpoint, authorization)
@@ -697,10 +833,15 @@ class ApprovalJudge:
                 raise DataHandlingRefused("approval judge wire identity is unavailable") from exc
             if actual != target:
                 raise DataHandlingRefused("approval judge wire identity changed")
+            if native_compatible and tuple(backend.client.event_hooks.get("request", ())) != request_hooks:
+                raise DataHandlingRefused("approval judge physical request hook changed")
             require_direct_async_transport(backend.client, expected_url)
             return authorize_role_target(self._router, target)
 
         try:
+            if native_compatible and (not request_hooks
+                                      or not getattr(request_hooks[-1], "_nerva_egress_recorder", False)):
+                raise DataHandlingRefused("approval judge physical request hook is unavailable")
             check()
             if backend.client.build_request("POST", path).url != expected_url:
                 raise DataHandlingRefused("approval judge request URL is unsupported")
@@ -708,18 +849,72 @@ class ApprovalJudge:
             request_marker = object()
 
             def request_check(request):
+                nonlocal physical_attempts
                 if (request.extensions.get("nerva_approval_judge_request") is request_marker
                         or request.method != "POST" or request.url != expected_url
                         or request.headers.get("Authorization", "") != target.binding[5]
                         or request.headers.get("Cookie")):
                     raise DataHandlingRefused("approval judge physical request identity changed")
+                if native_compatible:
+                    def unique_pairs(pairs):
+                        result = {}
+                        for key, value in pairs:
+                            if key in result:
+                                raise ValueError("duplicate field")
+                            result[key] = value
+                        return result
+
+                    try:
+                        body = json.loads(request.content, object_pairs_hook=unique_pairs)
+                        actual_body = json.dumps(body, sort_keys=True, separators=(",", ":"),
+                                                 ensure_ascii=False, allow_nan=False)
+                    except (ValueError, TypeError, httpx.RequestNotRead):
+                        actual_body = None
+                    if (actual_body != body_fingerprint or physical_attempts >= 2
+                            or request.headers.get("Content-Type") != "application/json"
+                            or request.headers.get("Proxy-Authorization")):
+                        raise DataHandlingRefused("approval judge physical request body changed")
                 require_direct_async_transport(backend.client, request.url)
+                if on_request is not None:
+                    check()
+                    on_request()
                 # HTTPX copies extensions onto redirects; rebuilt native retries start fresh.
                 request.extensions["nerva_approval_judge_request"] = request_marker
+                if native_compatible:
+                    physical_attempts += 1
 
             with physical_request_scope(check, request_check=request_check):
-                text = await backend.generate(model=model, prompt=prompt, system=JUDGE_SYSTEM,
-                                              max_tokens=MAX_TOKENS, temperature=0)
+                if native_compatible:
+                    import asyncio
+
+                    from ..llm.auxiliary_recovery import rejects_temperature
+
+                    # One operation clock covers both native sends; a fresh judgement starts
+                    # with its configured temperature and exact output cap again.
+                    async with asyncio.timeout(status.timeout):
+                        try:
+                            text = await backend.generate(model=model, prompt=prompt, system=system,
+                                                          max_tokens=max_tokens, temperature=0)
+                        except httpx.HTTPStatusError as exc:
+                            if physical_attempts != 1 or not rejects_temperature(exc):
+                                raise RuntimeError("approval judge provider request failed") from None
+                            check()
+                            expected_body = _compatible_judge_body(
+                                model, prompt, system, max_tokens, None)
+                            body_fingerprint = json.dumps(
+                                expected_body, sort_keys=True, separators=(",", ":"),
+                                ensure_ascii=False, allow_nan=False)
+                            try:
+                                text = await backend.generate(
+                                    model=model, prompt=prompt, system=system,
+                                    max_tokens=max_tokens, temperature=None)
+                            except httpx.HTTPError:
+                                raise RuntimeError("approval judge provider request failed") from None
+                        except httpx.HTTPError:
+                            raise RuntimeError("approval judge provider request failed") from None
+                else:
+                    text = await backend.generate(model=model, prompt=prompt, system=system,
+                                                  max_tokens=max_tokens, temperature=0)
                 check()
         finally:
             if owned and hasattr(backend, "aclose"):
@@ -729,13 +924,7 @@ class ApprovalJudge:
                     logger.debug("approval judge client close failed", exc_info=True)
         # Owned client cleanup may yield; do not return an opinion after revocation there.
         check()
-        verdict = parse_verdict(text)
-        if verdict is None:
-            logger.debug("approval judge reply was not a verdict; nothing stored")
-            return None
-        return {"score": verdict.score, "rationale": verdict.rationale, "flags": flags,
-                "truncated": bool(truncated), "advisory": True, "judge": status.identity(),
-                "at": time.time()}
+        return text
 
 
 def rationale_sha256(annotation: Mapping) -> str:

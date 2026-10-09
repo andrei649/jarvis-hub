@@ -45,6 +45,7 @@ class VisionRetryScope:
     prepared_json: str | None = None
     attempts: int = 0
     sent: bool = False
+    max_attempts: int = 2
 
     def _alive(self):
         if not self.active or _current.get() is not self:
@@ -62,7 +63,7 @@ class VisionRetryScope:
 
     def next_attempt(self):
         self._alive()
-        if not self.started or self.attempts >= 2:
+        if not self.started or self.attempts >= self.max_attempts:
             raise RuntimeError("vision retry limit exceeded")
         self.attempts += 1
         self.sent = False
@@ -88,8 +89,10 @@ _current: ContextVar[VisionRetryScope | None] = ContextVar("vision_empty_retry_s
 
 
 @contextmanager
-def vision_retry_scope(backend: object, model: str, check):
-    state = VisionRetryScope(backend, model, check)
+def vision_retry_scope(backend: object, model: str, check, *, max_attempts: int = 2):
+    if max_attempts not in (1, 2):
+        raise ValueError("invalid vision attempt budget")
+    state = VisionRetryScope(backend, model, check, max_attempts=max_attempts)
     token = _current.set(state)
     try:
         yield state

@@ -1,0 +1,30 @@
+{
+  "scope": "OpenAI Image2/Codex native images and HUD provider controls; full H515 remains partial",
+  "donor_contract": {
+    "quality_tiers": [
+      "gpt-image-2-low",
+      "gpt-image-2-medium",
+      "gpt-image-2-high"
+    ],
+    "native_endpoints": [
+      "images/generations",
+      "images/edits"
+    ],
+    "credential_base": "paired explicit owner source, fixed official Codex base",
+    "no_responses_fallback": true
+  },
+  "findings_closed": [
+    "Codex configured status requires governance/plugin availability before reading credentials",
+    "Codex code digest binds shared OpenAI tier definitions",
+    "Existing OpenAI/FAL deadlines retain180s; Codex300s only",
+    "Actual uploaded artifact bytes equal approval digest; no changed-reference upload",
+    "Missing selected HUD provider cannot silently fall back; remembered catalog disables legacy fallback",
+    "Image generation/edit approval cards display actual provider/model/references and fixed-endpoint identity"
+  ],
+  "limitations": [
+    "No product-managed Codex login/refresh",
+    "No live/paid/subscription generation acceptance",
+    "No native-mobile producer acceptance",
+    "Other five frozen image providers, Clarity, FAL artifact upload and existing local lifecycle/authority gaps remain"
+  ]
+}

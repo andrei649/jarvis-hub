@@ -1,0 +1,94 @@
+{
+  "generated_at": "2026-10-05T22:08:24.217542+00:00",
+  "goal_scope": "all697",
+  "H515": "partial",
+  "publication": false,
+  "implemented": [
+    "OpenRouter12-model donor catalog with current dedicated/chat endpoints and single approved POST",
+    "OpenRouter artifact-reference hashes and bounded native payload/result parser",
+    "Krea3 models, style-guided requests, durable submit job id before bounded same-principal GET polling",
+    "Separate default-off manifests and local unprobed discovery, no disabled credential reads",
+    "Live PermissionGate and public-DNS result admission, credential-free download and local PNG/catalog",
+    "Registered tool, authenticated API, explicit HUD provider controls and immutable approval cards"
+  ],
+  "verification": {
+    "backend": {
+      "receipt": "integration-final-result.xml",
+      "tests": 705,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "frontend": {
+      "receipt": "frontend-result.json",
+      "tests": 1958,
+      "passed": 1958,
+      "failed": 0,
+      "pending": 0
+    },
+    "focused": {
+      "receipt": "focused-result.xml",
+      "tests": 116,
+      "note": "Before final producer completion and review-race additions; overlaps final union"
+    },
+    "typecheck": true,
+    "build": true,
+    "ruff": true,
+    "bandit": {
+      "receipt": "bandit-result.json",
+      "loc": 2656,
+      "findings": 0,
+      "errors": 0
+    },
+    "review": "contract-review.json",
+    "no_live_calls": true,
+    "records": {
+      "receipt": "records-result.xml",
+      "tests": 104,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "graft": {
+      "graph": {
+        "ok": true,
+        "missing": false
+      },
+      "counts": {
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "stale": 0
+      },
+      "context_missing": true
+    },
+    "secret_scan": {
+      "receipt": "secret-scan-result.json",
+      "paths": 57,
+      "findings": 0,
+      "baseline": false,
+      "inline_allow": false
+    }
+  },
+  "verification_history": {
+    "red": "Missing runtime identities/producers, then corrected",
+    "first_runtime": "Two test assertions ignored DNS-pinned URL; fixed assertions verify logical URL, Host and wire path",
+    "first_union": "One old provider-discovery test required exactly3providers; updated additive assertion, final705pass",
+    "review": "Race reproduced RED and corrected before final union"
+  },
+  "remaining": [
+    "Krea approved polling continuation after process restart and separate Enhance",
+    "Owner admission of actual provider result CDN domains; no fixture-derived defaults",
+    "xAI, DeepInfra and managed Nous/FAL image providers",
+    "Dynamic donor catalog breadth and 4K artifacts",
+    "FAL artifact upload/Clarity and product-managed Codex OAuth",
+    "Existing local ComfyUI leases/LLM restore/authority kinds/native and live acceptance"
+  ],
+  "accounting": {
+    "inventory": 697,
+    "equivalent": 130,
+    "percent": 18.7,
+    "new_equivalent_H515": 0
+  },
+  "source_manifest": "scoped-inputs.json"
+}

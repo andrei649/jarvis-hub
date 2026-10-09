@@ -1,0 +1,213 @@
+{
+  "generated_at": "2026-10-04T06:27:05.090965+00:00",
+  "goal": "All 697 Hermes capabilities; substantive current-source collateral review without new equivalent credit",
+  "base_sha": "43cad5f152795aee2ae4964f6d98531ebc402d0b",
+  "head_sha": "abc2fd892dea9fd78b3d40931f823e877d3febea",
+  "reviewed_rows": {
+    "H218": {
+      "retained_status": "partial",
+      "source_reason": "Archive filters and existing delete governance remain unchanged. The session backup inventory now includes the exact rewind head before deletion, and the current encrypted backup/read-back tests preserve that marker and legacy compatibility. Purge mediation/approval gaps remain open; local permission for kernel work no longer requires another owner decision."
+    },
+    "H262": {
+      "retained_status": "equivalent",
+      "source_reason": "Checkpoint source changes only the per-session backup inventory tuple; all CheckpointManager method bodies are AST-identical. Lifecycle claim/schedule/retention rules and archive/purge consumers are unchanged; current retention regressions pass."
+    },
+    "H413": {
+      "retained_status": "equivalent",
+      "source_reason": "The CheckpointManager title getter/setter, session metadata CAS and all method bodies are AST-identical. Added backup rewind inventory occurs below the title methods, leaving their cited lines and title/owner behavior unchanged; current session-title regressions pass."
+    },
+    "H428": {
+      "retained_status": "equivalent",
+      "source_reason": "Queued embedding, stale generation/epoch checks, store/hybrid recall, purge invalidation and worker bounds remain AST-identical. Rewind bumps only the addressed session epoch after durable commit. Normal turn queueing remains after accepted persistence, while rejected strict rewind appends do not enqueue embeddings. Current recall and rewind regressions pass; moved unchanged citations were read and remapped."
+    },
+    "H441": {
+      "retained_status": "equivalent",
+      "source_reason": "Turn/tool name normalization and seed serialization remain unchanged. Continuation and ordinary reload now additionally validate exact durable rewind heads; valid retained turns still reconstruct tool names/media, and erased tails cannot return. Recap and slash regressions pass, with moved citations remapped to the read current symbols."
+    },
+    "H487": {
+      "retained_status": "partial",
+      "source_reason": "Existing TaskQueue method bodies are all AST-identical; the sole source addition is the read-only checkpoint_origin_turn observer. It checks stored task birth, ready server association and current intent, grants nothing and consumes no approval outcome. Existing provenance/claim/denial regressions and new observer cases pass. Earlier missing producers, deadlines and live acceptance remain open; moved denial-method citations were read and remapped."
+    },
+    "H671": {
+      "retained_status": "equivalent",
+      "source_reason": "Session continuation retains immutable root/seed, instance binding and existing clock CAS. The new rewind index is additive; ordinary snapshot saves remain best effort, while explicitly rewound sessions require exact durable JSON/SQLite head agreement on load and later append. Failed/missing/forged heads refuse only the affected session. Current continuation, birth, compaction clock and tool-loop regressions pass; no new clock/provider/live capability is claimed."
+    },
+    "H679": {
+      "retained_status": "equivalent",
+      "source_reason": "Checkpoint source changes only its per-session backup inventory tuple, with all method bodies unchanged. Reasoning vocabulary/declarations, normalization and request projection source remain unchanged. Existing verdict is preserved without expanded provider or live proof."
+    }
+  },
+  "changed_symbols": {
+    "agents/core/autonomy/queue.py": {
+      "changed_existing": [],
+      "added": [
+        "TaskQueue.checkpoint_origin_turn"
+      ],
+      "removed": []
+    },
+    "agents/core/checkpoint.py": {
+      "changed_existing": [],
+      "added": [],
+      "removed": []
+    },
+    "agents/core/memory/manager.py": {
+      "changed_existing": [
+        "MemoryManager.__init__",
+        "MemoryManager.set_checkpoint_manager",
+        "MemoryManager.new_session",
+        "MemoryManager.resume_session",
+        "MemoryManager.add_turn",
+        "MemoryManager.get_context",
+        "MemoryManager.get_history"
+      ],
+      "added": [
+        "_turn_digest",
+        "MemoryManager._verified_rewind_document",
+        "MemoryManager._load_pending_rewind",
+        "MemoryManager._quarantine_rewind",
+        "MemoryManager._ensure_rewind_ready",
+        "MemoryManager._check_rewind_head_before_append",
+        "MemoryManager.prepare_rollback_rewind",
+        "MemoryManager.commit_rollback_rewind"
+      ],
+      "removed": []
+    },
+    "agents/core/memory/conversation.py": {
+      "changed_existing": [
+        "ConversationMemory.__init__",
+        "ConversationMemory._load_latest_session",
+        "ConversationMemory.new_session",
+        "ConversationMemory.resume_session",
+        "ConversationMemory.add_turn",
+        "ConversationMemory._persist_turn",
+        "ConversationMemory._save_snapshot",
+        "ConversationMemory.get_history",
+        "ConversationMemory.clear"
+      ],
+      "added": [
+        "ConversationMemory.restore_verified_rewind"
+      ],
+      "removed": []
+    },
+    "agents/core/memory/persistence.py": {
+      "changed_existing": [
+        "save_memory"
+      ],
+      "added": [
+        "RewindPersistenceError.__init__",
+        "session_snapshot_lock",
+        "snapshot_digest",
+        "read_snapshot_for_rewind",
+        "replace_memory_if_current",
+        "restore_memory_if_current"
+      ],
+      "removed": []
+    },
+    "agents/core/session_continuation.py": {
+      "changed_existing": [
+        "initialize",
+        "_load_locked"
+      ],
+      "added": [
+        "rewind_head"
+      ],
+      "removed": []
+    }
+  },
+  "citation_remaps": {
+    "H428": {
+      "agents/core/memory/manager.py:45-46": "agents/core/memory/manager.py:79-80",
+      "agents/core/memory/manager.py:291": "agents/core/memory/manager.py:590",
+      "agents/core/memory/manager.py:319": "agents/core/memory/manager.py:618",
+      "agents/core/memory/manager.py:154": "agents/core/memory/manager.py:451",
+      "agents/core/memory/manager.py:300": "agents/core/memory/manager.py:599",
+      "agents/core/memory/manager.py:303": "agents/core/memory/manager.py:602"
+    },
+    "H441": {
+      "agents/core/memory/conversation.py:38": "agents/core/memory/conversation.py:42",
+      "agents/core/memory/conversation.py:67": "agents/core/memory/conversation.py:71",
+      "agents/core/session_continuation.py:290": "agents/core/session_continuation.py:305",
+      "agents/core/session_continuation.py:89": "agents/core/session_continuation.py:104"
+    },
+    "H487": {
+      "agents/core/autonomy/queue.py:4094-4149": "agents/core/autonomy/queue.py:4119-4174",
+      "agents/core/autonomy/queue.py:4589-4643": "agents/core/autonomy/queue.py:4614-4668"
+    }
+  },
+  "root_collateral": {
+    "tests": 909,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 909,
+    "junit_sha256": "97b426a2d33897c73c7ae350dbf6d53921832a3b50baaba7f742b2f2c6c4f9a4",
+    "log_sha256": "f40b203ddb73d4918983a76b7622ee75b6dfd35be680b86f10b2379bbe5b16ae",
+    "modules": [
+      "tests/test_compaction_clock.py",
+      "tests/test_conversation_clock.py",
+      "tests/test_h011_checkpoint_origin_turn.py",
+      "tests/test_h011_file_checkpoint_history.py",
+      "tests/test_h011_file_checkpoint_maintenance.py",
+      "tests/test_h011_file_checkpoint_restore.py",
+      "tests/test_h011_rewind_boot_lifecycle.py",
+      "tests/test_h011_rewind_session_backup.py",
+      "tests/test_h011_rollback_conversation.py",
+      "tests/test_h218_archived_chats.py",
+      "tests/test_h262_lifecycle_sweep.py",
+      "tests/test_h262_retention_approval.py",
+      "tests/test_h277_active_image_history.py",
+      "tests/test_h277_image_turn_memory.py",
+      "tests/test_h413_session_titles.py",
+      "tests/test_h427_precompress_checkpoint.py",
+      "tests/test_h441_session_recap.py",
+      "tests/test_h485_denial_feedback_queue.py",
+      "tests/test_h487_chat_outcome_store.py",
+      "tests/test_h487_consent_claim_revocation.py",
+      "tests/test_h487_terminal_consent_provenance.py",
+      "tests/test_recall_gate.py",
+      "tests/test_route_compaction.py",
+      "tests/test_session_birth_persistence.py",
+      "tests/test_session_continuation.py",
+      "tests/test_session_persistence.py",
+      "tests/test_slash_commands.py",
+      "tests/test_tool_loop_compaction.py"
+    ]
+  },
+  "collection": {
+    "backend": 22756,
+    "added": 38,
+    "frontend_historical": 1889,
+    "mobile_historical": 185,
+    "meaning": "Actual guarded collection only; not a full run"
+  },
+  "limits": [
+    "Retains six existing equivalent and two partial claims after semantic review; no new equivalent credit",
+    "Other source-linked rows already stale before this unit remain stale; no general restamp",
+    "H011 remains partial until terminal scopes, authorized commands, kernel/queue effect integration and maintenance are delivered",
+    "Historical backend full run excludes H011; current 452 and collateral run scopes are exact",
+    "Existing unawaited title-upgrade warning and TestClient deprecation warning retained; no unrelated fix",
+    "Frontend/mobile counts reused, not rerun",
+    "No push/merge/deploy/provider/device/live terminal effects"
+  ],
+  "next_action": "Finish record gates and local record commit, then grouped terminal and owner UX integration",
+  "final_record_gates": {
+    "tests": 151,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "2c2a47fb1cfdce7c90e72ce8d756e4ff0a135d64a7ccb6b1f790854dd8d98701",
+    "log_sha256": "ef44940ff7b0c272c4e8bef2399712d59b6c36f9279acce8a980228659553c45"
+  },
+  "graft": {
+    "source_graph_ok": true,
+    "added": 0,
+    "removed": 0,
+    "changed": 0,
+    "stale": 0,
+    "check_sha256": "98c5b00963c837904ce0a5153d3c9b4ac59f9170cb191c08ae7342157977e394",
+    "optional_deep_context_missing": true,
+    "optional_deep_nodes_pending": 49612,
+    "meaning": "Fresh local source graph; no optional LLM deep context run"
+  },
+  "h011_delivery_note": "Private durable conversation rewind and exact terminal task origin observer recorded as integrated dependencies; public H011 remains partial."
+}

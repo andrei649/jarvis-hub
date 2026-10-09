@@ -19,7 +19,7 @@ from .video_native import VideoNativeRefused, gemini_request_url
 
 _CHAIN_NAME = "JARVIS_ROLE_VIDEO_FALLBACKS"
 _FIELDS = frozenset({"provider", "model", "base_url"})
-_PROVIDERS = frozenset({"lm-studio", "openai-compatible", "gemini"})
+_PROVIDERS = frozenset({"lm-studio", "openai-compatible", "gemini", "openrouter"})
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 _MAX_CHAIN_BYTES = 8192
 _MAX_PROVIDER = 64
@@ -156,5 +156,7 @@ def resolve_video_fallbacks(env: Mapping[str, str] | None = None) -> tuple[Video
         key = _read(env, f"JARVIS_ROLE_VIDEO_FALLBACK_{slot}_KEY")
         if (len(key) > _MAX_KEY or any(not 32 <= ord(c) <= 126 for c in key)):
             raise VideoRouteConfigError("video_fallback_key_invalid")
+        if provider == "openrouter" and not key.strip():
+            raise VideoRouteConfigError("video_fallback_key_unset")
         routes.append(VideoFallbackRoute(slot, provider, model, base, key.strip()))
     return tuple(routes)

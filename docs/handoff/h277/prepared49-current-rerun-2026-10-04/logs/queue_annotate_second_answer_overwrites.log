@@ -1,0 +1,12 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/queue_annotate_second_answer_overwrites.xml", "tests/test_h277_approval_judge.py::test_the_first_annotation_wins"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________________ test_the_first_annotation_wins ________________________
+tests/test_h277_approval_judge.py:487: in test_the_first_annotation_wins
+    assert q.annotate(item["id"], {**first, "score": 99}) is None
+E   AssertionError: assert {'score': 99, 'rationale': 'Writes one file under the workspace; reversible.', 'flags': [], 'truncated': False, ...} is None
+E    +  where {'score': 99, 'rationale': 'Writes one file under the workspace; reversible.', 'flags': [], 'truncated': False, ...} = annotate('e0b94f428e71', {'score': 99, 'rationale': 'Writes one file under the workspace; reversible.', 'flags': [], 'truncated': False, ...})
+E    +    where annotate = <agents.core.autonomy.action_approvals.ActionApprovalQueue object at 0x1075bcbc0>.annotate
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_the_first_annotation_wins - As...
+1 failed in 1.47s

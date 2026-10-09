@@ -1,0 +1,126 @@
+{
+  "rule": "Exact immediate preimage pins only; complete localized source/AST impact and629-case code/runtime/file/web/sandbox regression reviewed. Other old stale pins and every verdict preserved. No unrelated coordinator/route/schema source change.",
+  "changes": [
+    {
+      "id": "H277",
+      "paths": [
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py",
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status_preserved": "partial"
+    },
+    {
+      "id": "H287",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py",
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py"
+      ],
+      "status_preserved": "partial"
+    },
+    {
+      "id": "H298",
+      "paths": [
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py",
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status_preserved": "equivalent"
+    },
+    {
+      "id": "H305",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py",
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py"
+      ],
+      "status_preserved": "partial"
+    },
+    {
+      "id": "H315",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py",
+        "agents/core/session_kernels.py",
+        "agents/core/code_tools.py"
+      ],
+      "status_preserved": "equivalent"
+    },
+    {
+      "id": "H317",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status_preserved": "partial"
+    },
+    {
+      "id": "H416",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status_preserved": "partial"
+    },
+    {
+      "id": "H435",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status_preserved": "partial"
+    },
+    {
+      "id": "H436",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status_preserved": "partial"
+    },
+    {
+      "id": "H437",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status_preserved": "partial"
+    },
+    {
+      "id": "H485",
+      "paths": [
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py",
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status_preserved": "partial"
+    },
+    {
+      "id": "H595",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py",
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py"
+      ],
+      "status_preserved": "partial"
+    },
+    {
+      "id": "H660",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py",
+        "agents/core/code_tools.py",
+        "agents/core/session_kernels.py"
+      ],
+      "status_preserved": "partial"
+    },
+    {
+      "id": "H661",
+      "paths": [
+        "agents/core/code_tools.py"
+      ],
+      "status_preserved": "equivalent"
+    },
+    {
+      "id": "H667",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status_preserved": "equivalent"
+    }
+  ]
+}

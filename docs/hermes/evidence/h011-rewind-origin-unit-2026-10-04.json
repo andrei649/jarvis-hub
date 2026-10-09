@@ -1,0 +1,198 @@
+{
+  "generated_at": "2026-10-04T06:18:49.801224+00:00",
+  "goal": "All 697 pinned Hermes capabilities; H011 durable last-user rewind, backup preservation and terminal-origin observation",
+  "base_sha": "43cad5f152795aee2ae4964f6d98531ebc402d0b",
+  "head_sha": "Pending local source commit; exact reviewed source bytes below",
+  "changed_paths": [
+    "agents/core/autonomy/queue.py",
+    "agents/core/checkpoint.py",
+    "agents/core/memory/conversation.py",
+    "agents/core/memory/manager.py",
+    "agents/core/memory/persistence.py",
+    "agents/core/session_continuation.py",
+    "tests/test_h218_archived_chats.py",
+    "tests/test_h011_checkpoint_origin_turn.py",
+    "tests/test_h011_rewind_boot_lifecycle.py",
+    "tests/test_h011_rewind_session_backup.py",
+    "tests/test_h011_rollback_conversation.py",
+    "docs/hermes/h011-conversation-rewind-integration-plan-2026-10-04.md",
+    "docs/hermes/h011-terminal-origin-observation-plan-2026-10-04.md"
+  ],
+  "source_sha256": {
+    "agents/core/autonomy/queue.py": "b8f4f74cd7b7481a26e1afdb1360a5822b224f4f3e7690b55daec39df9c91460",
+    "agents/core/checkpoint.py": "9db6385132872e43d0fdc398566328dd94a22999dd781f843ec3fbbab825849f",
+    "agents/core/memory/conversation.py": "3c36bb93a8993a51c998b43779de4346cfdeaddee52517f4984e548e70300b03",
+    "agents/core/memory/manager.py": "bd95baced0a5ffcbc7e68cea7e60318cab8f96ef0cc967c011e39d15610afcc0",
+    "agents/core/memory/persistence.py": "7c6d757c3a4c26d4d457aeb6fa630a6878076d0a303fb95010e8b26c22ce9c1f",
+    "agents/core/session_continuation.py": "deee5d2ccdbd1c1e2d3e95602c6ec6db872ee181711c04d38da21526f6cf7e0c",
+    "tests/test_h218_archived_chats.py": "cd85c6cd8f6e0263c13b9723fa0362bb24a68419bc63db0c67cf15df852d018d",
+    "tests/test_h011_checkpoint_origin_turn.py": "165d5e561ef3e48a686465d88e8bf5413fbe5d1fc7826620d589c7275ef7d29f",
+    "tests/test_h011_rewind_boot_lifecycle.py": "e6873635c506a4e61492b1077565a04d7a3aee8c4ae5428405bf2e56a328ff9d",
+    "tests/test_h011_rewind_session_backup.py": "2af0047735c12459572cc4cfada6cfd7c0f966f59b4ca095354d58554efd4686",
+    "tests/test_h011_rollback_conversation.py": "0e4a6cf17b5f46ea627bf96db1f457475cc741b3ab29dff787f1ff27cd71b9db",
+    "docs/hermes/h011-conversation-rewind-integration-plan-2026-10-04.md": "2e00df0a82a994062d45c55e331c91290dfaa8cf42b9fc1ed5e789b8f847cf04",
+    "docs/hermes/h011-terminal-origin-observation-plan-2026-10-04.md": "9570685fed5947fa3898289f22fded3fe44db8719a718a9010b91e9e465d9f69"
+  },
+  "state": "Integrated local dependency unit; H011 remains partial, no new equivalent credit",
+  "behavior": [
+    "Prepared one-use ticket pins current last user exchange, instance, checkpoint clock, warm and durable tail; older file checkpoint selection is independent of that cut",
+    "Strict JSON/SQLite rewind with compensation, exact durable head after every subsequent append, stale/forged higher revision refusal and warm state rollback on append failure",
+    "Cold constructor binding defers verification until initialization; corrupt inactive rewind is quarantined per addressed session without stopping healthy sessions",
+    "Immutable continuation seed and append audit retained; rewind invalidates active images and queued session embeddings",
+    "Existing encrypted per-session delete backup preserves durable rewind marker; legacy backups remain readable",
+    "Read-only birth and intent-bound terminal task origin observer grants no execution permission; closed originating turn remains valid provenance",
+    "Synchronous snapshot re-save is an exact-head no-op only; different same-revision history is refused"
+  ],
+  "root_runs": {
+    "rewind-root-api-red": {
+      "kind": "expected missing API RED",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "junit_path": "/tmp/nerva-h011-rewind-root-api-red-20261004.xml",
+      "junit_sha256": "f1bbba33b680ca64f0f499feb81febd7536aefb991a3d99680f6bc61d396f44a",
+      "log_sha256": "751cc89d2e8f2c62ca57029de96eaaea9b6d7a2464381973455f61ecf8c7ee34"
+    },
+    "rewind-root-head-red": {
+      "kind": "expected exact-head regression RED",
+      "tests": 4,
+      "failures": 4,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "junit_path": "/tmp/nerva-h011-rewind-root-head-red-20261004.xml",
+      "junit_sha256": "69aa030dbe85ebd6897f4d1222beba92b577888917e5266b867e577810c9d1dd",
+      "log_sha256": "801f89df56c07136c33011d6a954541e441d056a133e1e1d0f85a385c6d41588"
+    },
+    "rewind-root-boot-red": {
+      "kind": "expected real lifecycle regression RED",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "junit_path": "/tmp/nerva-h011-rewind-root-boot-red-20261004.xml",
+      "junit_sha256": "6e05f0ffa50b67e1161faa75e72ad8d74c029e86161d6f696c9dce00ab5cd375",
+      "log_sha256": "e8741db487554dfc4211481bf1886cc48f5bfaf34c25bcd4c092386e94486ace"
+    },
+    "origin-root-red": {
+      "kind": "expected missing origin observer RED",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "junit_path": "/tmp/nerva-h011-origin-root-red-20261004.xml",
+      "junit_sha256": "2281c0e456ffeca7ea03739ebf590f4d905f6546d58c1036401d274a3aefcad1",
+      "log_sha256": "5e8e676fde1e05422147c7b7d6680c75486b23e87f9c1189c4e7ef998bb8c9ae"
+    },
+    "rewind-root-sync-save-red": {
+      "kind": "expected synchronous compatibility RED",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "junit_path": "/tmp/nerva-h011-rewind-root-sync-save-red-20261004.xml",
+      "junit_sha256": "0d8172b069d86ace0d65b4d4bfca466f21b0abf575b922ff3c14477be0c510c1",
+      "log_sha256": "a06cf57442013a241c8ab453926cc6a9a49a6e18564d8da3b9f3491674d3096e"
+    },
+    "rewind-root-first-green": {
+      "kind": "initial affected GREEN",
+      "tests": 323,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 323,
+      "junit_path": "/tmp/nerva-h011-rewind-root-first-green-20261004.xml",
+      "junit_sha256": "24d0ac8c9c928a81f0482bd15b2fa10d8da048b7cd11c26c735bd1f48c988a14",
+      "log_sha256": "09e305329b638186b578d6e4fa6abc21279b1355c6fb5d128ec01299aef579ed"
+    },
+    "origin-root-green": {
+      "kind": "origin and adjacent approval GREEN",
+      "tests": 121,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 121,
+      "junit_path": "/tmp/nerva-h011-origin-root-green-20261004.xml",
+      "junit_sha256": "0530651fecee1a2de96ba774a3f67647558e91d98f0e3c335906dd8a80342e7a",
+      "log_sha256": "9f987b2f573532331f033712a27a7be4d492a4b8a13083c20e6f76e9846f40b3"
+    },
+    "rewind-root-sync-save-green": {
+      "kind": "synchronous compatibility and same-revision refusal GREEN",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 4,
+      "junit_path": "/tmp/nerva-h011-rewind-root-sync-save-green-20261004.xml",
+      "junit_sha256": "bd9c8825a44b18575eaba72ff324739597f3167d9a694f2a4324a5e8990487f5",
+      "log_sha256": "c4b808d34f4db00b333696dec1f3a43a2887d8bfe0cb7af07a3cb98ff43a7830"
+    },
+    "rewind-origin-root-final-green": {
+      "kind": "final affected union GREEN",
+      "tests": 452,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 452,
+      "junit_path": "/tmp/nerva-h011-rewind-origin-root-final-green-20261004.xml",
+      "junit_sha256": "a437bdd1d5a503a60112fc1f87bf883c0612398e5f7535a4b4504136fb1b890c",
+      "log_sha256": "c184733dfa4693a5363be13564cb73880f52ad8fd9287d2c8123eb948fd9af81"
+    }
+  },
+  "external_package_sha256": {
+    "durable_rewind": "a6c02fe54794a329d945c7a961bb040ddc8cb6e3d12ca79fee60ec812f58449d",
+    "backup": "cbfaedfa6c9f28a8548f04fd60ecefe98fc557661eafef260ae7d6e0067a112d",
+    "exact_current_head": "9d995c9d32cea0f501c7bfa61f38e27b1fcda185b1dca5e16d2c532fac995013",
+    "boot_quarantine": "2cad26084025dbf7a27d8a6492ac6829449e29c80a1b5f16512046185f96cabd"
+  },
+  "affected_modules": [
+    "tests/test_conversation_clock.py",
+    "tests/test_h011_checkpoint_origin_turn.py",
+    "tests/test_h011_file_checkpoint_history.py",
+    "tests/test_h011_file_checkpoint_maintenance.py",
+    "tests/test_h011_file_checkpoint_restore.py",
+    "tests/test_h011_rewind_boot_lifecycle.py",
+    "tests/test_h011_rewind_session_backup.py",
+    "tests/test_h011_rollback_conversation.py",
+    "tests/test_h218_archived_chats.py",
+    "tests/test_h277_active_image_history.py",
+    "tests/test_h277_image_turn_memory.py",
+    "tests/test_h427_precompress_checkpoint.py",
+    "tests/test_h441_session_recap.py",
+    "tests/test_h485_denial_feedback_queue.py",
+    "tests/test_h487_chat_outcome_store.py",
+    "tests/test_h487_consent_claim_revocation.py",
+    "tests/test_h487_terminal_consent_provenance.py",
+    "tests/test_route_compaction.py",
+    "tests/test_session_continuation.py",
+    "tests/test_session_persistence.py"
+  ],
+  "static_checks": {
+    "ruff": "Actual repository configuration; eleven changed Python paths, exit 0",
+    "bandit": {
+      "exit_code": 0,
+      "baseline": ".bandit-baseline.json",
+      "log_sha256": "ec5fc63e133115b45f35eb2269cf705188100e9cdefb1d9efd626187fc6aa715"
+    }
+  },
+  "resource_plan": {
+    "implementer": "gpt-6-sol high, external snapshot",
+    "review_and_actual_writer": "root coordinator",
+    "terminal_and_owner_ux": "Independent external packages not accepted by this receipt"
+  },
+  "limits": [
+    "No public rollback/CLI/slash restore or kernel action yet; prepared private ticket is not authorization",
+    "Conversation and filesystem stores are not an atomic transaction; root effect orchestration must report split outcomes",
+    "Physical terminal grouping/callback wiring and approved prune/clear remain open",
+    "Current source changes invalidate collateral evidence until substantively reviewed; no blind hash restamp",
+    "Historical full backend 22699 excludes all H011 source; final full milestone remains required",
+    "No coverage threshold established, live provider/device acceptance or frontend rerun claimed",
+    "No push, merge, deploy or real terminal effect"
+  ],
+  "next_action": "Commit exact reviewed source unit; actual collection and affected claim review; then integrate grouped terminal package and owner/kernel/preappend paths"
+}

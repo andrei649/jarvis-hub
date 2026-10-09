@@ -1,0 +1,141 @@
+{
+  "source_entries": [
+    {
+      "path": "agents/core/cloud_image_runtime.py",
+      "sha256": "dea659c07e39d6ecb4de419a68d3f00ce80ce04c04bc20e93c1c56c5d2e8c864"
+    },
+    {
+      "path": "agents/core/plugin_gate.py",
+      "sha256": "f60d2ee0ecc557cc42eb889a7cf7362d34e9af2c0ecfcec2ff036ee8a58f23e9"
+    },
+    {
+      "path": "agents/core/image_tool_dispatcher.py",
+      "sha256": "439c0f8b315ad69ad6b6728046dbc5f2f36498b74c068bc30ee72d30a15a26e3"
+    },
+    {
+      "path": "agents/core/routers/multimodal.py",
+      "sha256": "baf4b8632ea34c634e796db10070d384b072d70eaea143e518c1a8c80c5c6139"
+    },
+    {
+      "path": "agents/core/media_backends/openrouter_image.py",
+      "sha256": "42ef3dfa87a9d785d4c66a3c4bb68f97040fa57c646bb777ba9c8135d631ff9a"
+    },
+    {
+      "path": "agents/core/media_backends/krea_image.py",
+      "sha256": "c282771246a6a7981512cd54178fc34f0b858ac8ac19480f0b7e820a94664239"
+    },
+    {
+      "path": "agents/core/media_backends/krea_jobs.py",
+      "sha256": "4a2bd54e541fae7fd9d78dda84a9921f72193c15f611badc14ad9d7d192e14d4"
+    },
+    {
+      "path": "tests/test_cloud_image_openrouter_krea.py",
+      "sha256": "2a77821ebd6d397af733b1f6c5615ea787f2751c1319a7f2a68e2dda5a8d6099"
+    },
+    {
+      "path": "tests/test_openrouter_image.py",
+      "sha256": "b8e9b0502920624ecdcbba0896a564dfb1a6e7707652fa7757c328168971e74c"
+    },
+    {
+      "path": "tests/test_krea_image.py",
+      "sha256": "8288efa2ee1c4c3a8862d5097a2565edc804a936570b5565d4955ee3c27435e3"
+    },
+    {
+      "path": "tests/test_krea_jobs.py",
+      "sha256": "ccc054d827afaa753d58d2f94366060096a38e644be38ca6f5e4ff4dba76dcfd"
+    },
+    {
+      "path": "tests/test_cloud_image_codex.py",
+      "sha256": "ebbfa19909765cca0ed0a1a2d1631c0b7cdf4ace377dd92ea9b79249d4a995e8"
+    },
+    {
+      "path": "frontend/src/api/images.ts",
+      "sha256": "66772bebd79e6f146e62e7340e39d26e5bc2ab8ecfc82d8f51cbc5cffb2e59c7"
+    },
+    {
+      "path": "frontend/src/panels/images.tsx",
+      "sha256": "bb5ac1034a02671629ecd9b9dd684772a8d771230b50dd9caf783b93073e4643"
+    },
+    {
+      "path": "frontend/src/gap.tsx",
+      "sha256": "8754813ca68537e6755909c923ca16ed38c729869665a9a3b12c7223fc9cb884"
+    },
+    {
+      "path": "frontend/src/test/images-provider-flow.test.tsx",
+      "sha256": "f12a2463afdcde474e8ebf2c1e314c107209a895a539d3429e1600ff8c2d806e"
+    },
+    {
+      "path": "frontend/src/test/decision-inbox-panel.test.tsx",
+      "sha256": "d5f172649dfe9d150f9aada02ca138ea7a507aa9d54c24091ba75ed3187ec54a"
+    },
+    {
+      "path": "docs/hermes/openrouter-krea-image-guide.md",
+      "sha256": "91dc2295ac565558133d086f2fe774eed866e09ce37d08d194781e37a47cb204"
+    },
+    {
+      "path": "docs/hermes/h515-openrouter-krea-plan-2026-10-06.md",
+      "sha256": "210dc3f1b94872027fa0036436c410f1802c3f1307d7dc48d86b32b81fd8d61e"
+    },
+    {
+      "path": "agents/web/v2/assets/client-D7Azo9Vs.js",
+      "sha256": "14ff90baa08a75c728800011be72023cd1697fde0c24b065918584114df483d6"
+    },
+    {
+      "path": "agents/web/v2/assets/gap-Crl5de4H.css",
+      "sha256": "ea2c58ff70f0e4322cd34ebcd152e1292bc36317ab221186fc70ffdc890a72c5"
+    },
+    {
+      "path": "agents/web/v2/assets/gap-D-IqTSlu.js",
+      "sha256": "377d4e76064178dfeaa521be65a69875c60ca4fda4ae7d61e9bfc95a680e2a4b"
+    },
+    {
+      "path": "agents/web/v2/assets/index-MTEpBJYP.js",
+      "sha256": "3eaf7431b7b04212df77ef018da937ae4d3860da347ca82e28a80c9948e2a494"
+    },
+    {
+      "path": "agents/web/v2/assets/index-teqkDIsI.css",
+      "sha256": "f2ed79d72c09f820317880035ede4e11c9fe4452e78554a89e8a39c4ea57b7c9"
+    },
+    {
+      "path": "agents/web/v2/assets/jobs-vYmczPrq.js",
+      "sha256": "3b81379f8be7515b6fa596ed3c8c4e322d6b1bd3ad2afdf60c8cbd3b5e39eeb9"
+    },
+    {
+      "path": "agents/web/v2/assets/modes-D4ydn6XU.js",
+      "sha256": "0716c99ad7446e7307584a6e4391dbc9b0caa042175fed3a208ac1a952f984a1"
+    },
+    {
+      "path": "agents/web/v2/assets/modes2-BmwZs15Q.js",
+      "sha256": "beaf9e38d66232cd1db9b978ca040a07d9b9ad2ceb344a5fd20f7a972ddc7014"
+    },
+    {
+      "path": "agents/web/v2/assets/modes3-BXRGOnOZ.js",
+      "sha256": "0a5e3cc84b786be7c1fe70babc400f65964207b6687138762a35fb7fe0f97352"
+    },
+    {
+      "path": "agents/web/v2/assets/modes4-UvEde4HE.js",
+      "sha256": "71440db9fa41cb22af068bd61633dafbec47263c17ec2803f075ed2d915ddef7"
+    },
+    {
+      "path": "agents/web/v2/assets/modes_world-BtMDGikj.js",
+      "sha256": "3d6cf5f2967a3a616be6335522c7df45d0d2870e8b2fa9498d428dd870ffb877"
+    },
+    {
+      "path": "agents/web/v2/assets/panel-kit-CwyHgGr0.js",
+      "sha256": "9f0fb670dba95dbad8e5453c6c282f0da22e5548bd8475cc39e36c79e80d58d5"
+    },
+    {
+      "path": "agents/web/v2/assets/soul-edit-BcaRddJT.js",
+      "sha256": "b4f223073a316469a1eb8f911f8d814e1266c4e5050515aa41d3ce3498c02e69"
+    },
+    {
+      "path": "agents/web/v2/index.html",
+      "sha256": "5adbea93668bf3fcfa54f3c6b08f886d6c980b395466d87268cd60dd292ee5c6"
+    },
+    {
+      "path": "agents/web/v2/sw-v2.js",
+      "sha256": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c"
+    }
+  ],
+  "indexing": "No binaries, credentials, vendor roots or generated dependency trees indexed."
+}

@@ -1,5 +1,85 @@
 # Handoff — H277 in progress on PR #1207 (2026-09-27)
 
+## Local H063 gateway milestone — 2026-10-05
+
+The [session lifecycle proof](../../hermes/evidence/2026-10-05-session-lifecycle/README.md)
+closes H063 locally: reset policies/triggers, generation-fenced routing-index
+expiry without deleting transcripts, real-progress stall notices, and forum-aware
+channel integration. Final backend: 23,680 passed, 34 ordinary skips and one
+existing xfail; serial frontend: 1,912 passed. Zero failures/errors and zero drift
+across 4,807 inputs at both terminals before final records. Both failed backend
+attempts and the credit-disabled assertion control are retained. The H487 test
+clock correction changes no production deadline or consent authority.
+
+Documented local code equivalence is now 125/697 (17.9%); the goal remains all697.
+H277 and other partial capabilities remain open. The original49 campaigns below
+retain their dated snapshots; this batch changed shared agent/channel sources and
+did not rerun that campaign. Recheck its source freshness before any new mutation
+acceptance claim. Next gateway audit is H067 pending-input interception. No
+stage, commit, push, merge, deployment or live provider/device acceptance.
+
+## Original49 after child resume integration — 2026-10-05
+
+The [new current-source rerun](prepared49-resume-current-2026-10-05/REPORT.md)
+detects all49 original prepared faults:43 assertion kills and6 test-body
+exception kills, with no survivors, setup errors, invalid cases or timeouts.
+Baseline and restored checks pass360 Python and40 legacy HUD tests. All997
+copied regular input hashes match after each fault and at the end, with no
+root-source drift. Mapping and runner sources, sanitized XML derivatives and
+their raw local hashes are included. Strict default-rule secret scanning passes.
+
+The [resume/recovery checkpoint](../../hermes/kanban-child-resume-recovery-plan-2026-10-05.md)
+adds separately approved continuations and conservative interruption recovery.
+The [new frozen full milestone](../../hermes/evidence/2026-10-05-kanban-resume-full/README.md)
+passes23,557 backend cases with34 ordinary skips and one existing xfail,
+zero failures/errors, then1,912/1,912 frontend tests. All4,684 source/test/metadata
+inputs match at both terminals. The older full proofs below retain their dated
+snapshots. H277 remains partial; no full functional, native, live-provider or
+publication acceptance is claimed.
+
+## Kanban child milestone and H277 freshness — 2026-10-05
+
+The [local milestone proof](../../hermes/evidence/2026-10-05-kanban-child-milestone/README.md) records a terminal full backend run (23,532 passes,34 skips,one expected xfail;zero failures/errors;4,200 inputs unchanged), drift-free prior full frontend1,912 passes, and current legacy HUD233 passes with coverage thresholds met. This verifies the current partial local integration; it does not close H277 or any remaining Kanban requirement.
+
+The original49 campaign below remains evidence for its2026-10-04 snapshot. The [exact freshness comparison](../../hermes/evidence/2026-10-05-kanban-child-milestone/h277-snapshot-drift.json) finds21 changed/missing inputs among993, including shared coordinator/queue/file/ToolRPC and rebuilt HUD paths. Do not present it as current-source mutation acceptance. Resume/crash recovery is still required, followed by a new coherent original49 rerun and full acceptance checks. No publication or live/provider activation occurred.
+
+
+## Full original49 current-snapshot rerun (2026-10-04)
+
+The [complete current rerun](prepared49-current-rerun-2026-10-04/REPORT.md)
+detects all49 original prepared faults:43 assertion kills and6 test-body
+exception kills, with no survivors, setup errors, invalid cases or timeouts.
+Baseline and post-restoration checks pass360 Python and40 HUD tests; all993
+current input hashes are restored after each case and at the end. This is a
+whole49 rerun using the accepted fault23 public-route regression, rather than
+the combined historical evidence below. H277 remains partial; the latest full
+backend still requires a new green milestone after compatibility corrections.
+
+
+## Prepared49 current-source follow-up (2026-10-04)
+
+The [new exact-source campaign](prepared49-refresh-2026-10-04/REPORT.md) preserves
+all49 original prepared faults. Existing tests detect42 by assertion and6 by
+behavior-changing exceptions; one original public-projection fault survived.
+The accepted regression in source `f2318ee0` passes on current production and
+fails under that exact fault for a configured nonlocal custom loopback judge.
+Expanded coverage therefore detects43 by assertion and6 by exception. This is
+an added test for a correct production guard, not a current privacy defect.
+Baseline/final359 Python and40 HUD tests pass;942 copied input hashes restored.
+See [root integration and limits](prepared49-refresh-2026-10-04/root-integration.json).
+H277 remains partial; this campaign does not establish wider provider/native parity.
+
+## Exact-image review continuation (2026-10-02)
+
+The selected browser review now binds the one-use token to the SHA-256 digests
+of the exact ordered data-URI images. A changed image or order is refused before
+transport and burns the token. The full backend suite completed 21,177 cases:
+21,142 passed, 35 skipped and none failed or errored on the prior source
+checkpoint. The added reordering regression passed separately. The
+[exact-commit mutation report](../../hermes/evidence/h277-exact-image-review-mutations-2026-10-02.md)
+records three valid assertion kills, a 15/15 baseline before and after, and
+4,402 restored tracked regular files. H277 remains partial.
+
 ## Local configured-chain continuation (2026-10-02)
 
 The [provider-chain report](../../hermes/h277-video-provider-chain-2026-10-02.md) tracks
@@ -167,3 +247,42 @@ Next rows: **H487**, then the rest of `docs/hermes/build-queue.md`. The owner as
 to go last: rows that need `agents/core/security/**` (e.g. **H512**) and the `github-advanced-security`
 check are the owner's. H696 / H334 need network access; H427 waits on owner decision P30.2
 (`docs/OWNER_TASKS.md`).
+
+## Fresh N1–N7 verification — 2026-10-04
+
+The [focused mutation refresh](mutation-refresh-2026-10-04.md) and its
+[structured result](mutation-refresh-2026-10-04.json) record11 behavioral kills:
+10 assertion failures and1 intended runtime ImportError, with successful Python
+and browser baselines, zero setup errors/timeouts/survivors, and complete snapshot
+restoration. The six named source/test fingerprints match local milestone
+cc4618a1. This updates the named handoff regressions only; H277 provider/routing,
+other accepted dependencies and live acceptance remain unfinished. Historical
+receipts retain their original source scope and are not rewritten.
+
+
+## Original prepared49 current-source verification — 2026-10-04
+
+The [current-source campaign](prepared49-current-2026-10-04.md) and
+[structured result](prepared49-current-2026-10-04.json) preserve all original49
+cases:41 assertion kills,6 behavioral exception kills and2 survivors. Python
+350/350 and browser40/40 baselines and final runs passed. All3,003 snapshot inputs
+were restored. The remote-URL survivor retains an independent sanitizer; the
+late-annotation survivor exposes missing direct-API test coverage, while current
+source already refuses it. Its proposed regression passed baseline and killed
+that fault in the disposable snapshot; integration remains a separate step.
+
+The separate [integrated backend receipt](../../hermes/evidence/h487-h277-inline-full-2026-10-04.json)
+records22,360 passes,34 ordinary skips,1 existing xfail and zero failures/errors
+for the inline-outcome and promotion-audit source checkpoint. New provider work
+and broader H277 acceptance remain unfinished. The earlier handoff instructions
+above are historical; the owner's later local/kernel authorization applies.
+
+
+## Direct late-annotation coverage integrated — 2026-10-04
+
+The separately [integrated regression](late-annotation-regression-2026-10-04.json)
+now covers the direct action-queue API:178 current judge/regression cases pass,
+and removing only the decided-item guard causes its new assertion to fail. The
+disposable3,003-input snapshot was fully restored. Production source is unchanged.
+The original49 campaign and earlier full22395 checkpoint retain their scope;
+the generated backend count is now22396, pending the next integrated full run.

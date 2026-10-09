@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "scope": "Local H388 execution/steering producers and H227 prepared fixed-turn preview; all697 objective remains incomplete.",
+  "source_base_sha": "817dd9d6ff597e525aea77f0730906715633b1cd",
+  "verified_at": "2026-10-04T12:23:55.658341+00:00",
+  "frozen_paths": 3131,
+  "frozen_manifest_sha256": "b466ebaea456043ebb8ed12bf7d9e9836a447dee3bdf465f40cc82b0a04c15ec",
+  "frozen_input_drift": [],
+  "backend_command": "python -m pytest tests -n 3 --dist loadfile --timeout=90 -q --tb=short --junitxml=<external result>",
+  "full_backend": {
+    "tests": 23247,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 35,
+    "passed": 23212,
+    "ordinary_skips": 34,
+    "existing_xfail": 1,
+    "expected_failure_cases": [
+      "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+    ],
+    "junit_sha256": "b3edf12a7ea5fdc2b3004df3256da61684a80b9890824ae709ba5e20cc2bc91e",
+    "log_sha256": "a6597ba8650f26dd4b83d8acc59a7836b39ee5a27d6cd67d699b7c23c10a37c0"
+  },
+  "initial_full_backend": {
+    "tests": 23247,
+    "failures": 1,
+    "errors": 0,
+    "skipped": 35,
+    "passed": 23211,
+    "ordinary_skips": 34,
+    "existing_xfail": 1,
+    "expected_failure_cases": [
+      "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+    ],
+    "junit_sha256": "05d7cddad7e08c93c164739fbaf70952e10ef9ed17b6a0e55f7ae63fc73fd5c6",
+    "log_sha256": "9e065904edad30e1e5d4b7e9586478af810991a1bbcaca9482b9682c20b6c5dc"
+  },
+  "initial_failure": "The concurrent-stream fixture omitted Agent.model_system_prompt. Bind the real method; all history-isolation assertions are unchanged.",
+  "fixture_correction_regressions": {
+    "tests": 57,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "affected_integration": {
+    "tests": 1023,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "focused_review_regressions": {
+    "tests": 203,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "record_and_doc_gates_before_fixture_note": {
+    "tests": 231,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "static_checks": {
+    "ruff_exit_code": 0,
+    "baseline_aware_bandit_exit_code": 0,
+    "graft_graph_current": true,
+    "graft_concept_pass": "not requested",
+    "source_staged_gitleaks_findings": 0
+  },
+  "changed_source_pins": {
+    "agents/core/agent.py": "541e50ecacb5a9bc99f8b79b6149137fe14099a9d0c6e34f230a88f095f0ea20",
+    "agents/core/agent_runtime.py": "356fcc96880e27a3113a5b062cc19bc35597255229c9dff517fd7b08eb98be24",
+    "agents/core/autonomy_coordinator.py": "cc36323a506d15a0a99b4b0a7a0d1cdb908ccfd97b2493be04ac9568113ec317",
+    "agents/core/environment_probe.py": "a97dd345e4e0b03f498eec1c43f1acf04dc31ef1a798d7a0f716ee70a3410a6d",
+    "agents/core/execution_guidance_context.py": "042091404c3ce8cbe3d88c020d94638c02fbcd73da53024b0bba74af949ed4bc",
+    "agents/core/inspector.py": "60c5cae83fc2d597a4cdc5b7e9eff6b26704607bd8f8135cf8573fdea8c1b72d",
+    "agents/core/llm/hybrid_router.py": "8d82bd265dba73324cd125eeda1bc09e346f6bbc076dee9656a78bde6e2c3a22",
+    "agents/core/operating_guidance.py": "8aac1087eabc85c58697815e28b96c545984f0d06aaff49c17d0492d56a9f5b0",
+    "agents/core/operating_prompt.py": "7061ac0e312f29762531bf6ee5e3c6fbf380096c95111a547511813f38d337bb",
+    "agents/core/orchestrator_bindings.py": "1f9a9a3c5cbbf0168c8e76f5c95a42beeb7d778259ca00353dd5b52aaba15a26",
+    "agents/core/steering.py": "c87634b1e30364d1f9649d6fbffd2e788c7b0969234b73840f5a39649c615386",
+    "agents/core/subagents.py": "2fd0ac6654f6cc1d75557bd56e69a3a0d457e4d6b879ef9b0e0e8527e06672a0",
+    "tests/test_concurrent_session_isolation.py": "a56cc1819ed1d46a4cf9be2d53d6a4e5f10cb68628ba88d72ac7b4f96b7dbbb1",
+    "tests/test_h388_execution_context.py": "657df7f618db052a11f54c855ee1e9e0c67da5fabd20d11d2d89871ec3efa166",
+    "tests/test_h388_guidance_runtime.py": "1715a8e020449e2e71a0d6d1e089d0d79a1d62734dd346305d19a7ea1e650a93",
+    "tests/test_h388_guidance_wiring.py": "1334b1ed01daa930be9dad94c4e7c61ebcc6b6d42ec0d5b5932c7a95a9e96eca",
+    "tests/test_h388_remaining_prompt_contracts.py": "78a60a8f1a5fc731d313776e73b061177fbf5500ff065a820f70aed6146712af",
+    "tests/test_h388_steering_runtime.py": "f625159a2de33610e21d6fc62b24ca246d3d1c97276ad32e84230dd5fa262427",
+    "tests/test_inspector.py": "e09f958aa7111a1f79697cbcf20e6c8c47d95595f5ecb96a079d94c3fda9bab5"
+  },
+  "files_modified": [
+    {
+      "path": "GO_LIVE_PLAN.md",
+      "rationale": "Regenerate collected backend count (23,247); retain prior unchanged client counts and CI provenance."
+    },
+    {
+      "path": "HERMES_STATUS.md",
+      "rationale": "Refresh truthful H388/H227 partial reviews and three bounded collateral rows; regenerate reports."
+    },
+    {
+      "path": "NERVA.md",
+      "rationale": "Regenerate collected backend count (23,247); retain prior unchanged client counts and CI provenance."
+    },
+    {
+      "path": "README.md",
+      "rationale": "Regenerate collected backend count (23,247); retain prior unchanged client counts and CI provenance."
+    },
+    {
+      "path": "STATUS.md",
+      "rationale": "Regenerate collected backend count (23,247); retain prior unchanged client counts and CI provenance."
+    },
+    {
+      "path": "agents/core/agent.py",
+      "rationale": "Wire adapted operating guidance, explicit provider identity, target facts and actual generation steering."
+    },
+    {
+      "path": "agents/core/agent_runtime.py",
+      "rationale": "Wire adapted operating guidance, explicit provider identity, target facts and actual generation steering."
+    },
+    {
+      "path": "agents/core/autonomy_coordinator.py",
+      "rationale": "Wire adapted operating guidance, explicit provider identity, target facts and actual generation steering."
+    },
+    {
+      "path": "agents/core/environment_probe.py",
+      "rationale": "Copy/adapt Hermes local Python toolchain probe with MIT notice."
+    },
+    {
+      "path": "agents/core/execution_guidance_context.py",
+      "rationale": "Describe actual eligible execution targets and gate local probes; read-only preview cache access."
+    },
+    {
+      "path": "agents/core/inspector.py",
+      "rationale": "Read-only fixed-turn route/prepared-prefix preview without provider, probe or queue side effects."
+    },
+    {
+      "path": "agents/core/llm/hybrid_router.py",
+      "rationale": "Read-only fixed-turn route/prepared-prefix preview without provider, probe or queue side effects."
+    },
+    {
+      "path": "agents/core/operating_guidance.py",
+      "rationale": "Wire adapted operating guidance, explicit provider identity, target facts and actual generation steering."
+    },
+    {
+      "path": "agents/core/operating_prompt.py",
+      "rationale": "Read-only fixed-turn route/prepared-prefix preview without provider, probe or queue side effects."
+    },
+    {
+      "path": "agents/core/orchestrator_bindings.py",
+      "rationale": "Keep exact callsite inventory coordinates aligned after guidance insertion."
+    },
+    {
+      "path": "agents/core/steering.py",
+      "rationale": "Scoped authentic child steering, FIFO staging and generation acknowledgement."
+    },
+    {
+      "path": "agents/core/subagents.py",
+      "rationale": "Scoped authentic child steering, FIFO staging and generation acknowledgement."
+    },
+    {
+      "path": "docs/HERMES_CAPABILITIES.md",
+      "rationale": "Refresh truthful H388/H227 partial reviews and three bounded collateral rows; regenerate reports."
+    },
+    {
+      "path": "docs/hermes/assessment.json",
+      "rationale": "Refresh truthful H388/H227 partial reviews and three bounded collateral rows; regenerate reports."
+    },
+    {
+      "path": "docs/hermes/h388-guidance-integration-plan-2026-10-04.md",
+      "rationale": "Record pre-code scope, implemented behavior, verification, rollback and unfinished contracts."
+    },
+    {
+      "path": "project-status.json",
+      "rationale": "Regenerate collected backend count (23,247); retain prior unchanged client counts and CI provenance."
+    },
+    {
+      "path": "tests/test_concurrent_session_isolation.py",
+      "rationale": "Verify actual producer/consumer requests, context refusal, provenance, lifecycle and read-only inspection."
+    },
+    {
+      "path": "tests/test_h388_execution_context.py",
+      "rationale": "Verify actual producer/consumer requests, context refusal, provenance, lifecycle and read-only inspection."
+    },
+    {
+      "path": "tests/test_h388_guidance_runtime.py",
+      "rationale": "Verify actual producer/consumer requests, context refusal, provenance, lifecycle and read-only inspection."
+    },
+    {
+      "path": "tests/test_h388_guidance_wiring.py",
+      "rationale": "Verify actual producer/consumer requests, context refusal, provenance, lifecycle and read-only inspection."
+    },
+    {
+      "path": "tests/test_h388_remaining_prompt_contracts.py",
+      "rationale": "Verify actual producer/consumer requests, context refusal, provenance, lifecycle and read-only inspection."
+    },
+    {
+      "path": "tests/test_h388_steering_runtime.py",
+      "rationale": "Verify actual producer/consumer requests, context refusal, provenance, lifecycle and read-only inspection."
+    },
+    {
+      "path": "tests/test_inspector.py",
+      "rationale": "Verify actual producer/consumer requests, context refusal, provenance, lifecycle and read-only inspection."
+    },
+    {
+      "path": "docs/hermes/evidence/h388-producer-full-backend-2026-10-04.json",
+      "rationale": "Preserve the actual frozen complete backend result and bounded delivery manifest."
+    }
+  ],
+  "remaining": [
+    "H388 actual Kanban board/tool/lifecycle and floating HUD producer binding.",
+    "Alibaba main provider registration, Windows bash and generic compatible-provider role contracts.",
+    "H227 CLI/HUD resolution disclosure and active-turn preview limits; cold probes remain unavailable during inspection.",
+    "Probe temporary-file byte cap, total probe deadline and cache TTL remain technical debt.",
+    "Frontend/mobile/legacy HUD were not rerun for this backend-only batch; their retained counts are earlier evidence.",
+    "No paid/live-provider, container activation, remote execution, GitHub CI, merge or deployment acceptance.",
+    "The all697 pinned Hermes functional-parity mission remains active."
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "source_hashes": {
+    "agents/core/media_backends/fal_catalog.py": "a6a5d17c2b6e0ba63dffcb06370dd40897fa37e0f4fd465650296345bc53aeef",
+    "agents/core/media_backends/fal_image.py": "df337789521971a850b3831263f21a76d1c2b6bc6d932cd81c38a6a323861f89",
+    "agents/core/cloud_image_runtime.py": "afbffa817287d6a8601891c2abb98644066134dddb28ac1f78c9d1a28ae1ea7a",
+    "agents/core/image_tool_dispatcher.py": "dcde28c45fb1c1e04476991437df438e8bafcd26277452c131e7c6f97ce4449d",
+    "agents/core/plugin_gate.py": "f3f51a3707c11d82f9ad797c033807f959e2a2ed00f18e3a3fa09a2c50a428cc",
+    "agents/core/routers/multimodal.py": "00bbd83b855c775eac7602a3f4469df49140ea547f8f6d11b68d1c75b76e0a00",
+    "tests/test_fal_image.py": "6116badc6e4890d35e1ae2a79d08f9e2e60f7b6d1710fac63fc16482163bc1f4",
+    "tests/test_cloud_image_fal.py": "b8aace6ee64d72292ff7a5c5652614fd47dc15be392ceaf908bf572094264c1c",
+    "tests/test_fal_image_tool.py": "3d6adb28e3aab0e1f784b582114c2765a9fabc27c94077c78710abee25d3655c",
+    "docs/hermes/fal-image-guide.md": "2586a085be0937c0ac924ae71c3d4a042d2c738015551879a66ca2e03854826b",
+    "docs/hermes/h515-provider-reuse-plan-2026-10-05.md": "f6262dab9542307f867a0f1a81654f1e7bef700d49be33ac4c2844f74b9eb1ea",
+    "mobile/PARITY.md": "c4fdfb5c0ae82459e4ee119726117779910da1c5a8ea0c27a88e4db3b8a07873",
+    "docs/design/HUD_V2_REMAINING.md": "28e2113bb2caa507a1d33697ede52b5a79470cf989f1ccd5f9517b63dba82bb3",
+    "tests/test_hermes_sprint_status.py": "579c94932af2712d939a2b88920302459dce60e844448ab7db48adbd56212071"
+  },
+  "donor_sha": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "catalog_values_unchanged": true,
+  "models": 25
+}

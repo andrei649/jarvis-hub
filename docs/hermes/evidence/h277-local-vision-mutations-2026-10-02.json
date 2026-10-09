@@ -1,0 +1,56 @@
+{
+  "scope": "H277 local model vision metadata at composer preparation",
+  "files_sha256": {
+    "agents/core/llm/vision_capability.py": "73c8902e5e677a2fd448fb93ed5ebc9d55fd7e1ab0cb09da7f3184eae15e0f9b",
+    "agents/core/routers/composer_vision.py": "aa61718a06532c26c0202d1ef60ac20616ec457d08078d7f3e1962bca4d5fa92",
+    "tests/test_h277_selected_composer.py": "c2a1e0b4512e1c140dee9787f27cb5291296a25ee7e8cb4d887d1dbe022da103",
+    "tests/test_h277_local_vision_metadata.py": "05c94558517722a4d07841935349320e092253e75ab9054b408bdbaf569a9dcd"
+  },
+  "baseline_passed": 3,
+  "mutants_killed": 3,
+  "mutants_total": 3,
+  "results": [
+    {
+      "case": "negative_verdict",
+      "mutant": false,
+      "exit_code": 0,
+      "killed": false,
+      "baseline_passed": true
+    },
+    {
+      "case": "review_refresh",
+      "mutant": false,
+      "exit_code": 0,
+      "killed": false,
+      "baseline_passed": true
+    },
+    {
+      "case": "direct_transport",
+      "mutant": false,
+      "exit_code": 0,
+      "killed": false,
+      "baseline_passed": true
+    },
+    {
+      "case": "negative_verdict",
+      "mutant": true,
+      "exit_code": 1,
+      "killed": true,
+      "baseline_passed": false
+    },
+    {
+      "case": "review_refresh",
+      "mutant": true,
+      "exit_code": 1,
+      "killed": true,
+      "baseline_passed": false
+    },
+    {
+      "case": "direct_transport",
+      "mutant": true,
+      "exit_code": 1,
+      "killed": true,
+      "baseline_passed": false
+    }
+  ]
+}

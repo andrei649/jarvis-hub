@@ -517,17 +517,57 @@ class SnapshotStore:
                 raise ValueError("not_a_file")
             data = target.read_bytes()
             mode = stat.S_IMODE(info.st_mode)
+        return self.take_captured(target, existed=existed, data=data, mode=mode, now=now)
+
+    def take_captured(self, target: Path, *, existed: bool, data: bytes,
+                      mode: int, now: float | None = None) -> Snapshot:
+        """Persist bytes already read through a scoped file descriptor.
+
+        The pre-undo path uses this rather than opening the name a second time.
+        Its record/blob format is exactly the existing SnapshotStore format.
+        """
+        if not isinstance(data, bytes) or not isinstance(existed, bool):
+            raise ValueError("invalid captured snapshot")
+        if not existed and (data or mode):
+            raise ValueError("invalid absent snapshot")
+        from .file_checkpoint_history import HISTORY_SUPPORTED, _locked
+
+        if HISTORY_SUPPORTED:
+            with _locked(self._dir):
+                return self._persist_captured(target, existed=existed, data=data,
+                                              mode=mode, now=now)
+        return self._persist_captured(target, existed=existed, data=data,
+                                      mode=mode, now=now)
+
+    def _persist_captured(self, target: Path, *, existed: bool, data: bytes,
+                          mode: int, now: float | None) -> Snapshot:
         sha = hashlib.sha256(data).hexdigest()
         snap = Snapshot(
             path=str(target), existed=existed, blob_sha=sha, size=len(data),
             mode=mode, created_at=float(time.time() if now is None else now),
         )
+        self._dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         blobs = self._dir / "blobs"
-        blobs.mkdir(parents=True, exist_ok=True)
+        blobs.mkdir(parents=True, exist_ok=True, mode=0o700)
         blob = self._blob_path(sha)
         if not blob.exists():
             _atomic_write(blob, data, mode=0o600)
+        # Capture already knows the exact size. A corrupt existing blob must
+        # not expand a bounded preimage into an unbounded verification read.
+        fd = os.open(blob, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                     | getattr(os, "O_NONBLOCK", 0))
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_size != len(data):
+                raise OSError("snapshot verification failed")
+            with os.fdopen(os.dup(fd), "rb") as handle:
+                if handle.read(len(data) + 1) != data:
+                    raise OSError("snapshot verification failed")
+        finally:
+            os.close(fd)
         _atomic_write(self._record_path(snap.ref), snap.canonical().encode("utf-8"), mode=0o600)
+        if self.load(snap.ref) is None:
+            raise OSError("snapshot verification failed")
         return snap
 
     def load(self, ref: str) -> Snapshot | None:
@@ -571,6 +611,12 @@ def _atomic_write(target: Path, data: bytes, *, mode: int | None = None) -> None
         if mode is not None:
             os.chmod(tmp, mode)
         os.replace(tmp, target)
+        if hasattr(os, "O_DIRECTORY"):
+            directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
@@ -593,9 +639,10 @@ def _valid_offset(value: object) -> bool:
 def _mutation_result(result: dict, target: Path, op: str, outcome: str) -> dict:
     """Preserve legacy fields and add this resolved attempt's limited observation.
 
-    Refused never submitted ``_apply``; applied means it returned, without
-    read-back; unknown means its OSError handler ran. Cancellation and escaping
-    errors return no receipt. A ToolRPC-scrubbed path is not a stable identity.
+    Refused means the byte effect was never entered; applied means it returned,
+    without read-back; unknown covers an effect whose outcome is uncertain.
+    Cancellation and escaping errors return no receipt. A ToolRPC-scrubbed path
+    is not a stable identity.
     """
     return {
         **result,
@@ -629,6 +676,11 @@ class FileTools:
     ) -> None:
         self.scope = scope if scope is not None else FileScope.from_env()
         self.snapshots = snapshots if snapshots is not None else SnapshotStore()
+        # Private storage/effect primitive. Owner-facing rollback still requires a
+        # separately mediated command; this is not registered as a ToolRPC tool.
+        from .file_checkpoint_history import FileCheckpointHistory
+
+        self.history = FileCheckpointHistory(self.snapshots, self.scope)
         cap = max_bytes if max_bytes is not None else env_int(
             MAX_BYTES_ENV, DEFAULT_MAX_BYTES, minimum=1
         )
@@ -1004,25 +1056,42 @@ class FileTools:
         if root is None or target == root:
             return {"ok": False, "reason": "outside_scope"}
 
-        def _snapshot() -> Snapshot | str:
-            if target.exists() and not target.is_file():
-                return "not_a_file"
-            if op == "delete" and not target.exists():
-                return "not_found"
+        from .file_checkpoint_history import (
+            HISTORY_SUPPORTED,
+            CapturedPreimage,
+            CheckpointRefusal,
+        )
+
+        def _snapshot() -> Snapshot | CapturedPreimage | str:
             try:
+                if HISTORY_SUPPORTED:
+                    return self.history.capture_preimage(target, root, op=op)
+                # Windows has no dirfd/no-follow effect path in this first
+                # H011 unit. Preserve ordinary governed FileTools behavior,
+                # explicitly leaving searchable history unsupported there.
+                if target.exists() and not target.is_file():
+                    return "not_a_file"
+                if op == "delete" and not target.exists():
+                    return "not_found"
                 return self.snapshots.take(target)
+            except CheckpointRefusal as exc:
+                return exc.reason
             except ValueError as exc:
                 return str(exc) or "snapshot_failed"
 
         try:
-            snap = await asyncio.to_thread(_snapshot)
+            captured = await asyncio.to_thread(_snapshot)
         except OSError as exc:
             return _mutation_result(
                 {"ok": False, "reason": "snapshot_failed", "detail": exc.__class__.__name__},
                 target, op, "refused",
             )
-        if isinstance(snap, str):
-            return _mutation_result({"ok": False, "reason": snap}, target, op, "refused")
+        if isinstance(captured, str):
+            return _mutation_result({"ok": False, "reason": captured}, target, op, "refused")
+        identity = (captured.root_dev, captured.root_ino) if isinstance(
+            captured, CapturedPreimage
+        ) else None
+        snap = captured.snapshot if isinstance(captured, CapturedPreimage) else captured
 
         payload = {
             "kind": KIND,
@@ -1079,16 +1148,42 @@ class FileTools:
                 "snapshot_ref": snap.ref,
             }, target, op, "refused")
 
-        def _apply() -> None:
-            if op == "delete":
-                target.unlink()
-                return
-            mode = snap.mode if snap.existed else 0o644
-            _atomic_write(target, data, mode=mode)
-
         try:
-            await asyncio.to_thread(_apply)
-        except OSError as exc:
+            if HISTORY_SUPPORTED:
+                await asyncio.to_thread(self.history.apply_mutation, target, root, snap, op, data,
+                                        expected_root=identity,
+                                        tool_turn=current_tool_turn())
+            else:
+                def _legacy_apply() -> None:
+                    if op == "delete":
+                        target.unlink()
+                    else:
+                        _atomic_write(target, data, mode=snap.mode if snap.existed else 0o644)
+
+                await asyncio.to_thread(_legacy_apply)
+        except FileScopeError as exc:
+            # Scope resolution in apply_mutation precedes its byte effect.
+            return _mutation_result(
+                {"ok": False, "reason": exc.reason, "snapshot_ref": snap.ref},
+                target, op, "refused",
+            )
+        except Exception as exc:
+            if isinstance(exc, CheckpointRefusal):
+                # These exact fences run before effect_started. Its other
+                # refusals include effect_state_incomplete after possible I/O.
+                pre_effect = {"root_changed", "path_changed", "snapshot_changed",
+                              "changed_since_snapshot"}
+                return _mutation_result(
+                    {"ok": False, "reason": exc.reason, "snapshot_ref": snap.ref},
+                    target, op, "refused" if exc.reason in pre_effect else "unknown",
+                )
+            if not isinstance(exc, OSError):
+                logger.warning("file checkpoint capture failed closed: %s", target,
+                               exc_info=True)
+                return _mutation_result(
+                    {"ok": False, "reason": "checkpoint_failed", "snapshot_ref": snap.ref},
+                    target, op, "unknown",
+                )
             self._record(f"file.{op}", f"{target}: io_error", ok=False)
             return _mutation_result({
                 "ok": False, "reason": "io_error", "detail": exc.__class__.__name__,
@@ -1660,6 +1755,7 @@ def register_file_tools(
     tools: FileTools | None = None,
     *,
     enabled: bool | None = None,
+    mutation_intake: Callable[[str, str, dict, Mapping[str, Any] | None], int] | None = None,
 ) -> list[str]:
     """Register the five file tools on a ToolRPC server. Default-off: returns
     ``[]`` without touching the server unless ``JARVIS_FILE_TOOLS`` is on (or
@@ -1667,30 +1763,62 @@ def register_file_tools(
     on = file_tools_enabled() if enabled is None else bool(enabled)
     if not on:
         return []
+    if mutation_intake is not None and not callable(mutation_intake):
+        raise ValueError("mutation_intake must be callable")
     instance = tools if tools is not None else FileTools.from_env()
 
+    def _current_instance():
+        from .kanban.workspace_context import file_tools_for_workspace
+
+        return file_tools_for_workspace(instance)
+
+    def _preflight(name):
+        def validate(args):
+            try:
+                current = _current_instance()
+            except FileScopeError as exc:
+                raise ToolRPCValidationError(exc.reason) from None
+            return current.preflight(name)(args)
+        return validate
+
     async def _read(args: dict) -> dict:
-        return await instance.read_file(args)
+        return await _current_instance().read_file(args)
 
     async def _list(args: dict) -> dict:
-        return await instance.list_dir(args)
+        return await _current_instance().list_dir(args)
 
     async def _search(args: dict) -> dict:
-        return await instance.search_files(args)
+        return await _current_instance().search_files(args)
 
     async def _write(args: dict) -> dict:
         # Reached only through ToolRPCServer.execute after durable approval
         # (gated tools never run inline from handle()), and only after that
         # execute matched the call's H506 class against the approved card.
-        return await instance.write_file(args, approved=True)
+        return await _current_instance().write_file(args, approved=True)
 
     async def _delete(args: dict) -> dict:
-        return await instance.delete_file(args, approved=True)
+        return await _current_instance().delete_file(args, approved=True)
 
     def _classify(args: dict) -> Mapping[str, Any] | None:
         # H506 — server-owned, registered here, never selectable by call data: a
         # sandboxed script cannot label its own write, nor strip the label off one.
-        return instance.classify_mutation(args)
+        return _current_instance().classify_mutation(args)
+
+    def _gated_intake(name: str):
+        def intake(actor: str, args: dict) -> int:
+            # The registrar owns this callback. Recheck the worker binding at the
+            # last synchronous boundary before the coordinator queues its action.
+            try:
+                current = _current_instance()
+                labels = current.classify_mutation(args)
+                latest = _current_instance()
+                if getattr(current, "binding", None) is not getattr(latest, "binding", None):
+                    raise FileScopeError("outside_scope")
+            except FileScopeError as exc:
+                raise ToolRPCValidationError(exc.reason) from None
+            return mutation_intake(actor, name, args, labels)
+
+        return intake
 
     handlers = {
         "file_read": _read, "file_list": _list, "file_search": _search,
@@ -1708,9 +1836,10 @@ def register_file_tools(
             description=spec["description"],
             input_schema=spec["input_schema"],
             capability_id=spec["capability_id"],
-            preflight=instance.preflight(name),
+            preflight=_preflight(name),
             trusted_execution=spec["trusted_execution"],
             classifier=classifiers.get(name),
+            gated_intake=_gated_intake(name) if mutation_intake is not None and spec["gated"] else None,
         )
         registered.append(name)
     return registered

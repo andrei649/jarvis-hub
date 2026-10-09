@@ -54,7 +54,9 @@ async def test_owner_projection_redacts_payload_paths_urls_and_unrelated_results
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
         response = await client.get("/api/media/generation-tasks/17", headers={"X-Admin-Token": "owner-test"})
     assert response.status_code == 200
-    assert response.json() == {"task_id": 17, "state": "ready", "artifact": {"id": "a" * 32, "bytes": 80, "width": 512, "height": 512}}
+    assert response.json() == {"task_id": 17, "state": "ready", "resume_available": False,
+                               "enhance_available": False,
+                               "artifact": {"id": "a" * 32, "bytes": 80, "width": 512, "height": 512}}
     assert "PRIVATE" not in response.text
     assert "url" not in response.json()["artifact"]
 
@@ -77,7 +79,8 @@ async def test_done_without_valid_success_is_uncertain_not_generated(app, monkey
     monkeypatch.setattr(multimodal, "get_orch", lambda: SimpleNamespace(autonomy_queue=SimpleNamespace(get=lambda task_id: image_task(result=result))))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
         response = await client.get("/api/media/generation-tasks/17", headers={"X-Admin-Token": "owner-test"})
-    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None,
+                               "resume_available": False, "enhance_available": False}
 
 
 @pytest.mark.parametrize("status,state", [("blocked", "awaiting_approval"), ("proposed", "awaiting_approval"), ("approved", "queued"), ("running", "generating"), ("rejected", "rejected"), ("deferred", "deferred"), ("failed", "uncertain"), ("quarantined", "refused")])
@@ -86,7 +89,8 @@ async def test_exact_queue_states_are_projected_without_inventing_progress(app, 
     monkeypatch.setattr(multimodal, "get_orch", lambda: SimpleNamespace(autonomy_queue=SimpleNamespace(get=lambda task_id: image_task(status=status))))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
         response = await client.get("/api/media/generation-tasks/17", headers={"X-Admin-Token": "owner-test"})
-    assert response.json() == {"task_id": 17, "state": state, "artifact": None}
+    assert response.json() == {"task_id": 17, "state": state, "artifact": None,
+                               "resume_available": False, "enhance_available": False}
 
 
 @pytest.mark.asyncio
@@ -143,7 +147,8 @@ async def test_exact_cloud_provider_response_failure_has_only_safe_terminal_stat
         )
     assert response.status_code == 200
     assert "no-store" in response.headers["cache-control"]
-    assert response.json() == {"task_id": 17, "state": "failed", "artifact": None}
+    assert response.json() == {"task_id": 17, "state": "failed", "artifact": None,
+        "resume_available": False, "enhance_available": False}
     assert reason not in response.text and "PRIVATE" not in response.text
     project.assert_called_once_with(task)
 
@@ -196,6 +201,7 @@ def test_unmatched_cloud_envelopes_remain_uncertain(change):
             setattr(task, key, value)
     assert project_image_task(task).model_dump() == {
         "task_id": 17, "state": "uncertain", "artifact": None,
+        "resume_available": False, "enhance_available": False,
     }
 
 
@@ -224,7 +230,8 @@ async def test_exact_local_provider_response_failure_is_redacted_and_admin_only(
         )
     assert response.status_code == 200
     assert "no-store" in response.headers["cache-control"]
-    assert response.json() == {"task_id": 17, "state": "failed", "artifact": None}
+    assert response.json() == {"task_id": 17, "state": "failed", "artifact": None,
+        "resume_available": False, "enhance_available": False}
     assert reason not in response.text and "PRIVATE" not in response.text
     assert "local_openai_images_v1" not in response.text
 
@@ -268,6 +275,7 @@ def test_local_failure_requires_exact_canonical_envelope(change):
         setattr(task, key, value)
     assert project_image_task(task).model_dump() == {
         "task_id": 17, "state": "uncertain", "artifact": None,
+        "resume_available": False, "enhance_available": False,
     }
 
 
@@ -295,7 +303,8 @@ async def test_exact_comfyui_history_error_is_redacted_and_admin_only(app, monke
         )
     assert response.status_code == 200
     assert "no-store" in response.headers["cache-control"]
-    assert response.json() == {"task_id": 17, "state": "failed", "artifact": None}
+    assert response.json() == {"task_id": 17, "state": "failed", "artifact": None,
+        "resume_available": False, "enhance_available": False}
     assert "generation_failed" not in response.text
     assert "comfyui_history_error_v1" not in response.text
     assert "PRIVATE" not in response.text
@@ -318,4 +327,5 @@ def test_comfyui_marker_and_reason_must_be_exactly_paired(result):
     task = image_task(kind="tool.rpc", result=result)
     assert project_image_task(task).model_dump() == {
         "task_id": 17, "state": "uncertain", "artifact": None,
+        "resume_available": False, "enhance_available": False,
     }

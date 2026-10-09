@@ -1,0 +1,77 @@
+{
+  "generated_at": "2026-10-04T05:49:14.659226+00:00",
+  "goal": "All 697 pinned Hermes capabilities; claim-specific FileTools collateral review and first H011 partial record",
+  "base_sha": "516a0e1e927a54432f3db27b9991289e2cf08e0a",
+  "head_sha": "dfc261722a11e1bc642bb0cc693f04210ea053c5",
+  "changed_paths": [
+    "agents/core/file_tools.py",
+    "agents/core/file_checkpoint_history.py"
+  ],
+  "reviewed_rows": [
+    "H298",
+    "H303",
+    "H444",
+    "H507",
+    "H536",
+    "H576",
+    "H594",
+    "H670"
+  ],
+  "unchanged_class_methods": [
+    "FileScopeError.__init__",
+    "FileScope.__init__",
+    "FileScope.from_env",
+    "FileScope.roots",
+    "FileScope.root_for",
+    "FileScope.resolve",
+    "Snapshot.__post_init__",
+    "Snapshot.canonical",
+    "Snapshot.ref",
+    "SnapshotStore.__init__",
+    "SnapshotStore.directory",
+    "SnapshotStore._blob_path",
+    "SnapshotStore._record_path",
+    "SnapshotStore.load",
+    "SnapshotStore.blob",
+    "FileTools.from_env",
+    "FileTools._spill_file",
+    "FileTools._resolve_read",
+    "FileTools._is_spill",
+    "FileTools.reaches",
+    "FileTools.read_file",
+    "FileTools.list_dir",
+    "FileTools.search_files",
+    "FileTools.write_file",
+    "FileTools.delete_file",
+    "FileTools._authorize",
+    "FileTools.restore_snapshot",
+    "FileTools.classify_mutation",
+    "FileTools.preflight",
+    "FileTools._record"
+  ],
+  "changed_class_methods": [
+    "SnapshotStore.take",
+    "FileTools.__init__",
+    "FileTools._mutate"
+  ],
+  "changed_top_level_functions": [
+    "_atomic_write"
+  ],
+  "review": "Complete FileTools diff and effect flow reviewed: added history constructor is lazy metadata only; snapshot and actuation changes preserve existing gated authorization/instruction floor and successful write result. Read/search/list/paging, guidance wrapper, project-context callbacks, instruction-name roster/classifier, registrations and generic restore API retain their AST bodies. _atomic_write adds directory fsync only. H507 anchors moved uniquely and were reread at classify_mutation 1239 and write_file 1009; H670 instruction roster anchor 259 remains unchanged. All other evidence pins for these previously current rows match unchanged bytes.",
+  "focused_verification": {
+    "cases": 470,
+    "passed": 469,
+    "skipped": 1,
+    "failures": 0,
+    "errors": 0,
+    "junit_sha256": "57bef49b97b3aedd82e794af55c876c159a11667359d54cfce8c12c1b8d1bd9b",
+    "log_sha256": "05fc287cd898947e18df2fb55a6d14cf5a9af2d79a39213ed89cbaacf3131a3f"
+  },
+  "limits": [
+    "Retains existing four equivalent and four partial verdicts only; no new equivalence credit",
+    "H011 first per-file checkpoint dependency is partial, without owner CLI/slash, terminal groups or conversation undo",
+    "Previous full 22699 covers pre-H011 source; new 22718 collection is not a new full pass",
+    "Historical frontend/mobile/live/mutation evidence is not renewed by this source review"
+  ],
+  "next_action": "Commit coherent generated collection/parity records; continue remaining H011 integration"
+}

@@ -117,6 +117,7 @@ class _DetachedHandle:
     child_rpc_dir: str = ''
     running: bool = True
     monitor: asyncio.Task | None = None
+    execution_context: dict | None = None
 
 
 class _MailboxReader:
@@ -247,20 +248,26 @@ class DetachedDockerBackend(PipeKernelBackend):
         argv[-1] = DETACHED_WORKER_SOURCE
         return argv
 
-    async def start(self, key: KernelKey, *, rpc_dir='', child_rpc_dir=''):
+    async def start(self, key: KernelKey, *, rpc_dir='', child_rpc_dir='', execution_context=None):
         if not self.available():
             raise KernelRefused(KERNEL_UNAVAILABLE)
         token = secrets.token_hex(16)
-        argv = self.launch_argv(key, token, rpc_dir)
+        argv = list(self._argv(key, token, rpc_dir))
+        config = self._startup_config(token, execution_context, rpc_dir, argv,
+                                      source=DETACHED_WORKER_SOURCE)
+        argv[argv.index('-i')] = '-d'
+        argv[3:3] = ['--log-driver', 'none']
+        argv[-1] = DETACHED_WORKER_SOURCE
         handle = _DetachedHandle(argv[argv.index('--name') + 1], token, child_rpc_dir)
         try:
             await self._command(argv)
-            await self._exec(handle, WRITE_REQUEST, data=(json.dumps({
-                'token': token, 'max_output': self._max_output_bytes,
-                'rpc_timeout': self._rpc_timeout}) + '\n').encode())
-            ready = await asyncio.wait_for(self._reply(handle), 10)
+            self._validate_context(execution_context)
+            await self._exec(handle, WRITE_REQUEST, data=(json.dumps(config) + '\n').encode())
+            ready = await asyncio.wait_for(self._reply(handle),
+                                          30 if execution_context is not None else 10)
             if not ready.get('ready'):
                 raise KernelRefused(KERNEL_UNAVAILABLE)
+            handle.execution_context = ready.get('execution_context') or {}
             handle.monitor = asyncio.create_task(self._watch(handle))
             return handle
         except BaseException as failure:
@@ -277,6 +284,8 @@ class DetachedDockerBackend(PipeKernelBackend):
                     cancelled=isinstance(failure, asyncio.CancelledError)) from None
             if isinstance(failure, asyncio.CancelledError):
                 raise
+            if isinstance(failure, KernelRefused):
+                raise failure
             raise KernelRefused(KERNEL_UNAVAILABLE) from None
 
     async def _watch(self, handle):

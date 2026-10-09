@@ -54,9 +54,10 @@ NTFY_TITLE_CHARS = 120
 
 OWNER_CHAT_SETTING = "autonomy.owner_chat_id"
 OWNER_CHAT_ENV = "AUTONOMY_OWNER_CHAT_ID"
+_UNSET_OWNER_CHAT = object()
 
 
-def _owner_chat_id(orch: Any) -> str:
+def _owner_chat_id(orch: Any, *, configured_owner: Any = _UNSET_OWNER_CHAT) -> str:
     """The owner's Telegram chat, from the environment or the settings store.
 
     Same precedence as ``JobRunner._send``: the environment wins, so a host can
@@ -67,6 +68,8 @@ def _owner_chat_id(orch: Any) -> str:
     from_env = env_str(OWNER_CHAT_ENV)
     if from_env.strip():
         return from_env.strip()
+    if configured_owner is not _UNSET_OWNER_CHAT:
+        return str(configured_owner or "").strip()
     get_setting = getattr(orch, "get_setting", None)
     if not callable(get_setting):
         return ""

@@ -1,0 +1,157 @@
+{
+  "source_head": "b9548379c679ff4b5b1ca5d9ab14da6bf6f11e56",
+  "source_commit": "d78d47f166feb569df9333cf1fcfb511c3a9da74",
+  "base": "0e617d63b51d3d8ddb6dd996b5cf5502d9f8d365",
+  "pinned_hermes": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "publication": {
+    "push": false,
+    "merge": false,
+    "deploy": false,
+    "live_provider_calls": false
+  },
+  "artifacts": {
+    "focused": {
+      "path": "/tmp/nerva-deepinfra-final-focused-20261002.xml",
+      "sha256": "60903383e035207c30a65198b156162db1780ebc6926af34d90b9c05c39871ea"
+    },
+    "frontend": {
+      "path": "/tmp/nerva-deepinfra-frontend-20261002.json",
+      "sha256": "4a850bb5457c4d1337ad7b589ea0be84f20e02a14d79b4088f513955966d1291"
+    },
+    "browser": {
+      "path": "/tmp/nerva-deepinfra-browser-20261002.json",
+      "sha256": "3b9a48b90de6fa778eb9223189eeedfc1e0fcaac381e8578d5d41a42d8644827"
+    },
+    "docs": {
+      "path": "/tmp/nerva-deepinfra-docs-20261002.xml",
+      "sha256": "f95433020228a37ea8b905312b9ca0ac392fc42a8d834b3c0ac2aa3a0d1b3b2c"
+    },
+    "secret_scan": {
+      "path": "/tmp/nerva-strict-deepinfra-records-20261002.receipt.json",
+      "sha256": "85cd9490e0cc162d04968b6a0ec0eb55913c55389ae46da1e07044ba2bb1c4b5"
+    },
+    "full_xml": {
+      "path": "/tmp/nerva-deepinfra-full-20261002.xml",
+      "sha256": "de0e4dcfbb6f1d7a256aa9aefec8888715511d25e4e2f5e729a9bb6698b72bbc"
+    },
+    "full_run.json": {
+      "path": "/tmp/nerva-deepinfra-full-20261002.run.json",
+      "sha256": "055880cebed148d9574890129232e740091cc3035e55a5c9d1ecb10fc0fee482"
+    },
+    "full_manifest.json": {
+      "path": "/tmp/nerva-deepinfra-full-20261002.manifest.json",
+      "sha256": "699220b2262f86c5a7da81c51f600e8a71c418cb6daf5b3669de1178db6e7d62"
+    },
+    "full_log": {
+      "path": "/tmp/nerva-deepinfra-full-20261002.log",
+      "sha256": "cd599b421c812d9da7779046fc513ce0e917791db7e722530e2b965a2de41e8f"
+    }
+  },
+  "focused": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "455",
+    "time": "7.612",
+    "timestamp": "2026-10-02T09:19:08.300737+03:00",
+    "hostname": "Macmini"
+  },
+  "frontend": {
+    "numTotalTests": 1859,
+    "numPassedTests": 1859,
+    "numFailedTests": 0,
+    "success": true
+  },
+  "browser": {
+    "startTime": "2026-10-02T06:19:53.766Z",
+    "duration": 14109.633,
+    "expected": 6,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "docs": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "92",
+    "time": "3.415",
+    "timestamp": "2026-10-02T09:23:11.928076+03:00",
+    "hostname": "Macmini"
+  },
+  "changed_paths": [
+    ".env.example",
+    "BACKLOG.md",
+    "GO_LIVE_PLAN.md",
+    "HERMES_STATUS.md",
+    "NERVA.md",
+    "README.md",
+    "STATUS.md",
+    "agents/core/llm/model_roles.py",
+    "agents/core/llm/providers/__init__.py",
+    "agents/core/llm/vision_deepinfra.py",
+    "agents/core/llm/vision_policy.py",
+    "agents/core/llm/vlm.py",
+    "agents/core/routers/composer_vision.py",
+    "agents/web/v2/assets/gap-C2VkMbW1.js",
+    "agents/web/v2/assets/index-CUer-ESL.js",
+    "agents/web/v2/assets/modes-DWhZHySS.js",
+    "agents/web/v2/assets/modes2-CIdIZPeL.js",
+    "agents/web/v2/assets/modes3-DJF9vW0Y.js",
+    "agents/web/v2/assets/modes4-C_GsztC_.js",
+    "agents/web/v2/assets/modes_world-xZS0jIzF.js",
+    "agents/web/v2/index.html",
+    "docs/FLAGS.md",
+    "docs/HERMES_CAPABILITIES.md",
+    "docs/design/HUD_V2_REMAINING.md",
+    "docs/hermes/assessment.json",
+    "docs/hermes/h277-deepinfra-vision-plan-2026-10-02.md",
+    "frontend/src/api/schema.gen.ts",
+    "frontend/src/composer-images.tsx",
+    "frontend/src/test/composer-images.test.tsx",
+    "mobile/PARITY.md",
+    "project-status.json",
+    "tests/test_h277_deepinfra_vision_catalog.py",
+    "tests/test_h277_deepinfra_vision_consumer.py",
+    "tests/test_h277_deepinfra_vision_roles.py"
+  ],
+  "generated_at": "2026-10-02T06:28:39.629185+00:00",
+  "full_backend": {
+    "passed": 20903,
+    "skipped": 34,
+    "xfailed": 1,
+    "warnings": 64,
+    "total": 20938
+  },
+  "frozen_run": {
+    "head": "b9548379c679ff4b5b1ca5d9ab14da6bf6f11e56",
+    "head_after": "b9548379c679ff4b5b1ca5d9ab14da6bf6f11e56",
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests/",
+      "-n",
+      "4",
+      "--dist",
+      "loadfile",
+      "--timeout=90",
+      "--junitxml=/tmp/nerva-deepinfra-full-20261002.xml"
+    ],
+    "returncode": 0,
+    "seconds": 229.77715225005522,
+    "changed_tracked_files": [],
+    "git_status_after": "",
+    "tracked_regular_files": 4351,
+    "fingerprint": "11d4d48b17a04cf8edaa01ec453e4c971488377bc2d08b7839d713d74cbcca51"
+  },
+  "limitations": [
+    "Simulated provider requests only; no live service or billing acceptance.",
+    "No new mutation campaign; deterministic regression/mutation scenarios are ordinary tests.",
+    "Native mobile not tested; Pixel 7 browser emulation only.",
+    "H277 and full Hermes parity remain incomplete.",
+    "Graft source graph fresh; semantic contexts not built."
+  ]
+}

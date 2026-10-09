@@ -1,0 +1,126 @@
+{
+  "goal_scope": "all697",
+  "H515": "partial",
+  "publication": "owner-authorized draft checkpoint on codex/hermes-parity-handover-20261006",
+  "implemented": [
+    "Separate explicit Krea Enhance source-bound signed POST approval, exact native factor2 body and original preserved",
+    "Source URL/artifact/hash/actual human execution/principal/live-host checks before dial and publication",
+    "Enhance interruption uses existing saved-job freshGET continuation; no automatic secondPOST",
+    "Scoped4096px/16MiB metadata-stripped PNG and private execution/pixel-bound opaque download",
+    "Generated catalog/binary download/ZIP/portable export share durable private proof, exact pixels and one catalog snapshot",
+    "Strict API/tool enhance_task_id and availability, immutable source card, original preview/reset/unmount cleanup and ambiguous once semantics"
+  ],
+  "verification": {
+    "backend": {
+      "receipt": "backend-result.xml",
+      "tests": 956,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "frontend": {
+      "receipt": "frontend-result.json",
+      "tests": 1976,
+      "passed": 1976,
+      "failed": 0,
+      "pending": 0,
+      "integrated_main": "c21202c1",
+      "before_main_receipt": "frontend-before-main-result.json"
+    },
+    "typecheck": true,
+    "build": true,
+    "ruff": true,
+    "bandit": {
+      "receipt": "bandit-result.json",
+      "loc": 3601,
+      "findings": 0,
+      "errors": 0
+    },
+    "records": {
+      "receipt": "records-result.xml",
+      "tests": 120,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "graft": {
+      "graph": {
+        "ok": true,
+        "missing": false
+      },
+      "counts": {
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "stale": 0
+      },
+      "context_missing": true
+    },
+    "secret_scan": {
+      "receipt": "secret-scan-result.json",
+      "paths": 721,
+      "findings": 0,
+      "baseline": false,
+      "inline_allow": false,
+      "note": "Earlier 721-file new-work index passed with zero findings. Broader outgoing snapshot scan additionally covers historical files and preserves its reviewed false-positive report."
+    },
+    "no_live_calls": true,
+    "publication_metadata": {
+      "receipt": "publication-metadata-tests.xml",
+      "tests": 34,
+      "failures": 0,
+      "errors": 0,
+      "settings_AST_identical": true
+    },
+    "outgoing_snapshot_scan": {
+      "receipt": "outgoing-snapshot-scan-result.json",
+      "review": "outgoing-snapshot-scan-review.json",
+      "paths": 1268,
+      "raw_findings": 113,
+      "reviewed_nonsecrets": 113,
+      "unresolved": 0,
+      "baseline": false,
+      "inline_allow": false
+    }
+  },
+  "verification_history": {
+    "initial_red": "Runtime Enhance/source projection/API missing;10 expected integration failures",
+    "provider_red": "Native1024URL boundary and documented gen.krea.ai manifest origin initially missing",
+    "review_red": "Nested Enhance attempted to read nonexistent completion; fixed early original-source validation",
+    "gallery_red": "Real4K catalog read rejected; completed-pixel proof admission added, normal2K limits retained",
+    "first_frontend": "1975/1976 passed; one older exact projection assertion omitted enhance_available=false, corrected; final1976/1976 passed"
+  },
+  "review": "contract-review.json",
+  "source_manifest": "scoped-inputs.json",
+  "remaining": [
+    "Managed Nous/FAL transport and narrow managedOAuth credential seam (read-only map saved)",
+    "Other dynamic catalogs, FAL artifact upload/Clarity, product-managedCodex OAuth, xAI storage controls",
+    "Provider-specific/larger outputs above4K, existing ComfyUI LLM restore/leases/authority contracts and native/mobile acceptance",
+    "Historical Krea completions without private resultURL cannotEnhance; expired URLs mayfail; no nestedEnhance",
+    "Original preview lives in currentHUD session; reload opens selected task alone"
+  ],
+  "accounting": {
+    "total": 697,
+    "accepted": 697,
+    "counts": {
+      "equivalent": 130,
+      "partial": 227,
+      "missing": 56,
+      "excluded": 0,
+      "needs_review": 284
+    },
+    "all_percent": 18.7,
+    "accepted_percent": 18.7,
+    "reviewed": 57,
+    "reviewed_equivalent": 22,
+    "inherited_equivalent": 108,
+    "new_equivalent_H515": 0
+  },
+  "main_integration": {
+    "main": "c21202c1",
+    "source_review": "main-integration-review.json",
+    "upstream_commits": 4,
+    "generated_assets": "rebuilt from merged source; typecheck/build/full frontend pass",
+    "full_aggregate_backend_rerun": false
+  }
+}

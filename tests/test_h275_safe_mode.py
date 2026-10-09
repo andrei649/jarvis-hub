@@ -674,6 +674,8 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         # H507: an owner's off for the code-pattern warnings reads as on in safe mode.
         "agents/core/code_guidance.py",
         "agents/core/heartbeat.py",
+        # The managed Hermes service only refuses enablement while safe mode is on.
+        "agents/core/hermes_runtime/service.py",
         # H490: the router's cloud fallback and the model pull cap read the stricter value.
         "agents/core/llm/hybrid_router.py",
         "agents/core/routers/model_setup.py",
@@ -705,3 +707,12 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/autonomy/worker.py",
         "agents/web.py",
     ])
+
+
+def test_safe_mode_leaves_the_managed_hermes_runtime_disabled(monkeypatch):
+    from agents.core.hermes_runtime.service import HermesRuntimeService
+
+    monkeypatch.setenv("JARVIS_HERMES_ENABLED", "1")
+    assert HermesRuntimeService.enabled() is True
+    _on(monkeypatch)
+    assert HermesRuntimeService.enabled() is False

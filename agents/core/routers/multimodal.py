@@ -386,13 +386,30 @@ async def desktop_run(body: DesktopStepsBody):
     return nocache_json(await execute_desktop_steps(orch, proposal["steps"]))
 
 
+class ImageStyleReference(BaseModel):
+    model_config = {"extra": "forbid"}
+    url: str = Field(..., min_length=1, max_length=2048)
+    strength: float = Field(..., strict=True, ge=-2, le=2, allow_inf_nan=False)
+
+
 class MediaGenBody(BaseModel):
     model_config = {"extra": "forbid"}
     kind: str = Field(..., max_length=20)
     prompt: str = Field(..., max_length=4000)
     cloud: bool = False
     size: Literal["1024x1024", "1536x1024", "1024x1536"] | None = None
-    quality: Literal["low", "medium", "high"] | None = None
+    quality: Literal["auto", "low", "medium", "high"] | None = None
+    aspect_ratio_exact: str | None = Field(None, max_length=16)
+    resolution: Literal["512", "1K", "2K", "1k", "2k"] | None = None
+    background: Literal["auto", "opaque", "transparent"] | None = None
+    output_compression: int | None = Field(None, strict=True, ge=0, le=100)
+    n: int | None = Field(None, strict=True, ge=1, le=1)
+    aspect_ratio: Literal["square", "landscape", "portrait"] | None = None
+    creativity: Literal["raw", "low", "medium", "high"] | None = None
+    resume_task_id: int | None = Field(None, strict=True, ge=1, lt=2**63)
+    enhance_task_id: int | None = Field(None, strict=True, ge=1, lt=2**63)
+    refresh_catalog: bool | None = Field(None, strict=True)
+    image_style_references: list[str | ImageStyleReference] | None = Field(None, min_length=1, max_length=10)
     seed: int | None = Field(None, strict=True, ge=0, le=2**63 - 1)
     width: int | None = Field(None, strict=True, ge=64, le=1024, multiple_of=64)
     height: int | None = Field(None, strict=True, ge=64, le=1024, multiple_of=64)
@@ -402,10 +419,10 @@ class MediaGenBody(BaseModel):
     # generator at a file the owner did not produce through this same route.
     reference: str | None = Field(None, pattern=r"^[a-f0-9]{32}$")
     strength: int | None = Field(None, strict=True, ge=1, le=100)
-    references: list[str] | None = Field(None, min_length=1, max_length=4)
+    references: list[str] | None = Field(None, min_length=1, max_length=16)
     upscale: int | None = Field(None, strict=True, ge=2, le=2)
     backend: str | None = Field(None, pattern=r"^[a-z][a-z0-9_-]{0,31}$")
-    model: str | None = Field(None, max_length=173)
+    model: str | None = Field(None, max_length=256)
 
 
 @router.get("/api/media", dependencies=[Depends(user_guard)])
@@ -417,7 +434,10 @@ async def media_status():
     cloud = runtime.status() if runtime is not None else {"configured": False}
     return nocache_json({
         "cloud_image": cloud,
-        "kinds": {"image": status["configured"] or cloud["configured"], "thumbnail": False, "video": False},
+        "kinds": {"image": status["configured"] or cloud["configured"] or
+                  any(entry.get("enabled") and entry.get("configured")
+                      for entry in cloud.get("providers", {}).values()),
+                  "thumbnail": False, "video": False},
         "local_image": status,
     })
 
@@ -431,6 +451,9 @@ async def media_generate(body: MediaGenBody):
     0.62: paused when the active system profile turns heavy features off (e.g. the
     *gaming* profile frees the GPU). Default ``balanced`` leaves them on → unchanged."""
     from agents.core.system_profiles import active_name, heavy_features_enabled
+    if ((body.resume_task_id is not None or body.enhance_task_id is not None or body.refresh_catalog is not None)
+            and (not body.cloud or body.kind != 'image')):
+        return nocache_json({'ok': False, 'reason': 'cloud image operation required'}, status_code=422)
     if not heavy_features_enabled():
         return nocache_json(
             {"ok": False, "paused": True, "profile": active_name(),
@@ -448,13 +471,33 @@ async def media_generate(body: MediaGenBody):
         if options.get('backend') == 'openai':
             options.pop('backend')
         try:
-            task_id = runtime.submit(body.prompt, options, current_action_origin())
+            if 'enhance_task_id' in options:
+                if (body.prompt != '' or options.get('backend') != 'krea'
+                        or set(options) != {'backend', 'enhance_task_id'}):
+                    raise ValueError('invalid image enhancement')
+                task_id = runtime.enhance(options['enhance_task_id'], current_action_origin())
+            elif 'resume_task_id' in options:
+                if (body.prompt != '' or options.get('backend') != 'krea'
+                        or set(options) != {'backend', 'resume_task_id'}):
+                    raise ValueError('invalid image continuation')
+                task_id = runtime.resume(options['resume_task_id'], current_action_origin())
+            elif 'refresh_catalog' in options:
+                if (body.prompt != '' or options != {'backend': 'deepinfra', 'refresh_catalog': True}):
+                    raise ValueError('invalid image catalog refresh')
+                task_id = runtime.refresh_catalog('deepinfra', current_action_origin())
+            else:
+                task_id = runtime.submit(body.prompt, options, current_action_origin())
         except Exception:
             return nocache_json({'ok': False, 'reason': 'cloud image proposal refused'}, status_code=422)
         return nocache_json({'ok': False, 'reason': 'approval_required', 'task_id': task_id}, status_code=202)
-    if not body.cloud and (body.size is not None or body.quality is not None):
+    if not body.cloud and any(getattr(body, field) is not None for field in (
+        'size', 'quality', 'aspect_ratio_exact', 'resolution', 'background', 'output_compression',
+        'n', 'aspect_ratio', 'creativity', 'image_style_references', 'resume_task_id', 'enhance_task_id', 'refresh_catalog',
+    )):
         return nocache_json({'ok': False, 'reason': 'cloud options require cloud image generation'}, status_code=422)
     if not body.cloud and body.kind == "image":
+        if body.references is not None and len(body.references) > 4:
+            return nocache_json({'ok': False, 'reason': 'too many local image references'}, status_code=422)
         from agents.core.routers._component import require_component
         _, server, error = require_component("tool_rpc", "tool runtime unavailable")
         if error is not None:
@@ -485,15 +528,19 @@ async def media_generate(body: MediaGenBody):
 async def media_generated_artifact(artifact_id: str):
     """Read a generated PNG by opaque id; never accept a host path or backend URL.
 
-    Shares one reader with the edit path (`comfyui.artifact_bytes`), so an artifact
-    is reachable as an edit's reference on exactly the terms it is downloadable —
-    there is no second, laxer resolution of an id anywhere in the hub.
+    Normal artifacts share the bounded edit reader. A completed Krea Enhance
+    execution may admit a 4K download through its private, exact-pixel proof;
+    that exception does not broaden generation or edit-reference limits.
     """
     from agents.core.media_backends.comfyui import ImageGenerationError, artifact_bytes
     from agents.core.paths import data_path
 
     try:
-        data = artifact_bytes(artifact_id, data_path("media", "generated"))
+        runtime = getattr(get_orch(), 'cloud_images', None)
+        reader = getattr(runtime, 'read_artifact', None)
+        data = reader(artifact_id) if callable(reader) else None
+        if data is None:
+            data = artifact_bytes(artifact_id, data_path("media", "generated"))
     except ImageGenerationError:
         return nocache_json({"ok": False, "reason": "artifact_not_found"}, status_code=404)
     return Response(data, media_type="image/png", headers={

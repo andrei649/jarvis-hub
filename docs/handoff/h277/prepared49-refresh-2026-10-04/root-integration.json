@@ -1,0 +1,87 @@
+{
+  "goal": "All 697 pinned Hermes capabilities; prepared49 campaign does not establish H277 parity",
+  "generated_at": "2026-10-04T09:23:57.291609Z",
+  "source_head": "f2318ee0afca0f7d4ea4210b3c7071ee8c633c93",
+  "original_mutants_sha256": "35b3fe792debc2fc4c32c60cf7f352e7ae5253cc0932d1e19b7f0639bf8db928",
+  "original_count": 49,
+  "initial_outcomes": {
+    "killed_assertion": 42,
+    "killed_behavioral_exception": 6,
+    "survived": 1
+  },
+  "supplemental_original_23": {
+    "baseline": {
+      "path": "docs/handoff/h277/prepared49-refresh-2026-10-04/supplemental-baseline.xml",
+      "sha256": "73cf04c2cdbeced75571bc125cc24ce7119e1938e757ddf7429e88afa2e2ec2e",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "exact_fault": {
+      "path": "docs/handoff/h277/prepared49-refresh-2026-10-04/supplemental-mutant.xml",
+      "sha256": "80d3d7ab69cf519419224080a2483bd28aac6212b369b3b5506ca55255e9d08c",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "accepted_test_sha256": "e88a7cd9e63c7ac41a2a915d7ac2984df489ab4b3252cef6c2fb249d533dd712",
+    "patch_sha256": "28c4b1de49e2751632647fc0740d74d41b457a8ba44859467ceaf40a90b00a17",
+    "root_affected_tests": {
+      "path": "/tmp/nerva-h011-h277-frozen-five-fixes-green-20261004.xml",
+      "sha256": "bcb5694d92a36a9a7ba11647d7eb5f9f4b844933e0fa3eb10f3d0ee3b15c9033",
+      "tests": 200,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "expanded_suite_outcomes": {
+    "killed_assertion": 43,
+    "killed_behavioral_exception": 6,
+    "survived": 0
+  },
+  "source_production_changed": false,
+  "meaning": "Initial survivor was a missing public API assertion; current production retains the correct local-status guard. Six kills are exceptions in test bodies, not setup/import errors. All942 original snapshot/source inputs restored. Expanded suite result combines the original48 detections with the exact-original23 additional witness, not a rerun of all49 after test integration.",
+  "full_suites": "First full backend failed five test/inventory compatibility assertions; serial clients pass; next frozen backend pending",
+  "publication": false,
+  "evidence": [
+    {
+      "path": "docs/handoff/h277/prepared49-refresh-2026-10-04/REPORT.md",
+      "sha256": "dc4bc6c9a213f34b8f269338bd5a456928392ef7ec6ec01488a94a2d2f00f902"
+    },
+    {
+      "path": "docs/handoff/h277/prepared49-refresh-2026-10-04/final_audit.json",
+      "sha256": "aeb41f91d483907424bcfdf02780cfebc439e6aa98e446adfefb5fbbd61fb2dc"
+    },
+    {
+      "path": "docs/handoff/h277/prepared49-refresh-2026-10-04/input-manifest.json",
+      "sha256": "81d6c1e37ceb7db805f36eb515187f25187689559400c8dd7bf60f636d546795"
+    },
+    {
+      "path": "docs/handoff/h277/prepared49-refresh-2026-10-04/mapping.json",
+      "sha256": "ea7a17180217786a849dc1d2e10c046ee173c0b86eca9e3f9003a91a84f4daaf"
+    },
+    {
+      "path": "docs/handoff/h277/prepared49-refresh-2026-10-04/proposed_public_projection_regression.patch",
+      "sha256": "28c4b1de49e2751632647fc0740d74d41b457a8ba44859467ceaf40a90b00a17"
+    },
+    {
+      "path": "docs/handoff/h277/prepared49-refresh-2026-10-04/results.json",
+      "sha256": "e94a29e7d2f8f3ac79e3c6036e7b1174b7a102a44662b441b01fd587fa54021c"
+    },
+    {
+      "path": "docs/handoff/h277/prepared49-refresh-2026-10-04/supplemental-baseline.xml",
+      "sha256": "73cf04c2cdbeced75571bc125cc24ce7119e1938e757ddf7429e88afa2e2ec2e"
+    },
+    {
+      "path": "docs/handoff/h277/prepared49-refresh-2026-10-04/supplemental-mutant.xml",
+      "sha256": "80d3d7ab69cf519419224080a2483bd28aac6212b369b3b5506ca55255e9d08c"
+    },
+    {
+      "path": "docs/handoff/h277/prepared49-refresh-2026-10-04/witness-public.json",
+      "sha256": "4a95154742211ea4ee32ed6e84f2abd48daca9cd5ea23c043a2499fdb34007c6"
+    }
+  ]
+}

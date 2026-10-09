@@ -13,7 +13,8 @@ MAX_MANIFEST_BYTES = 64 * 1024
 MAX_EXTENSIONS = 128
 MAX_DECLARATIONS = 64
 CAPABILITIES = frozenset({"tools", "commands", "events.observe"})
-EVENTS = frozenset({"command.completed", "session.started", "session.ended", "tool.completed"})
+EVENTS = frozenset({"command.completed", "session.started", "session.ended", "tool.completed",
+                    "approval.smart.requested", "approval.smart.decided"})
 _NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _VERSION = re.compile(r"(?:0|[1-9][0-9]{0,8})\.(?:0|[1-9][0-9]{0,8})\.(?:0|[1-9][0-9]{0,8})(?:[-+][A-Za-z0-9.-]{1,40})?")
 _DISTRIBUTION = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?")

@@ -1,0 +1,28 @@
+{
+  "baseline": {
+    "local_origin": "",
+    "public": {
+      "configured": true,
+      "data_policy": "",
+      "local": false,
+      "model": "judge",
+      "provider": "openai-compatible",
+      "reason": "",
+      "timeout": 20.0
+    }
+  },
+  "mutant": {
+    "local_origin": "",
+    "public": {
+      "configured": true,
+      "data_policy": "",
+      "local": false,
+      "model": "judge",
+      "provider": "openai-compatible",
+      "reason": "",
+      "timeout": 20.0
+    }
+  },
+  "equal": true,
+  "restored_paths": 942
+}

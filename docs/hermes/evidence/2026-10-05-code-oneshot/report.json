@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-10-05T20:16:24.400076+00:00",
+  "base_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "goal_scope": "all697",
+  "publication": false,
+  "H595": "partial",
+  "implemented": [
+    "Project/strict cwd and backend interpreter in contextual one-shot and safe resident fallback",
+    "Exact granted scoped skill/config environment delivered by stdin, not argv",
+    "Private per-run project and informational metadata outside shared /workspace; readonly /project mount",
+    "Backend teardown before projection/mailbox cleanup, virtualenv descendant cancellation",
+    "Docker startup write/drain shares execution deadline"
+  ],
+  "verification": {
+    "tests": 56,
+    "passed": 48,
+    "skipped": 8,
+    "failures": 0,
+    "errors": 0,
+    "run": "affected-result.xml",
+    "ruff": true,
+    "bandit": {
+      "findings": 2,
+      "new_findings": 0,
+      "note": "Inherited B404/B603 bounded optional binary probe; source unchanged, line offsets moved."
+    },
+    "valid_red": "Docker stdin drain could exceed execution timeout; regression failed before deadline fix. Registered-model project/env and grant regressions reproduced missing context in preceding implementation turn.",
+    "scope": "Real local Python/mailbox and virtualenv workers, registered model/skill entry, synthetic data and Docker argv/startup transport doubles. Production host fallback remains refused.",
+    "docker_binary_available": false,
+    "full_suite_or_live_acceptance": false
+  },
+  "remaining": [
+    "Product new-message interruption is under implementation in a separate batch",
+    "Fresh isolated-backend/platform acceptance; Docker is absent on this Mac",
+    "H660 remote transports/resume/output limits and remaining full697 goal work"
+  ],
+  "accounting": {
+    "equivalent": 129,
+    "total": 697,
+    "new_equivalent": 0
+  },
+  "source_manifest": "scoped-inputs.json"
+}

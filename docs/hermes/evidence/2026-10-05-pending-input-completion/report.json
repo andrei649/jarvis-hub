@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-10-05T15:25:28.584800+00:00",
+  "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "capability": "H067",
+  "verdict": "partial",
+  "publication": false,
+  "donor": "NousResearch Hermes59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e MIT",
+  "implemented": [
+    "Pure batch/choice normalization copied from tools/clarify_tool.py; async sequential callback preserves answered questions on timeout.",
+    "Real gateway Slack/Discord reset confirmation: cancel/once/always via signed native reply tasks, durable memory and separate kernel permission.grant.",
+    "Explicit exact owner_senders with active pairing; revocation and transport generation changes fence confirmations.",
+    "Ephemeral TTL retained in signed durable reply payload; transport deletes only acknowledged messages, with owned bounded lifecycle and generation checks.",
+    "Same-instance stop refuses new pending stores; restart reopens persisted routes and Telegram HTTP/deletion lifecycle; Other callback explains typed fallback even after message/edit failure."
+  ],
+  "runs": [
+    {
+      "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/integration-result.xml",
+      "tests": 1277,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/final-transport-result.xml",
+      "tests": 197,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "counts_overlap": true,
+  "new_completion_cases": 36,
+  "source_freeze": "scoped-inputs.json; integration-scoped-inputs.json retains earlier snapshot before removal of unused typing imports and the localized Telegram HTTP/deletion restart fix. Final transport probes cover that fix; protocol probes rerun after import cleanup.",
+  "security": {
+    "ruff": "passed",
+    "diff_check": "passed",
+    "bandit": "one LOW inherited Slack empty token default (B107); baseline unchanged",
+    "gitleaks": "one inherited GA4 setting declaration; AST confirms empty value length0. No real credential identified, no suppressions/rule changes.",
+    "proof_gitleaks": "Eight matches occur only in the two public source-hash manifests (generic-api-key and discord-api-token rules). Both documents contain repository-relative file paths mapped to SHA256 digests, not credentials. Raw findings retained outside repo; rules unchanged."
+  },
+  "remaining": [
+    "Signed native prompt payload limit still blocks oversized question/choice combinations; design a digest-bound content reference, not a weaker global kernel limit.",
+    "Pending producers and typed-answer entry points outside Telegram/Slack/Discord still require integration.",
+    "Full integrated backend/frontend milestone and remaining H277 requirements are outstanding; no live vault/workspace/provider validation claimed."
+  ],
+  "graft": "Explicit external source-only cache build and check completed; graph.ok true, zero added/removed/changed/stale inputs.",
+  "files_modified": {
+    "agents/core/channels/clarify_protocol.py": "Copied pure Hermes choice and batch normalization; modern type annotations.",
+    "agents/core/channels/pending_input_runtime.py": "Sequential batch questions, replacement of closed runtime handlers and revoked transport confirmation refusal.",
+    "agents/core/channels/session_command_runtime.py": "Governed Slack/Discord reset confirmation and exact transport generation fencing.",
+    "agents/core/channel_reply.py": "Signed ephemeral TTL preservation until the governed transport.",
+    "agents/core/channels/slack.py": "Owned delayed deletion, acknowledged message and generation checks, lifecycle cleanup.",
+    "agents/core/channels/discord.py": "Owned delayed deletion and transport lifecycle cleanup.",
+    "agents/core/channels/telegram.py": "Explicit Other typed fallback and reopened HTTP/deletion lifecycle after restart.",
+    "agents/core/orchestrator.py": "Explicit paired workspace owner authority, governed command notices and stop/start runtime/route wiring.",
+    "agents/core/settings_db.py": "Default-empty explicit workspace owner mapping exposed in existing settings.",
+    "tests/test_pending_input_completion_h067.py": "36 behavior cases for signed delivery, consent, history, revocation, batches, ephemeral notices and restarts.",
+    "docs/hermes/assessment.json": "Three new equivalence records and bounded known impact updates; H067 remains partial.",
+    "HERMES_STATUS.md": "Generated current status.",
+    "docs/HERMES_CAPABILITIES.md": "Generated capability-by-capability status.",
+    "docs/hermes/pending-input-plan-2026-10-05.md": "Completion decisions and resumable execution ledger.",
+    "docs/hermes/autonomous-development-objective.md": "Owner mandate and concrete local checkpoint."
+  },
+  "previous_direct_port_files": "../2026-10-05-direct-ports/scoped-inputs.json and README.md enumerate the H034/H078/H256 source paths and rationale."
+}

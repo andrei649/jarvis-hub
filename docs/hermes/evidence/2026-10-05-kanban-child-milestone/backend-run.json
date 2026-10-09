@@ -1,0 +1,36 @@
+{
+  "generated_at": "2026-10-04T22:09:03Z",
+  "state": "terminal_review_required",
+  "pid": 38468,
+  "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "command": [
+    "/tmp/nerva-pr-python-20261001/bin/python",
+    "-m",
+    "pytest",
+    "tests",
+    "-n",
+    "1",
+    "--dist",
+    "loadfile",
+    "--timeout=90",
+    "-q",
+    "--tb=short",
+    "--junitxml=/tmp/nerva-kanban-child-full-backend-20261005.xml"
+  ],
+  "log": "/tmp/nerva-kanban-child-full-backend-20261005.log",
+  "xml": "/tmp/nerva-kanban-child-full-backend-20261005.xml",
+  "freeze": "/tmp/nerva-kanban-child-full-backend-20261005-frozen.json",
+  "frozen_paths": 4200,
+  "expected_cases": 23567,
+  "next_action": "Observe this exact process; no restart on observation timeout. At terminal inspect JUnit and exact frozen rehash. No push/merge/deploy.",
+  "exit_code": 0,
+  "verified_at": "2026-10-04T22:31:00Z",
+  "drift": [],
+  "full_backend": {
+    "tests": 23567,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 35,
+    "passed": 23532
+  }
+}

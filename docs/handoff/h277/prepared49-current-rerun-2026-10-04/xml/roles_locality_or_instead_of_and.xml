@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.376" timestamp="2026-10-04T23:53:40.464188+03:00" hostname="Macmini"><testcase classname="tests.test_h277_model_roles" name="test_judge_role_uses_the_provider_profile_base_url" time="1.142"><failure message="AssertionError: assert ('http://192.168.1.20:1234' == 'http://192.168.1.20:1234'&#10;  &#10;    http://192.168.1.20:1234 and True is False)&#10; +  where True = ResolvedRole(role='approval_judge', configured=True, provider_id='lm-studio', model='judge-m', base_url='http://192.16...', 'provider': 'default', 'base_url': 'JARVIS_LM_STUDIO_URL'}), local=True, data_policy='local', reason='', ignored=()).local">tests/test_h277_model_roles.py:337: in test_judge_role_uses_the_provider_profile_base_url
+    assert lan.base_url == "http://192.168.1.20:1234" and lan.local is False   # LAN is not local
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert ('http://192.168.1.20:1234' == 'http://192.168.1.20:1234'
+E     
+E       http://192.168.1.20:1234 and True is False)
+E    +  where True = ResolvedRole(role='approval_judge', configured=True, provider_id='lm-studio', model='judge-m', base_url='http://192.16...', 'provider': 'default', 'base_url': 'JARVIS_LM_STUDIO_URL'}), local=True, data_policy='local', reason='', ignored=()).local</failure></testcase></testsuite></testsuites>

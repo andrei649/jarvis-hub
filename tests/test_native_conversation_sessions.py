@@ -29,6 +29,9 @@ def host(tmp_path, settings=None, *, resumable=()):
     clock = {"now": 1_780_000_000.0}
     orch._session_clock = lambda: clock["now"]
     orch._session_progress_clock = lambda: clock["now"]
+    orch._telegram_owner_settings = lambda: {
+        "autonomy.owner_chat_id": "123", "autonomy.owner_user_ids": [42],
+    }
     return orch, cap, clock
 
 
@@ -105,7 +108,7 @@ async def test_scheduler_expires_idle_route_without_new_inbound_message(tmp_path
 
     orch.heartbeat_scheduler = SimpleNamespace(scheduler=Scheduler())
     service = SchedulerService(orch)
-    service.schedule_session_expiry()
+    service.schedule_session_lifecycle()
     callback, trigger, args = registered["channel-session-expiry"]
     assert trigger == "interval" and args["minutes"] == 1
     clock["now"] += 61

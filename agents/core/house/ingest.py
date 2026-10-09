@@ -70,6 +70,10 @@ class HousePresenceIngestor:
             raise ValueError("inference must be a PresenceInference")
         self._inference = inference
 
+    def current_presence_id(self, occupant_id: str):
+        """Read one persisted decision by public pseudonym for an explicit explanation."""
+        return self._inference.current_presence_id(occupant_id)
+
     def ingest(self, snapshot: HouseSnapshot) -> int:
         """Feed one live snapshot; returns how many occupants were inferred.
 

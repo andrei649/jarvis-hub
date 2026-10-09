@@ -12,7 +12,14 @@ from typing import Any, Callable
 
 import httpx
 
-from .auxiliary_recovery import may_repair_temperature, rejects_temperature
+from .auxiliary_recovery import (
+    may_repair_output_cap,
+    may_repair_temperature,
+    note_output_cap_rejection,
+    omit_rejected_temperature,
+    rejects_temperature,
+    remember_temperature_rejection,
+)
 from .egress import llm_async_client
 from .host_protocol import HostProtocolRefused
 from .repetition_guard import is_repetition_dominated
@@ -526,14 +533,24 @@ class LMStudioBackend(LLMBackend):
         await self.client.aclose()
 
     async def _post_chat(self, payload: dict) -> httpx.Response:
-        """POST a completion with at most one unload and scoped temperature repair."""
+        """POST with one unload and independent scoped temperature/cap rungs."""
         current = payload
+        model = payload.get("model")
+        if ("temperature" in payload and "tools" not in payload
+                and payload.get("stream") is False
+                and omit_rejected_temperature(self, model)):
+            current = {key: value for key, value in payload.items() if key != "temperature"}
+        auxiliary_recovery = may_repair_temperature(self, model)
+        cap_recovery = may_repair_output_cap(self, model)
         unloaded_retried = False
         temperature_retried = False
-        for _ in range(3):
+        output_cap_retried = False
+        for _ in range(2 + int(auxiliary_recovery) + int(cap_recovery and "max_tokens" in current)):
             resp = await self.client.post("/v1/chat/completions", json=current)
             try:
                 resp.raise_for_status()
+                if temperature_retried:
+                    remember_temperature_rejection(self, model)
                 return resp
             except httpx.HTTPStatusError as exc:
                 if not unloaded_retried and is_model_unloaded_error(exc):
@@ -551,6 +568,12 @@ class LMStudioBackend(LLMBackend):
                         and rejects_temperature(exc)):
                     temperature_retried = True
                     current = {key: value for key, value in current.items() if key != "temperature"}
+                    continue
+                if (not output_cap_retried and "max_tokens" in current
+                        and "tools" not in current
+                        and note_output_cap_rejection(self, current.get("model"), exc)):
+                    output_cap_retried = True
+                    current = {key: value for key, value in current.items() if key != "max_tokens"}
                     continue
                 raise
         raise RuntimeError("local completion retry limit exceeded")
@@ -640,15 +663,27 @@ class LMStudioBackend(LLMBackend):
         # loaded model's full context — the single dial sized in LM Studio.
         if not is_auto_max_tokens(max_tokens):
             payload["max_tokens"] = max_tokens
-        # Attempt 0 may be retried once, and only once, when LM Studio reports the
-        # model unloaded before any token reached the user — see `_post_chat`.
-        for attempt in (0, 1):
+        # Auxiliary parameter repair is permitted only for this exact task, backend
+        # and model. Ordinary streams keep their original unload-only behavior.
+        auxiliary_recovery = may_repair_temperature(self, model)
+        cap_recovery = may_repair_output_cap(self, model)
+        if auxiliary_recovery and omit_rejected_temperature(self, model):
+            payload = {key: value for key, value in payload.items() if key != "temperature"}
+        unloaded_retried = False
+        temperature_retried = False
+        output_cap_retried = False
+        for _ in range(2 + int(auxiliary_recovery) + int(cap_recovery and "max_tokens" in payload)):
             emitted = ""          # filtered text actually streamed to the user
             reasoning_full = ""   # accumulated reasoning_content (never emitted live)
             finish = None
             usage = None
             completed = False
             usage_failed = False
+            stream_activity = False
+            refused = False
+            pending_status_error = None
+            status_body_too_large = False
+            response_cleanup_ok = False
             sf = ThinkingStreamFilter()
             try:
                 async with self.client.stream(
@@ -657,52 +692,100 @@ class LMStudioBackend(LLMBackend):
                     if resp.status_code >= 400:
                         # A streaming response arrives with its body unread, so the
                         # server's own explanation is invisible to both the unload
-                        # check and `_server_error_detail`. Pull it in first.
-                        await resp.aread()
-                    resp.raise_for_status()
-                    async for line in resp.aiter_lines():
-                        if line and on_activity is not None:
-                            on_activity()     # H674: any chunk, reasoning included, is life
-                        if line.startswith("data: "):
-                            chunk = line[6:]
-                            if chunk.strip() == "[DONE]":
-                                completed = True
-                                break
-                            try:
-                                data = json.loads(chunk)
-                                if "error" in data or data.get("type") == "error":
+                        # check and `_server_error_detail`. Auxiliary classification
+                        # only needs a small structured body; never buffer more.
+                        if auxiliary_recovery:
+                            body = bytearray()
+                            async for chunk in resp.aiter_bytes(chunk_size=4097):
+                                body.extend(chunk)
+                                if len(body) > 4096:
+                                    status_body_too_large = True
+                                    break
+                            if not status_body_too_large:
+                                resp._content = bytes(body)
+                        else:
+                            await resp.aread()
+                    if auxiliary_recovery and resp.status_code >= 400:
+                        try:
+                            resp.raise_for_status()
+                        except httpx.HTTPStatusError as exc:
+                            pending_status_error = exc
+                    else:
+                        resp.raise_for_status()
+                    if pending_status_error is None:
+                        async for line in resp.aiter_lines():
+                            if auxiliary_recovery:
+                                stream_activity = True
+                            if line and on_activity is not None:
+                                on_activity()     # H674: any chunk, reasoning included, is life
+                            if line.startswith("data: "):
+                                chunk = line[6:]
+                                if chunk.strip() == "[DONE]":
+                                    completed = True
+                                    break
+                                try:
+                                    data = json.loads(chunk)
+                                    if "error" in data or data.get("type") == "error":
+                                        usage_failed = True
+                                    if data.get("refusal"):
+                                        refused = True
+                                    if "usage" in data:
+                                        usage = lmstudio_usage(data)
+                                    choices = data.get("choices") or []
+                                    if not choices:
+                                        continue
+                                    choice = choices[0]
+                                    if choice.get("finish_reason"):
+                                        finish = choice["finish_reason"]
+                                    delta = choice.get("delta", {})
+                                    if choice.get("refusal") or delta.get("refusal"):
+                                        refused = True
+                                    content = delta.get("content", "")
+                                    reasoning = delta.get("reasoning_content", "")
+                                    if content:
+                                        safe = sf.feed(content)
+                                        if safe:
+                                            emitted += safe
+                                            if on_token:
+                                                await _emit(on_token, safe)
+                                    if reasoning:
+                                        reasoning_full += reasoning
+                                except json.JSONDecodeError:
                                     usage_failed = True
-                                if "usage" in data:
-                                    usage = lmstudio_usage(data)
-                                choices = data.get("choices") or []
-                                if not choices:
                                     continue
-                                choice = choices[0]
-                                if choice.get("finish_reason"):
-                                    finish = choice["finish_reason"]
-                                delta = choice.get("delta", {})
-                                content = delta.get("content", "")
-                                reasoning = delta.get("reasoning_content", "")
-                                if content:
-                                    safe = sf.feed(content)
-                                    if safe:
-                                        emitted += safe
-                                        if on_token:
-                                            await _emit(on_token, safe)
-                                if reasoning:
-                                    reasoning_full += reasoning
-                            except json.JSONDecodeError:
-                                usage_failed = True
-                                continue
+                response_cleanup_ok = True
+                if pending_status_error is not None:
+                    raise pending_status_error
             except Exception as e:
-                # Never retry once text is on screen — the user would see the
-                # answer restart mid-sentence.
-                if attempt == 0 and not emitted and is_model_unloaded_error(e):
+                # Scoped auxiliary streams cannot replay any received frame,
+                # including reasoning and malformed frames with no visible text.
+                can_retry = not (stream_activity if auxiliary_recovery else emitted)
+                if auxiliary_recovery:
+                    can_retry = (can_retry and response_cleanup_ok
+                                 and not status_body_too_large
+                                 and may_repair_temperature(self, model))
+                if can_retry and not unloaded_retried and is_model_unloaded_error(e):
+                    unloaded_retried = True
                     logger.info(
                         "LM Studio reported model %r unloaded before the stream "
                         "started — retrying once so it can JIT-load",
                         model,
                     )
+                    continue
+                if (auxiliary_recovery and can_retry and not temperature_retried
+                        and "temperature" in payload
+                        and may_repair_temperature(self, model)
+                        and rejects_temperature(e)):
+                    temperature_retried = True
+                    payload = {key: value for key, value in payload.items()
+                               if key != "temperature"}
+                    continue
+                if (cap_recovery and can_retry and not output_cap_retried
+                        and "max_tokens" in payload
+                        and note_output_cap_rejection(self, model, e)):
+                    output_cap_retried = True
+                    payload = {key: value for key, value in payload.items()
+                               if key != "max_tokens"}
                     continue
                 err = local_backend_degraded_reply(
                     "LM Studio", f"LM Studio ({self.base_url})", e, model=model
@@ -723,6 +806,9 @@ class LMStudioBackend(LLMBackend):
         # truncated <think> / reasoning_content trace would overwrite the clean
         # bubble and poison conversation memory.
         answer = self._finalize_stream(emitted, reasoning_full, finish, model)
+        if (temperature_retried and completed and not usage_failed and not refused
+                and finish == "stop" and answer.strip() and not is_degraded_reply(answer)):
+            remember_temperature_rejection(self, model)
         if completed and not usage_failed:
             report_text_usage(usage if usage is not None else lmstudio_usage({}))
         return answer

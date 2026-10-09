@@ -180,6 +180,7 @@ async def test_two_concurrent_stream_turns_keep_separate_histories(orch):
         soul = {"content": ""}
         config = {"model": "stub"}
         tool_runtime = None
+        model_system_prompt = Agent.model_system_prompt
         generate_response = Agent.generate_response
         _generate_response = Agent._generate_response
         _checkpoint_manager = None

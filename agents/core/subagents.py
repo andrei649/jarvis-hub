@@ -217,21 +217,37 @@ class SteerChannel:
     can wind down before the CancelledError lands."""
 
     def __init__(self, spawn_id: str) -> None:
+        from collections import deque
+
         self.spawn_id = spawn_id
         self._q: asyncio.Queue = asyncio.Queue()
+        self._pending = deque()
         self.stop_requested = False
         self.delivered: list[dict] = []
 
     def push(self, msg: SteerMessage) -> None:
-        self._q.put_nowait(msg.to_dict())
+        item = msg.to_dict()
+        self._pending.append(item)
+        self._q.put_nowait(item)
 
-    def poll(self) -> list[dict]:
+    def peek(self, *, max_messages: int = 32) -> list[dict]:
+        """Read the FIFO prefix without acknowledging model delivery."""
+        from itertools import islice
+
+        if type(max_messages) is not int or max_messages < 1:
+            raise ValueError("max_messages must be a positive integer")
+        return [dict(item) for item in islice(self._pending, max_messages)]
+
+    def poll(self, *, max_messages: int | None = None) -> list[dict]:
+        if max_messages is not None and (type(max_messages) is not int or max_messages < 1):
+            raise ValueError("max_messages must be a positive integer")
         out: list[dict] = []
-        while True:
+        while max_messages is None or len(out) < max_messages:
             try:
                 item = self._q.get_nowait()
             except asyncio.QueueEmpty:
                 break
+            self._pending.popleft()
             self.delivered.append(item)
             out.append(item)
         return out
@@ -244,6 +260,7 @@ class SteerChannel:
                 item = await asyncio.wait_for(self._q.get(), timeout)
         except TimeoutError:
             return None
+        self._pending.popleft()
         self.delivered.append(item)
         return item
 

@@ -1,0 +1,80 @@
+{
+  "generated_at": "2026-10-04",
+  "goal": "All697 pinned Hermes capabilities; delivered owner-once outcome dependency",
+  "base_sha": "31a1d193",
+  "state": "Integrated root focused, affected and frozen full backend verification; local only",
+  "root_verification": {
+    "red": {
+      "tests": 14,
+      "failures": 12,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "b423dfefa8606b62e42e62dce47bd166673d0b112bf32cc72842a25d00a79567"
+    },
+    "green": {
+      "tests": 82,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "0712ea582fc3d974f6f63e5d47e7ff0746b731c3652d08356e31fba49918bbaa"
+    },
+    "broad": {
+      "tests": 367,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "aa203fc2f513247e90bc086e83d55edb6fc0a781c3368ae9bcfcf63e692ad26e"
+    }
+  },
+  "source_sha256": {
+    "agents/core/autonomy/owner_once.py": "65b55554ac29f59bdd864a3119eb90c1e11514ec28635306e53838c1eb628828",
+    "agents/core/autonomy/owner_once_prompts.py": "14807a546ff07840b6e7be433fd0b7d4a956a621b96fb6becf2c1356bf95b536",
+    "agents/core/autonomy/terminal_review.py": "07d4cdf55fdecf4b61cb96b9a94893176fae8f92ddc5da2e5c6868277f39cd57",
+    "tests/test_h487_owner_once_outcomes.py": "e1b723ecf6e7b8970770c6e21d15cfaff181f7fc3783e83bdc6e4c176e3e0357",
+    "tests/test_h485_owner_once_prompts.py": "2e9dc5336e9beb1243caceae92f303a27334d351b1d0eb98f00b29297b4a79fe",
+    "tests/test_h485_owner_once_actuation.py": "7d49719bb62a872f50b526e3a838adefe1a654dab149a441e702c3607e181429",
+    "tests/test_h487_telegram_consent_integration.py": "e9477f9fe321baebcd63450ddd463b9ac76f385745ef13650165c284c816b294"
+  },
+  "prototype_patch_sha256": "52f10db5b2737dce65cf5fb6ffa233de98e1cfad80cbd6ed9b099ba79f95b271",
+  "review_fix": {
+    "finding": "Queue-committed human denial can precede callback publication and be masked by wait expiry",
+    "isolated_red": "One real-queue cross-loop barrier test failed with timeout instead of durable denial",
+    "isolated_green": "Same case passed after exact durable offer reconciliation",
+    "root_proof": "Included in new14-case root module and focused/adjacent regressions",
+    "no_authority_change": "Only process-bound observations are reconciled; exact OwnerOnceClaim alone reaches signed actuation"
+  },
+  "limits": [
+    "No full H487 equivalent credit",
+    "No live Telegram/terminal/device acceptance",
+    "No queue/kernel/proof/grant code changed",
+    "Prior full22418 excludes these source/test edits; separate full22465 now covers the integrated final sources",
+    "No push, merge, deploy or provider activation"
+  ],
+  "ruff": "Seven changed Python paths pass",
+  "integrated_common_regression": {
+    "tests": 4303,
+    "modules": 168,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "c5658c056db40eccc08ee491f7299e78ae9d36f9d557b5f2a8480bfb3dbe87e7",
+    "scope": "Common suite before explicit scope-None Bandit correction; affected92 rerun afterward, no unchanged-full-source claim"
+  },
+  "collected_backend_cases": 22465,
+  "full_backend_receipt": "docs/hermes/evidence/h487-auxiliary-outcomes-full-2026-10-04.json",
+  "full_backend": {
+    "tests": 22465,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 35,
+    "passed": 22430,
+    "ordinary_skips": 34,
+    "existing_xfail": 1,
+    "expected_failure_cases": [
+      "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+    ],
+    "junit_sha256": "7903d6d7eefed3efb43128ee7ac3acb8d2e53be9fdd1e21fc8baf4ffadf37001",
+    "log_sha256": "6424a0f2a3f5a124382800a393134009c8d97e6b0887444e08666070451b4faf"
+  },
+  "verified_head_sha": "e84f0922b230a2349933c67d8511cd3684c17e1a"
+}

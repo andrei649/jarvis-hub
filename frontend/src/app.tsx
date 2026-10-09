@@ -1,7 +1,7 @@
 import { SAFE_MODE_OFF, SafeModeBanner } from './safe-mode-banner';
 import { PowerChip, usePower } from './power-chip';
 import { PressureBanner, usePressure } from './pressure-banner';
-import {describeImages} from './vision-turn';
+import {describeImages,restoreVisionTurn} from './vision-turn';
 import type {VisionDraft} from './composer-images';
 import { useAppearance } from './appearance';
 import { appUrl, logicalPath } from './base-path';
@@ -24,7 +24,8 @@ import { turnOutcome, type TurnOutcome } from './turn-outcome';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
-import { postStream, apiGet, apiPost } from './api/client';
+import { postStream, apiGet, apiPost, apiFetchOnce } from './api/client';
+import { pendingQuestion, PendingQuestion, type Question, type QuestionAnswer } from './pending-question';
 import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
 import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
@@ -65,7 +66,7 @@ function visibleTurns(turns: any[]): any[] {
     const ts = fmtTimeShort(new Date(tn.timestamp || Date.now()));
     return tn.role === 'user'
       ? { role: 'user', text: tn.content, ts }
-      : { role: 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts };
+      : restoreVisionTurn(tn,ts) || { role: 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts };
   });
 }
 
@@ -141,10 +142,10 @@ function App({ floating = false, shortcuts, onWorld }: {
       const detail = (event as CustomEvent).detail;
       if (typeof detail?.sessionId === 'string' && Array.isArray(detail.turns)) {
         setCurrentOutcome(null);
-        if (turnBusy.current) {
+        if (turnBusy.current || textTurns.current.size) {
           abortRef.current?.abort(); abortRef.current = null;
           turnEpoch.current++; turnBusy.current = false;
-          turnResolve.current?.(); turnResolve.current = null;
+          for(const turn of textTurns.current.values()){turn.controller.abort();turn.settle('');}
           setThinking(null);
         }
         selectSession(detail.sessionId, detail.turns);
@@ -327,8 +328,23 @@ function App({ floating = false, shortcuts, onWorld }: {
   // submit → cognition flow (mock timeline; real SSE arrives in P2)
   const timers = useRef([]);
   const turnBusy=useRef(false), turnEpoch=useRef(0);
-  const turnResolve=useRef<null|(()=>void)>(null);
-  const abortRef = useRef(null);   // AbortController of the in-flight /chat/stream turn
+  const abortRef = useRef<AbortController|null>(null); // vision turn
+  const textTurns=useRef(new Map<number,{controller:AbortController;settle:(text:string)=>void}>());
+  const nextTextTurn=useRef(0), latestTextTurn=useRef(0);
+  const lastTypedSubmit=useRef({text:'',at:0});
+  const questionTurn=useRef<number|null>(null);
+  const [question,setQuestion]=useState<Question|null>(null);
+  const answerQuestion=useCallback(async(answer:QuestionAnswer)=>{
+    if(!question)throw new Error('Question unavailable');
+    const id=question.id, owner=questionTurn.current;
+    const signal=owner===null?undefined:textTurns.current.get(owner)?.controller.signal;
+    if(!signal || signal.aborted)throw new Error('Question unavailable');
+    const response=await apiFetchOnce(`/chat/pending/${id}/answer`,{method:'POST',body:answer,signal});
+    if(!response.ok)throw new Error('Answer rejected');
+    const result=await response.json();
+    if(result?.ok!==true || result.status!=='resolved')throw new Error('Answer not acknowledged');
+    if(questionTurn.current===owner)setQuestion(current=>current?.id===id?null:current);
+  },[question]);
 
   // offline fallback — the prototype's staged timeline so the cockpit still demos
   const runMock = useCallback((text) => {
@@ -360,45 +376,52 @@ function App({ floating = false, shortcuts, onWorld }: {
   // H5.16: runTurn is defined before useVoice (which takes runTurn as onTurn), so
   // the token->TTS forward goes through a ref, assigned right after the hook runs.
   const voiceRef = useRef(null);
-  const runTurn = useCallback((text) => new Promise((resolve) => {
-    // TASK-4 P1 — double-submit guard: `thinking` is non-null for the whole
-    // duration of an in-flight /chat/stream turn (cleared on end/abort/error).
-    // Ignore a second submit (rapid double Enter/click, or voice firing while
-    // text input is also mid-turn) instead of racing two streams into the
-    // same abortRef/message index.
-    if (thinking || turnBusy.current) { resolve(''); return; }
-    turnBusy.current=true;
-    const epoch=++turnEpoch.current;
+  const runTurn = useCallback((text:string, source:'typed'|'voice'='typed') => new Promise<string>((resolve) => {
+    if (turnBusy.current || (source==='voice' && (thinking || textTurns.current.size>0)) || (thinking && textTurns.current.size===0)) { resolve(''); return; }
+    const id=++nextTextTurn.current, epoch=turnEpoch.current;
+    latestTextTurn.current=id;
     setCurrentOutcome(null);
     timers.current.forEach(clearTimeout); timers.current = [];
-    setMessages((m) => [...m, { role: 'user', text, ts: fmtTimeShort(new Date()) }]);
+    const ctl = new AbortController();
+    let streamed='', closed=false;
+    const settle=(reply:string)=>{
+      if(closed)return;
+      closed=true;
+      textTurns.current.delete(id);
+      if(questionTurn.current===id){questionTurn.current=null;setQuestion(null);}
+      if(textTurns.current.size===0 && !turnBusy.current)setThinking(null);
+      resolve(reply);
+    };
+    textTurns.current.set(id,{controller:ctl,settle});
+    // Reserve the reply bubble now: a queued request may emit start after a newer one.
+    setMessages((m) => [...m,
+      { role: 'user', text, ts: fmtTimeShort(new Date()) },
+      { role: 'agent', who: activeId, role_label: '', ts: fmtTimeShort(new Date()), text: '', _turnId:id },
+    ]);
     setCenterTab('conversation');
     setThinking({ label: t.think + ' · routing', route: null });
-    let streamed = '';
-    turnResolve.current=()=>resolve(streamed);
-    let idx = -1;
-    // Stop button: aborting the fetch rides the server's existing disconnect →
-    // cancel path (web.py _chat_event_stream), which never persists a partial.
-    const ctl = new AbortController();
-    abortRef.current = ctl;
+    const updateBubble=(change:(message:any)=>any)=>setMessages((messages)=>messages.map(message=>message._turnId===id?change(message):message));
     postStream('/chat/stream', { message: text, agent: activeId,
       ...(sessionId.current ? { session_id: sessionId.current } : {}) }, (evt) => {
-      if(epoch!==turnEpoch.current||ctl.signal.aborted)return;
+      if(closed||epoch!==turnEpoch.current||ctl.signal.aborted)return;
       if (evt.type === 'start') {
-        setThinking({ label: t.think, route: [String(evt.agent || activeId).toUpperCase()] });
-        setMessages((m) => { idx = m.length; return [...m, { role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: '' }]; });
+        if(id===latestTextTurn.current)setThinking({ label: t.think, route: [String(evt.agent || activeId).toUpperCase()] });
+        updateBubble(message=>({...message,who:evt.agent||activeId}));
+      } else if (evt.type === 'clarify') {
+        const prompt=pendingQuestion(evt);
+        if(prompt){questionTurn.current=id;setQuestion(prompt);}
       } else if (evt.type === 'token') {
         streamed += evt.text || '';
         // H5.16: forward the delta to the voice loop's streaming-speak session so
         // sentence #1 is synthesized while the model is still writing sentence #2.
         // No-op unless a voice turn opened a session (typed turns stay silent).
-        try { voiceRef.current && voiceRef.current.pushSpeakDelta(evt.text || ''); } catch { /* never break the stream over TTS */ }
-        setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: streamed }; return c; });
+        try { if(source==='voice')voiceRef.current?.pushSpeakDelta(evt.text || ''); } catch { /* never break the stream over TTS */ }
+        updateBubble(message=>({...message,text:streamed}));
       } else if (evt.type === 'end') {
         const finalText = evt.text || streamed;
         const changed = typeof evt.session_id === 'string' && evt.session_id !== sessionId.current;
         if (typeof evt.session_id === 'string') selectSession(evt.session_id);
-        setCurrentOutcome(changed && ['/new', '/reset', '/undo'].includes(text.trim())
+        if(id===latestTextTurn.current) setCurrentOutcome(changed && ['/new', '/reset', '/undo'].includes(text.trim())
           ? null : turnOutcome(evt.outcome));
         if (changed && ['/new', '/reset', '/undo'].includes(text.trim())) {
           if (text.trim() === '/undo') {
@@ -413,45 +436,46 @@ function App({ floating = false, shortcuts, onWorld }: {
           }
           setMessages([{ role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: finalText }]);
         } else {
-          setMessages((m) => { const c = [...m]; if (idx >= 0 && c[idx]) c[idx] = { ...c[idx], text: finalText, who: evt.agent || activeId }; else c.push({ role: 'agent', who: evt.agent || activeId, ts: fmtTimeShort(new Date()), text: finalText }); return c; });
+          updateBubble(message=>({...message,text:finalText,who:evt.agent||activeId}));
         }
         // H674: what the owner should know beside the reply (e.g. the summary was deferred).
         const notes = noticeMessages(evt, fmtTimeShort(new Date()));
         if (notes.length) setMessages((m) => [...m, ...notes]);
-        turnBusy.current=false;abortRef.current=null;turnResolve.current=null;
-        setThinking(null);
-        resolve(finalText);
+        settle(finalText);
         apiGet('/api/cognition').then((cog: any) => {
-          if(epoch!==turnEpoch.current)return;
+          if(epoch!==turnEpoch.current||ctl.signal.aborted)return;
           const tr = traceFromCognition(cog, text);
-          setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
+          if(id===latestTextTurn.current)setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
           // HONESTY: real plugin reads + locality from the cognition snapshot — never a
           // client-side guess. Unknown locality renders as "—" instead of a false claim.
           const dloc = (cog && cog.decision) || {};
           const reads = (cog && (cog.plugins || dloc.plugins)) || [];
           const localKnown = typeof dloc.local === 'boolean' ? dloc.local : (cog && typeof cog.local === 'boolean' ? cog.local : undefined);
-          setMessages((m) => { const c = [...m]; const j = idx >= 0 ? idx : c.length - 1; if (c[j]) c[j] = { ...c[j], prov: { agents: tr.selected, plugins: reads, local: localKnown, conf: +(tr.conf || 0).toFixed(2) } }; return c; });
+          updateBubble(message=>({...message,prov:{ agents: tr.selected, plugins: reads, local: localKnown, conf: +(tr.conf || 0).toFixed(2) }}));
         }).catch(() => {});
       }
-    }, { signal: ctl.signal }).catch((err) => {
-      if(epoch!==turnEpoch.current){resolve('');return;}
-      setCurrentOutcome(null);
-      turnBusy.current=false;abortRef.current=null;turnResolve.current=null;
+    }, { signal: ctl.signal }).then(() => {
+      // EOF without an end frame must still release the composer and voice promise.
+      settle(streamed);
+    }).catch((err) => {
+      if(closed||epoch!==turnEpoch.current){settle(streamed);return;}
+      if(!closed && epoch===turnEpoch.current && id===latestTextTurn.current)setCurrentOutcome(null);
       // A user Stop (AbortError) is a clean outcome, not a failure: the partial
       // text already streamed into the bubble stays, no error notice — and the
       // server's disconnect path guarantees no partial is persisted to memory.
-      if (err && err.name === 'AbortError') { setThinking(null); resolve(streamed); return; }
+      if (err && err.name === 'AbortError') { settle(streamed); return; }
       // HONESTY: never fabricate a reply. The staged mock is for DEMO only; otherwise
       // surface the real failure (e.g. no model loaded / backend offline).
-      if (demo) { runMock(text); resolve(''); return; }
-      setThinking(null);
+      if (demo && textTurns.current.size===1) {
+        settle('');setMessages(messages=>messages.filter(message=>message._turnId!==id));runMock(text);return;
+      }
       setMessages((m) => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()), text: '⚠ No reply — the model backend is unreachable or no model is loaded. Load a model in LM Studio, or enable ◐ DEMO to preview the interface.' }]);
-      resolve('');
+      settle('');
     });
   }).finally(() => { if (!demo) notifyDesktopConversation(); }), [t, activeId, runMock, demo, thinking, selectSession]);
 
   const runVision=useCallback(async(text:string,draft:VisionDraft)=>{
-    if(turnBusy.current||thinking)return;
+    if(turnBusy.current||thinking||textTurns.current.size>0)return;
     turnBusy.current=true;
     setCurrentOutcome(null);
     const epoch=++turnEpoch.current,controller=new AbortController();abortRef.current=controller;
@@ -470,9 +494,11 @@ function App({ floating = false, shortcuts, onWorld }: {
     }
   },[thinking]);
   const stopTurn=useCallback(()=>{
-    abortRef.current?.abort();abortRef.current=null;turnEpoch.current++;turnBusy.current=false;
+    questionTurn.current=null;setQuestion(null);
+    turnEpoch.current++;
+    for(const turn of textTurns.current.values()){turn.controller.abort();turn.settle('');}
+    abortRef.current?.abort();abortRef.current=null;turnBusy.current=false;
     setCurrentOutcome(null);
-    turnResolve.current?.();turnResolve.current=null;
     timers.current.forEach(clearTimeout);timers.current=[];setThinking(null);
   },[]);
   const selectAgent=useCallback((id:string)=>{
@@ -480,13 +506,19 @@ function App({ floating = false, shortcuts, onWorld }: {
     setActiveId(id);setDossier(id);
   },[activeId,stopTurn]);
   const submit=useCallback((text:string,vision?:VisionDraft)=>{
-    if(turnBusy.current||thinking)return false;
-    if(vision?.review_token && (vision.session_id!==sessionId.current || vision.agent!==activeId))return false;
-    if(vision)void runVision(text,vision);else void runTurn(text);
+    if(turnBusy.current || (vision && (thinking||textTurns.current.size>0)) || (thinking && textTurns.current.size===0))return false;
+    if(!demo&&vision?.review_token && (vision.session_id!==sessionId.current || vision.agent!==activeId))return false;
+    if(vision)void runVision(text,vision);
+    else {
+      const now=Date.now();
+      if(lastTypedSubmit.current.text===text && now-lastTypedSubmit.current.at<500)return false;
+      lastTypedSubmit.current={text,at:now};
+      void runTurn(text);
+    }
     return true;
   },[runTurn,runVision,thinking,activeId]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
-  const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: runTurn });
+  const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: (text:string)=>runTurn(text,'voice') });
   useListeningIndicator(demo, voice.active);   // H222: the tray says when Nerva is listening
   voiceRef.current = voice;
 
@@ -494,11 +526,14 @@ function App({ floating = false, shortcuts, onWorld }: {
   // demo-owned surface in the same event before the banner disappears; the
   // next live refresh may then publish only a current evidence snapshot.
   const clearDemoDerivedState = useCallback(() => {
+    setQuestion(null);
     timers.current.forEach(clearTimeout);
     timers.current = [];
+    for(const turn of textTurns.current.values()){turn.controller.abort();turn.settle('');}
+    questionTurn.current=null;
     abortRef.current?.abort();
     abortRef.current = null;
-    turnEpoch.current++;turnBusy.current=false;turnResolve.current?.();turnResolve.current=null;
+    turnEpoch.current++;turnBusy.current=false;
     setCurrentOutcome(null);
     setAgents([]);
     baseAgents.current = [];
@@ -536,7 +571,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     setDemo(false);
   }, [clearDemoDerivedState, setDemo]);
 
-  useEffect(() => () => {timers.current.forEach(clearTimeout);abortRef.current?.abort();turnEpoch.current++;turnBusy.current=false;turnResolve.current?.();}, []);
+  useEffect(() => () => {timers.current.forEach(clearTimeout);turnEpoch.current++;for(const turn of textTurns.current.values()){turn.controller.abort();turn.settle('');}abortRef.current?.abort();turnBusy.current=false;}, []);
 
   // P1 — load live data and poll every 30s. A generation guard prevents a
   // slower, older poll from replacing a newer evidence snapshot.
@@ -578,10 +613,12 @@ function App({ floating = false, shortcuts, onWorld }: {
   const appearanceNotice = appearance.error && <div role="status" style={{fontSize:11, color:'var(--amber)', padding:'4px 8px'}}>
     {appearance.error} <button className="tool-btn" onClick={appearance.retry}>Retry sync</button>
   </div>;
+  const questionPanel=question && <PendingQuestion key={question.id} question={question} onAnswer={answerQuestion} lang={lang}/>;
 
   if (floating) return <RouteBoundary routeKey={`floating:${demo}`}><div {...rootAttrs} className="hud-root desktop-floating">
     <DesktopControls floating />
     {appearanceNotice}
+    {questionPanel}
     <SafeModeBanner state={safeMode} />
     {demo && <DemoBanner onExit={exitDemo} />}
     <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} />
@@ -590,6 +627,7 @@ function App({ floating = false, shortcuts, onWorld }: {
 
   return (
     <div {...rootAttrs}>
+      {questionPanel}
       <div className="tex-layer tex-glow"></div>
       <div className="tex-layer tex-dotgrid"></div>
       <div className="tex-layer tex-scan"></div>

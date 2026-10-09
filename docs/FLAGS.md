@@ -578,7 +578,7 @@ is a frozen table of five roles; the new names win when set, the old ones are fa
 |---|---|---|---|---|
 | `main` | none (`JARVIS_ROLE_MAIN_*` is **ignored**, the doctor says so) | settings `llm.*` | not env-selectable: the main model is chosen on the H378-guarded settings surfaces | the router |
 | `deep` | `JARVIS_ROLE_DEEP_MODEL` | `JARVIS_DEEP_MODEL`, then `deepseek-r1-distill-qwen-32b` | none (the router's local backend; `_PROVIDER`/`_BASE_URL` ignored) | the deep slot |
-| `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_MODEL` / `_BASE_URL` | `JARVIS_VLM_BACKEND` / `JARVIS_VLM_MODEL` / `JARVIS_VLM_URL` | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`) | `resolve_vlm_config` and all its consumers |
+| `vision` | `JARVIS_ROLE_VISION_PROVIDER` / `_PROFILE` / `_MODEL` / `_BASE_URL` | legacy `JARVIS_VLM_*` for LM Studio/custom; none for OpenRouter/DeepInfra/Nous | `lm-studio` (= backend `lmstudio`), `openai-compatible` (= `custom`), explicit `openrouter`, `deepinfra`, `nous` or opt-in `auto` | `resolve_vlm_config`; remote composer/native backend; local-only consumers keep their local guards |
 | `video` | `JARVIS_ROLE_VIDEO_PROVIDER` / `_MODEL` / `_BASE_URL` | resolved vision route when video provider/base are unset | `lm-studio`, `openai-compatible`, `gemini` | opt-in, owner-approved `video_analyze` ToolRPC |
 | `approval_judge` | `JARVIS_ROLE_APPROVAL_JUDGE_PROVIDER` / `_MODEL` / `_BASE_URL` | none | `lm-studio` (default), `ollama`, `openai-compatible` | `autonomy/approval_judge.py` |
 
@@ -607,6 +607,129 @@ setup every vision consumer refuses (`vlm_model_unset`, `vlm_url_unset`,
 `VLMConfig.is_local` (a loopback custom VLM is local).
 Local addresses in doctor/judge status expose only the loopback HTTP origin;
 userinfo, path, query and fragment are never displayed. The roles API omits URLs entirely.
+
+**Explicit OpenRouter vision** uses `JARVIS_ROLE_VISION_PROVIDER=openrouter` and a
+required `JARVIS_ROLE_VISION_MODEL`. It defaults to `https://openrouter.ai/api/v1`.
+The dedicated `JARVIS_ROLE_VISION_KEY` takes precedence, including at that default;
+otherwise `OPENROUTER_API_KEY` is used only on the canonical HTTPS origin (default
+port 443). Another `JARVIS_ROLE_VISION_BASE_URL` requires a dedicated role key.
+Remote HTTP, URL userinfo/query/fragment, malformed models/keys and missing keys
+refuse. Legacy VLM variables and `OPENROUTER_BASE_URL` do not configure this route.
+
+The composer discloses the selected model, destination and effective data policy.
+It sends all six validated live `llm.openrouter_*` routing controls; an unreadable
+or malformed setting refuses instead of dropping a restriction. Those controls
+are included in the consent binding and checked at the final HTTP hook, even with
+empty recovery disabled. Changed settings/keys/models require a fresh preview.
+Status discloses any `selection_requirements` for the chosen route. The HUD offers
+separate training and expensive-model confirmations, initially unchecked, for
+this image draft. CLI image turns require `--acknowledge-training` and/or
+`--confirm-expensive` when requested, in addition to `--remote-vision URL` for a
+remote destination. The POST flags are strict booleans and default to false;
+remote acknowledgement alone cannot clear them. The exact guard findings, prices
+and threshold participate in the destination binding and physical-send checks.
+Required training consent must reach the audit before any model client is made;
+cost confirmation keeps the existing best-effort audit. These confirmations grant
+no reusable provider or unattended-role permission. In particular, `:free` models
+and `data_collection=allow` do not silently bypass training guards.
+The inherited video route reports
+`video_vision_provider_unsupported`; signed OpenRouter video remains a separate
+unfinished increment.
+
+**Nous account authentication** is a provider-discovery prerequisite, available via
+`nerva auth nous login|status|logout --profile NAME`. Set a registered public OAuth
+client ID in `JARVIS_NOUS_CLIENT_ID` on the hub; this build does not assume that a
+Nerva registration exists or reuse the Hermes application's identity. Optional
+`JARVIS_NOUS_PORTAL_URL` and `JARVIS_NOUS_INFERENCE_BASE_URL` are explicit operator
+overrides. Account data stays encrypted under the Nerva data root. All four
+`/api/oauth/nous/*` routes require admin authorization; status makes no provider
+request, and logout removes only the selected local profile. Login alone does not
+configure vision or main-chat routing. See [Nous account setup](nous-auth.md).
+
+**Explicit Nous vision** uses `JARVIS_ROLE_VISION_PROVIDER=nous` and an owned
+`JARVIS_ROLE_VISION_PROFILE` (default `default`). The account's Portal and inference
+endpoint own the credential destination. `JARVIS_NOUS_INFERENCE_BASE_URL` is an
+explicit account endpoint override; if `JARVIS_ROLE_VISION_BASE_URL` is also set,
+it must exactly match the prepared account endpoint. A nonempty
+`JARVIS_ROLE_VISION_KEY` refuses configuration: it cannot replace account OAuth.
+The role's explicit `JARVIS_ROLE_VISION_MODEL` wins on the normal inference host;
+the welcome host always selects `nous/welcome`. Login alone enables neither image
+delivery nor main-chat selection.
+
+Without an explicit model, `GET /api/vlm/composer/status` prepares usable account
+credentials off the request loop and discovers a Portal vision recommendation. The
+public recommendation request carries no bearer token. A known free account uses
+only the free recommendation; paid or unknown entitlement tries paid, then free;
+if neither exists, selection falls back to `google/gemini-3.6-flash`. The public
+catalog has a 600-second profile/Portal cache and bounded disk last-good fallback.
+The account entitlement cache is separate and credential-scoped. The status query
+`refresh_catalog=true` refreshes catalog metadata; it does not force OAuth token
+rotation, though unusable credentials may undergo their normal refresh. An explicit
+role model and welcome endpoint bypass recommendation metadata.
+
+Image POSTs and role/policy readers use only the locally prepared selection. They
+do not refresh OAuth or discover a replacement model. Selection is stored under the
+encrypted account profile and becomes unavailable after logout, token/client/issuer
+or relevant configuration drift, or expiry. Remote destination, training and cost
+confirmations still apply to the actual model, endpoint and wire; local-only image
+consumers stay local. Inherited Nous video currently refuses until a video adapter
+exists. `JARVIS_NOUS_ANTHROPIC_WIRE=chat` is the default. `native` uses Messages
+only for `anthropic/*`; `auto` and invalid values currently use chat/completions.
+The wire is included in the reviewed destination identity.
+
+**Explicit DeepInfra vision** uses `JARVIS_ROLE_VISION_PROVIDER=deepinfra`.
+`JARVIS_ROLE_VISION_MODEL` pins a model and bypasses metadata discovery. Without
+that pin, composer status selects the first served chat/vision model from the
+credential-scoped catalog, preserving catalog order and Hermes's legacy ID filter
+for entries without surface tags. No catalog selection means unavailable.
+The base is the role base, then `DEEPINFRA_BASE_URL`, then
+`https://api.deepinfra.com/v1/openai`. The dedicated role key wins; ambient
+`DEEPINFRA_API_KEY` is accepted only on the canonical HTTPS origin/default port443.
+A custom origin requires a dedicated role key; legacy VLM variables are ignored.
+
+For this provider, `GET /api/vlm/composer/status` may send an authenticated metadata
+request to `/models?filter=true&sort_by=hermes`. It sends no prompt or image;
+`reachable=null` still means inference connectivity is untested. Positive model
+selections persist in a bounded process-local cache; failures retry after60 seconds.
+`refresh_catalog=true`, used by the HUD's Refresh vision destination button,
+refreshes metadata and revokes the old selection on failure. Explicit models bypass
+catalog refresh. Catalog requests use a direct transport, no redirects, a five-second
+deadline and a2 MiB response limit. A later image POST never discovers another
+model: it requires the reviewed selection and independent remote/selection
+confirmations. Keys, models and physical-request changes invalidate old approval.
+Data policy is unknown. Local-only consumers stay local; inherited signed video
+refuses with `video_vision_provider_unsupported`.
+
+**Explicit DeepInfra main routing** requires `llm.compatible_provider=deepinfra`,
+an explicit `llm.compatible_model` and `DEEPINFRA_API_KEY`. Its endpoint is exactly
+`https://api.deepinfra.com/v1/openai`; a trailing slash or explicit port443 is
+normalized, while other paths/origins are refused before a request. The same rule
+applies to `DEEPINFRA_BASE_URL` for this main route. It supports text, tool turns
+and native SSE streaming; an inherited main image turn uses the exact selected
+model and credential under the existing independent image/data acknowledgements.
+The unknown data policy still requires the applicable current H513 acknowledgement.
+An incomplete explicit DeepInfra selection refuses cloud fallback. This main
+route does not discover a default model or use the dedicated vision role's custom
+endpoint behavior. Live model/tool/stream/image compatibility remains unverified.
+
+**Opt-in automatic image selection** uses `JARVIS_ROLE_VISION_PROVIDER=auto`.
+The standalone composer has no selected conversation-main route, so it tries
+OpenRouter, then Nous, then DeepInfra. A future caller may pass an actual selected
+main vision route; unrelated global chat settings do not supply one. OpenRouter
+uses its dedicated free vision model when the role model is blank. Nous requires
+usable owned credentials; DeepInfra requires a pinned model or positively served
+vision catalog selection. A missing candidate is skipped; malformed authority or
+privacy settings refuse. An explicit role base URL is authoritative and requires
+an explicit role model and key scoped to that origin.
+
+Composer status prepares metadata, shows the selected provider, model and
+destination, and returns a consent binding that includes the auto source. Image
+POST resolves locally without discovery or OAuth refresh. Switching providers,
+credentials, model, endpoint, wire or effective policy invalidates the earlier
+confirmation before images leave the hub. Training and cost acknowledgements
+remain independent. Auto selection is unavailable to inherited video and does
+not make local-only consumers send images to a remote provider. This is a bounded
+image-composer slice, not complete H277 parity.
 
 **Video understanding** requires `JARVIS_VIDEO_ANALYSIS=1` and a valid resolved video
 route. When both video provider and base URL are unset, a configured vision route
@@ -747,7 +870,7 @@ fetching a URL source again; local-file checks can reread bytes to verify their
 approved hash. Results expose fixed attempt categories and the successful model,
 without failed provider bodies, destination paths or credentials.
 
-**Shared local auxiliary models (H277).** Six optional model IDs select a model
+**Shared local auxiliary models (H277).** Seven optional model IDs select a model
 on the router's existing local backend independently of the conversation model:
 
 | Setting | Consumer | Fallback when unset or ASCII-space-only |
@@ -758,6 +881,7 @@ on the router's existing local backend independently of the conversation model:
 | `JARVIS_AUX_COMPRESSION_MODEL` | Context compression summary | Active local model, then `qwen3:7b` |
 | `JARVIS_AUX_ACQUISITION_CAPABILITY_MODEL` | Governed capability generation | Active local model, then `local` |
 | `JARVIS_AUX_ACQUISITION_DRAFT_MODEL` | Grounded acquisition plan drafting | Active local model, then `local` |
+| `JARVIS_AUX_SOUL_DESCRIPTION_MODEL` | Local SOUL description proposal | Active local model, then `qwen3:7b` |
 
 Read when each operation starts; changing one does not change the active
 conversation model or the other auxiliary tasks. Acquisition captures the backend
@@ -766,6 +890,9 @@ at most 256 raw characters; surrounding ASCII spaces are removed. Invalid types,
 controls/nonprintable characters or oversized values refuse that auxiliary call without echoing
 the value or silently selecting another model. These settings do not install a
 model, choose a provider/URL/key, enable a feature, or add retries/cloud fallback.
+SOUL drafts also require a proven direct loopback LM Studio or Ollama transport;
+their private persona text is checked against the selected model, prompt and
+request budget at dispatch.
 
 The shared invocation retains the existing H513 policy checks at every attempt
 and physical request. Titles, rewriting, review and compression reject job-model
@@ -777,6 +904,14 @@ fallback. Acquisition keeps its two-attempt JSON bound, 2048/1024-token budgets 
 temperature progression from 0.2 to 0; policy, configuration and provider failures
 do not become JSON retries. There is no model-ID editor or auxiliary listing in the HUD/native app
 for these environment settings. Broader auxiliary discovery/recovery remains open.
+
+The explicitly configured native OpenAI-compatible approval judge may repeat once
+after a bounded structured HTTP400 that rejects `temperature`. Only temperature
+is omitted; the exact96-token advisory or16-token smart cap and all other request
+fields remain. Both sends share the original total timeout and recheck current
+role configuration, H513 consent, queue validity and direct physical request
+identity. A later judgement starts with temperature again. Other failures do not
+replay; this changes no strict-local auxiliary route or provider activation.
 
 **The approval judge** (`JARVIS_ROLE_APPROVAL_JUDGE_MODEL` set): each tool call queued on
 the action-approval queue is shown to that model **after** the card exists; its risk
@@ -1010,7 +1145,26 @@ A call already in flight is refused on its next tool call.
 
 ### `llm.execute_code_sessions` (+ `llm.execute_code_image`, `llm.execute_code_max_kernels`, `llm.execute_code_idle_ttl`)
 
-**Defaults: OFF · unset · `4` · `900`s.** Runtime settings, read at composition.
+**Execution context (H595):** `llm.execute_code_mode` accepts `project`
+(default) or `strict`. `llm.execute_code_project_root` optionally names an owner
+project staged as a bounded read-only snapshot; actual writes use approved file tools.
+`llm.execute_code_env_passthrough` optionally lists exact third-party environment
+names. Successful owner-vouched main skill views can declare the same names for
+their exact actor/principal/session. Managed provider credentials and loader/control
+variables remain blocked. Context changes discard the old interpreter, with current
+policy rechecked before startup values are sent and after waiting for a cell lock.
+One-shot Docker execution and safe resident-startup fallback preserve the same
+context, with a private read-only project mount and startup stdin. Contextual WASM
+and production host fallback refuse with `context_backend_unsupported`.
+See `docs/hermes/code-execution-guide.md` for snapshot bounds and backend-local Python.
+An admitted new message in the same conversation interrupts active code; the tool
+returns an explicit interrupted result after backend cleanup. Pending replies and
+background jobs retain their existing routing. Resident state is lost on interruption.
+
+**Defaults: ON when code execution is enabled · unset · `4` · `900`s.** Runtime settings,
+read at composition. `llm.execute_code` itself remains OFF by default. With code
+enabled and a pinned isolated image configured, no second opt-in is needed.
+An explicitly stored `llm.execute_code_sessions=false` remains an owner opt-out.
 
 **OFF:** every `execute_code` call is the K1 one-shot — a container per call, nothing
 kept. The tool's schema has no `reset` and its description promises no persistence, so
@@ -1030,7 +1184,7 @@ reviewed, cell 400 is not. So *state* persists and *permission* does not.
 | every cell | what happens |
 |---|---|
 | binds fresh | a new K0 `SandboxInvocation` from the live principal — a variable created while a tool was offered is still just a variable once it is not |
-| crosses the kernel | the cell is a `tool.rpc` action; a DENY (halted kill-switch, over budget, runaway loop) refuses it **before** a byte reaches the interpreter. No new action kind |
+| crosses the kernel | the cell is a `tool.rpc` action and needs an explicit GRANT, rechecked after its interpreter lock. DENY, QUEUE and missing/malformed decisions refuse it **before** a byte reaches the interpreter; a refused reset preserves its variables. No new action kind |
 | gets its own mailbox | tool calls go to a directory created for that cell and removed after, serviced under that cell's authority; a `jarvis_tool_call` captured ten cells ago writes where nobody is reading |
 | checks the stop | ESTOP is read before every cell, and an engaged stop **tears every kernel down** rather than leaving processes alive to resume |
 
@@ -1087,7 +1241,7 @@ says nothing about continuity — the fallback is named in the result shape, not
 | `JARVIS_TRUSTED_PROXIES` | unset (`proxy_trust.py`) | Forwarding headers (`X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Proto`) believed only from these networks; XFF walked right-to-left; uvicorn's own proxy-header layer is off under `serve.py` | A listed peer can name any client address — list only proxies you run; a malformed list, or a `FORWARDED_ALLOW_IPS` wider than it, refuses boot | Unset + restart: headers ignored, fail closed |
 | `JARVIS_ALLOWED_HOSTS` | unset (`host_policy.py`) | Extra `Host` names accepted by the rebinding guard | A listed name is reachable from any page that can resolve it to the box — list only names you own; `*` refuses boot | Unset + restart: only loopback names, IP literals and the bind/server address pass |
 | `llm.execute_code` *(runtime setting)* | off (`code_tools.py`) | Registers ungated `execute_code`: one model-written Python script per call, running in the sandbox, calling tools over file-RPC | Arbitrary code inside the container; inner calls bypass the tool loop's per-tool caps and repeated-call detector (bounded instead by `security.sandbox_max_tool_calls` and the sandbox timeout). Reach is K0-bound to the turn's own offered set, gated tools still only enqueue, and no isolated backend means `sandbox_not_isolated` rather than a host run | Set `false` + restart: `register_code_tools` is a no-op, nothing on the allowlist |
-| `llm.execute_code_sessions` *(runtime setting)* | off · needs `llm.execute_code_image` pinned by digest (`session_kernels.py`) | A resident interpreter per agent×principal×session×data-scope: variables, imports and loaded data persist between `execute_code` calls | A long-lived process per active session. Every cell still re-binds K0 authority, crosses the Action Kernel, gets its own tool-call mailbox and re-reads ESTOP — so state persists and permission does not; every loss of state is named on the next cell | Set `false` + restart: back to the K1 one-shot, kernels destroyed |
+| `llm.execute_code_sessions` *(runtime setting)* | on when code enabled · needs `llm.execute_code_image` pinned by digest (`session_kernels.py`) | A resident interpreter per agent×principal×session×data-scope: variables, imports and loaded data persist between `execute_code` calls | A long-lived process per active session. Every cell still re-binds K0 authority, requires a current Action Kernel GRANT after its interpreter lock, gets its own tool-call mailbox and re-reads ESTOP — so state persists and permission does not; every loss of state is named on the next cell | Explicitly set `false` + restart: back to the K1 one-shot, kernels destroyed |
 | `llm.tool_result_thresholds` *(runtime setting)* | `{}` (`tool_result_store.py`) | Per-tool byte ceilings for what a result may put in the context window, as `{tool: bytes}`. Beats the tool's own declaration and the `mcp_` family default; loses to a pinned tool (`file_read` is pinned to no limit, because it is how a spilled result is read back) | Raising one lets that tool fill more of the window; lowering it sends more of its output to disk. Nothing is lost either way — over the ceiling the full result is spilled and the model gets a preview naming the file | Set `{}` (no restart): back to the window-scaled default |
 | `llm.tool_result_context_window` *(runtime setting)* | `0` = auto (`agent_runtime.py`) | The context window the per-result (15 %) and per-turn (30 %) budgets scale against, with 8 KB / 16 KB floors. `0` reads the window of the model the turn is actually running on | Setting it wrong-large lets a turn overfill a small window; wrong-small spills results that would have fit. Distinct from `llm.tool_loop_context_tokens`, which is the *transcript* budget compaction folds against | Set `0` (no restart): the model's own window again |
 | `llm.tool_result_retention_seconds` · `llm.tool_result_max_files` *(runtime settings)* | `86400` · `512` (`tool_result_store.py`) | How long a spilled result stays readable under `data/workspace/tool_results/`, and how many are kept. Swept on every write, oldest first, never the file just written | Longer retention keeps more tool output on disk; shorter can retire a spill the model has not read back yet | Set back (no restart): the next write sweeps to the new limits |

@@ -62,7 +62,7 @@ from agents.core.boot_guards import (  # noqa: E402,F401
     assert_parseable_posture_flags,
     assert_safe_bind,
 )
-from agents.core.env_config import env_int  # noqa: E402  (O26-P2.1: was a local _env_int)
+from agents.core.env_config import env_int, env_str  # noqa: E402  (O26-P2.1: was a local _env_int)
 from agents.web import app
 
 
@@ -99,9 +99,9 @@ def server_config():
 
     config = uvicorn.Config(
         app,
-        host=os.environ.get("JARVIS_HOST", "127.0.0.1"),
+        host=env_str("JARVIS_HOST", "127.0.0.1"),
         port=env_int("JARVIS_PORT", 8080),
-        log_level=os.environ.get("JARVIS_LOG_LEVEL", "info"),
+        log_level=env_str("JARVIS_LOG_LEVEL", "info"),
         timeout_graceful_shutdown=env_int("JARVIS_SHUTDOWN_TIMEOUT", 10),
         proxy_headers=False,
     )

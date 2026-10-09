@@ -1,0 +1,125 @@
+{
+  "generated_at": "2026-10-05T20:32:29.991942+00:00",
+  "base_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "goal_scope": "all697",
+  "publication": false,
+  "status": {
+    "H595": "partial",
+    "H660": "partial"
+  },
+  "implemented": [
+    "Admitted same-session /chat and /chat/stream new messages interrupt active code children before turn lease",
+    "Telegram current pairing/rate probe before batching/chat lane; other gateway channels signal after admission and pending interception",
+    "Exact conversation ContextVar excludes jobs, unrelated sessions and direct non-admitted channel traffic; parallel same-session children all stop",
+    "Teardown completes before interrupted result; bounded partial output, completed RPC count, donor marker and elapsed duration preserved",
+    "Resident interruption discards namespace; external/disconnect cancellation propagates",
+    "Executed outcomes provide status/output/tool_calls_made/duration_seconds aliases; trusted backend timeout flag/reason avoids parsing user stderr",
+    "Child result taint explicitly reaches parent turn, including nested untrusted recall with no stdout",
+    "Native and simulated WASM-command cancellation reaps child; Docker startup transmission bounded"
+  ],
+  "verification": {
+    "runs": {
+      "composition": {
+        "path": "docs/hermes/evidence/2026-10-05-code-interruption/composition-result.xml",
+        "tests": 297,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "final_focused": {
+        "path": "docs/hermes/evidence/2026-10-05-code-interruption/final_focused-result.xml",
+        "tests": 109,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "backend": {
+        "path": "docs/hermes/evidence/2026-10-05-code-interruption/backend-result.xml",
+        "tests": 29,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "startup_impact": {
+        "path": "docs/hermes/evidence/2026-10-05-code-interruption/startup-impact-result.xml",
+        "tests": 44,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "records": {
+        "path": "docs/hermes/evidence/2026-10-05-code-interruption/records-result.xml",
+        "tests": 104,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "counts_are_not_additive": true,
+    "new_product_cases": 12,
+    "delegated_ingress_regression": {
+      "tests": 160,
+      "passed": 160,
+      "source": "gpt-6-sol high implementation tool run; no fabricated XML",
+      "files": [
+        "test_code_tools.py",
+        "test_tool_rpc_runtime.py",
+        "test_chat_http.py",
+        "test_channel_sessions.py",
+        "test_session_lifecycle_integration.py",
+        "test_cross_channel_sessions.py",
+        "test_telegram_group_gate.py",
+        "test_telegram_streaming.py",
+        "test_h487_telegram_lanes.py"
+      ]
+    },
+    "ruff": {
+      "paths": 12,
+      "passed": true
+    },
+    "bandit": {
+      "findings": 2,
+      "new_findings": 0,
+      "errors": 0,
+      "note": "Inherited B404/B603 bounded optional binary availability probe, same source with shifted lines."
+    },
+    "scope": "Real local native/pipe/virtualenv workers, registered tool, actual HTTP/SSE and gateway seams; synthetic data. Simulated WASM command, Docker argv/startup checks only. No live Docker/provider/full-suite acceptance.",
+    "valid_red": [
+      "HTTP new message initially waits/busy",
+      "Real worker PID survived native/WASM cancellation",
+      "Actual timeout lacked explicit flag; resident timeout aliased to error",
+      "Nested untrusted no-stdout child returned with parent origin still generated"
+    ],
+    "corrections": [
+      "Lifecycle regression fixture now accepts optional on_tool_call keyword; teardown assertions unchanged",
+      "Fixed trusted resident timeout reason mapping and parent recall taint propagation"
+    ],
+    "whole_suite_full697_or_live_acceptance": false,
+    "graft_graph": {
+      "ok": true,
+      "added": [],
+      "removed": [],
+      "changed": [],
+      "stale": []
+    },
+    "graft_context_missing": true,
+    "gitleaks": {
+      "paths": 29,
+      "findings": 0,
+      "baseline": false,
+      "inline_allow": false
+    }
+  },
+  "remaining": [
+    "HUD composer currently drops follow-up while busy; active next batch integrates this producer without racing streams.",
+    "Fresh isolated Docker/project-mount and platform acceptance unavailable on this Mac; Docker binary absent",
+    "Contextual WASM currently refuses explicitly; backend breadth remains documented",
+    "H660 remote transports/approved resume and remaining697 goal work"
+  ],
+  "accounting": {
+    "equivalent": 129,
+    "total": 697,
+    "new_equivalent_in_this_batch": 0
+  },
+  "source_manifest": "docs/hermes/evidence/2026-10-05-code-interruption/scoped-inputs.json"
+}

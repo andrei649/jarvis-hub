@@ -1,0 +1,42 @@
+{
+  "generated_at": "2026-10-04T00:20:18.316396+00:00",
+  "goal": "All697 pinned Hermes capabilities; H487 native human wait full milestone",
+  "base_sha": "ce96e6aef3d26f64c3138c71c5f56cf9b61209f7",
+  "state": "Successful terminal frozen full backend run; local only",
+  "full_backend": {
+    "exit_code": 0,
+    "tests": 22347,
+    "passed": 22312,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 34,
+    "existing_xfail": 1,
+    "expected_failure_cases": [
+      "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+    ],
+    "junit_sha256": "a811ea71b4e5dbd349d540787764f07cc809941db0821babe3aa91e90a3e2b86",
+    "log_sha256": "ace27e4bf6234afe1411e0f81a31087522d61d8162b84f0407c36ef4279d0955",
+    "command": "JARVIS_TESTING=1 python -m pytest tests --timeout=90 -q --tb=short"
+  },
+  "frozen_inputs": {
+    "paths": 2982,
+    "drift": 0,
+    "manifest_sha256": "395a710833339120735eb9dcb277fd5a6b3cf07f782cae8eb8293a62cf9c21a6"
+  },
+  "source_sha256": {
+    "agents/core/agent_runtime.py": "a86bc87b2af6c2bd992f8bd1721cba1eece2ab1addc186fdeec0049847ac79dd",
+    "agents/core/autonomy/consent_prompts.py": "076d0581b37454122c65d295d87fffb481289b7f21a8f7d2b4e2e7772849ebe0",
+    "agents/core/autonomy/owner_once_prompts.py": "e185a676b69720c5ebe9c73f7832a380b8b4ba9b35de4747f25351bc3e271096",
+    "agents/core/native_human_wait.py": "e5cc74291707cdee8f078660d8184d104b76e61261703c703c023e40c32852d7",
+    "tests/test_h487_native_runtime_human_wait.py": "94f35c29ffb98ec2899737e5806151996e7721e2c7a8c2401d274325e067676e",
+    "tests/test_h487_telegram_consent_integration.py": "bb5658627414e250ea67f18ff7a6572fbc794818b24a631626ed2748b741c24d",
+    "tests/test_native_human_wait.py": "27fbad5090c914eade08130974de0b688b902bc1d8f850847ff39cb980f27c7f"
+  },
+  "focused_receipt": "docs/hermes/evidence/h487-native-wait-progress-2026-10-04.json",
+  "limits": [
+    "Offline/synthetic effects only; no live device, Telegram or provider acceptance",
+    "H487 remains partial; no new equivalent capability credit",
+    "Historical mutation receipts are not refreshed by a full functional suite",
+    "No push, merge, deploy or provider activation"
+  ]
+}

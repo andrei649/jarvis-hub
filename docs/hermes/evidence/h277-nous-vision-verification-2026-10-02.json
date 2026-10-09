@@ -1,0 +1,173 @@
+{
+  "generated_at": "2026-10-02T07:53:13.236186+00:00",
+  "base": "54e5bf1b",
+  "source_commit": "43c669b0b4598c8a75cec8d198ee1d416f6d62e5",
+  "source_head": "cfd81423565846bca166fbc918bcb54b0f24eb00",
+  "pinned_hermes": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "full": {
+    "tests": 21084,
+    "failures": 0,
+    "errors": 0,
+    "passed": 21049,
+    "skipped": 34,
+    "xfailed": 1,
+    "seconds": 226.998
+  },
+  "frozen_run": {
+    "head": "cfd81423565846bca166fbc918bcb54b0f24eb00",
+    "head_after": "cfd81423565846bca166fbc918bcb54b0f24eb00",
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests/",
+      "-n",
+      "4",
+      "--dist",
+      "loadfile",
+      "--timeout=90",
+      "--junitxml=/tmp/nerva-nous-vision-full-20261002.xml"
+    ],
+    "returncode": 0,
+    "seconds": 229.65673620882444,
+    "changed_tracked_files": [],
+    "git_status_after": "",
+    "tracked_regular_files": 4371,
+    "fingerprint": "7ba01ebdc12804ef4ec4a8d109a08b0fd0f8d0f5526ceae89698e08f559fba60"
+  },
+  "focused": {
+    "tests": 1705,
+    "failures": 0,
+    "errors": 0,
+    "passed": 1705,
+    "skipped": 0,
+    "xfailed": 0,
+    "seconds": 30.191
+  },
+  "final_gates": {
+    "tests": 119,
+    "failures": 0,
+    "errors": 0,
+    "passed": 119,
+    "skipped": 0,
+    "xfailed": 0,
+    "seconds": 4.57
+  },
+  "new_backend_cases": 66,
+  "publication": {
+    "push": false,
+    "merge": false,
+    "deploy": false,
+    "live_provider_calls": false
+  },
+  "typescript": "passed",
+  "frontend_runtime_tests_rerun": false,
+  "mutation_campaign_run": false,
+  "live_oauth_client_registration_verified": false,
+  "graph_source_fresh": true,
+  "semantic_context_built": false,
+  "assessment": {
+    "equivalent": 172,
+    "partial": 254,
+    "missing": 64,
+    "needs_review": 207,
+    "excluded": 0,
+    "total": 697,
+    "rows_refreshed": 6,
+    "identical_moved_citations": 3
+  },
+  "changed_paths": [
+    ".env.example",
+    "BACKLOG.md",
+    "GO_LIVE_PLAN.md",
+    "HERMES_STATUS.md",
+    "NERVA.md",
+    "README.md",
+    "STATUS.md",
+    "agents/core/llm/model_roles.py",
+    "agents/core/llm/nous_auth.py",
+    "agents/core/llm/nous_models.py",
+    "agents/core/llm/providers/__init__.py",
+    "agents/core/llm/vision_nous.py",
+    "agents/core/llm/vision_nous_wire.py",
+    "agents/core/llm/vision_policy.py",
+    "agents/core/llm/vision_retry.py",
+    "agents/core/llm/vlm.py",
+    "agents/core/routers/composer_vision.py",
+    "docs/FLAGS.md",
+    "docs/HERMES_CAPABILITIES.md",
+    "docs/design/HUD_V2_REMAINING.md",
+    "docs/hermes/assessment.json",
+    "docs/hermes/h277-nous-vision-plan-2026-10-02.md",
+    "docs/nous-auth.md",
+    "mobile/PARITY.md",
+    "project-status.json",
+    "tests/test_h277_nous_auth.py",
+    "tests/test_h277_nous_models.py",
+    "tests/test_h277_nous_vision_config.py",
+    "tests/test_h277_nous_vision_consumer.py",
+    "tests/test_h277_nous_vision_wire.py"
+  ],
+  "artifacts": {
+    "nerva-nous-vision-full-20261002.xml": {
+      "path": "/tmp/nerva-nous-vision-full-20261002.xml",
+      "sha256": "147164a709d5efe20c2e3bd80496f3196fd2a501a42aa1d6aea89d1a0aee70fe"
+    },
+    "nerva-nous-vision-full-20261002.log": {
+      "path": "/tmp/nerva-nous-vision-full-20261002.log",
+      "sha256": "bc60e5700d4031beb9c7996307acf88d6f91ac315e39c2928b2c7946b090fbbd"
+    },
+    "nerva-nous-vision-full-20261002.run.json": {
+      "path": "/tmp/nerva-nous-vision-full-20261002.run.json",
+      "sha256": "fcb7510febf1e15634e08645893c6d4167b5ab8ce12659a943b65e715827aa22"
+    },
+    "nerva-nous-vision-full-20261002.manifest.json": {
+      "path": "/tmp/nerva-nous-vision-full-20261002.manifest.json",
+      "sha256": "0399af0b9caf94721ec548821acb59f7c0f98f0c6e39779fde1ba839a5b15826"
+    },
+    "nerva-nous-vision-focused-green.xml": {
+      "path": "/tmp/nerva-nous-vision-focused-green.xml",
+      "sha256": "7d4b529a7952d384b5354a332ce4e6d3910e372b126dfb080a3dd68b638a586b"
+    },
+    "nerva-nous-vision-gates.xml": {
+      "path": "/tmp/nerva-nous-vision-gates.xml",
+      "sha256": "e1b491e5c3c8094c697b32ccdb1986909636ae44b179ce246fe3bc7698c8aa77"
+    },
+    "nerva-nous-vision-typecheck.log": {
+      "path": "/tmp/nerva-nous-vision-typecheck.log",
+      "sha256": "4be34ed489a8a21324d3820825f37970c5f569bb436ce7a05ef560bca4b87b8a"
+    },
+    "nerva-nous-vision-ruff.log": {
+      "path": "/tmp/nerva-nous-vision-ruff.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    "nerva-strict-nous-vision-records-20261002.receipt.json": {
+      "path": "/tmp/nerva-strict-nous-vision-records-20261002.receipt.json",
+      "sha256": "e1a0da172049e10f955f84820ff04b3dded4055ee746794926b1785ad2e4a267"
+    },
+    "nerva-nous-vision-graft-check.json": {
+      "path": "/tmp/nerva-nous-vision-graft-check.json",
+      "sha256": "78d4b82d8648f7024381156614efbcc1de73dd297a910fd910bcbd3e6e1a34e2"
+    },
+    "nerva-nous-vision-corrections-red.log": {
+      "path": "/tmp/nerva-nous-vision-corrections-red.log",
+      "sha256": "30c79d60f4862c4965017dae09005baa91bb565df4d8370b144a2677d959349e"
+    },
+    "nerva-nous-loopback-red.log": {
+      "path": "/tmp/nerva-nous-loopback-red.log",
+      "sha256": "3f233522cafd12207c5575f912f8cc33b381be291754bfb379d4c901cb2b8bff"
+    },
+    "nerva-nous-loopback-green.xml": {
+      "path": "/tmp/nerva-nous-loopback-green.xml",
+      "sha256": "a239840e09c69c8cf2d4f4298fbd2d0b691060026d6a456af06c9f8a22860590"
+    },
+    "nerva-nous-vision-focused.xml": {
+      "path": "/tmp/nerva-nous-vision-focused.xml",
+      "sha256": "089c0ceb0bc363e3e9befa180e2bce52b0c5a7892d5017e1b68f050d91309daf"
+    },
+    "nerva-nous-composer-green.xml": {
+      "path": "/tmp/nerva-nous-composer-green.xml",
+      "sha256": "e322b060ce6582e18b0e80e50a62503924d8fbb541e74f0baf6277f2868a8617"
+    }
+  }
+}

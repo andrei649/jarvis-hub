@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import agents.core.file_tools as file_tools
+from agents.core.file_checkpoint_history import HISTORY_SUPPORTED
 from agents.core.file_tools import FileScope, FileTools, SnapshotStore, register_file_tools
 from agents.core.kernel import Decision, Verdict
 from agents.core.tool_rpc import ToolRPCServer
@@ -110,16 +111,26 @@ async def test_approved_kernel_refusal_preserves_file_and_failed_envelope(
 async def test_apply_oserror_remains_unknown_even_after_real_write(
     registered, monkeypatch, after_real_write,
 ):
-    original = file_tools._atomic_write
+    original = registered.tools.history.apply_mutation
 
-    def fail_at_target(target, data, *, mode=None):
-        if target == registered.target:
+    def fail_at_target(*args, **kwargs):
+        if after_real_write:
+            original(*args, **kwargs)
+        raise OSError("synthetic write failure")
+
+    if HISTORY_SUPPORTED:
+        monkeypatch.setattr(registered.tools.history, "apply_mutation", fail_at_target)
+    else:
+        original_legacy = file_tools._atomic_write
+
+        def fail_legacy(target, data, *, mode=None):
+            if target != registered.target:
+                return original_legacy(target, data, mode=mode)
             if after_real_write:
-                original(target, data, mode=mode)
+                original_legacy(target, data, mode=mode)
             raise OSError("synthetic write failure")
-        return original(target, data, mode=mode)
 
-    monkeypatch.setattr(file_tools, "_atomic_write", fail_at_target)
+        monkeypatch.setattr(file_tools, "_atomic_write", fail_legacy)
     task = _task("file_write", {"path": "notes.txt", "content": "after"})
     result = await registered.server.execute(task, execution_context=registered.token)
     assert result["status"] == "failed"
@@ -154,19 +165,32 @@ async def test_cancelled_approved_execute_can_finish_real_worker_without_returne
     started = threading.Event()
     release = threading.Event()
     finished = threading.Event()
-    original = file_tools._atomic_write
+    original = registered.tools.history.apply_mutation
 
-    def delayed_write(target, data, *, mode=None):
-        if target != registered.target:
-            return original(target, data, mode=mode)
+    def delayed_write(*args, **kwargs):
         started.set()
         try:
             assert release.wait(3), "test did not release the filesystem worker"
-            return original(target, data, mode=mode)
+            return original(*args, **kwargs)
         finally:
             finished.set()
 
-    monkeypatch.setattr(file_tools, "_atomic_write", delayed_write)
+    if HISTORY_SUPPORTED:
+        monkeypatch.setattr(registered.tools.history, "apply_mutation", delayed_write)
+    else:
+        original_legacy = file_tools._atomic_write
+
+        def delayed_legacy(target, data, *, mode=None):
+            if target != registered.target:
+                return original_legacy(target, data, mode=mode)
+            started.set()
+            try:
+                assert release.wait(3), "test did not release the filesystem worker"
+                return original_legacy(target, data, mode=mode)
+            finally:
+                finished.set()
+
+        monkeypatch.setattr(file_tools, "_atomic_write", delayed_legacy)
     task = _task("file_write", {"path": "notes.txt", "content": "after"})
     pending = asyncio.create_task(registered.server.execute(
         task, execution_context=registered.token))
@@ -185,15 +209,13 @@ async def test_cancelled_approved_execute_can_finish_real_worker_without_returne
 async def test_escaping_handler_error_uses_legacy_tool_error_without_receipt(
     registered, monkeypatch,
 ):
-    original = file_tools._atomic_write
+    def crash_after_effect(*_args, **_kwargs):
+        raise RuntimeError("synthetic post-effect bookkeeping failure")
 
-    def crash_at_target(target, data, *, mode=None):
-        if target == registered.target:
-            raise RuntimeError("synthetic unexpected failure")
-        return original(target, data, mode=mode)
-
-    monkeypatch.setattr(file_tools, "_atomic_write", crash_at_target)
+    # _record runs after the owned checkpoint worker reports the byte effect.
+    # An escaping handler error has no returned receipt, even after real I/O.
+    monkeypatch.setattr(registered.tools, "_record", crash_after_effect)
     task = _task("file_write", {"path": "notes.txt", "content": "after"})
     result = await registered.server.execute(task, execution_context=registered.token)
     assert result == {"status": "failed", "reason": "tool_error", "tool": "file_write"}
-    assert registered.target.read_text(encoding="utf-8") == "before"
+    assert registered.target.read_text(encoding="utf-8") == "after"

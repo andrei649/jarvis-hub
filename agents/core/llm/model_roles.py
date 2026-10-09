@@ -6,9 +6,10 @@ approval and the vision model can read a screenshot independently of the main mo
 
 Each role resolves ``{provider_id, model, base_url}`` from
 ``JARVIS_ROLE_<NAME>_PROVIDER`` / ``_MODEL`` / ``_BASE_URL``. The names that predate
-the table stay as fallbacks (``JARVIS_VLM_BACKEND`` / ``_MODEL`` / ``_URL`` for vision,
-``JARVIS_DEEP_MODEL`` for deep), so an install that sets only those behaves exactly as
-before; when both are set the new name wins and the listing names the shadowed one.
+the table stay as fallbacks (``JARVIS_VLM_BACKEND`` / ``_MODEL`` / ``_URL`` for local
+vision, ``JARVIS_DEEP_MODEL`` for deep), so an install that sets only those behaves
+exactly as before; when both are set the new name wins and the listing names the
+shadowed one. Explicit OpenRouter and DeepInfra vision roles ignore legacy VLM values.
 
 A provider value is a ProviderProfile id (``agents/core/llm/providers``): an unknown id
 is refused as ``role_provider_unknown`` and a real id the role's code path cannot speak
@@ -128,11 +129,11 @@ ROLES: Mapping[str, RoleSpec] = MappingProxyType({
         "vision", "reads screenshots, documents and images", "JARVIS_ROLE_VISION",
         MappingProxyType({"provider": "JARVIS_VLM_BACKEND", "model": "JARVIS_VLM_MODEL",
                           "base_url": "JARVIS_VLM_URL"}),
-        frozenset({"lm-studio", "openai-compatible"}),
+        frozenset({"lm-studio", "openai-compatible", "openrouter", "deepinfra", "nous"}),
         ("agents/core/llm/vlm.py resolve_vlm_config",)),
     "video": RoleSpec(
         "video", "reads approved video sources through video_analyze", "JARVIS_ROLE_VIDEO", MappingProxyType({}),
-        frozenset({"lm-studio", "openai-compatible", "gemini"}),
+        frozenset({"lm-studio", "openai-compatible", "gemini", "openrouter"}),
         ("agents/core/video_analysis.py video_analyze ToolRPC",)),
     "approval_judge": RoleSpec(
         "approval_judge", "scores a queued tool-call approval (advisory only)",
@@ -142,7 +143,8 @@ ROLES: Mapping[str, RoleSpec] = MappingProxyType({
 })
 
 # The VLM adapter's backend selector <-> the provider profile id it speaks to.
-_VISION_BACKEND_OF = MappingProxyType({"lm-studio": "lmstudio", "openai-compatible": "custom"})
+_VISION_BACKEND_OF = MappingProxyType({"lm-studio": "lmstudio", "openai-compatible": "custom",
+                                       "openrouter": "openrouter", "deepinfra": "deepinfra", "nous": "nous"})
 _VISION_PROVIDER_OF = MappingProxyType({v: k for k, v in _VISION_BACKEND_OF.items()})
 
 
@@ -236,13 +238,34 @@ def vision_env_view(env: Mapping[str, str] | None = None) -> tuple[str, str, str
     """``(backend, url, model, api_key, preset)`` for ``resolve_vlm_config``.
 
     ``JARVIS_ROLE_VISION_PROVIDER`` maps ``lm-studio`` → ``lmstudio`` and
-    ``openai-compatible`` → ``custom``; unset, ``JARVIS_VLM_BACKEND`` is returned raw and
-    unchanged, so ``off``, empty, URL-only and unknown-selector behaviour stay identical.
+    ``openai-compatible`` → ``custom``; DeepInfra and OpenRouter use their own pure
+    resolvers. Unset, ``JARVIS_VLM_BACKEND`` is returned raw and unchanged, so
+    ``off``, empty, URL-only and unknown-selector behaviour stay identical.
     Raises :class:`RoleConfigError` for an unknown or unsupported role provider.
     """
     read = _reader(env)
     spec = ROLES["vision"]
     role_provider = read(spec.env_name("provider")).strip()
+    if role_provider.lower() == "openrouter":
+        from .vision_openrouter import resolve_config
+
+        config = resolve_config(env)
+        return config.backend, config.base_url, config.model, config.api_key, ""
+    if role_provider.lower() == "deepinfra":
+        from .vision_deepinfra import resolve_config
+
+        config = resolve_config(env)
+        return config.backend, config.base_url, config.model, config.api_key, ""
+    if role_provider.lower() == "nous":
+        from .vision_nous import resolve_config
+
+        config = resolve_config(env)
+        return config.backend, config.base_url, config.model, config.api_key, ""
+    if role_provider.lower() == "auto":
+        from .vision_auto import resolve_config
+
+        config = resolve_config(env)
+        return config.backend, config.base_url, config.model, config.api_key, ""
     backend = (_VISION_BACKEND_OF[_validate(spec, role_provider)] if role_provider
                else read("JARVIS_VLM_BACKEND"))
     role_url = read(spec.env_name("base_url")).strip()
@@ -291,6 +314,95 @@ def _resolve_vision(read, spec: RoleSpec, env: Mapping[str, str] | None) -> Reso
     source: dict[str, str] = {}
     ignored: list[str] = []
     role_provider = read(spec.env_name("provider")).strip()
+    if role_provider.lower() == "openrouter":
+        from .vision_openrouter import current_provider_block, policy_for
+        from .vision_openrouter import resolve_config as resolve_openrouter
+
+        source = {"provider": spec.env_name("provider"),
+                  "model": spec.env_name("model") if read(spec.env_name("model")).strip() else "default",
+                  "base_url": (spec.env_name("base_url") if read(spec.env_name("base_url")) else "default")}
+        ignored = [name for name in ("JARVIS_VLM_BACKEND", "JARVIS_VLM_URL",
+                                    "JARVIS_VLM_MODEL", "JARVIS_VLM_KEY", "JARVIS_VLM_PRESET",
+                                    "OPENROUTER_BASE_URL") if read(name).strip()]
+        try:
+            config = resolve_openrouter(env)
+        except VLMNotConfigured as exc:
+            return ResolvedRole("vision", False, "", "", "", MappingProxyType(source),
+                                None, "", exc.reason, tuple(ignored))
+        try:
+            policy = policy_for(config.model, current_provider_block())[0]
+        except ValueError as exc:
+            return ResolvedRole("vision", False, "", "", "", MappingProxyType(source),
+                                None, "", str(exc), tuple(ignored))
+        return ResolvedRole("vision", True, "openrouter", config.model, config.base_url,
+                            MappingProxyType(source), bool(config.is_local), policy,
+                            "", tuple(ignored))
+    if role_provider.lower() == "deepinfra":
+        from .vision_deepinfra import model_source
+        from .vision_deepinfra import resolve_config as resolve_deepinfra
+
+        role_base = read(spec.env_name("base_url"))
+        provider_base = read("DEEPINFRA_BASE_URL")
+        source = {"provider": spec.env_name("provider"),
+                  "model": model_source(env),
+                  "base_url": (spec.env_name("base_url") if role_base else
+                               "DEEPINFRA_BASE_URL" if provider_base else "default")}
+        ignored = [name for name in ("JARVIS_VLM_BACKEND", "JARVIS_VLM_URL",
+                                    "JARVIS_VLM_MODEL", "JARVIS_VLM_KEY", "JARVIS_VLM_PRESET")
+                   if read(name).strip()]
+        if role_base and provider_base:
+            ignored.append("DEEPINFRA_BASE_URL")
+        try:
+            config = resolve_deepinfra(env)
+        except VLMNotConfigured as exc:
+            return ResolvedRole("vision", False, "", "", "", MappingProxyType(source),
+                                None, "", exc.reason, tuple(ignored))
+        policy = get_profile("deepinfra").data_policy_for(config.model)[0]
+        return ResolvedRole("vision", True, "deepinfra", config.model, config.base_url,
+                            MappingProxyType(source), bool(config.is_local), policy,
+                            "", tuple(ignored))
+    if role_provider.lower() == "nous":
+        from .vision_nous import model_source
+        from .vision_nous import resolve_config as resolve_nous
+
+        source = {"provider": spec.env_name("provider"), "model": "nous_recommendation",
+                  "base_url": "JARVIS_NOUS_INFERENCE_BASE_URL" if read("JARVIS_NOUS_INFERENCE_BASE_URL") else "nous_account",
+                  "profile": "JARVIS_ROLE_VISION_PROFILE" if read("JARVIS_ROLE_VISION_PROFILE") else "default",
+                  "wire_mode": "JARVIS_NOUS_ANTHROPIC_WIRE" if read("JARVIS_NOUS_ANTHROPIC_WIRE") else "default"}
+        ignored = [name for name in ("JARVIS_VLM_BACKEND", "JARVIS_VLM_URL", "JARVIS_VLM_MODEL",
+                                    "JARVIS_VLM_KEY", "JARVIS_VLM_PRESET") if read(name).strip()]
+        try:
+            source["model"] = model_source(env)
+            config = resolve_nous(env)
+        except VLMNotConfigured as exc:
+            return ResolvedRole("vision", False, "", "", "", MappingProxyType(source),
+                                None, "", exc.reason, tuple(ignored))
+        return ResolvedRole("vision", True, "nous", config.model, config.base_url,
+                            MappingProxyType(source), bool(config.is_local),
+                            get_profile("nous").data_policy_for(config.model)[0], "", tuple(ignored))
+    if role_provider.lower() == "auto":
+        from .vision_auto import resolve_config as resolve_auto
+        from .vision_openrouter import current_provider_block, policy_for
+
+        source = {"provider": spec.env_name("provider"), "model": "auto",
+                  "base_url": spec.env_name("base_url") if read(spec.env_name("base_url")) else "auto"}
+        ignored = [name for name in ("JARVIS_VLM_BACKEND", "JARVIS_VLM_URL",
+                                    "JARVIS_VLM_MODEL", "JARVIS_VLM_KEY", "JARVIS_VLM_PRESET")
+                   if read(name).strip()]
+        try:
+            config = resolve_auto(env)
+            source["model"] = config.route_source
+            provider = _VISION_PROVIDER_OF[config.backend]
+            policy = (policy_for(config.model, current_provider_block())[0]
+                      if provider == "openrouter" else
+                      "unknown" if provider == "openai-compatible" else
+                      get_profile(provider).data_policy_for(config.model)[0])
+        except (VLMNotConfigured, ValueError) as exc:
+            return ResolvedRole("vision", False, "", "", "", MappingProxyType(source),
+                                None, "", getattr(exc, "reason", str(exc)), tuple(ignored))
+        return ResolvedRole("vision", True, provider, config.model, config.base_url,
+                            MappingProxyType(source), bool(config.is_local), policy,
+                            "", tuple(ignored))
     legacy_backend = read("JARVIS_VLM_BACKEND").strip().lower()
     _url, source["base_url"], shadow = _pick(read, spec, "base_url")
     ignored += shadow
@@ -375,6 +487,11 @@ def resolve_video_route(env: Mapping[str, str] | None = None) -> ResolvedVideoRo
     vision_selected = any(read(name).strip() for name in (
         "JARVIS_ROLE_VISION_PROVIDER", "JARVIS_ROLE_VISION_MODEL", "JARVIS_ROLE_VISION_BASE_URL",
         "JARVIS_VLM_BACKEND", "JARVIS_VLM_URL", "JARVIS_VLM_MODEL", "JARVIS_VLM_PRESET"))
+    if read("JARVIS_ROLE_VISION_PROVIDER").strip().lower() == "auto":
+        return ResolvedVideoRoute(ResolvedRole("video", False, "", "", "",
+                                  MappingProxyType({"provider": "JARVIS_ROLE_VISION_PROVIDER",
+                                                    "model": "auto", "base_url": "auto"}),
+                                  None, "", "video_vision_provider_unsupported"))
     try:
         vision = _resolve_vision(read, ROLES["vision"], env)
     except RoleConfigError as exc:
@@ -383,6 +500,12 @@ def resolve_video_route(env: Mapping[str, str] | None = None) -> ResolvedVideoRo
                                                     "model": "default", "base_url": "default"}),
                                   None, "", exc.reason))
     if vision.configured:
+        if vision.provider_id in {"deepinfra", "nous"}:
+            source = dict(vision.source)
+            source["model"] = spec.env_name("model") if model else vision.source["model"]
+            return ResolvedVideoRoute(ResolvedRole("video", False, "", "", "",
+                                      MappingProxyType(source), None, "",
+                                      "video_vision_provider_unsupported"))
         from .vision_policy import VisionPolicyUnavailable
         from .vision_policy import describe as describe_vision
         from .vlm import VLMNotConfigured, resolve_vlm_config
@@ -411,8 +534,13 @@ def resolve_video_route(env: Mapping[str, str] | None = None) -> ResolvedVideoRo
         source["model"] = spec.env_name("model") if model else vision.source["model"]
         chosen_model = model or vision.model
         local = bool(config.is_local)
-        policy = ("unknown" if vision.provider_id == "openai-compatible" or not local
-                  else get_profile(vision.provider_id).data_policy_for(chosen_model)[0])
+        if vision.provider_id == "openrouter":
+            from .vision_openrouter import current_provider_block, policy_for
+
+            policy = policy_for(chosen_model, current_provider_block())[0]
+        else:
+            policy = ("unknown" if vision.provider_id == "openai-compatible" or not local
+                      else get_profile(vision.provider_id).data_policy_for(chosen_model)[0])
         return ResolvedVideoRoute(ResolvedRole("video", True, vision.provider_id, chosen_model,
                                   vision.base_url, MappingProxyType(source), local, policy),
                                   native.request_url, True)

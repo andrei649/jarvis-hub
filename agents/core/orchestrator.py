@@ -11,7 +11,6 @@ import inspect
 import logging
 import math
 import importlib
-import os
 import re
 import time
 import uuid
@@ -49,7 +48,7 @@ from .action_origin import (
 from .turn_approvals import bind_turn_approvals, reset_turn_approvals
 from .turn_outcome import measure_turn_latency
 from . import llm_control  # CLN-2: NL LLM-control detection + execution
-from .commands import Principal, build_default_registry
+from .commands import ADMIN, CommandOutcome, Principal, build_default_registry, checkpoint_command_name
 from .llm_control import detect_llm_control  # re-exported: NL LLM-control detection (CLN-2)
 
 from . import cognition_trace  # CLN-2: builds + persists the per-turn cognition trace
@@ -80,7 +79,7 @@ from .security.audit import AuditLogger
 from .security.recall_taint import mark_turn_recall_tainted
 from .security.taint import is_untrusted_source
 from .security.types import RedactionMode, SecurityEvent, SecurityEventType
-from .env_config import env_flag, truthy
+from .env_config import env_flag, env_str, truthy
 from .log import log_error
 from .errors import (
     E_LLM_BACKEND_MISSING, E_LLM_TIMEOUT,
@@ -401,8 +400,14 @@ async def _begin_project_context(orch) -> None:
     except AttributeError:
         session = "default"
     workdir = getter("llm.project_dir", "") if callable(getter) and on else ""   # H218
+    from .kanban.workspace_context import current_workspace
+
+    workspace = current_workspace()
+    scope = workspace.file_scope() if workspace is not None else None
+    if workspace is not None:
+        workdir = str(workspace.cwd)
     state = await asyncio.to_thread(project_context.build_turn, session, setting=lambda _k, _d: on,
-                                    workdir=workdir)
+                                    scope=scope, workdir=workdir)
     project_context.set_turn(state)
     if state is not None and state.block:
         from .security.recall_taint import mark_turn_recall_tainted
@@ -519,11 +524,16 @@ class Orchestrator:
     _delivery_router = DeliveryRouter()
 
     def __init__(self, config: JarvisConfig):
+        from .settings_db import ensure_initialized
+
+        # Every hub entry point shares this constructor. Validate persisted
+        # policy before constructing routers, services or provider clients.
+        ensure_initialized()
         self.config = config
         self.agents: dict[str, Agent] = {}
         self.router = IntentRouter(config)
-        gemini_key = os.environ.get("GEMINI_API_KEY", "")
-        anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        gemini_key = env_str("GEMINI_API_KEY")
+        anthropic_key = env_str("ANTHROPIC_API_KEY")
         self.llm_router = HybridRouter(gemini_api_key=gemini_key, anthropic_api_key=anthropic_key)
         # The auth-profile pool does not exist until HybridRouter.detect().  In
         # particular, GEMINI_API_KEYS-only deployments have no single boot key.
@@ -584,7 +594,9 @@ class Orchestrator:
             from .security.secret_broker import SecretBroker
             try:
                 from .secrets import SecretStore
-                return SecretBroker(SecretStore())
+                from .security.secret_sources import ExternalSecretSources
+                store = SecretStore()
+                return SecretBroker(store, sources=ExternalSecretSources(store))
             except Exception:
                 return SecretBroker()   # in-memory fallback
 
@@ -742,6 +754,7 @@ class Orchestrator:
         self._runtime_settings: dict = {}
         self._channel_sessions: dict[str, str] = {}
         self._channel_lifecycle = None
+        self._pending_inputs = None
         self._turn_leases: dict[str, asyncio.Lock] = {}
         self._turn_lease_max_wait: float = _TURN_LEASE_MAX_WAIT_SECONDS
         self.commands = build_default_registry()
@@ -753,6 +766,8 @@ class Orchestrator:
             make_task_mediation_anchor,
             resolve_task_mediation_mode,
         )
+        from .autonomy.consent_head_store import make_consent_head_anchor
+        from .autonomy.terminal_consent_categories import terminal_consent_catalog
 
         _task_mediation_signer = DetachedHMACSigner(
             getattr(getattr(self, "intent_log", None), "sign_detached", None)
@@ -768,6 +783,8 @@ class Orchestrator:
             mediation_head_anchor=make_task_mediation_anchor(),
             mediation_scope="*",
             mediation_policy_revision="nerva.action.v1",
+            consent_categories=terminal_consent_catalog(),
+            consent_head_anchor=make_consent_head_anchor(),
         )
         self.autonomy_prefs = PreferenceStore()
         # Mission Workspaces (0.32): persistent long-horizon workspaces — goal,
@@ -1381,10 +1398,26 @@ class Orchestrator:
                     scan_output=flat.get("security.scan_output"),
                 )
         except Exception as e:
+            # A failed initial policy read must never turn inline defaults into
+            # authority, even when the storage layer raised a raw I/O error.
+            if not self._runtime_settings:
+                raise
             log_error(logger, E_INTERNAL_UNEXPECTED, component="settings_db", detail=str(e))
 
     def get_setting(self, key: str, default=None):
         return self._runtime_settings.get(key, default)
+
+    def _telegram_owner_settings(self) -> dict:
+        """Read one persisted authority snapshot; never retain revoked cached owners."""
+        try:
+            from .settings_db import read_telegram_owner_binding
+
+            # This authority snapshot never waits behind a settings writer.
+            return read_telegram_owner_binding()
+        except Exception:
+            logger.warning("Telegram owner settings unavailable; authority refused", exc_info=True)
+            # Invalid explicit IDs also refuse private fallback under an env destination.
+            return {"autonomy.owner_chat_id": "", "autonomy.owner_user_ids": {}}
 
     async def _settings_watcher_loop(self):
         while True:
@@ -1427,8 +1460,10 @@ class Orchestrator:
         self.channel_manager.register(channel)
 
     async def start_channels(self):
-        lifecycle = self.__dict__.get("_channel_lifecycle")
-        if lifecycle is not None and lifecycle.closed:
+        self._pending_inputs_stopped = False
+        prior_lifecycle = self.__dict__.get("_channel_lifecycle")
+        if prior_lifecycle is not None and prior_lifecycle.closed:
+            # Reopen the persisted route index; retain transcript/session IDs.
             self._channel_lifecycle = None
         await self.channel_manager.start_all()
         self.heartbeat_scheduler.start(self)
@@ -1478,11 +1513,15 @@ class Orchestrator:
             setattr(self, name, None)
 
     async def stop_channels(self):
+        self._pending_inputs_stopped = True
+        self.heartbeat_scheduler.stop()
+        pending = self.__dict__.get("_pending_inputs")
+        if pending is not None:
+            pending.close()
         lifecycle = self.__dict__.get("_channel_lifecycle")
         if lifecycle is not None:
             await lifecycle.close()
         await self.channel_manager.stop_all()
-        self.heartbeat_scheduler.stop()
         # Every long-lived loop started in start_channels(). The autonomy worker and
         # the learning loop were previously never cancelled at all — they kept
         # ticking after shutdown, against a hub that had closed its backends. The
@@ -1519,6 +1558,9 @@ class Orchestrator:
         logger.info("Channels stopped")
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
+        from contextlib import ExitStack
+
+        pending_scope = ExitStack()
         action_origin = kwargs.pop("origin", origin_for_channel(channel))
         kwargs.pop("_inbound_meta", None)
         inbox_message_id = kwargs.pop("_inbox_message_id", "")
@@ -1556,6 +1598,29 @@ class Orchestrator:
             chat_type=chat_type,
         )
         try:
+            pending = self._pending_input_service()
+            if pending is not None and not observe_only:
+                pending_scope.enter_context(pending.bind(
+                    source, {**kwargs, "_inbox_message_id": inbox_message_id}))
+                intercepted = (pending.intercept(source, text)
+                               if kwargs.get("pending_input_eligible", True) is True else None)
+                if intercepted is not None:
+                    if intercepted:
+                        if channel in {"slack", "discord", "ntfy"}:
+                            self._queue_workspace_reply(channel, inbox_message_id, intercepted)
+                        else:
+                            await self.channel_manager.send(channel, intercepted, **kwargs)
+                    return intercepted
+                command_reply = await pending.command(source, text, kwargs)
+                if command_reply is not None:
+                    if channel in {"slack", "discord"}:
+                        self._queue_workspace_reply(channel, inbox_message_id, command_reply)
+                    else:
+                        delivery = {key: kwargs[key] for key in ("chat_id", "message_thread_id")
+                                    if key in kwargs}
+                        await self.channel_manager.send(channel, command_reply, **delivery,
+                                                        voice=False, plain=True)
+                    return command_reply
             # H3.3: cross-channel context is opt-in. When enabled, every channel
             # shares self.session_id (web<->telegram continuity). When off (default),
             # any channel turn that carries a real identity (a thread, a sender or a
@@ -1567,6 +1632,10 @@ class Orchestrator:
             # written in place as it is produced. The draft exists only when the router
             # would deliver to this source at all, and it sends nothing until the first
             # token, so a silent turn leaves no placeholder behind.
+            cross_channel = self.get_setting("memory.cross_channel_sessions", False)
+            from . import code_interruptions
+            if not observe_only and code_interruptions.is_admitted_channel(channel):
+                self._interrupt_for_channel_source(source, cross_channel=cross_channel)
             draft = None if observe_only else self._begin_channel_draft(channel, source, kwargs)
             from .channels.session_lifecycle import UNAVAILABLE, lifecycle
             from .channels.session_reset import SessionResetError
@@ -1601,14 +1670,156 @@ class Orchestrator:
             # ChannelManager.send's contract gate (_SUPPORTED_SEND_CHANNELS).
             decision = self._delivery_router.resolve(source, text=response or "")
             if decision.send and decision.target:
-                if channel in {"slack", "discord"}:
+                if channel in {"slack", "discord", "ntfy"}:
                     self._queue_workspace_reply(channel, inbox_message_id, response)
                 else:
                     await self.channel_manager.send(decision.target.channel, response, **kwargs)
             return response
         finally:
+            pending_scope.close()
             reset_turn_principal(principal_token)
             reset_action_origin(origin_token)
+
+    def interrupt_channel_message(self, *, channel: str, sender: str,
+                                  chat_id=None, message_thread_id=None) -> bool:
+        """Trusted adapter hook, before its chat lane occupies the turn queue."""
+        thread_id = str(chat_id) if chat_id is not None else None
+        if channel == "telegram" and message_thread_id:
+            thread_id = f"{thread_id}:topic:{message_thread_id}"
+        source = SessionSource(channel=channel, sender=sender, thread_id=thread_id)
+        return self._interrupt_for_channel_source(
+            source, cross_channel=self.get_setting("memory.cross_channel_sessions", False))
+
+    def _interrupt_for_channel_source(self, source: SessionSource, *, cross_channel: bool) -> bool:
+        from . import code_interruptions
+        from .channels.session import build_session_key
+
+        base = (self._session_id_default if cross_channel
+                or not (source.thread_id or source.sender or source.client_id)
+                else build_session_key(source))
+        selected = self.__dict__.get("_channel_sessions", {}).get(base)
+        if selected is None and base == self._session_id_default:
+            selected = base
+        return code_interruptions.interrupt(str(selected or ""))
+
+    async def channel_pending_handler(self, text: str, channel: str = "telegram", **kwargs) -> bool:
+        """Pending-only ingress; never enter a conversation lease or model turn."""
+        pending = self.__dict__.get("_pending_inputs")
+        if (channel not in {"telegram", "slack", "discord", "ntfy"} or kwargs.get("observe_only") or pending is None
+                or kwargs.get("pending_input_eligible", True) is not True):
+            return False
+        thread_id = kwargs.get("chat_id")
+        chat_type = kwargs.get("chat_type")
+        if channel == "telegram" and kwargs.get("message_thread_id"):
+            thread_id = f"{thread_id}:topic:{kwargs['message_thread_id']}"
+            chat_type = "thread"
+        elif channel == "slack":
+            thread_id = kwargs.get("slack_channel")
+            if thread_id and kwargs.get("thread_ts"):
+                thread_id = f"{thread_id}:{kwargs['thread_ts']}"
+                chat_type = "thread"
+            elif not chat_type:
+                chat_type = "private" if str(thread_id or "").startswith("D") else "group"
+        elif channel == "discord":
+            thread_id = kwargs.get("channel_id")
+        source = SessionSource(channel=channel, sender=kwargs.get("sender"),
+                               thread_id=thread_id, chat_type=chat_type,
+                               client_id=kwargs.get("client_id"))
+        origin_token = bind_action_origin(origin_for_channel(channel))
+        principal_token = bind_turn_principal(
+            self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"))
+        )
+        try:
+            from .channels.pending_input_runtime import pending_key
+
+            key = pending_key(source)
+            prompt = pending.inputs.pending(key) if key is not None else None
+            binding = pending._delivered.get(prompt.id) if prompt is not None else None
+            intercepted = pending.intercept(source, text, pending_only=True)
+            if intercepted is None:
+                return False
+            if intercepted:
+                if channel in {"slack", "discord", "ntfy"}:
+                    if binding is not None:
+                        self._queue_workspace_reply(
+                            channel, binding.delivery.get("_inbox_message_id", ""), intercepted)
+                    return True
+                delivery = {key: kwargs[key] for key in ("chat_id", "message_thread_id")
+                            if key in kwargs}
+                try:
+                    await self.channel_manager.send(channel, intercepted, **delivery,
+                                                    voice=False, plain=True)
+                except Exception:
+                    logger.warning("Pending reply consumed; retry notice delivery failed")
+            return True
+        finally:
+            reset_turn_principal(principal_token)
+            reset_action_origin(origin_token)
+
+    async def channel_pending_callback(self, callback: dict, channel: str = "telegram"):
+        """Button resolution under the verified inbound principal and origin."""
+        from .channels.ephemeral import EphemeralReply
+
+        pending = self.__dict__.get("_pending_inputs")
+        if pending is None or not isinstance(callback, dict):
+            return None
+        if channel in {"slack", "discord"}:
+            from .channels.pending_input_workspace import valid_callback
+
+            if not valid_callback(callback, channel):
+                return None
+            origin_token = bind_action_origin(origin_for_channel(channel))
+            principal_token = bind_turn_principal(
+                self._channel_principal(channel, callback["sender"], None))
+            try:
+                result = pending.cards.handle_workspace(callback)
+                if result.applied and result.status == "awaiting_text":
+                    binding = pending._delivered.get(result.prompt_id)
+                    if binding is not None:
+                        self._queue_workspace_reply(
+                            channel, binding.delivery.get("_inbox_message_id", ""),
+                            EphemeralReply("Type your answer."))
+                return result
+            finally:
+                reset_turn_principal(principal_token)
+                reset_action_origin(origin_token)
+        if channel != "telegram":
+            return None
+        sender, message = callback.get("from"), callback.get("message")
+        if not isinstance(sender, dict) or not isinstance(message, dict):
+            return None
+        chat = message.get("chat")
+        if (not isinstance(chat, dict) or type(sender.get("id")) is not int
+                or sender["id"] <= 0 or type(chat.get("id")) is not int or chat["id"] == 0):
+            return None
+        origin_token = bind_action_origin(origin_for_channel("telegram"))
+        principal_token = bind_turn_principal(
+            self._channel_principal("telegram", str(sender["id"]), chat["id"]))
+        try:
+            result = pending.cards.handle(callback)
+            if result.applied and result.status == "awaiting_text":
+                binding = pending._delivered.get(result.prompt_id)
+                if binding is not None:
+                    try:
+                        await self.channel_manager.send("telegram", EphemeralReply("Type your answer."),
+                                                       **binding.delivery, voice=False, plain=True)
+                    except Exception:
+                        logger.warning("Other choice applied; text instruction could not be sent")
+            return result
+        finally:
+            reset_turn_principal(principal_token)
+            reset_action_origin(origin_token)
+
+    def _pending_input_service(self):
+        if (self.__dict__.get("_pending_inputs_stopped", False)
+                or self.get_setting("channels.pending_inputs_enabled", False) is not True):
+            return None
+        service = self.__dict__.get("_pending_inputs")
+        if service is None or service.closed:
+            from .channels.pending_input_runtime import ChannelPendingRuntime
+
+            service = self._pending_inputs = ChannelPendingRuntime(self)
+        return service
 
     def _queue_workspace_reply(self, channel: str, message_id: str, response: str) -> None:
         """Workspace replies share the inbox's Action Kernel/approval boundary."""
@@ -1626,17 +1837,40 @@ class Orchestrator:
             logger.warning("Workspace reply request failed closed", exc_info=True)
 
     def _channel_principal(self, channel: str, sender, chat_id) -> Principal:
-        """The owner test for a channel turn: Telegram's owner allowlist or owner chat; else nobody."""
+        """Bind admin authority to an explicit current owner identity."""
         sender_text = None if sender is None else str(sender)
         admin = False
         if channel == "telegram":
+            from .telegram_owner import is_telegram_owner_sender, telegram_owner_user_ids
+            from .channels.outbound import _owner_chat_id
+
             adapter = (getattr(self, "channels", None) or {}).get("telegram")
-            allowed = {str(uid) for uid in (getattr(adapter, "allowed_users", None) or [])}
-            owner_chat = str(self.get_setting("autonomy.owner_chat_id", "") or "").strip()
-            admin = bool(
-                (sender_text is not None and sender_text in allowed)
-                or (owner_chat and chat_id is not None and str(chat_id) == owner_chat)
+            owner_settings = self._telegram_owner_settings()
+            owner_chat = _owner_chat_id(self, configured_owner=owner_settings.get("autonomy.owner_chat_id"))
+            admin = is_telegram_owner_sender(
+                sender, chat_id=chat_id, owner_chat_id=owner_chat,
+                allowed_user_ids=telegram_owner_user_ids(
+                    owner_settings.get("autonomy.owner_user_ids"),
+                    allowed_user_ids=getattr(adapter, "allowed_users", None),
+                ),
             )
+        elif channel in {"slack", "discord", "ntfy"}:
+            configured = self.get_setting("channels.owner_senders", {})
+            owners = configured.get(channel) if type(configured) is dict else None
+            pattern = (r"T[A-Z0-9]{1,63}:[UW][A-Z0-9]{1,63}" if channel == "slack"
+                       else r"[A-Za-z0-9_-]{1,64}" if channel == "ntfy" else r"[1-9][0-9]{0,19}")
+            adapter = (getattr(self, "channels", None) or {}).get(channel)
+            pairing = getattr(adapter, "pairing", None) or getattr(adapter, "_pairing", None)
+            if (type(owners) is list and len(owners) <= 64
+                    and all(type(owner) is str and re.fullmatch(pattern, owner) for owner in owners)
+                    and sender_text in owners and getattr(adapter, "_running", False)
+                    and pairing is not None
+                    and (channel != "ntfy" or (getattr(adapter, "inbound", False)
+                                                and sender_text == getattr(adapter, "topic", None)))):
+                try:
+                    admin = pairing.is_allowed(channel, sender_text) is True
+                except Exception:
+                    admin = False
         return Principal(
             channel=channel, sender=sender_text, admin=admin,
             chat=None if chat_id is None else str(chat_id),
@@ -1652,6 +1886,36 @@ class Orchestrator:
         except Exception:
             logger.warning("slash command dispatch failed closed", exc_info=True)
             return None
+
+    async def _dispatch_preappend_checkpoint_command(self, text: str):
+        """Keep owner checkpoint operations outside the exchange they address."""
+        name = checkpoint_command_name(text)
+        if name is None:
+            return None
+        from .turn_notices import record_turn_notice
+
+        if not current_principal().admin:
+            outcome = CommandOutcome(name, "refused", f"/{name} is an owner command — "
+                                     "send it from the owner's channel or with an admin token.")
+            record_turn_notice("checkpoint.refused", outcome.reply)
+            return outcome
+        if len(text.strip()) > 2_000:
+            outcome = CommandOutcome(name, "refused", "Checkpoint command is too long; nothing changed.")
+            record_turn_notice("checkpoint.refused", outcome.reply)
+            return outcome
+        registry = getattr(self, "commands", None)
+        get = getattr(registry, "get", None)
+        command = get(name) if callable(get) else None
+        if command is None or command.tier != ADMIN:
+            outcome = CommandOutcome(name, "failed", "Checkpoint commands are unavailable; nothing changed.")
+        else:
+            outcome = await self._dispatch_command(text)
+            if outcome is None:
+                outcome = CommandOutcome(name, "failed", "Checkpoint command failed; check the hub log.")
+        if outcome.status != "answered":
+            record_turn_notice("checkpoint.refused" if outcome.status == "refused"
+                               else "checkpoint.unavailable", outcome.reply)
+        return outcome
 
     async def _direct_session_command(self, text: str, channel: str, session_id: str | None):
         """Switch web/CLI to a concrete new ID before appending a command turn."""
@@ -1707,16 +1971,57 @@ class Orchestrator:
 
             if WARMUP.warming:   # H677: named, so a slow first reply is not a mystery
                 logger.info("%s turn served while the local model is still warming up", channel)
-            if draft is not None:
-                from .channels.session_lifecycle import note_session_activity
-                note_session_activity()
-                async def push(token):
-                    note_session_activity()
-                    await draft.push(token)
-                return await self.handle_input_stream(text, channel, on_token=push)
             from .channels.session_lifecycle import note_session_activity
+            from . import code_interruptions
             note_session_activity()
-            return await self.handle_input(text, channel)
+            conversation_token = code_interruptions.bind_conversation(str(self.session_id or ""))
+            try:
+                if draft is not None:
+                    async def push(token):
+                        note_session_activity()
+                        await draft.push(token)
+                    return await self.handle_input_stream(text, channel, on_token=push)
+                return await self.handle_input(text, channel)
+            finally:
+                code_interruptions.reset_conversation(conversation_token)
+
+    async def _run_channel_session_turn(self, session_id, text, channel, *, observe_only, draft):
+        # BUG-5: request-local binding never mutates the owner's default session.
+        token = _active_session.set(session_id)
+        shared_token = _session_is_shared.set(session_id == self._session_id_default)
+        try:
+            return await self._channel_turn(text, channel, observe_only=observe_only, draft=draft)
+        finally:
+            _session_is_shared.reset(shared_token)
+            _active_session.reset(token)
+
+    async def _session_channel_input(self, source, text, *, cross_channel, observe_only, draft):
+        from .channels.session import session_type
+        from .channels.session_lifecycle import UNAVAILABLE, lifecycle
+        from .channels.session_reset import SessionResetError, resolve_policy
+
+        try:
+            service = lifecycle(self)
+            if service.closed:
+                raise SessionResetError("Session lifecycle is closed")
+            if not cross_channel and (source.thread_id or source.sender or source.client_id):
+                return await service.run(source, text, observe_only=observe_only, draft=draft)
+            policy = resolve_policy(self.get_setting, source.channel, session_type(source))
+            if ((not observe_only and service.reset_requested(text)) or policy.mode != "none"
+                    or self._session_id_default in self._channel_sessions
+                    or service.store.state(self._session_id_default).active
+                    or service.store.state(self._session_id_default).generation > 0):
+                return await service.run(source, text, observe_only=observe_only, draft=draft, shared=True)
+            if observe_only:
+                return await self._channel_turn(text, source.channel, observe_only=True, draft=draft)
+            async with self.turn_lease() as acquired:
+                if not acquired:
+                    return TURN_BUSY_REPLY
+                with service.track(self._session_id_default):
+                    return await self._channel_turn(text, source.channel, observe_only=False, draft=draft)
+        except (SessionResetError, OverflowError, OSError):
+            logger.warning("channel session lifecycle unavailable")
+            return UNAVAILABLE
 
     async def _run_channel_session_turn(self, session_id, text, channel, *, observe_only, draft):
         token = _active_session.set(session_id)
@@ -1732,7 +2037,7 @@ class Orchestrator:
         owner turned streaming off, or the router would not deliver to this source."""
         # Full workspace replies are approved through channel.reply. An editable
         # transport alone is not authority to publish tokens before that decision.
-        if channel in {"slack", "discord"}:
+        if channel in {"slack", "discord", "ntfy"}:
             return None
         try:
             if self.get_setting("channels.streaming_replies", True) is not True:
@@ -2079,6 +2384,11 @@ class Orchestrator:
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
             return session_reply
+
+        outcome = await self._dispatch_preappend_checkpoint_command(text)
+        if outcome is not None:
+            self.last_cognition = self._command_cognition(outcome)
+            return outcome.reply
         from .session_continuation import prepare_continuation_turn
 
         await prepare_continuation_turn(self, self.session_id)
@@ -2289,6 +2599,15 @@ class Orchestrator:
                 if inspect.isawaitable(emitted):
                     await emitted
             return session_reply
+
+        outcome = await self._dispatch_preappend_checkpoint_command(text)
+        if outcome is not None:
+            if on_token:
+                emitted = on_token(outcome.reply)
+                if inspect.isawaitable(emitted):
+                    await emitted
+            self.last_cognition = self._command_cognition(outcome)
+            return outcome.reply
         from .session_continuation import prepare_continuation_turn
 
         await prepare_continuation_turn(self, self.session_id)
@@ -2453,10 +2772,13 @@ class Orchestrator:
                         backend, router_model, route_name = self.llm_router.select_backend(agent_id, prompt)
                     if router_model:
                         model = router_model
+                    prepare_system = getattr(agent, "model_system_prompt", None)
+                    if callable(prepare_system):
+                        system_prompt = prepare_system(backend, model, system_prompt)
+                    from .operating_prompt import clocked_prompt
+                    system_prompt = clocked_prompt(system_prompt, prompt_clock.get())
                     if prepared is not None:
-                        from .conversation_clock import render_snapshot
-
-                        rendered_system = render_snapshot(system_prompt, prompt_clock.get())
+                        rendered_system = system_prompt
                         agent._check_prepared_budget(prepared, prompt, rendered_system)
                     # Reasoning models on the deep slot need a far larger budget:
                     # 1–2k tokens is consumed by chain-of-thought before any
@@ -3404,14 +3726,18 @@ class Orchestrator:
         return block
 
     def _ack_chat_outcomes(self, reply):
-        from .approval_outcomes import current_approval_turn
+        from .approval_outcomes import current_approval_turn, invocation_outcomes
 
         state = _TURN_CHAT_OUTCOMES.get()
-        if (state is None or not state["persisted"] or not state["included"]
+        if (state is None or not state["persisted"]
                 or current_approval_turn() is not state["context"] or is_failed_turn_reply(None, reply)):
             return
+        current = invocation_outcomes(state['context'])
+        observations = [*current, *state['included']][:8]
+        if not observations:
+            return
         try:
-            state["queue"].ack_chat_outcomes(state["context"], state["included"])
+            state["queue"].ack_chat_outcomes(state["context"], observations)
         except Exception:
             # A persisted answer may safely repeat the observation on a later turn.
             logger.warning("chat approval observation acknowledgment unavailable", exc_info=True)
@@ -3733,9 +4059,10 @@ class Orchestrator:
                                        tools=called or None, media=media)
         elif called:
             await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id,
-                                       tools=called)
+                                       tools=called, **({"media": media} if media is not None else {}))
         else:
-            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id)
+            await self.memory.add_turn(self.session_id, "assistant", synthesized, agent_id=responder_id,
+                                       **({"media": media} if media is not None else {}))
         state = _TURN_CHAT_OUTCOMES.get()
         if state is not None and not is_failed_turn_reply(responder_id, synthesized):
             state["persisted"] = True
@@ -3772,15 +4099,23 @@ class Orchestrator:
 
     async def complete_selected_image_turn(
         self, *, session_id: str, agent_id: str, question: str, answer: str,
-        image_count: int, model: str, route_name: str, latency: float,
+        image_count: int, model: str, backend: str, local: bool,
+        route_name: str, latency: float, reused_image_count: int = 0,
     ) -> None:
-        """Commit only text and provenance after a reviewed Ollama image answer."""
+        """Commit a reviewed image reply through the ordinary conversation seam.
+
+        The caller owns the session lease and physical image guard. Only a text
+        marker and bounded provenance are durable; the image data stay in the
+        request scope and are never passed to memory or embeddings.
+        """
         from .memory.conversation import validated_media
 
         if agent_id not in self.agents or not question.strip() or not answer.strip():
             raise ValueError("invalid selected image turn")
+        if (type(reused_image_count) is not int or not 0 <= reused_image_count <= image_count):
+            raise ValueError("invalid selected image history")
         media = validated_media({"kind": "image", "count": image_count,
-                                 "model": model, "backend": "ollama", "local": True})
+                                 "model": model, "backend": backend, "local": local})
         session_token = _active_session.set(session_id)
         shared_token = _session_is_shared.set(session_id == self._session_id_default)
         meter_token = _TURN_METER_MAPS.set({})
@@ -3796,16 +4131,24 @@ class Orchestrator:
             self._last_cached_tokens = {}
             self._last_prompt_tokens = {}
             self._last_reported_usage = {}
-            marker = "image" if image_count == 1 else "images"
-            await self.memory.add_turn(session_id, "user", f"{question}\n[{image_count} {marker} attached]",
-                                       channel="web", media=media)
+            fresh_count = image_count - reused_image_count
+            markers = []
+            if fresh_count:
+                markers.append(f"[{fresh_count} {'image' if fresh_count == 1 else 'images'} attached]")
+            if reused_image_count:
+                markers.append(f"[{reused_image_count} previous "
+                               f"{'image' if reused_image_count == 1 else 'images'} referenced]")
+            user_text = f"{question}\n" + "\n".join(markers)
+            await self.memory.add_turn(session_id, "user", user_text, channel="web", media=media)
             self._title_session(question, "web")
             await self._complete_llm_turn(
-                text=question, intent=intent, plugin_data={}, responses={agent_id: answer},
-                synthesized=answer, responder_id=agent_id, route_name=route_name,
-                channel="web", action_taken="selected_image_turn via web",
+                text=question, intent=intent, plugin_data={},
+                responses={agent_id: answer}, synthesized=answer,
+                responder_id=agent_id, route_name=route_name, channel="web",
+                action_taken="selected_image_turn via web",
                 t_classify=0, t_route=0, t_plugin=0,
-                t_synthesize=max(0, int(latency * 1000)), media=media,
+                t_synthesize=max(0, int(latency * 1000)),
+                media=media,
             )
         finally:
             reset_action_origin(origin_token)
@@ -4231,6 +4574,9 @@ class Orchestrator:
                 if runtime is not None:
                     # A conservative superset: profile filtering can only remove tools.
                     overhead += estimate_tokens(json.dumps(runtime._server.tools()))
+                    guidance_budget = getattr(runtime, "guidance_budget_tokens", None)
+                    if callable(guidance_budget):
+                        overhead += guidance_budget(aid)
                 prompts[aid] = (prompt, overhead, enriched, runtime is not None)
             return prompts
 

@@ -18,11 +18,13 @@ from __future__ import annotations
 if __name__ != "agents.core.autonomy.worker":
     raise ImportError("AutonomyWorker authority must be imported as agents.core.autonomy.worker")
 
+import asyncio
 import inspect
 import logging
 import threading
 import time
 import uuid
+from collections import Counter
 from contextvars import ContextVar
 from datetime import UTC, date
 from typing import Awaitable, Callable, Optional
@@ -36,6 +38,8 @@ from .mediation import (
     issue_intake_evidence,
     issue_receipt,
 )
+from .owner_once import OwnerOnceClaim, OwnerOnceOffer
+from .owner_once_execution import _worker_scope, owner_once_current
 from .policy import ACT, ASK, NOTIFY, AutonomyPolicy, RiskTier
 from .queue import (
     MAX_ATTEMPTS,
@@ -221,6 +225,10 @@ INTERRUPT_BUDGET_PER_DAY = 4
 _HOUSE_REFUSALS = ("kernel_denied", "execution_in_progress", "task_payload_changed",
                    "unified_action_api_disabled", "action_kernel_disabled")
 _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
+    # Hermes is consumed by its own signed, one-use runtime bridge. The generic
+    # autonomy executor cannot run this kind and therefore has no handler-returned
+    # `failed` reason to classify as an unattempted refusal here.
+    "hermes.runtime": (),
     # node.dispatch — NodeMesh.execute re-authorises at action time: NodeMesh._authorize
     # and security.capability.authorize (``kill-switch engaged for scope '<scope>'``
     # matches by prefix, below). ``capability_broker_unavailable`` is not one: the
@@ -315,6 +323,13 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     "permission.grant": ("kind_mismatch", "human_decision_required", "decision_not_approval",
                          "payload_required", "contract_denied", "never_entry"),
     "terminal.exec": (),
+    # These handlers return an explicit refusal/partial result, never `failed`
+    # with a governance reason. Post-claim partial effects remain failures.
+    # The board handler's preflight refusals use status=refused; execution
+    # failures raise. It never returns a failed/refusal reason to classify here.
+    "kanban.worker": (),
+    "checkpoint.restore": (),
+    "checkpoint.maintenance": (),
     "file.write": (),
     "model.pull": (),
     "report.export": (),
@@ -470,6 +485,7 @@ class _ExecutionPermit:
     def __init__(self, task: Task) -> None:
         self._fingerprint = TaskQueue.execution_fingerprint(task)
         self._active = True
+        self._consumed = False
         self._lock = threading.Lock()
 
     def consume(self, task: Task, *, validate: Callable[[Task, str], bool]) -> bool:
@@ -484,7 +500,16 @@ class _ExecutionPermit:
                 or task.status != TaskStatus.RUNNING.value
             ):
                 return False
-        return validate(task, self._fingerprint)
+        allowed = validate(task, self._fingerprint)
+        if allowed:
+            with self._lock:
+                self._consumed = True
+        return allowed
+
+    @property
+    def consumed(self) -> bool:
+        with self._lock:
+            return self._consumed
 
     def revoke(self) -> None:
         with self._lock:
@@ -595,6 +620,7 @@ class AutonomyWorker:
         if hasattr(self.policy, "outcome_provider"):
             self.policy.outcome_provider = self._capability_outcome_stats
         self.executor = executor
+        self._parallel_tick_lock = asyncio.Lock()
         self.notifier = notifier
         self.budget = budget or InterruptBudget()
         self.delivery_broker = delivery_broker or getattr(self.budget, "delivery_broker", None)
@@ -625,13 +651,17 @@ class AutonomyWorker:
         )
 
     def attach_approval_judge(self, judge, *, loop=None, capacity=None, audit=None) -> None:
-        """Bind an optional advisory adapter, independent of all task authority."""
+        """Bind default advisory review and optional sealed smart terminal decisions."""
         from .task_approval_judge import TaskApprovalJudge
 
-        adapter = TaskApprovalJudge(self.queue)
+        adapter = TaskApprovalJudge(self.queue, worker=self)
         adapter.attach_judge(judge, loop=loop, capacity=capacity)
         adapter.attach_audit(audit)
         self.approval_judge = adapter
+
+    def smart_terminal_approved(self, task_id: int) -> bool:
+        adapter = self.approval_judge
+        return adapter is not None and adapter.verify_smart_approval(task_id)
 
     def _schedule_approval_judge(self, task: Task) -> None:
         adapter = self.approval_judge
@@ -648,7 +678,7 @@ class AutonomyWorker:
         self._mediation_kernel = kernel
         self._mediation_signer = signer or DetachedHMACSigner(None)
 
-    def kernel_gate(self, action, capability=None, budget=None):
+    def kernel_gate(self, action, capability=None, budget=None, *, approval_check=None):
         """Broker-facing kernel hook that preserves the exact decision for enqueue."""
 
         kernel = self._mediation_kernel
@@ -666,7 +696,11 @@ class AutonomyWorker:
             scope=action.scope,
             origin=origin,
         )
-        decision = kernel(finalized_action, capability=capability, budget=budget)
+        if approval_check is None:
+            decision = kernel(finalized_action, capability=capability, budget=budget)
+        else:
+            decision = kernel(finalized_action, capability=capability, budget=budget,
+                              approval_check=approval_check)
         try:
             from ..kernel import Verdict
 
@@ -680,10 +714,68 @@ class AutonomyWorker:
             logger.warning("could not persist kernel refusal evidence", exc_info=True)
         return decision
 
+    def kernel_dispatch_current(self, action, capability=None, *, approval_check=None):
+        """Recheck live kernel floors without consuming the intake decision."""
+        from ..kernel import Decision, Verdict
+
+        kernel = getattr(self._mediation_kernel, "revalidate", None)
+        if not callable(kernel):
+            return Decision(Verdict.DENY, reason="kernel revalidation unavailable")
+        try:
+            if approval_check is None:
+                decision = kernel(action, capability=capability)
+            else:
+                decision = kernel(action, capability=capability,
+                                  approval_check=approval_check)
+            return decision if isinstance(decision, Decision) else Decision(
+                Verdict.DENY, reason="kernel revalidation unavailable")
+        except Exception:
+            return Decision(Verdict.DENY, reason="kernel revalidation unavailable")
+
     def execution_allowed(self, task: Task) -> bool:
         """Guard a TaskExecutor call with the worker's private validated-claim context."""
 
+        try:
+            persisted = self.queue.get(getattr(task, 'id', 0))
+            marker = getattr(self.queue, 'consent_task_marker', None)
+            consent = any(
+                value is not None and (
+                    value.decided_by == 'consent'
+                    or str(value.decision or '').startswith(('consent-', 'auto-consent-'))
+                ) for value in (task, persisted)
+            ) or (callable(marker) and marker(task.id))
+            if consent:
+                from .consent_execution import consent_current
+
+                fingerprint = TaskQueue.execution_fingerprint(task)
+                if (persisted is None or persisted.status != TaskStatus.RUNNING.value
+                        or fingerprint is None
+                        or fingerprint != TaskQueue.execution_fingerprint(persisted)
+                        or not consent_current(task.id)):
+                    return False
+        except Exception:
+            return False
+
         if self.queue.mediation_mode == "off":
+            try:
+                persisted = self.queue.get(getattr(task, "id", 0))
+            except Exception:
+                return False
+            owner_once = (
+                task.decided_by == "owner_once" or task.decision == "owner-once"
+                or (persisted is not None and (
+                    persisted.decided_by == "owner_once" or persisted.decision == "owner-once"
+                ))
+            )
+            if owner_once:
+                fingerprint = TaskQueue.execution_fingerprint(task)
+                return bool(
+                    persisted is not None
+                    and persisted.status == TaskStatus.RUNNING.value
+                    and fingerprint is not None
+                    and fingerprint == TaskQueue.execution_fingerprint(persisted)
+                    and owner_once_current(task.id)
+                )
             return True
         persisted, mediated = self.queue.execution_snapshot(
             getattr(task, "id", 0), presented_kind=getattr(task, "kind", "")
@@ -697,6 +789,9 @@ class AutonomyWorker:
             or not persisted_fingerprint
             or persisted_fingerprint != presented_fingerprint
         ):
+            return False
+        if ((persisted.decided_by == "owner_once" or persisted.decision == "owner-once")
+                and (not mediated or not owner_once_current(task.id))):
             return False
         if not mediated:
             return True
@@ -1179,8 +1274,21 @@ class AutonomyWorker:
                     'mode', 'agent_modes', 'cap_per_action', 'daily_ceiling',
                     'earned_autonomy_enabled', 'tier_outcomes', '_spent_today',
                 )}
+                # Canonical signed JSON requires string keys; risk tiers are IntEnums.
+                policy['tier_outcomes'] = {str(int(tier)): outcome for tier, outcome
+                                           in self.policy.tier_outcomes.items()}
                 policy['decision'] = decision.to_dict()
+                capture_source = getattr(self.queue, '_capture_consent_source', None)
+                if callable(capture_source):
+                    try:
+                        capture_source(task.id, policy=policy)
+                    except Exception:
+                        logger.warning('consent provenance unavailable; ordinary approval retained')
                 self.queue.register_pending_group(task.id, context=context, policy=policy)
+                if self.queue.approve_with_current_consent(task.id):
+                    task = self.queue.get(task.id)
+                    self._audit('autonomy.consent.reuse', task, 'current owner category consent')
+                    return task.id
         except Exception:
             logger.warning('model approval grouping unavailable; independent task retained')
         self._schedule_approval_judge(task)
@@ -1318,12 +1426,79 @@ class AutonomyWorker:
             await self._maybe_push(task)
         return task
 
-    async def _maybe_push(self, task: Task, *, delivery_id: str | None = None) -> bool:
+    async def _await_smart_notification_review(self, task: Task) -> None:
+        """Hold only an opted-in terminal card for its already scheduled review.
+
+        Completion is not authority: the caller still reads current queue state
+        before dispatch. The trusted role timeout also bounds waiting for a slot.
+        """
+        from .smart_approvals import smart_policy, terminal_args
+        from .task_approval_judge import TaskApprovalJudge
+
+        adapter = self.approval_judge
+        if type(adapter) is not TaskApprovalJudge:
+            return
+        try:
+            current = self.queue.get(task.id)
+            snapshot = adapter._snapshot(current) if current is not None else None
+            judge = adapter._judge
+            status = judge.status() if judge is not None else None
+            if (snapshot is None or status is None or not status.configured
+                    or not smart_policy(getattr(judge, '_env', None)).enabled
+                    or terminal_args(snapshot) is None or not judge.wants(snapshot, status)):
+                return
+            await adapter.wait_for_review(task.id, snapshot['snapshot_sha256'], timeout=status.timeout)
+        except Exception:
+            logger.warning('guardian notification wait unavailable; manual handling retained')
+
+    def _settle_terminal_denial(self, task_id: int) -> bool:
+        """Suppress generic DENY controls and settle unattended exact refusals."""
+        from .task_approval_judge import TaskApprovalJudge
+
+        adapter = self.approval_judge
+        denial = (adapter.current_terminal_denial(task_id)
+                  if type(adapter) is TaskApprovalJudge else None)
+        if denial is None:
+            return False
+        snapshot, _result, current = denial
+        prompts = getattr(self, '_owner_once_prompts', None)
+        if prompts is None or not prompts.reply_available(task_id):
+            self.queue.reject_smart_terminal_denial(
+                task_id, snapshot['snapshot_sha256'],
+                check=lambda: self.approval_judge is adapter and current(),
+            )
+        return True
+
+    async def _maybe_push(self, task: Task, *, delivery_id: str | None = None,
+                          expected_group_id: str | None = None,
+                          edited_revision: str | None = None) -> bool:
         if not self.notifier:
             return False
         from .inbox import is_decision_notification_leader
+        from .queue import approval_is_pending
 
-        if not is_decision_notification_leader(self.queue, task):
+        def pending_leader() -> Task | None:
+            if expected_group_id is not None:
+                current = self.queue.pending_group_leader(expected_group_id)
+                valid = (current is not None and current.id == task.id
+                         and current.status == TaskStatus.BLOCKED.value and not current.pushed)
+            else:
+                current = self.queue.get(task.id)
+                valid = (current is not None and current.status == TaskStatus.BLOCKED.value
+                         and (not current.pushed or edited_revision is not None)
+                         and (edited_revision is None or edited_revision == current.updated_at)
+                         and is_decision_notification_leader(self.queue, current))
+            return current if valid and approval_is_pending(current) else None
+
+        if pending_leader() is None:
+            return False
+        await self._await_smart_notification_review(task)
+        if self._settle_terminal_denial(task.id):
+            # A DENY never consumes a generic four-choice notification/budget.
+            # A live originating invocation owns its separate once/deny prompt.
+            return False
+        notifier = self.notifier
+        if not callable(notifier) or pending_leader() is None:
             return False
         if self.delivery_broker is None:
             logger.warning(
@@ -1331,12 +1506,31 @@ class AutonomyWorker:
                 task.id,
             )
             return False
+        stale_at_dispatch = False
+
+        async def dispatch_current() -> object:
+            nonlocal stale_at_dispatch
+            # Waiting can span an owner edit. Send the row checked above, never
+            # the intake-time payload captured before guardian review.
+            if self._settle_terminal_denial(task.id):
+                # A live owner invocation can keep DENY BLOCKED while this
+                # broker waits; that is not a generic approval opportunity.
+                stale_at_dispatch = True
+                return False
+            current = pending_leader()
+            if current is None or self.notifier is not notifier:
+                stale_at_dispatch = True
+                return False
+            return await notifier(current)
+
         result = await self.delivery_broker.dispatch(
             delivery_id or f"task-{task.id}",
             "decision_push",
-            lambda: self.notifier(task),
+            dispatch_current,
         )
-        ok = result.get("status") == "delivered"
+        # A delivered/idempotent broker receipt can recover a crash after send;
+        # a callback skipped for a settled card must never mark it pushed.
+        ok = result.get("status") == "delivered" and not stale_at_dispatch and pending_leader() is not None
         if ok:
             self.queue.mark_pushed(task.id)
             self._audit("autonomy.push_decision", task, "pushed to inbox")
@@ -1417,7 +1611,8 @@ class AutonomyWorker:
                     candidate = self.queue.pending_group_leader(effect.group_id)
                     if (self.notifier is not None and candidate
                             and candidate.attention_mode == "interrupt" and not candidate.pushed
-                            and (not approval_is_pending(candidate) or not await self._maybe_push(candidate))):
+                            and (not approval_is_pending(candidate) or not await self._maybe_push(
+                                candidate, expected_group_id=effect.group_id))):
                         continue
                 acknowledged += ack(effect, task)
             except Exception:
@@ -1432,13 +1627,17 @@ class AutonomyWorker:
         now = now or datetime.fromtimestamp(self._clock(), UTC)
         changed = self.queue.expire_pending_approvals(now=now, limit=limit)
         cleared = self._clear_expiry_judges(changed)
-        result = {"expired": len(changed.tasks), "expiry_effects_acked": 0}
+        result = {"expired": len(changed.tasks), "expiry_effects_acked": 0,
+                  "promotion_effects_acked": 0}
         if not reconcile or self._halted():
             return result
         batch = self.queue.pending_approval_expiry_effects(limit=limit)
         result["expiry_effects_acked"] = await self._drain_approval_expiry(
             batch, limit=limit, notify_promotions=notify_promotions, already_cleared=cleared,
         )
+        if notify_promotions:
+            effects = self.queue.pending_approval_promotion_effects(limit=limit)
+            result["promotion_effects_acked"] = await self._drain_approval_promotions(effects)
         return result
 
     async def _consume_committed_expiry(self, batch) -> None:
@@ -1446,13 +1645,35 @@ class AutonomyWorker:
         if not self._halted():
             await self._drain_approval_expiry(batch, already_cleared=cleared)
 
-    async def tick(self, limit: int = 10, max_tier: Optional[int] = None) -> dict:
+    async def tick(self, limit: int = 10, max_tier: Optional[int] = None, *,
+                   task_id: int | None = None, parallel_kind: str | None = None,
+                   parallel_limit: int = 1, parallel_agent_limit: int = 1) -> dict:
         """Run approved tasks. Returns a small summary dict.
 
         `max_tier` caps which risk tiers run this pass — used by the night shift
         to batch only reversible/read-only work (max_tier=1).
+        Optional concurrency applies only to one named kind; other kinds stay serial.
+        Zero capacity holds that kind's approvals without holding unrelated tasks.
         """
-        ran = done = failed = held = 0
+        if parallel_kind is None:
+            return await self._tick(limit, max_tier, task_id=task_id)
+        if not isinstance(parallel_kind, str) or not parallel_kind.strip():
+            raise ValueError("parallel_kind must be a nonempty string")
+        if any(type(value) is not int or not 0 <= value <= 16
+               for value in (parallel_limit, parallel_agent_limit)):
+            raise ValueError("parallel capacities must be integers from 0 through 16")
+        # Serialize selection with execution for competing configured ticks. Queue
+        # CAS and signed permits remain the authority for each individual row.
+        async with self._parallel_tick_lock:
+            return await self._tick(
+                limit, max_tier, task_id=task_id, parallel_kind=parallel_kind,
+                parallel_limit=parallel_limit, parallel_agent_limit=parallel_agent_limit,
+            )
+
+    async def _tick(self, limit, max_tier, *, task_id=None, parallel_kind=None,
+                    parallel_limit=1, parallel_agent_limit=1):
+        if task_id is not None and (type(task_id) is not int or task_id <= 0):
+            raise ValueError("task_id must be a positive integer")
         await self.approval_housekeeping(limit=limit, reconcile=not self._halted())
         # Q6: reap crash-stranded RUNNING tasks first — bookkeeping, not an
         # action, so it runs even under a halt (the stuck state is honest).
@@ -1463,12 +1684,62 @@ class AutonomyWorker:
         if self._halted():
             logger.warning("kill-switch engaged — autonomy tick skipped (tasks held)")
             return {"ran": 0, "done": 0, "failed": 0, "halted": True, "held": 0, "reaped": reaped}
-        for task in self.queue.runnable(limit=limit, max_tier=max_tier):
+        runnable = (self.queue.runnable(limit=limit, max_tier=max_tier) if task_id is None
+                    else self.queue.runnable(limit=limit, max_tier=max_tier, task_id=task_id))
+        if parallel_kind is None:
+            summary = await self._run_runnable(runnable)
+        else:
+            summary = await self._run_parallel(
+                runnable, parallel_kind, parallel_limit, parallel_agent_limit,
+            )
+        return {**summary, "reaped": reaped}
+
+    async def _run_parallel(self, runnable, kind, total_cap, agent_cap):
+        running = [t for t in self.queue.active_kind_tasks(kind) if t.status == "running"]
+        counts = Counter(t.agent for t in running)
+        slots = max(0, total_cap - len(running))
+        selected, ordinary = [], []
+        held = 0
+        for task in runnable:
+            if task.kind != kind:
+                ordinary.append(task)
+            elif (self._halted(task.agent)
+                  or (task.mediation_scope and self._halted(task.mediation_scope))
+                  or slots <= 0 or counts[task.agent] >= agent_cap):
+                held += 1
+            else:
+                selected.append(task)
+                counts[task.agent] += 1
+                slots -= 1
+        # Finish the ordinary serial batch before potentially long board turns;
+        # opting into background workers must not delay the hub's other queue work.
+        summary = await self._run_runnable(ordinary)
+        # Each child reaches the original guard/claim/permit path, with independent
+        # ContextVars. TaskGroup awaits all cleanup when the parent is cancelled.
+        async with asyncio.TaskGroup() as group:
+            children = [group.create_task(self._run_runnable([task])) for task in selected]
+        summary["held"] += held
+        for child in children:
+            for key, value in child.result().items():
+                summary[key] += value
+        return summary
+
+    async def _run_runnable(self, runnable):
+        """Original serial execution path, shared by ordinary and parallel rows."""
+        ran = done = failed = held = 0
+        for task in runnable:
             # Q6: a per-agent halt (scope = the agent's name, ch07 GOV-178)
             # holds that agent's tasks at this same kernel-independent seam —
             # they stay APPROVED and run on the first tick after release.
             if self._halted(task.agent):
                 held += 1
+                continue
+            if self.queue.consent_task_marker(task.id):
+                summary = await self._run_consent(task)
+                ran += summary['ran']
+                done += summary['done']
+                failed += summary['failed']
+                held += summary['held']
                 continue
             if self.queue.mediation_mode == "off":
                 mediated = False
@@ -1492,7 +1763,20 @@ class AutonomyWorker:
                     continue
                 task = claimed
             else:
-                self.queue.transition(task.id, TaskStatus.RUNNING)
+                try:
+                    self.queue.transition(task.id, TaskStatus.RUNNING,
+                                          expected_status=TaskStatus.APPROVED)
+                except TaskQueueError as exc:
+                    # A competing tick may claim the same approved row between
+                    # runnable() and this transactional transition. Only that
+                    # exact expected-status loss is benign; store errors propagate.
+                    stale = any(
+                        str(exc) == f"unexpected task status {state.value} (task {task.id})"
+                        for state in TaskStatus if state is not TaskStatus.APPROVED
+                    )
+                    if stale:
+                        continue
+                    raise
                 task = self.queue.get(task.id)
             ran += 1
             attempts = self.queue.increment_attempts(task.id)
@@ -1574,6 +1858,10 @@ class AutonomyWorker:
                         logger.info(f"Task #{task.id} failed (attempt {attempts}), will retry: {e}")
                     continue
                 try:
+                    if (task.kind == "toolrpc.terminal_run"
+                            and task.decided_by == "smart_approval"
+                            and task.decision == "smart-approve"):
+                        result = self.queue.issue_smart_terminal_result(task, result)
                     self.queue.transition(task.id, TaskStatus.DONE, result=result)
                 except Exception as e:
                     # The handler returned; the WORKER's own bookkeeping raised (round 5,
@@ -1612,7 +1900,190 @@ class AutonomyWorker:
                 if execution_permit is not None:
                     execution_permit.revoke()
                 self._execution_context.reset(execution_token)
-        return {"ran": ran, "done": done, "failed": failed, "held": held, "reaped": reaped}
+        return {"ran": ran, "done": done, "failed": failed, "held": held}
+
+    async def _run_consent(self, task: Task) -> dict:
+        """Spend one private consent claim; every exit settles one attempt."""
+        from .consent_execution import _worker_scope as consent_worker_scope
+        from .consent_execution import consent_current
+        from .executor import TaskExecutor
+
+        empty = {'ran': 0, 'done': 0, 'failed': 0, 'held': 1}
+        executor = getattr(self.executor, '__self__', None)
+        trusted_execute = self.executor
+        trusted_guard = getattr(executor, 'execution_guard', None)
+        if (self.queue.mediation_mode not in {'off', 'enforce'}
+                or task.status != TaskStatus.APPROVED.value or task.attempts != 0
+                or type(executor) is not TaskExecutor
+                or not callable(trusted_guard)):
+            return empty
+
+        def worker_live():
+            return (self.executor == trusted_execute and executor.execution_guard is trusted_guard
+                    and not (self._halted() or self._halted(task.agent)
+                             or (task.mediation_scope and self._halted(task.mediation_scope))))
+
+        if not worker_live() or asyncio.current_task().cancelling():
+            return empty
+        claim = self.queue.claim_consent(task.id, execution_id=str(uuid.uuid4()),
+                                         live_check=worker_live)
+        if claim is None:
+            return empty
+        execution_permit = None
+        try:
+            attempt = self.queue.increment_attempts(task.id)
+            task = self.queue.get(task.id)
+            if task is None or task.status != TaskStatus.RUNNING.value or attempt != 1:
+                raise TaskQueueError('consent attempt state changed')
+            if self.queue.mediation_mode == 'enforce':
+                fingerprint = TaskQueue.execution_fingerprint(task)
+                if not fingerprint or not self.queue.validate_mediated_execution(task, fingerprint):
+                    raise TaskQueueError('consent mediation unavailable')
+                execution_permit = _ExecutionPermit(task)
+            self._observe_qa4_intake(task)
+            token = self._execution_context.set(execution_permit)
+            try:
+                with consent_worker_scope(
+                    self.queue, claim, worker_live, trusted_executor=self.executor,
+                    dispatch_check=lambda: execution_permit is None or execution_permit.consumed,
+                ) as scope:
+                    if not consent_current(task.id):
+                        raise TaskQueueError('consent claim unavailable')
+                    result = await self._execute(task)
+                    dispatched = self.queue.consent_execution_dispatched(
+                        task.id, claim, live_check=scope.live,
+                    )
+                    live_after = scope.live()
+                    scope.close()
+            finally:
+                if execution_permit is not None:
+                    execution_permit.revoke()
+                self._execution_context.reset(token)
+            if (not live_after or not dispatched or type(result) is not dict
+                    or result.get('status') in {'refused', 'failed', 'noop'}):
+                raise TaskQueueError('consent execution did not complete with a physical dispatch proof')
+            self.queue.transition(task.id, TaskStatus.DONE, result=result)
+            if self._exercises_capability(task):
+                self._record_capability_outcome(task, success=True, result=result)
+            self._settle_spend(task)
+            self._audit('autonomy.done', task, 'owner category consent executed')
+            return {'ran': 1, 'done': 1, 'failed': 0, 'held': 0}
+        except asyncio.CancelledError:
+            current = self.queue.get(claim.task_id)
+            if current is not None and current.status == TaskStatus.RUNNING.value:
+                self.queue.transition(current.id, TaskStatus.FAILED,
+                                      result={'error': 'consent execution cancelled'})
+            raise
+        except Exception as exc:
+            current = self.queue.get(claim.task_id)
+            if current is not None and current.status == TaskStatus.RUNNING.value:
+                self.queue.transition(current.id, TaskStatus.FAILED, result=_failure_record(exc))
+            if current is not None:
+                if self._exercises_capability(current):
+                    self._record_capability_outcome(current, success=False, error=exc)
+                self._audit('autonomy.failed', current, 'owner category consent execution failed')
+            return {'ran': 1, 'done': 0, 'failed': 1, 'held': 0}
+
+    async def _run_owner_once(self, claim: OwnerOnceClaim, *,
+                              live_check: Callable[[], bool]) -> dict:
+        """Run one exact owner claim outside the scheduler's approved-task lane."""
+        empty = {"ran": 0, "done": 0, "failed": 0, "held": 1}
+        if type(claim) is not OwnerOnceClaim or not callable(live_check):
+            return empty
+        task = self.queue.get(claim.task_id)
+        if (task is None or task.status != TaskStatus.APPROVED.value
+                or task.decided_by != "owner_once" or task.decision != "owner-once"
+                or task.attempts != 0 or self.queue.mediation_mode not in {"off", "enforce"}
+                or self._halted() or self._halted(task.agent)
+                or (task.mediation_scope and self._halted(task.mediation_scope))):
+            return empty
+
+        def worker_live() -> bool:
+            if (self._halted() or self._halted(task.agent)
+                    or (task.mediation_scope and self._halted(task.mediation_scope))):
+                return False
+            try:
+                return live_check() is True
+            except Exception:
+                return False
+
+        if not worker_live() or asyncio.current_task().cancelling():
+            return empty
+        running = self.queue.claim_owner_once(
+            claim.task_id, claim, execution_id=str(uuid.uuid4()), live_check=worker_live,
+        )
+        if running is None:
+            return empty
+        # From this point the claim is spent. Every exit fails or completes this
+        # single attempt; no path returns the row to APPROVED for a retry.
+        task = running
+        execution_permit = None
+        try:
+            attempt = self.queue.increment_attempts(task.id)
+            refreshed = self.queue.get(task.id)
+            if refreshed is None or refreshed.status != TaskStatus.RUNNING.value or attempt != 1:
+                raise TaskQueueError("owner-once attempt state changed")
+            task = refreshed
+            if self.queue.mediation_mode == "enforce":
+                persisted, mediated = self.queue.execution_snapshot(
+                    task.id, presented_kind=task.kind,
+                )
+                fingerprint = TaskQueue.execution_fingerprint(task)
+                if (persisted is None or not mediated or fingerprint is None
+                        or TaskQueue.execution_fingerprint(persisted) != fingerprint
+                        or not self.queue.validate_mediated_execution(task, fingerprint)):
+                    raise TaskQueueError("owner-once mediation unavailable")
+                task = persisted
+                execution_permit = _ExecutionPermit(task)
+            self._observe_qa4_intake(task)
+            execution_token = self._execution_context.set(execution_permit)
+            try:
+                with _worker_scope(
+                    self.queue, claim, worker_live,
+                    dispatch_check=lambda: execution_permit is None or execution_permit.consumed,
+                ) as scope:
+                    if not owner_once_current(task.id):
+                        raise TaskQueueError("owner-once approval unavailable")
+                    result = await self._execute(task)
+                    live_after = scope.live()
+                    scope.close()  # copied child contexts cannot dispatch after return
+            finally:
+                if execution_permit is not None:
+                    execution_permit.revoke()
+                self._execution_context.reset(execution_token)
+            if not live_after and asyncio.current_task().cancelling():
+                raise asyncio.CancelledError
+            if not live_after or type(result) is not dict:
+                raise TaskQueueError("owner-once execution did not complete live")
+            signed = self.queue.issue_owner_once_terminal_result(task, result)
+            if type(signed.get("_owner_once_execution")) is not dict:
+                raise TaskQueueError("owner-once dispatch or completion proof missing")
+            self.queue.transition(task.id, TaskStatus.DONE, result=signed)
+            if self._exercises_capability(task):
+                self._record_capability_outcome(task, success=True, result=result)
+            self._settle_spend(task)
+            self._audit("autonomy.done", task, "owner-once executed")
+            return {"ran": 1, "done": 1, "failed": 0, "held": 0}
+        except asyncio.CancelledError:
+            current = self.queue.get(task.id)
+            if current is not None and current.status == TaskStatus.RUNNING.value:
+                self.queue.transition(task.id, TaskStatus.FAILED,
+                                      result={"error": "owner-once execution cancelled"})
+            raise
+        except Exception as exc:
+            current = self.queue.get(task.id)
+            if current is not None and current.status == TaskStatus.RUNNING.value:
+                self.queue.transition(task.id, TaskStatus.FAILED, result=_failure_record(exc))
+            if self._exercises_capability(task):
+                self._record_capability_outcome(task, success=False, error=exc)
+            self._audit("autonomy.failed", task, "owner-once execution failed")
+            return {"ran": 1, "done": 0, "failed": 1, "held": 0}
+        finally:
+            # The queue's accepted/claimed state can be withdrawn before a
+            # physical dispatch. A dispatching row remains for DONE evidence.
+            self.queue.revoke_owner_once(OwnerOnceOffer(
+                claim.task_id, claim.nonce, "", claim._turn, claim._queue_key,
+            ))
 
     def _exercises_capability(self, task: Task) -> bool:
         """False when the injected executor says no handler of its own is registered for
@@ -1747,13 +2218,29 @@ class AutonomyWorker:
         return False
 
     # ── human decisions ───────────────────────────────────────────
+    async def _drain_approval_promotions(self, effects) -> int:
+        acknowledged = 0
+        for effect in effects:
+            if self._halted():
+                break
+            try:
+                candidate = self.queue.pending_group_leader(effect.group_id)
+                if (candidate is not None and candidate.attention_mode == 'interrupt'
+                        and not candidate.pushed and not await self._maybe_push(
+                            candidate, expected_group_id=effect.group_id)):
+                    continue
+                acknowledged += self.queue.ack_approval_promotion_effects((effect,))
+            except Exception:
+                logger.warning('Promoted decision notification held for group %s',
+                               effect.group_id, exc_info=True)
+        return acknowledged
+
     async def _push_promoted_group(self, group_id: str | None) -> None:
         if group_id is None:
             return
         try:
-            candidate = self.queue.pending_group_leader(group_id)
-            if candidate and candidate.attention_mode == 'interrupt' and not candidate.pushed:
-                await self._maybe_push(candidate)
+            effects = self.queue.pending_approval_promotion_effects(group_id=group_id)
+            await self._drain_approval_promotions(effects)
         except Exception:
             logger.warning('Promoted decision notification failed for group %s',
                            group_id, exc_info=True)
@@ -1787,6 +2274,42 @@ class AutonomyWorker:
                     logger.warning('Preference record failed for #%s', task.id, exc_info=True)
             self._reconcile_waiting_run(task)
         return rejected
+
+    async def apply_consent_decision(self, task_id: int, revision: str, *,
+                                     choice: str, actor, reason: str | None = None):
+        """Apply one authenticated owner choice before per-task observations."""
+        from .queue import TaskApprovalExpired
+
+        try:
+            result = self.queue.decide_reusable_consent(
+                task_id, revision, choice=choice, actor=actor, reason=reason,
+            )
+        except TaskApprovalExpired as exc:
+            await self._consume_committed_expiry(exc.batch)
+            return None
+        if result is None:
+            return None
+        prompts = getattr(self, '_consent_prompts', None)
+        notify = getattr(prompts, 'decision_committed', None)
+        if callable(notify):
+            try:
+                notify(task_id, revision, result)
+            except Exception:
+                logger.warning('Committed consent native notification failed', exc_info=True)
+        for task in result.tasks:
+            if self.approval_judge is not None:
+                self.approval_judge.clear_pending(task.id)
+            self._audit(f'autonomy.decision.consent.{choice}', task, f'by {actor.decided_by}')
+            if self.prefs:
+                try:
+                    self.prefs.record(task, 'reject' if choice == 'deny' else 'accept',
+                                      decided_by=actor.decided_by)
+                except Exception:
+                    logger.warning('Preference record failed for #%s', task.id, exc_info=True)
+            self._reconcile_waiting_run(task)
+        for group_id in result.group_ids:
+            await self._push_promoted_group(group_id)
+        return result
 
     async def apply_decision(
         self, task_id: int, action: str, decided_by: str = "user", payload: dict = None,
@@ -1883,6 +2406,7 @@ class AutonomyWorker:
                     await self._maybe_push(
                         edited,
                         delivery_id=f"task-{edited.id}-edit-{edited.updated_at}",
+                        edited_revision=edited.updated_at,
                     )
                     self._audit(
                         "autonomy.decision.edit", edited, f"by {decided_by} (re-gated, blocked)"

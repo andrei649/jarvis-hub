@@ -582,6 +582,17 @@ class Agent:
             identity = identity.replace(_SOUL_FALLBACK_RULES, "").strip()
         return "\n\n".join(part for part in (identity, hint_block(), persona) if part)
 
+    def model_system_prompt(self, backend, model: str, system: str, *, allow_tools: bool = True) -> str:
+        """Bind operating advice to the actual route, also before cache lookup."""
+        from .operating_prompt import OperatingPrompt
+
+        if isinstance(system, OperatingPrompt) and system.model == model:
+            return system
+        prepare = getattr(getattr(self, "tool_runtime", None), "prepare_system", None)
+        if callable(prepare):
+            return prepare(system, backend=backend, model=model, agent_id=self.id, allow_tools=allow_tools)
+        return system
+
     def _load_identity(self) -> None:
         self._identity_kept = False
         path = None
@@ -912,16 +923,31 @@ class Agent:
                                 usage_sink=None, session_id=None, effective_window=None,
                                 clock_snapshot=CLOCK_UNSET, prepared_route=None,
                                 cached_input_tokens=0) -> str:
-        from .conversation_clock import capture_clock, clock_scope, render_snapshot
+        from .channels.session_lifecycle import session_activity_callback
+        from .conversation_clock import capture_clock, clock_scope
         from .llm.request_context import current_session, session_scope
         from .llm.usage_context import current_observer, observer_scope, text_usage_scope
+        from .operating_prompt import clocked_prompt
+
+        activity = session_activity_callback()
+        if activity is not None:
+            deliver_token = on_token
+
+            async def observed_token(piece):
+                activity()
+                if deliver_token is not None:
+                    emitted = deliver_token(piece)
+                    if inspect.isawaitable(emitted):
+                        await emitted
+
+            on_token = observed_token
 
         sid = session_id or current_session()
         manager = self._checkpoint_manager
         snapshot = capture_clock(manager, sid, agent_id=self.id) if clock_snapshot is CLOCK_UNSET else clock_snapshot
         if snapshot is not None and snapshot.session_id != sid:
             snapshot = None
-        system = render_snapshot(system, snapshot)
+        system = clocked_prompt(system, snapshot)
         if prepared_route is not None:
             self._check_prepared_budget(
                 prepared_route, prompt, system, cached_input_tokens=cached_input_tokens,
@@ -981,6 +1007,7 @@ class Agent:
         (Hermes absorption 5c).
         """
         from .llm.job_selection import selected_window
+        system = self.model_system_prompt(backend, model, system)
         pinned_window = selected_window(model)
         if pinned_window is not None:
             cap = pinned_window // 4
@@ -1018,6 +1045,11 @@ class Agent:
 
         from .llm.data_handling import physical_request_scope
         from .llm.usage_context import text_usage_scope
+        from .steering import prepare_steering_rows
+
+        steering = prepare_steering_rows(getattr(self, "id", ""))
+        if steering.rows:
+            prompt = "\n\n".join([prompt, *(row["content"] for row in steering.rows)])
 
         check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
         guard = (lambda: check(backend, model)) if callable(check) else None
@@ -1025,7 +1057,7 @@ class Agent:
             if callable(check):
                 check(backend, model)
             if on_token and hasattr(backend, "generate_stream"):
-                return await backend.generate_stream(
+                response = await backend.generate_stream(
                     model=model,
                     prompt=prompt,
                     system=system,
@@ -1033,6 +1065,8 @@ class Agent:
                     temperature=temperature,
                     on_token=on_token,
                 )
+                steering.acknowledge()
+                return response
 
             response = await backend.generate(
                 model=model,
@@ -1041,6 +1075,7 @@ class Agent:
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
+            steering.acknowledge()
             if on_token:
                 emitted = on_token(response)
                 if inspect.isawaitable(emitted):
@@ -1298,6 +1333,7 @@ class Agent:
             manager = getattr(self.llm_router, "model_manager", None)
             residency = manager.using(model) if (manager is not None and route_name.startswith("local")) else _NullCtx()
 
+            system_prompt = self.model_system_prompt(backend, model, system_prompt, allow_tools=False)
             async with residency:
                 await self._ensure_resident(route_name, model)
                 max_tokens, temperature = self._gen_params(route_name)

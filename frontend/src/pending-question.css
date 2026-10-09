@@ -1,0 +1,7 @@
+.pending-question{position:fixed;z-index:80;bottom:84px;left:50%;transform:translateX(-50%);width:min(600px,94vw);max-height:65vh;overflow:auto;padding:16px;background:var(--surface);color:var(--ink);border:1px solid var(--panel-line);border-radius:var(--radius);box-shadow:0 8px 32px #0006}
+.pending-question h3{font-size:14px;margin:0 0 12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.pending-question-options,.pending-question form{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.pending-question-options .tool-btn{max-width:100%;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}
+.pending-question [aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
+.pending-question textarea{width:100%;min-height:72px;background:var(--void-2);color:var(--ink);border:1px solid var(--panel-line);padding:8px}
+.pending-question [role=alert]{color:var(--amber);font-size:12px}

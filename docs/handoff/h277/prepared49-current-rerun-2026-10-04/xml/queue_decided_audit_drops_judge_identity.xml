@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.467" timestamp="2026-10-04T23:54:47.431640+03:00" hostname="Macmini"><testcase classname="tests.test_h277_approval_judge" name="test_audit_rows_carry_the_judge_identity" time="1.010"><failure message="AssertionError: assert None == {'provider': 'lm-studio', 'model': 'judge-m', 'local': True}">tests/test_h277_approval_judge.py:265: in test_audit_rows_carry_the_judge_identity
+    assert decided["metadata"]["judge"] == {"provider": "lm-studio", "model": "judge-m", "local": True}
+E   AssertionError: assert None == {'provider': 'lm-studio', 'model': 'judge-m', 'local': True}</failure></testcase></testsuite></testsuites>

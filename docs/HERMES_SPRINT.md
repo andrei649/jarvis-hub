@@ -1,5 +1,98 @@
 # Sprint: echivalarea funcțiilor Hermes
 
+
+> Frozen H011/H277 milestone, 2026-10-04, source `b9d4d22d`: complete backend
+> 23,086 passed, 34 ordinary skips, one existing xfail, zero failures/errors;
+> all 3,109 frozen inputs unchanged. Serial clients passed HUD V2 1,889,
+> mobile 185 and legacy HUD 233; their source inputs remain unchanged.
+> H011/H277 remain partial. See [exact full evidence](hermes/evidence/h011-h277-reconciled-full-2026-10-04.json).
+
+> Frozen H011/H277 follow-up, 2026-10-04, source `f2318ee0`: the first complete
+> backend ran 23,120 cases: 23,080 passed, five failed, 34 skipped, one existing
+> xfail; all 3,098 frozen inputs were unchanged. Two old-signature persistence
+> fakes and three intentional readiness/harness-count updates are corrected;
+> 200 affected tests pass. Serial full clients pass: HUD V2 1,889, mobile 185,
+> legacy HUD 233. The original prepared H277 49-fault campaign has 48 initial
+> detections plus one test gap; the accepted exact-fault public-route regression
+> detects that gap, yielding 43 assertion and six behavior-exception detections.
+> H011/H277 stay partial. The subsequent frozen backend milestone is verified in the exact full evidence above.
+> See [prepared49 evidence](handoff/h277/prepared49-refresh-2026-10-04/root-integration.json)
+> and [reconciliation plan](hermes/h011-frozen-milestone-reconciliation-2026-10-04.md).
+
+> H011 owner effect increment, 2026-10-04, source `825533f4`: CLI/chat diff and
+> selected/force restore now use the preappend owner path, durable exact intents,
+> signed enforce-mode human tasks and real kernel/worker execution. Physical
+> fences bind the accepted root, current bytes and durable session identity;
+> complete file success then commits the current-last-user conversation rewind.
+> Partial groups and persistence splits keep undo and conversation history.
+> Approved index maintenance retains shared blobs. The final 93-module affected
+> run passed 2,273 with 3 optional skips; whole-repository Ruff and agents/scripts
+> Bandit passed. H011 stays partial: retention/size controls, complete payload
+> cleanup, dedicated clients, Windows support and the frozen full milestone
+> remain open. The 22-module image/code/binding collateral run passed 697 cases with
+> 7 Docker-dependent skips; 151 route/status/doc gates pass. Other stale
+> evidence receives no automatic credit. See the
+> [integration receipt](hermes/evidence/h011-owner-effect-integration-2026-10-04.json).
+
+> Local owner-denial/active-judge increment2026-10-04: native Telegram `/deny`
+> now settles owner-once waits with the original bounded human reason, protected
+> by a denial-specific MAC. Accepted execution authority stays unchanged. The
+> explicitly configured compatible approval judge can recover one typed
+> temperature rejection with the exact generation cap and current request guards;
+> early hook refusal also closes the owned client. The35-module common regression
+> passed1,003 cases,zero failures/errors/skips. Actual backend collection is22,699;
+> frontend1,889/mobile185 remain historical snapshots. H277/H487 remain partial;
+> the clean frozen full milestone and wider functional scope remain open. See
+> [owner-denial evidence](hermes/evidence/h487-native-owner-denial-progress-2026-10-04.json)
+> and [active-judge evidence](hermes/evidence/h277-active-judge-recovery-progress-2026-10-04.json).
+
+> Local provider/terminal/denial increment2026-10-04: explicit DeepInfra main text,
+> tools and native SSE are integrated under canonical current route guards. Human-
+> approved manual Docker tasks now cross kernel/current receipt physical checks.
+> Local auxiliary errors recover explicit unsupported-field wording without
+> treating value complaints as field-removal authority. Exact delivered-card
+> Telegram `/deny [reason]` settles reusable-consent waits outside the occupied
+> originating chat lane; owner-once reasons remain the next separate unit.
+> The189-module affected run passed5,135 cases,with7 ordinary skips and zero
+> failures/errors;15 static route/doc gates and50 binding checks pass. Actual
+> backend collection is22,632. Prior full22,465 is an earlier snapshot; the next
+> frozen full milestone is pending. H277/H487 remain partial. See the
+> [affected regression receipt](hermes/evidence/h277-h487-provider-terminal-denial-regression-2026-10-04.json).
+
+> Local auxiliary/owner-once increment2026-10-04: supported guarded local tasks
+> recover a typed unsupported output cap once per operation; no cross-call cap
+> memory, no post-frame stream replay and no reset of compaction idle deadlines.
+> Delivered terminal owner-once waits distinguish expiry, withdrawal, real owner
+> denial and approved-but-held handoff. Exact durable denial survives delayed
+> callback publication; observations never grant execution.
+> The168-module common regression passed4,303 cases. After the Bandit assert
+> correction,92 affected cases passed; final Bandit/Ruff pass. Backend collection
+> is22,465; the frozen full completed with22,430 passes,34 ordinary
+> skips,one existing xfail,zero failures/errors and3,020 unchanged inputs.
+> H277/H487 remain partial. See the [full receipt](hermes/evidence/h487-auxiliary-outcomes-full-2026-10-04.json).
+> See [auxiliary evidence](hermes/evidence/h277-auxiliary-output-cap-progress-2026-10-04.json)
+> and [owner-once evidence](hermes/evidence/h487-owner-once-outcomes-progress-2026-10-04.json).
+
+> OpenRouter native-video increment 2026-10-04: explicit primary, guarded vision
+> inheritance/model override and fixed-slot fallback now use the signed video
+> ToolRPC. Full video bytes, scoped keys and the approved provider privacy block
+> are verified offline; changes before send or disclosure refuse.597 affected
+> cases pass. The frozen22,418-case backend completed:22,383 passed,34 ordinary
+> skips,one existing expected failure,zero failures/errors;3,008 inputs unchanged.
+> See the [full receipt](hermes/evidence/h277-openrouter-video-full-2026-10-04.json).
+> H277 remains partial. See the [integration plan](hermes/h277-openrouter-video-plan-2026-10-04.md).
+
+> Local progress 2026-10-04: exact reusable inline choices now wake native waits
+> across approval surfaces. Timeout, withdrawal and denial remain distinct;
+> matching decisions observed after the wait ends cannot revive execution.
+> Signed Smart promotion audits now identify the actual committed judge model.
+> The integrated H277/H485/H487 regression passes 2,989 cases across 134 modules;
+> the frozen backend run finished with 22,360 passes, 34 ordinary skips, one
+> existing expected failure and zero failures/errors. H487 and H277 remain partial.
+> See [full backend evidence](hermes/evidence/h487-h277-inline-full-2026-10-04.json),
+> [inline outcomes](hermes/evidence/h487-inline-outcomes-progress-2026-10-04.json)
+> and [promotion audit](hermes/evidence/h277-smart-promotion-audit-progress-2026-10-04.json).
+
 > Local milestone 2026-09-27: H487 reasons/expiry/owner-registration grouping and H513
 > routed provider consent are integrated and verified. Backend 18,765 passed/35 skipped;
 > frontend 1,802 passed; legacy HUD 233 passed. Both rows remain partial. See

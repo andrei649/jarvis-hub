@@ -72,6 +72,7 @@ def _mock_autonomy_orch() -> MagicMock:
     m.autonomy_queue.list = MagicMock(return_value=[task])
     m.autonomy_queue.stats = MagicMock(return_value={"total": 1, "pending": 1})
     m.autonomy_queue.pending_decisions = MagicMock(return_value=[])
+    m.autonomy_queue.pending_consent_offer = MagicMock(return_value=None)
     # Match an unconfigured real AutonomyWorker; MagicMock otherwise invents
     # a truthy adapter whose projection/status are not JSON data.
     m.autonomy.approval_judge = None

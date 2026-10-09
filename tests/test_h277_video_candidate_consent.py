@@ -25,8 +25,8 @@ def stored_roles(value):
 def candidates(tmp_path, monkeypatch):
     monkeypatch.setattr(settings_db, "DB_PATH", tmp_path / "settings.db")
     monkeypatch.setattr(settings_db, "_initialized", False)
-    settings_db.init_db(force=True)
-    monkeypatch.setattr(settings_db, "_initialized", True)
+    monkeypatch.setattr(settings_db, "_initialized_for_path", None)
+    settings_db.ensure_initialized()
     monkeypatch.setattr(dh, "_scope_key", lambda: b"synthetic-candidate-scope")
     monkeypatch.setattr(vp, "_scope_key", lambda: b"synthetic-candidate-scope")
     monkeypatch.setenv("JARVIS_VIDEO_ANALYSIS", "1")

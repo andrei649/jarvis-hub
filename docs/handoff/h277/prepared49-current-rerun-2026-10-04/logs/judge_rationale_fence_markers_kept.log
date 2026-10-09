@@ -1,0 +1,14 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/judge_rationale_fence_markers_kept.xml", "tests/test_h277_approval_judge.py::test_parse_verdict_sanitises_the_rationale"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________________ test_parse_verdict_sanitises_the_rationale __________________
+tests/test_h277_approval_judge.py:346: in test_parse_verdict_sanitises_the_rationale
+    assert "<<" not in v.rationale and ">>" not in v.rationale and "UNTRUSTED" not in v.rationale
+E   AssertionError: assert ('<<' not in 'line one li...yyyyyyyyyyy…'
+E     
+E     '<<' is contained here:
+E       line one line two reversed <<END UNTRUSTED>> <<UNTRUSTED source=x>> tail yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy…
+E     ?                            ++)
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_parse_verdict_sanitises_the_rationale
+1 failed in 1.45s

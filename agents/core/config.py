@@ -10,6 +10,7 @@ from typing import Optional
 
 import yaml
 
+from agents.core.config_read_errors import report_unreadable
 from agents.core.paths import data_root  # config.py defines its own data_path() below
 
 # ── storage location + tunable limits (Q4) ───────────────────────────────────
@@ -74,22 +75,43 @@ class JarvisConfig:
         self.general: dict = {}
         self.plugins: dict = {}
         self.bench: dict = {}
+        self._has_good_config = False
         self._load()
 
     def _load(self):
         if not self.path.exists():
+            if self._has_good_config:
+                report_unreadable(self.path, FileNotFoundError(str(self.path)))
+                return
             raise FileNotFoundError(f"Config not found: {self.path}")
 
-        with open(self.path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+        try:
+            with open(self.path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            if not isinstance(data, dict):
+                raise ValueError("agents.yaml must contain a mapping")
+            agent_rows = data.get("agents", {})
+            if not isinstance(agent_rows, dict):
+                raise ValueError("agents must contain a mapping")
+            agents = {}
+            for agent_id, agent_data in agent_rows.items():
+                if not isinstance(agent_data, dict):
+                    raise ValueError(f"agent {agent_id!r} must contain a mapping")
+                agents[agent_id] = AgentConfig({**agent_data, "id": agent_id})
+            for section in ("general", "plugins", "bench"):
+                if not isinstance(data.get(section, {}) or {}, dict):
+                    raise ValueError(f"{section} must contain a mapping")
+        except (OSError, UnicodeError, yaml.YAMLError, AttributeError, TypeError, ValueError) as exc:
+            report_unreadable(self.path, exc)
+            if self._has_good_config:
+                return
+            raise RuntimeError(f"Config {self.path} is unreadable; refusing startup") from exc
 
-        for agent_id, agent_data in data.get("agents", {}).items():
-            agent_data["id"] = agent_id
-            self.agents[agent_id] = AgentConfig(agent_data)
-
-        self.general = data.get("general", {})
-        self.plugins = data.get("plugins", {})
+        self.agents = agents
+        self.general = data.get("general", {}) or {}
+        self.plugins = data.get("plugins", {}) or {}
         self.bench = data.get("bench", {}) or {}
+        self._has_good_config = True
 
     def get_promotion_rules(self) -> dict:
         """Derive bench-promotion rules from agents.yaml `bench:` entries that

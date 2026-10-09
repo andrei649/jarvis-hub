@@ -1,0 +1,116 @@
+{
+  "generated_at": "2026-10-05T17:35:20.913485+00:00",
+  "goal_scope": "all697",
+  "capability": "H067",
+  "status": "partial",
+  "base_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "publication": false,
+  "implemented": [
+    "Actual /chat/stream runner binds the existing ChannelPendingRuntime to server-derived credential/role identity and session; WebClient/payload claims do not establish identity.",
+    "SSE clarification is acknowledged by the generator after yielding before delivered state and human-wait credit start. The original ToolRPC/model remains waiting.",
+    "User-guarded one-shot answer endpoint validates same currently authorized actor and exact live prompt; native parser handles choices, multiselect, Other/free text and cancellation. No conversation lease or second model call.",
+    "HUD handles the actual stream with choices, multiselect, Other/free-text, cancel and retry; Stop/disconnect cleanup and consecutive-question race are verified. Existing theme and same-origin credential client reused.",
+    "Ordinary channel bindings cannot create an HTTP producer even when they know the original source. Managed-token revocation and expiry retire the owned wait through the existing runtime loop."
+  ],
+  "reuse": "Existing Hermes-derived PendingInputs, choice/batch normalization, cancellation and native human-wait accounting. Added only Nerva HTTP/SSE and React adapter seams; no new dependency or pending store.",
+  "verification": {
+    "runs": [
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/web-affected-result.xml",
+        "tests": 344,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/web-hud-result.xml",
+        "tests": 60,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/web-gates-result.xml",
+        "tests": 54,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "counts_overlap": true,
+    "new_backend_cases": 10,
+    "new_hud_cases": 6,
+    "backend_actual_path": "Actual chat_stream producer, ToolRPC, session lease, runtime human-wait sampler and real guarded ASGI answer requests. Managed TokenStore used for identity/revocation; synthetic model only.",
+    "frontend_actual_path": "Actual App streaming parser and question UI through fetch response streams; offline model/server fixtures.",
+    "edge_cases": [
+      "Another valid token cannot answer",
+      "Missing/revoked token refused by real guards",
+      "Invalid/empty/excess/unknown-field answer leaves original question intact",
+      "Prompt ID replay and expiry refused",
+      "Disconnect retires pending state",
+      "Zero credit before yielded-event acknowledgement, five sampled delivered seconds",
+      "Original model call count remains one",
+      "Other/selection/cancel retry and next-question/previous-response race",
+      "Generic channel metadata cannot impersonate HTTP capability"
+    ],
+    "ruff": "passed",
+    "typecheck": "passed after schema generation",
+    "build": "passed; committed HUD output regenerated locally",
+    "bandit": "0 findings/errors on three production modules",
+    "strict_gitleaks": "0 findings on nine frozen source/test files, default rules, no baseline/config or inline suppression",
+    "graft": {
+      "graph_current": true,
+      "added": 0,
+      "removed": 0,
+      "changed": 0,
+      "stale": 0,
+      "context": "not initialized; graph only"
+    },
+    "final_metadata_and_built_hud": {
+      "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/web-final-metadata-result.xml",
+      "tests": 211,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "shared_impact": {
+    "web_functions_changed": [
+      "_chat_event_stream",
+      "chat_stream"
+    ],
+    "other_web_functions": "AST-identical, including startup, ntfy configuration and credential verification. Module adds nullcontext import and guarded router mount.",
+    "retained_review": "H099 unchanged ntfy push behavior verified in current affected ntfy/HTTP suite; refresh only the exact matching immediate web source pin. Unrelated stale reviews remain untouched.",
+    "H063": "Only a new H067 documentation section appended; prior reset/expiry HUD record is byte-preserved as a prefix. Source and policy unchanged; current session/command regressions pass."
+  },
+  "files_modified": {
+    "agents/core/channels/pending_input_runtime.py": "Trusted HTTP capability, same prompt/parser/wait lifecycle and exact answers.",
+    "agents/core/routers/chat_pending.py": "Live actor fingerprint and strict guarded one-shot answer schema.",
+    "agents/web.py": "Bind authenticated stream runner, acknowledge question frame, mount guarded router.",
+    "frontend/src/app.tsx": "Consume questions and post answers while the same stream remains active.",
+    "frontend/src/pending-question.tsx": "Choice/multiselect/Other/free-text/cancel/retry component.",
+    "frontend/src/pending-question.css": "Scoped styling using existing theme variables.",
+    "tests/test_pending_input_web.py": "Ten real stream/RPC/auth behavior cases.",
+    "frontend/src/test/pending-question.test.tsx": "Six actual App stream/UI behavior cases.",
+    "frontend/src/api/schema.gen.ts": "Pinned offline OpenAPI type generation adds new route/schema.",
+    "tests/_snapshots/route_auth.json": "Only the new POST route added as user guarded.",
+    "tests/_snapshots/route_surface.json": "Only the new POST route added.",
+    "tests/_snapshots/openapi_surface.json": "Only the new operation added.",
+    "agents/web/v2/": "Built HUD output from preserved source.",
+    "docs/design/HUD_V2_REMAINING.md": "Streaming slice and remaining surfaces accurately recorded.",
+    "docs/test-manual/14-api-surface-sweep.md": "Generated current API enumeration.",
+    "docs/hermes/assessment.json": "H067 partial and matching reviewed H099 pin.",
+    "HERMES_STATUS.md": "Generated697 report.",
+    "docs/HERMES_CAPABILITIES.md": "Generated capability report.",
+    "docs/hermes/pending-input-plan-2026-10-05.md": "Bounded architecture/verification/rollback plan.",
+    "docs/hermes/autonomous-development-objective.md": "Resumable local checkpoint."
+  },
+  "remaining": [
+    "Nonstream HTTP pending producer and answer discovery",
+    "Email/CLI pending producers and answer entry points",
+    "Busy prose and other commands",
+    "Full integrated acceptance and rest of697 inventory; no live account validation"
+  ],
+  "next_action": "Close nonstream HTTP on the same trusted actor/session runtime with guarded polling/discovery, then CLI/email. Keep all697 goal active and all changes local.",
+  "head_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646"
+}

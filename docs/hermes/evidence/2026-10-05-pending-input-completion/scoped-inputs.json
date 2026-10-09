@@ -1,0 +1,236 @@
+{
+  "source_entries": [
+    {
+      "path": "agents/core/channel_reply.py",
+      "sha256": "fa7c29e918f725c7a5c74faa140fb1fe929dae2dee3f9c0873ac67b239130691"
+    },
+    {
+      "path": "agents/core/channels/clarify_protocol.py",
+      "sha256": "e58f78f2b3705a2d80c7257b2ead272b81fb7b6265354af388a460be8ca40257"
+    },
+    {
+      "path": "agents/core/channels/discord.py",
+      "sha256": "07180a7e8bb80979a6e12eb2d732b0efa6abb7834eeefbb493af53dd60e9dc9b"
+    },
+    {
+      "path": "agents/core/channels/pending_input_runtime.py",
+      "sha256": "f5ebf411ba51211ce580241a86309e7d2a6e00ec58adb76bb6a404a0f04a37c8"
+    },
+    {
+      "path": "agents/core/channels/session_command_runtime.py",
+      "sha256": "2466883be839744379f1cc6f9f092b160cb16d7ad9f7558c74f2165bc002a416"
+    },
+    {
+      "path": "agents/core/channels/slack.py",
+      "sha256": "047cbb6200dd4d43ba2bca2375e4184c4aa1b3b95028eca7fbcf9e3d52ea5376"
+    },
+    {
+      "path": "agents/core/channels/telegram.py",
+      "sha256": "a4326463413bf92746a0f70f10fc7e2ef5a9e6051b4d3bbca9bd116e811ef500"
+    },
+    {
+      "path": "agents/core/orchestrator.py",
+      "sha256": "3d23aa2249c9972585a3914fcb9ce59a3fa9233f447f1c134931951a286a4c78"
+    },
+    {
+      "path": "agents/core/settings_db.py",
+      "sha256": "55f4e91020aaadb9cd0fb55dd57334eec051a7cff9919256c668719f54606616"
+    },
+    {
+      "path": "tests/_snapshots/capability_readiness.json",
+      "sha256": "115a96ee1fe5cd190d9eef4dc93cc75752b83d9b68a2ea5effa2f0c81e6ac28c"
+    },
+    {
+      "path": "tests/test_config_recovery_h256.py",
+      "sha256": "89f286dd65de620776f381fed6fa6e08fa29793ccc3bcb95a63e2fa056231390"
+    },
+    {
+      "path": "tests/test_config_recovery_startup_h256.py",
+      "sha256": "1718a92b7b95772b4e0ee7c7e28981a3382a1dbabcabb2587f4eaa5d3118b3e6"
+    },
+    {
+      "path": "tests/test_default_deny_front_door.py",
+      "sha256": "8849b32910f203043e98924fa1a91765797b7c6ca652906ff5526e3d15d3cec3"
+    },
+    {
+      "path": "tests/test_ephemeral_reply.py",
+      "sha256": "286b71884243fb0414547e07498ed9de9d2a8f913c942e129ec3f5b5e9baab71"
+    },
+    {
+      "path": "tests/test_external_secret_sources_h034.py",
+      "sha256": "fe2edd066db9ef19df227c1cc88db70ba08c7653fdfa22c2cd49f75e669e616c"
+    },
+    {
+      "path": "tests/test_external_secret_sources_integration_h034.py",
+      "sha256": "e3861385a0b69ef56626fa860fd00718727742d13cec04ddd7444d14b6ee9110"
+    },
+    {
+      "path": "tests/test_h117_message_batching.py",
+      "sha256": "86f5008f559a1ca6270e4897d6094062a4dc22117acd3cfb6cfa9f6e68549913"
+    },
+    {
+      "path": "tests/test_h15_4_secret_broker.py",
+      "sha256": "8a508eea85652bb4e04aa4d0303485e3e6588d3623084380fcc2272213c73549"
+    },
+    {
+      "path": "tests/test_h277_approval_judge.py",
+      "sha256": "e88a7cd9e63c7ac41a2a915d7ac2984df489ab4b3252cef6c2fb249d533dd712"
+    },
+    {
+      "path": "tests/test_h277_model_roles.py",
+      "sha256": "487b95a7f5f1775c211fbc6c00c7473a012d9afb4a3b5ddbe642cc3427eeb96c"
+    },
+    {
+      "path": "tests/test_h27_capability_verification.py",
+      "sha256": "9e4490e611f0ea39127d5f838da41403d7b5a9f0daff67e22663fcb16c3545e3"
+    },
+    {
+      "path": "tests/test_h485_telegram_owner_settings.py",
+      "sha256": "e484ea0ed1af88cf38a5924cf7075bc6ec0910abf68320b6c091f4ea441c21ce"
+    },
+    {
+      "path": "tests/test_h487_native_runtime_human_wait.py",
+      "sha256": "b7e8eb6fac2e5f34be81379f2c501f5d52580709ee25404d86cbb97cc687d628"
+    },
+    {
+      "path": "tests/test_h490_safe_mode_posture.py",
+      "sha256": "f448d33f9853a67830ac3244fa2b9376a6fae6d92ffe4931621138ae3504895b"
+    },
+    {
+      "path": "tests/test_hermes_kanban_child_effects.py",
+      "sha256": "4f207fcec2686adcd0f430ef03f9c21c746b0c2ffbdbf07194068aa2b6991875"
+    },
+    {
+      "path": "tests/test_m12_origin_threading.py",
+      "sha256": "48b813eb7969c2dd43a9b1745248647f1420c8a11b2bd0da53a739fc7e5e66c5"
+    },
+    {
+      "path": "tests/test_nerva_cli.py",
+      "sha256": "c98bb5738f4f05ce43a21fa195116a2b74d47cc7c5c6db2582c95cb7f4631037"
+    },
+    {
+      "path": "tests/test_ntfy_approval_integration.py",
+      "sha256": "30847ad2c39de1a335074cecd24e03ad374df9c6a99bc6c9849e5d35198d9d11"
+    },
+    {
+      "path": "tests/test_ntfy_inbound.py",
+      "sha256": "ac0c7fb9cecc3aaf390b3ad732056632a8a8c1a6965cd8e0625bb2929f70fb1f"
+    },
+    {
+      "path": "tests/test_pending_input.py",
+      "sha256": "94222359748577e6ba3ef6c51f03f06805072b070f6ee3bbb118f45e769d2317"
+    },
+    {
+      "path": "tests/test_pending_input_cards.py",
+      "sha256": "fff0d63882238ed1eaf72fb2a6648f7ceedc87a7a5a134d6b4a12c2137753310"
+    },
+    {
+      "path": "tests/test_pending_input_completion_h067.py",
+      "sha256": "1b1da5fe66f34b5f8dee78b2466f09b1f88e09ab0cb1e541e0f17b1146d4548e"
+    },
+    {
+      "path": "tests/test_pending_input_discord_transport.py",
+      "sha256": "5a0d6a2ff4dcc2f85d4351206d75d8b8840add401baf515425a207da69587c42"
+    },
+    {
+      "path": "tests/test_pending_input_ingress.py",
+      "sha256": "dd4dd5f6a83e25943ddb42a7b6322568185bf4952464400c53c5c6d04749f045"
+    },
+    {
+      "path": "tests/test_pending_input_native_transport.py",
+      "sha256": "54799372586f3322abb23ee60d94868a935316d73325fac7ad14975c5e257015"
+    },
+    {
+      "path": "tests/test_pending_input_runtime.py",
+      "sha256": "6f614cfda819dab7728894e87e7c006103886be1a1e9f3b06ff610a075531d69"
+    },
+    {
+      "path": "tests/test_pending_input_slack_transport.py",
+      "sha256": "d71ab8aeb9b1543233c3b6b68a48c7b315872a7a4751b6280d30cb405f5e1aa6"
+    },
+    {
+      "path": "tests/test_pending_input_workspace.py",
+      "sha256": "092c331e5c45c48ca098f764db32d414049a0fb9463e3e5fe3adab4102bce9d8"
+    },
+    {
+      "path": "tests/test_pending_input_workspace_broker.py",
+      "sha256": "31b779034e7935d9e3d6ec00d500967ff963b90ba2137d131ecca2b1c4bab405"
+    },
+    {
+      "path": "tests/test_pending_input_workspace_runtime.py",
+      "sha256": "e76a1d1e3b42adeb8a0f98f10eb597ddc061487d9ac4d87277d7e8c9fcfd1124"
+    },
+    {
+      "path": "tests/test_permission_ledger.py",
+      "sha256": "02b1438795935ae9fbd7a148ad6c2835b243e53af6a4abe804e8ba65d1c6d196"
+    },
+    {
+      "path": "tests/test_quick_commands_h078.py",
+      "sha256": "b775cd372b803dc997e78214d6936bea520156a7a5c4321999d931ff8b84b5e1"
+    },
+    {
+      "path": "tests/test_reality_harness.py",
+      "sha256": "ed5f7bb43f870aa163518a0cff214167b629d7a05d155b8501bce21e9a50d1ad"
+    },
+    {
+      "path": "tests/test_safe_comms_channel_inbox.py",
+      "sha256": "d34e6c8d133e0e06e205498617cf0602ad311b172c1e1b78b77308e485ba8615"
+    },
+    {
+      "path": "tests/test_session_command_consent.py",
+      "sha256": "3346c66581ceaca1bfe8586de40cb00665174b88e75ac62f3d32ed883fccea6c"
+    },
+    {
+      "path": "tests/test_session_command_kernel.py",
+      "sha256": "24e6e7e4546da884cfae63408b41c2a55e0dfb5416020a003bae2ce3949f7257"
+    },
+    {
+      "path": "tests/test_session_command_permission.py",
+      "sha256": "4b9f6da16c06a4ae36f2ba61c9ad70b8ed3cd4a264893801cc8763689eb0b882"
+    },
+    {
+      "path": "tests/test_session_command_runtime.py",
+      "sha256": "35ed574781f372421be099f6bf14bc383e02243f059ac155eb9592b96c8538d5"
+    },
+    {
+      "path": "tests/test_session_lifecycle_integration.py",
+      "sha256": "51c7c4c09cd9ddadf9bb60c4a18cb12a6d09b6fe85fe4b28136ef2c23dddc962"
+    },
+    {
+      "path": "tests/test_session_reset_policy.py",
+      "sha256": "6c4203f382e40f1d72aa0402de8d66e5525e278b2bcde18e45f0e02cfb6eb4f8"
+    },
+    {
+      "path": "tests/test_session_undo.py",
+      "sha256": "ccbb4e6548d20937b2320d064e21d348aaabc32766639e739c36846f5323f710"
+    },
+    {
+      "path": "tests/test_settings_db.py",
+      "sha256": "d0a9b0dc8e6c9cd06b94f3395623eaa51ea147b0c37e0338c4e7a609f7a96fa1"
+    },
+    {
+      "path": "tests/test_slash_commands.py",
+      "sha256": "7e8de9894c387c2c18b212d1a485fb25f24b2e8d07153de861c17e49c8ed1040"
+    },
+    {
+      "path": "tests/test_stall_watcher.py",
+      "sha256": "6fa47a9aca3e64a8d4cc3c9edfc025d960016a8b8f9535ffe53c6c31d935dcbb"
+    },
+    {
+      "path": "tests/test_telegram_group_gate.py",
+      "sha256": "f3a83e850481240da1dda737b2c502c42a90dc904e0fd8130b144cf1e49034de"
+    },
+    {
+      "path": "tests/test_telegram_pairing_shared_store.py",
+      "sha256": "f673226938f478fbbc220dd0ea212abcd4c766066b0f1be7f45896529c509fd7"
+    },
+    {
+      "path": "tests/test_turn_lease.py",
+      "sha256": "f5a2f9ce420ccda151c45759e5a99ecee9253711099e0f1af46f33c082cad10d"
+    },
+    {
+      "path": "tests/test_workspace_channel_replies.py",
+      "sha256": "9621a611a6b365875bb4f111b27f9cb963dbf83db613413bd49706708ffa72f5"
+    }
+  ]
+}

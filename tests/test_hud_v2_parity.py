@@ -11,6 +11,7 @@ See ``docs/design/HUD_V2_IMPLEMENTATION_PLAN.md`` §8 and the coverage map in
 ``docs/design/HUD_V2_COVERAGE_AND_PLAN.md``.
 """
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -59,6 +60,7 @@ RULES = [
     ("/api/design-manifest", "observe"),
     ("/api/widget/", "interop"),  # embeddable widget runtime (managed under Interop)
     ("/api/ops/estop", "admin"),  # global emergency stop (hermes v2026.8.27 port) — owner control
+    ("/api/hermes/", "admin"),  # managed runtime controls and task approvals in Admin → Hermes Runtime
     # cockpit / conversation
     ("/chat", "cockpit"),
     ("/api/status", "cockpit"),
@@ -225,12 +227,30 @@ CORE_SURFACES = [
 ]
 
 
+def _router_prefix(source: str) -> str:
+    """Honor a router's literal APIRouter prefix when scanning decorator paths."""
+    for statement in ast.parse(source).body:
+        if not isinstance(statement, ast.Assign) or not any(
+            isinstance(target, ast.Name) and target.id == "router" for target in statement.targets
+        ):
+            continue
+        call = statement.value
+        if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name) or call.func.id != "APIRouter":
+            continue
+        for keyword in call.keywords:
+            if keyword.arg == "prefix" and isinstance(keyword.value, ast.Constant) and isinstance(keyword.value.value, str):
+                return keyword.value.value
+    return ""
+
+
 def _routes():
     app_pat = r'^@app\.(?:get|post|put|delete|patch)\("([^"]+)"'
     router_pat = r'^@router\.(?:get|post|put|delete|patch)\("([^"]+)"'
     found = set(re.findall(app_pat, WEB.read_text(encoding="utf-8"), re.M))
     for mod in sorted(ROUTERS.glob("*.py")):
-        found |= set(re.findall(router_pat, mod.read_text(encoding="utf-8"), re.M))
+        source = mod.read_text(encoding="utf-8")
+        prefix = _router_prefix(source)
+        found |= {prefix + path for path in re.findall(router_pat, source, re.M)}
     return sorted(found)
 
 
@@ -246,6 +266,16 @@ def _classify(path):
 def test_routes_extracted():
     routes = _routes()
     assert len(routes) > 150, f"expected the full route surface, got {len(routes)}"
+
+
+def test_prefixed_hermes_routes_are_mapped_to_the_real_admin_panel():
+    routes = _routes()
+    assert "/api/hermes/approvals" in routes
+    assert "/api/hermes/approvals/{task_id}/decision" in routes
+    assert "/approvals" not in routes
+    assert _classify("/api/hermes/approvals") == "admin"
+    admin_source = (REPO / "frontend/src/modes3.tsx").read_text(encoding="utf-8")
+    assert "<HermesRuntimePanel/>" in admin_source.split("function AdminMode", 1)[1]
 
 
 def test_every_route_has_a_v2_home():
@@ -476,6 +506,11 @@ _CLIENT_GLOBS = (
 # inheriting a bare list. The audit's own count came down from 86 to 68 precisely because
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
+    "/api/kanban/command": "owner host CLI bridge, used by nerva kanban; board UI uses dedicated REST routes",
+    "/api/kanban/projects/command": "owner host CLI bridge, used by nerva project; project inventory uses the dedicated REST route",
+    "/api/vlm/composer/status":
+        "legacy vision preview read by `nerva chat --image`; the web composer uses "
+        "prompt-bound /api/vlm/composer/prepare instead",
     "/v1/capabilities":
         "protocol discovery for external HTTP chat/session clients; packaged HUD/native "
         "clients retain their fixed tested contract, with no discovery control",
@@ -542,6 +577,41 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # H075/H581: ProjectsMode now consumes the core board, drawer, attachment,
+    # metadata and dispatch routes. Remaining advanced HUD/native controls follow.
+    # Each exact path is also recorded in docs/design/HUD_V2_REMAINING.md.
+    "/api/kanban/assignees",
+    "/api/kanban/boards/import",
+    "/api/kanban/boards/{slug}/export",
+    "/api/kanban/boards/{slug}/switch",
+    "/api/kanban/config",
+    "/api/kanban/diagnostics",
+    "/api/kanban/estimate",
+    "/api/kanban/home-channels",
+    "/api/kanban/links",
+    "/api/kanban/model-options",
+    "/api/kanban/profiles/{profile_name}",
+    "/api/kanban/profiles/{profile_name}/describe-auto",
+    "/api/kanban/runs/{run_id}",
+    "/api/kanban/runs/{run_id}/inspect",
+    "/api/kanban/runs/{run_id}/terminate",
+    "/api/kanban/stats",
+    "/api/kanban/tasks/{task_id}/decompose",
+    "/api/kanban/tasks/{task_id}/estimate",
+    "/api/kanban/tasks/{task_id}/home-subscribe/{platform}",
+    "/api/kanban/tasks/{task_id}/reassign",
+    "/api/kanban/tasks/{task_id}/reclaim",
+    "/api/kanban/tasks/{task_id}/specify",
+    "/api/kanban/workers/active",
+    # H075/H581: approved backend dispatch exists; dedicated board/worker
+    # controls remain in HUD_V2_REMAINING.md and native task H18.34.
+    "/api/autonomy/kanban/dispatch",
+    # Nous account operations have a working owner CLI (agents/cli/nous_auth.py).
+    # HUD account controls remain unfinished, recorded in HUD_V2_REMAINING.md.
+    "/api/oauth/nous/login",
+    "/api/oauth/nous/logout",
+    "/api/oauth/nous/poll",
+    "/api/oauth/nous/status",
     # HA-4i-S1: host CLI inspection exists; dedicated HUD/mobile views are pending.
     # The existing acquisition panel does not show this extension projection.
     "/api/plugins/extensions",
@@ -608,6 +678,56 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/worldview/status",
 ])
 
+
+# ProjectsMode mounts KanbanView, which calls these transport functions. Its API
+# composes paths from `root` and `scopedPath`, so the literal-route matcher above
+# cannot discover them. Keep transport expressions and mounted consumers here so
+# a removed button/read or changed route cannot silently count as a HUD caller.
+KANBAN_HTTP_CONSUMERS: dict[str, tuple[str, str, str]] = {
+    "/api/kanban/attachments/{attachment_id}": ("scopedPath(`/attachments/${id}`, slug)", "downloadAttachment", "drawer.tsx"),
+    "/api/kanban/board": ("root + '/board'", "fetchBoard", "KanbanView.tsx"),
+    "/api/kanban/boards": ("root + '/boards'", "fetchBoards", "KanbanView.tsx"),
+    "/api/kanban/boards/{slug}": ("`${root}/boards/${encodeURIComponent(slug)}`", "updateBoard", "board-switcher.tsx"),
+    "/api/kanban/dispatch": ("scopedPath('/dispatch', slug)", "dispatch", "KanbanView.tsx"),
+    "/api/kanban/orchestration": ("root + '/orchestration'", "fetchOrchestration", "KanbanView.tsx"),
+    "/api/kanban/profiles": ("root + '/profiles'", "fetchProfiles", "KanbanView.tsx"),
+    "/api/kanban/projects": ("root + '/projects'", "fetchProjects", "KanbanView.tsx"),
+    "/api/kanban/tasks": ("scopedPath('/tasks', slug)", "createTask", "board.tsx"),
+    "/api/kanban/tasks/bulk": ("scopedPath('/tasks/bulk', slug)", "bulkTasks", "KanbanView.tsx"),
+    "/api/kanban/tasks/{task_id}": ("scopedPath(`/tasks/${encodeURIComponent(id)}`, slug)", "fetchTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/attachments": ("scopedPath(`/tasks/${encodeURIComponent(id)}/attachments`, slug)", "uploadAttachment", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/comments": ("scopedPath(`/tasks/${encodeURIComponent(id)}/comments`, slug)", "addComment", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/log": ("scopedPath(`/tasks/${encodeURIComponent(id)}/log`, slug)", "fetchLog", "drawer.tsx"),
+}
+
+
+def test_mounted_kanban_composed_callers_are_accounted_for():
+    files = _client_files()
+    transport = files["frontend/src/panels/kanban/api.ts"]
+    host = files["frontend/src/gap.tsx"]
+    view = files["frontend/src/panels/kanban/KanbanView.tsx"]
+    assert "<KanbanView />" in host and "createKanbanSocket(" in view
+    assert "const root = '/api/kanban'" in transport
+    assert "root + '/events'" in transport and "new WebSocket(kanbanEventsUrl" in transport
+    routes = set(_snapshot_routes())
+    blob = _client_blob()
+    for path, (expression, function, consumer) in KANBAN_HTTP_CONSUMERS.items():
+        client = files[f"frontend/src/panels/kanban/{consumer}"]
+        assert path in routes, f"{path} is no longer a server route"
+        assert expression in transport, f"{path} transport expression changed"
+        assert re.search(rf"\b{re.escape(function)}\(", client), f"{path} lost its mounted UI call"
+        assert not _has_caller(path, blob), f"{path} became literal; remove computed classification"
+        assert path in COMPUTED_URL_CALLERS, f"{path} is absent from computed callers"
+        assert path not in UNCALLED_BACKLOG, f"{path} still claims no client caller"
+
+
+def test_kanban_route_gap_document_matches_the_uncalled_routes():
+    remaining = (REPO / "docs/design/HUD_V2_REMAINING.md").read_text(encoding="utf-8")
+    section = remaining.split("Kanban client route gaps:", 1)[1].split("\n\nH011 checkpoints", 1)[0]
+    documented = set(re.findall(r"^- `(/api/kanban/[^`]+)`$", section, flags=re.MULTILINE))
+    uncalled = {path for path in UNCALLED_BACKLOG if path.startswith("/api/kanban/")}
+    assert documented == uncalled
+
 # Routes whose client call is BUILT rather than written: the last segment comes from a
 # variable (`'/api/missions/' + id + '/' + action`), so no literal template exists for the
 # matcher above to find. Each entry names the client file that builds it, and
@@ -617,6 +737,12 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
 # NOT unfinished work: putting them on the punch list would record a false statement and
 # send a future reader to build controls that already exist.
 COMPUTED_URL_CALLERS: dict[str, str] = {
+    # HermesRuntimePanel composes `/api/hermes/${action}` from its start/stop controls.
+    "/api/hermes/start": "frontend/src/hermes-runtime-panel.tsx",
+    "/api/hermes/stop": "frontend/src/hermes-runtime-panel.tsx",
+    # Kanban transport composes the shared root and scoped task paths in api.ts.
+    # The test above verifies each expression and its mounted UI consumer.
+    **dict.fromkeys(KANBAN_HTTP_CONSUMERS, "frontend/src/panels/kanban/api.ts"),
     # JobsPanel builds the accepted receipt polling URL from JOBS_PATH and both IDs.
     "/api/jobs/{job_id}/requests/{request_id}": "frontend/src/panels/jobs.tsx",
     # AcquisitionPanel: apiPost(`/api/acquisition/${…}/${action}`), action from the buttons
@@ -762,6 +888,17 @@ def test_computed_url_callers_stay_real():
             problems.append(f"{path}: no longer a route")
         elif source is None:
             problems.append(f"{path}: {client} is not in the client corpus")
+        elif path in KANBAN_HTTP_CONSUMERS:
+            # The dedicated gate checks the composed URL and its mounted caller.
+            continue
+        elif path in {"/api/hermes/start", "/api/hermes/stop"}:
+            action = path.rsplit("/", 1)[1]
+            if ("`/api/hermes/${action}`" not in source
+                    or f"control('{action}')" not in source
+                    or "action: 'start' | 'stop'" not in source
+                    or _has_caller(path, blob)):
+                problems.append(f"{path}: Hermes panel no longer builds and uses this control URL")
+            continue
         elif stem not in source:
             problems.append(f"{path}: {client} never mentions {stem}")
         elif any(not re.search(rf"\b{re.escape(w)}\b", source) for w in words):

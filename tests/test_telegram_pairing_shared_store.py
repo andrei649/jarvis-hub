@@ -175,6 +175,12 @@ def test_the_app_hands_the_telegram_channel_the_orchestrators_store(monkeypatch)
         assert orch.sender_pairing is not None
         assert telegram._pairing is orch.sender_pairing
         assert web.gateway.pairing is orch.sender_pairing
+        # Pending-only ingress is explicitly wired to the same live gateway and
+        # orchestrator, rather than bypassing pairing through an adapter shortcut.
+        assert telegram.pending_reply_handler == web.gateway.route_pending
+        assert web.gateway.pending_handler == orch.channel_pending_handler
+        assert telegram.pending_callback_handler == web.gateway.route_pending_callback
+        assert web.gateway.pending_callback_handler == orch.channel_pending_callback
         assert _get_sender_pairing() is orch.sender_pairing
         # one file, spelled through the data root on both sides
         store_path = Path(orch.sender_pairing.path).resolve()

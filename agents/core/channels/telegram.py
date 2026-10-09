@@ -12,12 +12,14 @@ import logging
 import math
 import re
 import time
+import uuid
 from typing import Callable, NamedTuple, Optional
 
 import httpx
 
 from .base import ChannelAdapter
 from .descriptor import DIALECT_TELEGRAM_HTML, ChannelDescriptor
+from .ephemeral import EphemeralDeletes, EphemeralReply, ephemeral_ttl
 from .group_policy import ANSWER, OBSERVE, GroupPolicy, gate_message
 from .inbound_media import (
     KIND_PHOTO,
@@ -45,6 +47,7 @@ from .render import chunk, to_plain, to_telegram_html
 from .spoken_reply import REASON_SEND, Audio, SpokenReply
 from ..log_safe import log_safe
 from ..settings_db import get_value
+from ..owner_once_context import OwnerReplySource, bind_owner_reply_source, close_owner_reply_source
 
 logger = logging.getLogger("jarvis.channels.telegram")
 
@@ -63,10 +66,11 @@ _STREAM_CURSOR = " ▍"
 class _TurnScope:
     """One turn of one chat while it runs (see :data:`_RUNNING_TURN`)."""
 
-    __slots__ = ("channel", "chat_id", "running")
+    __slots__ = ("channel", "chat_id", "running", "message_thread_id")
 
-    def __init__(self, channel, chat_id) -> None:
+    def __init__(self, channel, chat_id, message_thread_id=None) -> None:
         self.channel, self.chat_id, self.running = channel, chat_id, True
+        self.message_thread_id = message_thread_id
 
     def answers(self, channel, chat_id) -> bool:
         """Is a reply to *chat_id* on *channel*, sent in this scope, this turn's own reply?"""
@@ -89,6 +93,7 @@ class _TurnScope:
 #: turn's mark as if it were the answer. (``loop.run_in_executor`` copies no context, so a reply
 #: marshalled back from such a thread is never the answer either.)
 _RUNNING_TURN: contextvars.ContextVar = contextvars.ContextVar("telegram_running_turn", default=None)
+_TOPIC_REPLY: contextvars.ContextVar = contextvars.ContextVar("telegram_reply_topic", default=None)
 
 
 class _Page(NamedTuple):
@@ -97,11 +102,14 @@ class _Page(NamedTuple):
     ``wall`` on the host's wall clock (None when unreadable), and ``previous``, the ``now`` of
     the page before it (None before the first page, or after a page whose reading failed). A
     page whose handling raised before every update in it was handled does not count: the
-    updates after the failing one come again, and the page before it stays their bound."""
+    updates after the failing one come again, and the page before it stays their bound.
+    ``native_at`` is a separate monotonic getUpdates-return stamp for native consent:
+    configurable reason clocks and Telegram's coarse date never extend its deadline."""
 
     previous: Optional[float]
     now: Optional[float]
     wall: Optional[float]
+    native_at: Optional[float] = None
 
 
 def _is_instant(value) -> bool:
@@ -239,11 +247,19 @@ class TelegramChannel(ChannelAdapter):
     def __init__(self, token: str, handler: Optional[Callable] = None,
                  allowed_user_ids: Optional[list[int]] = None,
                  group_policy: Optional[GroupPolicy] = None,
-                 pairing=None):
+                 pairing=None, pending_reply_handler: Optional[Callable] = None,
+                 pending_callback_handler: Optional[Callable] = None,
+                 pre_turn_interrupt: Optional[Callable] = None):
         super().__init__("telegram", handler)
+        self.pending_reply_handler = pending_reply_handler
+        self.pending_callback_handler = pending_callback_handler
+        self.pre_turn_interrupt = pre_turn_interrupt
+        self._pending_callback_generation = object()
+        self._pending_callback_fast: dict[str, asyncio.Task] = {}
         # H117: a burst from one sender (a split message, an album, a photo then its
         # question) is held for the batch window and handed over as one turn.
         self._batch = Coalescer(*configured())
+        self._batch_session_meta: dict = {}
         self.token = token
         self.api_base = f"https://api.telegram.org/bot{token}"
         self.client = httpx.AsyncClient(timeout=15.0)
@@ -257,6 +273,22 @@ class TelegramChannel(ChannelAdapter):
         self._bot_username: Optional[str] = None
         self._offset = 0
         self._poll_task = None
+        self._owner_once_generation: str | None = None
+        self._owner_once_fast: dict[str, asyncio.Task] = {}
+        self._owner_once_denial_fast: dict[tuple[int, int], asyncio.Task] = {}
+        self._consent_fast: dict[str, asyncio.Task] = {}
+        self._consent_denial_fast: dict[tuple[int, int], asyncio.Task] = {}
+        # Registration-owned hooks; the channel does not decide owner identity.
+        self.owner_once_pending: Optional[Callable] = None
+        self.on_owner_once_callback: Optional[Callable] = None
+        self.owner_once_denial_pending: Optional[Callable] = None
+        self.on_owner_once_denial_reply: Optional[Callable] = None
+        self.on_owner_once_stop: Optional[Callable] = None
+        self.consent_pending: Optional[Callable] = None
+        self.on_consent_callback: Optional[Callable] = None
+        self.consent_denial_pending: Optional[Callable] = None
+        self.on_consent_denial_reply: Optional[Callable] = None
+        self.on_consent_stop: Optional[Callable] = None
         # H677: while the poll loop runs, each chat's turns go to that chat's lane, so
         # one slow answer never holds another chat's messages.
         self._lanes = None
@@ -321,8 +353,15 @@ class TelegramChannel(ChannelAdapter):
         # (chat, sender) like H117's batches: in a group another member's older batch
         # flushes first and must not take it.
         self._voice_pending: set = set()
+        self._ephemeral_deletes = EphemeralDeletes()
 
     async def start(self):
+        if self.client.is_closed:
+            self.client = httpx.AsyncClient(timeout=15.0)
+        if self._ephemeral_deletes._closed:
+            self._ephemeral_deletes = EphemeralDeletes()
+        self._pending_callback_generation = object()
+        self._owner_once_generation = uuid.uuid4().hex
         self._running = True
         me = await self._get_me()
         if me:
@@ -339,6 +378,40 @@ class TelegramChannel(ChannelAdapter):
 
     async def stop(self):
         self._running = False
+        self._pending_callback_generation = None
+        generation = getattr(self, "_owner_once_generation", None)
+        self._owner_once_generation = None
+        stop_hook = getattr(self, "on_owner_once_stop", None)
+        if generation is not None and stop_hook is not None:
+            try:
+                stop_hook(generation)
+            except Exception:
+                logger.warning("Owner-once stop hook failed", exc_info=True)
+        consent_stop = getattr(self, "on_consent_stop", None)
+        if generation is not None and consent_stop is not None:
+            try:
+                consent_stop(generation)
+            except Exception:
+                logger.warning("Reusable-consent stop hook failed", exc_info=True)
+        fast = tuple(getattr(self, "_owner_once_fast", {}).values())
+        fast += tuple(getattr(self, "_owner_once_denial_fast", {}).values())
+        fast += tuple(getattr(self, "_consent_fast", {}).values())
+        fast += tuple(getattr(self, "_consent_denial_fast", {}).values())
+        fast += tuple(getattr(self, "_pending_callback_fast", {}).values())
+        for task in fast:
+            task.cancel()
+        if fast:
+            await asyncio.wait(fast, timeout=LANE_DRAIN_BUDGET)
+        if hasattr(self, "_owner_once_fast"):
+            self._owner_once_fast.clear()
+        if hasattr(self, "_owner_once_denial_fast"):
+            self._owner_once_denial_fast.clear()
+        if hasattr(self, "_consent_fast"):
+            self._consent_fast.clear()
+        if hasattr(self, "_consent_denial_fast"):
+            self._consent_denial_fast.clear()
+        if hasattr(self, "_pending_callback_fast"):
+            self._pending_callback_fast.clear()
         if self._poll_task:
             self._poll_task.cancel()
             # H117: the cancel lands at one of the loop's awaits, so the hand-over at its
@@ -348,6 +421,8 @@ class TelegramChannel(ChannelAdapter):
         lanes, self._lanes = self._lanes, None
         if lanes is not None:
             await lanes.drain(LANE_DRAIN_BUDGET)
+        if not await self._ephemeral_deletes.aclose(timeout=LANE_DRAIN_BUDGET):
+            logger.warning("Telegram ephemeral deletion did not finish within the shutdown budget")
         await self.client.aclose()
         logger.info("Telegram channel stopped")
 
@@ -368,7 +443,26 @@ class TelegramChannel(ChannelAdapter):
         if not cid:
             logger.warning("No chat_id provided for Telegram send")
             return False
+        topic = kwargs.pop("message_thread_id", None)
+        if topic is not None:
+            if type(topic) is not int or topic <= 0:
+                return False
+            scope = _TurnScope(self, cid, topic)
+            token = _TOPIC_REPLY.set(scope)
+            try:
+                return await self.send(message, chat_id=cid, **kwargs)
+            finally:
+                scope.running = False
+                _TOPIC_REPLY.reset(token)
         plain = kwargs.get("plain") is True
+        if isinstance(message, EphemeralReply):
+            default = get_value("display", "ephemeral_system_ttl", 0) if message.ttl_seconds is None else 0
+            ttl = ephemeral_ttl(message, default=default)
+            for piece in chunk(message.text, self.descriptor.max_message_length):
+                if not await self._send_ephemeral_chunk(cid, piece, plain=plain, ttl=ttl):
+                    return False
+            # System notices neither speak nor consume a pending voice turn.
+            return True
         for piece in chunk(str(message or ""), self.descriptor.max_message_length):
             sent = await self._send_plain_chunk(cid, piece) if plain else await self._send_chunk(cid, piece)
             if not sent:
@@ -380,6 +474,44 @@ class TelegramChannel(ChannelAdapter):
         # send takes that mark only from inside the turn itself (see _after_reply).
         await self._after_reply(cid, str(message or ""), speak=kwargs.get("voice", True))
         return True
+
+    async def _send_ephemeral_chunk(self, cid, piece: str, *, plain: bool, ttl: int) -> bool:
+        """Schedule removal only of the exact bot message acknowledged by sendMessage."""
+        try:
+            topic = self._topic_args(cid)
+            body = {"chat_id": cid, "text": piece, **topic}
+            if plain:
+                body["link_preview_options"] = {"is_disabled": True}
+            else:
+                body.update(text=to_telegram_html(piece), parse_mode="HTML")
+            response = await self.client.post(self.api_base + "/sendMessage", json=body)
+            if not plain and response.status_code == 400:
+                response = await self.client.post(self.api_base + "/sendMessage", json={
+                    "chat_id": cid, "text": to_plain(piece), **topic})
+            response.raise_for_status()
+            payload = response.json()
+            result = payload.get("result") if isinstance(payload, dict) else None
+            message_id = result.get("message_id") if isinstance(result, dict) else None
+            if (not isinstance(payload, dict) or payload.get("ok") is not True
+                    or type(message_id) is not int or message_id <= 0):
+                return False
+
+            client = self.client
+
+            async def delete():
+                if client.is_closed:
+                    return False
+                response = await client.post(self.api_base + "/deleteMessage", json={
+                    "chat_id": cid, "message_id": message_id})
+                response.raise_for_status()
+                body = response.json()
+                return isinstance(body, dict) and body.get("ok") is True and body.get("result") is True
+
+            self._ephemeral_deletes.schedule(ttl, delete)
+            return True
+        except Exception as exc:
+            logger.warning("Telegram system notice delivery failed: %s", type(exc).__name__)
+            return False
 
     async def send_scheduled_text(self, text: str, *, chat_id: int) -> bool:
         """One bounded plain-text request, without fallback, retries or exception logging."""
@@ -434,24 +566,31 @@ class TelegramChannel(ChannelAdapter):
         (logged by type only: an HTTP error names the URL, and the URL holds the token)."""
         try:
             resp = await self.client.post(f"{self.api_base}/sendMessage", json={
-                "chat_id": cid, "text": piece, "link_preview_options": {"is_disabled": True}})
+                "chat_id": cid, "text": piece, "link_preview_options": {"is_disabled": True},
+                **self._topic_args(cid)})
             resp.raise_for_status()
             return True
         except Exception as e:
             logger.error("Telegram send error: %s", type(e).__name__)
             return False
 
+    def _topic_args(self, cid) -> dict:
+        scope = _TOPIC_REPLY.get()
+        if scope is not None and scope.answers(self, cid) and scope.message_thread_id is not None:
+            return {"message_thread_id": scope.message_thread_id}
+        return {}
+
     async def _send_message(self, cid, html_text: str, *, plain: str) -> Optional[int]:
         """POST one message as HTML, as plain text if Telegram rejects the markup (400).
         Returns the new message id (or 0 when Telegram did not say), raises on failure."""
         resp = await self.client.post(
             f"{self.api_base}/sendMessage",
-            json={"chat_id": cid, "text": html_text, "parse_mode": "HTML"},
+            json={"chat_id": cid, "text": html_text, "parse_mode": "HTML", **self._topic_args(cid)},
         )
         if resp.status_code == 400:
             logger.info("Telegram rejected the markup; resending the chunk as plain text")
             resp = await self.client.post(
-                f"{self.api_base}/sendMessage", json={"chat_id": cid, "text": plain},
+                f"{self.api_base}/sendMessage", json={"chat_id": cid, "text": plain, **self._topic_args(cid)},
             )
         resp.raise_for_status()
         return _message_id_of(resp)
@@ -489,6 +628,165 @@ class TelegramChannel(ChannelAdapter):
         except Exception as e:
             logger.error(f"Telegram send_card error: {e}")
             return False
+
+    def _owner_once_live(self, generation: str | None) -> bool:
+        poller = self._poll_task
+        return (self._running is True and type(generation) is str and bool(generation)
+                and self._owner_once_generation == generation
+                and isinstance(poller, asyncio.Task) and not poller.done()
+                and not poller.cancelling())
+
+    def _consent_denial_hook_live(self, generation: str | None, hook: Callable | None) -> bool:
+        registry = getattr(self.on_consent_callback, "__self__", None)
+        return (
+            self._owner_once_live(generation) and registry is not None
+            and hook is getattr(registry, "_denial_hook", None)
+            and self.consent_denial_pending is getattr(registry, "_denial_pending_hook", None)
+            and self.consent_pending is getattr(registry, "_pending_hook", None)
+            and self.on_consent_stop is getattr(registry, "_stop_hook", None)
+        )
+
+    def _owner_once_denial_hook_live(self, generation: str | None,
+                                      hook: Callable | None) -> bool:
+        registry = getattr(self.on_owner_once_callback, "__self__", None)
+        return (
+            self._owner_once_live(generation) and registry is not None
+            and hook is getattr(registry, "_denial_hook", None)
+            and self.owner_once_denial_pending is getattr(
+                registry, "_denial_pending_hook", None)
+            and self.owner_once_pending is getattr(registry, "_pending_hook", None)
+            and self.on_owner_once_stop is getattr(registry, "_stop_hook", None)
+        )
+
+    @staticmethod
+    def _owner_once_parts(text: str) -> tuple[str, ...] | None:
+        """Split plain text at Telegram's 4096 UTF-16-unit message boundary."""
+        if type(text) is not str or not text:
+            return None
+        parts: list[str] = []
+        current: list[str] = []
+        units = total = 0
+        for char in text:
+            code = ord(char)
+            if 0xD800 <= code <= 0xDFFF:
+                return None
+            size = 2 if code > 0xFFFF else 1
+            total += size
+            if total > 24_576:
+                return None
+            if units + size > TELEGRAM_MAX_MESSAGE_LENGTH:
+                parts.append("".join(current))
+                current = []
+                units = 0
+            current.append(char)
+            units += size
+        if current:
+            parts.append("".join(current))
+        return tuple(parts)
+
+    async def send_pending_card(self, text: str, *, reply_markup: dict, chat_id: int,
+                                message_thread_id: int | None = None) -> int | None:
+        """Plain prompt parts with buttons only on the exact final receipt."""
+        generation = self._pending_callback_generation
+        parts = self._owner_once_parts(text)
+        if (not self._running or generation is None or self.client.is_closed
+                or type(chat_id) is not int or chat_id == 0 or parts is None
+                or type(reply_markup) is not dict
+                or (message_thread_id is not None
+                    and (type(message_thread_id) is not int or message_thread_id <= 0))):
+            return None
+        for index, part in enumerate(parts):
+            if not self._running or generation is not self._pending_callback_generation:
+                return None
+            body = {"chat_id": chat_id, "text": part, "disable_web_page_preview": True}
+            if message_thread_id is not None:
+                body["message_thread_id"] = message_thread_id
+            if index == len(parts) - 1:
+                body["reply_markup"] = reply_markup
+            try:
+                response = await self.client.post(f"{self.api_base}/sendMessage", json=body)
+                response.raise_for_status()
+                reply = response.json()
+                result = reply.get("result") if type(reply) is dict and reply.get("ok") is True else None
+                message_id = result.get("message_id") if type(result) is dict else None
+                if type(message_id) is not int or message_id <= 0:
+                    return None
+            except Exception:
+                logger.warning("Pending prompt delivery failed")
+                return None
+            if not self._running or generation is not self._pending_callback_generation:
+                return None
+        return message_id
+
+    async def _handle_pending_callback(self, callback, generation, hook):
+        """Owned fast ingress: no chat lease, batching, or model fallback."""
+        if (not self._running or self.client.is_closed
+                or generation is not self._pending_callback_generation):
+            return
+        try:
+            result = await hook(callback)
+            applied = getattr(result, "applied", False) is True
+            if (not self._running or self.client.is_closed
+                    or generation is not self._pending_callback_generation):
+                return
+            if applied:
+                message = callback["message"]
+                markup = getattr(result, "markup", None) or {"inline_keyboard": []}
+                try:
+                    response = await self.client.post(f"{self.api_base}/editMessageReplyMarkup", json={
+                        "chat_id": message["chat"]["id"], "message_id": message["message_id"],
+                        "reply_markup": markup,
+                    })
+                    response.raise_for_status()
+                    if response.json().get("ok") is not True:
+                        logger.warning("Pending prompt buttons could not be updated")
+                except Exception:
+                    # Revision has advanced. Old buttons cannot mutate the prompt;
+                    # the original text-reply fallback remains available.
+                    logger.warning("Pending prompt buttons could not be updated")
+            notice = ("Type your answer in this chat." if applied
+                      and getattr(result, "status", None) == "awaiting_text"
+                      else "Applied." if applied else "Not applied.")
+            await self._answer_callback(callback["id"], notice)
+        except Exception:
+            logger.warning("Pending callback not applied")
+            if self._running and not self.client.is_closed:
+                await self._answer_callback(callback["id"], "Not applied.")
+
+    async def send_owner_once_card(self, chat_id: int, card: dict) -> int | None:
+        """Send every plain-text part; bind buttons only to the final receipt."""
+        generation = self._owner_once_generation
+        if (not self._owner_once_live(generation) or type(chat_id) is not int
+                or chat_id == 0 or not isinstance(card, dict)):
+            return None
+        parts = self._owner_once_parts(card.get("text"))
+        markup = card.get("reply_markup")
+        if parts is None or (markup is not None and type(markup) is not dict):
+            return None
+        for number, part in enumerate(parts):
+            if not self._owner_once_live(generation):
+                return None
+            body = {"chat_id": chat_id, "text": part}
+            if number == len(parts) - 1 and markup is not None:
+                body["reply_markup"] = markup
+            try:
+                response = await self.client.post(f"{self.api_base}/sendMessage", json=body)
+                response.raise_for_status()
+                reply = response.json()
+                result = reply.get("result") if type(reply) is dict and reply.get("ok") is True else None
+                message_id = result.get("message_id") if type(result) is dict else None
+                if type(message_id) is not int or message_id <= 0:
+                    return None
+            except Exception:
+                logger.warning("Owner-once card delivery failed")
+                return None
+            if not self._owner_once_live(generation):
+                return None
+        return message_id
+
+    async def send_consent_card(self, chat_id: int, card: dict) -> int | None:
+        """Return the verified final Bot API message ID for a reusable card."""
+        return await self.send_owner_once_card(chat_id, card)
 
     async def request_decision_reason(self, task_id: int, *, chat_id: int) -> int:
         """Offer an optional reply bound to one rejected decision, not a chat turn."""
@@ -581,13 +879,92 @@ class TelegramChannel(ChannelAdapter):
         # Decision-inbox button taps arrive as callback_query updates.
         cb = up.get("callback_query")
         if cb:
+            data = cb.get("data")
+            if type(data) is str and data.startswith("h067:"):
+                callback_id = cb.get("id")
+                hook = self.pending_callback_handler
+                if (self._running and not self.client.is_closed and callable(hook)
+                        and type(callback_id) is str and 0 < len(callback_id) <= 128
+                        and callback_id not in self._pending_callback_fast
+                        and len(self._pending_callback_fast) < 32):
+                    task = asyncio.create_task(self._handle_pending_callback(
+                        cb, self._pending_callback_generation, hook), name="telegram-pending-callback")
+                    self._pending_callback_fast[callback_id] = task
+                    task.add_done_callback(
+                        lambda done, key=callback_id: self._pending_callback_fast.get(key) is done
+                        and self._pending_callback_fast.pop(key, None))
+                elif self._running and not self.client.is_closed:
+                    await self._answer_callback(callback_id or "", "Not applied.")
+                return
+            from ..autonomy.inbox import parse_consent_callback_data
+
+            data = cb.get("data")
+            parsed_consent = parse_consent_callback_data(data)
+            if parsed_consent is not None or (type(data) is str and data.startswith("autc:")):
+                if parsed_consent is None:
+                    await self._answer_callback(cb.get("id", ""), "Not applied.")
+                    return
+                nonce, choice = parsed_consent
+                generation = self._owner_once_generation
+                callback_hook = self.on_consent_callback
+                pending_hook = self.consent_pending
+                reserved = False
+                if (self._owner_once_live(generation) and callback_hook is not None
+                        and pending_hook is not None and nonce not in self._consent_fast
+                        and len(self._consent_fast) < 32):
+                    try:
+                        reserved = pending_hook(cb) is True
+                    except Exception:
+                        reserved = False
+                if reserved:
+                    task = asyncio.create_task(self._handle_consent_callback(
+                        cb, nonce, choice, generation, callback_hook, pending_hook,
+                    ))
+                    self._consent_fast[nonce] = task
+                    task.add_done_callback(
+                        lambda done, key=nonce: self._consent_fast.get(key) is done
+                        and self._consent_fast.pop(key, None)
+                    )
+                else:
+                    await self._answer_callback(cb.get("id", ""), "Not applied.")
+                return
             await self._flush_all_turns()      # what was said before the tap goes first
             chat = ((cb.get("message") or {}).get("chat") or {}).get("id")
+            from ..autonomy.inbox import parse_owner_once_callback_data
+            parsed_once = parse_owner_once_callback_data(cb.get("data"))
+            generation = self._owner_once_generation
+            if (parsed_once is not None and self._owner_once_live(generation)
+                    and self.owner_once_pending is not None
+                    and self.on_owner_once_callback is not None
+                    and parsed_once[0] not in self._owner_once_fast
+                    and len(self._owner_once_fast) < 32):
+                try:
+                    reserved = self.owner_once_pending(cb) is True
+                except Exception:
+                    reserved = False
+                if reserved:
+                    nonce, choice = parsed_once
+                    callback_hook = self.on_owner_once_callback
+                    pending_hook = self.owner_once_pending
+                    task = asyncio.create_task(self._handle_owner_once_callback(
+                        cb, nonce, choice, generation, callback_hook, pending_hook,
+                    ))
+                    self._owner_once_fast[nonce] = task
+                    task.add_done_callback(
+                        lambda done, key=nonce: self._owner_once_fast.get(key) is done
+                        and self._owner_once_fast.pop(key, None)
+                    )
+                    return
             await self._in_chat(chat, lambda: self._handle_callback(cb))
             return
         msg = up.get("message") or up.get("edited_message")
         if not msg:
             return
+        if (up.get("message") is None or any(msg.get(field) for field in (
+                "forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))):
+            # This narrowing marker also follows the ordinary queued path; otherwise
+            # a forwarded/edited reply could be intercepted later by the gateway.
+            msg = {**msg, "_pending_input_ineligible": True}
         uid = msg["from"]["id"]
         if self.allowed_users and uid not in self.allowed_users:
             logger.info("Ignored message from user %s", log_safe(uid))
@@ -606,6 +983,101 @@ class TelegramChannel(ChannelAdapter):
         # the orchestrator, echoed, or logged as message text.
         if await self._maybe_pair_deeplink(text, uid, chat_id):
             return
+        # A native denial is a direct reply to one delivered card. Dispatch it
+        # outside the chat lane: that lane may contain the very tool turn waiting for it.
+        # Consume every exact /deny command, including stale or malformed attempts, so
+        # an old card reply cannot become a model turn.
+        if (type(text) is str and text.startswith("/deny")
+                and (len(text) == 5 or text[5].isspace())):
+            reply_id = (msg.get("reply_to_message") or {}).get("message_id")
+            message_id = msg.get("message_id")
+            generation = self._owner_once_generation
+            key = (chat_id, message_id)
+            if (up.get("message") is None or attachment is not None
+                    or any(msg.get(field) for field in (
+                        "forward_origin", "forward_from", "forward_from_chat",
+                        "forward_sender_name",
+                    ))
+                    or type(chat_id) is not int or type(uid) is not int
+                    or type(message_id) is not int or message_id <= 0
+                    or type(reply_id) is not int or reply_id <= 0
+                    or not self._owner_once_live(generation)):
+                await self._consent_denial_ack(chat_id, "Not applied.")
+                return
+            consent_hook = self.on_consent_denial_reply
+            owner_hook = self.on_owner_once_denial_reply
+            try:
+                consent = (self._consent_denial_hook_live(generation, consent_hook)
+                           and self.consent_denial_pending(
+                               chat_id=chat_id, user_id=uid,
+                               reply_to_message_id=reply_id,
+                           ) is True)
+                owner = (self._owner_once_denial_hook_live(generation, owner_hook)
+                         and self.owner_once_denial_pending(
+                             chat_id=chat_id, user_id=uid,
+                             reply_to_message_id=reply_id,
+                         ) is True)
+            except Exception:
+                consent = owner = False
+            # No current card, or an impossible duplicate ID across registries,
+            # never selects an offer. Both still stay out of model turns.
+            if consent == owner:
+                await self._consent_denial_ack(chat_id, "Not applied.")
+                return
+            reason = text[5:].lstrip() or None
+            received_at = page.native_at if page is not None else time.monotonic()
+            fast = self._consent_denial_fast if consent else self._owner_once_denial_fast
+            if key in fast or len(fast) >= 32:
+                await self._consent_denial_ack(chat_id, "Not applied.")
+                return
+            hook = consent_hook if consent else owner_hook
+            handler = (self._handle_consent_denial_reply if consent
+                       else self._handle_owner_once_denial_reply)
+            task = asyncio.create_task(handler(
+                reason, chat_id, uid, message_id, reply_id, received_at, generation, hook,
+            ))
+            fast[key] = task
+            task.add_done_callback(
+                lambda done, k=key, tasks=fast: tasks.get(k) is done
+                and tasks.pop(k, None)
+            )
+            return
+        # A delivered clarification may be awaited by this chat's current lane.
+        # Only fresh, directly authored, group-authorized text may bypass that lane.
+        if (callable(self.pending_reply_handler) and up.get("message") is not None
+                and text and attachment is None
+                and not any(msg.get(field) for field in (
+                    "forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))):
+            chat = msg.get("chat") or {}
+            decision = gate_message(
+                self.group_policy, chat_type=chat.get("type", "private"), chat_id=chat_id,
+                thread_id=msg.get("message_thread_id"), text=text,
+                entities=msg.get("entities") or (),
+                reply_to_from_id=((msg.get("reply_to_message") or {}).get("from") or {}).get("id"),
+                bot_id=self._bot_id, bot_username=self._bot_username,
+            )
+            reply_id = (msg.get("reply_to_message") or {}).get("message_id")
+            claimed_reason = (self.on_decision_reason and not is_command(text)
+                              and reply_id is not None
+                              and (self._reason_prompts_posting.get(chat_id)
+                                   or self._claims_reason(chat_id, uid, reply_id)))
+            if decision.action == ANSWER and not claimed_reason:
+                metadata = {}
+                if chat.get("type", "private") != "private":
+                    metadata["chat_type"] = chat.get("type")
+                topic = msg.get("message_thread_id")
+                if type(topic) is int and topic > 0:
+                    metadata["message_thread_id"] = topic
+                try:
+                    consumed = await self.pending_reply_handler(
+                        decision.text, channel="telegram", chat_id=chat_id,
+                        sender=str(uid), **metadata,
+                    )
+                except Exception:
+                    logger.warning("Telegram pending reply not applied")
+                    consumed = False
+                if consumed is True:
+                    return
         # Only a fresh, directly authored reply can explain a decision. Edited,
         # forwarded, attachment and command messages retain their existing paths.
         if (self.on_decision_reason and up.get("message") is not None and text
@@ -682,10 +1154,11 @@ class TelegramChannel(ChannelAdapter):
     def _page_received(self) -> _Page:
         """Read once per getUpdates page, as it comes back: when it did, and when the page
         before it did. A page whose reading failed leaves the next one no previous page."""
+        native_at = time.monotonic()
         reading = self._clock_reading()
         now, wall = reading if reading is not None else (None, None)
         previous, self._last_page_at = self._last_page_at, now
-        return _Page(previous, now, wall)
+        return _Page(previous, now, wall, native_at)
 
     def _reason_arrival(self, msg: dict, page: Optional[_Page]):
         """The stamp of a claimed reply, on ``decision_reason_clock``: the instant its page came
@@ -737,8 +1210,29 @@ class TelegramChannel(ChannelAdapter):
     async def _handle_message_content(
         self, msg, uid, chat_id, text, attachment, *, inline=False,
     ) -> None:
+        topic = msg.get("message_thread_id")
+        scope = _TurnScope(self, chat_id, topic if type(topic) is int and topic > 0 else None)
+        token = _TOPIC_REPLY.set(scope)
+        try:
+            await self._handle_message_content_scoped(msg, uid, chat_id, text, attachment, inline=inline)
+        finally:
+            scope.running = False
+            _TOPIC_REPLY.reset(token)
+
+    async def _handle_message_content_scoped(
+        self, msg, uid, chat_id, text, attachment, *, inline=False,
+    ) -> None:
         """Apply the message gate; an already queued reply stays in its lane."""
         chat = msg.get("chat") or {}
+        session_meta = {}
+        if (callable(self.pending_reply_handler)
+                and (attachment is not None or msg.get("_pending_input_ineligible"))):
+            session_meta["pending_input_eligible"] = False
+        if chat.get("type", "private") != "private":
+            session_meta["chat_type"] = chat.get("type")
+        topic = msg.get("message_thread_id")
+        if type(topic) is int and topic > 0:
+            session_meta["message_thread_id"] = topic
         # A caption is the sender's own words about what they sent,
         # so it is what the group gate must judge and what the turn
         # carries — with its own entity list, or an @mention in a
@@ -763,16 +1257,24 @@ class TelegramChannel(ChannelAdapter):
                 if inline:
                     await self.receive(
                         observed, chat_id=chat_id, sender=str(uid), observe_only=True,
+                        **session_meta,
                     )
                 else:
                     await self._flush_all_turns()
                     await self._in_chat(chat_id, lambda: self.receive(
                         observed, chat_id=chat_id, sender=str(uid), observe_only=True,
+                        **session_meta,
                     ))
             return
         if decision.action != ANSWER:
             logger.debug("Ignored group message (%s)", decision.reason)
             return
+        # Pending replies were intercepted in _handle_update. This admitted
+        # message must signal before batching and the occupied chat lane.
+        if callable(self.pre_turn_interrupt):
+            self.pre_turn_interrupt(
+                channel="telegram", sender=str(uid), chat_id=chat_id,
+                message_thread_id=topic if type(topic) is int and topic > 0 else None)
         turn = decision.text
         if attachment is not None:
             logger.info("Telegram inbound media: %s", attachment.to_dict())
@@ -793,28 +1295,35 @@ class TelegramChannel(ChannelAdapter):
         # piece is held so a burst from this sender becomes one turn.
         if turn:
             if inline:
-                await self._run_turn(chat_id, uid, turn)
+                await self._run_turn(chat_id, uid, turn, **session_meta)
             else:
-                await self._queue_turn(chat_id, uid, turn)
+                await self._queue_turn(chat_id, uid, turn, **session_meta)
 
-    async def _queue_turn(self, chat_id, uid, turn: str) -> None:
+    async def _queue_turn(self, chat_id, uid, turn: str, **session_meta) -> None:
         if not self._batch.enabled:
-            await self._deliver_turn(chat_id, uid, turn)
+            await self._deliver_turn(chat_id, uid, turn, **session_meta)
             return
         key = (chat_id, str(uid))
+        if session_meta.get("message_thread_id") is not None:
+            key += (session_meta["message_thread_id"],)
         if is_command(turn):
             # The command plane answers a turn that is the command alone: what was held
             # goes first, then the command on its own (merged, /stop would be chat).
             await self._flush_turn(key)
-            await self._deliver_turn(chat_id, uid, turn)
+            await self._deliver_turn(chat_id, uid, turn, **session_meta)
             return
+        metadata = self._batch_session_meta.setdefault(key, dict(session_meta))
+        if session_meta.get("pending_input_eligible", True) is not True:
+            # Coalescing must never erase the restriction on any included piece.
+            metadata["pending_input_eligible"] = False
         if self._batch.add(key, turn):
             await self._flush_turn(key)
 
     async def _flush_turn(self, key) -> None:
         held = self._batch.pop(key)
+        meta = self._batch_session_meta.pop(key, {})
         if held is not None and held.text:
-            await self._deliver_turn(key[0], key[1], held.text)
+            await self._deliver_turn(key[0], key[1], held.text, **meta)
 
     async def _flush_all_turns(self) -> None:
         for key in self._batch.held_keys():
@@ -830,11 +1339,13 @@ class TelegramChannel(ChannelAdapter):
             if key[0] == chat_id:
                 await self._flush_turn(key)
 
-    async def _deliver_turn(self, chat_id, uid, turn: str) -> None:
+    async def _deliver_turn(self, chat_id, uid, turn: str, **session_meta) -> None:
         mark = (chat_id, str(uid))
+        if session_meta.get("message_thread_id") is not None:
+            mark += (session_meta["message_thread_id"],)
         spoken = mark in self._voice_pending
         self._voice_pending.discard(mark)
-        await self._in_chat(chat_id, lambda: self._run_turn(chat_id, uid, turn, spoken=spoken))
+        await self._in_chat(chat_id, lambda: self._run_turn(chat_id, uid, turn, spoken=spoken, **session_meta))
 
     async def _in_chat(self, chat_id, work) -> None:
         """Run *work* after everything already queued for *chat_id* (H677): in that chat's
@@ -849,21 +1360,141 @@ class TelegramChannel(ChannelAdapter):
         else:
             lanes.submit(chat_id, work)
 
-    async def _run_turn(self, chat_id, uid, turn: str, *, spoken: bool = False) -> None:
+    async def _run_turn(self, chat_id, uid, turn: str, *, spoken: bool = False, **session_meta) -> None:
         # Only this turn's own replies (sent in its context, see _RUNNING_TURN) may take the
         # chat's voice mark, and only while it runs.
-        scope = _TurnScope(self, chat_id)
+        scope = _TurnScope(self, chat_id, session_meta.get("message_thread_id"))
         token = _RUNNING_TURN.set(scope)
+        topic_token = _TOPIC_REPLY.set(scope)
+        owner_source = OwnerReplySource(
+            self, self._owner_once_generation or "", chat_id, uid, asyncio.current_task(),
+        )
+        owner_token = bind_owner_reply_source(owner_source)
         if spoken:
             self._voice_turns.add(chat_id)
         try:
-            await self.receive(turn, chat_id=chat_id, sender=str(uid))
+            await self.receive(turn, chat_id=chat_id, sender=str(uid), **session_meta)
         finally:
             # A turn the router answered with nothing must not leave
             # its voice mark behind for the next, typed, question.
             self._voice_turns.discard(chat_id)
             scope.running = False
+            close_owner_reply_source(owner_source, owner_token)
             _RUNNING_TURN.reset(token)
+            _TOPIC_REPLY.reset(topic_token)
+
+    async def _handle_owner_once_callback(
+        self, cb: dict, nonce: str, choice: str, generation: str,
+        callback_hook: Callable, pending_hook: Callable,
+    ) -> None:
+        """Dispatch a registered nonce outside the occupied chat lane."""
+        uid = (cb.get("from") or {}).get("id")
+        message = cb.get("message") or {}
+        chat_id = (message.get("chat") or {}).get("id")
+        try:
+            if (not self._owner_once_live(generation)
+                    or self.on_owner_once_callback is not callback_hook
+                    or self.owner_once_pending is not pending_hook
+                    or pending_hook(cb) is not True):
+                await self._answer_callback(cb.get("id", ""), "Not applied.")
+                return
+            result = await callback_hook(
+                nonce, choice, chat_id=chat_id, user_id=uid,
+                message_id=message.get("message_id"),
+            )
+            await self._answer_callback(
+                cb.get("id", ""),
+                (f"OK: {choice}" if type(result) is str and result.strip()
+                 and self._owner_once_live(generation)
+                 and self.on_owner_once_callback is callback_hook else "Not applied."),
+            )
+        except Exception:
+            logger.warning("Owner-once callback dispatch failed")
+            await self._answer_callback(cb.get("id", ""), "Not applied.")
+
+    async def _handle_consent_callback(
+        self, cb: dict, nonce: str, choice: str, generation: str,
+        callback_hook: Callable, pending_hook: Callable,
+    ) -> None:
+        """Dispatch a registered reusable choice outside its occupied chat lane."""
+        uid = (cb.get("from") or {}).get("id")
+        message = cb.get("message") or {}
+        chat_id = (message.get("chat") or {}).get("id")
+        try:
+            if (not self._owner_once_live(generation)
+                    or self.on_consent_callback is not callback_hook
+                    or self.consent_pending is not pending_hook
+                    or pending_hook(cb) is not True):
+                await self._answer_callback(cb.get("id", ""), "Not applied.")
+                return
+            result = await callback_hook(
+                nonce, choice, chat_id=chat_id, user_id=uid,
+                message_id=message.get("message_id"),
+            )
+            await self._answer_callback(
+                cb.get("id", ""),
+                (f"OK: {choice}" if type(result) is str and result.strip()
+                 and self._owner_once_live(generation)
+                 and self.on_consent_callback is callback_hook else "Not applied."),
+            )
+        except Exception:
+            logger.warning("Reusable-consent callback dispatch failed")
+            await self._answer_callback(cb.get("id", ""), "Not applied.")
+
+    async def _consent_denial_ack(self, chat_id: int, message: str) -> None:
+        try:
+            await self.send(message, chat_id=chat_id, voice=False, plain=True)
+        except Exception:
+            logger.warning("Reusable-consent denial acknowledgement failed")
+
+    async def _handle_consent_denial_reply(
+        self, reason: str | None, chat_id: int, user_id: int, message_id: int,
+        reply_id: int,
+        received_at: float | None, generation: str, hook: Callable,
+    ) -> None:
+        try:
+            if (not self._consent_denial_hook_live(generation, hook)
+                    or self.on_consent_denial_reply is not hook):
+                result = None
+            else:
+                result = await hook(
+                    reason, chat_id=chat_id, user_id=user_id,
+                    message_id=message_id, reply_to_message_id=reply_id,
+                    received_at=received_at,
+                )
+            answer = ("Denied." if result == "accepted" else
+                      "Use a reason of at most 280 characters." if result == "invalid_reason"
+                      else "Not applied.")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("Reusable-consent denial dispatch failed")
+            answer = "Not applied."
+        await self._consent_denial_ack(chat_id, answer)
+
+    async def _handle_owner_once_denial_reply(
+        self, reason: str | None, chat_id: int, user_id: int, message_id: int,
+        reply_id: int, received_at: float | None, generation: str, hook: Callable,
+    ) -> None:
+        try:
+            if (not self._owner_once_denial_hook_live(generation, hook)
+                    or self.on_owner_once_denial_reply is not hook):
+                result = None
+            else:
+                result = await hook(
+                    reason, chat_id=chat_id, user_id=user_id,
+                    message_id=message_id, reply_to_message_id=reply_id,
+                    received_at=received_at,
+                )
+            answer = ("Denied." if result == "accepted" else
+                      "Use a reason of at most 280 characters." if result == "invalid_reason"
+                      else "Not applied.")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("Owner-once denial dispatch failed")
+            answer = "Not applied."
+        await self._consent_denial_ack(chat_id, answer)
 
 
     async def _maybe_pair_deeplink(self, text: str, uid, chat_id) -> bool:
@@ -921,11 +1552,14 @@ class TelegramChannel(ChannelAdapter):
         task_id, action = parsed
         chat_id = ((cb.get("message") or {}).get("chat") or {}).get("id")
         try:
-            await self.on_callback(task_id, action, chat_id=chat_id, user_id=uid)
-            await self._answer_callback(cb.get("id", ""), f"OK: {action}")
+            result = await self.on_callback(task_id, action, chat_id=chat_id, user_id=uid)
+            await self._answer_callback(
+                cb.get("id", ""),
+                f"OK: {action}" if type(result) is str and result.strip() else "Not applied.",
+            )
         except Exception as e:
             logger.warning(f"Telegram callback dispatch error: {e}")
-            await self._answer_callback(cb.get("id", ""))
+            await self._answer_callback(cb.get("id", ""), "Not applied.")
 
     # ---- inbound media ----------------------------------------------------
 
@@ -1008,7 +1642,11 @@ class TelegramChannel(ChannelAdapter):
                 return "", voice_note(transcript)
             # The reply to this turn answers speech: `/voice voice` keys on the mark,
             # which this sender's turn takes with it when it is delivered (H677).
-            self._voice_pending.add((chat_id, str(uid)))
+            mark = (chat_id, str(uid))
+            topic = self._topic_args(chat_id).get("message_thread_id")
+            if topic is not None:
+                mark += (topic,)
+            self._voice_pending.add(mark)
             if self._echo_transcripts():
                 # Hermes `stt_echo_transcripts`: say what was heard before answering
                 # it, so a misheard note is caught by the person who sent it. A
@@ -1112,14 +1750,14 @@ class TelegramChannel(ChannelAdapter):
         try:
             resp = await self.client.post(
                 f"{self.api_base}/sendVoice",
-                data={"chat_id": str(chat_id)},
+                data={"chat_id": str(chat_id), **{k: str(v) for k, v in self._topic_args(chat_id).items()}},
                 files={"voice": (filename, audio.data, audio.mime)},
             )
             if resp.status_code == 400:
                 logger.info("Telegram refused the clip as a voice message; sending it as audio")
                 resp = await self.client.post(
                     f"{self.api_base}/sendAudio",
-                    data={"chat_id": str(chat_id)},
+                    data={"chat_id": str(chat_id), **{k: str(v) for k, v in self._topic_args(chat_id).items()}},
                     files={"audio": (filename, audio.data, audio.mime)},
                 )
             return self._scheduled_ack(resp)

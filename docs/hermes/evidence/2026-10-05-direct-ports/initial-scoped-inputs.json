@@ -1,0 +1,68 @@
+{
+  "source_entries": [
+    {
+      "path": "agents/core/quick_commands.py",
+      "sha256": "930eb65c576e228b9f297218c3562563fe05467c5bbf4fed969eb70d368400e2"
+    },
+    {
+      "path": "agents/core/commands.py",
+      "sha256": "ceb4e12cfd76f27c983472acc21b03f1a4c5a426cf6c029b898e4e666dc9119e"
+    },
+    {
+      "path": "agents/core/config.py",
+      "sha256": "d2707153a604179f4b42a7d6bd866ea861b8adb505b0b4dc171ad2c1a0c7ec8a"
+    },
+    {
+      "path": "agents/core/settings_db.py",
+      "sha256": "1b8733c4a8b02279d8876628c9de01b6e48ec418f2f9784841f63be6a3daa95d"
+    },
+    {
+      "path": "agents/core/config_read_errors.py",
+      "sha256": "4a0e09454bae79e1d9347cb7c6104767148638dae0967ba86c4ccb115dde45b2"
+    },
+    {
+      "path": "agents/core/security/secret_broker.py",
+      "sha256": "ebf91ca7ba1091428d7aeb3971b2c5b0576143fcb41b73796c23d55dc62719d0"
+    },
+    {
+      "path": "agents/cli/secrets.py",
+      "sha256": "1e929452f855a4d4a45a0b21ad1ba070a1437acaf80f0eb5754435d619ee9239"
+    },
+    {
+      "path": "agents/cli/nerva.py",
+      "sha256": "9a710170266f29421018361dcaa621c7aaa86f45e90c26bfe50d8fc7c09c14a6"
+    },
+    {
+      "path": "agents/core/orchestrator.py",
+      "sha256": "f3206c8917f170e061fff0b8a0621e99e4238adbae68372ce4288ce915468398"
+    },
+    {
+      "path": "agents/core/autonomy_coordinator.py",
+      "sha256": "f148df71c653b9d511e602a91cea817f26ccc88875b17242825bc946b1b47563"
+    },
+    {
+      "path": "agents/core/security/secret_sources/registry.py",
+      "sha256": "9ec0f33c3a0af210bbf36bb6278d0302263f74504b11e876705d5268b7c48f90"
+    },
+    {
+      "path": "agents/core/security/secret_sources/__init__.py",
+      "sha256": "25438ca52c3627e8fcf008efeae8cf1c2cb4d9a410c07b801d0da3d90f9ab39f"
+    },
+    {
+      "path": "agents/core/security/secret_sources/onepassword.py",
+      "sha256": "b3a2f155911e54bc47aa6432890eb093b5a9aeb698d6047578014d30b811d1c1"
+    },
+    {
+      "path": "agents/core/security/secret_sources/install.py",
+      "sha256": "28bd1ca58796b3eb14899cde991d5eb31982034f340621c59e62a59ff592e83f"
+    },
+    {
+      "path": "agents/core/security/secret_sources/base.py",
+      "sha256": "f6255b637890b562cd60becdfed572585900a077697640290bfa43219b52f6f8"
+    },
+    {
+      "path": "agents/core/security/secret_sources/bitwarden.py",
+      "sha256": "830194580421d3b6d8a5a1fc3472df417a8bf24f536f90ddba88db495bf9f766"
+    }
+  ]
+}

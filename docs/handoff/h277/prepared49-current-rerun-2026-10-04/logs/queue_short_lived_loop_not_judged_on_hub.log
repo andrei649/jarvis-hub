@@ -1,0 +1,10 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/queue_short_lived_loop_not_judged_on_hub.xml", "tests/test_h277_approval_judge.py::test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop _______
+tests/test_h277_approval_judge.py:683: in test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop
+    assert seen["loop"] is hub_loop
+E   assert <_UnixSelectorEventLoop running=False closed=True debug=False> is <_UnixSelectorEventLoop running=True closed=False debug=False>
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_a_request_from_a_short_lived_loop_is_judged_on_the_hub_loop
+1 failed in 1.70s

@@ -518,6 +518,12 @@ def file_identity(path: Path, *, content: bool = True) -> dict[str, Any] | None:
                 return None
             identity: dict[str, Any] = {"path": str(path), "dev": int(before.st_dev), "ino": int(before.st_ino),
                                         "size": int(before.st_size), "mtime_ns": int(before.st_mtime_ns)}
+            # Filesystem identifiers may be unsigned 64-bit values (notably
+            # overlayfs and Windows). Preserve them exactly without widening
+            # the signed-integer contract of canonical approval JSON.
+            for key in ("dev", "ino"):
+                if identity[key] > (1 << 63) - 1:
+                    identity[key] = str(identity[key])
             if not content:
                 return identity
             digest, total = hashlib.sha256(), 0

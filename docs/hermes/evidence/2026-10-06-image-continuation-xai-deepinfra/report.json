@@ -1,0 +1,145 @@
+{
+  "generated_at": "2026-10-05T22:53:26.758514+00:00",
+  "goal_scope": "all697",
+  "H515": "partial",
+  "publication": false,
+  "implemented": [
+    "Krea continuation is a fresh signed GET bound to durable source job and actual human execution identity",
+    "One nonblocking source lock and canonical local completion; no second generation POST",
+    "Executed Krea continuations recover after restart, while pending/rejected siblings cannot inherit ready results",
+    "xAI3 model generation and owned-artifact editing with explicit native wire bodies and exact upload hashes",
+    "Dynamic DeepInfra image-gen catalog via separate approved GET and authority/result/configuration-bound private cache",
+    "Fixed authenticated API/tool selectors and responsive Images/Decision Inbox controls"
+  ],
+  "verification": {
+    "backend": {
+      "receipt": "backend-result.xml",
+      "tests": 786,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "frontend": {
+      "receipt": "frontend-result.json",
+      "tests": 1965,
+      "passed": 1965,
+      "failed": 0,
+      "pending": 0
+    },
+    "focused": {
+      "receipt": "focused-result.xml",
+      "tests": 81,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "note": "Overlaps final affected backend union"
+    },
+    "records": {
+      "receipt": "records-result.xml",
+      "tests": 120,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "typecheck": true,
+    "build": true,
+    "ruff": true,
+    "bandit": {
+      "receipt": "bandit-result.json",
+      "loc": 2843,
+      "findings": 0,
+      "errors": 0
+    },
+    "graft": {
+      "graph": {
+        "ok": true,
+        "missing": false
+      },
+      "counts": {
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "stale": 0
+      },
+      "context_missing": true
+    },
+    "review": "contract-review.json",
+    "no_live_calls": true,
+    "secret_scan": {
+      "receipt": "secret-scan-result.json",
+      "paths": 71,
+      "findings": 0,
+      "baseline": false,
+      "inline_allow": false
+    }
+  },
+  "verification_history": {
+    "initial_red": "Krea continuation API/worker and two provider manifests absent",
+    "review_red": "Changed Krea source approver and unexecuted sibling ready projection; corrected",
+    "first_focused": "One missing-catalog exception type and two guard-result assertions corrected",
+    "first_union": "24 exact-shape assertions in two old test files lacked additive resume_available=false; updated without loosening state/privacy checks",
+    "xai_cdn_red": "Official imgen.x.ai host refused by initial restricted manifest; fixed default-off domain allowlist",
+    "static": "One Bandit low severity except/pass replaced by explicit unavailable catalog state; final scan has no findings"
+  },
+  "accounting": {
+    "inventory": 697,
+    "equivalent": 130,
+    "percent": 18.7,
+    "partial": 227,
+    "missing": 56,
+    "needs_review": 284,
+    "new_equivalent_H515": 0,
+    "inherited_equivalent": 108,
+    "current_reevaluated_equivalent": 22
+  },
+  "remaining": [
+    "Krea Enhance with its own approval",
+    "Managed Nous/FAL image path and other dynamic donor catalogs",
+    "FAL artifact upload/Clarity and product-managed Codex OAuth",
+    "xAI storage controls, larger/4K artifacts and undocumented CDN origins",
+    "Existing local ComfyUI leases, LLM restore, authority kinds and native/live acceptance",
+    "Legacy Krea jobs without private authority proof do not resume"
+  ],
+  "source_manifest": "scoped-inputs.json",
+  "changed_source_paths": [
+    "agents/core/cloud_image_runtime.py",
+    "agents/core/image_generation_view.py",
+    "agents/core/image_tool_dispatcher.py",
+    "agents/core/plugin_gate.py",
+    "agents/core/routers/multimodal.py",
+    "agents/core/media_backends/xai_image.py",
+    "agents/core/media_backends/deepinfra_image.py",
+    "tests/test_cloud_image_krea_resume.py",
+    "tests/test_cloud_image_deepinfra.py",
+    "tests/test_cloud_image_xai.py",
+    "tests/test_xai_image.py",
+    "tests/test_deepinfra_image.py",
+    "tests/test_image_generation_view.py",
+    "tests/test_image_generation_api_flow.py",
+    "frontend/src/api/images.ts",
+    "frontend/src/api/schema.gen.ts",
+    "frontend/src/panels/images.tsx",
+    "frontend/src/gap.tsx",
+    "frontend/src/test/images-provider-flow.test.tsx",
+    "frontend/src/test/decision-inbox-panel.test.tsx",
+    "docs/hermes/openrouter-krea-image-guide.md",
+    "docs/hermes/h515-job-continuation-providers-plan-2026-10-06.md",
+    "mobile/PARITY.md",
+    "docs/design/HUD_V2_REMAINING.md",
+    "agents/web/v2/assets/client-D7Azo9Vs.js",
+    "agents/web/v2/assets/gap-B4TG_MGh.js",
+    "agents/web/v2/assets/gap-Crl5de4H.css",
+    "agents/web/v2/assets/index-BKcUzsZG.js",
+    "agents/web/v2/assets/index-teqkDIsI.css",
+    "agents/web/v2/assets/jobs-vYmczPrq.js",
+    "agents/web/v2/assets/modes-VrNjBPCd.js",
+    "agents/web/v2/assets/modes2-sXVeijvJ.js",
+    "agents/web/v2/assets/modes3-C7ro9s-6.js",
+    "agents/web/v2/assets/modes4-D8LFnq7W.js",
+    "agents/web/v2/assets/modes_world-D2A3ymRP.js",
+    "agents/web/v2/assets/panel-kit-CwyHgGr0.js",
+    "agents/web/v2/assets/soul-edit-BcaRddJT.js",
+    "agents/web/v2/index.html",
+    "agents/web/v2/sw-v2.js"
+  ]
+}

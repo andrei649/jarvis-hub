@@ -20,6 +20,7 @@ from __future__ import annotations
 import inspect
 import logging
 import re
+import shlex
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -31,6 +32,15 @@ ADMIN = "admin"
 
 _COMMAND_RE = re.compile(r"^/([A-Za-z][A-Za-z0-9_]*)(?:@\w+)?(?:\s+(.*))?$", re.DOTALL)
 _MAX_ARGS = 2_000
+
+
+def checkpoint_command_name(text: str) -> str | None:
+    """Identify only raw checkpoint commands; recognition grants no authority."""
+    if not isinstance(text, str):
+        return None
+    match = _COMMAND_RE.fullmatch(text.strip())
+    name = match.group(1).lower() if match else None
+    return name if name in {"rollback", "checkpoints"} else None
 
 
 @dataclass(frozen=True)
@@ -124,10 +134,16 @@ class CommandRegistry:
     async def dispatch(self, text: str, *, orch: Any, principal: Principal,
                        _quick_seen: frozenset[str] = frozenset()) -> CommandOutcome | None:
         """Answer a slash command, or return None when *text* is not one."""
+        checkpoint_name = checkpoint_command_name(text)
+        if checkpoint_name and len(text.strip()) > _MAX_ARGS:
+            return self._observed(CommandOutcome(checkpoint_name, "refused",
+                                  "Checkpoint command is too long; nothing changed."))
         parsed = self.parse(text)
         if parsed is None:
             return None
         name, args = parsed
+        if name == "kanban" and len(text.strip()) > _MAX_ARGS:
+            return self._observed(CommandOutcome(name, "refused", "Kanban command is too long; nothing changed."))
         command = self.get(name)
         if command is None:
             from .quick_commands import dispatch_quick
@@ -411,7 +427,33 @@ async def _recap(ctx: CommandContext) -> str:
     return render_recap(turns, exchanges=exchanges)["text"]
 
 
+async def _kanban(ctx: CommandContext) -> str:
+    from .kanban.cli import execute_command
+
+    try:
+        argv = shlex.split(ctx.args or "")
+    except ValueError:
+        return "kanban: invalid quoted arguments"
+    result = await execute_command(ctx.orch, argv, ctx.principal,
+                                   session_id=getattr(ctx.orch, "session_id", None), owner_command=ctx)
+    return result["output"]
+
+
+async def _project(ctx: CommandContext) -> str:
+    from .kanban.projects_cli import execute_command
+
+    try:
+        argv = shlex.split(ctx.args or "")
+    except ValueError:
+        return "project: invalid quoted arguments"
+    result = await execute_command(ctx.orch, argv, ctx.principal,
+                                   session_id=getattr(ctx.orch, "session_id", None), owner_command=ctx)
+    return result["output"]
+
+
 def build_default_registry() -> CommandRegistry:
+    from .checkpoint_commands import checkpoint_command
+
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
     registry.register(SlashCommand("status", "backend, agents, autonomy mode, e-stop", _status))
@@ -428,6 +470,15 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("remind", "arm a reminder: /remind <when> | <message>", _remind, tier=ADMIN, usage="<when> | <message>"))
     registry.register(SlashCommand("voice", "spoken replies in this chat: off, voice-for-voice, or always", _voice, usage="[off|voice|always]"))
     registry.register(SlashCommand("refine", "review this conversation now for memories and skill changes", _refine, tier=ADMIN, usage="[focus]"))
+    registry.register(SlashCommand("checkpoints", "checkpoint previews and approved owner operations",
+                                   checkpoint_command, tier=ADMIN,
+                                   usage="[status|list|diff|restore|prune|clear|clear-legacy]"))
+    registry.register(SlashCommand("rollback", "list checkpoints or request an approved restore",
+                                   checkpoint_command, tier=ADMIN, usage="[checkpoint]"))
+    registry.register(SlashCommand("kanban", "manage your task boards", _kanban,
+                                   tier=ADMIN, usage="<action> [arguments]"))
+    registry.register(SlashCommand("project", "manage your projects and folders", _project,
+                                   tier=ADMIN, usage="<action> [arguments]"))
     return registry
 
 

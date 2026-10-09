@@ -1,0 +1,31 @@
+{
+  "integrated_main": "c21202c1",
+  "source_review": "Separate read-only review found no lost upstream source changes or merge-specific concerns; generated assets rebuilt from merged source.",
+  "files": [
+    {
+      "path": "frontend/src/mesh.tsx",
+      "checkpoint_sha256": "2507d8d77a377b110c9f8cad5f02a9e57809174727df995b4a44c5674a070dc5",
+      "merged_sha256": "eb6cf6e521538866f4ea463ad9858ede7ad4c7678c58fda42da5e6dcfcad1401",
+      "matches_origin_main": true
+    },
+    {
+      "path": "frontend/src/network.tsx",
+      "checkpoint_sha256": "6c5faa76f3aca20e28ad0f271653292a4cfa76d0af3c0945126a270b6b20ff69",
+      "merged_sha256": "e9e4e4b0a38de0c56ff40b53d49a07f5709851d3593d7a212d3034d8d0e7aca5",
+      "matches_origin_main": true
+    },
+    {
+      "path": "frontend/src/pointer.tsx",
+      "checkpoint_sha256": "6499eefb53069b8ae875ea276afbe0cbe4275706c78315cc53564e6f6d2901e6",
+      "merged_sha256": "69688bbcacaa8c2d3dc1354b087a690af020aa1db5aa9221f2a4c589be7879d5",
+      "matches_origin_main": true
+    },
+    {
+      "path": "frontend/src/sentences.ts",
+      "checkpoint_sha256": "59d0130f772b25329e39c5e789d9c173fc5c8b9a44b2b39dd827d369df31e2cf",
+      "merged_sha256": "a5ce19c255514853d82912a74f19d8c201f769181be96792318fbe1c545b00f9",
+      "matches_origin_main": true
+    }
+  ],
+  "evidence_refresh": "Only H309 pointer pin matching checkpoint preimage and H515 owned receipts/build entries may be refreshed after frontend passes."
+}

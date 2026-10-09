@@ -576,7 +576,7 @@ async def test_discord_handler_receives_sender_as_the_author_id_string():
 
     ch = DiscordChannel(token="tok", handler=handler)
     await ch._handle_message(_discord_message(99, "hi"))
-    assert seen == {"text": "hi", "channel": "discord", "sender": "99", "channel_id": "123"}
+    assert seen == {"text": "hi", "channel": "discord", "sender": "99", "channel_id": "123", "chat_type": "private"}
 
 
 @pytest.mark.asyncio
@@ -601,12 +601,12 @@ async def test_discord_on_message_delegates_to_the_method(fake_discord):
 
         stranger = _discord_message(7, "yo")
         await on_message(stranger)
-        assert seen == [("yo", "discord", {"sender": "7", "channel_id": "123"})]
+        assert seen == [("yo", "discord", {"sender": "7", "channel_id": "123", "chat_type": "private"})]
         assert stranger.channel.sent == []
 
         own = _discord_message(1, "echo?", author=client.user)
         await on_message(own)
-        assert seen == [("yo", "discord", {"sender": "7", "channel_id": "123"})] and own.channel.sent == []
+        assert seen == [("yo", "discord", {"sender": "7", "channel_id": "123", "chat_type": "private"})] and own.channel.sent == []
     finally:
         await ch.stop()
 

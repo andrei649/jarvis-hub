@@ -1,0 +1,160 @@
+{
+  "source_entries": [
+    {
+      "path": "agents/core/cloud_image_runtime.py",
+      "sha256": "8d382fa98fc45ae0c385253517b3289c5ceaa04fef7df5d5ca86959c413a0dfe"
+    },
+    {
+      "path": "agents/core/image_generation_view.py",
+      "sha256": "544563a69e46538a8aacac745e24a26ec876ed05257dbaa40d9727bb57a03ed3"
+    },
+    {
+      "path": "agents/core/image_tool_dispatcher.py",
+      "sha256": "65876aa73c553839d9246fc803f1258a00d1513726df7ecda45e8e96adb69a75"
+    },
+    {
+      "path": "agents/core/plugin_gate.py",
+      "sha256": "d79a1248cd504cc4889160b161e7156317c903566e4690c03a7797fb187e583a"
+    },
+    {
+      "path": "agents/core/routers/multimodal.py",
+      "sha256": "81147435e97dfba360d331455fc68826d348128a72cdd51819e45f138f54288c"
+    },
+    {
+      "path": "agents/core/media_backends/xai_image.py",
+      "sha256": "11e918f61ee24da22aa6cf503f9921b82fca686b2c7514c3c5d214bab8b3b2da"
+    },
+    {
+      "path": "agents/core/media_backends/deepinfra_image.py",
+      "sha256": "7480ead1b9b09de0f3372ce4683344fb32ee287d1870a7d8d3611f4aea553cbd"
+    },
+    {
+      "path": "tests/test_cloud_image_krea_resume.py",
+      "sha256": "84ec5ef5b8c466c014d92394d5b4e9ad6cf9e8ebd784ffab4b33c02820dcf506"
+    },
+    {
+      "path": "tests/test_cloud_image_deepinfra.py",
+      "sha256": "7382d8f0e184a99c7c604819a035cb3e16e1f18e6474daa006b9854e7bce70a0"
+    },
+    {
+      "path": "tests/test_cloud_image_xai.py",
+      "sha256": "28ba4f0e139ab243e4214a11dfa3dd63a3b21c0c52f5a3a9e400410266642502"
+    },
+    {
+      "path": "tests/test_xai_image.py",
+      "sha256": "2a40d1992033157f4ba8ea77f6f06087dd9b416f9b4c880b79363fb1d583b5d1"
+    },
+    {
+      "path": "tests/test_deepinfra_image.py",
+      "sha256": "df7fbafd9370311ebfad8e3fabfdd709b03f3a233c3e98eb2791fc443187b75e"
+    },
+    {
+      "path": "tests/test_image_generation_view.py",
+      "sha256": "dbc05674b31d57c804574bfc9a996491033da2b76d4957eeae6ec8fe6301046f"
+    },
+    {
+      "path": "tests/test_image_generation_api_flow.py",
+      "sha256": "272415ff36948829c6db216d20ee20be5a71a85788aa4bab96f2b76ded998397"
+    },
+    {
+      "path": "frontend/src/api/images.ts",
+      "sha256": "e7122edf9e0e55044a8cabe752aa4ce6c9245db50d7114d29b12c1248fa6c07a"
+    },
+    {
+      "path": "frontend/src/api/schema.gen.ts",
+      "sha256": "4312cc619ce978baaa11b4f33fc52985995b59dd216f333aedd9216b02a8c40c"
+    },
+    {
+      "path": "frontend/src/panels/images.tsx",
+      "sha256": "5dd0112530a24e4cd6fbb72547374d127ce1a9a3f3310d550c42eb6dae14bc68"
+    },
+    {
+      "path": "frontend/src/gap.tsx",
+      "sha256": "337fe42cdaba57df257b833677dde2f9aead8badcadd8af2852b3dd0d938b133"
+    },
+    {
+      "path": "frontend/src/test/images-provider-flow.test.tsx",
+      "sha256": "0c7ada6bba3c6dac52001e738cfa97ee02c0320157eacaae303976d5332c23fa"
+    },
+    {
+      "path": "frontend/src/test/decision-inbox-panel.test.tsx",
+      "sha256": "47fbd30a3dbd1d704e22f2f8f7b6a4d51f6e8be7232074eafaed8796f0cb2136"
+    },
+    {
+      "path": "docs/hermes/openrouter-krea-image-guide.md",
+      "sha256": "19e9921d4ddcbbe12b14727e542416345bcebff250fd1522b6a47456b6a2a5d9"
+    },
+    {
+      "path": "docs/hermes/h515-job-continuation-providers-plan-2026-10-06.md",
+      "sha256": "ef489255577d143395a5ec657442adef8184c5145944f153070ea41b951d5d69"
+    },
+    {
+      "path": "mobile/PARITY.md",
+      "sha256": "bd6af2d78c227dad54c13f391ceddd48fa45a23ea84b955315aee5fbc0cb07aa"
+    },
+    {
+      "path": "docs/design/HUD_V2_REMAINING.md",
+      "sha256": "0f23c583808748b91bd36cb29c1b467d1b0026649431a474c02f37e4df0aa59f"
+    },
+    {
+      "path": "agents/web/v2/assets/client-D7Azo9Vs.js",
+      "sha256": "14ff90baa08a75c728800011be72023cd1697fde0c24b065918584114df483d6"
+    },
+    {
+      "path": "agents/web/v2/assets/gap-B4TG_MGh.js",
+      "sha256": "8ecfecb6551809982e4dfe37651d009452d606cc5686043a5bc1e19062b9db60"
+    },
+    {
+      "path": "agents/web/v2/assets/gap-Crl5de4H.css",
+      "sha256": "ea2c58ff70f0e4322cd34ebcd152e1292bc36317ab221186fc70ffdc890a72c5"
+    },
+    {
+      "path": "agents/web/v2/assets/index-BKcUzsZG.js",
+      "sha256": "c2da6fa7bceeec5b5e7b9cf478c5486c50b8ad51634f381573ce29dc2ed3fa1c"
+    },
+    {
+      "path": "agents/web/v2/assets/index-teqkDIsI.css",
+      "sha256": "f2ed79d72c09f820317880035ede4e11c9fe4452e78554a89e8a39c4ea57b7c9"
+    },
+    {
+      "path": "agents/web/v2/assets/jobs-vYmczPrq.js",
+      "sha256": "3b81379f8be7515b6fa596ed3c8c4e322d6b1bd3ad2afdf60c8cbd3b5e39eeb9"
+    },
+    {
+      "path": "agents/web/v2/assets/modes-VrNjBPCd.js",
+      "sha256": "db79ac5981f5a2762c08d58decad90c04c073c51908929b26d73bc1d6d63c61b"
+    },
+    {
+      "path": "agents/web/v2/assets/modes2-sXVeijvJ.js",
+      "sha256": "87282b93f46d8745730bf90f75ca5bb4f4db40765e371b7fd6abd9a00819decf"
+    },
+    {
+      "path": "agents/web/v2/assets/modes3-C7ro9s-6.js",
+      "sha256": "2bef0d7adf9f9a102ca70fa49f6dafa1624cc956df17eefbbe2dc326dff078a9"
+    },
+    {
+      "path": "agents/web/v2/assets/modes4-D8LFnq7W.js",
+      "sha256": "e2533fbd32ad04534b899444ee9c20eb9bfc4f27e90bfbda73d7950d4468d9ca"
+    },
+    {
+      "path": "agents/web/v2/assets/modes_world-D2A3ymRP.js",
+      "sha256": "d7b808546563e7388543471370688c73252841b02a04b59a6274cd854f63d2cf"
+    },
+    {
+      "path": "agents/web/v2/assets/panel-kit-CwyHgGr0.js",
+      "sha256": "9f0fb670dba95dbad8e5453c6c282f0da22e5548bd8475cc39e36c79e80d58d5"
+    },
+    {
+      "path": "agents/web/v2/assets/soul-edit-BcaRddJT.js",
+      "sha256": "b4f223073a316469a1eb8f911f8d814e1266c4e5050515aa41d3ce3498c02e69"
+    },
+    {
+      "path": "agents/web/v2/index.html",
+      "sha256": "cb8b299a115757be6cddbc08c6baac21f46598435ce4e9405bdfc38065284e11"
+    },
+    {
+      "path": "agents/web/v2/sw-v2.js",
+      "sha256": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c"
+    }
+  ]
+}

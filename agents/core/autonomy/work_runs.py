@@ -610,6 +610,50 @@ class WorkRunLedger:
             raise ValueError('corrupt wait metadata')
         return meta
 
+    @staticmethod
+    def _wait_cap(meta: dict) -> float:
+        start = meta['start']
+        if type(start) not in (int, float) or not math.isfinite(start):
+            raise ValueError('invalid wait start')
+        observed = meta.get('observed')
+        if (type(observed) not in (int, float) or not math.isfinite(observed)
+                or observed < start):
+            raise ValueError('invalid wait observation')
+        ceiling = meta.get('ceiling', 360)
+        if (type(ceiling) not in (int, float) or not math.isfinite(ceiling)
+                or ceiling <= 60 or not math.isfinite(start + ceiling)):
+            raise ValueError('invalid wait ceiling')
+        if 'ceiling' in meta:
+            initial = meta.get('initial_sources')
+            sources = meta.get('sources')
+            if (not isinstance(initial, list) or not 1 <= len(initial) <= 1000
+                    or not isinstance(sources, list)
+                    or len(initial) != len(set(initial))
+                    or any(type(seq) is not int for seq in initial)):
+                raise ValueError('invalid initial wait sources')
+            by_seq = {source['seq']: source for source in sources
+                      if isinstance(source, dict) and type(source.get('seq')) is int}
+            if len(by_seq) != len(sources) or not set(initial) <= by_seq.keys():
+                raise ValueError('missing initial wait source')
+            expected = []
+            for seq in initial:
+                source = by_seq[seq]
+                deadline = source.get('deadline')
+                if source.get('start') != start:
+                    raise ValueError('invalid initial wait start')
+                if deadline is None:
+                    expected.append(360)
+                elif (type(deadline) in (int, float) and math.isfinite(deadline)
+                      and deadline > start):
+                    expected.append(deadline - start + 60)
+                else:
+                    raise ValueError('invalid initial wait deadline')
+            if ceiling != max(expected):
+                raise ValueError('unproven wait ceiling')
+        elif 'initial_sources' in meta:
+            raise ValueError('legacy wait has initial sources')
+        return start + ceiling
+
     def _wait_credit_locked(self, run: WorkRun, now: float, tasks: dict, *,
                             persist: bool = True) -> float:
         """Refresh bounded union windows in the caller's settlement transaction.
@@ -630,9 +674,10 @@ class WorkRunLedger:
             try:
                 meta = self._wait_decode(row['metadata'])
                 start, last = meta['start'], meta['last']
+                cap_at = self._wait_cap(meta)
                 if (type(start) not in (int, float) or type(last) not in (int, float)
                         or not math.isfinite(start) or not math.isfinite(last)
-                        or not run.started_at <= start <= last <= start + 360
+                        or not run.started_at <= start <= last <= cap_at
                         or type(meta['closed']) is not bool or not isinstance(meta['sources'], list)
                         or not 1 <= len(meta['sources']) <= 1000):
                     raise ValueError('invalid wait metadata')
@@ -643,6 +688,9 @@ class WorkRunLedger:
                                               (run.id, source['seq'])).fetchone()
                     if (type(source['seq']) is not int or type(source['task']) is not int
                             or step is None or step['seq'] < row['marker'] or step['task_id'] != source['task']
+                            or type(source['start']) not in (int, float)
+                            or type(source['last']) not in (int, float)
+                            or not math.isfinite(source['start']) or not math.isfinite(source['last'])
                             or not start <= source['start'] <= source['last'] <= last
                             or not all(isinstance(source[k], str) and len(source[k]) == 64
                                        for k in ('birth', 'intent'))
@@ -653,7 +701,7 @@ class WorkRunLedger:
                         raise ValueError('invalid wait source')
                     end = source['end']
                     if end is not None and (type(end) not in (int, float) or not math.isfinite(end)
-                                            or not source['start'] <= end <= start + 360):
+                                            or not source['start'] <= end <= cap_at):
                         raise ValueError('invalid wait end')
                     if end is None:
                         task = tasks.get(source['task'])
@@ -666,8 +714,8 @@ class WorkRunLedger:
                             elif isinstance(metadata, dict) and metadata.get('action') in {'accept', 'reject', 'edit', 'defer'}:
                                 stamp = self._wait_timestamp(metadata.get('first_at'))
                         if stamp is not None and identity == (source['birth'], source['intent']):
-                            end = max(source['start'], min(stamp, now, start + 360,
-                                                          source.get('deadline') or start + 360))
+                            end = max(source['start'], min(stamp, now, cap_at,
+                                                          source.get('deadline') or cap_at))
                         elif (not meta['closed'] and marker == row['marker'] and run.status == 'blocked'
                               and not run.stop_reason and not run.barrier and now >= last
                               and identity == (source['birth'], source['intent'])
@@ -676,9 +724,9 @@ class WorkRunLedger:
                               and step['outcome'] == 'queued'):
                             deadline = self._wait_timestamp(task.approval_deadline_at)
                             observed = tasks.get('_observed', {}).get(source['task'], source['last'])
-                            end_at = min(now, observed, start + 360, deadline if deadline is not None else now)
+                            end_at = min(now, observed, cap_at, deadline if deadline is not None else now)
                             source['last'] = max(source['start'], end_at)
-                            if (deadline is not None and now >= deadline) or now >= start + 360:
+                            if (deadline is not None and now >= deadline) or now >= cap_at:
                                 end = source['last']
                             else:
                                 active = True
@@ -717,7 +765,12 @@ class WorkRunLedger:
                                             "intent": identity[1], "start": now, "last": now, "end": None,
                                             "deadline": self._wait_timestamp(task.approval_deadline_at)})
                 if sources:
-                    meta = {"start": now, "last": now, "observed": now, "closed": False, "sources": sources}
+                    ceiling = max(360 if source['deadline'] is None else
+                                  source['deadline'] - now + 60 for source in sources)
+                    meta = {"start": now, "last": now, "observed": now, "closed": False,
+                            "ceiling": ceiling,
+                            "initial_sources": [source['seq'] for source in sources],
+                            "sources": sources}
                     self._conn.execute('INSERT INTO approval_wait_epochs VALUES(?,?,?)',
                                        (run.id, marker, self._wait_encode(meta)))
             else:
@@ -726,7 +779,8 @@ class WorkRunLedger:
                                               (run.id, marker)).fetchone()
                 try:
                     meta = self._wait_decode(existing[0])
-                    if not meta['closed'] and meta['start'] <= now < meta['start'] + 360:
+                    cap_at = self._wait_cap(meta)
+                    if not meta['closed'] and meta['start'] <= now < cap_at:
                         known = {s['seq'] for s in meta['sources']}
                         for step in self._conn.execute("SELECT * FROM steps WHERE run_id=? AND seq>=? AND outcome='queued' AND at=? LIMIT 1000",
                                                        (run.id, marker, now)).fetchall():

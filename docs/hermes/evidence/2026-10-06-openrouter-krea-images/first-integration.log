@@ -1,0 +1,25 @@
+.FF.........                                                             [100%]
+=================================== FAILURES ===================================
+_ test_openrouter_route_worker_publishes_measured_artifact[openai/gpt-5.4-image-2-chat/completions] _
+tests/test_cloud_image_openrouter_krea.py:70: in test_openrouter_route_worker_publishes_measured_artifact
+    assert str(providers.requests[0].url) == "https://openrouter.ai/api/v1/" + surface
+E   AssertionError: assert 'https://93.1...t/completions' == 'https://open...t/completions'
+E     
+E     - https://openrouter.ai/api/v1/chat/completions
+E     + https://93.184.216.34/api/v1/chat/completions
+_ test_openrouter_route_worker_publishes_measured_artifact[openai/gpt-image-2-images] _
+tests/test_cloud_image_openrouter_krea.py:70: in test_openrouter_route_worker_publishes_measured_artifact
+    assert str(providers.requests[0].url) == "https://openrouter.ai/api/v1/" + surface
+E   AssertionError: assert 'https://93.1...api/v1/images' == 'https://open...api/v1/images'
+E     
+E     - https://openrouter.ai/api/v1/images
+E     + https://93.184.216.34/api/v1/images
+=============================== warnings summary ===============================
+tests/test_cloud_image_openrouter_krea.py::test_openrouter_route_worker_publishes_measured_artifact[openai/gpt-5.4-image-2-chat/completions]
+  /Users/andrei649/Projects/nerva-hub/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_cloud_image_openrouter_krea.py::test_openrouter_route_worker_publishes_measured_artifact[openai/gpt-5.4-image-2-chat/completions]
+FAILED tests/test_cloud_image_openrouter_krea.py::test_openrouter_route_worker_publishes_measured_artifact[openai/gpt-image-2-images]

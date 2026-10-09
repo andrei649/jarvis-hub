@@ -9,9 +9,13 @@ from typing import Optional
 
 from agents.core.paths import data_root
 
-from .persistence import list_sessions, load_memory_snapshot, save_memory
+from .persistence import RewindPersistenceError, list_sessions, load_memory_snapshot, save_memory
 
 logger = logging.getLogger("jarvis.memory.conversation")
+
+
+class UnverifiedRewind(RuntimeError):
+    """A rewound JSON snapshot needs its durable checkpoint head before use."""
 
 # Resolved LAZILY, not at import. `MEMORY_DIR = data_root()` bound the repo's
 # memory_logs/ before a caller could redirect JARVIS_HOME, so scripts/install_smoke.py
@@ -102,6 +106,10 @@ class ConversationMemory:
 
         self.sessions: dict[str, list[Turn]] = {}
         self.instances: dict[str, str] = {}
+        self.revisions: dict[str, int] = {}
+        self.rewound_sessions: set[str] = set()
+        self.pending_rewinds: set[str] = set()
+        self._rewind_checkpoint_mgr = None
         self.active_images = ActiveImageHistory()
         self._active_image_instances: dict[str, str] = {}
         self.max_turns = max_turns
@@ -122,6 +130,10 @@ class ConversationMemory:
             if snapshot.get("session_id") == sid and isinstance(turns_data, list):
                 if snapshot.get("instance_id"):
                     self.instances[sid] = snapshot["instance_id"]
+                self.revisions[sid] = snapshot.get("revision", 0)
+                if snapshot.get("rewound") is True:
+                    self.pending_rewinds.add(sid)
+                    return
                 self.sessions[sid] = []
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
@@ -134,8 +146,11 @@ class ConversationMemory:
     async def new_session(self, session_id: str = None) -> str:
         async with self._lock:
             sid = session_id or datetime.now(timezone.utc).strftime("session_%Y%m%d_%H%M%S")
+            if sid in self.pending_rewinds:
+                raise UnverifiedRewind("conversation rewind head unverified")
             if sid not in self.sessions:
                 self.sessions[sid] = []
+                self.revisions[sid] = 0
                 logger.info(f"New session: {sid}")
             self.current_session_id = sid
             return sid
@@ -157,6 +172,8 @@ class ConversationMemory:
         chosen session by id. Returns False if it has no in-memory or on-disk turns.
         """
         async with self._lock:
+            if session_id in self.pending_rewinds:
+                raise UnverifiedRewind("conversation rewind head unverified")
             if session_id not in self.sessions:
                 self.invalidate_active_images(session_id)
                 snapshot = load_memory_snapshot(session_id)
@@ -165,7 +182,11 @@ class ConversationMemory:
                     return False
                 if snapshot.get("instance_id"):
                     self.instances[session_id] = snapshot["instance_id"]
+                if snapshot.get("rewound") is True:
+                    self.pending_rewinds.add(session_id)
+                    raise UnverifiedRewind("conversation rewind head unverified")
                 self.sessions[session_id] = []
+                self.revisions[session_id] = snapshot.get("revision", 0)
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
                                 tools=t.get("tools"), media=restored_media(t.get("media")))
@@ -175,16 +196,40 @@ class ConversationMemory:
             self.current_session_id = session_id
             return True
 
+    def restore_verified_rewind(self, session_id: str, snapshot: dict) -> None:
+        """Only the bound manager calls this after validating the SQLite head."""
+        rows = snapshot["turns"]
+        restored = []
+        for value in rows:
+            turn = Turn(value["role"], value["content"], value.get("agent_id"),
+                        value.get("token_count", 0), tools=value.get("tools"),
+                        media=restored_media(value.get("media")))
+            turn.timestamp = value.get("timestamp") or turn.timestamp
+            restored.append(turn)
+        self.invalidate_active_images(session_id)
+        self.sessions[session_id] = restored
+        self.instances[session_id] = snapshot["instance_id"]
+        self.revisions[session_id] = snapshot["revision"]
+        self.rewound_sessions.add(session_id)
+        self.pending_rewinds.discard(session_id)
+        self.current_session_id = session_id
+
     async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None,
                        tools: list[str] | None = None, media: dict | None = None):
         async with self._lock:
+            if session_id in self.pending_rewinds:
+                raise UnverifiedRewind("conversation rewind head unverified")
             if session_id not in self.sessions:
                 self.sessions[session_id] = []
+            prior_turns = list(self.sessions[session_id])
+            prior_revision = self.revisions.get(session_id, 0)
+            was_dirty = session_id in self._dirty
             turn = Turn(role, content, agent_id, token_count=len(content) // 4,
                         tools=tools, media=media)
             self.sessions[session_id].append(turn)
             if len(self.sessions[session_id]) > self.max_turns:
                 self.sessions[session_id].pop(0)
+            self.revisions[session_id] = self.revisions.get(session_id, 0) + 1
             self._dirty.add(session_id)
             if self.persist:
                 # AUD-7 / F9: both the append-log and the full-snapshot write are
@@ -194,18 +239,35 @@ class ConversationMemory:
                 # the actual writes in a worker thread so streaming is never blocked.
                 turn_dict = turn.to_dict()
                 turns_data = [t.to_dict() for t in self.sessions[session_id]]
-                await asyncio.to_thread(self._persist_turn, session_id, turn_dict, turns_data, self.instances.get(session_id))
+                try:
+                    await asyncio.to_thread(self._persist_turn, session_id, turn_dict, turns_data,
+                                            self.instances.get(session_id), self.revisions[session_id],
+                                            session_id in self.rewound_sessions)
+                except RewindPersistenceError:
+                    self.sessions[session_id] = prior_turns
+                    self.revisions[session_id] = prior_revision
+                    if not was_dirty:
+                        self._dirty.discard(session_id)
+                    raise
 
-    def _persist_turn(self, session_id: str, turn_dict: dict, turns_data: list[dict], instance_id: str | None = None):
+    def _persist_turn(self, session_id: str, turn_dict: dict, turns_data: list[dict],
+                      instance_id: str | None = None, revision: int | None = None,
+                      require_rewind: bool = False):
         """Blocking persistence, run off the event loop (see add_turn). Per-turn
         durability is unchanged: the snapshot is still written every turn — only the
         thread it runs on differs."""
         self._append_log_dict(session_id, turn_dict)
         try:
             if instance_id:
-                save_memory(session_id, turns_data, instance_id=instance_id)
+                save_memory(session_id, turns_data, instance_id=instance_id, revision=revision,
+                            checkpoint_mgr=self._rewind_checkpoint_mgr,
+                            require_rewind=require_rewind)
             else:
-                save_memory(session_id, turns_data)
+                save_memory(session_id, turns_data, revision=revision,
+                            checkpoint_mgr=self._rewind_checkpoint_mgr,
+                            require_rewind=require_rewind)
+        except RewindPersistenceError:
+            raise
         except Exception as e:
             logger.warning(f"Snapshot save failed: {e}")
 
@@ -215,14 +277,23 @@ class ConversationMemory:
             turns_data = [t.to_dict() for t in self.sessions.get(session_id, [])]
             instance_id = self.instances.get(session_id)
             if instance_id:
-                save_memory(session_id, turns_data, instance_id=instance_id)
+                save_memory(session_id, turns_data, instance_id=instance_id,
+                            revision=self.revisions.get(session_id, 0),
+                            checkpoint_mgr=self._rewind_checkpoint_mgr,
+                            require_rewind=session_id in self.rewound_sessions)
             else:
-                save_memory(session_id, turns_data)
+                save_memory(session_id, turns_data, revision=self.revisions.get(session_id, 0),
+                            checkpoint_mgr=self._rewind_checkpoint_mgr,
+                            require_rewind=session_id in self.rewound_sessions)
+        except RewindPersistenceError:
+            raise
         except Exception as e:
             logger.warning(f"Snapshot save failed: {e}")
 
     async def get_history(self, session_id: str, last_n: int = None) -> list[dict]:
         async with self._lock:
+            if session_id in self.pending_rewinds:
+                raise UnverifiedRewind("conversation rewind head unverified")
             turns = self.sessions.get(session_id, [])
             if last_n is not None:
                 turns = turns[-last_n:] if last_n > 0 else []
@@ -244,11 +315,17 @@ class ConversationMemory:
                 self.invalidate_active_images(session_id)
                 self.sessions.pop(session_id, None)
                 self.instances.pop(session_id, None)
+                self.revisions.pop(session_id, None)
+                self.rewound_sessions.discard(session_id)
+                self.pending_rewinds.discard(session_id)
             else:
                 self.active_images.clear()
                 self._active_image_instances.clear()
                 self.sessions.clear()
                 self.instances.clear()
+                self.revisions.clear()
+                self.rewound_sessions.clear()
+                self.pending_rewinds.clear()
 
     def _append_log(self, session_id: str, turn: Turn):
         self._append_log_dict(session_id, turn.to_dict())

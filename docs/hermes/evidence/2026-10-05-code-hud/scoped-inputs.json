@@ -1,0 +1,30 @@
+{
+  "source_hashes": {
+    "frontend/src/app.tsx": "46448188085fea2f190692bd8b669de6bc129c06481f9a8c4144b4806c01d63a",
+    "frontend/src/test/h595-chat-followup.test.tsx": "92b6432a1369a25f2364d780dd185adc137f41e6f2a8e5705653128efad37455",
+    "docs/design/HUD_V2_REMAINING.md": "b1b01d6513826613ec491c6589fe060a4a67681300207c7cde4763d5c5d34bc3",
+    "mobile/PARITY.md": "96daf44a3352dc5358829e6b6fef34f92a604a2bfe1d60c38ebc43e3420ec377",
+    "docs/hermes/code-execution-guide.md": "9d092154bbe02514318a79b6abcfa473e2b7ce3e0e81c60b98538c588605384e",
+    "docs/hermes/h595-hud-interruption-plan-2026-10-05.md": "4c1ed555a9df685d5782003e13c45a65e8d49ff0d2ae6a8d746e793256cf3baf"
+  },
+  "build_hashes": {
+    "agents/web/v2/assets/client-D7Azo9Vs.js": "14ff90baa08a75c728800011be72023cd1697fde0c24b065918584114df483d6",
+    "agents/web/v2/assets/gap-Crl5de4H.css": "ea2c58ff70f0e4322cd34ebcd152e1292bc36317ab221186fc70ffdc890a72c5",
+    "agents/web/v2/assets/gap-D3oFvel3.js": "113a3bcf895c6d800eb61ec07fa513db14da6d97feb889a4e866e3594b053d8a",
+    "agents/web/v2/assets/index-C7qGXyZP.js": "ec6db111d381cccffe065b5c698925397556dbfac92f44c8dfc25f4697de3e79",
+    "agents/web/v2/assets/index-teqkDIsI.css": "f2ed79d72c09f820317880035ede4e11c9fe4452e78554a89e8a39c4ea57b7c9",
+    "agents/web/v2/assets/jetbrains-mono-latin-var-B9CIFXIH.woff2": "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e",
+    "agents/web/v2/assets/jobs-vYmczPrq.js": "3b81379f8be7515b6fa596ed3c8c4e322d6b1bd3ad2afdf60c8cbd3b5e39eeb9",
+    "agents/web/v2/assets/modes-CyfcHiSq.js": "26dc6f5de61e507a501a65d0ca1d09cb67d3c3ee8797503bd9c1345326dffb80",
+    "agents/web/v2/assets/modes2-Cm3D_f1v.js": "a1dd835fbbd1aa3870074e6c2c6d4149c42c39cc2844735a179f75e783efbb46",
+    "agents/web/v2/assets/modes3-D8It4SN1.js": "91321077adf3cfdd7db4afbdcca3b56273f4e45f19b9ab4d4c5d48dbbc3b38f8",
+    "agents/web/v2/assets/modes4-Dseq7PPV.js": "7ec1f1d5cf7e14c865388f44d4b023d87d263c6fa99e389ba9f5444f68f9148b",
+    "agents/web/v2/assets/modes_world-DKUcl9R7.js": "7858eb77b21ee2f89c530d0bb1f10a352ef1e86bbe012c398c92d3b0fb70d51c",
+    "agents/web/v2/assets/panel-kit-CwyHgGr0.js": "9f0fb670dba95dbad8e5453c6c282f0da22e5548bd8475cc39e36c79e80d58d5",
+    "agents/web/v2/assets/soul-edit-BcaRddJT.js": "b4f223073a316469a1eb8f911f8d814e1266c4e5050515aa41d3ce3498c02e69",
+    "agents/web/v2/assets/space-grotesk-latin-var-BhU9QXUp.woff2": "0640890476fc1198ab4de571fb658de443c4d85b66466ec09534a8737ab1ce9d",
+    "agents/web/v2/index.html": "1b5ea78d2509d944645e760708a0da35742be1a07318f87344e6c7d93682aa47",
+    "agents/web/v2/manifest.webmanifest": "c2d642afdc2d01e79fe147118fc92dfbefa66b7c503406efb5e5479f7c101c69",
+    "agents/web/v2/sw-v2.js": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c"
+  }
+}

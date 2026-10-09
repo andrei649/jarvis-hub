@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.382" timestamp="2026-10-04T23:53:26.667032+03:00" hostname="Macmini"><testcase classname="tests.test_h277_model_roles" name="test_vision_role_falls_back_to_jarvis_vlm_model" time="1.147"><failure message="AssertionError: assert 'default' == 'JARVIS_VLM_MODEL'&#10;  &#10;  - JARVIS_VLM_MODEL&#10;  + default">tests/test_h277_model_roles.py:121: in test_vision_role_falls_back_to_jarvis_vlm_model
+    assert role.source["model"] == "JARVIS_VLM_MODEL"
+E   AssertionError: assert 'default' == 'JARVIS_VLM_MODEL'
+E     
+E     - JARVIS_VLM_MODEL
+E     + default</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,50 @@
+{
+  "scope": "Krea Enhance signed source workflow, scoped4K delivery/gallery/export and responsive HUD",
+  "findings": [
+    {
+      "issue": "Current Enhance schema caps source URL at1024, donor common URL helper admitted2048",
+      "fix": "PureEnhance adapter and immutable card enforce1024 before approval/dial",
+      "regression": "test_source_url_matches_current_provider_schema_limit; card1024/1025 boundary",
+      "source": "https://www.krea.ai/docs/api-reference/image-enhance/krea-enhance",
+      "status": "closed"
+    },
+    {
+      "issue": "Documented gen.krea.ai output origin was absent from default-off manifest",
+      "fix": "Explicitly admit documented API origin, preserve credential-free DNS-pinned GET and deny other hosts",
+      "regression": "test_krea_documented_result_origin_downloads_without_credentials; admission withdrawal guard",
+      "source": "https://www.krea.ai/docs/api-reference/image-enhance/krea-enhance",
+      "status": "closed"
+    },
+    {
+      "issue": "Nested or incomplete Enhance selector leaked missing completion file errors",
+      "fix": "Reject nested Enhance before completion lookup; map unavailable original completion to fixedValueError",
+      "regression": "test_completed_original_continuation_can_be_selected_but_enhance_cannot_nest",
+      "status": "closed"
+    },
+    {
+      "issue": "Real4KEnhance was rejected by gallery/binary ZIP/portable export sniffer",
+      "fix": "Admit only generated PNG with catalog metadata and exact private completed-execution/pixel proof; keep other limits",
+      "regression": "test_completed_4k_enhance_gallery_read_export_binary_and_zip; privateproof/catalog/naked4K guards",
+      "status": "closed"
+    }
+  ],
+  "reviewers": [
+    "retained backend specialist: source/approval/proof/runtime/gallery guards",
+    "retained frontend specialist: request/card/blob/watch/ambiguity/cleanup review"
+  ],
+  "models": [
+    {
+      "model": "gpt-6-sol",
+      "reasoning": "high",
+      "role": "two retained scoped implementation/review agents"
+    }
+  ],
+  "reclosed_read_only": true,
+  "live_provider_acceptance": false,
+  "limits": [
+    "Current-session original preview; reload opens selected task alone",
+    "Legacy source without provider_result_url remains unavailable; no automatic migration or replay",
+    "Scoped4K output; larger/native/provider/auth requirements remain explicit in H515",
+    "Portable export uses durable private completion proof and one catalog snapshot, without live worker/credentials"
+  ]
+}

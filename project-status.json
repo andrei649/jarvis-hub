@@ -4,9 +4,9 @@
     "blocked": 1,
     "delivered": 0,
     "done": 289,
-    "open": 19,
-    "open_or_blocked": 20,
-    "total": 309
+    "open": 20,
+    "open_or_blocked": 21,
+    "total": 310
   },
   "horizons": {
     "H10": {
@@ -69,8 +69,8 @@
       "blocked": 0,
       "delivered": 0,
       "done": 22,
-      "open": 11,
-      "total": 33
+      "open": 12,
+      "total": 34
     },
     "H19": {
       "blocked": 0,
@@ -199,7 +199,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "304ae4babf1c1a91777c5b780d80ac172c32077e",
+  "latest_ci_commit": "b5f5c4689050efe710ba4853718682a4c1bf9fb6",
   "open_release_gates": [
     {
       "id": "A1",
@@ -222,11 +222,11 @@
       "status": "🟡 **partial (owner, 2026-08-28)** — landing half moving; the 60s demo cut is the remaining piece. Not a 1.0 blocker (GTM, not proof)"
     }
   ],
-  "routes": 555,
+  "routes": 622,
   "tests": {
-    "backend": 21785,
-    "frontend": 2039,
-    "mobile": 316
+    "backend": 25541,
+    "frontend": 2177,
+    "mobile": 359
   },
   "version": "1.0.0"
 }

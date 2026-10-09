@@ -1,0 +1,45 @@
+{
+  "generated_at": "2026-10-04T03:43:25.986068+00:00",
+  "goal": "All697 pinned Hermes capabilities; active local typed-recovery wording dependency",
+  "base_sha": "326c6bef89d078a0aab464b912fa5457f8b5e50e",
+  "state": "Root focused and13-module adjacent regression verified; later full pending",
+  "prototype_patch_sha256": "cd3c362362bf1d2318944a0f6f2eea8114178173e6a9e84bed114bf6587d1595",
+  "source_sha256": {
+    "agents/core/llm/auxiliary_recovery.py": "f10f14a0912d14811e7ae108ebcefd23af4eeea55eb7d96d2ff817685528e4b5",
+    "tests/test_h277_auxiliary_rejection_wording.py": "3a467d53481f5bab5a2d7f605f500df8bddae0628722d25051d414ff81f22d65"
+  },
+  "root_verification": {
+    "red": {
+      "tests": 42,
+      "failures": 19,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "9d0222532c1fea8492857139f47779ba8fe5deed000068125aeb8cff6d572deb"
+    },
+    "green": {
+      "tests": 75,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "f2e55d05b1b4a99f9818bf19bda2b69e0c840ed14f08e0e487cbd5c87c06422e"
+    },
+    "broad": {
+      "tests": 394,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "1e65721d7a64a7bf38ab76073304a849705af80622a0284606dc949dcab6b027"
+    }
+  },
+  "red_scope": "19 behavioral failures in42 new cases; zero setup errors; prototype initial31-case RED and later value qualifier RED remain separate",
+  "ruff": "Two Python paths pass",
+  "bandit": "Final agents/scripts baseline-aware scan exit0",
+  "limits": [
+    "Prior full22465 excludes this subsequent source/test unit",
+    "No remote/SDK auxiliary route or provider retry introduced",
+    "Existing bounded local server-error logging unchanged; no new vendor-body-redaction claim",
+    "H277 remains partial; all697 remains objective",
+    "No paid/live/provider activation, push, merge or deploy"
+  ],
+  "next_action": "Native consent denial integration, shared exact records/counts/fresh graph and separate combined/full evidence"
+}

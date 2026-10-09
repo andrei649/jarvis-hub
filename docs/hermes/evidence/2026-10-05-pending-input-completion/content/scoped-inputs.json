@@ -1,0 +1,8 @@
+{
+  "agents/core/channel_reply.py": "59ef1c76dc22c7d03f87b8c03c6ff17faa32eb0a0bb69ed8b4dd84450d4de4c1",
+  "agents/core/routers/autonomy.py": "795a935d34f85d7b0b27134a6b7616265b62df55f96307a94d994ffeba1fc260",
+  "frontend/src/gap.tsx": "5db403d06320f85f06146999ac9e41da7e0edf1f9e6b722c0a5d2d3cd134d635",
+  "frontend/src/test/decision-inbox-panel.test.tsx": "024cf32093325b17bdec90db1e0ad824ee2396e5c5e3dc055ce58eb24910a529",
+  "tests/test_pending_input_large_prompts.py": "c6e05837fa3864a25545ca9ca3503477de841f09f596e3033e019f7f2e29f786",
+  "agents/core/autonomy_coordinator.py": "654d02633ed6e7c12602c1cb5f46f3198adc93b6da2f425dbd4d711bd3b80347"
+}

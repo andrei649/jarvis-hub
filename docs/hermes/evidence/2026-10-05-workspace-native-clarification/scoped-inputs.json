@@ -1,0 +1,66 @@
+[
+  {
+    "path": "agents/core/channel_reply.py",
+    "sha256": "107028e21b3974470f9f3b6b076707b489cc4922d6fcc7f590792de69ab0c6f0"
+  },
+  {
+    "path": "agents/core/autonomy_coordinator.py",
+    "sha256": "0f06baffb6ee1189d2ad6f93367077f1f62ac83ce103a5beefbf0a552586adcb"
+  },
+  {
+    "path": "agents/core/orchestrator.py",
+    "sha256": "fdbc48f06e51fc808929080e6e3b3c3ea47826d951fd227fc1c642f9ca1fcda0"
+  },
+  {
+    "path": "agents/web.py",
+    "sha256": "6a7989cba3f0788384ba193ccc32521eea709f3b738da3acb870f3efcd187a2d"
+  },
+  {
+    "path": "agents/core/channels/gateway.py",
+    "sha256": "7d32f633b0fa61dc114047b3a7977e68110ff12e58755aa0a2da27177eb41f72"
+  },
+  {
+    "path": "agents/core/channels/manager.py",
+    "sha256": "b29e96419fbb159971f0088a88c09ceb3d5cf2f4598431c31a8967c4eaa13b87"
+  },
+  {
+    "path": "agents/core/channels/pending_input_workspace.py",
+    "sha256": "6d3fdd274c5494497bf9f782ec947d9d9912119cd2475e61f6a7e7c1cce2d1d6"
+  },
+  {
+    "path": "agents/core/channels/pending_input_cards.py",
+    "sha256": "becc183be5543214dad57cde3bc396699cb7bf7c71adc1f8968637f02330f667"
+  },
+  {
+    "path": "agents/core/channels/pending_input_runtime.py",
+    "sha256": "e69cba82042181903abd6c270b424577967c0ad8ab2cd03a8b05b9f5f3ad3564"
+  },
+  {
+    "path": "agents/core/channels/slack.py",
+    "sha256": "a010db765e92d7583bac083c970b4e1776439f6380a41a066735b79e080d087a"
+  },
+  {
+    "path": "agents/core/channels/discord.py",
+    "sha256": "7fa8584a238d2bcfa4c61af6ef9ba893dcbe725dd494f8b3122313e2656a0264"
+  },
+  {
+    "path": "tests/test_pending_input_workspace.py",
+    "sha256": "092c331e5c45c48ca098f764db32d414049a0fb9463e3e5fe3adab4102bce9d8"
+  },
+  {
+    "path": "tests/test_pending_input_workspace_broker.py",
+    "sha256": "31b779034e7935d9e3d6ec00d500967ff963b90ba2137d131ecca2b1c4bab405"
+  },
+  {
+    "path": "tests/test_pending_input_workspace_runtime.py",
+    "sha256": "e76a1d1e3b42adeb8a0f98f10eb597ddc061487d9ac4d87277d7e8c9fcfd1124"
+  },
+  {
+    "path": "tests/test_pending_input_slack_transport.py",
+    "sha256": "d71ab8aeb9b1543233c3b6b68a48c7b315872a7a4751b6280d30cb405f5e1aa6"
+  },
+  {
+    "path": "tests/test_pending_input_discord_transport.py",
+    "sha256": "5a0d6a2ff4dcc2f85d4351206d75d8b8840add401baf515425a207da69587c42"
+  }
+]

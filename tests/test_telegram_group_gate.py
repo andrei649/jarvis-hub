@@ -227,8 +227,8 @@ async def test_the_poll_loop_forwards_observed_messages_as_context_only():
     await _drain(channel, [_message("hello everyone"), _message("@nerva_bot hi")])
 
     assert received == [
-        ("hello everyone", {"chat_id": GROUP, "sender": "42", "observe_only": True}),
-        ("hi", {"chat_id": GROUP, "sender": "42"}),
+        ("hello everyone", {"chat_id": GROUP, "sender": "42", "observe_only": True, "chat_type": "supergroup"}),
+        ("hi", {"chat_id": GROUP, "sender": "42", "chat_type": "supergroup"}),
     ]
 
 

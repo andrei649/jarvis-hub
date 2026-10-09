@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.481" timestamp="2026-10-04T23:54:51.469114+03:00" hostname="Macmini"><testcase classname="tests.test_h277_approval_judge" name="test_pending_route_carries_the_judge_status_and_no_secret" time="1.026"><failure message="KeyError: 'judge'">tests/test_h277_approval_judge.py:735: in test_pending_route_carries_the_judge_status_and_no_secret
+    assert pending["judge"]["configured"] is True and pending["judge"]["reason"] == ""
+           ^^^^^^^^^^^^^^^^
+E   KeyError: 'judge'</failure></testcase></testsuite></testsuites>

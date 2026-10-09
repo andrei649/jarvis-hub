@@ -1,0 +1,15 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/roles_pick_legacy_wins_over_role_name.xml", "tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable __
+tests/test_h277_model_roles.py:142: in test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable
+    assert role.model == "new-vl" and role.source["model"] == "JARVIS_ROLE_VISION_MODEL"
+E   AssertionError: assert ('new-vl' == 'new-vl'
+E     
+E       new-vl and 'JARVIS_VLM_MODEL' == 'JARVIS_ROLE_VISION_MODEL'
+E     
+E     - JARVIS_ROLE_VISION_MODEL
+E     + JARVIS_VLM_MODEL)
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_role_model_overrides_the_legacy_model_and_names_the_shadowed_variable
+1 failed in 1.43s

@@ -123,11 +123,22 @@ class TaskExecutor:
                 "status": "noop",
                 "note": f"no handler for kind={getattr(dispatch_task, 'kind', '?')}",
             }
-        if self.max_wall_seconds is not None:
+        # A consented handler needs its own exact task binding. wait_for creates
+        # a child Task, and an inherited ContextVar alone cannot authorize it.
+        from .consent_execution import authorize_consent_handler, consent_scope_present
+
+        if self.max_wall_seconds is not None or consent_scope_present():
+            handler_task = asyncio.create_task(handler(dispatch_task))
+            authorized = authorize_consent_handler(self, dispatch_task, handler_task)
+            if authorized is False:
+                handler_task.cancel()
+                await asyncio.gather(handler_task, return_exceptions=True)
+                return {"status": "refused", "reason": "mediation_execution_context_required"}
             try:
-                result = await asyncio.wait_for(
-                    handler(dispatch_task), timeout=self.max_wall_seconds
-                )
+                if self.max_wall_seconds is None:
+                    result = await handler_task
+                else:
+                    result = await asyncio.wait_for(handler_task, timeout=self.max_wall_seconds)
             except TimeoutError:
                 logger.warning(
                     "task wall-time budget exceeded (kind=%s, %.0fs)",

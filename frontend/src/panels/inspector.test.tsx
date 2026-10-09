@@ -28,7 +28,7 @@ const PAYLOAD = {
     { name: 'fs', transport: 'stdio', trust: 'full', connected: false, tools: 0, tool_names: [] },
   ] },
   system_prompt: { system: 'You are Jarvis.', turn: 'Available skills:\n  - weather: run weather', bytes: 60, tokens: 15, cap: 65536,
-    truncated: false, withheld: false },
+    truncated: false, withheld: false, resolved: true, model: 'qwen3-8b', route: 'local' },
 };
 
 beforeEach(() => {
@@ -66,6 +66,44 @@ describe('InspectorPanel — H227', () => {
     expect(screen.getByLabelText('System part').textContent).toBe('You are Jarvis.');
     expect(screen.getByLabelText('Turn part').textContent).toContain('Available skills:');
     expect(screen.getByText(/about 15 tokens before any history · 60 bytes/)).toBeTruthy();
+    expect(screen.getByText(/resolved empty-turn preview · model qwen3-8b · route local/)).toBeTruthy();
+    expect(screen.getByText(/Fixed empty-turn preview.*active history.*tool schemas.*cached runtime facts may differ/)).toBeTruthy();
+  });
+
+  it('replaces the resolved route and preview text after refresh', async () => {
+    render(<InspectorPanel />);
+    await waitFor(() => expect(screen.getByText(/resolved empty-turn preview · model qwen3-8b · route local/)).toBeTruthy());
+    reply = { status: 200, body: { ...PAYLOAD, system_prompt: {
+      ...PAYLOAD.system_prompt, system: 'Fresh prompt', model: 'new-model', route: 'cloud' } } };
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+    await waitFor(() => expect(screen.getByText(/resolved empty-turn preview · model new-model · route cloud/)).toBeTruthy());
+    expect(screen.queryByText(/resolved empty-turn preview · model qwen3-8b · route local/)).toBeNull();
+    expect(screen.getByLabelText('System part').textContent).toBe('Fresh prompt');
+    reply = { status: 200, body: { ...PAYLOAD, system_prompt: {
+      ...PAYLOAD.system_prompt, system: 'hidden secret', turn: 'hidden turn', withheld: true,
+      model: 'hidden-model', route: 'cloud' } } };
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+    await waitFor(() => expect(screen.getByText('withheld: the secret redactor could not be loaded')).toBeTruthy());
+    expect(screen.queryByLabelText('System part')).toBeNull();
+    expect(screen.queryByText(/new-model|hidden-model|Fresh prompt|hidden secret|hidden turn/)).toBeNull();
+  });
+
+  it('calls a failed route preview unresolved and its system text base only', async () => {
+    reply = { status: 200, body: { ...PAYLOAD, system_prompt: {
+      ...PAYLOAD.system_prompt, resolved: false, route_error: 'unavailable' } } };
+    render(<InspectorPanel />);
+    await waitFor(() => expect(screen.getByText(/unresolved · base system prompt only · route unavailable/)).toBeTruthy());
+    expect(screen.queryByText(/resolved empty-turn preview/)).toBeNull();
+    expect(screen.getByLabelText('System part').textContent).toBe('You are Jarvis.');
+  });
+
+  it('marks a legacy response as unverified instead of assuming resolution', async () => {
+    const { resolved, model, route, ...legacy } = PAYLOAD.system_prompt;
+    reply = { status: 200, body: { ...PAYLOAD, system_prompt: legacy } };
+    render(<InspectorPanel />);
+    await waitFor(() => expect(screen.getByText(/legacy preview · route resolution not reported/)).toBeTruthy());
+    expect(screen.getByText(/model-specific prompt additions unverified/)).toBeTruthy();
+    expect(screen.queryByText(/resolved empty-turn preview/)).toBeNull();
   });
 
   it('asks again as another principal, and for another agent', async () => {
@@ -85,6 +123,8 @@ describe('InspectorPanel — H227', () => {
     render(<InspectorPanel />);
     await waitFor(() => expect(screen.getByText(/the tool loop is off/)).toBeTruthy());
     expect(screen.getByText('withheld: the secret redactor could not be loaded')).toBeTruthy();
+    expect(screen.queryByLabelText('System part')).toBeNull();
+    expect(screen.queryByText(/resolved empty-turn preview/)).toBeNull();
     cleanup();
     reply = { status: 404, body: { error: 'unknown_agent', agent: 'jarvis' } };
     render(<InspectorPanel />);

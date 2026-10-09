@@ -1,0 +1,22 @@
+{
+  "source_hashes": {
+    "agents/core/code_interruptions.py": "f2d1e884c254930946f7f6b4718a384771c76a5ecb57a6c4efe15bc18054fca3",
+    "agents/core/code_tools.py": "545b8935d62cbc4461b827cf80225c4ae22aacf4bafa5b96c3952daacaee6f3b",
+    "agents/core/sandbox.py": "54993a5bcdb5c114b456588ab505be8ac70b9aca4f209367278ae469c64c9cf4",
+    "agents/core/tool_rpc_runtime.py": "7fe1873972c97908d618fe13358e58a597ac80a749c8ef5422072062def63add",
+    "agents/core/orchestrator.py": "2fd5c9b3b1e76891c037d892249b9457ddf276a3fb86927e0434ec364e141d13",
+    "agents/core/channels/gateway.py": "4466dd2212ae07a25e5358543df80868c1a8d7c715f9a4a54065284be7e10add",
+    "agents/core/channels/telegram.py": "8ffd343df560bce056078b11033b21b8a2eff2e5a55311d8b5793efc50f9ba74",
+    "agents/web.py": "e75bdba211d9545ff3ac7894c84a8b599bd049c45ea5dd0291fb8ab81ea04038",
+    "tests/test_h595_product_interrupt.py": "e9d0470bfd497b23b2f27ebcb9388b1d62f4a8699be9c54f766093911d3582c5",
+    "tests/test_h595_model_context.py": "f47a0cb2a85f7ed746c6e88a02b303fe1b64da87c1d32f1496ccf3d64c607d08",
+    "tests/test_h595_oneshot_context.py": "f3b9c1e98f0a9c729edd2f3b584a1671d4c16211ef55c47a0748d9598d2840a1",
+    "tests/test_h595_import_lifecycle.py": "9ad4048ab63e02b5a4a90729fb0cab158b504fef99ba704d0dc1df3366dc8140",
+    "docs/hermes/code-execution-guide.md": "a4b9cb71ea4ab4b8704bc1e73b7f663796b06f13e6fb8f758b3f8f243ee8a223",
+    "docs/FLAGS.md": "fbebe011ab90296165aad2adfda4f9c6518d49b864d3114cb6ce690613fef1f4",
+    "docs/hermes/h595-interruption-plan-2026-10-05.md": "f5a6f46fa85440ced76cb2090af103f5114d586f36979ac2bc03f7a950c9a835",
+    "mobile/PARITY.md": "2aa81a91630416bf59ea431efef81a47777799cc79c174ecf3cd181e004a4a1c",
+    "docs/design/HUD_V2_REMAINING.md": "bd5a56e21740041f0d5f16c5b841213930db0e42c167fbe94b3b091cdc793898"
+  },
+  "final_delta": "Final focused run follows the parent-taint correction; composition run predates that correction. Counts overlap."
+}

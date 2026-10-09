@@ -1,0 +1,45 @@
+{
+  "generated_at": "2026-10-04T05:14:56.228518+00:00",
+  "goal": "All697 pinned Hermes; correct exactly two superseded H277 absence claims",
+  "base_sha": "063b260013ce902b95e5d457326cef2b8a02c4ba",
+  "tested_head_sha": "3e21a7cddc64f0c4645eaec6e0dd600f4de1a248",
+  "state": "Scoped semantic correction only; H277 other evidence remains stale and incomplete",
+  "corrections": [
+    {
+      "old": "Legacy manually approved Docker execution still lacks the terminal.exec kernel hop added to the smart path.",
+      "current": "Manually approved Docker-target terminal execution now crosses the terminal.exec kernel grant and rechecks the exact durable task, runtime and current dispatch at the physical gate; the lane is restricted to Docker and refuses host fallback. No-task Docker ALLOW and other producer paths remain open."
+    },
+    {
+      "old": "DeepInfra explicit catalog/image integration is delivered; main-chat routing and live provider acceptance remain open.",
+      "current": "DeepInfra explicit catalog/image integration and selected-main text/tool/stream routing are delivered and locally verified. The main route requires an explicit model/key and canonical endpoint, and fails closed when unavailable. Default model discovery/catalog picker and live provider compatibility/acceptance remain open."
+    }
+  ],
+  "source_sha256": {
+    "agents/core/llm/hybrid_router.py": "407a823d44acb2dc4985485fad4d2174d2912e523fcc73882a3b9cd62dd34595",
+    "agents/core/llm/deepinfra.py": "d1e2c830bc74e7db7dc6be778c8c9bee80409c75cc2eee6c1a6582ccf4e93cc6",
+    "tests/test_h277_deepinfra_main.py": "93bb0f67bfe2a6f17a81e55cd32d4ec801d53f05fd56ce60b5479ddfac092f5d",
+    "agents/core/environments/execution.py": "2109367db7189c70038d047b9f06c263676e3fae097be3b1094ae5f4ebb699b4",
+    "agents/core/environments/legacy_terminal_dispatch.py": "bad5094d35e31ff500b8eca2547ea743d7ead8481598b0627582b7e407c7dc53",
+    "agents/core/sandbox.py": "42bef3d5a553d6339646fe0067a9ab45ea0ec7e7c0ee9cd04b9daca92b266305",
+    "agents/core/autonomy_coordinator.py": "66d9cd9e790a33b68a23c17ed9501dfb81788c398a99dd28e1d2e252ed27f5d3",
+    "tests/test_h277_legacy_docker_kernel.py": "e12e6d88817a993545aac108fe0a039c54bf800479ed61a950ebae73f18eaf96"
+  },
+  "full_receipt": "docs/hermes/evidence/h277-h487-provider-terminal-denial-full-2026-10-04.json",
+  "preserved": [
+    "All unrelated H277 remaining clauses",
+    "All existing H277 evidence pins; no blind restamp",
+    "Every other review and scope reopening",
+    "Partial stored verdict; derived stale-evidence status remains needs_review",
+    "No live/provider/Docker effects, activation, publication or new equivalent credit"
+  ],
+  "next_action": "Continue H011 and all697; H277 needs substantive remaining provider/producer/live reassessment",
+  "root_record_verification": {
+    "tests": 151,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "f37c2844bb66d6772de54b7925d25d0418dae7189deca0e88f6832755efdb4b1",
+    "log_sha256": "ef44940ff7b0c272c4e8bef2399712d59b6c36f9279acce8a980228659553c45",
+    "scope": "Eight reference/status/binding/auth/route/OpenAPI/lifespan modules; no new source test run needed for prose-only correction"
+  }
+}

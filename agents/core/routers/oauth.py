@@ -18,9 +18,11 @@ router. The Oracle handlers reach state only through `get_orch()`, so no web-own
 singleton remains.
 """
 
-from fastapi import APIRouter, Depends
+import asyncio
+
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from agents.core.app_state import get_orch
 from agents.core.env_config import env_flag, truthy as _env_truthy
@@ -126,6 +128,60 @@ async def oauth_refresh(service: str = ""):
     else:
         return JSONResponse({"error": f"Unknown service: {service}"}, status_code=404)
     return {"ok": token is not None, "service": service}
+
+
+# Nous accounts are owned by Nerva; provider credentials never cross these APIs.
+_NOUS_PROFILE = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+
+
+class NousProfileBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile: str = Field(default="default", strict=True, pattern=_NOUS_PROFILE)
+
+
+class NousPollBody(NousProfileBody):
+    login_id: str = Field(strict=True, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+def _nous_service():
+    from agents.core.llm.nous_auth import NousAuthService
+    return NousAuthService()
+
+
+async def _nous_call(method, *args):
+    try:
+        result = await asyncio.to_thread(lambda: getattr(_nous_service(), method)(*args))
+        return nocache_json(result)
+    except Exception as exc:
+        from agents.core.llm.nous_auth import NousAuthError
+        reason = exc.reason if isinstance(exc, NousAuthError) else "nous_auth_unavailable"
+        message = {
+            "client_id_required": "Set JARVIS_NOUS_CLIENT_ID on the hub before signing in",
+            "reauth_required": "Sign in to Nous again",
+            "authorization_denied": "Nous authorization was denied",
+            "login_not_found": "This Nous login is no longer active; start login again",
+        }.get(reason, "Nous account operation unavailable")
+        return nocache_json({"ok": False, "error": message, "reason": reason}, status_code=503)
+
+
+@router.get("/api/oauth/nous/status", dependencies=[Depends(admin_guard)])
+async def nous_status(profile: str = Query(default="default", pattern=_NOUS_PROFILE)):
+    return await _nous_call("status", profile)
+
+
+@router.post("/api/oauth/nous/login", dependencies=[Depends(admin_guard)])
+async def nous_login(body: NousProfileBody):
+    return await _nous_call("start_login", body.profile)
+
+
+@router.post("/api/oauth/nous/poll", dependencies=[Depends(admin_guard)])
+async def nous_poll(body: NousPollBody):
+    return await _nous_call("poll_login", body.profile, body.login_id)
+
+
+@router.post("/api/oauth/nous/logout", dependencies=[Depends(admin_guard)])
+async def nous_logout(body: NousProfileBody):
+    return await _nous_call("logout", body.profile)
 
 
 # ── Oracle Bridge endpoints ──────────────────────────────────────

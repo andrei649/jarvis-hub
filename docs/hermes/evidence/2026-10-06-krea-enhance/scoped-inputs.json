@@ -1,0 +1,239 @@
+{
+  "source_entries": [
+    {
+      "path": "agents/core/cloud_image_runtime.py",
+      "sha256": "ea2fe12182074f501545e7d09b14b1de98b9aad9dbdceb4970cd353e4b6c50d9"
+    },
+    {
+      "path": "agents/core/image_generation_view.py",
+      "sha256": "dd5a0f8582096db6c8e4d31de23773866c57c3b38ac971fb3badf3c893dffb92"
+    },
+    {
+      "path": "agents/core/image_tool_dispatcher.py",
+      "sha256": "16bc80092bc53a99a1277c6d3cffd2a7d0ee9d0839b1ca7878ae3ca352282e3b"
+    },
+    {
+      "path": "agents/core/media_backends/comfyui.py",
+      "sha256": "c851f159c7bdf2cb047ff3f9edf3a49d627dbcddef85500883e331ebe5123160"
+    },
+    {
+      "path": "agents/core/media_backends/fal_image.py",
+      "sha256": "829bba1dba925d33fa59e8d65bd60f3168d0858244985fb29e2d7d2af764f034"
+    },
+    {
+      "path": "agents/core/media_backends/krea_enhance.py",
+      "sha256": "adad246193e8caf1bef380d2b7bf5e5756a93c261595f181302c6de215eb72ea"
+    },
+    {
+      "path": "agents/core/media_library.py",
+      "sha256": "fa61e13d1a0edaedcd80e277ee011e9ac267979c71af6b54384c1d0b7a7dc8df"
+    },
+    {
+      "path": "agents/core/plugin_gate.py",
+      "sha256": "95c58898b71198c0f153b597a3fa084eb3e0bb2d3992ad1b8789f5cc6c5ee058"
+    },
+    {
+      "path": "agents/core/routers/multimodal.py",
+      "sha256": "60eb1500618e0deac8cddd79a46d02a96beb1ab0009e82f36f435d190f492b01"
+    },
+    {
+      "path": "agents/web/v2/assets/client-D7Azo9Vs.js",
+      "sha256": "14ff90baa08a75c728800011be72023cd1697fde0c24b065918584114df483d6"
+    },
+    {
+      "path": "agents/web/v2/assets/gap-Cqao4FKH.js",
+      "sha256": "8f2dd3a4f423add284575873c35f72ddf72d82b1d4d396c8ac0db4c118773f2a"
+    },
+    {
+      "path": "agents/web/v2/assets/gap-Crl5de4H.css",
+      "sha256": "ea2c58ff70f0e4322cd34ebcd152e1292bc36317ab221186fc70ffdc890a72c5"
+    },
+    {
+      "path": "agents/web/v2/assets/index-BDFXdZ0i.js",
+      "sha256": "7910afbc02dfce89972d271aded44c6bc2d452d46df6bb8187c502583ffe5c53"
+    },
+    {
+      "path": "agents/web/v2/assets/index-teqkDIsI.css",
+      "sha256": "f2ed79d72c09f820317880035ede4e11c9fe4452e78554a89e8a39c4ea57b7c9"
+    },
+    {
+      "path": "agents/web/v2/assets/jobs-vYmczPrq.js",
+      "sha256": "3b81379f8be7515b6fa596ed3c8c4e322d6b1bd3ad2afdf60c8cbd3b5e39eeb9"
+    },
+    {
+      "path": "agents/web/v2/assets/modes-BP_QFfDf.js",
+      "sha256": "cabc735192920d564949ae29a4f284ee17fbc5a7e802bdbee276e20d6a80fa87"
+    },
+    {
+      "path": "agents/web/v2/assets/modes2-BUQltWq6.js",
+      "sha256": "bca840ddb90a36d1815f462b65744ab268390e913a5c42a3186d8207407d27da"
+    },
+    {
+      "path": "agents/web/v2/assets/modes3-CK3eMYVV.js",
+      "sha256": "52f05338e34ea8e1cecadf743790365eb3d13ee32800c5effa3e5441e1c6eee6"
+    },
+    {
+      "path": "agents/web/v2/assets/modes4-BOirc9JJ.js",
+      "sha256": "7dbc1019b6c0bd21cd15ede940d4659174ff09a7480959e1e1faf830bf6d8e84"
+    },
+    {
+      "path": "agents/web/v2/assets/modes_world-KqiJAoOO.js",
+      "sha256": "be54b457ff322b85c7dd3652cbac23cefa1332b2f75315091996e953d7aa0b95"
+    },
+    {
+      "path": "agents/web/v2/assets/panel-kit-CwyHgGr0.js",
+      "sha256": "9f0fb670dba95dbad8e5453c6c282f0da22e5548bd8475cc39e36c79e80d58d5"
+    },
+    {
+      "path": "agents/web/v2/assets/soul-edit-BcaRddJT.js",
+      "sha256": "b4f223073a316469a1eb8f911f8d814e1266c4e5050515aa41d3ce3498c02e69"
+    },
+    {
+      "path": "agents/web/v2/index.html",
+      "sha256": "663af83f69f59c7b69d11837e01ca48a6908f883fd69c22b57cddf4b10330221"
+    },
+    {
+      "path": "agents/web/v2/sw-v2.js",
+      "sha256": "707b96153918cea03cf0f6f3f01649cdb91f02b01040388a455a280e23bd947c"
+    },
+    {
+      "path": "docs/design/HUD_V2_REMAINING.md",
+      "sha256": "071a8467668f0782192e2a672785b8b7c0d0d0122d706b91ffe34630b6a408d5"
+    },
+    {
+      "path": "docs/hermes/h515-krea-enhance-plan-2026-10-06.md",
+      "sha256": "e137a8755e1ac7267651cef13d84d619de96ead77c7ff0fcde4d98c4f0707b10"
+    },
+    {
+      "path": "docs/hermes/h515-managed-nous-map-2026-10-06.md",
+      "sha256": "30662ca04f93d37c4d237b8b8a23a77f58e76842781ac318459fa4f103c6d581"
+    },
+    {
+      "path": "docs/hermes/openrouter-krea-image-guide.md",
+      "sha256": "e9248b9dcf0b5c10cd3ebb9e1abbf55f9c2bb780b99f0dace2b8185562baf38b"
+    },
+    {
+      "path": "frontend/src/api/images.ts",
+      "sha256": "748ec4bf0a0b6a2cbb7c00da603153b5064968857038e20cffe7f588871fb5a3"
+    },
+    {
+      "path": "frontend/src/api/schema.gen.ts",
+      "sha256": "57c527f7099a4c0bceaf0b022d8de17624f70d00756d67628ac635cbf1daeb44"
+    },
+    {
+      "path": "frontend/src/gap.tsx",
+      "sha256": "cddc3c96d6e8c25bacc274446498c0d07c9298c029fd8fde70c28fd37316f3c2"
+    },
+    {
+      "path": "frontend/src/mesh.tsx",
+      "sha256": "eb6cf6e521538866f4ea463ad9858ede7ad4c7678c58fda42da5e6dcfcad1401"
+    },
+    {
+      "path": "frontend/src/network.tsx",
+      "sha256": "e9e4e4b0a38de0c56ff40b53d49a07f5709851d3593d7a212d3034d8d0e7aca5"
+    },
+    {
+      "path": "frontend/src/panels/images.tsx",
+      "sha256": "7be04f8dece101eb14024e95fafc321dceb52f29f58e1568f2796e10dc33db1b"
+    },
+    {
+      "path": "frontend/src/pointer.tsx",
+      "sha256": "69688bbcacaa8c2d3dc1354b087a690af020aa1db5aa9221f2a4c589be7879d5"
+    },
+    {
+      "path": "frontend/src/sentences.ts",
+      "sha256": "a5ce19c255514853d82912a74f19d8c201f769181be96792318fbe1c545b00f9"
+    },
+    {
+      "path": "frontend/src/test/decision-inbox-panel.test.tsx",
+      "sha256": "9bacdffd7869c159fc8e2fe1aa196888cea528922b33afab439626f3bc7cb3f8"
+    },
+    {
+      "path": "frontend/src/test/images-api.test.ts",
+      "sha256": "88913695f8365e3171010cf17d3621523db7b7f463ab48157436459febcf40ce"
+    },
+    {
+      "path": "frontend/src/test/images-provider-flow.test.tsx",
+      "sha256": "14b29e3ce1576c5900b517323d8a48cb857e67760d0adeb971b33863585baf22"
+    },
+    {
+      "path": "mobile/PARITY.md",
+      "sha256": "5f5ec6d37b808b6572344723681ac43c9da3ebf3568a913774e31666fbf3a8ee"
+    },
+    {
+      "path": "tests/test_cloud_image_enhance_gallery.py",
+      "sha256": "ca680713760c6560f5c71f42b4393c8d3494d32b5954437ac12678563d06dab9"
+    },
+    {
+      "path": "tests/test_cloud_image_krea_enhance.py",
+      "sha256": "2812769645894d55ef89cbe6335b1bffe2abb09838008d7e61651264906286c4"
+    },
+    {
+      "path": "tests/test_cloud_image_krea_enhance_guards.py",
+      "sha256": "00628ee2abbb3c5a16ed53b92a8ad61bb15e60816328315b6b3751e62f899eb7"
+    },
+    {
+      "path": "tests/test_cloud_image_openrouter_krea.py",
+      "sha256": "60256ff20398181b976e07c8e659a055402eada79585aab96815f7a34c806f92"
+    },
+    {
+      "path": "tests/test_image_generation_api_flow.py",
+      "sha256": "ce9fedc312541cfba67c625c8d0bc8620f18b55e9f80979df6c70d229fea3345"
+    },
+    {
+      "path": "tests/test_image_generation_view.py",
+      "sha256": "4eade9c31e8c72f69c5291d1d1eb9473b22ef7b0a64999b9fc372ac056042c01"
+    },
+    {
+      "path": "tests/test_krea_enhance.py",
+      "sha256": "3093da80949bb7c739285ae5492fbc7cde1ec85f4d052275c7de8587c7695dbd"
+    }
+  ],
+  "root_head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "donor_pin": "59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e",
+  "backend_test_paths": [
+    "tests/test_binary_artifact_routes.py",
+    "tests/test_binary_artifact_store.py",
+    "tests/test_cloud_image.py",
+    "tests/test_cloud_image_codex.py",
+    "tests/test_cloud_image_deepinfra.py",
+    "tests/test_cloud_image_enhance_gallery.py",
+    "tests/test_cloud_image_fal.py",
+    "tests/test_cloud_image_krea_enhance.py",
+    "tests/test_cloud_image_krea_enhance_guards.py",
+    "tests/test_cloud_image_krea_resume.py",
+    "tests/test_cloud_image_openrouter_krea.py",
+    "tests/test_cloud_image_tool.py",
+    "tests/test_cloud_image_xai.py",
+    "tests/test_data_export.py",
+    "tests/test_deepinfra_image.py",
+    "tests/test_fal_image.py",
+    "tests/test_fal_image_tool.py",
+    "tests/test_gpt_image2.py",
+    "tests/test_h275_safe_mode.py",
+    "tests/test_h285_load_set.py",
+    "tests/test_h490_safe_mode_posture.py",
+    "tests/test_h595_product_interrupt.py",
+    "tests/test_image_edit.py",
+    "tests/test_image_generation_api_flow.py",
+    "tests/test_image_generation_view.py",
+    "tests/test_image_mediation_composition.py",
+    "tests/test_image_options_extended.py",
+    "tests/test_krea_enhance.py",
+    "tests/test_krea_image.py",
+    "tests/test_krea_jobs.py",
+    "tests/test_local_image_backend.py",
+    "tests/test_local_image_runtime.py",
+    "tests/test_media_catalog.py",
+    "tests/test_media_gallery_pagination.py",
+    "tests/test_media_gen_h12_24.py",
+    "tests/test_media_library.py",
+    "tests/test_openai_codex_image.py",
+    "tests/test_openrouter_image.py",
+    "tests/test_plugin_egress.py",
+    "tests/test_xai_image.py"
+  ],
+  "publication": "owner-authorized draft snapshot",
+  "scope": "Krea Enhance with scoped4K pixel-proof delivery/gallery/export",
+  "integrated_main": "c21202c1"
+}

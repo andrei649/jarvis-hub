@@ -1,0 +1,80 @@
+{
+  "generated_at": "2026-10-04T04:50:17.405261+00:00",
+  "goal": "All697 pinned Hermes capabilities; reviewed owner-denial/judge milestone collateral",
+  "base_sha": "220052441ca2befdd5a839dc98a937486e0b1cb6",
+  "stamp_base_sha": "27eeccd40f7cfb2d0415fd8ea596c8d961b3a918",
+  "reviewed_ids": [
+    "H117",
+    "H153",
+    "H487",
+    "H504",
+    "H670",
+    "H677",
+    "H691"
+  ],
+  "preserved_statuses": {
+    "H117": "equivalent",
+    "H153": "equivalent",
+    "H487": "partial",
+    "H504": "equivalent",
+    "H670": "equivalent",
+    "H677": "equivalent",
+    "H691": "equivalent"
+  },
+  "proposal_sha256": "274f572502f7c5e464240d96f03220a6e9ff6129a1824affcd4df58ac63866a4",
+  "root_validation": "All18 proposed input hashes matched current committed bytes before stamp; exact seven independently detected previously-current/newly-stale rows; statuses unchanged; semantic changes and citation destinations inspected; clean root dry-run and actual stamp pass",
+  "claim_dispositions": {
+    "H117": "Existing batching unchanged; exact-card owner denial is a reserved private pre-flush exception, not a model turn",
+    "H153": "Actual send/card anchors remapped; unchanged ChannelManager added to resolve prior citation; webhook dispatch unchanged",
+    "H487": "Native owner-once reason dependency delivered with exact CAS/MAC and one-shot durable validation; only that gap removed; other producers/deadlines/recovery/crash/audit/live scope retained",
+    "H504": "Added judge-recovery FLAGS prose; TLS implementation/limits unchanged",
+    "H670": "Added denial/judge architecture prose; identity contract/loader/prompt/version unchanged",
+    "H677": "All FOUR callback/text fast sets canceled/waited before ordinary lane drain; existing concurrency/shutdown budgets unchanged; source review not live shutdown proof",
+    "H691": "Added judge-recovery FLAGS prose; proxy-trust code/limits unchanged"
+  },
+  "current_metrics": {
+    "equivalent": 182,
+    "partial": 260,
+    "missing": 62,
+    "needs_review": 193,
+    "excluded": 0,
+    "reviewed_current": 141,
+    "total": 697,
+    "documented_percent": 26.1
+  },
+  "evidence_scope": [
+    "docs/hermes/evidence/h277-h487-owner-judge-regression-2026-10-04.json",
+    "docs/hermes/evidence/h487-native-owner-denial-progress-2026-10-04.json",
+    "docs/hermes/evidence/h277-active-judge-recovery-progress-2026-10-04.json"
+  ],
+  "graft": {
+    "nodes": 49490,
+    "edges": 127874,
+    "files": 2806,
+    "parsed": 8,
+    "cached": 2798,
+    "graph_ok": true,
+    "added": 0,
+    "removed": 0,
+    "changed": 0,
+    "stale": 0,
+    "rule": "External local cache only; optional deep/context pass not requested or built"
+  },
+  "limits": [
+    "Six existing equivalent verdicts restored; no new equivalence credit",
+    "Already-stale H277/H513/provider records excluded from this collateral restoration",
+    "Current35-module regression1003 and prior final record151 are targeted, not full backend proof",
+    "No new mutation/live/provider/device/terminal acceptance or activation",
+    "No push, merge or deployment"
+  ],
+  "next_action": "Final record checks and exact scan/local commit; freeze clean source22,699 and inspect prepared full backend process to terminal without edits; independent H011 external prototype continues",
+  "final_record_gates": {
+    "tests": 151,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 151,
+    "junit_sha256": "7957cdb260cb468b37a5b03b85854ed5c5b0f457fa993e72128f149dbaefe455",
+    "log_sha256": "ef44940ff7b0c272c4e8bef2399712d59b6c36f9279acce8a980228659553c45"
+  }
+}

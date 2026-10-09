@@ -50,6 +50,7 @@ _FACT_FIELDS = frozenset(
     }
 )
 _EVENT_KEY = re.compile(r"evt-[0-9a-f]{48}")
+_PSEUDONYM = re.compile(r"occ-[0-9a-f]{32}\Z")
 
 
 class PrivateStoreError(RuntimeError):
@@ -558,6 +559,18 @@ class PrivateHouseStore:
             while len(self._query_cache) > _MAX_CACHE:
                 self._query_cache.popitem(last=False)
             return [dict(fact) for fact in result]
+
+    def query_pseudonym(self, occupant_id: str, *, at: float | None = None) -> list[dict]:
+        """Read one current occupant without releasing its private identity reference."""
+        if not isinstance(occupant_id, str) or _PSEUDONYM.fullmatch(occupant_id) is None:
+            raise ValueError("invalid occupant pseudonym")
+        with self._lock:
+            occupant_ref = self._identity_refs.get(occupant_id)
+            if occupant_ref is None:
+                raise ValueError("unknown occupant pseudonym")
+            # Keep the mapping and read under one lock: a concurrent purge or
+            # pseudonym rotation cannot swap the occupant between these steps.
+            return self.query(occupant_ref=occupant_ref, at=at)
 
     def history(self, occupant_ref: str, *, limit: int = 1_000) -> list[dict]:
         occupant_id = self.pseudonym_for(occupant_ref)

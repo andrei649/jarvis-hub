@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 import time
 from collections.abc import Callable, Mapping
@@ -120,6 +121,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     verbs = parser.add_subparsers(dest="verb", required=True, metavar="verb")
 
+    from .nous_auth import configure_parser as configure_nous_auth
+    configure_nous_auth(verbs)
+    from .secrets import register_parser as configure_secrets
+    configure_secrets(verbs)
+
+    from agents.core.kanban.cli_parser import build_parser as configure_kanban
+    configure_kanban(verbs)
+    from agents.core.kanban.cli_upstream.projects_commands import build_parser as configure_projects
+    configure_projects(verbs)
+
     doctor = verbs.add_parser("doctor", help="install check-up, one named reason per check (offline)")
     doctor.add_argument("--json", action="store_true")
     doctor.add_argument("--smoke", action="store_true", help="also run the install smoke (~30 s)")
@@ -177,6 +188,40 @@ def build_parser() -> argparse.ArgumentParser:
         decide.add_argument("--payload", help="JSON object attached to the decision")
         decide.add_argument("--reason", help="optional human decision reason (at most 280 characters)")
         decide.add_argument("--json", action="store_true")
+    consent = approvals_verbs.add_parser("consent", help="decide an exact reusable terminal offer (owner)")
+    consent.add_argument("task_id", type=int, metavar="TASK_ID")
+    consent.add_argument("--choice", required=True, choices=("session", "always", "deny"))
+    consent.add_argument("--revision", required=True, help="the exact 64-character offer revision from approvals list")
+    consent.add_argument("--reason", help="optional human decision reason (at most 280 characters)")
+    consent.add_argument("--json", action="store_true")
+
+    checkpoints = verbs.add_parser("checkpoints", help="owner checkpoint inventory and maintenance")
+    checkpoint_verbs = checkpoints.add_subparsers(dest="action", metavar="action")
+    for action in ("status", "list"):
+        query = checkpoint_verbs.add_parser(action, help="show checkpoint storage and projects")
+        query.add_argument("--project", metavar="ROOT")
+        query.add_argument("--limit", type=int, metavar="N")
+    diff = checkpoint_verbs.add_parser("diff", help="preview one checkpoint's bounded diff")
+    diff.add_argument("identifier", metavar="ID")
+    diff.add_argument("--project", metavar="ROOT")
+    restore = checkpoint_verbs.add_parser("restore", help="preview or request an approved restore")
+    restore.add_argument("identifier", metavar="ID")
+    restore.add_argument("--project", metavar="ROOT")
+    restore.add_argument("--path", dest="paths", action="append", metavar="REL")
+    restore_mode = restore.add_mutually_exclusive_group()
+    restore_mode.add_argument("--dry-run", action="store_true", help="preview only (default)")
+    restore_mode.add_argument("--execute", action="store_true", help="request governed approval")
+    restore.add_argument("--force", action="store_true",
+                         help="preview or request an owner overwrite; never bypass approval")
+    for action in ("prune", "clear", "clear-legacy"):
+        change = checkpoint_verbs.add_parser(action, help="preview or request owner approval")
+        if action == "prune":
+            change.add_argument("--project", metavar="ROOT")
+        mode = change.add_mutually_exclusive_group()
+        mode.add_argument("--dry-run", action="store_true", help="preview only (default)")
+        mode.add_argument("--execute", action="store_true", help="request governed approval")
+        change.add_argument("--force", action="store_true",
+                            help="forward force intent; never bypass owner approval")
 
     kernel = verbs.add_parser("kernel", help="the Action Kernel")
     kernel_verbs = kernel.add_subparsers(dest="action", required=True, metavar="action")
@@ -359,6 +404,7 @@ def build_parser() -> argparse.ArgumentParser:
     chat.add_argument("--remote-vision", metavar="URL",
                       help="acknowledge that the images go to this vision destination off the "
                            "hub's machine; it must name the destination the hub reports")
+    _selection_flags(chat)
 
     send = verbs.add_parser(
         "send",
@@ -1101,6 +1147,18 @@ def render_inspector(payload: Mapping[str, Any], *, only: str | None = None) -> 
         if prompt.get("withheld"):
             lines.append("prompt   withheld: the secret redactor could not be loaded")
         else:
+            if prompt.get("resolved") is True:
+                model, route = prompt.get("model"), prompt.get("route")
+                if isinstance(model, str) and model and isinstance(route, str) and route:
+                    lines.append(f"prompt   resolved for model {model} via {route}")
+                else:
+                    lines.append("prompt   unresolved: route details incomplete")
+            elif prompt.get("resolved") is False:
+                reason = "route unavailable" if prompt.get("route_error") == "unavailable" else "route not resolved"
+                lines.append(f"prompt   unresolved: base system prompt only ({reason})")
+            else:
+                lines.append("prompt   legacy preview: route resolution not reported; model-specific prompt additions unverified")
+            lines.append("prompt   fixed empty user message; active history, user input and tool schemas omitted; cached runtime facts may differ")
             size = f"prompt   {prompt.get('bytes', 0)} bytes, about {prompt.get('tokens', 0)} tokens before any history"
             if prompt.get("truncated"):
                 size += f", shown to {prompt.get('cap')}"
@@ -1109,10 +1167,29 @@ def render_inspector(payload: Mapping[str, Any], *, only: str | None = None) -> 
     return lines
 
 
+def _valid_consent_offer(offer: Any) -> bool:
+    """Only the bounded HUD offer shape earns reusable CLI guidance."""
+    if not isinstance(offer, dict):
+        return False
+    revision = offer.get("revision")
+    count = offer.get("count")
+    categories = offer.get("categories")
+    return (
+        isinstance(revision, str) and re.fullmatch(r"[a-f0-9]{64}", revision) is not None
+        and type(count) is int and 1 <= count <= 64
+        and offer.get("choices") == ["session", "always", "deny"]
+        and isinstance(categories, list) and 1 <= len(categories) <= 64
+        and all(isinstance(category, dict)
+                and isinstance(category.get("description"), str)
+                and 1 <= len(category["description"]) <= 500
+                and type(category.get("permanent")) is bool
+                for category in categories)
+    )
+
+
 def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
-    client = ctx.client()
     if ns.action == "list":
-        reply = client.get("/autonomy/approvals")
+        reply = ctx.client().get("/autonomy/approvals")
         if ns.json:
             ctx.dump(reply)
             return EXIT_OK
@@ -1126,7 +1203,48 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
                 f"#{task.get('id', '?')}  tier {task.get('risk_tier', '?')}  {flag:12s}  "
                 f"{task.get('kind', '?')}  — {task.get('title', '')}"
             )
+            offer = task.get("consent_offer")
+            task_id = task.get("id")
+            if _valid_consent_offer(offer) and type(task_id) is int and task_id > 0:
+                count = offer["count"]
+                ctx.say(f"  reusable offer: {count} matching request{'s' if count != 1 else ''}; "
+                        "choices session|always|deny")
+                for category in offer["categories"]:
+                    scope = "" if category["permanent"] else " (session only)"
+                    ctx.say(f"    {category['description']}{scope}")
+                ctx.say(f"  nerva approvals consent {task_id} --choice session "
+                        f"--revision {offer['revision']}")
         ctx.say(f"{len(pending)} pending — `nerva approvals accept|reject|defer <id>`")
+        return EXIT_OK
+    if ns.action == "consent":
+        if ns.task_id <= 0:
+            ctx.err.write("task id must be positive\n")
+            return EXIT_USAGE
+        if re.fullmatch(r"[a-f0-9]{64}", ns.revision) is None:
+            ctx.err.write("revision must be 64 lowercase hex characters\n")
+            return EXIT_USAGE
+        from agents.core.autonomy.decision_reasons import normalize_reason
+
+        try:
+            reason = normalize_reason(ns.reason)
+        except ValueError as exc:
+            ctx.err.write(f"{exc}\n")
+            return EXIT_USAGE
+        body: dict[str, Any] = {"choice": ns.choice, "revision": ns.revision}
+        if reason is not None:
+            body["reason"] = reason
+        reply = ctx.client().post(f"/autonomy/tasks/{ns.task_id}/consent", body)
+        tasks = reply.get("tasks") if isinstance(reply, dict) else None
+        if (not isinstance(reply, dict) or reply.get("ok") is not True
+                or not isinstance(tasks, list) or not tasks
+                or not all(isinstance(task, dict) and task for task in tasks)):
+            ctx.err.write("consent was not confirmed by the hub\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(reply)
+        else:
+            ctx.say(f"#{ns.task_id} consent {ns.choice} → {len(tasks)} matching "
+                    f"request{'s' if len(tasks) != 1 else ''} decided")
         return EXIT_OK
     try:
         payload = _payload(ns.payload)
@@ -1145,13 +1263,134 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
         body["reason"] = reason
     if payload:
         body["payload"] = payload
-    reply = client.post(f"/autonomy/tasks/{ns.task_id}/decision", body)
+    reply = ctx.client().post(f"/autonomy/tasks/{ns.task_id}/decision", body)
     if ns.json:
         ctx.dump(reply)
         return EXIT_OK
     task = (reply or {}).get("task") or {}
     ctx.say(f"#{ns.task_id} {ns.action}ed → {task.get('status', 'done')}")
     return EXIT_OK
+
+
+_CHECKPOINT_NOTICE_CODES = frozenset({
+    "checkpoint.complete", "checkpoint.preview", "checkpoint.queued",
+    "checkpoint.refused", "checkpoint.unavailable", "checkpoint.partial",
+})
+_CHECKPOINT_SUCCESS_CODES = frozenset({"checkpoint.complete", "checkpoint.preview"})
+
+
+def _checkpoint_identifier(value: object) -> bool:
+    if type(value) is not str or not 1 <= len(value) <= 64:
+        return False
+    if re.fullmatch(r"file:[1-9][0-9]*|group:[0-9a-f]{32}", value):
+        return True
+    return bool(re.fullmatch(r"[1-9][0-9]*", value)) and int(value) <= 500
+
+
+def _checkpoint_path(value: object) -> bool:
+    if (type(value) is not str or not 1 <= len(value) <= 4096
+            or value.startswith("/") or "\\" in value
+            or re.match(r"^[A-Za-z]:", value)
+            or any(ord(ch) < 32 or 127 <= ord(ch) <= 159 for ch in value)):
+        return False
+    return all(part not in {"", ".", ".."} for part in value.split("/"))
+
+
+def cmd_checkpoints(ns: argparse.Namespace, ctx: Context) -> int:
+    """Forward a fixed owner command; only the hub's checkpoint notice decides success."""
+    action = ns.action or "status"
+    project = getattr(ns, "project", None)
+    if project is not None and (
+        not isinstance(project, str) or not project.strip() or len(project) > 4096
+        or any(ord(ch) < 32 or 127 <= ord(ch) <= 159 for ch in project)
+    ):
+        ctx.err.write("project must be nonempty, at most 4096 characters, without controls\n")
+        return EXIT_USAGE
+    limit = getattr(ns, "limit", None)
+    if limit is not None and not 1 <= limit <= 500:
+        ctx.err.write("limit must be between 1 and 500\n")
+        return EXIT_USAGE
+    identifier = getattr(ns, "identifier", None)
+    if action in {"diff", "restore"} and not _checkpoint_identifier(identifier):
+        ctx.err.write("checkpoint ID must be canonical file/group ID or ordinal 1..500\n")
+        return EXIT_USAGE
+    paths = getattr(ns, "paths", None) or []
+    if len(paths) > 500 or len(set(paths)) != len(paths) or not all(
+        _checkpoint_path(path) for path in paths
+    ):
+        ctx.err.write("paths must be unique canonical relative paths (at most 500)\n")
+        return EXIT_USAGE
+    if paths and isinstance(identifier, str) and identifier.startswith("file:"):
+        ctx.err.write("--path selects group members, not a file checkpoint\n")
+        return EXIT_USAGE
+    execute = bool(getattr(ns, "execute", False))
+    force = bool(getattr(ns, "force", False))
+    if force and not execute and action != "restore":
+        ctx.err.write("--force requires --execute and does not bypass approval\n")
+        return EXIT_USAGE
+
+    tokens = ["/checkpoints", action]
+    if identifier is not None:
+        tokens.append(identifier)
+    if project is not None:
+        tokens.extend(("--project", project))
+    if limit is not None:
+        tokens.extend(("--limit", str(limit)))
+    for path in paths:
+        tokens.extend(("--path", path))
+    if action in {"prune", "clear", "clear-legacy", "restore"}:
+        tokens.append("--execute" if execute else "--dry-run")
+    if force:
+        tokens.append("--force")
+    command = " ".join(shlex.quote(token) for token in tokens)
+    if len(command.partition(" ")[2]) > 2_000:
+        ctx.err.write("checkpoint command is too long\n")
+        return EXIT_USAGE
+    reply = ctx.client().post("/chat", {"message": command})
+    if not isinstance(reply, Mapping):
+        ctx.err.write("checkpoint result unavailable: malformed hub reply\n")
+        return EXIT_FAILED
+
+    pending = reply.get("pending_approvals", [])
+    if not isinstance(pending, (list, tuple)):
+        ctx.err.write("checkpoint result unavailable: approval IDs unreadable; run `nerva approvals list`\n")
+        return EXIT_FAILED
+    valid_ids = [value for value in pending if type(value) is int and value > 0]
+    if pending:
+        ids = ", ".join(f"#{value}" for value in dict.fromkeys(valid_ids))
+        malformed = len(valid_ids) != len(pending) or len(set(valid_ids)) != len(valid_ids)
+        detail = f" ({ids})" if ids else ""
+        suffix = "; approval IDs partly unreadable" if malformed else ""
+        ctx.err.write(f"checkpoint request queued for approval{detail}{suffix}; "
+                      "run `nerva approvals list`\n")
+        return EXIT_FAILED
+
+    notices = reply.get("notices")
+    if not isinstance(notices, list):
+        ctx.err.write("checkpoint result unavailable: no status notice\n")
+        return EXIT_FAILED
+    checkpoint_notices = [item for item in notices if isinstance(item, Mapping)
+                          and isinstance(item.get("code"), str)
+                          and item["code"].startswith("checkpoint.")]
+    if len(checkpoint_notices) != 1:
+        ctx.err.write("checkpoint result unavailable: missing or ambiguous status notice\n")
+        return EXIT_FAILED
+    notice = checkpoint_notices[0]
+    code = notice["code"]
+    raw_text = notice.get("text")
+    if (code not in _CHECKPOINT_NOTICE_CODES or not isinstance(raw_text, str)
+            or not raw_text.strip() or len(raw_text) > 16_000):
+        ctx.err.write("checkpoint result unavailable: malformed status notice\n")
+        return EXIT_FAILED
+    message = _answer_text(raw_text).strip()
+    if not message:
+        ctx.err.write("checkpoint result unavailable: empty status notice\n")
+        return EXIT_FAILED
+    if code in _CHECKPOINT_SUCCESS_CODES:
+        _write_answer(ctx, message)
+        return EXIT_OK
+    ctx.err.write(message + "\n")
+    return EXIT_FAILED
 
 
 def explain_action(
@@ -2052,6 +2291,10 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         why = "--remote-vision applies only to an image turn (--image or --clipboard-image)"
         ctx.err.write(f"{why}\n")
         return finish(EXIT_USAGE, status="usage", reason=why)
+    if getattr(ns, "acknowledge_training", False) or getattr(ns, "confirm_expensive", False):
+        why = "selection confirmation flags on chat apply only to an image turn (--image or --clipboard-image)"
+        ctx.err.write(f"{why}\n")
+        return finish(EXIT_USAGE, status="usage", reason=why)
 
     body: dict[str, Any] = {"message": message}
     if ns.agent:
@@ -2468,6 +2711,25 @@ def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
                     or any(ord(char) < 32 or ord(char) == 127 for char in notice)):
                 return failed("the hub's vision retry policy is invalid; nothing was sent")
             ctx.err.write(f"{_plain(notice, 500)}\n")
+        requirements = status.get("selection_requirements", [])
+        if not isinstance(requirements, list) or len(requirements) > 8:
+            return failed("the hub's vision selection requirements are invalid; nothing was sent")
+        needs = set()
+        for requirement in requirements:
+            if not isinstance(requirement, dict):
+                return failed("the hub's vision selection requirements are invalid; nothing was sent")
+            need, notice = requirement.get("needs"), requirement.get("message")
+            if (not isinstance(need, str) or need not in ("acknowledge_training", "confirm_expensive")
+                    or need in needs or not isinstance(notice, str) or not notice.strip()
+                    or len(notice) > 500 or any(ord(char) < 32 or ord(char) == 127 for char in notice)):
+                return failed("the hub's vision selection requirements are invalid; nothing was sent")
+            needs.add(need)
+        for requirement in requirements:
+            ctx.err.write(f"{_plain(requirement['message'], 500)}\n")
+        missing = sorted(need for need in needs if getattr(ns, need, False) is not True)
+        if missing:
+            flags = " and ".join("--" + need.replace("_", "-") for need in missing)
+            return usage(f"this image turn requires {flags}; nothing was sent")
         if local and acknowledged is not None:
             ctx.err.write("--remote-vision is not needed: the vision model is on the hub's machine\n")
         if not local and (acknowledged is None
@@ -2490,10 +2752,10 @@ def _vision_turn(ns: argparse.Namespace, ctx: Context, message: str, *,
             raise
         return failed(exc.reason)
     try:
-        reply = client.post("/api/vlm/composer/describe", {
+        reply = client.post("/api/vlm/composer/describe", _selection_body(ns, {
             "prompt": message, "images": images, "expected_destination": destination,
             "expected_binding": binding, "remote_ack": not local,
-        }, timeout=VISION_TIMEOUT)
+        }), timeout=VISION_TIMEOUT)
     except KeyboardInterrupt:
         finish(EXIT_INTERRUPTED, status="interrupted", reason="interrupted")
         raise
@@ -2957,13 +3219,50 @@ def cmd_security(ns: argparse.Namespace, ctx: Context) -> int:
     return {"clean": EXIT_OK, "findings": EXIT_FAILED}.get(report.status, EXIT_UNAVAILABLE)
 
 
+def cmd_auth(ns: argparse.Namespace, ctx: Context) -> int:
+    from .nous_auth import run
+    return run(ns, ctx)
+
+
+def cmd_secrets(ns: argparse.Namespace, ctx: Context) -> int:
+    from .secrets import cmd_secrets as run
+    return run(ns, ctx)
+
+
+def cmd_kanban(ns: argparse.Namespace, ctx: Context) -> int:
+    result = ctx.client().post("/api/kanban/command", {"argv": ns._kanban_argv})
+    if not isinstance(result, dict) or type(result.get("exit_code")) is not int:
+        ctx.err.write("Kanban returned an invalid command result\n")
+        return EXIT_FAILED
+    if result.get("output"):
+        ctx.say(str(result["output"]))
+    code = result["exit_code"]
+    return code if 0 <= code <= 255 and (code != 0 or result.get("ok") is True) else EXIT_FAILED
+
+
+def cmd_project(ns: argparse.Namespace, ctx: Context) -> int:
+    result = ctx.client().post("/api/kanban/projects/command", {"argv": ns._project_argv})
+    if not isinstance(result, dict) or type(result.get("exit_code")) is not int:
+        ctx.err.write("Project returned an invalid command result\n")
+        return EXIT_FAILED
+    if result.get("output"):
+        ctx.say(str(result["output"]))
+    code = result["exit_code"]
+    return code if 0 <= code <= 255 and (code != 0 or result.get("ok") is True) else EXIT_FAILED
+
+
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
+    "secrets": cmd_secrets,
+    "kanban": cmd_kanban,
+    "project": cmd_project,
+    "auth": cmd_auth,
     "doctor": cmd_doctor,
     "prompt-size": cmd_prompt_size,
     "extensions": cmd_extensions,
     "status": cmd_status,
     "config": cmd_config,
     "approvals": cmd_approvals,
+    "checkpoints": cmd_checkpoints,
     "kernel": cmd_kernel,
     "tools": cmd_tools,
     "inspect": cmd_inspect,
@@ -2984,11 +3283,16 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
 
 def main(argv: list[str] | None = None, *, context: Context | None = None) -> int:
     parser = build_parser()
+    raw = list(argv) if argv is not None else sys.argv[1:]
     try:
-        ns = parser.parse_args(argv)
+        ns = parser.parse_args(raw)
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else EXIT_USAGE
     ctx = context or Context(environ=os.environ)
+    if ns.verb == "kanban":
+        ns._kanban_argv = raw[1:]
+    elif ns.verb == "project":
+        ns._project_argv = raw[1:]
     try:
         return _VERBS[ns.verb](ns, ctx)
     except HubUnavailable as exc:

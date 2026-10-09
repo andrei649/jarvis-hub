@@ -19,7 +19,7 @@ import asyncio
 import contextvars
 import logging
 import math
-import os
+# Telegram destinations use the shared channels.outbound resolver.
 import time
 from datetime import datetime
 
@@ -152,12 +152,33 @@ def _desktop_run_overrides() -> dict:
 class AutonomyCoordinator:
     def __init__(self, orchestrator):
         self._orch = orchestrator
+        self._kanban_dispatcher = None
+        self._kanban_network_adapter = None
         self._reason_windows = {}
         self._reason_prompts = {}
         self._reason_clock = time.monotonic
         # 0.34 (opt-in): lazily-built durable workflow pending-queue, drained each
         # tick only when JARVIS_WORKFLOW_PERSIST is set (else stays None, no drain).
         self._pending_queue = None
+
+    def kanban_dispatcher(self):
+        """One controller shared by intake, the admin route, and approved execution."""
+        if self._kanban_dispatcher is None:
+            from .kanban.dispatcher import KanbanDispatcher
+
+            self._kanban_dispatcher = KanbanDispatcher(self._orch)
+        return self._kanban_dispatcher
+
+    def kanban_network(self):
+        """Share the URL approval adapter between ToolRPC and queued execution."""
+        if self._kanban_network_adapter is None:
+            from .kanban.network import NetworkAttachmentAdapter
+            from .paths import data_path
+
+            self._kanban_network_adapter = NetworkAttachmentAdapter(
+                self._orch, home=data_path("kanban")
+            )
+        return self._kanban_network_adapter
 
     async def _drain_workflow_pending(self) -> None:
         """Drain due durable workflow runs once per tick (0.34 wiring).
@@ -199,14 +220,20 @@ class AutonomyCoordinator:
         budget; Telegram is excluded from the away fan-out to avoid a duplicate
         plain-text card on the channel that already got the rich one.
         """
-        owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(
-            self._orch.get_setting("autonomy.owner_chat_id", "") or ""
-        )
+        from .channels.outbound import _owner_chat_id
+
+        self._wire_owner_once_prompts()
+        self._wire_consent_prompts()
+        owner = _owner_chat_id(self._orch, configured_owner=self._owner_settings().get("autonomy.owner_chat_id"))
         tg = self._orch.channels.get("telegram")
         if tg and owner and hasattr(tg, "send_card"):
 
             async def base(task):
                 queue = getattr(self._orch, 'autonomy_queue', None)
+                prompts = getattr(self._orch.autonomy, '_consent_prompts', None)
+                offer = getattr(queue, 'pending_consent_offer', None)
+                if prompts is not None and callable(offer) and offer(task.id) is not None:
+                    return await prompts.notify(task, tg, int(owner))
                 pending_group = getattr(queue, 'pending_group', None)
                 group = pending_group(task.id) if callable(pending_group) else None
                 card = build_decision_card(task, group=group) if group is not None else build_decision_card(task)
@@ -226,6 +253,57 @@ class AutonomyCoordinator:
             logger.info(
                 "Autonomy decision inbox wired to Telegram (H34.2 away-notify via escalation)"
             )
+
+    def _wire_owner_once_prompts(self):
+        """Enroll the current reply transport before native intake can settle DENY."""
+        from .autonomy.owner_once_prompts import OwnerOncePrompts
+        from .channels.telegram import TelegramChannel
+
+        worker = getattr(self._orch, 'autonomy', None)
+        channel = (getattr(self._orch, 'channels', {}) or {}).get('telegram')
+        previous = getattr(self, '_owner_once_prompts', None)
+        old_channel = getattr(self, '_owner_once_channel', None)
+        if (previous is not None and (previous.worker is not worker
+                or previous.queue is not getattr(worker, 'queue', None)
+                or old_channel is not channel)):
+            previous.stop(getattr(old_channel, '_owner_once_generation', None))
+            if getattr(previous.worker, '_owner_once_prompts', None) is previous:
+                previous.worker._owner_once_prompts = None
+            self._owner_once_prompts = previous = None
+        if worker is None or not isinstance(channel, TelegramChannel):
+            return
+        if previous is None:
+            previous = OwnerOncePrompts(self)
+            self._owner_once_prompts = previous
+            self._owner_once_channel = channel
+        # Retain stable hooks/registrations across ordinary runtime rewiring.
+        previous.install(channel)
+        worker._owner_once_prompts = previous
+
+    def _wire_consent_prompts(self):
+        """Retain reusable reply registrations only for the current transport."""
+        from .autonomy.consent_prompts import ConsentPrompts
+        from .channels.telegram import TelegramChannel
+
+        worker = getattr(self._orch, 'autonomy', None)
+        channel = (getattr(self._orch, 'channels', {}) or {}).get('telegram')
+        previous = getattr(self, '_consent_prompts', None)
+        old_channel = getattr(self, '_consent_channel', None)
+        if previous is not None and (previous.worker is not worker
+                or previous.queue is not getattr(worker, 'queue', None)
+                or old_channel is not channel):
+            previous.stop(getattr(old_channel, '_owner_once_generation', None))
+            if getattr(previous.worker, '_consent_prompts', None) is previous:
+                previous.worker._consent_prompts = None
+            self._consent_prompts = previous = None
+        if worker is None or not isinstance(channel, TelegramChannel):
+            return
+        if previous is None:
+            previous = ConsentPrompts(self)
+            self._consent_prompts = previous
+            self._consent_channel = channel
+        previous.install(channel)
+        worker._consent_prompts = previous
 
     def _escalation_router(self):
         """Build a live ``EscalationRouter`` over the current channels + allowlist.
@@ -418,19 +496,31 @@ class AutonomyCoordinator:
     def _callback_is_owner(self, chat_id, user_id) -> bool:
         """Is this button tap the owner's?
 
-        Fails CLOSED when nothing identifies the owner. An approval surface with no owner
-        binding configured should not approve — declining costs the owner one settings
-        entry, whereas allowing costs them the guarantee that only they can approve.
+        A configured destination must match. Sender identity comes from the explicit
+        owner allowlist or the exact private owner chat; a group destination alone
+        identifies no owner.
         """
-        owner_chat = str(self._orch.get_setting("autonomy.owner_chat_id", "") or "").strip()
-        allowed_users = {
-            str(u) for u in (getattr(self._telegram_channel(), "allowed_users", None) or [])
-        }
-        if not owner_chat and not allowed_users:
+        from .telegram_owner import is_telegram_owner_sender, telegram_owner_user_ids
+        from .channels.outbound import _owner_chat_id
+
+        owner_settings = self._owner_settings()
+        owner_chat = _owner_chat_id(self._orch, configured_owner=owner_settings.get("autonomy.owner_chat_id"))
+        if not owner_chat or str(chat_id or "") != owner_chat:
             return False
-        if owner_chat and str(chat_id or "") != owner_chat:
-            return False
-        return not (allowed_users and str(user_id or "") not in allowed_users)
+        return is_telegram_owner_sender(
+            user_id, chat_id=chat_id, owner_chat_id=owner_chat,
+            allowed_user_ids=telegram_owner_user_ids(
+                owner_settings.get("autonomy.owner_user_ids"),
+                allowed_user_ids=getattr(self._telegram_channel(), "allowed_users", None),
+            ),
+        )
+
+    def _owner_settings(self) -> dict:
+        provider = getattr(self._orch, "_telegram_owner_settings", None)
+        if callable(provider):
+            return provider()
+        return {key: self._orch.get_setting(key, None)
+                for key in ("autonomy.owner_chat_id", "autonomy.owner_user_ids")}
 
     def _telegram_channel(self):
         for channel in (getattr(self._orch, "channels", {}) or {}).values():
@@ -527,7 +617,34 @@ class AutonomyCoordinator:
                     end = int(self._orch.get_setting("autonomy.night_end", 6) or 6)
                     if is_night_window(datetime.now().hour, start, end):
                         max_tier = 1  # reversible/read-only only
-                await self._orch.autonomy.tick(max_tier=max_tier)
+                dispatch_settings_unavailable = False
+                try:
+                    dispatch_enabled = amode != "off" and all(
+                        self._orch.get_setting(key, False) is True
+                        for key in ("llm.kanban", "llm.kanban_dispatch", "llm.tool_loop_enabled")
+                    )
+                except Exception:
+                    logger.warning("Kanban dispatch settings unavailable", exc_info=True)
+                    dispatch_enabled = False
+                    dispatch_settings_unavailable = True
+                if dispatch_enabled:
+                    await self.kanban_dispatcher().approved_tick(max_tier=max_tier)
+                elif dispatch_settings_unavailable:
+                    from .kanban.dispatcher import KanbanDispatcher
+
+                    await self._orch.autonomy.tick(
+                        max_tier=max_tier,
+                        parallel_kind=KanbanDispatcher.KIND,
+                        parallel_limit=0,
+                        parallel_agent_limit=0,
+                    )
+                else:
+                    await self._orch.autonomy.tick(max_tier=max_tier)
+                try:
+                    if dispatch_enabled:
+                        await self.kanban_dispatcher().tick()
+                except Exception:
+                    logger.warning("Kanban dispatcher intake failed", exc_info=True)
                 # Proactive passes self-generate new tasks — paused entirely in OFF mode.
                 if amode != "off":
                     # Sample the host and turn state changes into gated tasks.
@@ -617,6 +734,48 @@ class AutonomyCoordinator:
 
         execution_token = object()
 
+        def _smart_terminal_approved(task_id):
+            worker = getattr(self._orch, 'autonomy', None)
+            check = getattr(worker, 'smart_terminal_approved', None)
+            try:
+                return callable(check) and check(task_id) is True
+            except Exception:
+                return False
+
+        def _human_terminal_approval(task):
+            metadata = task.human_decision
+            return (task.decision in {'accept', 'edit'}
+                    and str(task.decided_by).lower() not in {'policy', 'smart_approval'}
+                    and isinstance(metadata, dict) and metadata.get('action') == task.decision
+                    and metadata.get('by') == task.decided_by)
+
+        def _smart_terminal_marker(task_id):
+            # Classification is independent of live consent. Revocation must
+            # refuse a machine operation, never downgrade it to legacy Docker.
+            task = self._orch.autonomy_queue.get(task_id)
+            return task is not None and (task.decision == 'smart-approve'
+                                        or task.decided_by == 'smart_approval')
+
+        def _owner_terminal_marker(task_id):
+            task = self._orch.autonomy_queue.get(task_id)
+            return task is not None and (task.decision == 'owner-once'
+                                        or task.decided_by == 'owner_once')
+
+        def _owner_terminal_approved(task_id):
+            from .autonomy.owner_once_execution import owner_once_current
+
+            return owner_once_current(task_id)
+
+        def _consent_terminal_marker(task_id):
+            queue = getattr(self._orch, 'autonomy_queue', None)
+            marker = getattr(queue, 'consent_task_marker', None)
+            return callable(marker) and marker(task_id)
+
+        def _consent_terminal_approved(task_id):
+            from .autonomy.consent_execution import consent_current
+
+            return _consent_terminal_marker(task_id) and consent_current(task_id)
+
         def _approved_execution_context(context, task):
             """Trust only the TaskExecutor turn whose durable row is running."""
             if context is not execution_token:
@@ -628,6 +787,19 @@ class AutonomyCoordinator:
             persisted = queue.get(task_id)
             if persisted is None:
                 return False
+            if persisted.kind in {'toolrpc.file_write', 'toolrpc.file_delete'} and queue.mediation_mode != 'off':
+                worker = getattr(self._orch, 'autonomy', None)
+                if queue.mediation_mode != 'enforce' or getattr(worker, 'queue', None) is not queue:
+                    return False
+                try:
+                    permit = worker._execution_context.get()
+                    fingerprint = queue.execution_fingerprint(task)
+                    if (permit is None or not permit.consumed or not fingerprint
+                            or getattr(permit, '_fingerprint', None) != fingerprint
+                            or not queue.validate_mediated_execution(task, fingerprint)):
+                        return False
+                except Exception:
+                    return False
             if is_video_task(persisted):
                 if queue.mediation_mode != "enforce":
                     return False
@@ -642,7 +814,20 @@ class AutonomyCoordinator:
                 and (persisted.kind in _TRUSTED_TOOL_RPC_KINDS or is_image_task(persisted)
                      or is_video_task(persisted))
                 and persisted.autonomy_level == "ask"
-                and persisted.decision in {"accept", "edit"}
+                and ((persisted.decision in {"accept", "edit"}
+                      and (persisted.kind != 'toolrpc.terminal_run' or _human_terminal_approval(persisted)))
+                     or (persisted.kind == 'toolrpc.terminal_run'
+                         and persisted.decision == 'smart-approve'
+                         and queue.execution_fingerprint(persisted) == queue.execution_fingerprint(task)
+                         and _smart_terminal_approved(task_id))
+                     or (persisted.kind == 'toolrpc.terminal_run'
+                         and _owner_terminal_marker(task_id)
+                         and queue.execution_fingerprint(persisted) == queue.execution_fingerprint(task)
+                         and _owner_terminal_approved(task_id))
+                     or (persisted.kind == 'toolrpc.terminal_run'
+                         and _consent_terminal_marker(task_id)
+                         and queue.execution_fingerprint(persisted) == queue.execution_fingerprint(task)
+                         and _consent_terminal_approved(task_id)))
                 and bool(persisted.decided_by)
                 and str(persisted.decided_by).lower() != "policy"
                 and persisted.payload == getattr(task, "payload", None)
@@ -680,6 +865,9 @@ class AutonomyCoordinator:
             kernel=action_kernel,
             execution_context_check=_approved_execution_context,
         )
+        from .channels.pending_input_runtime import register_clarify_tool
+
+        register_clarify_tool(server, self._orch)
         server.register_tool(
             "image_generate", image_dispatcher.execute, gated=True,
             description="Propose one image: local ComfyUI by default, or explicit paid OpenAI cloud generation; human approval required.",
@@ -789,7 +977,7 @@ class AutonomyCoordinator:
         )
 
         def _durable_terminal_approval(task_id):
-            """True only when *task_id* is the running, human-accepted terminal row.
+            """True only for a running terminal row with owner or sealed machine approval.
 
             The local-host backend refuses to spawn anything without this, so the
             check re-reads the durable queue rather than trusting the caller —
@@ -805,10 +993,37 @@ class AutonomyCoordinator:
                 persisted.status == "running"
                 and persisted.kind == "toolrpc.terminal_run"
                 and persisted.autonomy_level == "ask"
-                and persisted.decision in {"accept", "edit"}
+                and (_human_terminal_approval(persisted)
+                     or (persisted.decision == 'smart-approve' and _smart_terminal_approved(task_id))
+                     or (_owner_terminal_marker(task_id) and _owner_terminal_approved(task_id))
+                     or (_consent_terminal_marker(task_id) and _consent_terminal_approved(task_id)))
                 and bool(persisted.decided_by)
                 and str(persisted.decided_by).lower() != "policy"
             )
+
+        def _terminal_request_check(task_id, request):
+            from .autonomy.smart_approvals import smart_policy
+            from .env_config import env_flag
+            from .kernel import kernel_enabled
+
+            queue = getattr(self._orch, 'autonomy_queue', None)
+            if (queue is None or not env_flag('JARVIS_TERMINAL_TARGETS')
+                    or not smart_policy().command_allowed(request.get('command'))):
+                return False
+            task = queue.get(task_id)
+            from .tool_rpc import current_tool_actor
+
+            if task is not None and (_smart_terminal_marker(task_id) or _owner_terminal_marker(task_id)
+                                     or _consent_terminal_marker(task_id)):
+                from .autonomy.approval_judge import action_is_tainted
+
+                if (not kernel_enabled()
+                        or action_is_tainted({'origin': task.origin, 'payload': task.payload})):
+                    return False
+
+            return (task is not None and task.payload.get('args') == request
+                    and task.agent == current_tool_actor()
+                    and _durable_terminal_approval(task_id))
 
         async def _rpc_terminal_run(args):
             """Run a command on a named target AFTER durable approval (GAP-9).
@@ -826,30 +1041,239 @@ class AutonomyCoordinator:
                 return {"ok": False, "reason": "terminal_targets_disabled"}
             approved = _APPROVED_TASK.get()
             approved_task_id = getattr(approved, "id", None) if approved is not None else None
+            from .autonomy.consent_registration import trusted_registration_key
+
+            worker = getattr(self._orch, 'autonomy', None)
+            terminal_spec = server._tools.get('terminal_run')
+            registration_snapshot = (trusted_registration_key('terminal_run', terminal_spec)
+                                     if terminal_spec is not None else None)
+            manual_task = (approved if approved is not None
+                           and _human_terminal_approval(approved) else None)
+            manual_queue = getattr(self._orch, 'autonomy_queue', None)
+            manual_mode = getattr(manual_queue, 'mediation_mode', None)
+            manual_fingerprint = (manual_queue.execution_fingerprint(manual_task)
+                                  if manual_task is not None and manual_queue is not None else None)
+            manual_mediated = (manual_task is not None and any(
+                getattr(manual_task, name, None) not in (None, '')
+                for name in ('mediation_enqueue_id', 'mediation_enqueue_revision',
+                             'mediation_scope', 'mediation_policy_revision',
+                             'mediation_receipt', 'mediation_task_sha256',
+                             'mediation_execution_id')
+            ))
+
+            def manual_execution_current(task_id):
+                if manual_task is None:
+                    return True
+                if (task_id != manual_task.id or not manual_fingerprint
+                        or manual_mode not in {'off', 'enforce'}
+                        or (manual_mediated and manual_mode != 'enforce')
+                        or self._orch.autonomy_queue is not manual_queue
+                        or getattr(worker, 'queue', None) is not manual_queue
+                        or manual_queue.mediation_mode != manual_mode):
+                    return False
+                try:
+                    if manual_queue.execution_fingerprint(manual_task) != manual_fingerprint:
+                        return False
+                    if manual_mode == 'enforce':
+                        return manual_queue.validate_mediated_execution(
+                            manual_task, manual_fingerprint) is True
+                    persisted = manual_queue.get(task_id)
+                    return (persisted is not None and persisted.status == 'running'
+                            and manual_queue.execution_fingerprint(persisted)
+                            == manual_fingerprint
+                            and manual_queue.mediation_mode == 'off')
+                except Exception:
+                    return False
+
+            def current_request(task_id, request):
+                if approved is not None and isinstance(approved.payload, dict) and 'kanban_child' in approved.payload:
+                    from .kanban.workspace_context import current_workspace
+
+                    try:
+                        binding = current_workspace()
+                        if binding is None or str(binding.cwd) != approved.payload['kanban_child']['cwd']:
+                            return False
+                        binding.check()
+                    except Exception:
+                        return False
+                return (self._orch.autonomy is worker
+                        and self._orch.tool_rpc is server
+                        and terminal_spec is not None
+                        and server._tools.get('terminal_run') is terminal_spec
+                        and registration_snapshot is not None
+                        and trusted_registration_key('terminal_run', terminal_spec)
+                        == registration_snapshot
+                        and manual_execution_current(task_id)
+                        and _terminal_request_check(task_id, request))
+
+            def checkpoint_origin_lookup(task_id):
+                """Read only the exact executing birth's durable provenance."""
+                import uuid
+
+                if (type(task_id) is not int or task_id <= 0 or approved is None
+                        or task_id != approved.id or manual_queue is None
+                        or self._orch.autonomy is not worker
+                        or self._orch.autonomy_queue is not manual_queue
+                        or getattr(worker, 'queue', None) is not manual_queue):
+                    return None
+                try:
+                    task = manual_queue.get(task_id)
+                    if (task is None or task.kind != 'toolrpc.terminal_run'
+                            or task.created_at != approved.created_at):
+                        return None
+                    origin = manual_queue.checkpoint_origin_turn(task_id, task.created_at)
+                    return task.created_at, str(uuid.UUID(hex=origin)) if origin else None
+                except Exception:
+                    return None
+
+            child_transport = None
+            if approved is not None and isinstance(approved.payload, dict) and 'kanban_child' in approved.payload:
+                from .environments.local_transport import LocalHostTransport, default_timeout
+                from .kanban.workspace_context import current_workspace
+
+                binding = current_workspace()
+                if binding is None or args.get('target') != 'local-host' or args.get('cwd') != str(binding.cwd):
+                    return {'ok': False, 'reason': 'kanban_terminal_execution_unbound'}
+                child_transport = LocalHostTransport([binding.cwd], default_timeout=default_timeout())
+
             runner = GovernedTargetRunner(
                 self._target_registry(),
                 getattr(self._orch, "sandbox", None),
+                local_transport=child_transport,
                 authorizer=action_kernel,
                 approval_check=_durable_terminal_approval,
+                request_check=current_request,
+                smart_approval_check=_smart_terminal_marker,
+                owner_approval_check=_owner_terminal_marker,
+                owner_kernel_check=getattr(worker, 'kernel_dispatch_current', None),
+                consent_approval_check=_consent_terminal_marker,
+                consent_kernel_check=getattr(worker, 'kernel_dispatch_current', None),
+                legacy_kernel_check=getattr(worker, 'kernel_dispatch_current', None),
+                checkpoint_origin_lookup=checkpoint_origin_lookup,
             )
-            result = await runner.run(
-                target=args["target"],
-                agent="jarvis",
-                command=args["command"],
-                approved_task_id=approved_task_id,
-                cwd=args.get("cwd"),
-                timeout=args.get("timeout"),
-            )
+            from .action_origin import bind_action_origin, reset_action_origin
+
+            origin_token = bind_action_origin(getattr(approved, 'origin', 'generated'))
+            try:
+                result = await runner.run(
+                    target=args["target"], agent=getattr(approved, 'agent', ''),
+                    command=args["command"], approved_task_id=approved_task_id,
+                    cwd=args.get("cwd"), timeout=args.get("timeout"),
+                )
+            finally:
+                reset_action_origin(origin_token)
+            from .security.log_redaction import SecretRedactionFilter
+
+            output_redactor = SecretRedactionFilter()
+            for stream in ("stdout", "stderr"):
+                if isinstance(result.get(stream), str):
+                    # The transport already exposes this validated directory as
+                    # metadata. Do not mistake its exact pwd echo for a secret;
+                    # broker redaction still applies before ToolRPC returns it.
+                    if (stream == "stdout" and result.get("cwd")
+                            and result[stream].rstrip("\r\n") == result["cwd"]):
+                        continue
+                    result[stream] = output_redactor.redact_text(result[stream])
             from . import project_context   # H594: the terminal moved into a project directory
 
             if approved_task_id is not None and args.get("cwd"):
                 await asyncio.to_thread(project_context.note_terminal, approved_task_id, result, args["cwd"])
             return result
 
+        def _terminal_intake(actor, args):
+            """Finalize the typed terminal task before its kernel/intake decision."""
+            from .kanban.context import current_context, scope_is_bound
+
+            board_scope = current_context()
+            from .kanban.child_tools import ChildToolAdapter
+
+            child_adapter = ChildToolAdapter(self.kanban_dispatcher())
+            if scope_is_bound() and (board_scope is None or board_scope.task_id is not None
+                                     or board_scope.run_id is not None):
+                try:
+                    child = child_adapter.prepare(actor, 'terminal_run', args, {})
+                except ToolRPCValidationError as exc:
+                    raise ToolRPCValidationError('kanban_terminal_execution_unbound') from exc
+            else:
+                child = None
+            from .approval_outcomes import tool_approval_scope
+            from .autonomy.approval_grouping import model_request_scope
+            from .autonomy.consent_registration import trusted_registration_key
+            from .kernel import Action, Decision, Verdict, kernel_enabled
+
+            worker = getattr(self._orch, 'autonomy', None)
+            if not callable(getattr(worker, 'govern_enqueue', None)):
+                raise ToolRPCValidationError('terminal_intake_unavailable')
+            self._wire_owner_once_prompts()
+            self._wire_consent_prompts()
+            title = "Tool 'terminal_run' via RPC"
+            payload = {'tool': 'terminal_run', 'target': 'terminal_run', 'args': dict(args),
+                       **child_adapter.payload(child)}
+            # Production worker intake owns the bridge and creates one exact
+            # typed Action; do not leave a broad tool.rpc decision for that CAS.
+            if action_kernel is not None and kernel_enabled():
+                decision = action_kernel(Action(kind='toolrpc.terminal_run', agent=actor,
+                                                title=title, payload=payload))
+                if not isinstance(decision, Decision) or decision.verdict is Verdict.DENY:
+                    raise ToolRPCValidationError('kernel_denied')
+            spec = server._tools.get('terminal_run')
+            with tool_approval_scope('terminal_run'), model_request_scope(
+                actor=actor, tool='terminal_run', args=args,
+                epoch=spec.get('_grouping_epoch') if spec else None,
+                registration_is_live=lambda: server._tools.get('terminal_run') is spec,
+                registration_key=spec.get('_consent_registration_key') if spec else None,
+                registration_key_is_live=lambda candidate: (
+                    server._tools.get('terminal_run') is spec
+                    and trusted_registration_key('terminal_run', spec) == candidate
+                ),
+            ):
+                task_id = worker.govern_enqueue(actor, 'toolrpc.terminal_run', title,
+                                                payload=payload, risk_tier=3,
+                                                autonomy_level='ask', origin='generated')
+            child_adapter.bind(child, task_id)
+            prompts = getattr(worker, '_owner_once_prompts', None)
+            if prompts is not None:
+                prompts.register_invocation(
+                    task_id, check=lambda: (server._tools.get('terminal_run') is spec
+                                              and getattr(self._orch, 'autonomy', None) is worker),
+                )
+            consent_prompts = getattr(worker, '_consent_prompts', None)
+            if consent_prompts is not None:
+                consent_prompts.register_invocation(
+                    task_id, check=lambda: (server._tools.get('terminal_run') is spec
+                                              and getattr(self._orch, 'autonomy', None) is worker),
+                )
+            from . import project_context
+
+            project_context.note_task(task_id)
+            return task_id
+
+        async def _terminal_review(actor, args, task_id):
+            from .autonomy.terminal_review import review_terminal_task
+
+            worker = getattr(self._orch, 'autonomy', None)
+            spec = server._tools.get('terminal_run')
+            try:
+                return await review_terminal_task(
+                    worker, actor=actor, args=args, task_id=task_id,
+                    registration_is_live=lambda: (server._tools.get('terminal_run') is spec
+                                                   and getattr(self._orch, 'autonomy', None) is worker),
+                )
+            finally:
+                prompts = getattr(worker, '_owner_once_prompts', None)
+                if prompts is not None:
+                    prompts.release_invocation(task_id)
+                consent_prompts = getattr(worker, '_consent_prompts', None)
+                if consent_prompts is not None:
+                    consent_prompts.release_invocation(task_id)
+                worker._settle_terminal_denial(task_id)
+
         server.register_tool(
             "terminal_run",
             _rpc_terminal_run,
             gated=True,
+            gated_intake=_terminal_intake,
+            gated_review=_terminal_review,
             description="Run one bounded shell command on a named governed target.",
             input_schema={
                 "type": "object",
@@ -865,7 +1289,17 @@ class AutonomyCoordinator:
             capability_id="tool:terminal_run",
             trusted_execution=True,
             schema_overrides=self._terminal_run_overrides,
+            consent_revision="nerva.terminal_run.v1",
         )
+
+        queue = getattr(self._orch, 'autonomy_queue', None)
+        bind_consent = getattr(queue, 'bind_consent_resolver', None)
+        if callable(bind_consent):
+            from .autonomy.terminal_consent_runtime import build_terminal_consent_resolver
+
+            bind_consent(build_terminal_consent_resolver(
+                self._orch, self._target_registry, server, server._tools['terminal_run'],
+            ))
 
         async def _rpc_desktop_plan(args):
             """T-0.25 / DRA-43 — the row's own "model ToolRPC registration".
@@ -1043,7 +1477,48 @@ class AutonomyCoordinator:
             audit=getattr(self._orch, "intent_log", None),
             spill_dirs=(spill_root(),),
         )
-        register_file_tools(server, file_tools)
+        def _file_mutation_intake(actor, name, args, labels):
+            """Queue the registered, finalized file operation under its exact kind."""
+            from .kanban.child_tools import ChildToolAdapter
+            from .kernel import Action, Decision, Verdict, kernel_enabled
+            from .approval_outcomes import tool_approval_scope
+
+            child_adapter = ChildToolAdapter(self.kanban_dispatcher())
+            child = child_adapter.prepare(actor, name, args, labels)
+            worker = getattr(self._orch, 'autonomy', None)
+            if name not in {'file_write', 'file_delete'} or not callable(getattr(worker, 'govern_enqueue', None)):
+                raise ToolRPCValidationError('file_intake_unavailable')
+            title = f"Tool '{name}' via RPC"
+            notice = (labels or {}).get('notice')
+            if isinstance(notice, str) and notice:
+                title += f" — {notice}"
+            payload = {'tool': name, 'target': name, 'args': dict(args),
+                       **dict(labels or {}), **child_adapter.payload(child)}
+            if action_kernel is not None and kernel_enabled():
+                decision = action_kernel(Action(kind='toolrpc.' + name, agent=actor,
+                                                title=title, payload=payload))
+                if not isinstance(decision, Decision) or decision.verdict is Verdict.DENY:
+                    raise ToolRPCValidationError('kernel_denied')
+            from .autonomy.approval_grouping import model_request_scope
+            from .autonomy.consent_registration import trusted_registration_key
+
+            spec = server._tools.get(name)
+            with tool_approval_scope(name), model_request_scope(
+                actor=actor, tool=name, args=args,
+                epoch=spec.get('_grouping_epoch') if spec else None,
+                registration_is_live=lambda: server._tools.get(name) is spec,
+                registration_key=spec.get('_consent_registration_key') if spec else None,
+                registration_key_is_live=lambda candidate: (
+                    server._tools.get(name) is spec and trusted_registration_key(name, spec) == candidate
+                ),
+            ):
+                task_id = worker.govern_enqueue(actor, 'toolrpc.' + name, title,
+                                               payload=payload, risk_tier=3,
+                                               autonomy_level='ask', origin='generated')
+            child_adapter.bind(child, task_id)
+            return task_id
+
+        register_file_tools(server, file_tools, mutation_intake=_file_mutation_intake)
 
         def _spill_readable(path: str) -> bool:
             # H661 — a spill notice names `file_read(path=…)` only when that call would
@@ -1091,6 +1566,18 @@ class AutonomyCoordinator:
 
             return current_principal()
 
+        from .kanban.runtime import register_kanban_tools
+        from .paths import data_path
+        register_kanban_tools(
+            server,
+            home=lambda: data_path("kanban"),
+            enabled=lambda: _get_setting("llm.kanban", False) is True,
+            principal=_turn_principal,
+            session_id=lambda: str(getattr(self._orch, "session_id", "") or "") or None,
+            profiles=lambda: tuple(getattr(self._orch, "agents", {}) or {}),
+            network=self.kanban_network,
+        )
+
         def _agent_tool_patterns(agent_id):
             config = getattr(self._orch, "config", None)
             agents = getattr(config, "agents", None) or {}
@@ -1115,6 +1602,7 @@ class AutonomyCoordinator:
         code_environment = CodeEnvRegistry()
 
         def _redact_code_project(text):
+            # Secret sources may be initialized lazily after tool composition.
             redact = getattr(getattr(self._orch, "secret_broker", None), "redact", None)
             if not callable(redact):
                 from .code_context import ProjectSnapshotError
@@ -1230,6 +1718,31 @@ class AutonomyCoordinator:
                     frozenset(str(tool.get("name") or "") for tool in offered))
             return offered, decision
 
+        def _guidance_context(agent_id):
+            # Presentation follows the authenticated turn, never the prompt text.
+            # Missing/unreadable advice does not change the profiled tool offer.
+            config = _get_setting("llm.operating_guidance", None)
+            if not isinstance(config, dict) or config.get("enabled") is not True:
+                return None
+            agents = config.get("agents", {})
+            if not isinstance(agents, dict) or len(agents) > 256:
+                return None
+            specific = agents.get(agent_id, {})
+            if not isinstance(specific, dict) or specific.get("enabled", True) is not True:
+                return None
+            flags, overrides = config.get("flags", {}), specific.get("flags", {})
+            if not isinstance(flags, dict) or not isinstance(overrides, dict):
+                return None
+            from .execution_guidance_context import execution_guidance_context
+
+            return {
+                "surface": _turn_principal().channel,
+                "enabled": {**flags, **overrides},
+                "platform_overrides": config.get("platform_overrides"),
+                "profile": agent_id,
+                "execution_context": lambda: execution_guidance_context(self, agent_id),
+            }
+
         runtime = AgentToolRuntime(
             server,
             enabled=lambda: _get_setting("llm.tool_loop_enabled", False) is True,
@@ -1258,6 +1771,7 @@ class AutonomyCoordinator:
             context_window_tokens=lambda: int(
                 _get_setting("llm.tool_result_context_window", 0) or 0),
             tool_profile=_profile_and_note_offer,
+            guidance_context=_guidance_context,
             execution_profile=tool_profile,
         )
         bind_external_orchestrator_attribute(self._orch, "tool_rpc", server)
@@ -1274,6 +1788,13 @@ class AutonomyCoordinator:
             # model-facing schema. Reset in `finally` so nothing leaks to the next turn.
             token = _APPROVED_TASK.set(task)
             try:
+                if isinstance(task.payload, dict) and 'kanban_child' in task.payload:
+                    from .kanban.child_tools import ChildToolAdapter
+
+                    async def invoke(child):
+                        return await server.execute(child, execution_context=execution_token)
+
+                    return await ChildToolAdapter(self.kanban_dispatcher()).execute(task, invoke)
                 return await server.execute(task, execution_context=execution_token)
             finally:
                 _APPROVED_TASK.reset(token)
@@ -1295,8 +1816,8 @@ class AutonomyCoordinator:
     def _session_kernels(self, get_setting):
         """Compose the K2 kernel manager, or None when it cannot be real.
 
-        None is the honest answer whenever the pinned image is missing or the switch
-        is off: `code_tools` then stays on the K1 one-shot path and says so, rather
+        None is the honest answer whenever code execution is off, the owner opts
+        out or the pinned image is missing: `code_tools` stays on K1 and says so,
         than advertising persistence it cannot keep.
         """
         from .code_tools import SETTING
@@ -1417,6 +1938,30 @@ class AutonomyCoordinator:
         executor.register('plugin.egress', execute)
         bind_external_orchestrator_attribute(self._orch, "cloud_images", runtime)
 
+    def _wire_kanban_network(self, executor):
+        """Compose the attachment domain without bypassing other egress guards."""
+        redact = getattr(getattr(self._orch, "secret_broker", None), "redact", None)
+        if getattr(self._orch, "autonomy", None) is None or not callable(redact):
+            return
+        adapter = self.kanban_network()
+        previous_guard = executor.execution_guard
+        previous_execute = executor.resolve("plugin.egress")
+
+        def guard(task):
+            if adapter.matches(task):
+                return adapter.guard(task)
+            return callable(previous_guard) and previous_guard(task)
+
+        async def execute(task):
+            if adapter.matches(task):
+                return await adapter.execute(task)
+            if callable(previous_execute):
+                return await previous_execute(task)
+            return {"status": "refused", "reason": "unsupported egress operation"}
+
+        executor.execution_guard = guard
+        executor.register("plugin.egress", execute)
+
     def build_executor(self) -> TaskExecutor:
         """Wire task kinds to real capabilities, degrading gracefully."""
 
@@ -1466,8 +2011,15 @@ class AutonomyCoordinator:
             budget_ledger=_budget_ledger,
             execution_guard=getattr(self._orch.autonomy, "execution_allowed", None),
         )
+        from .kanban.dispatcher import KanbanDispatcher
+
+        async def _kanban_worker(task):
+            return await self.kanban_dispatcher().execute(task)
+
+        executor.register(KanbanDispatcher.KIND, _kanban_worker)
         self._wire_url_monitor(executor)
         self._wire_cloud_image(executor)
+        self._wire_kanban_network(executor)
         for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):
@@ -1585,6 +2137,7 @@ class AutonomyCoordinator:
                 channel_manager=getattr(self._orch, "channel_manager", None),
                 audit=getattr(self._orch, "audit", None),
                 kernel=_broker_kernel,
+                task_reader=getattr(getattr(self._orch, "autonomy_queue", None), "get", None),
             ),
         )
         executor.register("channel.reply", self._orch.channel_replies.execute)
@@ -1748,6 +2301,12 @@ class AutonomyCoordinator:
         for kind in irreversible.kinds():
             executor.register(kind, _apply_irreversible)
 
+        from .checkpoint_controller import CHECKPOINT_KINDS, CheckpointController
+
+        checkpoints = CheckpointController(self._orch)
+        for kind in CHECKPOINT_KINDS:
+            executor.register(kind, checkpoints.execute)
+
         acquisition = getattr(self._orch, "acquisition", None)
         if acquisition is not None:
             from .acquisition.promotion import make_skill_install_kernel_gate
@@ -1871,9 +2430,12 @@ def make_subagent_runner(orch):
     from .llm.provider_errors import provider_failure_scope
     from .subagents import SubAgentProviderError
 
-    async def _subagent_runner(task, session_id, agent):
+    async def _subagent_runner(task, session_id, agent, *, steer=None):
         picked = agent if agent in orch.agents else "jarvis"
-        with provider_failure_scope() as failures:
+        from .steering import steering_scope
+        from .kanban.runtime import delegate_scope
+
+        with provider_failure_scope() as failures, steering_scope(steer, agent_id=picked), delegate_scope():
             if current_selection() is not None:
                 router = getattr(orch, "llm_router", None)
                 if not callable(getattr(router, "select_backend", None)):

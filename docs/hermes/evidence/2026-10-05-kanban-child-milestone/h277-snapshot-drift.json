@@ -1,0 +1,28 @@
+{
+  "archived_campaign": "docs/handoff/h277/prepared49-current-rerun-2026-10-04/input-manifest.json",
+  "inputs": 993,
+  "current_changed_paths": [
+    "agents/core/autonomy/queue.py",
+    "agents/core/autonomy_coordinator.py",
+    "agents/core/file_checkpoint_history.py",
+    "agents/core/file_tools.py",
+    "agents/core/kanban/dashboard_api.py",
+    "agents/core/kanban/upstream/kanban_db.py",
+    "agents/core/kanban/workspaces.py",
+    "agents/core/orchestrator_bindings.py",
+    "agents/core/tool_rpc.py",
+    "agents/web/v2/assets/client-C3wAcB0V.js",
+    "agents/web/v2/assets/gap-B2EVtiLG.js",
+    "agents/web/v2/assets/index-B9LQ9jeP.js",
+    "agents/web/v2/assets/jobs-UvrJfY-6.js",
+    "agents/web/v2/assets/modes-BNVB6Cbn.js",
+    "agents/web/v2/assets/modes2-C82vzsbd.js",
+    "agents/web/v2/assets/modes3-DwJ9GSOP.js",
+    "agents/web/v2/assets/modes4-rZcAb5xQ.js",
+    "agents/web/v2/assets/modes_world-CO6q1yVB.js",
+    "agents/web/v2/assets/panel-kit-gf7swuoi.js",
+    "agents/web/v2/assets/soul-edit-BVVaOyCV.js",
+    "agents/web/v2/index.html"
+  ],
+  "meaning": "Archived original49 is proof for its dated snapshot, not current-source acceptance after child/HUD integration. Re-run on coherent next milestone."
+}

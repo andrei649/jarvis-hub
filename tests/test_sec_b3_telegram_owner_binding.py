@@ -125,6 +125,65 @@ async def test_missing_identity_on_the_callback_fails_closed():
     assert orch.autonomy.applied == []
 
 
+async def test_group_destination_alone_cannot_authorize_a_decision():
+    orch = _Orch(owner_chat="-500", allowed_users=[])
+    result = await _coordinator(orch)._on_callback(7, "accept", chat_id=-500, user_id=42)
+    assert result is None
+    assert orch.autonomy.applied == []
+
+
+@pytest.mark.parametrize("sender", [None, 7, True])
+async def test_private_destination_requires_its_actual_owner(sender):
+    orch = _Orch(owner_chat="42", allowed_users=[])
+    result = await _coordinator(orch)._on_callback(7, "accept", chat_id=42, user_id=sender)
+    assert result is None
+    assert orch.autonomy.applied == []
+
+
+async def test_private_owner_without_allowlist_can_still_decide():
+    orch = _Orch(owner_chat="42", allowed_users=[])
+    result = await _coordinator(orch)._on_callback(7, "accept", chat_id=42, user_id=42)
+    assert result == "Task #7: accept"
+    assert orch.autonomy.applied == [(7, "accept", "telegram")]
+
+
+async def test_explicit_group_owner_can_decide_in_its_destination():
+    orch = _Orch(owner_chat="-500", allowed_users=[42])
+    result = await _coordinator(orch)._on_callback(7, "accept", chat_id=-500, user_id=42)
+    assert result == "Task #7: accept"
+    assert orch.autonomy.applied == [(7, "accept", "telegram")]
+
+
+@pytest.mark.parametrize("stored,chat,accepted", [("", 777, False), ("43", 42, True), ("43", 43, False)])
+async def test_environment_destination_binds_the_owner_callback(monkeypatch, stored, chat, accepted):
+    monkeypatch.setenv("AUTONOMY_OWNER_CHAT_ID", "42")
+    orch = _Orch(owner_chat=stored, allowed_users=[99])
+    result = await _coordinator(orch)._on_callback(7, "accept", chat_id=chat, user_id=99)
+    assert (result is not None) is accepted
+    assert orch.autonomy.applied == ([(7, "accept", "telegram")] if accepted else [])
+
+
+async def test_open_group_owner_identity_is_separate_from_admission():
+    orch = _Orch(owner_chat="-500", allowed_users=[])
+    orch.get_setting = lambda key, default=None: {
+        "autonomy.owner_chat_id": "-500", "autonomy.owner_user_ids": "[42]",
+    }.get(key, default)
+    coordinator = _coordinator(orch)
+    assert await coordinator._on_callback(7, "accept", chat_id=-500, user_id=7) is None
+    assert orch.autonomy.applied == []
+    assert await coordinator._on_callback(7, "accept", chat_id=-500, user_id=42)
+    assert orch.autonomy.applied == [(7, "accept", "telegram")]
+
+
+async def test_clearing_owner_destination_revokes_existing_callback(monkeypatch):
+    monkeypatch.delenv("AUTONOMY_OWNER_CHAT_ID", raising=False)
+    orch = _Orch(owner_chat="-500", allowed_users=[42])
+    coordinator = _coordinator(orch)
+    orch._owner_chat = ""
+    assert await coordinator._on_callback(7, "accept", chat_id=-500, user_id=42) is None
+    assert orch.autonomy.applied == []
+
+
 # ── the pairing gate ───────────────────────────────────────────────
 async def test_pairing_gate_holds_the_sender_when_its_store_errors():
     """It defaulted to allowed=True — the gate admitted the sender it exists to hold.

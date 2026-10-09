@@ -1,0 +1,28 @@
+{
+  "base_sha": "8c0d86775c165895d93a8561e182e7a4c917f513",
+  "scope": "One direct-API regression assertion, no production behavior change",
+  "integrated": {
+    "tests": 178,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "40556d00f465f024dcb3f7bd04f223c80cd9a824fae5c2275c188938a705ce6f"
+  },
+  "single_fault": {
+    "label": "queue_annotate_after_decision",
+    "tests": 1,
+    "assertion_failures": 1,
+    "errors": 0,
+    "junit_sha256": "7d545eed5fa0b4f3104b3354c71a622252e6523bd54713e4f9aa727520141b5f",
+    "restored_snapshot_inputs": 3003
+  },
+  "source_sha256": {
+    "agents/core/autonomy/action_approvals.py": "9ee9d1bbf42dd011b75b51e607750b187bd31ccf5f0a88e99bb5ce016067709b",
+    "tests/test_h277_annotate_after_decision_regression.py": "6ee0a17ae40879e54bd7fe7595f30877c28254532401989681fa3e5caf89e663"
+  },
+  "limits": [
+    "Original49 campaign counts unchanged:41 assertion kills,6 behavioral exception kills,2 survivors",
+    "Previous full22395 does not contain this test; next integrated source milestone requires new full run",
+    "No full H277 equivalent credit, live effects or publication"
+  ]
+}

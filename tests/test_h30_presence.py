@@ -82,6 +82,28 @@ def test_sensor_fusion_persists_bounded_explainable_facts_and_emits_event(tmp_pa
     assert presence["confidence"] == outcome.decision.confidence
 
 
+def test_pseudonym_reads_same_current_decision_without_exposing_identity(tmp_path):
+    store = _store(tmp_path)
+    engine = PresenceInference(store, clock=lambda: 1_000.0)
+    engine.infer("Alice Example", _present_evidence())
+    occupant_id = store.pseudonym_for("Alice Example")
+
+    assert store.query_pseudonym(occupant_id, at=1_000.0) == store.query(
+        occupant_ref="Alice Example", at=1_000.0
+    )
+    assert engine.current_presence_id(occupant_id) == engine.current_presence("Alice Example")
+    assert "Alice Example" not in str(engine.current_presence_id(occupant_id).to_dict())
+
+
+def test_pseudonym_read_rejects_unknown_and_invalid_ids(tmp_path):
+    store = _store(tmp_path)
+    engine = PresenceInference(store, clock=lambda: 1_000.0)
+    with pytest.raises(ValueError, match="pseudonym"):
+        store.query_pseudonym("Alice Example")
+    with pytest.raises(ValueError, match="pseudonym"):
+        engine.current_presence_id("occ-" + "0" * 32)
+
+
 def test_stale_evidence_returns_unknown_without_persisting(tmp_path):
     store = _store(tmp_path)
     engine = PresenceInference(store, clock=lambda: 1_000.0, max_evidence_age=120.0)

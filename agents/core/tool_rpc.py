@@ -33,6 +33,7 @@ and offline-testable. The injected sink/secret-broker keep it decoupled.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 import uuid
@@ -43,6 +44,7 @@ from typing import Awaitable, Callable, Optional
 
 from . import project_context
 from .automation_contracts import ContractTemplate, predicate
+from .autonomy.consent_registration import trusted_registration_key
 from .security.quarantine import strip_invisible_deep
 from .turn_approvals import record_pending_approval
 
@@ -88,6 +90,7 @@ def current_tool_turn() -> Optional[str]:
 Handler = Callable[[dict], Awaitable]
 Preflight = Callable[[dict], Mapping]
 GatedIntake = Callable[[str, dict], int]
+GatedReview = Callable[[str, dict, int], Awaitable[dict | None]]
 #: H506 — a *registrar-supplied* look at one call's arguments that answers "is this
 #: call a distinct class of thing the owner must be told about?". Returns a small
 #: mapping of labels (``class``, ``notice``, plus flat scalars) or ``None``. It is
@@ -279,6 +282,8 @@ class ToolRPCServer:
         classifier: Classifier | None = None,
         max_result_bytes: int | None = None,
         schema_overrides: SchemaOverrides | None = None,
+        gated_review: GatedReview | None = None,
+        consent_revision: str | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
 
@@ -296,6 +301,11 @@ class ToolRPCServer:
         refuses a call whose approved card did not carry the class it belongs to —
         so a classed call can only ever run off an approval that named the class.
         Gated tools only: an ungated tool never produces a card to label.
+
+        ``gated_review`` is an async, registrar-owned continuation for a trusted
+        custom intake. It sees the finalized arguments and persisted task id
+        before the turn records a pending manual approval. A returned dict is
+        the registrar's result; ``None`` or an error keeps manual handling.
 
         ``max_result_bytes`` is this tool's own statement of how much it may put in
         the context window (H298). It is the fourth rung of the threshold ladder —
@@ -318,12 +328,25 @@ class ToolRPCServer:
                 raise ValueError("max_result_bytes must be a byte count") from exc
             if max_result_bytes <= 0:
                 raise ValueError("max_result_bytes must be positive")
+        if consent_revision is not None and (
+            type(consent_revision) is not str or not 0 < len(consent_revision) <= 128
+            or not all(char.isascii() and (char.isalnum() or char in "._:-")
+                       for char in consent_revision)
+        ):
+            raise ValueError("consent_revision must be a bounded machine identifier")
         if trusted_execution and not gated:
             raise ValueError("trusted execution is only valid for gated tools")
         if gated_intake is not None and (
             not callable(gated_intake) or not gated or not trusted_execution
         ):
             raise ValueError("custom intake requires a trusted gated tool")
+        if gated_review is not None and (
+            not gated or not trusted_execution or gated_intake is None
+            or not callable(gated_review)
+            or not (inspect.iscoroutinefunction(gated_review)
+                    or inspect.iscoroutinefunction(type(gated_review).__call__))
+        ):
+            raise ValueError("gated review requires async trusted custom intake")
         if classifier is not None and (not callable(classifier) or not gated):
             raise ValueError("a call classifier requires a gated tool")
         if schema_overrides is not None and not callable(schema_overrides):
@@ -348,7 +371,7 @@ class ToolRPCServer:
         existing = self._tools.get(name)
         if existing is not None and existing.get("active_tasks"):
             raise RuntimeError(f"tool has in-flight calls: {name}")
-        self._tools[name] = {
+        spec = {
             "handler": handler,
             "_grouping_epoch": uuid.uuid4().hex,
             "gated": bool(gated),
@@ -359,11 +382,15 @@ class ToolRPCServer:
             "trusted_execution": bool(trusted_execution),
             "untrusted_output": bool(untrusted_output),
             "gated_intake": gated_intake,
+            "gated_review": gated_review,
             "classifier": classifier,
             "max_result_bytes": max_result_bytes,
             "schema_overrides": schema_overrides,
+            "consent_revision": consent_revision,
             "active_tasks": set(),
         }
+        spec["_consent_registration_key"] = trusted_registration_key(name, spec)
+        self._tools[name] = spec
         return self
 
     async def unregister_tool(
@@ -455,6 +482,14 @@ class ToolRPCServer:
             # Not on the allowlist — the sandbox cannot reach it.
             return {"ok": False, "reason": "tool_not_allowed", "tool": name}
 
+        if spec.get("gated_review") is not None:
+            # Preflight may rewrite nested values; it must not mutate a caller's
+            # request while finalizing a reviewed operation.
+            try:
+                args = deepcopy(args)
+            except Exception:
+                return {"ok": False, "reason": "validation_failed", "tool": name}
+
         # The agent loop alone supplies this private callback out of band. It
         # rechecks the current profile synchronously, after the independent job
         # restriction and before preflight, approval intake, or a handler can act.
@@ -465,7 +500,6 @@ class ToolRPCServer:
                 allowed = False
             if allowed is not True:
                 return {"ok": False, "reason": "tool_not_allowed", "tool": name}
-
         args, denial = self._run_preflight(spec, args, name)
         if denial is not None:
             return denial
@@ -502,22 +536,55 @@ class ToolRPCServer:
             # gate and governed enqueue; call data cannot select this callback.
             intake = spec.get("gated_intake")
             if intake is not None:
+                labels, denial = self._classify(spec, args)
+                if denial is not None:
+                    self._record(
+                        "toolrpc.classify_failed", f"{name}: {denial}", agent=effective_actor)
+                    return {"ok": False, "reason": denial, "tool": name}
+                review = spec.get("gated_review")
+                if review is not None:
+                    try:
+                        finalized_args = deepcopy(args)
+                        intake_args = deepcopy(finalized_args)
+                    except Exception:
+                        return {"ok": False, "reason": "validation_failed", "tool": name}
+                else:
+                    intake_args = args
                 try:
                     from .approval_outcomes import tool_approval_scope
                     # Specialized intake finalization is not yet proven for this slice.
                     with tool_approval_scope(None):
-                        task_id = intake(effective_actor, args)
+                        task_id = intake(effective_actor, intake_args)
                 except ToolRPCValidationError as exc:
                     return {"ok": False, "reason": exc.reason, "tool": name}
                 except Exception:
                     logger.warning("tool-rpc bound intake failed", exc_info=True)
                     return {"ok": False, "reason": "enqueue_failed", "tool": name}
                 self._record("toolrpc.gated", name, agent=effective_actor)
+                if review is not None:
+                    if self._tools.get(name) is not spec:
+                        return {"ok": False, "reason": "registration_changed", "tool": name,
+                                "task_id": task_id}
+                    if type(task_id) is int and task_id > 0:
+                        try:
+                            reviewed = await review(effective_actor, deepcopy(finalized_args), task_id)
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            logger.warning("tool-rpc gated review unavailable; manual approval retained")
+                            reviewed = None
+                        if self._tools.get(name) is not spec:
+                            return {"ok": False, "reason": "registration_changed", "tool": name,
+                                    "task_id": task_id}
+                        if type(reviewed) is dict:
+                            return reviewed
                 # The caller of the *turn* only ever sees the loop's prose reply, so
                 # the id is noted here too — where it is known — for the collector the
                 # turn holds. Reporting only: the row stays proposed either way.
                 record_pending_approval(task_id)
-                return {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
+                answer = {"ok": False, "reason": "approval_required", "tool": name, "task_id": task_id}
+                answer.update({key: labels[key] for key in _ANSWER_LABEL_KEYS if key in labels})
+                return answer
 
             # ORIZONT-24 K1 wave-3: mediate the gated tool through the Action Kernel
             # first (default-off). A DENY (halted kill-switch / over-budget / runaway
@@ -553,6 +620,10 @@ class ToolRPCServer:
                 with tool_approval_scope(name), model_request_scope(
                     actor=effective_actor, tool=name, args=args, epoch=spec.get('_grouping_epoch'),
                     registration_is_live=lambda: self._tools.get(name) is spec,
+                    registration_key=spec.get('_consent_registration_key'),
+                    registration_key_is_live=lambda candidate: (
+                        self._tools.get(name) is spec
+                        and trusted_registration_key(name, spec) == candidate),
                 ):
                     task_id = self._enqueue(
                         effective_actor, f"toolrpc.{name}", title,

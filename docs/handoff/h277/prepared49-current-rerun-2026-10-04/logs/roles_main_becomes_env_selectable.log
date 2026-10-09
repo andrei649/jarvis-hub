@@ -1,0 +1,19 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/roles_main_becomes_env_selectable.xml", "tests/test_h277_model_roles.py::test_main_role_is_not_env_selectable"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________________ test_main_role_is_not_env_selectable _____________________
+tests/test_h277_model_roles.py:250: in test_main_role_is_not_env_selectable
+    role = model_roles.resolve("main")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:586: in resolve
+    return _resolve_env_role(read, spec)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:437: in _resolve_env_role
+    provider = _validate(spec, raw_provider) if raw_provider else "lm-studio"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:224: in _validate
+    raise RoleConfigError("role_provider_unsupported",
+E   agents.core.llm.model_roles.RoleConfigError: role_provider_unsupported: main can use , not anthropic
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_main_role_is_not_env_selectable
+1 failed in 1.38s

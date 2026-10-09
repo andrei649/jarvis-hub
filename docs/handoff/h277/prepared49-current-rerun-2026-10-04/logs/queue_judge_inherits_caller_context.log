@@ -1,0 +1,14 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/queue_judge_inherits_caller_context.xml", "tests/test_h277_approval_judge.py::test_the_judge_runs_outside_a_childs_selection_and_overrides"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_the_judge_runs_outside_a_childs_selection_and_overrides _________
+tests/test_h277_approval_judge.py:644: in test_the_judge_runs_outside_a_childs_selection_and_overrides
+    assert seen == {"selection": None, "overrides": None}
+E   AssertionError: assert {} == {'selection':...rrides': None}
+E     
+E     Right contains 2 more items:
+E     {'overrides': None, 'selection': None}
+E     Use -v to get more diff
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_the_judge_runs_outside_a_childs_selection_and_overrides
+1 failed in 1.77s

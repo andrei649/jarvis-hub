@@ -12,6 +12,7 @@ from .comfyui import ImageGenerationError, validate_png
 
 ENDPOINT = "https://api.openai.com/v1/images/generations"
 MODEL = "gpt-image-1.5"
+IMAGE2_TIERS = {f"gpt-image-2-{quality}": quality for quality in ("low", "medium", "high")}
 MAX_IMAGE = 16 * 1024 * 1024
 MAX_RESPONSE = 24 * 1024 * 1024
 SIZES = {"1024x1024", "1536x1024", "1024x1536"}
@@ -24,23 +25,27 @@ def normalize_request(prompt, options):
         raise ValueError("unsupported cloud image option")
     model = options.get("model", MODEL)
     size = options.get("size", "1024x1024")
-    quality = options.get("quality", "low")
+    tier = IMAGE2_TIERS.get(model)
+    if tier is not None and "quality" in options:
+        raise ValueError("quality is selected by image model")
+    quality = options.get("quality", "low") if tier is None else tier
     if (
         not all(isinstance(value, str) for value in (model, size, quality))
-        or model != MODEL
+        or model not in {MODEL, *IMAGE2_TIERS}
         or size not in SIZES
         or quality not in {"low", "medium", "high"}
     ):
         raise ValueError("unsupported cloud image option")
-    return {
-        "model": model,
+    body = {
+        "model": "gpt-image-2" if tier else model,
         "prompt": prompt,
         "n": 1,
         "size": size,
         "quality": quality,
-        "output_format": "png",
-        "stream": False,
     }
+    if tier is None:
+        body.update(output_format="png", stream=False)
+    return body
 
 
 def decode_result(value, size):

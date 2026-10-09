@@ -23,6 +23,11 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 Camera parity is read/search parity over the same bounded metadata API. Admin ONVIF onboarding is
 intentionally owner-HUD-only; native clients expose no discovery, frame, stream, or private URL.
 
+H063 gateway reset/index/stall policies are host/channel behavior, with no new
+mobile endpoint or lifecycle controls. Mobile HTTP chat keeps its existing
+lifecycle. Native configuration and device acceptance are not claimed by the
+gateway implementation.
+
 Media integrity (local backend candidate, 2026-10-09): newly cloud-finalized, ComfyUI and local OpenAI PNG `md-*` catalog rows bind their producer digest for shared delivery and export. Both clients inherit a refusal for mismatched bytes on those catalog URLs. Existing blob headers and gallery controls are unchanged; verified/unbound status is export metadata only. New ComfyUI, local OpenAI and cloud standalone generated-image URLs and edit references also verify an expected sidecar digest through the shared server reader; mismatches and invalid bindings use the existing opaque refusal. These built-in producers share the reserved-ID publisher, while cloud task recovery keeps its independent completion hash. Missing sidecars retain legacy availability without digest verification. Legacy/other unsupplied catalog rows retain their own limits. Native wire shapes and UI stay unchanged (H477 partial).
 
 Tool profile permissions (local backend candidate, 2026-10-09): both clients inherit a live profile check before each new tool dispatch in the enabled production agent loop. A tool withdrawn since the model saw it is refused before preflight or approval intake. Existing error shapes and client controls are unchanged; already-running tools and queued approvals are outside this check (H672 partial).
@@ -73,6 +78,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 
 | Surface | API (agents/web.py) | Browser | Mobile | Task |
 |---------|---------------------|:-------:|:------:|------|
+| Managed Hermes runtime and exact action approvals | Admin `/api/hermes/{status,catalog,start,stop,rpc,ws,approvals}` and approval decision API | ✅ private runtime, sessions, methods, events, approve/deny controls | ➖ intentionally owner desktop administration; no native acceptance claimed | PR #1233 |
 | Chat (streaming) | `POST /chat/stream`, `POST /chat` | ✅ | ✅ | H18.1 |
 | Current-turn duration (H686 first slice) | optional `outcome.latency_ms` on `/chat` and SSE end; owner `display.status_bar_fields` | ✅ local cockpit and focus-chat readout; normal returned turns only, ephemeral | 🟡 local current-turn readout from validated explicit SSE end; clears on work/context changes and never persists; physical-device/live-Hub acceptance open | H18.33 / H686; [evidence](docs/h1833-turn-duration.md) |
 
@@ -85,8 +91,11 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Code execution project context and persistence | existing admin settings and sandbox status/reset | ✅ existing Admin settings and sandbox surface | ➖ operator configuration stays on the owner HUD; chat tools use the same governed backend | H595/H660, remote transports remain partial |
 | Chat-command catalog (live registry, filtered by chat principal) | `GET /api/commands` | ✅ quickbar menu | 🟡 native Chat modal lists live command, usage, description and owner tier; loading, empty, error and unavailable states, retry, and composer insertion are host-tested. Device/live-Hub acceptance open; Send stays on governed chat path | H18.26 |
 | Chat/session protocol discovery | `GET /v1/capabilities` | ➖ machine-readable client contract; no HUD control | ➖ available to authenticated clients; current native transport remains fixed to its tested contract, runtime negotiation is not implemented | H477 partial |
+| Owner checkpoint operations (H011, partial) | Existing `POST /chat`, `POST /chat/stream`; no new route | Owner inventory, diff, selected/force restore and index maintenance through typed commands and host CLI; signed human task + kernel execution; successful restore rewinds only the current last-user exchange | ⬜ dedicated checkpoint UI and native acceptance; no native implementation claimed | H011 / H18.26; size/retention controls and complete checkpoint-owned payload cleanup remain open; shared blobs retained |
 | Chat history persistence | — (client-side) | ✅ | ✅ | H18.2 |
 | Agent selection | `GET /api/agents`, `agent` param | ✅ | ✅ | H18.3 |
+| Runtime Inspector (H227) | Existing admin inspector route | ✅ model/route resolution, unresolved/legacy/withheld states and fixed empty-turn limits | ⬜ dedicated native inspector; intentional owner administration gap | H18.26 / H227 |
+| Durable Kanban and approved workers (H075/H581, partial) | Owner `/kanban` and `nerva kanban`, scoped admin `/api/kanban` board/task/file APIs and authenticated board event WebSocket; signed dispatch queue, bounded parallel workers, cancellation and separately approved URL attachments; flags default off | 🟡 ProjectsMode board and task drawer: board/task CRUD, bulk changes, comments, local attachment upload/download, project/profile/orchestration reads, explicit dispatch request, event refresh with reconnect and poll; existing approval queue. Advanced profile/orchestration/log/model/transfer and worker/recovery actions remain open; file-mutation callback prerequisite is not wired | ⬜ native board/worker controls and attachments | H18.34 / H075 / H581; no full Hermes parity or native acceptance claimed |
 | Markdown rendering | — (client-side) | ✅ | ✅ | H18.4 |
 | Status / telemetry | `GET /status` | ✅ | ✅; local refresh-order fix protects model/Trust/brief data and loading/error state from older responses | H18.1; [refresh evidence](docs/native-status-refresh-order.md) |
 | Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ✅ | H18.5 |
@@ -101,8 +110,11 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Knowledge graph | read legs only: `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, `GET /api/kg/facts/{as-of,history}` | ✅ | ✅ existing native entity list/detail and relation rows | H18.17 |
 | Memory neighborhood navigation | user/admin-superset `GET /api/kg/entities`, `GET /api/kg/entities/{name}`, plus KG fact reads | ✅ live search, selectable connections, bounded reads; samples only in explicit Demo | 🟡 local Graph code: connected navigation outside first 50, cancellable ten-second reads, post-body one-MiB verification, 100-row caps, stale-read guards and explicit unavailable states; device/live-Hub acceptance open | DW-1 / H18.28 |
 | Action approval queue + rollback story | `GET /autonomy/approvals`, `POST /autonomy/tasks/{id}/decision` | ✅ | ✅ | H18.11 / O26-P3.4 / H27.6 |
+| Reusable terminal consent (H487) | Optional public `consent_offer` on `GET /autonomy/tasks`; admin `POST /autonomy/tasks/{id}/consent` with exact revision | Decision Inbox offers session/always/deny for current reviewed terminal categories; ordinary once controls remain | ⬜ native reusable choices and device acceptance; ordinary native decisions remain available | H487 remains partial: Telegram, other producers and broader interactive parity remain open |
 | Task mediation evidence status | admin `GET /autonomy/mediation` | ✅ local Autonomy Control candidate: effective mode and verified aggregate counts; invalid/unavailable evidence hides counts | 🟡 local Status card after Trust: strict counters, mode/evidence separation, refresh and connection/read-order fences; device/live-hub acceptance open | [H18.32 evidence](docs/h1832-task-mediation-status.md) / DRA-59 |
 | Advisory approval model opinions (H277) | Optional `judge` / `judge_pending` on blocked tasks; `GET /api/llm/roles` configuration | ✅ Decision Inbox opinion, bounded polling and model roles viewer | 🟡 local candidate: advisory opinion and read-only roles view; pending says pull to refresh; no automatic polling; #1233 integration and device/live acceptance open | H18.29 / H277 |
+| Opt-in terminal guardian verdicts (H277) | Same blocked-task projection: `judge.advisory=false`, strict `decision`; pending `judge_mode=smart` | ✅ DENY/ESCALATE, guardian identity and one-task owner override; smart approvals leave the inbox | ⬜ distinct guardian verdict/pending labels; existing owner decisions remain usable | H18.29 / H277 |
+| Guardian denial feedback and observers (H485) | Bounded next authenticated owner-turn prompt observation; consented server extension events around native guardian request/committed decision | Server chat flow warns after repeated DENYs; observer subscriptions use extension declarations, no dedicated HUD editor | Native settings/labels, observer management and device acceptance remain open; no new mobile client implementation | H485 |
 | Capability registry board | `GET /api/capabilities` | ✅ | ✅ | H18.22 / H27.8 |
 | WorldView bridge (World tab: liveness + recon read data) | `GET /api/worldview/status`, `GET /api/worldview/overview` | ✅ | ⬜ | |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
@@ -323,6 +335,11 @@ full-chain retry settings have no native editor. Their additional send budgets a
 shown through the existing server-generated task approval notice. Native-device and live video-provider acceptance
 remain unverified.
 
+OpenRouter native video (2026-10-04) uses those same responsive-web task/role
+consent surfaces. Provider privacy preferences are server-side and bound to the
+approval; there is no new native mobile editor or video picker. Offline tests do
+not establish native-device or live/model acceptance.
+
 Local auxiliary model selection (H277, 2026-10-02) runs on the server for session
 titles, recall rewriting, conversation review, compression and governed acquisition
 capability/plan generation. Existing results reach the same clients; the six
@@ -366,6 +383,91 @@ Responsive-web Trust also exposes the separate camera-description model-data rol
 Acknowledgment is independent of household consent and does not enable capture or
 remote inference. Native camera role controls, supported owner camera provisioning
 and live-device acceptance remain open.
+
+
+Explicit OpenRouter image analysis (H277, 2026-10-02) is available through the
+responsive-web composer and native VLM backend, with live upstream routing
+controls bound to each preview/request. Native mobile image intake and these
+provider controls remain a gap; existing mobile chat does not gain image routing.
+Responsive-web image drafts additionally support distinct per-turn training/cost
+confirmations with audit and destination binding; native mobile has no equivalent
+image intake or confirmation controls yet.
+Signed OpenRouter video is not delivered.
+
+Explicit DeepInfra image analysis uses the same responsive-web composer and
+confirmation controls. Its Refresh vision destination button can refresh the
+server-side model catalog. This adds no native image intake or native mobile
+provider configuration; native-device and live-provider acceptance remain open.
+
+Nous account lifecycle now has owner-only server routes and a terminal device-code
+flow. No responsive-web or native-mobile login controls are added in this
+prerequisite. Account login does not enable a model route. Explicit Nous vision
+now uses the responsive-web image composer with account-bound recommendations,
+Chat/Messages inference and the existing destination/training/cost confirmations.
+UI account management, native image intake and native-device acceptance remain open.
+
+Opt-in automatic image selection now works in the responsive-web composer:
+the chosen OpenRouter, Nous or DeepInfra provider appears with its model and
+destination before consent, and a changed choice invalidates that consent.
+The composer has no actual selected main conversation route, so this first
+candidate is absent. Native mobile image intake and provider controls remain
+open; this web flow does not imply native mobile parity.
+The web composer now prepares a short-lived, one-use destination review for
+the current image question and agent. Editing either clears its confirmation;
+a changed destination or reused review is refused before image egress. This
+still uses the configured vision route, not the selected chat backend. Native
+mobile has no matching review flow.
+
+Selected main image conversation turns (H277, 2026-10-02) now use the
+responsive-web composer to commit the reviewed question, an image-count marker,
+and the selected model's answer to the shared session. Reload restores the
+answer and bounded provider provenance from server memory; image bytes remain
+transient. Explicit standalone and auxiliary image descriptions still use the
+separate transient route. Native mobile has no image composer, reviewed
+destination flow, or equivalent history rendering. This gap remains under
+H18.10 pending a native client request; the web behavior is not native parity.
+# H595 code interruption checkpoint (2026-10-05)
+
+The existing authenticated chat endpoints accept a same-session new message while
+code runs and return the prior tool's interrupted result after teardown. No route
+or mobile schema was added. Native mobile producer/interaction acceptance is not
+verified in this batch. The responsive HUD now submits typed follow-ups during a text stream and keeps
+separate reply ownership and cancellation. This browser behavior does not
+establish native-mobile producer or interaction parity.
+
+
+## FAL image provider (2026-10-06)
+
+The existing authenticated media generation route and registered image tool now
+accept `cloud=true, backend=fal`. Generation and model-bounded edits from FAL
+media URLs produce the same opaque local artifacts after approval. Native mobile
+has no FAL configuration, model picker or reference URL entry UI; this backend
+addition does not establish native interaction parity.
+
+
+## OpenAI/Codex image providers (2026-10-06)
+
+The shared authenticated media API now supports approved OpenAI Image2 tiers and
+native Codex image generation/edit from saved artifact IDs. The desktop Images
+HUD selects OpenAI, Codex and FAL models/references. Native mobile has no equivalent
+provider/model/reference controls or managed Codex OAuth flow; these remain gaps.
+No mobile device or live subscription generation was validated.
+
+## Additional image providers and Krea continuation (2026-10-06)
+
+Krea Enhance now has an additive authenticated `enhance_task_id` operation and
+`enhance_available` task field. The responsive HUD proposes a separate 2x pass,
+keeps the original preview, displays the bound source in Decision Inbox and
+resumes interrupted Enhance jobs through a fresh GET approval. Validated 4K
+Enhance pixels have proof-bound download/gallery/export admission. Native mobile
+generation/gallery/Enhance producer parity and device acceptance remain open.
+
+The existing authenticated media API supports OpenRouter, Krea, xAI and dynamic
+DeepInfra catalogs through separate approved tasks. Krea recovery queues a fresh
+GET for an existing job; DeepInfra discovery queues a catalog GET before image
+generation becomes available. The responsive Images HUD exposes these controls.
+Native mobile has no equivalent provider/catalog/continuation interface. No
+native-device or live-provider acceptance is claimed.
 
 The 2026-10-09 local HUD contrast candidate moves secondary browser text away from
 the decorative `--ink-3` token. It changes no native API or interaction; native

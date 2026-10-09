@@ -2,8 +2,11 @@
 persistence.py — Memory persistence: saves/loads conversation history across restarts.
 """
 
+import hashlib
 import json
 import logging
+import os
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 from agents.core.paths import data_root
@@ -35,7 +38,115 @@ _memory_dir = memory_dir   # internal alias, kept so use sites read tersely
 logger = logging.getLogger("jarvis.persistence")
 
 
-def save_memory(session_id: str, turns: list[dict], *, instance_id: str | None = None):
+class RewindPersistenceError(RuntimeError):
+    """A rewound session's JSON and durable head could not advance together."""
+
+    def __init__(self, message: str, *, inconsistent: bool = False):
+        super().__init__(message)
+        self.inconsistent = inconsistent
+
+
+class SnapshotRevisionConflict(RewindPersistenceError):
+    """A stale writer must not replace a committed rewind head."""
+
+
+@contextmanager
+def session_snapshot_lock(session_id: str):
+    """Serialize snapshot writers across processes, including strict rewinds."""
+    if not is_valid_session_id(session_id):
+        raise ValueError("invalid session identifier")
+    _memory_dir().mkdir(parents=True, exist_ok=True)
+    path = _memory_dir() / f"{session_id}.json.lock"
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"0")
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        if os.name == "nt":
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def snapshot_digest(document: dict) -> str:
+    return hashlib.sha256(json.dumps(document, ensure_ascii=False, sort_keys=True,
+                                     separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+
+
+def read_snapshot_for_rewind(session_id: str) -> tuple[dict, str]:
+    """Read an existing valid snapshot; caller supplies higher-level instance checks."""
+    with session_snapshot_lock(session_id):
+        path = _memory_dir() / f"{session_id}.json"
+        with path.open("r", encoding="utf-8") as stream:
+            document = json.load(stream)
+        if (type(document) is not dict or document.get("session_id") != session_id
+                or type(document.get("turns")) is not list
+                or type(document.get("revision", 0)) is not int
+                or document.get("revision", 0) < 0):
+            raise ValueError("conversation snapshot is unavailable")
+        return document, snapshot_digest(document)
+
+
+def replace_memory_if_current(session_id: str, *, instance_id: str, revision: int,
+                              digest: str, turns: list[dict],
+                              already_locked: bool = False,
+                              expected_missing: bool = False) -> tuple[dict | None, str]:
+    """Strict durable compare-and-replace; errors never become a successful undo."""
+    with nullcontext() if already_locked else session_snapshot_lock(session_id):
+        path = _memory_dir() / f"{session_id}.json"
+        if expected_missing:
+            if path.exists():
+                raise ValueError("conversation snapshot changed")
+            current = None
+        else:
+            with path.open("r", encoding="utf-8") as stream:
+                current = json.load(stream)
+            if (type(current) is not dict or current.get("session_id") != session_id
+                    or current.get("instance_id") != instance_id
+                    or current.get("revision", 0) != revision
+                    or snapshot_digest(current) != digest):
+                raise ValueError("conversation snapshot changed")
+        updated = {"session_id": session_id, "turns": turns,
+                   "instance_id": instance_id, "revision": revision + 1,
+                   "rewound": True}
+        atomic_write_json(path, updated)
+        return current, snapshot_digest(updated)
+
+
+def restore_memory_if_current(session_id: str, *, digest: str, previous: dict | None,
+                              already_locked: bool = False) -> bool:
+    """Best-effort rollback if the SQLite half of a rewind failed after JSON replace."""
+    try:
+        with nullcontext() if already_locked else session_snapshot_lock(session_id):
+            path = _memory_dir() / f"{session_id}.json"
+            with path.open("r", encoding="utf-8") as stream:
+                current = json.load(stream)
+            if snapshot_digest(current) != digest:
+                return False
+            if previous is None:
+                path.unlink()
+            else:
+                atomic_write_json(path, previous)
+            return True
+    except Exception:
+        return False
+
+
+def save_memory(session_id: str, turns: list[dict], *, instance_id: str | None = None,
+                revision: int | None = None, checkpoint_mgr=None,
+                require_rewind: bool = False):
     # AUD-5: never let an id that isn't an inert identifier reach the path — a
     # second line of defense behind the router validation, so any internal caller
     # is protected too.
@@ -48,10 +159,88 @@ def save_memory(session_id: str, turns: list[dict], *, instance_id: str | None =
         # tmp+replace, not open(path, "w"): the truncate-then-stream form left a
         # half-written snapshot on disk whenever the dump raised (or the process
         # died) mid-turn, and load_memory() reads that as an empty conversation.
-        atomic_write_json(path, {"session_id": session_id, "turns": turns,
-                                 **({"instance_id": instance_id} if instance_id else {})})
+        payload = {"session_id": session_id, "turns": turns,
+                   **({"instance_id": instance_id} if instance_id else {}),
+                   **({"revision": revision} if revision is not None else {})}
+        with (checkpoint_mgr._lock if checkpoint_mgr is not None else nullcontext()), session_snapshot_lock(session_id):
+            conn = getattr(checkpoint_mgr, "_conn", None)
+            try:
+                head = (conn.execute(
+                    "SELECT instance_id,revision,snapshot_sha256 FROM session_history_rewinds "
+                    "WHERE session_id=?", (session_id,),
+                ).fetchone() if conn is not None else None)
+            except Exception as exc:
+                if require_rewind:
+                    raise RewindPersistenceError("conversation rewind head unavailable") from exc
+                raise
+            current = None
+            if path.exists():
+                try:
+                    with path.open("r", encoding="utf-8") as stream:
+                        current = json.load(stream)
+                except (OSError, ValueError, TypeError) as exc:
+                    if head is not None or require_rewind:
+                        raise RewindPersistenceError("conversation rewind snapshot unavailable") from exc
+                    raise
+            if require_rewind or head is not None or (isinstance(current, dict) and current.get("rewound") is True):
+                if conn is None or head is None:
+                    raise RewindPersistenceError("conversation rewind head unavailable")
+                try:
+                    current_digest = snapshot_digest(current) if type(current) is dict else None
+                except (ValueError, TypeError) as exc:
+                    raise RewindPersistenceError("conversation rewind snapshot unavailable") from exc
+                if (type(current) is not dict or current.get("session_id") != session_id
+                        or current.get("rewound") is not True
+                        or type(revision) is not int or type(current.get("revision")) is not int
+                        or instance_id != head[0] or current.get("instance_id") != instance_id
+                        or current["revision"] != head[1]
+                        or current_digest != head[2]):
+                    raise SnapshotRevisionConflict("conversation changed after rewind")
+                payload["rewound"] = True
+                new_digest = snapshot_digest(payload)
+                # Synchronous callers may re-save the exact durable head. This
+                # is idempotent, never a way to replace history at the same revision.
+                if revision == current["revision"] and new_digest == current_digest:
+                    return
+                if current["revision"] != revision - 1:
+                    raise SnapshotRevisionConflict("conversation changed after rewind")
+                wrote = False
+                try:
+                    conn.execute("BEGIN IMMEDIATE")
+                    atomic_write_json(path, payload)
+                    wrote = True
+                    changed = conn.execute(
+                        "UPDATE session_history_rewinds SET revision=?,snapshot_sha256=? "
+                        "WHERE session_id=? AND instance_id=? AND revision=? AND snapshot_sha256=?",
+                        (revision, new_digest, session_id, instance_id, head[1], head[2]),
+                    )
+                    if changed.rowcount != 1:
+                        raise SnapshotRevisionConflict("conversation rewind head changed")
+                    conn.commit()
+                except Exception as exc:
+                    rollback_failed = False
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        rollback_failed = True
+                    restored = not wrote or restore_memory_if_current(
+                        session_id, digest=new_digest, previous=current, already_locked=True
+                    )
+                    if rollback_failed or not restored:
+                        raise RewindPersistenceError(
+                            "conversation rewind needs recovery", inconsistent=True
+                        ) from exc
+                    if isinstance(exc, RewindPersistenceError):
+                        raise
+                    raise RewindPersistenceError("conversation rewind not persisted") from exc
+            else:
+                atomic_write_json(path, payload)
         logger.info(f"Memory saved: {path} ({len(turns)} turns)")
+    except RewindPersistenceError:
+        raise
     except Exception as e:
+        if require_rewind:
+            raise RewindPersistenceError("conversation rewind not persisted") from e
         logger.warning(f"Failed to save memory: {e}")
 
 

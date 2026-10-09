@@ -123,6 +123,7 @@ class ChannelSessionLifecycle:
 
     async def run(self, source: SessionSource, text: str, *, observe_only=False, draft=None,
                   shared=False, authorize_reset=None):
+        from ..memory.manager import RewindRefused
         from ..orchestrator import TURN_BUSY_REPLY
 
         base = self.orch._session_id_default if shared else build_session_key(source)
@@ -186,7 +187,7 @@ class ChannelSessionLifecycle:
                         # Completion is route activity; pending eligibility is a
                         # separate ephemeral record, never persisted inbound text.
                         self.store.touch(base, self.now(), source.channel, kind)
-        except (SessionResetError, OverflowError, OSError):
+        except (SessionResetError, RewindRefused, OverflowError, OSError):
             logger.warning("channel session lifecycle unavailable")
             return UNAVAILABLE
 

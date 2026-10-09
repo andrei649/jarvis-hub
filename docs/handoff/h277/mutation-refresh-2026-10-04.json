@@ -1,0 +1,324 @@
+{
+  "generated_at": "2026-10-04T00:24:54.569644+00:00",
+  "goal": "All697 pinned Hermes capabilities; fresh focused H277 N1-N7 verification",
+  "source_head": "ce96e6aef3d26f64c3138c71c5f56cf9b61209f7",
+  "later_matching_source_head": "cc4618a1615e9588e1f82800a57d36500329efe1",
+  "source_sha256": {
+    "agents/core/autonomy/advisory_judgements.py": "ec90ed9ac95c64385d6a627f6793fc4f1864d73a43571447f655a82290514eb9",
+    "agents/core/autonomy/action_approvals.py": "9ee9d1bbf42dd011b75b51e607750b187bd31ccf5f0a88e99bb5ce016067709b",
+    "agents/core/autonomy/approval_judge.py": "63f493e46a4a71dfc03549a7b02e8d5ee5f898329c1fb3f0078c8868c23a7eea",
+    "agents/web/static/tools.js": "45c4536ecd983d7871a3f313bd1f216062ea72f7cec50810b31c2ae9e7357ccb",
+    "tests/test_h277_approval_judge.py": "e5f32cad56d50bf5f61ed8de43d21ef3397f078b6ecdef230ddbaaca90b51d5e",
+    "tests/frontend/tools.test.js": "5fd583e9a2e9b2e2676fe75313f6a4ca5f2e5d10f704ec3584da893f07fddb1c"
+  },
+  "snapshot": {
+    "paths": 4589,
+    "manifest_sha256": "64882d90c9bb73e6076ca47bcc47d1b744fef50028b6938aaa29d493b0a00ac4",
+    "restored": true
+  },
+  "python_baseline": {
+    "kind": "passed",
+    "exit_code": 0,
+    "seconds_limit": 150,
+    "log": "/tmp/nerva-h277-mutation-20261004/baseline.log",
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-x",
+      "--tb=short",
+      "--timeout=30",
+      "--allow-hosts=127.0.0.1,::1,localhost",
+      "tests/test_h277_approval_judge.py::test_direct_remote_scoring_also_refuses_unscannable_depth",
+      "tests/test_h277_approval_judge.py::test_judge_pending_is_public_runtime_state_only",
+      "tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state",
+      "tests/test_h277_approval_judge.py::test_round2_failed_judge_import_does_not_fail_requests",
+      "tests/test_h277_approval_judge.py::test_round2_large_values_share_budget_and_keep_small_values_and_keys",
+      "tests/test_h277_approval_judge.py::test_round2_nfkc_keeps_legacy_double_prime_neutralised",
+      "tests/test_h277_approval_judge.py::test_round2_non_json_values_are_normalised_and_scanned",
+      "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_quote",
+      "tests/test_h277_approval_judge.py::test_round2_small_long_value_is_sent_whole",
+      "tests/test_h277_approval_judge.py::test_round2_too_deep_scan_fails_closed",
+      "tests/test_h277_approval_judge.py::test_round2_unconfigured_judge_preserves_tainted_head_shape",
+      "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy"
+    ]
+  },
+  "cases": [
+    {
+      "key": "N1-post-slot",
+      "fix": "N1",
+      "reason": "Remove post-slot live-policy rejection; skipped_revoked must still report late revocation.",
+      "verdict": "killed_by_assertion",
+      "kind": "assertion_failure",
+      "exit_code": 1,
+      "seconds_limit": 150,
+      "log": "/tmp/nerva-h277-mutation-20261004/N1-post-slot.log",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-x",
+        "--tb=short",
+        "--timeout=30",
+        "--allow-hosts=127.0.0.1,::1,localhost",
+        "tests/test_h277_approval_judge.py::test_waiting_judgement_rechecks_live_policy"
+      ]
+    },
+    {
+      "key": "N1-disk-state",
+      "fix": "N1",
+      "reason": "Skip persisted pending-state reread; the waiting queued call must not dispatch.",
+      "verdict": "killed_by_assertion",
+      "kind": "assertion_failure",
+      "exit_code": 1,
+      "seconds_limit": 150,
+      "log": "/tmp/nerva-h277-mutation-20261004/N1-disk-state.log",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-x",
+        "--tb=short",
+        "--timeout=30",
+        "--allow-hosts=127.0.0.1,::1,localhost",
+        "tests/test_h277_approval_judge.py::test_round2_dispatch_checks_persisted_pending_state"
+      ]
+    },
+    {
+      "key": "N2-finish-pending",
+      "fix": "N2",
+      "reason": "Leave public pending bit set when the attempt finishes naturally.",
+      "verdict": "killed_by_assertion",
+      "kind": "assertion_failure",
+      "exit_code": 1,
+      "seconds_limit": 150,
+      "log": "/tmp/nerva-h277-mutation-20261004/N2-finish-pending.log",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-x",
+        "--tb=short",
+        "--timeout=30",
+        "--allow-hosts=127.0.0.1,::1,localhost",
+        "tests/test_h277_approval_judge.py::test_judge_pending_is_public_runtime_state_only"
+      ]
+    },
+    {
+      "key": "N3-premature-cap",
+      "fix": "N3",
+      "reason": "Cut a complete 1600-character argument before the 4000-character budget.",
+      "verdict": "killed_by_assertion",
+      "kind": "assertion_failure",
+      "exit_code": 1,
+      "seconds_limit": 150,
+      "log": "/tmp/nerva-h277-mutation-20261004/N3-premature-cap.log",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-x",
+        "--tb=short",
+        "--timeout=30",
+        "--allow-hosts=127.0.0.1,::1,localhost",
+        "tests/test_h277_approval_judge.py::test_round2_small_long_value_is_sent_whole",
+        "tests/test_h277_approval_judge.py::test_round2_large_values_share_budget_and_keep_small_values_and_keys"
+      ]
+    },
+    {
+      "key": "N4-depth-marker",
+      "fix": "N4",
+      "reason": "Omit the depth marker used by the remote refusal.",
+      "verdict": "killed_by_assertion",
+      "kind": "assertion_failure",
+      "exit_code": 1,
+      "seconds_limit": 150,
+      "log": "/tmp/nerva-h277-mutation-20261004/N4-depth-marker.log",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-x",
+        "--tb=short",
+        "--timeout=30",
+        "--allow-hosts=127.0.0.1,::1,localhost",
+        "tests/test_h277_approval_judge.py::test_round2_too_deep_scan_fails_closed",
+        "tests/test_h277_approval_judge.py::test_direct_remote_scoring_also_refuses_unscannable_depth"
+      ]
+    },
+    {
+      "key": "N5-nfkc",
+      "fix": "N5",
+      "reason": "Omit NFKC before rationale quote neutralization.",
+      "verdict": "killed_by_assertion",
+      "kind": "assertion_failure",
+      "exit_code": 1,
+      "seconds_limit": 150,
+      "log": "/tmp/nerva-h277-mutation-20261004/N5-nfkc.log",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-x",
+        "--tb=short",
+        "--timeout=30",
+        "--allow-hosts=127.0.0.1,::1,localhost",
+        "tests/test_h277_approval_judge.py::test_round2_nfkc_keeps_legacy_double_prime_neutralised",
+        "tests/test_h277_approval_judge.py::test_round2_rationale_neutralises_each_quote"
+      ]
+    },
+    {
+      "key": "N6-bytes",
+      "fix": "N6",
+      "reason": "Turn bytes into repr text, rather than decoded untrusted text.",
+      "verdict": "killed_by_assertion",
+      "kind": "assertion_failure",
+      "exit_code": 1,
+      "seconds_limit": 150,
+      "log": "/tmp/nerva-h277-mutation-20261004/N6-bytes.log",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-x",
+        "--tb=short",
+        "--timeout=30",
+        "--allow-hosts=127.0.0.1,::1,localhost",
+        "tests/test_h277_approval_judge.py::test_round2_non_json_values_are_normalised_and_scanned"
+      ]
+    },
+    {
+      "key": "N6-set",
+      "fix": "N6",
+      "reason": "Lose set/frozenset elements from the normalized snapshot.",
+      "verdict": "killed_by_assertion",
+      "kind": "assertion_failure",
+      "exit_code": 1,
+      "seconds_limit": 150,
+      "log": "/tmp/nerva-h277-mutation-20261004/N6-set.log",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-x",
+        "--tb=short",
+        "--timeout=30",
+        "--allow-hosts=127.0.0.1,::1,localhost",
+        "tests/test_h277_approval_judge.py::test_round2_non_json_values_are_normalised_and_scanned"
+      ]
+    },
+    {
+      "key": "N7-import-guard",
+      "fix": "N7",
+      "reason": "Allow a judge import failure to fail request registration.",
+      "verdict": "killed_by_runtime_exception",
+      "kind": "runtime_exception",
+      "exit_code": 1,
+      "seconds_limit": 150,
+      "log": "/tmp/nerva-h277-mutation-20261004/N7-import-guard.log",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-x",
+        "--tb=short",
+        "--timeout=30",
+        "--allow-hosts=127.0.0.1,::1,localhost",
+        "tests/test_h277_approval_judge.py::test_round2_failed_judge_import_does_not_fail_requests"
+      ],
+      "original_automated_kind": "setup_or_collection_error",
+      "classification_review": "ImportError was raised by the mutated request() inside the targeted test body at line 1251; collection and setup completed. This is the intended off-path failure, not a setup error or an assertion failure."
+    },
+    {
+      "key": "N7-off-shape",
+      "fix": "N7",
+      "reason": "Run taint augmentation even with no configured judge.",
+      "verdict": "killed_by_assertion",
+      "kind": "assertion_failure",
+      "exit_code": 1,
+      "seconds_limit": 150,
+      "log": "/tmp/nerva-h277-mutation-20261004/N7-off-shape.log",
+      "command": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-x",
+        "--tb=short",
+        "--timeout=30",
+        "--allow-hosts=127.0.0.1,::1,localhost",
+        "tests/test_h277_approval_judge.py::test_round2_unconfigured_judge_preserves_tainted_head_shape"
+      ]
+    }
+  ],
+  "browser": {
+    "source_sha256": "45c4536ecd983d7871a3f313bd1f216062ea72f7cec50810b31c2ae9e7357ccb",
+    "mutated_sha256": "7562bc4253d54f22926c9af77498d51b2db5397d66d78cc6d6a60fae6a96eb90",
+    "dependency_source": "/Users/andrei649/Projects/nerva-pr-worktrees/integration/node_modules",
+    "baseline": {
+      "command": [
+        "./node_modules/.bin/vitest",
+        "run",
+        "tests/frontend/tools.test.js",
+        "-t",
+        "shows a late queued opinion after the old timeout plus 5 s window"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "log": "/tmp/nerva-h277-mutation-20261004/ui-baseline.log"
+    },
+    "mutant": {
+      "command": [
+        "./node_modules/.bin/vitest",
+        "run",
+        "tests/frontend/tools.test.js",
+        "-t",
+        "shows a late queued opinion after the old timeout plus 5 s window"
+      ],
+      "exit_code": 1,
+      "timed_out": false,
+      "log": "/tmp/nerva-h277-mutation-20261004/ui-N2-browser-budget.log"
+    },
+    "restored": true,
+    "status": "mutant_executed"
+  },
+  "totals": {
+    "behavioral_kills": 11,
+    "assertion_kills": 10,
+    "runtime_exception_kills": 1,
+    "setup_errors": 0,
+    "timeouts": 0,
+    "survivors": 0
+  },
+  "logs_sha256": {
+    "N5-nfkc.log": "9f02e8f38577cf032447eb9ee61bbe23b51aefd3b418b82d7af4d6fcec9788bc",
+    "ui-N2-browser-budget.log": "3d582c0e3851022d2b06752ff1d500519e1db5599d79f2701dcd9ef14ed99422",
+    "N4-depth-marker.log": "982c7d4dc91f87e2d0aff86d56365c4495f4cf9ecc14d1fc60044be28509297c",
+    "N6-bytes.log": "c847cd4f191487dce1327d7d6eaa5043fbc938788af2821c8e32cb5d5bc6a842",
+    "N1-disk-state.log": "f4bd587be15e1cb3679008b13c3735025002836ee5197262349ef6d91cb742d9",
+    "N7-off-shape.log": "d0b25cf61b274e3984d7a595d04fe961b65e0911ee39e62a1ba83f73869e6b6c",
+    "N3-premature-cap.log": "6851fef6e8a752f264773d10ad51b70b22305cead17c3b62927c7f8cde360f3f",
+    "baseline.log": "b2c6720453f06d35157bf6fc9703ffce184bf1d11bc189b38e5a9b17338d728b",
+    "N1-post-slot.log": "72ccbd82b0b5a3b8b6114eda0b3e4c87b621cf3f2324a9c983a45c225b6b6d3a",
+    "N2-finish-pending.log": "ddc5bac1cce4c87ef4f1ad62d81f3cdf5c88914d216b5c1cd4545e5a007f2084",
+    "ui-baseline.log": "2d9c023a8ed7853aca116910f7e604424279f1c73d9d7288de68962535ee8539",
+    "N7-import-guard.log": "1c69bfd43afd3dc601bc9d6bbf82c74e8d1baaaacd1c2c6ff619951a4a0c6add",
+    "N6-set.log": "87d7875bbb47dea897ebc184372d83c70671cc9bb547e1ad0984c292b758bf08"
+  },
+  "limits": [
+    "Exact selected N1-N7 regressions only; not full H277 or provider parity",
+    "Snapshot included pre-milestone tracked overlay; six named files match later local milestone",
+    "All mutations confined to disposable snapshot; no repository mutations by campaign",
+    "No installation, live service/provider/device calls, push, merge or deployment"
+  ]
+}

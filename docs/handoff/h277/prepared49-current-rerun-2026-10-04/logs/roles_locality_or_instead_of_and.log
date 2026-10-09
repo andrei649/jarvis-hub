@@ -1,0 +1,14 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/roles_locality_or_instead_of_and.xml", "tests/test_h277_model_roles.py::test_judge_role_uses_the_provider_profile_base_url"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______________ test_judge_role_uses_the_provider_profile_base_url ______________
+tests/test_h277_model_roles.py:337: in test_judge_role_uses_the_provider_profile_base_url
+    assert lan.base_url == "http://192.168.1.20:1234" and lan.local is False   # LAN is not local
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert ('http://192.168.1.20:1234' == 'http://192.168.1.20:1234'
+E     
+E       http://192.168.1.20:1234 and True is False)
+E    +  where True = ResolvedRole(role='approval_judge', configured=True, provider_id='lm-studio', model='judge-m', base_url='http://192.16...', 'provider': 'default', 'base_url': 'JARVIS_LM_STUDIO_URL'}), local=True, data_policy='local', reason='', ignored=()).local
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_judge_role_uses_the_provider_profile_base_url
+1 failed in 1.38s

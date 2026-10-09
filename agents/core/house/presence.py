@@ -149,8 +149,11 @@ class LocalPresenceExplainer:
         backend = router.local_backend
         return cls(backend, getattr(router, "active_model", None) or "local", router=router)
 
-    async def explain(self, decision: PresenceDecision) -> str:
+    async def explain(self, decision: PresenceDecision, *, strict_local: bool = False) -> str:
+        from agents.core.llm.base import is_degraded_reply
         from agents.core.llm.data_handling import DataHandlingRefused, auxiliary_request_scope
+        from agents.core.llm.direct_transport import require_direct_async_transport
+        from agents.core.llm.model_roles import public_local_origin, same_origin
 
         if self._router is None:
             raise DataHandlingRefused("presence explanation requires a live router binding")
@@ -160,11 +163,32 @@ class LocalPresenceExplainer:
             raise DataHandlingRefused("presence explanation router binding is unavailable") from exc
         if selected is not self._backend:
             raise DataHandlingRefused("presence explanation router binding changed")
+        endpoint = str(getattr(self._backend, "endpoint", None)
+                       or getattr(self._backend, "base_url", ""))
+        if strict_local and not public_local_origin(endpoint):
+            raise DataHandlingRefused("presence explanation requires a local endpoint")
+        client = getattr(self._backend, "client", None)
+        if strict_local:
+            require_direct_async_transport(client, endpoint)
+
+        def request_check(request) -> None:
+            current = str(getattr(self._backend, "endpoint", None)
+                          or getattr(self._backend, "base_url", ""))
+            if (not public_local_origin(current) or not same_origin(endpoint, current)
+                    or not same_origin(endpoint, str(request.url))):
+                raise DataHandlingRefused("presence explanation requires the bound local endpoint")
+            if getattr(self._backend, "client", None) is not client:
+                raise DataHandlingRefused("presence explanation client binding changed")
+            require_direct_async_transport(client, request.url)
+
         payload = decision.to_dict()
         payload.pop("occupant_id", None)
         prompt = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        with auxiliary_request_scope(self._router, self._backend, self._model,
-                                     role="house_presence_explanation"):
+        with auxiliary_request_scope(
+            self._router, self._backend, self._model,
+            role="house_presence_explanation",
+            request_check=request_check if strict_local else None,
+        ):
             result = await self._backend.generate(
                 self._model,
                 prompt,
@@ -175,7 +199,9 @@ class LocalPresenceExplainer:
                 max_tokens=128,
                 temperature=0.0,
             )
-        return str(result)[:1_000]
+        if not isinstance(result, str) or not result.strip() or is_degraded_reply(result):
+            raise RuntimeError("presence explanation unavailable")
+        return result[:1_000]
 
 
 class PresenceInference:
@@ -494,6 +520,18 @@ class PresenceInference:
         now = _timestamp(self._clock(), label="clock")
         occupant_id = self._store.pseudonym_for(occupant)
         facts = self._store.query(occupant_ref=occupant, at=now)
+        return self._current_presence_from_facts(occupant_id, facts, now)
+
+    def current_presence_id(self, occupant_id: str) -> PresenceDecision:
+        """Read the same deterministic decision by its public pseudonym."""
+        now = _timestamp(self._clock(), label="clock")
+        facts = self._store.query_pseudonym(occupant_id, at=now)
+        return self._current_presence_from_facts(occupant_id, facts, now)
+
+    @staticmethod
+    def _current_presence_from_facts(
+        occupant_id: str, facts: list[dict], now: float,
+    ) -> PresenceDecision:
         state = next(
             (fact for fact in facts if fact.get("predicate") == "presence_status"),
             None,

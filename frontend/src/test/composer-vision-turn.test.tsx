@@ -1,4 +1,5 @@
 import React from 'react';
+import {webcrypto} from 'node:crypto';
 import {render,screen,fireEvent,waitFor,act,cleanup} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import App from '../app';
@@ -10,17 +11,18 @@ vi.mock('../api/live',()=>({PREVIEW_MODE_LIVE_KEYS:{},useLiveModes:()=>({live:{}
 vi.mock('../analytics',()=>({initAnalytics:()=>{},trackPageview:()=>{}}));
 vi.mock('../gap',()=>({FirstRunGate:()=>null}));
 vi.mock('../modes3',async()=>{const {Conversation,InputBar}=await import('../cockpit');return {ChatMode:(props:any)=>{submit=props.onSubmit;return <><Conversation {...props}/><InputBar onSubmit={props.onSubmit} t={props.t}/></>;}};});
-const status={configured:true,destination:'http://127.0.0.1:1234/v1',binding:'a'.repeat(64),model:'vision-test',backend:'custom',local:true};
-const draft={images:['data:image/png;base64,iVBORw0KGgo='],names:['shot.png'],expected_destination:status.destination,expected_binding:status.binding,remote_ack:false};
+const status={configured:true,destination:'http://127.0.0.1:1234/v1',binding:'a'.repeat(64),review_token:'r'.repeat(43),model:'vision-test',backend:'custom',local:true,selected_turn:true,session_id:'image_session'};
+const draft={images:['data:image/png;base64,iVBORw0KGgo='],names:['shot.png'],expected_destination:status.destination,expected_binding:status.binding,review_token:status.review_token,agent:'jarvis',remote_ack:false,selected_turn:true,session_id:'image_session'};
 const answer=()=>new Response(JSON.stringify({ok:true,response:'A blue square.',model:'vision-test',backend:'custom',destination:status.destination,local:true}));
 let resolveVision:(r:Response)=>void;let requests:any[]=[];
 beforeEach(()=>{
+  vi.stubGlobal('crypto',webcrypto);
   localStorage.clear();sessionStorage.clear();history.replaceState(null,'','/v2/chat?demo=1');requests=[];
   URL.createObjectURL=vi.fn(()=> 'blob:image');URL.revokeObjectURL=vi.fn();
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async(path,init)=>{
     requests.push({path,...init});
-    if(path.endsWith('/composer/status'))return new Response(JSON.stringify(status));
-    if(path.endsWith('/composer/describe'))return new Promise<Response>(resolve=>resolveVision=resolve);
+    if(path.endsWith('/composer/prepare'))return new Response(JSON.stringify(status));
+    if(path.endsWith('/composer/describe-prepared'))return new Promise<Response>(resolve=>resolveVision=resolve);
     if(path==='/chat/stream')return new Response('data: {"type":"start","agent":"jarvis"}\n\ndata: {"type":"end","text":"Text answer","agent":"jarvis"}\n\n');
     return new Response(JSON.stringify({configured:false,revision:'0',preferences:{}}));
   }));
@@ -35,9 +37,9 @@ it('sends a vision turn from the actual shared input and labels actual provenanc
   await screen.findByRole('img',{name:'shot.png'});
   const send=screen.getByRole('button',{name:/TRANSMIT/});
   await waitFor(()=>expect(send.hasAttribute('disabled')).toBe(false));fireEvent.click(send);
-  await waitFor(()=>expect(requests.some(r=>r.path.endsWith('/composer/describe'))).toBe(true));
-  const request=requests.find(r=>r.path.endsWith('/composer/describe'));
-  expect(JSON.parse(request.body)).toMatchObject({prompt:'Describe these images.',expected_binding:status.binding});
+  await waitFor(()=>expect(requests.some(r=>r.path.endsWith('/composer/describe-prepared'))).toBe(true));
+  const request=requests.find(r=>r.path.endsWith('/composer/describe-prepared'));
+  expect(JSON.parse(request.body)).toMatchObject({prompt:'Describe these images.',expected_binding:status.binding,selected_turn:true,session_id:'image_session'});
   expect(JSON.parse(request.body)).not.toHaveProperty('names');
   await act(async()=>resolveVision(answer()));
   await screen.findByText('A blue square.');await screen.findByText(/VISION ANALYSIS/);
@@ -47,7 +49,7 @@ it('sends a vision turn from the actual shared input and labels actual provenanc
 it('owns one turn synchronously across image and text submissions',async()=>{
   await mount();
   act(()=>{submit('image question',draft);submit('second text');submit('second image',draft);});
-  await waitFor(()=>expect(requests.filter(r=>r.path.endsWith('/composer/describe'))).toHaveLength(1));
+  await waitFor(()=>expect(requests.filter(r=>r.path.endsWith('/composer/describe-prepared'))).toHaveLength(1));
   expect(requests.some(r=>r.path==='/chat/stream')).toBe(false);
   await act(async()=>resolveVision(answer()));
   act(()=>submit('normal text'));
@@ -102,7 +104,7 @@ it('stops a vision turn and ignores a late response even if transport ignores ab
   await mount();act(()=>submit('question',draft));
   await waitFor(()=>expect(resolveVision).toBeTruthy());
   fireEvent.click(screen.getByRole('button',{name:'Stop generating'}));
-  expect(requests.find(r=>r.path.endsWith('/composer/describe')).signal.aborted).toBe(true);
+  expect(requests.find(r=>r.path.endsWith('/composer/describe-prepared')).signal.aborted).toBe(true);
   await act(async()=>resolveVision(answer()));
   expect(screen.queryByText('A blue square.')).toBeNull();
 });
@@ -116,7 +118,7 @@ it('renders a structured vision failure without invented agent provenance',async
 it('aborts an owned image turn on unmount',async()=>{
   const view=render(<App/>);await screen.findByLabelText('Attach images');
   act(()=>submit('question',draft));
-  const request=requests.find(r=>r.path.endsWith('/composer/describe'));
+  const request=requests.find(r=>r.path.endsWith('/composer/describe-prepared'));
   view.unmount();expect(request.signal.aborted).toBe(true);
   await act(async()=>resolveVision(answer()));
 });

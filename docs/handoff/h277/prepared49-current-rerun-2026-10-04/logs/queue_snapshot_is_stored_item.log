@@ -1,0 +1,14 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/queue_snapshot_is_stored_item.xml", "tests/test_h277_approval_judge.py::test_the_judge_never_holds_the_stored_args"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________________ test_the_judge_never_holds_the_stored_args __________________
+tests/test_h277_approval_judge.py:395: in test_the_judge_never_holds_the_stored_args
+    assert "changed after request" not in seen["prompt"]
+E   assert 'changed after request' not in '<<UNTRUSTED... UNTRUSTED>>'
+E     
+E     'changed after request' is contained here:
+E       ": {"k": "changed after request"}}}
+E       <<END UNTRUSTED>>
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_the_judge_never_holds_the_stored_args
+1 failed in 1.62s

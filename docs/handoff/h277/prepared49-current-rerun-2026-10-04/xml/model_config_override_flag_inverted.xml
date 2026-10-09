@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.373" timestamp="2026-10-04T23:53:48.285740+03:00" hostname="Macmini"><testcase classname="tests.test_h277_model_roles" name="test_deep_role_defaults_and_is_not_pinned" time="1.141"><failure message="assert True is False&#10; +  where True = &lt;function deep_model_override_configured at 0x104067240&gt;()&#10; +    where &lt;function deep_model_override_configured at 0x104067240&gt; = model_config.deep_model_override_configured">tests/test_h277_model_roles.py:211: in test_deep_role_defaults_and_is_not_pinned
+    assert model_config.deep_model_override_configured() is False
+E   assert True is False
+E    +  where True = &lt;function deep_model_override_configured at 0x104067240&gt;()
+E    +    where &lt;function deep_model_override_configured at 0x104067240&gt; = model_config.deep_model_override_configured</failure></testcase></testsuite></testsuites>

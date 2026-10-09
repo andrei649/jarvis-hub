@@ -1,0 +1,162 @@
+{
+  "generated_at": "2026-10-03T23:27:53.101686+00:00",
+  "goal": "Complete local functional parity with all 697 pinned Hermes capabilities",
+  "base_sha": "42840e3d409449cb1382417c8e88999fdd14ed26",
+  "state": "Local Telegram and CLI implementation; corrected integrated full backend milestone passes; H487 remains partial",
+  "changed_source_sha256": {
+    "agents/cli/nerva.py": "79a15acad36ad3182f9b254496c0a049255c24323c9fdd670d43145e23d8938a",
+    "agents/core/autonomy/consent_authority.py": "90155b2cd15f0e24a627623af1ea4c3cceda09ac6573f2dd6e6b09fb2fcb3ab1",
+    "agents/core/autonomy/consent_ledger.py": "72f6f49d5bbee4d95af78fd4cf1d469daef31672985170eaca0d35adb740d693",
+    "agents/core/autonomy/consent_prompts.py": "811987b2cfc075a1a52803882bab848885f90e0aad2b2a0b5fafcc29ec332a17",
+    "agents/core/autonomy/consent_types.py": "5242f5c26f726873ec4716a934324b772e6e9e71a3e04031f7c256d57aa72604",
+    "agents/core/autonomy/inbox.py": "682392fa7c0e240c1fbccbd41790aff2db07a4c98c055d6674c2b8bbbec2df08",
+    "agents/core/autonomy/queue.py": "dc8e1a0faa5954bbdca41141038e57e64a98cbba9a3478f59d3f744e101f2f40",
+    "agents/core/autonomy/terminal_review.py": "9f02fc898e84b09cbee30638b30518bc1e88d340cce840db0c6a7b499b6aa601",
+    "agents/core/autonomy_coordinator.py": "c3fa1865b9c3b70a62b47a1bfb9eaee0cef6b54270625fee148e4df5a125a430",
+    "agents/core/channels/telegram.py": "584f30198d91842f4cc82c76b0cd977f04ed864293a2e60d93a18c350e469b5e",
+    "agents/core/orchestrator_bindings.py": "d971ab7053a05934ad5e777aac82c97890532c341281ccf87b216b341dbefb44",
+    "agents/core/routers/autonomy.py": "6bc1be622348ab4d39d71c7aebe8e1af784e7ccbfd02628fc278e145eb072da4",
+    "tests/test_h487_consent_cli.py": "e4139348ea88214435934bad284fb6047dca1615c2d3c5b99b4a0595c60255c1",
+    "tests/test_h487_consent_cli_api.py": "43b1526220bd0c62e98df17147e4c24f1be8ec85cd4209642ccfc2b0ea4c9468",
+    "tests/test_h487_telegram_consent_authority.py": "988b732b3844a0d38546e2f6b7303902c7aa19d467305b17987aca89ae5b701e",
+    "tests/test_h487_telegram_consent_integration.py": "577f6341430d73d60a284ca7b5812cd8cc7d74dd63be079ad17b6278f043dcf0",
+    "tests/test_h487_telegram_consent_prompts.py": "54086d1241cc031d842f2c762b12cf0bc63fc818fb39b148e52b08a8255f8bfb",
+    "tests/test_h487_telegram_consent_transport.py": "8d0378e6dda25aaacca8fb37f3fe1b72655361b504a59b75604ab3baf863fb26",
+    "tests/test_nerva_cli.py": "bef7c86a5b09302d2fafc7346470b8a882d294f36867bf6e0bd92931fa4568f1"
+  },
+  "focused": {
+    "tests": 5970,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 13,
+    "passed": 5957,
+    "junit_sha256": "bcc1de401ae1de571408575e4f290da9a1f0b8a191ced5a13e00b5a80a51155c",
+    "files": 206
+  },
+  "overlapping_agent_suites": {
+    "telegram": 190,
+    "cli": 135,
+    "owner_api": 44,
+    "counting_rule": "Do not sum overlapping suites; focused5970 includes their contracts"
+  },
+  "backend_collection": 22327,
+  "frontend_mobile": {
+    "source_unchanged": true,
+    "prior_verified_frontend_cases": 1889,
+    "tracked_mobile_cases": 142,
+    "fresh_runs": false,
+    "mobile_baseline": {
+      "suites": 34,
+      "tests": 142,
+      "passed": 142,
+      "failures": 0,
+      "typecheck": "passed",
+      "command": "node node_modules/jest/bin/jest.js --runInBand --no-cache",
+      "source_changed": false,
+      "note": "Initial cached whole Jest run terminated with Node SIGSEGV; unchanged source and versions passed with no cache. This is a baseline, not acceptance of new mobile consent controls."
+    }
+  },
+  "review": {
+    "previously_current_claims": 31,
+    "reviewed_existing_verdicts": [
+      "H004",
+      "H117",
+      "H145",
+      "H153",
+      "H157",
+      "H220",
+      "H227",
+      "H242",
+      "H262",
+      "H273",
+      "H298",
+      "H309",
+      "H314",
+      "H315",
+      "H329",
+      "H350",
+      "H378",
+      "H413",
+      "H465",
+      "H487",
+      "H515",
+      "H586",
+      "H594",
+      "H595",
+      "H660",
+      "H666",
+      "H667",
+      "H671",
+      "H677",
+      "H681",
+      "H687"
+    ],
+    "existing_citations_compared": 387,
+    "new_equivalent_credit": 0,
+    "callback_and_lifecycle_prose_rewritten": [
+      "H117",
+      "H677"
+    ],
+    "cli_tree_prose_updated": "H004",
+    "scope": "Source preservation with row-specific offline regressions; older stale claims untouched"
+  },
+  "checks": {
+    "ruff": "passed affected source and new tests",
+    "bandit": "passed actual agents/scripts CI scope with existing baseline",
+    "graft": "Wiring graph rebuilt/check fresh over core, CLI, frontend/src, tests, scripts; optional deep context not built",
+    "gitleaks": "Passed exact31-file candidate snapshot with repository CI config; supplemental unconfigured scan flagged one verified recorded SHA-256 as generic-api-key, not a credential"
+  },
+  "source_constraints": {
+    "external_effects": "Mocked Bot API and process effects only; no activation, push, merge or live provider/device acceptance",
+    "request_task": "Exact terminal RPC task with current inherited native parent scope; cross-event-loop transport not claimed",
+    "signed_records": "Strict attributed v2, reviewed v1 supported; captured source scope distinct from actual decider",
+    "deny_audit": "Durable ordinary attribution only, no cryptographic denial audit claim"
+  },
+  "full_backend": {
+    "state": "Terminal corrected integrated rerun passed with unchanged frozen source",
+    "prior_terminal_run": {
+      "tests": 22210,
+      "passed": 22169,
+      "skipped": 34,
+      "existing_xfail": 1,
+      "failures": 6,
+      "focused_corrections_passed": 52
+    },
+    "latest_all_green_baseline": {
+      "base_sha": "01191f70389208f20955a0e9729e8bfc7f2412c4",
+      "tests": 22093,
+      "passed": 22058,
+      "skipped": 34,
+      "existing_xfail": 1,
+      "applies_to_current_dirty_source": false
+    },
+    "current_run": {
+      "tests": 22327,
+      "passed": 22292,
+      "skipped": 34,
+      "existing_xfail": 1,
+      "failures": 0,
+      "errors": 0,
+      "exit_code": 0,
+      "seconds": 1153.347,
+      "junit_sha256": "aaf6a9bc0ef6e4870af2562db4e9d4cb2ed0f136760615cecc59773cb35fd5da",
+      "frozen_paths_verified": 2884,
+      "frozen_path_drift": 0,
+      "scope": "Guarded local pytest tests run; network and physical effects simulated; skips and existing xfail do not establish live acceptance"
+    }
+  },
+  "remaining": [
+    "Remaining browser/kernel/specialized producers",
+    "Native mobile and deadline controls; longer explicit human waits",
+    "Legacy markerless recovery and cross-store crash audit limitations",
+    "Live transport/provider/device acceptance",
+    "All other unfinished accepted Hermes rows"
+  ],
+  "record_gates": {
+    "tests": 178,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "57738157a3b506ab843fab524bff0d75f7ceae5e899104bc902fbf2319be80fe"
+  }
+}

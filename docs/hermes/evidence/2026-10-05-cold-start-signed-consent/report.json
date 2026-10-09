@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-10-05T05:18:24.189742+00:00",
+  "goal": "Local parity with all 697 pinned Hermes capabilities; H067 remains partial.",
+  "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "phase": "validated_partial",
+  "accepted_complete": false,
+  "tests": {
+    "integration": {
+      "cases": 419,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 419
+    },
+    "raw_xml_sha256": "9bada20e7c541e7f148fa8ba762c81b204377ee29b316f020b3af0d7c845b903",
+    "physical_kernel_cases": 8,
+    "runtime_cases": 26,
+    "metadata": {
+      "cases": 195,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 195
+    },
+    "metadata_raw_xml_sha256": "478dca836ec35007141aa6dea88e3651d464e240436698880fe99166f5fbca18"
+  },
+  "corrections": [
+    "Resume persisted cold-start transcript under route leases; no creation of missing/corrupt history; recheck authority after await.",
+    "Use one final title for physical kernel authorization and governed queue intake.",
+    "Require recorded human approval matching action and decider before a permission grant."
+  ],
+  "red_evidence": {
+    "root_title_mismatch": "Observed physical MediationDecisionMismatch before shared-title fix.",
+    "root_human_record_cases": 5,
+    "agent_cold_start_cases": 7
+  },
+  "scope": {
+    "source_paths": [
+      "agents/core/permission_ledger.py",
+      "agents/core/channels/session_command_runtime.py",
+      "tests/test_permission_ledger.py",
+      "tests/test_session_command_permission.py",
+      "tests/test_session_command_runtime.py",
+      "tests/test_session_command_kernel.py"
+    ],
+    "local_offline": true,
+    "production_live_channels": false,
+    "trusted_worker_api_used_for_human_approval": true
+  },
+  "checks": {
+    "ruff": "6 scoped Python paths passed",
+    "bandit": "2 production paths passed using unchanged baseline",
+    "strict_gitleaks_source_findings": 0,
+    "scoped_input_drift": 0,
+    "strict_gitleaks_proof_findings": 0
+  },
+  "remaining": [
+    "Slack/Discord native and governed delivery integration; CLI/HUD/web routes; full H067 acceptance.",
+    "Fresh integrated full backend/frontend and H277 mutation verification at the milestone.",
+    "Legacy permission tasks without human_decision fail closed and require a new recorded approval."
+  ]
+}

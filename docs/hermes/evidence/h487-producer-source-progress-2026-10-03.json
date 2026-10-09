@@ -1,0 +1,109 @@
+{
+  "goal": "Complete all 697 accepted Hermes capabilities locally; H487 remains unfinished",
+  "base_sha": "27bf6cb043a029bf2cee1e6c777a0ef38cc3263c",
+  "generated_at": "2026-10-03",
+  "paths": {
+    "agents/core/autonomy/approval_grouping.py": "43e2878b09d0c4963400c12360c231df9733e6b9bb833fa9b71986667f5550d9",
+    "agents/core/autonomy/consent_registration.py": "ff2f6981f2206f9b97dba6bf8a70422f05e8b297d1090dac3c081432dc513eda",
+    "agents/core/autonomy/consent_sources.py": "0b84c055324bcb026495754be02b1875f5cbd66da5bb8b57c55a295c3739f5e7",
+    "agents/core/autonomy/hermes_command_detection.py": "8e5893ace45adcfdcad97a7d89757db00f1d11340fde8277c386eb761d44ee86",
+    "agents/core/autonomy/terminal_consent_categories.py": "5480d8de8e974180defa35a3248df9b98680ed9e5baa917f9429442a5b2e10f3",
+    "agents/core/autonomy/queue.py": "e69e1012ac54ba42220f2dac061abdc49cb3cae8f3f596ace422bbeec05c240a",
+    "agents/core/autonomy/worker.py": "c4f3ba8fa03c71e2e5ffe285c67ccd64a85658f34d006b501bb53df94d5c4f8b",
+    "agents/core/autonomy_coordinator.py": "a096d2c24cbe42590f9d0ef0dd68b6229573f4becc9f19e9861fca2b20175ace",
+    "agents/core/tool_rpc.py": "cb142e67eb8ae20dd26c28d0007d3af0a9a696e34862817957ffccd6d8eab0c4",
+    "tests/test_h487_consent_registration.py": "a4a255d9bdc0e98caa820d230a4b5265082b19e99ac6ef938b3a7935a0bfbdfc",
+    "tests/test_h487_terminal_consent_categories.py": "1fb9a26cd2c5aad493cb052cb43881cd6dc3a68527fd255b0b50f9aa1f36f6a8",
+    "tests/test_h487_terminal_consent_provenance.py": "a49d4a695fb0d49cdae9bae2b13c6429018dec4a2151b54837ccc2ea55c1c92c"
+  },
+  "guarded_integration": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "3135",
+      "time": "74.285",
+      "timestamp": "2026-10-03T22:17:18.642242+03:00",
+      "hostname": "Macmini"
+    }
+  ],
+  "backend_collected": 22067,
+  "backend_collection_modules": 1071,
+  "full_backend_run": false,
+  "models": {
+    "category_port": "gpt-6-sol high",
+    "registration_provenance": "gpt-6-sol high",
+    "read_only_source_review": "gpt-6-sol high"
+  },
+  "review": {
+    "finding": "Private source rows survived existing session purge/settled retention",
+    "red_reproductions": 2,
+    "fixed": true,
+    "focused_queue_retention_cases": 104,
+    "actual_terminal_cases": 20,
+    "remaining": "Live policy/registration/target checks, owner choices, per-follower B7 receipts and monotonic revocation at dispatch"
+  },
+  "graft": {
+    "graph_ok": true,
+    "nodes": 48670,
+    "deep_context_missing": true
+  },
+  "artifacts": {
+    "/tmp/nerva-h487-producer-source-final-integrated-20261003.log": "564e431db892ffdbd81d6e09856c12be735405b42c9c2938167a88d713b37e75",
+    "/tmp/nerva-h487-producer-source-final-integrated-20261003.xml": "94682f59fe839b27c4b8c168e47d63336cbf55d8b9b9cfd57151a7b73b802f17",
+    "/tmp/nerva-h487-producer-source-collection-20261003.log": "c7acd7e2e6634be17aef02ad8fa06872f4c428259f703c08241916ecf62ef7ca",
+    "/tmp/nerva-h487-consent-source-red-20261003.xml": "19ba11366daa1dace3ed6e95306ae16906fffdd9958c5e0e85e06b4b990fd3e2",
+    "/tmp/nerva-h487-consent-source-retention-red-20261003.xml": "dac148d28c44edcb4c6c9101404957599a2d8ccdf8b803de83313cc35708ce18",
+    "/tmp/nerva-h487-consent-source-retention-green-20261003.xml": "1affd29c43dc6b001d9f42ff72bcce969d3b447d3721bcf44bb2e401d23cc527",
+    "/tmp/nerva-h487-category-port-20261003-report.md": "5d28e96b58c071c8b62dfcf5d195c0272021b5c6e1358f29e2cbb4b2f1c46d31",
+    "/tmp/nerva-h487-registration-provenance-20261003-report.md": "4205c2e9620485c8a084b902fe74fc9863e3a37207252b4c50eec85fb12df46f",
+    "/tmp/nerva-h487-producer-source-bandit-20261003.json": "eb4fc3b634faadeae34dd85aa09564c781456929bfd49c50a356817af7b86808",
+    "/tmp/nerva-h487-producer-source-graft-check-20261003.json": "1f1bc2f0a3bf4039cb6e20e699a43b8f29edc5cfd4c8e8d718cac1f334efe889",
+    "/tmp/nerva-h487-producer-source-record-gates-20261003.log": "a9d6c55ed9d807b32d5bf39b92352c1be384488db2b8135a515cc9266b970a29",
+    "/tmp/nerva-h487-producer-source-record-gates-20261003.xml": "7ec9ee3e7556fcbdda0e828fae2fc835e65c5e8fee48e4447e3679dc7e720408",
+    "/tmp/nerva-h487-producer-source-image-collateral-20261003.log": "56709282fc6c16b097397a849143a11a38abe13a2f4132af4d7c04117ead7d69",
+    "/tmp/nerva-h487-producer-source-image-collateral-20261003.xml": "4e69d848d6181dd32e2a5775b58c8eaa1f1b68abf5bc87bd6ab56347708e4b49",
+    "/tmp/nerva-h487-producer-source-code-collateral-20261003.log": "fffb3a0797e9f39645e5193f3e090e46c928d9dd58272fbe49f93fe490341d23",
+    "/tmp/nerva-h487-producer-source-code-collateral-20261003.xml": "823c59f58fd65295c7d48ffdff8c8bc455eb61b4ac8c2700fdf7f3775d551749",
+    "/tmp/nerva-h487-producer-source-gitleaks-20261003.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+  },
+  "scans": {
+    "bandit_new_findings": 0,
+    "bandit_errors": 0,
+    "gitleaks_findings": 0
+  },
+  "hermes_metrics": {
+    "equivalent": 173,
+    "partial": 259,
+    "missing": 62,
+    "needs_review": 203,
+    "excluded": 0,
+    "total": 697,
+    "all_percent": 24.8
+  },
+  "published": false,
+  "activated": false,
+  "record_gates": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "108",
+    "time": "4.193",
+    "timestamp": "2026-10-03T22:27:22.463304+03:00",
+    "hostname": "Macmini"
+  },
+  "collateral_review": {
+    "ids": [
+      "H515",
+      "H660",
+      "H595"
+    ],
+    "status": "partial retained",
+    "image_passed": 349,
+    "code_passed": 232,
+    "code_skipped": 7,
+    "equivalence_credit": 0
+  }
+}

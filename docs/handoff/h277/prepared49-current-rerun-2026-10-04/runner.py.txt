@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""Run only the authoritative original H277 prepared faults in a disposable copy."""
+import ast
+import hashlib
+import json
+import os
+import re
+import subprocess
+import time
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+OUT = Path('/tmp/nerva-h277-prepared49-current-rerun-20261004')
+SNAP = OUT / 'snapshot'
+PYTHON = '/tmp/nerva-pr-python-20261001/bin/python'
+NODE = '/Users/andrei649/.local/bin/node'
+ROWS = json.loads((OUT / 'mapping.json').read_text())
+EXPECTED = json.loads((OUT / 'input-manifest.json').read_text())['paths']
+assert len(ROWS) == 49 and len(EXPECTED) >= 942
+
+
+def hashcheck():
+    bad = []
+    for rel, digest in EXPECTED.items():
+        path = SNAP / rel
+        if not path.is_file() or path.is_symlink():
+            bad.append((rel, 'not regular'))
+        elif hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            bad.append((rel, 'hash mismatch'))
+    return bad
+
+
+def execute(row, target, broad=False):
+    label = row['label'] + ('-broad' if broad else '')
+    env = dict(os.environ, JARVIS_TESTING='1', PYTHONDONTWRITEBYTECODE='1',
+               PYTHONPATH=str(SNAP), TMPDIR=str(OUT / 'tmp'),
+               VITE_CONFIG_NATIVE_IGNORE_WARNING='true')
+    if row['run'] == 'py':
+        xml = OUT / 'xml' / (label + '.xml')
+        cmd = [PYTHON, '-B', '-m', 'pytest', '-p', 'no:cacheprovider', '--tb=short',
+               '--junitxml=' + str(xml), *([target] if isinstance(target, str) else target)]
+    else:
+        xml = None
+        cmd = [NODE, 'node_modules/vitest/vitest.mjs', 'run', 'tests/frontend/tools.test.js']
+        if not broad:
+            cmd += ['-t', target]
+    log = OUT / 'logs' / (label + '.log')
+    start = time.monotonic()
+    with log.open('w') as handle:
+        handle.write('COMMAND ' + json.dumps(cmd) + '\n')
+        handle.flush()
+        try:
+            result = subprocess.run(cmd, cwd=SNAP, env=env, stdout=handle,
+                                    stderr=subprocess.STDOUT, timeout=90 if row['run']=='py' else 45)
+            code = result.returncode
+        except subprocess.TimeoutExpired:
+            handle.write('\nOUTER_TIMEOUT\n')
+            code = 124
+    output = log.read_text(errors='replace')
+    evidence = {'target': target, 'returncode': code,
+                'seconds': round(time.monotonic() - start, 2), 'log': str(log)}
+    if row['run'] == 'py':
+        evidence['xml'] = str(xml)
+        failures = []
+        errors = []
+        if xml.exists():
+            try:
+                root = ET.parse(xml).getroot()
+                evidence['case_count'] = sum(1 for _ in root.iter('testcase'))
+                for case in root.iter('testcase'):
+                    for tag, collection in (('failure', failures), ('error', errors)):
+                        issue = case.find(tag)
+                        if issue is not None:
+                            collection.append({'case':case.get('classname','')+'::'+case.get('name',''),
+                                               'type':issue.get('type',''),
+                                               'message':issue.get('message','')[:500]})
+            except ET.ParseError as exc:
+                evidence['xml_error'] = str(exc)
+        evidence['failures'] = failures
+        evidence['errors'] = errors
+        assertion_count = sum('AssertionError' in f['type'] or 'assert ' in f['message'] for f in failures)
+        evidence['assertion_failures'] = assertion_count
+        evidence['behavioral_failures'] = len(failures) - assertion_count
+        if code == 124:
+            status = 'timeout'
+        elif errors or 'ERROR collecting' in output or 'ERROR at setup' in output:
+            status = 'setup_error'
+        elif failures:
+            status = ('killed_assertion' if assertion_count == len(failures) else
+                      'killed_behavioral_exception' if not assertion_count else 'killed_mixed')
+        elif code == 0 and evidence.get('case_count',0) > 0:
+            status = 'survived_focus'
+        else:
+            status = 'harness_error'
+    else:
+        fails = re.findall(r'^\s*FAIL\s+([^\n]+)', output, re.M)
+        evidence['failures'] = fails
+        summary = re.search(r'Tests\s+([^\n]+)', output)
+        evidence['summary'] = summary.group(1).strip() if summary else ''
+        if code == 124:
+            status = 'timeout'
+        elif code == 0 and 'passed' in evidence['summary']:
+            status = 'survived_focus'
+        elif fails and ('AssertionError' in output or 'expected ' in output):
+            status = 'killed_assertion'
+        elif fails:
+            status = 'killed_behavioral_exception'
+        else:
+            status = 'harness_error'
+    evidence['classification'] = status
+    return evidence
+
+
+def broad_targets(row):
+    if row['run'] == 'js':
+        return 'tests/frontend/tools.test.js'
+    if row['label'].startswith(('roles_', 'vlm_', 'model_config_', 'doctor_model_roles')):
+        return ['tests/test_h277_model_roles.py', 'tests/test_model_config.py',
+                'tests/test_llm_model_config.py', 'tests/test_doctor.py']
+    return ['tests/test_h277_approval_judge.py',
+            'tests/test_h277_annotate_after_decision_regression.py',
+            'tests/test_action_approvals_persist.py']
+
+
+if hashcheck():
+    raise SystemExit('initial snapshot hash mismatch')
+results = []
+for row in ROWS:
+    path = SNAP / row['file']
+    before = path.read_bytes()
+    text = before.decode()
+    result = {'index':row['index'], 'label':row['label'], 'file':row['file'],
+              'mapping_review':row['mapping_review'], 'focused_target':row.get('focused_test',row.get('js_test_name'))}
+    if text.count(row['a']) != 1 or row['a'] == row['b']:
+        result['classification'] = 'unmappable_anchor'
+        result['anchor_count'] = text.count(row['a'])
+    else:
+        changed = text.replace(row['a'],row['b'],1)
+        try:
+            if row['run'] == 'py':
+                ast.parse(changed, filename=row['file'])
+                result['syntax'] = 'valid_ast'
+            path.write_text(changed)
+            if row['run'] == 'js':
+                check = subprocess.run([NODE,'--check',str(path)], cwd=SNAP,
+                                       capture_output=True, text=True, timeout=15)
+                result['syntax'] = 'valid_node_check' if check.returncode == 0 else 'invalid_node_check'
+                if check.returncode:
+                    result['syntax_error'] = (check.stdout+check.stderr)[-1000:]
+            if result.get('syntax') in ('valid_ast','valid_node_check'):
+                first = execute(row, result['focused_target'])
+                result['focused'] = first
+                if first['classification'] == 'survived_focus':
+                    broader = execute(row, broad_targets(row), True)
+                    result['broader'] = broader
+                    result['classification'] = ('survived' if broader['classification']=='survived_focus'
+                                                else broader['classification'])
+                else:
+                    result['classification'] = first['classification']
+            else:
+                result['classification'] = 'invalid_syntax'
+        except SyntaxError as exc:
+            result['classification'] = 'invalid_syntax'
+            result['syntax_error'] = str(exc)
+        except Exception as exc:
+            result['classification'] = 'harness_exception'
+            result['exception'] = repr(exc)
+        finally:
+            path.write_bytes(before)
+    problems = hashcheck()
+    result['restored_inputs'] = len(EXPECTED)
+    result['restoration_ok'] = not problems
+    if problems:
+        result['restoration_mismatch'] = problems[:8]
+    results.append(result)
+    (OUT/'results.json').write_text(json.dumps({'head':json.loads((OUT/'input-manifest.json').read_text())['head'],
+                                                 'results':results},indent=2)+'\n')
+    print(f"{row['index']:02}/49 {row['label']} {result['classification']} restored={result['restoration_ok']}",flush=True)
+    if problems:
+        raise SystemExit('restoration mismatch')
+print('DONE',flush=True)

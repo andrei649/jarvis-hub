@@ -1,0 +1,32 @@
+COMMAND ["/Users/andrei649/.local/bin/node", "node_modules/vitest/vitest.mjs", "run", "tests/frontend/tools.test.js", "-t", "never shows an opinion line on a skill-change card"]
+
+ RUN  v5.0.1 /privatedocs/handoff/h277/prepared49-current-rerun-2026-10-04/snapshot
+
+ ❯ tests/frontend/tools.test.js (40 tests | 1 failed | 39 skipped) 105ms
+   ❯ Action Approvals — model opinion (H277) (14)
+     × never shows an opinion line on a skill-change card 103ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend/tools.test.js > Action Approvals — model opinion (H277) > never shows an opinion line on a skill-change card
+AssertionError: expected 'skill changeModel opinion: not availa…' not to contain 'Model opinion'
+
+Expected: "Model opinion"
+Received: "skill changeModel opinion: not availableNo change is shown for this card here, so it cannot be approved from this panel; reject it, or reload to read it.ApproveReject"
+
+ ❯ tests/frontend/tools.test.js:569:53
+    567|     boot({ actions: [{ id: 's1', tool: 'skill.patch_proposal', summary…
+    568|     const c = await open();
+    569|     expect(card(c, 'skill change').textContent).not.toContain('Model o…
+       |                                                     ^
+    570|   });
+    571|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 39 skipped (40)
+   Start at  23:54:57
+   Duration  804ms (import 81%, tests 14%, transform 4%)
+

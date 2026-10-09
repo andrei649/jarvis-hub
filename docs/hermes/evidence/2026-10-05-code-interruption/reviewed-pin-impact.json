@@ -1,0 +1,633 @@
+{
+  "refresh": [
+    {
+      "id": "H063",
+      "paths": [
+        "agents/core/channels/telegram.py",
+        "agents/core/orchestrator.py",
+        "docs/design/HUD_V2_REMAINING.md",
+        "mobile/PARITY.md"
+      ],
+      "status": "equivalent"
+    },
+    {
+      "id": "H099",
+      "paths": [
+        "agents/core/channels/gateway.py",
+        "agents/core/orchestrator.py",
+        "agents/web.py"
+      ],
+      "status": "equivalent"
+    },
+    {
+      "id": "H277",
+      "paths": [
+        "agents/core/code_tools.py",
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status": "partial"
+    },
+    {
+      "id": "H287",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py",
+        "agents/core/code_tools.py"
+      ],
+      "status": "partial"
+    },
+    {
+      "id": "H298",
+      "paths": [
+        "agents/core/code_tools.py",
+        "agents/core/sandbox.py",
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status": "equivalent"
+    },
+    {
+      "id": "H305",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py",
+        "agents/core/code_tools.py"
+      ],
+      "status": "partial"
+    },
+    {
+      "id": "H315",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py",
+        "agents/core/code_tools.py",
+        "agents/core/sandbox.py"
+      ],
+      "status": "equivalent"
+    },
+    {
+      "id": "H317",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status": "partial"
+    },
+    {
+      "id": "H416",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status": "partial"
+    },
+    {
+      "id": "H435",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status": "partial"
+    },
+    {
+      "id": "H436",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status": "partial"
+    },
+    {
+      "id": "H437",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status": "partial"
+    },
+    {
+      "id": "H485",
+      "paths": [
+        "agents/core/code_tools.py",
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status": "partial"
+    },
+    {
+      "id": "H487",
+      "paths": [
+        "agents/core/sandbox.py"
+      ],
+      "status": "partial"
+    },
+    {
+      "id": "H595",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py",
+        "agents/core/code_tools.py",
+        "agents/core/sandbox.py",
+        "docs/hermes/code-execution-guide.md",
+        "tests/test_h595_import_lifecycle.py"
+      ],
+      "status": "partial"
+    },
+    {
+      "id": "H660",
+      "paths": [
+        "agents/core/tool_rpc_runtime.py",
+        "agents/core/code_tools.py",
+        "docs/hermes/code-execution-guide.md",
+        "tests/test_h595_import_lifecycle.py"
+      ],
+      "status": "partial"
+    },
+    {
+      "id": "H661",
+      "paths": [
+        "agents/core/code_tools.py"
+      ],
+      "status": "equivalent"
+    },
+    {
+      "id": "H667",
+      "paths": [
+        "agents/core/sandbox.py",
+        "agents/core/tool_rpc_runtime.py"
+      ],
+      "status": "equivalent"
+    },
+    {
+      "id": "H067",
+      "paths": [
+        "agents/core/channels/telegram.py",
+        "agents/core/orchestrator.py",
+        "agents/core/channels/gateway.py",
+        "agents/web.py"
+      ],
+      "status": "equivalent"
+    },
+    {
+      "id": "H034",
+      "paths": [
+        "agents/core/orchestrator.py"
+      ],
+      "status": "equivalent"
+    },
+    {
+      "id": "H256",
+      "paths": [
+        "agents/core/orchestrator.py"
+      ],
+      "status": "equivalent"
+    }
+  ],
+  "inherited_stale_retained": [
+    {
+      "id": "H011",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H011",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H060",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H060",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H061",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H061",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H068",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H068",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H071",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H075",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H075",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H104",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H104",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H108",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H114",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H117",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H117",
+      "path": "agents/core/channels/gateway.py"
+    },
+    {
+      "id": "H130",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H135",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H139",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H146",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H146",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H153",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H161",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H165",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H182",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H182",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H220",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H227",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H262",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H273",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H275",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H277",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H277",
+      "path": "agents/core/sandbox.py"
+    },
+    {
+      "id": "H277",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H283",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H285",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H298",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H305",
+      "path": "agents/core/sandbox.py"
+    },
+    {
+      "id": "H313",
+      "path": "docs/FLAGS.md"
+    },
+    {
+      "id": "H315",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H326",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H328",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H329",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H358",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H363",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H364",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H364",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H388",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H388",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H396",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H396",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H398",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H413",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H413",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H416",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H425",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H427",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H428",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H433",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H441",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H449",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H449",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H456",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H461",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H465",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H477",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H485",
+      "path": "agents/core/sandbox.py"
+    },
+    {
+      "id": "H485",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H485",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H487",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H487",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H490",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H490",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H497",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H497",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H497",
+      "path": "agents/core/channels/gateway.py"
+    },
+    {
+      "id": "H501",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H504",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H504",
+      "path": "docs/FLAGS.md"
+    },
+    {
+      "id": "H510",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H512",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H513",
+      "path": "docs/FLAGS.md"
+    },
+    {
+      "id": "H513",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H523",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H557",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H557",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H579",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H579",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H581",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H581",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H586",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H594",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H659",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H667",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H670",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H671",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H671",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H672",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H673",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H674",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H674",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H677",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H677",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H677",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H679",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H681",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H683",
+      "path": "agents/core/channels/telegram.py"
+    },
+    {
+      "id": "H683",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H686",
+      "path": "agents/core/orchestrator.py"
+    },
+    {
+      "id": "H686",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H689",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H691",
+      "path": "agents/web.py"
+    },
+    {
+      "id": "H691",
+      "path": "docs/FLAGS.md"
+    }
+  ]
+}

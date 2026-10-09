@@ -1,0 +1,15 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/route_pending_drops_judge_key.xml", "tests/test_h277_approval_judge.py::test_pending_route_carries_the_judge_status_and_no_secret"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_pending_route_carries_the_judge_status_and_no_secret ___________
+tests/test_h277_approval_judge.py:735: in test_pending_route_carries_the_judge_status_and_no_secret
+    assert pending["judge"]["configured"] is True and pending["judge"]["reason"] == ""
+           ^^^^^^^^^^^^^^^^
+E   KeyError: 'judge'
+------------------------------ Captured log call -------------------------------
+WARNING  jarvis.llm.data_handling:data_handling.py:291 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+WARNING  jarvis.llm.data_handling:data_handling.py:291 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+WARNING  jarvis.llm.data_handling:data_handling.py:291 openai-compatible: data handling is unknown; prompts may be retained or used for training. (target=role:approval_judge, acknowledged=True)
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_pending_route_carries_the_judge_status_and_no_secret
+1 failed in 1.48s

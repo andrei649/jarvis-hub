@@ -388,6 +388,21 @@ class SshTransport:
         }
         remote = self.remote_command(argv_list, workdir)
         start = time.monotonic()
+        from .consent_dispatch import physical_gate as consent_physical_gate
+
+        if consent_physical_gate(self, backend="ssh", argv=tuple(argv_list),
+                                 cwd=workdir, timeout=bounded) is False:
+            return {"ok": False, "reason": "consent_dispatch_unavailable", **base}
+        from .owner_once_dispatch import physical_gate
+
+        if physical_gate(self, backend="ssh", argv=tuple(argv_list),
+                         cwd=workdir, timeout=bounded) is False:
+            return {"ok": False, "reason": "owner_once_dispatch_unavailable", **base}
+        from .legacy_terminal_dispatch import physical_gate as legacy_physical_gate
+
+        if legacy_physical_gate(self, backend="ssh", argv=tuple(argv_list),
+                                cwd=workdir, timeout=bounded) is False:
+            return {"ok": False, "reason": "legacy_terminal_dispatch_unavailable", **base}
         try:
             proc = await self._spawn(
                 *self.ssh_argv(host, remote),
@@ -402,6 +417,10 @@ class SshTransport:
             return {"ok": False, "reason": "ssh_client_not_permitted", **base}
         except OSError:
             return {"ok": False, "reason": "spawn_failed", **base}
+
+        if asyncio.current_task().cancelling():
+            await self._kill(proc)
+            raise asyncio.CancelledError
 
         try:
             (out_head, out_tail, out_total), (err_head, err_tail, err_total) = await asyncio.wait_for(
@@ -422,6 +441,9 @@ class SshTransport:
                 "timeout": bounded,
                 **base,
             }
+        except asyncio.CancelledError:
+            await self._kill(proc)
+            raise
         stdout = render_capped(out_head, out_tail, out_total, max_content_bytes=cap, label="STDOUT")
         stderr = render_capped(err_head, err_tail, err_total, max_content_bytes=cap, label="STDERR")
         exit_code = proc.returncode if isinstance(proc.returncode, int) else -1

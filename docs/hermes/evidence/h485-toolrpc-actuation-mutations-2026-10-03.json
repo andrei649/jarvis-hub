@@ -1,0 +1,217 @@
+{
+  "generated_utc": "2026-10-03T12:10:57.304558+00:00",
+  "python": "/tmp/nerva-pr-python-20261001/bin/python",
+  "source_and_test_sha256": {
+    "agents/core/tool_rpc.py": "b352d38a000a39166276263fda1822e649513ceda098693f9400841803d726ed",
+    "agents/core/autonomy/queue.py": "5a838ac785b4975160ce685dbe7a69e19dbf0a859cc055a47683a14be8e8422e",
+    "agents/core/autonomy/worker.py": "d4102bdb79b2593cc2fc92773087d81ed1527ba68735ca0c799d46e7b5b041ff",
+    "agents/core/autonomy/terminal_review.py": "31f5947696b633231377b3aeae6c1d413413ccf87fd12b7999ce6fee3bfaef0f",
+    "agents/core/agent_runtime.py": "c6a374a3c9219b0da4facc4d17d15011fedf5e28fd217e0fb83d8a877f016139",
+    "agents/core/approval_outcomes.py": "aef7168db608fa540b06dbf2b537fe6fbb706af8c9c108a2beaa58773df5cfd0",
+    "agents/core/orchestrator.py": "11cad8a205bd064bbcab21563f7b4a4cb6e76cbf8ac8ea4f182728dc0d911660",
+    "agents/core/autonomy_coordinator.py": "ecafa27816e5894450ccbb73dfe05c373f7bba480fc54707f959cc003ba87d37",
+    "tests/test_h485_toolrpc_actuation_integration.py": "a794ca41f552e13d05f3ff5b5071e7352c9751beaf69cdc25ec6758171ff5fd5",
+    "tests/test_h485_named_worker_execution.py": "e8496cc0eef2bb462e7a76eaf83f8cb0cdb3ebc54a9ac16f150571ce324638c7",
+    "tests/test_h485_smart_execution_completion.py": "6180a8cb3437e06b3970b4d7f5b43cdf28b0ab5f3d2ec3cddd571458ac8df850",
+    "tests/test_h485_same_turn_queue_feedback.py": "004cb6674d28269c4c1c55cd0a436e99ddd2b89f3d0350a567f1e055255dcc52",
+    "tests/test_h485_toolrpc_review_seam.py": "2bf60d6c4c7ae1e4741fedb08b7603bceb8201a16ecb22b04ad8c5c2d5411d54",
+    "docs/hermes/evidence/h277-smart-terminal-mutations-2026-10-03.py": "5282893bf0a043a78c7c3f5a5a708fc81a3829f6e25224d95505936b06567c2c",
+    "agents/_system/agents.yaml": "1c07c3e0332c27a59b18718d4f56d0093e03b150c1884c0e9c60632c2bad9319",
+    "tests/test_h277_smart_terminal_integration.py": "a13904044654f2d41aa728dc3c62e994d7cd4200aad7dcc3501e79b1e942ff8d"
+  },
+  "temporary_root": "/tmp/h485-actuation-mutations-oz099on1",
+  "mutants": [
+    {
+      "name": "post_intake_review_skipped",
+      "path": "agents/core/tool_rpc.py",
+      "selectors": [
+        "tests/test_h485_toolrpc_actuation_integration.py::test_two_native_approvals_execute_in_their_invocations_through_real_kernel"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.925,
+      "log": "/tmp/h485-actuation-mutations-oz099on1/logs/post_intake_review_skipped.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_toolrpc_actuation_integration::test_two_native_approvals_execute_in_their_invocations_through_real_kernel"
+      ]
+    },
+    {
+      "name": "named_selection_ignored",
+      "path": "agents/core/autonomy/queue.py",
+      "selectors": [
+        "tests/test_h485_named_worker_execution.py::test_named_tick_executes_only_selected_approved_task"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.742,
+      "log": "/tmp/h485-actuation-mutations-oz099on1/logs/named_selection_ignored.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_named_worker_execution::test_named_tick_executes_only_selected_approved_task"
+      ]
+    },
+    {
+      "name": "registration_revocation_ignored",
+      "path": "agents/core/autonomy/terminal_review.py",
+      "selectors": [
+        "tests/test_h485_toolrpc_actuation_integration.py::test_replaced_terminal_registration_during_review_cannot_actuate"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.941,
+      "log": "/tmp/h485-actuation-mutations-oz099on1/logs/registration_revocation_ignored.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_toolrpc_actuation_integration::test_replaced_terminal_registration_during_review_cannot_actuate"
+      ]
+    },
+    {
+      "name": "completion_proof_not_required",
+      "path": "agents/core/autonomy/terminal_review.py",
+      "selectors": [
+        "tests/test_h485_toolrpc_actuation_integration.py::test_synthetic_done_without_worker_execution_cannot_report_success"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.907,
+      "log": "/tmp/h485-actuation-mutations-oz099on1/logs/completion_proof_not_required.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_toolrpc_actuation_integration::test_synthetic_done_without_worker_execution_cannot_report_success"
+      ]
+    },
+    {
+      "name": "completion_signature_not_checked",
+      "path": "agents/core/autonomy/queue.py",
+      "selectors": [
+        "tests/test_h485_smart_execution_completion.py::test_tampered_persisted_bytes_or_receipt_fail_completion_proof"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.675,
+      "log": "/tmp/h485-actuation-mutations-oz099on1/logs/completion_signature_not_checked.log",
+      "tests": 6,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_execution_completion::test_tampered_persisted_bytes_or_receipt_fail_completion_proof[completion_signature]"
+      ]
+    },
+    {
+      "name": "completion_result_digest_not_bound",
+      "path": "agents/core/autonomy/queue.py",
+      "selectors": [
+        "tests/test_h485_smart_execution_completion.py::test_tampered_persisted_bytes_or_receipt_fail_completion_proof"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.694,
+      "log": "/tmp/h485-actuation-mutations-oz099on1/logs/completion_result_digest_not_bound.log",
+      "tests": 6,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_execution_completion::test_tampered_persisted_bytes_or_receipt_fail_completion_proof[result]"
+      ]
+    },
+    {
+      "name": "same_batch_breaker_disabled",
+      "path": "agents/core/agent_runtime.py",
+      "selectors": [
+        "tests/test_h485_toolrpc_actuation_integration.py::test_denial_breaker_blocks_fourth_gated_operation_in_one_provider_batch"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 2.389,
+      "log": "/tmp/h485-actuation-mutations-oz099on1/logs/same_batch_breaker_disabled.log",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_toolrpc_actuation_integration::test_denial_breaker_blocks_fourth_gated_operation_in_one_provider_batch[False]",
+        "tests.test_h485_toolrpc_actuation_integration::test_denial_breaker_blocks_fourth_gated_operation_in_one_provider_batch[True]"
+      ]
+    },
+    {
+      "name": "model_tools_not_withdrawn",
+      "path": "agents/core/agent_runtime.py",
+      "selectors": [
+        "tests/test_h485_toolrpc_actuation_integration.py::test_three_denials_warn_model_in_same_turn_and_stop_fourth_operation"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 2.393,
+      "log": "/tmp/h485-actuation-mutations-oz099on1/logs/model_tools_not_withdrawn.log",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_toolrpc_actuation_integration::test_three_denials_warn_model_in_same_turn_and_stop_fourth_operation[False]",
+        "tests.test_h485_toolrpc_actuation_integration::test_three_denials_warn_model_in_same_turn_and_stop_fourth_operation[True]"
+      ]
+    },
+    {
+      "name": "unseen_truncated_feedback_acknowledged",
+      "path": "agents/core/approval_outcomes.py",
+      "selectors": [
+        "tests/test_h485_toolrpc_actuation_integration.py::test_truncated_denial_is_retained_for_next_turn_instead_of_acknowledged"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 2.287,
+      "log": "/tmp/h485-actuation-mutations-oz099on1/logs/unseen_truncated_feedback_acknowledged.log",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_toolrpc_actuation_integration::test_truncated_denial_is_retained_for_next_turn_instead_of_acknowledged[False]",
+        "tests.test_h485_toolrpc_actuation_integration::test_truncated_denial_is_retained_for_next_turn_instead_of_acknowledged[True]"
+      ]
+    }
+  ],
+  "baseline": {
+    "returncode": 0,
+    "timed_out": false,
+    "seconds": 4.328,
+    "log": "/tmp/h485-actuation-mutations-oz099on1/logs/baseline.log",
+    "tests": 66,
+    "failures": 0,
+    "errors": 0,
+    "failed_tests": []
+  },
+  "restored_baseline": {
+    "returncode": 0,
+    "timed_out": false,
+    "seconds": 4.339,
+    "log": "/tmp/h485-actuation-mutations-oz099on1/logs/restored_baseline.log",
+    "tests": 66,
+    "failures": 0,
+    "errors": 0,
+    "failed_tests": []
+  },
+  "live_source_unchanged": true,
+  "counts": {
+    "killed": 9,
+    "survived": 0,
+    "invalid": 0
+  },
+  "status": "complete"
+}

@@ -38,7 +38,7 @@ ROLE_TARGETS = {
 }
 COVERAGE = (
     "routed agent dispatch, synthesis, tool-loop requests, Gemini cache writes, "
-    "session titles, recall query rewriting, background/on-demand review, context compression, "
+    "session titles, recall query rewriting, background/on-demand review, context compression, SOUL description drafts, "
     "acquisition drafting/generation, the optional presence explanation seam, the approval judge, "
     "interactive composer vision, strict-local describe/screen-reflex, unattended Telegram image descriptions, strict-local camera descriptions, approved video analysis, and local-only embeddings; "
     "unscoped multimodal library clients excluded"
@@ -81,7 +81,7 @@ def physical_request_scope(check, *, request_check=None):
 
 
 @contextmanager
-def auxiliary_request_scope(router, backend, model, *, role):
+def auxiliary_request_scope(router, backend, model, *, role, request_check=None):
     """Guard a selected auxiliary generation as internal, including physical retries.
 
     Capture the actual adapter/model, but resolve configuration and consent again
@@ -98,7 +98,7 @@ def auxiliary_request_scope(router, backend, model, *, role):
                          principal=principal, origin=DEFAULT_ACTION_ORIGIN)
 
     check()
-    with physical_request_scope(check):
+    with physical_request_scope(check, request_check=request_check):
         yield
 
 

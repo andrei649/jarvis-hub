@@ -1,0 +1,45 @@
+{
+  "state": "terminal",
+  "pid": 50628,
+  "started_at": 1791155386.437011,
+  "source_head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "original_cases": 49,
+  "input_count": 997,
+  "source_changes": false,
+  "baseline_python": {
+    "tests": 360,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "baseline_hud": {
+    "numTotalTests": 40,
+    "numPassedTests": 40,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true
+  },
+  "exit_code": 0,
+  "completed_at": 1791155504.656391,
+  "outcomes": {
+    "killed_assertion": 43,
+    "killed_behavioral_exception": 6
+  },
+  "restored": true,
+  "source_drift": [],
+  "snapshot_drift": [],
+  "post_python": {
+    "tests": 360,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "post_hud": {
+    "numTotalTests": 40,
+    "numPassedTests": 40,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true
+  },
+  "post_verified_at": 1791155588.467199
+}

@@ -99,9 +99,11 @@ def test_no_connection_answers_empty(tmp_path):
     assert cold.stale_sessions("2030") == [] and cold.session_row("s") is None
     assert cold.session_rows_for_backup("s") == {"session": None, "checkpoints": [], "clock": None,
                                                  "continuation": None, "history_instance": None,
+                                                 "rewind": None,
                                                  "continued_by": []}
     assert cold.delete_session_rows("s") == {"checkpoints": 0, "session_clock": 0, "session_continuations": 0,
-                                             "session_history_instances": 0, "sessions": 0}
+                                             "session_history_instances": 0, "session_history_rewinds": 0,
+                                             "sessions": 0}
 
 
 def test_a_store_error_while_archiving_is_not_a_missing_session(cp):
@@ -235,7 +237,8 @@ async def test_a_delete_backs_up_every_trace_first_then_removes_them(cp, stores,
     assert [item["content"] for item in record["todo"]["todos"]] == ["x"] and record["note"] == "call the bank"
     assert (backup.stat().st_mode & 0o777) == 0o600
     assert got["removed"]["rows"] == {"checkpoints": 1, "session_clock": 0, "session_continuations": 0,
-                                      "session_history_instances": 1, "sessions": 1}
+                                      "session_history_instances": 1, "session_history_rewinds": 0,
+                                      "sessions": 1}
     assert got["removed"]["snapshot"] is True and got["removed"]["log"] is True and got["removed"]["compaction_archive"] is True
     assert got["removed"]["todo"] is True and stores.todos.read("gone")["todos"] == []
     assert got["removed"]["note"] is True and notes.get("gone") == ""
@@ -725,7 +728,8 @@ async def test_the_orchestrator_passes_the_setting(tmp_path, monkeypatch):
 
     seen = {}
 
-    def fake(session, *, setting=None, workdir=None):
+    def fake(session, *, setting=None, workdir=None, scope=None):
+        assert scope is None, "an ordinary owner turn has no worker workspace scope"
         seen.update(session=session, workdir=workdir, on=setting("k", None))
         return None
     monkeypatch.setattr(pc, "build_turn", fake)

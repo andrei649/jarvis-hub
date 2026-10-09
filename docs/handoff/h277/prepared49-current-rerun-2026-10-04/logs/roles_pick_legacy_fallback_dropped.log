@@ -1,0 +1,13 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/roles_pick_legacy_fallback_dropped.xml", "tests/test_h277_model_roles.py::test_vision_role_falls_back_to_jarvis_vlm_model"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_vision_role_falls_back_to_jarvis_vlm_model ________________
+tests/test_h277_model_roles.py:121: in test_vision_role_falls_back_to_jarvis_vlm_model
+    assert role.source["model"] == "JARVIS_VLM_MODEL"
+E   AssertionError: assert 'default' == 'JARVIS_VLM_MODEL'
+E     
+E     - JARVIS_VLM_MODEL
+E     + default
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_vision_role_falls_back_to_jarvis_vlm_model
+1 failed in 1.47s

@@ -1,0 +1,108 @@
+{
+  "generated_at": "2026-10-05T15:50:54.799566+00:00",
+  "capability": "H067",
+  "status": "partial",
+  "publication": false,
+  "implemented": [
+    "Oversized native prompt text and buttons stored only in the existing live delivery entry; exact SHA256 and byte size signed by the original kernel/queue.",
+    "Global mediation bounds unchanged; single2MiB and aggregate32MiB admission bounds; expiration, revocation, restart, rejection and mutation fail closed.",
+    "Existing admin-only/no-store task preview supplies full content before approval; Decision Inbox renders all text and choices without HTML interpretation.",
+    "Actual Slack/Discord SDK, signed physical task and ToolRPC model reply exercised with large Unicode choices; short prompt protocol preserved."
+  ],
+  "verification": {
+    "backend": [
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/content/affected-result.xml",
+        "tests": 247,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/content/impact-result.xml",
+        "tests": 191,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/content/final-result.xml",
+        "tests": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "counts_overlap": true,
+    "new_cases": 15,
+    "hud_affected_tests": 163,
+    "hud_affected_files": 9,
+    "hud_preview_tests": 38,
+    "hud_build": "passed; existing large-chunk warning",
+    "ruff": "passed",
+    "bandit": "0 findings and0 errors on both modified Python production files",
+    "strict_gitleaks": "0 findings on the five current source/test files; built-in rules, no baseline or inline allow comments",
+    "status_tests": 48,
+    "hermes_status": "697 generated reports in sync;128 equivalent,229 partial,56 missing,284 need_review;20 current equivalent and108 inherited.",
+    "commands": {
+      "workspace": "/Users/andrei649/Projects/nerva-pr-worktrees/consent",
+      "sdk_pythonpath": "/tmp/nerva-h067-workspace-sdk-20261005",
+      "final_backend": [
+        "/tmp/nerva-pr-python-20261001/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_pending_input_large_prompts.py",
+        "-q",
+        "--tb=short"
+      ],
+      "hud": [
+        "npm",
+        "test",
+        "--",
+        "src/test/decision-inbox-panel.test.tsx",
+        "src/test/soul-edit.test.tsx",
+        "src/test/markdown-adoption.test.tsx",
+        "src/test/markdown.test.tsx",
+        "src/test/confirm.test.tsx",
+        "src/test/media-gallery-panel.test.tsx",
+        "src/test/images-panel.test.tsx",
+        "src/test/images-api.test.ts",
+        "src/test/sandbox-kernels.test.tsx"
+      ],
+      "hud_build": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "bandit_pythonpath": "/tmp/nerva-smart-bandit-20261003"
+    }
+  },
+  "provenance": "Reuses the existing H067 donor parser, card lifecycle and ToolRPC/SDK tests; additional reference adapter handles Nerva signed-envelope differences. Hermes59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e MIT attribution unchanged.",
+  "impact_review": {
+    "retained": [
+      "H099",
+      "H156",
+      "H168",
+      "H515",
+      "H518",
+      "H595",
+      "H660"
+    ],
+    "method": "Only immediate matching preimage pins refreshed after local semantic diff and affected probes. HUD delta limited to pending-question preview; ordinary ntfy send, persona, Markdown/confirmation, media gallery and code views unchanged.",
+    "H067_old_coordinator_pin": "Exact19-line unified diff reviewed:12 added terminal output redaction lines; clarify registration unchanged. Prior direct-port correction tests remain dated evidence."
+  },
+  "remaining": [
+    "Typed producers/answer paths beyond Telegram/Slack/Discord remain unintegrated.",
+    "Full integrated milestone, broader H277 and live-account validation remain separate; no whole697 completion claim."
+  ],
+  "files_modified": {
+    "agents/core/channel_reply.py": "Conditional signed content reference and exact live hydration/review.",
+    "agents/core/routers/autonomy.py": "Complete pending content on existing protected preview.",
+    "frontend/src/gap.tsx": "Safe complete question/choice rendering.",
+    "frontend/src/test/decision-inbox-panel.test.tsx": "Available/unavailable owner-preview regressions.",
+    "tests/test_pending_input_large_prompts.py": "15 signed queue/kernel, tamper, lifecycle, capacity and actual SDK/RPC regressions.",
+    "agents/web/v2": "Regenerated existing HUD bundle from preserved source.",
+    "docs/hermes/pending-input-plan-2026-10-05.md": "Bounded design and verification decisions."
+  },
+  "graft": "Explicit external build/check completed; graph.ok true; zero added/removed/changed/stale source inputs."
+}

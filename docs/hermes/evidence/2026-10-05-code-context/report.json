@@ -1,0 +1,97 @@
+{
+  "generated_at": "2026-10-05T19:51:30.778527+00:00",
+  "base_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "goal_scope": "all697",
+  "status": {
+    "H595": "partial",
+    "H660": "partial"
+  },
+  "publication": false,
+  "implemented": [
+    "Resident project/strict backend-local cwd and Python selection, including actual Python re-exec; strict uses staging/default interpreter",
+    "Bounded project module/data projection, secret-path/text/link exclusions, separate read-only Docker mount, approved writes remain file tools",
+    "Successful owner-vouched skill_view declares exact actor/principal/session names with live catalog/trust/snapshot checks",
+    "Frozen env values travel only through startup stdin; managed credentials/control variables remain blocked; trusted interpreter hints are separate",
+    "Keyed context revision changes interpreter identity; context changes/revocation discard old state and report it; post-lock/startup revalidation blocks stale values before transmission",
+    "Binding inventory coordinates repaired without changing writer authority"
+  ],
+  "reused": {
+    "source": "Hermes 59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e tools/code_execution_env.py and exact-name local_env_policy.py",
+    "license": "docs/hermes/licenses/hermes-code-execution-MIT.txt"
+  },
+  "verification": {
+    "runs": {
+      "affected": {
+        "path": "docs/hermes/evidence/2026-10-05-code-context/affected-result.xml",
+        "tests": 1422,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 2
+      },
+      "final_focused": {
+        "path": "docs/hermes/evidence/2026-10-05-code-context/final_focused-result.xml",
+        "tests": 71,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "composition": {
+        "path": "docs/hermes/evidence/2026-10-05-code-context/composition-result.xml",
+        "tests": 67,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "final_records": {
+        "path": "docs/hermes/evidence/2026-10-05-code-context/records-result.xml",
+        "tests": 71,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "counts_are_not_additive": true,
+    "new_focused_cases": 46,
+    "scope": "Real local pipe/mailbox Python workers, actual skill/model registrars, synthetic project/env data; isolation simulated. Docker argv and startup transport checked; no fresh live Docker/provider/remote acceptance.",
+    "valid_red": "Initial four functional cases reproduced missing project/env behavior. Strengthened delayed-start case fails when startup validation is disabled: revoked startup payload is sent. Original check that only asserted no cell ran was too weak; close-control packets are correctly allowed. Binding inventory check failed then passed after coordinate-only repair.",
+    "corrections": "Initial virtualenv failure came from blocked VIRTUAL_ENV, confirmed by env-name resolution; hints now use a separate trusted path, never a skill control allowance. Config/source-reader failures remain fail-closed. Bandit probe/tmpfs findings have explicit bounded-backend justifications; empty exception paths now return safe results.",
+    "ruff": {
+      "paths": 11,
+      "passed": true
+    },
+    "bandit": {
+      "production_paths": 8,
+      "findings": 0,
+      "errors": 0
+    },
+    "gitleaks": {
+      "paths": 15,
+      "findings": 0,
+      "baseline": false,
+      "inline_allow": false
+    },
+    "graft_graph": {
+      "ok": true,
+      "added": 0,
+      "removed": 0,
+      "changed": 0,
+      "stale": 0
+    },
+    "graft_context_missing": true,
+    "whole_suite_full697_or_live_acceptance": false
+  },
+  "remaining": [
+    "One-shot project/environment context transport remains open; configured contextual runs currently refuse instead of silently dropping context",
+    "Product user-message interruption and fresh isolated-backend/platform integration evidence remain open for H595",
+    "H660 remote transports and the full remaining Hermes inventory remain separate outstanding goal work"
+  ],
+  "source_manifest": "docs/hermes/evidence/2026-10-05-code-context/scoped-inputs.json",
+  "accounting": {
+    "equivalent": 129,
+    "total": 697,
+    "percent": 18.5,
+    "current_equivalent": 21,
+    "inherited_equivalent": 108,
+    "new_equivalent_in_this_batch": 0
+  }
+}

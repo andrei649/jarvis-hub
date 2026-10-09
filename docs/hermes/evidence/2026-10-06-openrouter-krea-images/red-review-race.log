@@ -1,0 +1,12 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_krea_revocation_during_poll_dns_retains_governance_reason ________
+tests/test_cloud_image_openrouter_krea.py:210: in test_krea_revocation_during_poll_dns_retains_governance_reason
+    assert result["status"] == "unknown", result
+E   AssertionError: {'status': 'failed', 'reason': 'krea_job_invalid_response', 'job_id': 'job-1', 'submission_replayed': False}
+E   assert 'failed' == 'unknown'
+E     
+E     - unknown
+E     + failed
+=========================== short test summary info ============================
+FAILED tests/test_cloud_image_openrouter_krea.py::test_krea_revocation_during_poll_dns_retains_governance_reason

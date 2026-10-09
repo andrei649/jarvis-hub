@@ -1,17 +1,8 @@
 """S3: lifecycle events an extension may *watch*, and nothing more than watch.
 
-The rows that ask for this (H567, H622) ask for something larger: 37 hook points,
-shell hooks with an exit code that blocks, `pre_tool_call` able to veto a call and
-`pre_llm_call` able to inject text into the turn. Three other rows in the same
-inventory — H021, H163 and H514 — deliberately **exclude** exactly that, and their
-reasons are the right ones: an owner-authored script running beside the kernel on
-every lifecycle event is a second, weaker authorization system parallel to the one
-that is the product, and it fires with no human in the loop, around the HARDLINE
-denylist rather than through it. Each exclusion names the same re-open path — a
-`hook.exec` kernel kind with a per-hook capability token and a hash-pinned script —
-and that is an owner decision, not one to take by writing code.
-
-So this file delivers the half that does not re-open the exclusion: **observation**.
+The full parity backlog (including H021, H163 and H514) also asks for blocking
+and modifying hooks. Those need their own kernel-governed authority contracts;
+this bus implements observation, and provides no authorization return channel.
 An extension already signed, consented, activated and sandboxed (S2) may be told
 that something happened. Four properties make that different in kind from a hook:
 
@@ -19,9 +10,11 @@ that something happened. Four properties make that different in kind from a hook
   byte of output. There is no return value to trust, so an observer cannot veto a
   decision, rewrite an identity, admit a sender or add prompt text — not because
   those are filtered out, but because there is no channel for them.
-* **The payload is an allowlist, not a redaction.** Each event has a fixed, tiny set
-  of fields built here from scratch. A message body, a tool argument, a result, a
-  principal or a secret is not omitted — it is never assembled.
+* **The payload is an allowlist.** The original lifecycle events carry only tiny
+  summary fields. H485 guardian events additionally carry force-scanned command
+  and description excerpts under an explicitly declared subscription. They mask
+  recognized credentials and catalogue identifiers, not arbitrary private prose.
+  No prompt, model answer, principal field, policy or receipt is assembled.
 * **Emission never blocks the caller.** `emit` builds the payload, picks observers
   and returns. Delivery happens on its own task, because an observer runs in a
   container and a container start is measured in seconds while the hot paths that
@@ -37,9 +30,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import itertools
 import logging
 import time
+import uuid
 from typing import Any
 
 from .manifest import EVENTS
@@ -53,7 +48,10 @@ FIELDS: dict[str, tuple[str, ...]] = {
     "session.started": ("session_id",),
     "session.ended": ("session_id",),
     "tool.completed": ("tool", "status"),
+    "approval.smart.requested": ("request_id", "surface", "command", "description"),
+    "approval.smart.decided": ("request_id", "surface", "command", "description", "choice", "decided_by"),
 }
+SMART_EVENTS = frozenset({"approval.smart.requested", "approval.smart.decided"})
 MAX_FIELD_CHARS = 200
 MAX_PENDING = 64
 DELIVERY_TIMEOUT_SECONDS = 60.0
@@ -91,6 +89,8 @@ class ExtensionEventBus:
         allowed = FIELDS[event]
         if set(fields) - set(allowed):
             raise ValueError("unknown_event_field")
+        if event in SMART_EVENTS:
+            fields = self._smart_fields(event, fields)
         payload: dict[str, Any] = {
             "event": event,
             "event_id": f"{int(self._clock() * 1000):d}-{next(self._sequence):d}",
@@ -107,6 +107,48 @@ class ExtensionEventBus:
             else:
                 raise ValueError("invalid_event_field")
         return payload
+
+    @staticmethod
+    def _smart_fields(event: str, fields: dict) -> dict:
+        """Force scanning before truncation at this consented text boundary.
+
+        Unlike the other lifecycle events, these two carry excerpts of operation
+        text. Recognized secrets are masked; arbitrary private prose is not.
+        A preparation failure refuses observation, never the guardian decision.
+        """
+        from ..log_catalogue import CatalogueScanner
+        from ..security.scanner import SecretScanner
+
+        if set(fields) != set(FIELDS[event]) or any(type(v) is not str for v in fields.values()):
+            raise ValueError("invalid_event_field")
+        try:
+            identity = uuid.UUID(fields["request_id"])
+        except ValueError:
+            raise ValueError("invalid_event_field") from None
+        if identity.version != 4 or identity.hex != fields["request_id"] or fields["surface"] != "smart":
+            raise ValueError("invalid_event_field")
+        if event == "approval.smart.decided" and (
+            fields["choice"] not in {"smart_approve", "smart_deny"} or fields["decided_by"] != "aux_llm"
+        ):
+            raise ValueError("invalid_event_field")
+        clean = dict(fields)
+        scanner = SecretScanner()
+        catalogue = CatalogueScanner()
+        for name, limit in (("command", 4000), ("description", 1000)):
+            value = fields[name]
+            if len(value) > limit:
+                raise ValueError("invalid_event_field")
+            value.encode("utf-8")
+            redacted = scanner.redact(value)
+            if type(redacted) is not str:
+                raise ValueError("invalid_event_field")
+            redacted.encode("utf-8")
+            redacted = catalogue.redact(redacted)
+            if type(redacted) is not str:
+                raise ValueError("invalid_event_field")
+            redacted.encode("utf-8")
+            clean[name] = redacted
+        return clean
 
     # ── delivery ─────────────────────────────────────────────────────────────
     def observers(self, event: str) -> tuple[str, ...]:
@@ -132,7 +174,10 @@ class ExtensionEventBus:
         if len(self._pending) >= self._max_pending:
             self.dropped += 1
             return
-        task = loop.create_task(self._deliver(extension_id, event, payload))
+        if event in SMART_EVENTS:
+            task = loop.create_task(self._deliver(extension_id, event, payload), context=contextvars.Context())
+        else:
+            task = loop.create_task(self._deliver(extension_id, event, payload))
         self._pending.add(task)
         task.add_done_callback(self._pending.discard)
 
@@ -199,6 +244,13 @@ class ExtensionEventBus:
         return len(pending)
 
 
+def prepare_smart_event_fields(event: str, fields: dict) -> dict:
+    """Prepare a reusable sanitized excerpt for paired guardian observations."""
+    if event not in SMART_EVENTS:
+        raise ValueError("unknown_event")
+    return ExtensionEventBus._smart_fields(event, fields)
+
+
 class _BoundBus:
     """The one bus the emitting subsystems reach, bound when a runtime is composed.
 
@@ -243,4 +295,4 @@ EXTENSION_EVENTS = _BoundBus()
 
 
 __all__ = ["DELIVERY_TIMEOUT_SECONDS", "EXTENSION_EVENTS", "FIELDS", "MAX_PENDING",
-           "ExtensionEventBus"]
+           "ExtensionEventBus", "prepare_smart_event_fields"]

@@ -1,0 +1,83 @@
+{
+  "generated_at": "2026-10-04T01:15:32.355895+00:00",
+  "scope": "Only new H277 smart-promotion audit contract; not all H277 mutations or provider acceptance",
+  "base_sha": "6b9422ed56bd45c0823e818db123266b854496ec",
+  "frozen_inputs": 2994,
+  "restored_paths": 2994,
+  "baseline_before": {
+    "case": "baseline-before",
+    "exit_code": 0,
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "failure_cases": [],
+    "junit_sha256": "00d65a57164e7bed108138bc13f7450538bb8105997820cf61cf3293ec559973",
+    "log_sha256": "c4b808d34f4db00b333696dec1f3a43a2887d8bfe0cb7af07a3cb98ff43a7830"
+  },
+  "baseline_after": {
+    "case": "baseline-after",
+    "exit_code": 0,
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "failure_cases": [],
+    "junit_sha256": "abc461a8af33dfc9401839428c5d8e202e6348cf63b7f042562f3607105b459a",
+    "log_sha256": "c4b808d34f4db00b333696dec1f3a43a2887d8bfe0cb7af07a3cb98ff43a7830"
+  },
+  "mutations": [
+    {
+      "case": "omit-judge-identity",
+      "exit_code": 1,
+      "tests": 4,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "failure_cases": [
+        "test_smart_promotion_audit_names_committed_actual_judge[fixture-judge-fixture-judge]",
+        "test_smart_promotion_audit_names_committed_actual_judge[active-loaded-guardian-v2]"
+      ],
+      "junit_sha256": "90576ef0cb714fad6bf2e78bec530cdb9c4dfe40cdaef8ffa38928ec8339f9e4",
+      "log_sha256": "050493e5d02a846637569519c52c4cebe7274bf1e073d7e8b44a8d0d90986daa",
+      "meaningful_assertion_kill": true
+    },
+    {
+      "case": "trust-unverified-annotation",
+      "exit_code": 1,
+      "tests": 4,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "failure_cases": [
+        "test_unmatched_smart_receipt_never_invents_an_audit_model[signature]",
+        "test_unmatched_smart_receipt_never_invents_an_audit_model[observation]"
+      ],
+      "junit_sha256": "a9bc63c004f74a63a79d1ac11bfc7d068b16f7a7022d2f8aed1dd28d1d994b56",
+      "log_sha256": "04a87e21a6bfba1b1c331ef4f2e33f913b1ff9ad3a6abc58f2d53bbe7d02ca73",
+      "meaningful_assertion_kill": true
+    },
+    {
+      "case": "reread-mutable-model",
+      "exit_code": 1,
+      "tests": 4,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "failure_cases": [
+        "test_smart_promotion_audit_names_committed_actual_judge[active-loaded-guardian-v2]"
+      ],
+      "junit_sha256": "18b223c1e15d329afdcaf3047d249b488075d10b02e997d25822da02bfc3210a",
+      "log_sha256": "20a72330922b0527fac9724d0209c165f74ae5b304cf0f052d41462d632e4c01",
+      "meaningful_assertion_kill": true
+    }
+  ],
+  "assertion_kills": 3,
+  "real_checkout_edited": false,
+  "source_sha256": {
+    "agents/core/autonomy/task_approval_judge.py": "9bf79d754ded10c31c809e39444197c0458c2cb1733f8d1497d34ddc7b387d9f",
+    "tests/test_h277_smart_promotion_audit.py": "ed4b06a90c2110001c118910eea58279870f4f6c0eb9f2851e9355cf10cb095c"
+  },
+  "manifest_sha256": "118f53d371903af7721323b870f4f114254e7d5f39dae5be95a1f9540d5fe3e5",
+  "results_sha256": "91421f0463488784c98c4d33ec1b19958cbf9c5f62683e8e0e770057a6e17e71"
+}

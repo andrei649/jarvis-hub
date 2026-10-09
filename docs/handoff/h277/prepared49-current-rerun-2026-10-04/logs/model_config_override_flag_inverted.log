@@ -1,0 +1,12 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/model_config_override_flag_inverted.xml", "tests/test_h277_model_roles.py::test_deep_role_defaults_and_is_not_pinned"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________________ test_deep_role_defaults_and_is_not_pinned ___________________
+tests/test_h277_model_roles.py:211: in test_deep_role_defaults_and_is_not_pinned
+    assert model_config.deep_model_override_configured() is False
+E   assert True is False
+E    +  where True = <function deep_model_override_configured at 0x104067240>()
+E    +    where <function deep_model_override_configured at 0x104067240> = model_config.deep_model_override_configured
+=========================== short test summary info ============================
+FAILED tests/test_h277_model_roles.py::test_deep_role_defaults_and_is_not_pinned
+1 failed in 1.37s

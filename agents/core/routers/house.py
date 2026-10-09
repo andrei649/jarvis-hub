@@ -31,6 +31,7 @@ from ..house import (
     HouseActuator,
     HouseGraph,
     HousePresenceIngestor,
+    LocalPresenceExplainer,
     PresenceInference,
     PrivateHouseStore,
     PrivateStoreError,
@@ -91,6 +92,10 @@ class SecurityControlBody(_StrictBody):
 
 class ConfirmationBody(_StrictBody):
     challenge_token: str = Field(..., min_length=16, max_length=256)
+
+
+class PresenceExplainBody(_StrictBody):
+    occupant_id: str = Field(..., pattern=r"^occ-[0-9a-f]{32}$")
 
 
 class _UnavailableActuator:
@@ -442,6 +447,52 @@ async def house_state():
             "privacy_status": privacy_status,
         }
     )
+
+
+@router.post("/api/house/presence/explain", dependencies=[Depends(user_guard)])
+async def house_presence_explain(body: PresenceExplainBody):
+    """Explain one current private-store decision with the selected local model."""
+    from agents.core.llm.data_handling import DataHandlingRefused
+
+    runtime = await _get_runtime()
+    ingestor = getattr(runtime, "presence_ingestor", None)
+    if ingestor is None or getattr(runtime, "private_store", None) is None:
+        return nocache_json({"status": "unavailable", "reason": "presence_disabled"}, status_code=409)
+    try:
+        snapshot = await runtime.adapter.snapshot()
+    except Exception:
+        logger.warning("House presence explanation snapshot failed", exc_info=True)
+        return nocache_json({"status": "unavailable", "reason": "house_state_unavailable"}, status_code=503)
+    if not snapshot.enabled or snapshot.status != "live":
+        return nocache_json({"status": "unavailable", "reason": "house_state_not_live"}, status_code=503)
+    try:
+        await asyncio.to_thread(ingestor.ingest, snapshot)
+        decision = await asyncio.to_thread(ingestor.current_presence_id, body.occupant_id)
+    except ValueError:
+        return nocache_json({"status": "not_found", "reason": "occupant_not_found"}, status_code=404)
+    except Exception:
+        logger.warning("House presence explanation read failed", exc_info=True)
+        return nocache_json({"status": "unavailable", "reason": "presence_read_failed"}, status_code=503)
+    if decision.status not in {"present", "vacant"}:
+        return nocache_json({"status": "unavailable", "reason": "presence_not_current"}, status_code=409)
+    llm_router = getattr(get_orch(), "llm_router", None)
+    if llm_router is None:
+        return nocache_json({"status": "unavailable", "reason": "local_model_unavailable"}, status_code=503)
+    try:
+        explainer = LocalPresenceExplainer.from_router(llm_router)
+        explanation = await asyncio.wait_for(
+            explainer.explain(decision, strict_local=True), timeout=15.0,
+        )
+    except (DataHandlingRefused, TimeoutError):
+        return nocache_json({"status": "unavailable", "reason": "local_model_unavailable"}, status_code=503)
+    except Exception:
+        logger.warning("House presence explanation model failed", exc_info=True)
+        return nocache_json({"status": "unavailable", "reason": "explanation_failed"}, status_code=503)
+    return nocache_json({
+        "status": "explained",
+        "decision": decision.to_dict(),
+        "explanation": explanation,
+    })
 
 
 @router.post("/api/house/control/light", dependencies=[Depends(user_guard)])

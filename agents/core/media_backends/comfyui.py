@@ -261,7 +261,7 @@ def validate_options(prompt, options):
     return result
 
 
-def artifact_bytes(artifact_id, root):
+def artifact_bytes(artifact_id, root, *, max_dimension=2048):
     """Read one already-generated PNG out of the artifact root, by opaque id only.
 
     This is the single reader for both the HTTP artifact route and the edit path, so
@@ -282,7 +282,7 @@ def artifact_bytes(artifact_id, root):
             data = handle.read(16 * 1024 * 1024 + 1)
         if len(data) > 16 * 1024 * 1024:
             raise OSError
-        validate_png(data)
+        validate_png(data, max_dimension=max_dimension)
         expected = _expected_artifact_digest(root / (artifact_id + ".sha256.json"))
         if expected is not None and hashlib.sha256(data).hexdigest() != expected:
             raise ValueError
@@ -377,7 +377,7 @@ def _workflow(config, prompt, opts, reference_name=None, reference_size=None):
     return graph
 
 
-def validate_png(data: bytes):
+def validate_png(data: bytes, *, max_dimension=2048):
     """Validate the fixed writer's static, noninterlaced 8-bit PNG output.
 
     Framing/CRC alone accepts corrupt compressed pixels. Bound inflation to the
@@ -385,7 +385,8 @@ def validate_png(data: bytes):
     deliberately supports the grayscale/RGB (+alpha) subset emitted by SaveImage,
     not palette, interlaced or animated images. PNG rules: https://www.w3.org/TR/png-3/
     """
-    if len(data) > 16 * 1024 * 1024 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+    if (type(max_dimension) is not int or max_dimension not in {2048, 4096}
+            or len(data) > 16 * 1024 * 1024 or not data.startswith(b"\x89PNG\r\n\x1a\n")):
         raise ImageGenerationError("invalid_image")
     pos, chunks, dimensions, has_data = 8, 0, None, False
     compressed = bytearray()
@@ -405,7 +406,7 @@ def validate_png(data: bytes):
                 break
             width, height, depth, color, compression, filtering, interlace = struct.unpack(">IIBBBBB", body)
             channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(color, 0)
-            if not (0 < width <= 2048 and 0 < height <= 2048 and channels
+            if not (0 < width <= max_dimension and 0 < height <= max_dimension and channels
                     and depth == 8 and compression == filtering == interlace == 0):
                 break
             dimensions = (width, height)

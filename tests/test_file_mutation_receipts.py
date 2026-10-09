@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from agents.core import file_tools as module
+from agents.core.file_checkpoint_history import HISTORY_SUPPORTED, CheckpointRefusal
 from agents.core.file_tools import FileScope, FileTools, SnapshotStore
 from agents.core.kernel import Decision, Verdict
 
@@ -35,6 +36,30 @@ def receipt(result, path, op, outcome):
         "path": str(path), "op": op, "outcome": outcome,
     }
     assert set(result["mutation_receipt"]) == {"path", "op", "outcome"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not HISTORY_SUPPORTED, reason="owned checkpoint path requires dirfd support")
+@pytest.mark.parametrize("error,reason,outcome", [
+    (module.FileScopeError("outside_scope"), "outside_scope", "refused"),
+    (CheckpointRefusal("path_changed"), "path_changed", "refused"),
+    (CheckpointRefusal("effect_state_incomplete"), "effect_state_incomplete", "unknown"),
+    (RuntimeError("synthetic checkpoint failure"), "checkpoint_failed", "unknown"),
+])
+async def test_checkpoint_apply_failure_receipt_describes_effect_uncertainty(
+    root, monkeypatch, error, reason, outcome,
+):
+    tools = make_tools(root)
+    target = root / "notes.txt"
+
+    def fail(*_args, **_kwargs):
+        raise error
+
+    monkeypatch.setattr(tools.history, "apply_mutation", fail)
+    result = await tools.write_file({"path": "notes.txt", "content": "new"})
+    assert result["ok"] is False and result["reason"] == reason
+    assert target.read_bytes() == b"old"
+    receipt(result, target, "write", outcome)
 
 
 @pytest.mark.asyncio
@@ -115,13 +140,17 @@ async def test_allowed_symlink_alias_denial_names_canonical_target(root, monkeyp
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", [ValueError("snapshot_failed"), OSError("disk")])
-async def test_snapshot_failures_refuse_without_applying(root, failure):
-    class FailedSnapshots(SnapshotStore):
-        def take(self, target, *, now=None):
-            raise failure
-
+async def test_snapshot_failures_refuse_without_applying(root, monkeypatch, failure):
     target = root / "notes.txt"
-    tools = make_tools(root, snapshots=FailedSnapshots(root.parent / "snaps"))
+    tools = make_tools(root)
+
+    def fail(*_args, **_kwargs):
+        raise failure
+
+    if HISTORY_SUPPORTED:
+        monkeypatch.setattr(tools.history, "capture_preimage", fail)
+    else:
+        monkeypatch.setattr(tools.snapshots, "take", fail)
     result = await tools.write_file({"path": "notes.txt", "content": "new"})
     assert target.read_bytes() == b"old"
     assert result["ok"] is False and result["reason"] == "snapshot_failed"
@@ -214,17 +243,28 @@ async def test_instruction_floor_is_refusal(root):
 @pytest.mark.parametrize("after_effect", [False, True])
 async def test_write_oserror_is_unknown_even_if_bytes_changed(root, monkeypatch, after_effect):
     target = root / "notes.txt"
-    original = module._atomic_write
+    tools = make_tools(root)
+    original = tools.history.apply_mutation
 
-    def fault(path, data, *, mode):
-        if path == target:
+    def fault(*args, **kwargs):
+        if after_effect:
+            original(*args, **kwargs)
+        raise OSError("injected")
+
+    if HISTORY_SUPPORTED:
+        monkeypatch.setattr(tools.history, "apply_mutation", fault)
+    else:
+        original_legacy = module._atomic_write
+
+        def fault_legacy(path, data, *, mode):
+            if path != target:
+                return original_legacy(path, data, mode=mode)
             if after_effect:
-                original(path, data, mode=mode)
+                original_legacy(path, data, mode=mode)
             raise OSError("injected")
-        return original(path, data, mode=mode)
 
-    monkeypatch.setattr(module, "_atomic_write", fault)
-    result = await make_tools(root).write_file({"path": "notes.txt", "content": "new"})
+        monkeypatch.setattr(module, "_atomic_write", fault_legacy)
+    result = await tools.write_file({"path": "notes.txt", "content": "new"})
     assert target.read_bytes() == (b"new" if after_effect else b"old")
     assert result["ok"] is False and result["reason"] == "io_error"
     assert result["detail"] == "OSError" and isinstance(result["snapshot_ref"], str)
@@ -235,17 +275,26 @@ async def test_write_oserror_is_unknown_even_if_bytes_changed(root, monkeypatch,
 @pytest.mark.parametrize("after_effect", [False, True])
 async def test_delete_oserror_is_unknown_even_if_file_disappeared(root, monkeypatch, after_effect):
     target = root / "notes.txt"
-    original = Path.unlink
+    tools = make_tools(root)
+    original = tools.history.apply_mutation
 
-    def fault(path, *args, **kwargs):
-        if path == target:
+    def fault(*args, **kwargs):
+        if after_effect:
+            original(*args, **kwargs)
+        raise OSError("injected")
+
+    if HISTORY_SUPPORTED:
+        monkeypatch.setattr(tools.history, "apply_mutation", fault)
+    else:
+        original_legacy = Path.unlink
+
+        def fault_legacy(path, *args, **kwargs):
             if after_effect:
-                original(path, *args, **kwargs)
+                original_legacy(path, *args, **kwargs)
             raise OSError("injected")
-        return original(path, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "unlink", fault)
-    result = await make_tools(root).delete_file({"path": "notes.txt"})
+        monkeypatch.setattr(Path, "unlink", fault_legacy)
+    result = await tools.delete_file({"path": "notes.txt"})
     assert target.exists() is (not after_effect)
     assert result["ok"] is False and result["reason"] == "io_error"
     assert result["detail"] == "OSError" and isinstance(result["snapshot_ref"], str)
@@ -287,21 +336,36 @@ async def test_cancellation_during_worker_propagates_without_returned_receipt(ro
     entered = threading.Event()
     release = threading.Event()
     finished = threading.Event()
-    original = module._atomic_write
+    tools = make_tools(root)
+    original = tools.history.apply_mutation
 
-    def blocked(path, data, *, mode):
-        if path == target:
+    def blocked(*args, **kwargs):
+        entered.set()
+        try:
+            if not release.wait(2):
+                raise OSError("worker timeout")
+            return original(*args, **kwargs)
+        finally:
+            finished.set()
+
+    if HISTORY_SUPPORTED:
+        monkeypatch.setattr(tools.history, "apply_mutation", blocked)
+    else:
+        original_legacy = module._atomic_write
+
+        def blocked_legacy(path, data, *, mode):
+            if path != target:
+                return original_legacy(path, data, mode=mode)
             entered.set()
             try:
                 if not release.wait(2):
                     raise OSError("worker timeout")
-                return original(path, data, mode=mode)
+                return original_legacy(path, data, mode=mode)
             finally:
                 finished.set()
-        return original(path, data, mode=mode)
 
-    monkeypatch.setattr(module, "_atomic_write", blocked)
-    task = asyncio.create_task(make_tools(root).write_file({"path": "notes.txt", "content": "late"}))
+        monkeypatch.setattr(module, "_atomic_write", blocked_legacy)
+    task = asyncio.create_task(tools.write_file({"path": "notes.txt", "content": "late"}))
     try:
         assert await asyncio.to_thread(entered.wait, 2)
         task.cancel()

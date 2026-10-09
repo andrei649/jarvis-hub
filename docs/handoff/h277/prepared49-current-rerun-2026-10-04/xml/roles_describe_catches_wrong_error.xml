@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.398" timestamp="2026-10-04T23:53:44.403272+03:00" hostname="Macmini"><testcase classname="tests.test_h277_model_roles" name="test_describe_never_raises_and_reports_a_bad_role" time="1.149"><failure message="agents.core.llm.model_roles.RoleConfigError: role_provider_unknown: JARVIS_ROLE_VISION_PROVIDER='nope'; provider ids: lm-studio, ollama, gemini, anthropic, openrouter, deepinfra, nous, xai, openai-responses, openai-compatible">tests/test_h277_model_roles.py:350: in test_describe_never_raises_and_reports_a_bad_role
+    rows = {r["role"]: r for r in model_roles.describe()}
+                                  ^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:596: in describe
+    resolved = resolve(name, env)
+               ^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:583: in resolve
+    return _resolve_vision(read, spec, env)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:412: in _resolve_vision
+    provider = _validate(spec, role_provider)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents/core/llm/model_roles.py:220: in _validate
+    raise RoleConfigError("role_provider_unknown",
+E   agents.core.llm.model_roles.RoleConfigError: role_provider_unknown: JARVIS_ROLE_VISION_PROVIDER='nope'; provider ids: lm-studio, ollama, gemini, anthropic, openrouter, deepinfra, nous, xai, openai-responses, openai-compatible</failure></testcase></testsuite></testsuites>

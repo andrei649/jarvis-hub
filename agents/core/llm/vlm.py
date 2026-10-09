@@ -155,15 +155,35 @@ class VLMConfig:
     ``label at (x, y)`` contract ever promised.
     """
 
-    backend: str  # "lmstudio" | "custom"
+    backend: str  # Local, compatible or reviewed native provider id.
     base_url: str
     model: str
     api_key: str
     is_local: bool
     preset: str = ""
     convention: str = CONVENTION_ABSOLUTE
+    wire_mode: str = "chat_completions"
+    route_source: str = ""
+    prompt_cache_retention: str = "in_memory"
+    reasoning_effort: str = ""
 
     def __post_init__(self) -> None:
+        if self.wire_mode not in {"chat_completions", "anthropic_messages", "ollama_chat", "gemini_generate_content", "responses", "xai_responses"} or (
+                self.wire_mode == "anthropic_messages" and self.backend not in {"nous", "anthropic"}) or (
+                self.wire_mode == "ollama_chat" and self.backend != "ollama") or (
+                self.wire_mode == "gemini_generate_content" and self.backend != "gemini") or (
+                self.wire_mode == "responses" and self.backend != "openai-responses") or (
+                self.wire_mode == "xai_responses" and self.backend != "xai") or (
+                self.backend == "anthropic" and self.wire_mode != "anthropic_messages") or (
+                self.backend == "gemini" and self.wire_mode != "gemini_generate_content") or (
+                self.backend == "openai-responses" and self.wire_mode != "responses") or (
+                self.backend == "xai" and self.wire_mode != "xai_responses") or (
+                self.backend == "ollama" and self.wire_mode != "ollama_chat"):
+            raise ValueError("unsupported vision wire mode")
+        if self.prompt_cache_retention not in {"in_memory", "24h"}:
+            raise ValueError("unsupported Responses retention")
+        if self.reasoning_effort not in {"", "low", "medium", "high", "xhigh"}:
+            raise ValueError("unsupported image reasoning effort")
         if self.convention not in COORDINATE_CONVENTIONS:
             raise ValueError(f"unknown coordinate convention: {self.convention!r}")
 
@@ -194,6 +214,18 @@ def resolve_vlm_config(env=None) -> VLMConfig:
     ``JARVIS_ROLE_VISION_PROVIDER`` (``lm-studio`` | ``openai-compatible``) / ``_MODEL`` /
     ``_BASE_URL`` win when set, and ``JARVIS_VLM_*`` are the fallbacks, unchanged.
     """
+    if model_roles._reader(env)("JARVIS_ROLE_VISION_PROVIDER").strip().lower() == "openrouter":
+        from .vision_openrouter import resolve_config
+        return resolve_config(env)
+    if model_roles._reader(env)("JARVIS_ROLE_VISION_PROVIDER").strip().lower() == "deepinfra":
+        from .vision_deepinfra import resolve_config
+        return resolve_config(env)
+    if model_roles._reader(env)("JARVIS_ROLE_VISION_PROVIDER").strip().lower() == "nous":
+        from .vision_nous import resolve_config
+        return resolve_config(env)
+    if model_roles._reader(env)("JARVIS_ROLE_VISION_PROVIDER").strip().lower() == "auto":
+        from .vision_auto import resolve_config
+        return resolve_config(env)
     try:
         backend, url, model, api_key, preset_name = model_roles.vision_env_view(env)
     except model_roles.RoleConfigError as exc:
@@ -297,6 +329,46 @@ def build_vision_messages(prompt: str, images=None, system: str = "",
     return messages
 
 
+def build_vision_history_messages(prompt: str, images, history, system: str = "",
+                                  max_dim: int = 1024) -> list:
+    """Replay explicitly selected active image turns as ordered native parts."""
+    from .vision_history import ActiveImageTurn
+
+    if type(history) not in (list, tuple) or not 1 <= len(history) <= 8:
+        raise ValueError("invalid active image history")
+    if type(prompt) is not str or not prompt.strip():
+        raise ValueError("invalid active image question")
+    if type(images) not in (list, tuple) or len(images) > 8:
+        raise ValueError("invalid active image selection")
+    messages = [{"role": "system", "content": system}] if system else []
+    image_count = len(images)
+    for turn in history:
+        if isinstance(turn, ActiveImageTurn):
+            question, answer, prior_images = turn.question, turn.answer, turn.images
+        elif type(turn) is tuple and len(turn) == 3:
+            question, answer, prior_images = turn
+        else:
+            raise ValueError("invalid active image history")
+        if (type(question) is not str or not 0 < len(question) <= 4000 or not question.strip()
+                or type(answer) is not str or not 0 < len(answer) <= 16000 or not answer.strip()
+                or type(prior_images) not in (list, tuple) or not 1 <= len(prior_images) <= 8
+                or any(type(image) is not bytes or not image for image in prior_images)):
+            raise ValueError("invalid active image history")
+        image_count += len(prior_images)
+        if image_count > 8:
+            raise ValueError("too many active images")
+        parts = [{"type": "text", "text": question}]
+        parts.extend(encode_image_block(image, max_dim) for image in prior_images)
+        messages.extend(({"role": "user", "content": parts},
+                         {"role": "assistant", "content": answer}))
+    if any(type(image) is not bytes or not image for image in images):
+        raise ValueError("invalid active image selection")
+    parts = [{"type": "text", "text": prompt}]
+    parts.extend(encode_image_block(image, max_dim) for image in images)
+    messages.append({"role": "user", "content": parts})
+    return messages
+
+
 class VLMBackend(LLMBackend):
     """OpenAI-vision-compatible VLM backend (host server is the deployment seam)."""
 
@@ -305,7 +377,31 @@ class VLMBackend(LLMBackend):
     supports_tools = False
 
     def __init__(self, base_url: str = DEFAULT_VLM_BASE, api_key: str = "",
-                 client=None, max_image_dim: int = 1024, *, composer_auth: bool = False) -> None:
+                 client=None, max_image_dim: int = 1024, *, composer_auth: bool = False,
+                 provider_id: str = "", wire_mode: str = "chat_completions",
+                 prompt_cache_retention: str = "in_memory", reasoning_effort: str = "") -> None:
+        if provider_id not in ("", "openrouter", "deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses", "xai"):
+            raise ValueError("unsupported native vision provider")
+        if wire_mode not in {"chat_completions", "anthropic_messages", "ollama_chat", "gemini_generate_content", "responses", "xai_responses"} or (
+                wire_mode == "anthropic_messages" and provider_id not in {"nous", "anthropic"}) or (
+                wire_mode == "ollama_chat" and provider_id != "ollama") or (
+                wire_mode == "gemini_generate_content" and provider_id != "gemini") or (
+                wire_mode == "responses" and provider_id != "openai-responses") or (
+                wire_mode == "xai_responses" and provider_id != "xai") or (
+                provider_id == "anthropic" and wire_mode != "anthropic_messages") or (
+                provider_id == "gemini" and wire_mode != "gemini_generate_content") or (
+                provider_id == "openai-responses" and wire_mode != "responses") or (
+                provider_id == "xai" and wire_mode != "xai_responses") or (
+                provider_id == "ollama" and wire_mode != "ollama_chat"):
+            raise ValueError("unsupported vision wire mode")
+        if prompt_cache_retention not in {"in_memory", "24h"}:
+            raise ValueError("unsupported Responses retention")
+        if reasoning_effort not in {"", "low", "medium", "high", "xhigh"}:
+            raise ValueError("unsupported image reasoning effort")
+        self._wire_mode = wire_mode
+        self._provider_id = provider_id
+        self._prompt_cache_retention = prompt_cache_retention
+        self._reasoning_effort = reasoning_effort
         self.base_url = base_url
         self.api_key = api_key
         self.max_image_dim = max_image_dim
@@ -319,7 +415,7 @@ class VLMBackend(LLMBackend):
             # Suppress URL Basic overriding explicit Bearer; _headers resolves both.
             options["auth"] = httpx.Auth()
             options["trust_env"] = False
-        self.client = client or llm_async_client("vlm", base_url=base_url, timeout=180.0, **options)
+        self.client = client or llm_async_client(provider_id or "vlm", base_url=base_url, timeout=180.0, **options)
 
     @classmethod
     def from_env(cls, *, client=None, max_image_dim: int = 1024) -> "VLMBackend":
@@ -330,6 +426,10 @@ class VLMBackend(LLMBackend):
             api_key=config.api_key,
             client=client,
             max_image_dim=max_image_dim,
+            **({"provider_id": config.backend} if config.backend in ("openrouter", "deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses", "xai") else {}),
+            wire_mode=config.wire_mode,
+            prompt_cache_retention=config.prompt_cache_retention,
+            reasoning_effort=config.reasoning_effort,
         )
         backend.is_local = config.is_local
         return backend
@@ -342,7 +442,13 @@ class VLMBackend(LLMBackend):
 
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json"}
-        if self.api_key:
+        if self._wire_mode == "anthropic_messages":
+            h["anthropic-version"] = "2023-06-01"
+        if self._provider_id == "anthropic":
+            h["x-api-key"] = self.api_key
+        elif self._provider_id == "gemini":
+            h["x-goog-api-key"] = self.api_key
+        elif self.api_key:
             h["Authorization"] = f"Bearer {self.api_key}"
         elif self._composer_auth:
             from .vision_policy import authorization
@@ -352,39 +458,89 @@ class VLMBackend(LLMBackend):
         return h
 
     async def generate_vision_checked(self, model: str, prompt: str, images=None, system: str = "",
-                              max_tokens: int = 1024, temperature: float = 0.2) -> str:
-        messages = build_vision_messages(prompt, images, system, self.max_image_dim)
+                              max_tokens: int = 1024, temperature: float = 0.2, *,
+                              history=None) -> str:
+        messages = (build_vision_history_messages(prompt, images or [], history, system,
+                                                  self.max_image_dim)
+                    if history is not None else
+                    build_vision_messages(prompt, images, system, self.max_image_dim))
         payload = {"model": model, "messages": messages,
                    "max_tokens": max_tokens, "temperature": temperature, "stream": False}
+        native_messages = self._wire_mode == "anthropic_messages"
+        native_ollama = self._wire_mode == "ollama_chat"
+        native_gemini = self._wire_mode == "gemini_generate_content"
+        native_responses = self._wire_mode == "responses"
+        native_xai = self._wire_mode == "xai_responses"
+        if native_gemini:
+            from .video_native import gemini_request_url
+            gemini_request_url(self.base_url, model)
+        endpoint = (f"/models/{model}:generateContent" if native_gemini else
+                    "/responses" if native_responses or native_xai else
+                    "/messages" if native_messages else "/api/chat" if native_ollama else "/chat/completions")
+        answer, empty = compatible_vision_answer, compatible_empty_success
+        if native_messages:
+            from .vision_nous_wire import messages_payload, messages_answer, messages_empty
+            payload = messages_payload(payload)
+            answer, empty = messages_answer, messages_empty
+        if native_ollama:
+            from .vision_ollama_wire import chat_payload, chat_answer, chat_empty
+            payload = chat_payload(payload)
+            answer, empty = chat_answer, chat_empty
+        if native_gemini:
+            from .vision_gemini_wire import (
+                generate_content_answer, generate_content_empty, generate_content_payload,
+            )
+            payload = generate_content_payload(payload)
+            answer, empty = generate_content_answer, generate_content_empty
+        if native_responses:
+            from .vision_responses_wire import responses_answer, responses_empty, responses_payload
+            payload = responses_payload(payload, retention=self._prompt_cache_retention)
+            answer, empty = responses_answer, responses_empty
+        if native_xai:
+            from .vision_xai_wire import xai_answer, xai_empty, xai_payload
+            payload = xai_payload(payload, reasoning_effort=self._reasoning_effort)
+            answer, empty = xai_answer, xai_empty
+        if self._provider_id == "openrouter":
+            from .vision_openrouter import current_provider_block
+            payload["provider"] = current_provider_block()
+        if history is not None and len(json.dumps(
+                payload, separators=(",", ":"), ensure_ascii=False).encode()) > 20_000_000:
+            raise ValueError("active image request too large")
         scope = current_vision_retry(self, model)
         image_bearing = any(isinstance(part, dict) and part.get("type") == "image_url"
                             for message in messages if isinstance(message.get("content"), list)
                             for part in message["content"])
-        if scope is not None and image_bearing:
-            scope.begin(payload)
+        recovery = scope if image_bearing else None
+        if recovery is not None or history is not None or self._provider_id in {"deepinfra", "nous", "ollama", "anthropic", "gemini", "openai-responses", "xai"}:
+            if recovery is not None:
+                recovery.begin(payload)
             async with asyncio.timeout(VISION_GENERATION_TIMEOUT):
-                for attempt in range(2):
-                    attempt_body = scope.next_attempt()
+                attempts = recovery.max_attempts if recovery is not None else 1
+                for attempt in range(attempts):
+                    attempt_body = recovery.next_attempt() if recovery is not None else payload
                     async with self.client.stream(
-                            "POST", "/chat/completions", json=attempt_body,
+                            "POST", endpoint, json=attempt_body,
                             headers=self._headers()) as response:
                         result = bytearray()
                         async for chunk in response.aiter_bytes():
-                            scope.check()
-                            result.extend(chunk)
-                            if len(result) > MAX_VISION_RESPONSE_BYTES:
+                            if recovery is not None:
+                                recovery.check()
+                            if len(result) + len(chunk) > MAX_VISION_RESPONSE_BYTES:
                                 raise ValueError("vision response too large")
-                        scope.check()
+                            result.extend(chunk)
+                        if recovery is not None:
+                            recovery.check()
                         response.raise_for_status()
-                    scope.check()
+                    if recovery is not None:
+                        recovery.check()
                     data = json.loads(result)
-                    if attempt == 0 and compatible_empty_success(data):
+                    if recovery is not None and attempt + 1 < attempts and empty(data):
                         continue
-                    return compatible_vision_answer(data)
-        resp = await self.client.post("/chat/completions", json=payload, headers=self._headers())
+                    return answer(data)
+        resp = await self.client.post(endpoint, json=payload, headers=self._headers())
         resp.raise_for_status()
         data = resp.json()
-        return compatible_vision_answer(data)
+        return answer(data)
 
     async def generate_vision(self, model: str, prompt: str, images=None, system: str = "",
                               max_tokens: int = 1024, temperature: float = 0.2) -> str:

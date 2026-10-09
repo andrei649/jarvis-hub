@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-10-04T02:22:53.160725+00:00",
+  "base_sha": "4f265c6cdbe8d04d905230919bd0e717d6a3c5c4",
+  "state": "Successful terminal frozen full backend run; local only",
+  "full_backend": {
+    "tests": 22418,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 35,
+    "passed": 22383,
+    "ordinary_skips": 34,
+    "existing_xfail": 1,
+    "expected_failure_cases": [
+      "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+    ],
+    "junit_sha256": "a074e6adb198cdf2eb9c9cad8cb84ba359ab554a1f744ee6648489af7955dc48",
+    "log_sha256": "c49a74ee3f4946151f3dd72e29f525e7c41e077aca58277f8e9b0183166c9d73",
+    "exit_code": 0,
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests",
+      "--timeout=90",
+      "-q",
+      "--tb=short",
+      "--junitxml=/tmp/nerva-h277-openrouter-video-full-20261004.xml"
+    ]
+  },
+  "frozen_inputs": {
+    "paths": 3008,
+    "drift": 0,
+    "manifest_sha256": "1190fa5b4a4f60b3d31bf426dd0b9f9e969e4ee3eaddc26a4a8ba7b4591ba1eb"
+  },
+  "source_sha256": {
+    "agents/core/llm/model_roles.py": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "agents/core/llm/video_policy.py": "e32c063f358832f37c40a5b7b1e4148d4715a8e397d5618c041f6e1a664c5a92",
+    "agents/core/llm/video_routes.py": "daf71275804e7c9833b764c5fdd8d611ecd18df8de3cb1f0b7acd7e0e592888d",
+    "agents/core/video_analysis.py": "9865d53cfe1ca9300f5c352ace9ebcae370391d253c5d9cb92db743b55fd0301",
+    "tests/test_h277_openrouter_video.py": "0a6bf2b57d0849ef549bc8555ce1127a143a28caaa325e0a7fc2aaeff5dcd860",
+    "tests/test_h277_openrouter_vision_resolution.py": "5a974ea62acc4afadbec0644787fe50714ba2b9547301cd7ab27fba48d7b651b"
+  },
+  "limits": [
+    "34 ordinary skips and one existing xfail; no coverage threshold or 100% coverage claim",
+    "Existing test warnings remain; no live provider or device acceptance",
+    "H277 remains partial; no new equivalent credit",
+    "No push, merge, deploy or provider activation",
+    "Subsequent source or test changes require separate verification; later documentation is checked separately"
+  ]
+}

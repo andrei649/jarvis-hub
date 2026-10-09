@@ -16,6 +16,7 @@ from ..automation_contracts import ContractTemplate, contract_denial, predicate
 from .base import ChannelAdapter
 from ..errors import E_CHANNEL_START_FAIL
 from ..log import log_error
+from .pending_input_workspace import valid_markup, valid_receipt
 
 logger = logging.getLogger("jarvis.channels.manager")
 
@@ -27,7 +28,7 @@ _SAFE_CONTRACT_TOKEN = re.compile(r"^[A-Za-z0-9_.:/@\-]{1,200}$")
 # untrusted input and may only reach SMTP through the governed channel-reply
 # executor below.
 _SUPPORTED_SEND_CHANNELS = frozenset({"telegram", "web", "voice", "ntfy"})
-_SUPPORTED_REPLY_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord"})
+_SUPPORTED_REPLY_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord", "ntfy"})
 
 
 def _safe_contract_token(value: Any) -> bool:
@@ -149,6 +150,21 @@ class ChannelManager:
             return bool(await ch.send(response, **kwargs))
         return False
 
+    async def send_pending_card(self, channel: str, response, markup: dict, **kwargs) -> int | None:
+        """Direct Telegram prompt delivery through the existing send contract.
+
+        A verified Bot API message receipt is required to bind buttons. Workspace
+        channels retain their governed reply path; this API cannot send to them.
+        """
+        ch = self.channels.get(channel)
+        send = getattr(ch, "send_pending_card", None)
+        if (channel != "telegram" or not callable(send) or type(markup) is not dict
+                or self._contract_denial(channel, response, {**kwargs, "reply_markup": markup})
+                is not None):
+            return None
+        receipt = await send(response, reply_markup=markup, **kwargs)
+        return receipt if type(receipt) is int and receipt > 0 else None
+
     async def send_channel_reply(self, channel: str, response, **kwargs) -> bool:
         """Dispatch an already-governed `channel.reply` task.
 
@@ -161,9 +177,35 @@ class ChannelManager:
             return False
         if self._reply_contract_denial(channel, response, kwargs) is not None:
             return False
+        if channel == "ntfy":
+            return bool(await ch.send_reply(response, **kwargs))
         if channel in _SUPPORTED_REPLY_CHANNELS:
             return bool(await ch.send(response, **kwargs))
         return False
+
+    async def send_channel_prompt(self, channel: str, response, markup: dict, **kwargs) -> dict | None:
+        """Native transport used only by the governed channel.reply executor."""
+        adapter = self.channels.get(channel)
+        send = getattr(adapter, "send_pending_card", None)
+        if (channel not in {"slack", "discord"} or not callable(send) or not valid_markup(markup)
+                or self._reply_contract_denial(channel, response, kwargs) is not None):
+            return None
+        receipt = await send(response, reply_markup=markup, **kwargs)
+        return receipt if valid_receipt(receipt) and receipt["channel"] == channel else None
+
+    async def send_channel_text_prompt(self, channel: str, response, *, current, **kwargs) -> bool:
+        """Text-only prompt transport, consumed by the governed reply executor."""
+        adapter = self.channels.get(channel)
+        send = getattr(adapter, "send_reply", None)
+        if (channel != "ntfy" or not callable(send) or not callable(current)
+                or self._reply_contract_denial(channel, response, kwargs) is not None):
+            return False
+        return await send(response, current=current, plain=True, **kwargs) is True
+
+    def discard_pending_card(self, channel: str, receipt: dict):
+        discard = getattr(self.channels.get(channel), "discard_pending_card", None)
+        if callable(discard) and valid_receipt(receipt) and receipt["channel"] == channel:
+            discard(receipt)
 
     @staticmethod
     def _contract_payload_for(kind: str, channel: str, response, kwargs: dict) -> dict:

@@ -91,6 +91,17 @@ def test_status_and_actual_model_provenance(setup):
     assert setup.closed == 1
 
 
+def test_user_token_can_still_prepare_standalone_vision(setup):
+    preview = setup.client.post("/api/vlm/composer/prepare", json={"prompt": "What is shown?"})
+    assert preview.status_code == 200, preview.text
+    status = preview.json()
+    response = setup.client.post("/api/vlm/composer/describe-prepared", json={
+        **body(setup), "review_token": status["review_token"],
+    })
+    assert response.status_code == 200, response.text
+    assert len(setup.calls) == 1
+
+
 @pytest.mark.parametrize(
     "change",
     [
@@ -309,11 +320,15 @@ def test_configuration_rotation_during_cleanup_cannot_return_success(setup, monk
     assert len(setup.calls) == 1 and setup.closed == 1
 
 
-def test_composer_model_selection_findings_retain_legacy_refusal_contract(setup, monkeypatch):
+def test_composer_cost_drift_requires_preview_then_explicit_confirmation(setup, monkeypatch):
     from agents.core.llm import selection_guards as sg
     setup.config = replace(setup.config, model='gpt-4.1', base_url='https://synthetic.invalid/v1', is_local=False)
     payload = {**body(setup), 'remote_ack': True}
     monkeypatch.setattr(sg, '_cost_line', lambda: 1.0)
+    response = setup.client.post(DESCRIBE, json=payload)
+    assert response.status_code == 409 and response.json()['reason'] == 'vlm_destination_changed'
+    assert not setup.calls and setup.closed == 0
+    payload = {**body(setup), 'remote_ack': True}
     response = setup.client.post(DESCRIBE, json=payload)
     assert response.status_code == 409 and response.json()['error'] == 'selection_guard'
     assert response.json()['needs'] == ['confirm_expensive']

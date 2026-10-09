@@ -1,0 +1,82 @@
+{
+  "generated_at": "2026-10-05T19:04:45.465931+00:00",
+  "goal_scope": "all697",
+  "base_sha": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "status": {
+    "H595": "partial",
+    "H660": "partial"
+  },
+  "publication": false,
+  "reused": {
+    "source": "Hermes59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e/tools/code_execution_tool.py generate_hermes_tools_module and per-tool stub templates",
+    "license": "docs/hermes/licenses/hermes-code-execution-MIT.txt",
+    "adaptation": "Generate jarvis_tools signatures from the existing live offered Nerva tool schemas; preserve raw RPC envelopes, file transport, host broker, approval queue and per-cell grant. No donor socket service or extra authority copied."
+  },
+  "implemented": [
+    "Import offered public Python tool names in one-shot and resident code. Positional/keyword/required/optional arguments follow current schemas; private generated identifiers cannot collide with schema fields.",
+    "Rebuild resident import module each cell. Saved functions still call the current broker, so a revoked tool offer is refused; current imports no longer advertise it.",
+    "Keep the full32768-character user-code allowance by passing trusted generated prelude separately from manager input validation.",
+    "The actual registered model tool preserves gated approval_required and the host call cap with imported functions.",
+    "One-shot runtime cancels and awaits its execute task when interrupted, including during host RPC service, before deleting its mailbox. Backend errors still propagate and mailbox cleanup still runs."
+  ],
+  "verification": {
+    "affected": {
+      "path": "docs/hermes/evidence/2026-10-05-code-imports/affected-result.xml",
+      "tests": 629,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 9
+    },
+    "passed": 620,
+    "new_focused_tests": 13,
+    "valid_red": "Original import cases failed for absent module. Corrected cancellation fixtures reproduce two real teardown failures against the external original runtime. Two introduced helper/cleanup edge regressions reproduced then fixed. Initial incomplete cancellation fixture and invalid suite filename are not behavioral evidence.",
+    "skips": {
+      "linux_proc": 1,
+      "docker_backend_unavailable": 1,
+      "dedicated_live_docker_lane": 7
+    },
+    "scope": "Real Python/file RPC workers and actual model registrar/read-only FileTools, using synthetic project data. Isolated containment is simulated in these worker tests; Docker source/mocked tests included, no fresh live Docker/provider/remote run.",
+    "ruff": {
+      "paths": 5,
+      "passed": true
+    },
+    "bandit": {
+      "production_paths": 4,
+      "findings": 0,
+      "errors": 0
+    },
+    "gitleaks": {
+      "source_test_doc_license_paths": 8,
+      "findings": 0,
+      "baseline": false,
+      "inline_allow": false
+    },
+    "source_manifest": "docs/hermes/evidence/2026-10-05-code-imports/scoped-inputs.json",
+    "impact": "docs/hermes/evidence/2026-10-05-code-imports/reviewed-pin-impact.json",
+    "existing_tests_changed": false,
+    "graft_graph": {
+      "ok": true,
+      "added": 0,
+      "removed": 0,
+      "changed": 0,
+      "stale": 0,
+      "context_missing": true
+    },
+    "whole_suite_full697_or_live_acceptance": false
+  },
+  "contract_map": "docs/hermes/code-execution-guide.md",
+  "remaining": [
+    "H595 project/strict session cwd and active interpreter selection; authority profiles do not supply this function.",
+    "Owner/skill-scoped environment passthrough and explicit operational-variable workaround, integrated into isolated code spawns.",
+    "Product user-message interruption and backend/platform integration evidence.",
+    "H660 remote transport, H515 images and the remaining697 goal remain separate outstanding work."
+  ],
+  "accounting": {
+    "equivalent": 129,
+    "total": 697,
+    "percent": 18.5,
+    "current_equivalent": 21,
+    "inherited_equivalent": 108,
+    "new_equivalent_in_this_batch": 0
+  }
+}

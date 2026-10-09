@@ -1,0 +1,87 @@
+{
+  "head": "b5a8b78474a6e63df0fd122ed681927d66eb1e63",
+  "head_after": "b5a8b78474a6e63df0fd122ed681927d66eb1e63",
+  "command": [
+    "/tmp/nerva-pr-python-20261001/bin/python",
+    "-m",
+    "pytest",
+    "tests/",
+    "-n",
+    "4",
+    "--dist",
+    "loadfile",
+    "--timeout=90",
+    "--junitxml=/tmp/nerva-vision-consent-full-20261002.xml"
+  ],
+  "returncode": 0,
+  "seconds": 226.47449325001799,
+  "changed_tracked_files": [],
+  "git_status_after": "",
+  "tracked_regular_files": 4344,
+  "fingerprint": "62ba6dc1168aa6b42d37a57a602d43069eb73faee9f1a86477bf442ead5bfd6f",
+  "generated_at": "2026-10-02T05:59:50.107978+00:00",
+  "results": {
+    "passed": 20842,
+    "skipped": 34,
+    "xfailed": 1,
+    "warnings": 64,
+    "total": 20877
+  },
+  "scope": "Local per-image-turn training/cost confirmations; native provider HTTP requests simulated. Goal of full Hermes parity remains open.",
+  "frontend": {
+    "passed": 1858,
+    "failed": 0,
+    "typecheck": "passed",
+    "e2e_types": "passed",
+    "build": "passed",
+    "generated_schema": "openapi-typescript7.13.0 from actual app.openapi with JARVIS_TESTING=1"
+  },
+  "browser": {
+    "passed": 6,
+    "failed": 0,
+    "engine": "installed Google Chrome via Playwright channel chrome",
+    "surfaces": [
+      "desktop",
+      "emulated Pixel7 mobile"
+    ],
+    "backend": "isolated loopback fixture; no application lifespan or live provider calls"
+  },
+  "artifacts": [
+    {
+      "path": "/tmp/nerva-vision-consent-full-20261002.xml",
+      "sha256": "0853ad9e5c3dd7c29ba798e451dbbc876f2fe4ae3cd69455d56ebb0a19530eee"
+    },
+    {
+      "path": "/tmp/nerva-vision-consent-full-20261002.log",
+      "sha256": "cb8386fc702bf4e37319530ad6741ace912345f258b8a92bd95868fc4f0c3240"
+    },
+    {
+      "path": "/tmp/nerva-vision-consent-full-20261002.manifest.json",
+      "sha256": "4e7ff0766f7d8d96ab70bccc5746fa0b92aef189a671424812bd46b6f208698f"
+    },
+    {
+      "path": "/tmp/nerva-vision-consent-frontend-20261002.json",
+      "sha256": "e206d0d234355c0ba01ee6cd182ee38b34469405615bacab9b3f6077cac8ff05"
+    },
+    {
+      "path": "/tmp/nerva-vision-consent-build-20261002.log",
+      "sha256": "6052acbcd74d56cd08fc5b5d2d34c8c886efdde449a4b8b9e9d3693eeb723d17"
+    },
+    {
+      "path": "/tmp/nerva-vision-consent-browser-20261002.json",
+      "sha256": "24796ad9f61d11cb0937278d1809bef249e26a437a04a6e328296923114a851a"
+    },
+    {
+      "path": "/tmp/nerva-vision-consent-final-focused-20261002.xml",
+      "sha256": "dad8b7feaf30e29dbe595af4081082a62ecd78fac8743fc9668483e7a08bcdf9"
+    },
+    {
+      "path": "/tmp/nerva-vision-consent-records-20261002.xml",
+      "sha256": "dd9783ffe230ba49da2bef36a0b693fa1d9b6c601955ac74d2eb18e62b596522"
+    },
+    {
+      "path": "/tmp/nerva-vision-consent-cli-red-20261002.xml",
+      "sha256": "588e37d6f7b3d870a7ba121124c339d6748cfb7becd9a82d181e96fcaf728714"
+    }
+  ]
+}

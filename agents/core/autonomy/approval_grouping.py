@@ -93,6 +93,8 @@ class _ModelProducer:
     task: object = field(repr=False)
     thread: int
     lifetime: list = field(repr=False)
+    registration_key: str | None = field(default=None, repr=False)
+    registration_key_is_live: object = field(default=None, repr=False)
 
 
 _MODEL_PRODUCER = ContextVar('model_approval_grouping', default=None)
@@ -107,7 +109,8 @@ def _calling_task():
 
 
 @contextmanager
-def model_request_scope(*, actor, tool, args, epoch, registration_is_live):
+def model_request_scope(*, actor, tool, args, epoch, registration_is_live,
+                        registration_key=None, registration_key_is_live=None):
     """Private synchronous producer lifetime; descendants cannot borrow it."""
     import threading
 
@@ -122,8 +125,20 @@ def model_request_scope(*, actor, tool, args, epoch, registration_is_live):
             encoded = json.dumps(args, sort_keys=True, ensure_ascii=False,
                                  separators=(',', ':'), allow_nan=False)
             if len(encoded.encode('utf-8')) <= 65_536:
+                key = None
+                verifier = None
+                if (isinstance(registration_key, str) and len(registration_key) == 64
+                        and all(char in '0123456789abcdef' for char in registration_key)
+                        and callable(registration_key_is_live)):
+                    try:
+                        if registration_key_is_live(registration_key) is True:
+                            key = registration_key
+                            verifier = registration_key_is_live
+                    except Exception:
+                        key = verifier = None  # Consent failure preserves legacy grouping.
                 context = _ModelProducer(producer, actor, tool, encoded, epoch,
-                    registration_is_live, _calling_task(), threading.get_ident(), [True])
+                    registration_is_live, _calling_task(), threading.get_ident(), [True],
+                    key, verifier)
     except Exception:
         context = None  # Failed provenance leaves an independent approval request.
     token = _MODEL_PRODUCER.set(context)
@@ -169,3 +184,32 @@ def model_group_semantics(context, task):
                 'registration_epoch': context.epoch}
     except (TypeError, ValueError, UnicodeError, RecursionError):
         return None
+
+
+def model_consent_semantics(context, task):
+    """Export registrar provenance only for the exact verified live producer."""
+    semantics = model_group_semantics(context, task)
+    if semantics is None or not isinstance(context.registration_key, str):
+        return None
+    try:
+        # Call arguments are model-controlled. A claimed provenance field cannot
+        # ride alongside the registrar-owned key, even when the rest matches.
+        def claimed(value, depth=0):
+            if depth > 20:
+                return True
+            if isinstance(value, dict):
+                return any(key in {'registration_key', '_consent_registration_key',
+                                   'consent_revision'} or claimed(child, depth + 1)
+                           for key, child in value.items())
+            if isinstance(value, list):
+                return any(claimed(child, depth + 1) for child in value)
+            return False
+
+        if claimed(task.payload):
+            return None
+        if (not callable(context.registration_key_is_live)
+                or context.registration_key_is_live(context.registration_key) is not True):
+            return None
+    except Exception:
+        return None
+    return {**semantics, 'registration_key': context.registration_key}

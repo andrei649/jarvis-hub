@@ -14,6 +14,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from agents.core.config_read_errors import report_unreadable
 from agents.core.llm import provider_routing as _routing
 from agents.core.llm.model_config import (
     DEFAULT_CLAUDE_MODEL,
@@ -179,7 +180,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="reasoning_effort", value="",                    label="Cloud reasoning effort (empty = ask for nothing; clamped to what each model accepts)", kind="select", opts=["", *REASONING_EFFORT_LADDER]),
     dict(category="llm", key="ollama_num_ctx", value=0, label="Ollama context tokens (0 = probe model parameters)", kind="number"),
     dict(category="llm", key="gemini_effort_declarations", value="", label='Gemini effort vocabularies: JSON {"exact-model": ["low", "high"]}', kind="text"),
-    dict(category="llm", key="compatible_provider", value="", label="Compatible cloud provider (empty = Gemini)", kind="select", opts=["", "openrouter", "openai-compatible", "openai-responses", "xai"]),
+    dict(category="llm", key="compatible_provider", value="", label="Compatible cloud provider (empty = Gemini)", kind="select", opts=["", "openrouter", "openai-compatible", "deepinfra", "openai-responses", "xai"]),
     # H583 — which upstream provider may serve an OpenRouter request (sent as its
     # `provider` object, to OpenRouter only). data_collection is a privacy control:
     # seeded "deny" so a cloud turn never lands on a provider that stores or trains
@@ -195,6 +196,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm", key="compatible_prompt_cache_key", value=False, label="Compatible endpoint explicitly supports prompt_cache_key", kind="toggle"),
     dict(category="llm", key="compatible_reasoning_enabled", value=False, label="Compatible endpoint explicitly supports reasoning effort", kind="toggle"),
     dict(category="llm", key="compatible_effort_declarations", value="", label='Compatible effort vocabularies: JSON {"exact-model": ["low", "high"]}', kind="text"),
+    dict(category="llm", key="vision_model_capabilities", value=[], label="Selected image model capability declarations: JSON rows with backend, base_url, model and supports_vision", kind="json"),
     dict(category="llm",     key="reasoning_effort_overrides", value="",          label="Reasoning-effort overrides — JSON {\"model-prefix\": [\"low\",\"high\"]}; an empty list silences the parameter for that model", kind="text"),
     dict(category="llm",     key="control_enabled",  value=True,                  label="LM Studio control (start/load/unload)", kind="toggle"),
     dict(category="llm",     key="chat_control",     value=True,                  label="LM Studio control via chat",            kind="toggle"),
@@ -205,6 +207,13 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="cost_confirm_usd_per_mtok", value=40,          label="Ask before choosing a model whose output costs at least this many USD per million tokens (0 = never ask)", kind="number"),
     dict(category="llm",     key="hybrid_flash_max", value=1000000,                label="Cloud Flash routing threshold — above N input tokens escalates to Pro (0 = unlimited)", kind="number"),
     dict(category="llm",     key="tool_loop_enabled", value=False,                  label="Agent tool loop (experimental)", kind="toggle"),
+    dict(category="llm", key="kanban", value=False, label="Owner Kanban board tools; worker dispatch has a separate opt-in setting", kind="toggle"),
+    dict(category="llm", key="kanban_dispatch", value=False, label="Governed Kanban worker dispatch (also requires board tools and agent tool loop)", kind="toggle"),
+    dict(category="llm", key="kanban_network_attachments", value=False, label="Kanban URL attachments (requires separate approval for each URL and redirect)", kind="toggle"),
+    dict(category="llm", key="kanban_max_workers", value=2, label="Maximum concurrent Kanban workers across all agents", kind="number"),
+    dict(category="llm", key="kanban_max_workers_per_agent", value=1, label="Maximum concurrent Kanban workers per agent", kind="number"),
+    dict(category="llm", key="operating_guidance", value={"enabled": True, "flags": {}, "platform_overrides": {}, "agents": {}},
+         label="Model operating guidance: enabled, independent flags, per-agent overrides and channel presentation", kind="json"),
     # Native execute_code remains owner opt-in. Sessions follow that switch by default;
     # the image is needed only for persistent Docker kernels, not one-shot execution.
     dict(category="llm", key="execute_code", value=False, label="Offer native code execution to the owner", kind="toggle"),
@@ -344,6 +353,19 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="channels",key="rate_limit",       value=10,                    label="Gateway rate limit (msg/min)", kind="number"),
     dict(category="channels",key="web_enabled",      value=True,                  label="Web channel",        kind="toggle"),
     dict(category="channels",key="streaming_replies", value=True,                 label="Write chat replies in place as they are produced (channels that can edit a message)", kind="toggle"),
+    dict(category="channels",key="pending_inputs_enabled", value=False, label="Chat clarification preview (restart to apply)", kind="toggle"),
+    dict(category="channels", key="owner_senders", value={}, label="Command owners: Slack team:user, Discord user ID or ntfy receive topic; current pairing required", kind="json"),
+    dict(category="display", key="ephemeral_system_ttl", value=0, label="Seconds before temporary system notices are removed (0 keeps them)", kind="number"),
+    # H063: reset routing context without deleting stored conversations.
+    dict(category="sessions", key="reset_mode", value="none", label="Automatic conversation reset policy", kind="select", opts=["none", "idle", "daily", "both"]),
+    dict(category="sessions", key="idle_minutes", value=1440, label="Idle minutes before a fresh conversation (idle/both)", kind="number"),
+    dict(category="sessions", key="daily_hour", value=4, label="Daily reset hour in the configured timezone (0–23)", kind="number"),
+    dict(category="sessions", key="reset_by_type", value={}, label="Reset overrides by dm/group/thread", kind="json"),
+    dict(category="sessions", key="reset_by_channel", value={}, label="Reset overrides by channel, with optional nested types", kind="json"),
+    dict(category="sessions", key="reset_triggers", value=["/new", "/reset"], label="Exact texts that start a new conversation", kind="json"),
+    dict(category="sessions", key="store_max_age_days", value=90, label="Retire idle routing-index entries after days (0 = off; transcripts remain saved)", kind="number"),
+    dict(category="sessions", key="stall_seconds", value=300, label="Notify when a pending conversation has no processing progress for seconds (0 = off)", kind="number"),
+    dict(category="sessions", key="stall_channel", value="telegram", label="Owner-configured destination for session stall notices", kind="select", opts=["telegram", "ntfy", "web"]),
     # webhooks — H153: the platform-level receiver switch. Off, every inbound delivery
     # is refused with 503 before its body is read; hooks keep their credentials.
     dict(category="webhooks", key="receiver_enabled", value=True, label="Inbound webhook receiver (off: every delivery is refused; hooks keep their credentials)", kind="toggle"),
@@ -384,7 +406,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="plugins", key="gecko_tx_csv_path",       value="",   label="Gecko – transactions CSV (burn-rate)", kind="text"),
     # stark — analytics
     dict(category="plugins", key="stark_ga4_service_account", value="", label="Stark – GA4 Service Account JSON", kind="text"),
-    dict(category="plugins", key="stark_ga4_property_id",     value="", label="Stark – GA4 Property ID",          kind="text"),
+    dict(category="plugins", key="stark_ga4_" "property_id",     value="", label="Stark – GA4 Property ID",          kind="text"),
     # skills
     dict(category="skills",  key="auto_generate",    value=True,                  label="Auto-generate skills",kind="toggle"),
     dict(category="skills",  key="sandbox_enabled",  value=True,                  label="Sandbox execution",  kind="toggle"),
@@ -429,6 +451,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="mode",            value="auto", label="Autonomy mode (AUTO/ASK/OFF)", kind="select", opts=["auto","ask","off"]),
     dict(category="autonomy", key="earned_autonomy_enabled", value=False, label="Earn autonomy from proven outcomes", kind="toggle"),
     dict(category="autonomy", key="owner_chat_id",   value="",     label="Owner Telegram chat ID", kind="text"),
+    dict(category="autonomy", key="owner_user_ids", value=None, label="Telegram owners (JSON user ID list; null uses the allowed sender list)", kind="json"),
     dict(category="autonomy", key="cap_per_action",  value=50,     label="Money cap per action", kind="number"),
     dict(category="autonomy", key="daily_ceiling",   value=200,    label="Money daily ceiling",  kind="number"),
     dict(category="autonomy", key="interrupt_budget",value=4,      label="Urgent pushes per day", kind="number"),
@@ -486,38 +509,98 @@ DEFAULTS: list[dict[str, Any]] = [
 # ── lazy init — called on first use, not at import time ───────────
 
 _initialized = False
+_initialized_for_path: str | None = None
 _init_lock = threading.Lock()
 _wal_set = False
+_wal_path: str | None = None
+_last_good_values: dict[str, dict[tuple[str, str], Any]] = {}
+
+
+class SettingsUnreadable(RuntimeError):
+    """The persisted settings store could not be read safely."""
+
+
+def _db_path_key() -> str:
+    return str(DB_PATH.resolve())
+
+
+def _read_persisted_values() -> dict[tuple[str, str], Any] | None:
+    """Validate an existing store before any schema migration or setting write."""
+    if not DB_PATH.exists():
+        return None
+    try:
+        conn = sqlite3.connect(DB_PATH.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
+        try:
+            if conn.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise sqlite3.DatabaseError("integrity check failed")
+            rows = conn.execute("SELECT category, key, value, opts FROM settings").fetchall()
+            values = {}
+            for category, key, value, opts in rows:
+                json.loads(opts)
+                values[(category, key)] = json.loads(value)
+            return values
+        finally:
+            conn.close()
+    except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
+        report_unreadable(DB_PATH, exc)
+        raise SettingsUnreadable(f"Settings store {DB_PATH} is unreadable") from exc
+
+
+def _require_readable_store() -> None:
+    values = _read_persisted_values()
+    if values is not None:
+        _last_good_values[_db_path_key()] = values
+
+
+def _recover_value(category: str, key: str, exc: Exception):
+    if not isinstance(exc, SettingsUnreadable):
+        report_unreadable(DB_PATH, exc)
+    values = _last_good_values.get(_db_path_key())
+    if values is not None and (category, key) in values:
+        return _decrypt_if_secret(values[(category, key)])
+    raise SettingsUnreadable(f"Settings store {DB_PATH} is unreadable") from exc
 
 def _ensure_init():
-    global _initialized
-    if _initialized:
+    global _initialized, _initialized_for_path
+    path_key = _db_path_key()
+    if _initialized and _initialized_for_path == path_key:
+        if not DB_PATH.exists():
+            exc = FileNotFoundError(f"Previously initialized settings store disappeared: {DB_PATH}")
+            report_unreadable(DB_PATH, exc)
+            raise SettingsUnreadable(str(exc)) from exc
         return
     with _init_lock:
-        if not _initialized:
+        if not _initialized or _initialized_for_path != path_key:
             init_db()
             _initialized = True
+            _initialized_for_path = path_key
 
 
 def ensure_initialized() -> None:
     """Create and seed the settings schema on first use, safely across threads."""
     _ensure_init()
+    _require_readable_store()
 
 # ── helpers ───────────────────────────────────────────────────────
 
 def get_conn() -> sqlite3.Connection:
-    global _wal_set
+    global _wal_set, _wal_path
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     # check_same_thread=False: settings reads/writes may be dispatched via
     # asyncio.to_thread from the async hot path; a threading.Lock (_init_lock)
     # serialises schema init. Individual callers close the connection promptly.
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    # WAL is a persistent database property — setting it once per process
-    # is enough; re-issuing the PRAGMA on every connection is wasted work.
-    if not _wal_set:
-        conn.execute("PRAGMA journal_mode=WAL")
-        _wal_set = True
+    try:
+        conn.row_factory = sqlite3.Row
+        # WAL is a persistent database property — setting it once per process
+        # is enough; re-issuing the PRAGMA on every connection is wasted work.
+        if not _wal_set or _wal_path != _db_path_key():
+            conn.execute("PRAGMA journal_mode=WAL")
+            _wal_set = True
+            _wal_path = _db_path_key()
+    except BaseException:
+        conn.close()
+        raise
     return conn
 
 def _migrate_retired_claude_default(conn: sqlite3.Connection) -> bool:
@@ -540,6 +623,7 @@ def _migrate_retired_claude_default(conn: sqlite3.Connection) -> bool:
 
 
 def init_db(force: bool = False):
+    _require_readable_store()
     conn = get_conn()
     conn.executescript(SCHEMA)
     if force:
@@ -563,6 +647,7 @@ def init_db(force: bool = False):
     _refresh_labels(conn)
     conn.commit()
     conn.close()
+    _require_readable_store()
     if force:
         _changed(None, None)
 
@@ -650,6 +735,7 @@ def _mark_overlay(category: str, row: dict, posture: tuple[str, dict]) -> dict:
 
 def get_all() -> dict[str, list[dict]]:
     _ensure_init()
+    _require_readable_store()
     conn = get_conn()
     rows = conn.execute("SELECT category, key, value, label, kind, opts FROM settings ORDER BY category, key").fetchall()
     conn.close()
@@ -673,27 +759,27 @@ def get_all() -> dict[str, list[dict]]:
     return groups
 
 def get_value(category: str, key: str, default=None):
-    """Return a single setting value, or `default` if missing / DB unavailable.
-
-    Safe to call before init or without a DB (returns default) so callers like the
-    LLM router can read admin config without a hard dependency."""
+    """Return a healthy-store value or missing-key default; retain last good on failure."""
     try:
         _ensure_init()
+        _require_readable_store()
         conn = get_conn()
-        row = conn.execute(
-            "SELECT value FROM settings WHERE category=? AND key=?",
-            (category, key),
-        ).fetchone()
-        conn.close()
+        try:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE category=? AND key=?",
+                (category, key),
+            ).fetchone()
+        finally:
+            conn.close()
         if row is None:
             return default
-        return _decrypt_if_secret(json.loads(row["value"]))
-    except Exception:
-        return default
-
-
-class SettingsUnreadable(RuntimeError):
-    """The settings store could not be read (corrupt, locked, no table)."""
+        raw = json.loads(row["value"])
+        _last_good_values.setdefault(_db_path_key(), {})[(category, key)] = raw
+        return _decrypt_if_secret(raw)
+    except SettingsUnreadable as exc:
+        return _recover_value(category, key, exc)
+    except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
+        return _recover_value(category, key, exc)
 
 
 def read_setting(category: str, key: str) -> tuple[bool, Any]:
@@ -711,12 +797,35 @@ def read_setting(category: str, key: str) -> tuple[bool, Any]:
         finally:
             conn.close()
     except Exception as exc:
+        report_unreadable(DB_PATH, exc)
         raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
     if row is None:
         return False, None
     try:
         return True, _decrypt_if_secret(json.loads(row["value"]))
     except Exception as exc:
+        report_unreadable(DB_PATH, exc)
+        raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
+
+
+def read_telegram_owner_binding() -> dict[str, Any]:
+    """One read-only authority snapshot; a busy/missing store raises immediately.
+
+    This hot-path guard must neither seed a database nor wait for its writer.
+    Owner IDs and destination are not secret or product-posture overlay settings.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH.resolve().as_uri() + "?mode=ro", uri=True, timeout=0)
+        try:
+            rows = conn.execute(
+                "SELECT key, value FROM settings WHERE category=? AND key IN (?, ?)",
+                ("autonomy", "owner_chat_id", "owner_user_ids"),
+            ).fetchall()
+        finally:
+            conn.close()
+        return {f"autonomy.{key}": json.loads(value) for key, value in rows}
+    except Exception as exc:
+        report_unreadable(DB_PATH, exc)
         raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
 
 
@@ -974,6 +1083,9 @@ def validate_category(cat: str, data: dict[str, Any]) -> list[str]:
             err = channel_map_problem(value)
         if err is None and (cat, key) == ("mcp", "servers"):
             err = _mcp_servers_problem(value)
+        if err is None and (cat, key) == ("llm", "vision_model_capabilities"):
+            from .llm.vision_capability import vision_capability_declarations_problem
+            err = vision_capability_declarations_problem(value)
         if err is None and (cat, key) in _LIFECYCLE_INT_BOUNDS:
             low, high = _LIFECYCLE_INT_BOUNDS[(cat, key)]
             if type(value) is not int or not low <= value <= high:
@@ -1040,6 +1152,7 @@ def _template_vars_problem(value: Any) -> str | None:
 
 def put_category(cat: str, data: dict[str, Any]) -> tuple[int, list[str]]:
     _ensure_init()
+    _require_readable_store()
     conn = get_conn()
     updated = 0
     skipped = []
@@ -1067,6 +1180,7 @@ def put_category(cat: str, data: dict[str, Any]) -> tuple[int, list[str]]:
             skipped.append(key)
     conn.commit()
     conn.close()
+    _require_readable_store()
     if skipped:
         logger.warning("put_category(%s): ignored unknown keys: %s",
                        _logsafe(cat), _logsafe(skipped))
@@ -1270,12 +1384,14 @@ def apply_import(changes: dict[str, dict[str, Any]]) -> int:
     """Write *changes* (already planned) in one transaction: all of it or none of it.
     Returns how many settings were written."""
     _ensure_init()
+    _require_readable_store()
     conn = get_conn()
     try:
         with conn:
             written = _write_values(conn, changes)
     finally:
         conn.close()
+    _require_readable_store()
     for cat, values in changes.items():
         if values:
             _changed(cat, dict(values))
@@ -1326,6 +1442,7 @@ def plan_reset(cat: str | None, extra_kept: frozenset[str] = frozenset()) -> dic
     if specs is None:
         return None
     _ensure_init()
+    _require_readable_store()
     conn = get_conn()
     try:
         stored = _stored_values(conn)
@@ -1368,6 +1485,7 @@ def reset_settings(cat: str | None,
         return None
     if not plan:
         return {}, None
+    _require_readable_store()
     conn = get_conn()
     try:
         with conn:
@@ -1381,6 +1499,7 @@ def reset_settings(cat: str | None,
                          "(SELECT id FROM settings_resets ORDER BY id DESC LIMIT ?)", (RESETS_KEPT,))
     finally:
         conn.close()
+    _require_readable_store()
     for c, values in plan.items():
         _changed(c, dict(values))
     return plan, snap
@@ -1421,6 +1540,7 @@ def undo_last_reset(gate: Callable[[dict[str, dict[str, Any]]], list[str]] | Non
     that would delete deeper than approved) restores nothing and returns ``{"refused":
     those names}``, the reset still undoable."""
     _ensure_init()
+    _require_readable_store()
     conn = get_conn()
     try:
         with conn:
@@ -1452,6 +1572,7 @@ def undo_last_reset(gate: Callable[[dict[str, dict[str, Any]]], list[str]] | Non
             conn.execute("UPDATE settings_resets SET undone_at=? WHERE id=?", (time.time(), row["id"]))
     finally:
         conn.close()
+    _require_readable_store()
     for cat, values in restore.items():
         _changed(cat, dict(values))
     return {"id": row["id"], "scope": row["scope"], "restored": _names(restore), "skipped": skipped}

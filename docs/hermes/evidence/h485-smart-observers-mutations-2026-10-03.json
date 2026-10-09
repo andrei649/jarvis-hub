@@ -1,0 +1,230 @@
+{
+  "generated_utc": "2026-10-03T09:41:13.169683+00:00",
+  "python": "/tmp/nerva-pr-python-20261001/bin/python",
+  "source_and_test_sha256": {
+    "agents/core/autonomy/smart_observers.py": "ea3c1164e2fa09b71ef1ac7e33dea7e3f0b16b8a2b6506c300d35c4835332ee8",
+    "agents/core/autonomy/advisory_judgements.py": "5fb6865ffc2cd89057bb00c370332f54fe46f0d754079178a45ec430c0e4c415",
+    "agents/core/autonomy/approval_judge.py": "63f493e46a4a71dfc03549a7b02e8d5ee5f898329c1fb3f0078c8868c23a7eea",
+    "agents/core/extensions/events.py": "a83cb60144156741c9f32aad13937ec35593ddf63625be737952badaeec5658c",
+    "agents/core/extensions/manifest.py": "2913ef39451e538cdc1548423e5186ef22608e6e69570756d821ce1638439620",
+    "tests/test_h485_smart_observer_dispatch.py": "d99c6f30b3c44171de0cb435ed9850986c6ea83c50cc70b7e4fbd509d9bd2848",
+    "tests/test_h485_smart_observer_events.py": "5b22c11a7c843f51a33ac6408a80f51a9fbb28330ab24b1e732c210730d14775",
+    "docs/hermes/evidence/h277-smart-terminal-mutations-2026-10-03.py": "5282893bf0a043a78c7c3f5a5a708fc81a3829f6e25224d95505936b06567c2c",
+    "agents/_system/agents.yaml": "1c07c3e0332c27a59b18718d4f56d0093e03b150c1884c0e9c60632c2bad9319",
+    "agents/core/security/scanner.py": "ce3553da52a18c021d1b8e5df8a656a9c4db2eea99cdc0dba728688ef3875b5d",
+    "agents/core/log_catalogue.py": "c576e55592bf169e5f90b8f55b70979cefd2a9f7afbc50e7499851a0ba77e554"
+  },
+  "temporary_root": "/tmp/h485-observer-mutations-2vqa5a34",
+  "mutants": [
+    {
+      "name": "request_event_omitted",
+      "path": "agents/core/autonomy/smart_observers.py",
+      "selectors": [
+        "tests/test_h485_smart_observer_dispatch.py"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 2.172,
+      "log": "/tmp/h485-observer-mutations-2vqa5a34/logs/request_event_omitted.log",
+      "tests": 18,
+      "failures": 14,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_observer_dispatch::test_native_request_precedes_http_and_decided_follows_durable_store[APPROVE-smart_approve-approved]",
+        "tests.test_h485_smart_observer_dispatch::test_native_request_precedes_http_and_decided_follows_durable_store[DENY-smart_deny-blocked]",
+        "tests.test_h485_smart_observer_dispatch::test_static_policy_deny_and_escalate_never_emit_decided",
+        "tests.test_h485_smart_observer_dispatch::test_stale_or_revoked_request_has_pre_only_and_no_durable_decision",
+        "tests.test_h485_smart_observer_dispatch::test_observation_failure_never_changes_guardian_result[raise]",
+        "tests.test_h485_smart_observer_dispatch::test_observation_failure_never_changes_guardian_result[unbound]",
+        "tests.test_h485_smart_observer_dispatch::test_concurrent_tasks_keep_distinct_request_identity",
+        "tests.test_h485_smart_observer_dispatch::test_delivery_hang_is_async_and_does_not_delay_decision",
+        "tests.test_h485_smart_observer_dispatch::test_direct_score_emits_only_requested_without_a_durable_store",
+        "tests.test_h485_smart_observer_dispatch::test_native_retry_emits_one_request_and_one_decision",
+        "tests.test_h485_smart_observer_dispatch::test_cleanup_revocation_keeps_pre_without_post",
+        "tests.test_h485_smart_observer_dispatch::test_failed_durable_store_has_no_decided_event",
+        "tests.test_h485_smart_observer_dispatch::test_preparation_redacts_source_before_fake_observer_receives_it",
+        "tests.test_h485_smart_observer_dispatch::test_real_bound_bus_delivers_scanned_pair_without_grant_authority"
+      ]
+    },
+    {
+      "name": "committed_post_omitted",
+      "path": "agents/core/autonomy/advisory_judgements.py",
+      "selectors": [
+        "tests/test_h485_smart_observer_dispatch.py"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 2.815,
+      "log": "/tmp/h485-observer-mutations-2vqa5a34/logs/committed_post_omitted.log",
+      "tests": 18,
+      "failures": 7,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_observer_dispatch::test_native_request_precedes_http_and_decided_follows_durable_store[APPROVE-smart_approve-approved]",
+        "tests.test_h485_smart_observer_dispatch::test_native_request_precedes_http_and_decided_follows_durable_store[DENY-smart_deny-blocked]",
+        "tests.test_h485_smart_observer_dispatch::test_concurrent_tasks_keep_distinct_request_identity",
+        "tests.test_h485_smart_observer_dispatch::test_delivery_hang_is_async_and_does_not_delay_decision",
+        "tests.test_h485_smart_observer_dispatch::test_native_retry_emits_one_request_and_one_decision",
+        "tests.test_h485_smart_observer_dispatch::test_preparation_redacts_source_before_fake_observer_receives_it",
+        "tests.test_h485_smart_observer_dispatch::test_real_bound_bus_delivers_scanned_pair_without_grant_authority"
+      ]
+    },
+    {
+      "name": "escalation_mislabeled_as_model_deny",
+      "path": "agents/core/autonomy/smart_observers.py",
+      "selectors": [
+        "tests/test_h485_smart_observer_dispatch.py::test_static_policy_deny_and_escalate_never_emit_decided"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.821,
+      "log": "/tmp/h485-observer-mutations-2vqa5a34/logs/escalation_mislabeled_as_model_deny.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_observer_dispatch::test_static_policy_deny_and_escalate_never_emit_decided"
+      ]
+    },
+    {
+      "name": "shape_scanner_bypassed",
+      "path": "agents/core/extensions/events.py",
+      "selectors": [
+        "tests/test_h485_smart_observer_events.py::test_forced_redaction_preserves_useful_text_with_log_masking_disabled"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.708,
+      "log": "/tmp/h485-observer-mutations-2vqa5a34/logs/shape_scanner_bypassed.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_observer_events::test_forced_redaction_preserves_useful_text_with_log_masking_disabled"
+      ]
+    },
+    {
+      "name": "named_secret_catalogue_bypassed",
+      "path": "agents/core/extensions/events.py",
+      "selectors": [
+        "tests/test_h485_smart_observer_events.py::test_named_short_credentials_are_forced_masked"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.716,
+      "log": "/tmp/h485-observer-mutations-2vqa5a34/logs/named_secret_catalogue_bypassed.log",
+      "tests": 3,
+      "failures": 3,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_observer_events::test_named_short_credentials_are_forced_masked[curl 'https://example.invalid/?token=abc'-abc]",
+        "tests.test_h485_smart_observer_events::test_named_short_credentials_are_forced_masked[printf '{\"client_secret\": \"tiny\"}'-tiny]",
+        "tests.test_h485_smart_observer_events::test_named_short_credentials_are_forced_masked[curl -H 'Authorization: Bearer short' https://example.invalid-short]"
+      ]
+    },
+    {
+      "name": "source_truncated_before_scan",
+      "path": "agents/core/extensions/events.py",
+      "selectors": [
+        "tests/test_h485_smart_observer_events.py::test_redaction_sees_whole_token_crossing_output_truncation"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.662,
+      "log": "/tmp/h485-observer-mutations-2vqa5a34/logs/source_truncated_before_scan.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_observer_events::test_redaction_sees_whole_token_crossing_output_truncation"
+      ]
+    },
+    {
+      "name": "guardian_inherits_turn_context",
+      "path": "agents/core/extensions/events.py",
+      "selectors": [
+        "tests/test_h485_smart_observer_events.py::test_guardian_delivery_does_not_inherit_request_or_turn_context"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.663,
+      "log": "/tmp/h485-observer-mutations-2vqa5a34/logs/guardian_inherits_turn_context.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_observer_events::test_guardian_delivery_does_not_inherit_request_or_turn_context"
+      ]
+    },
+    {
+      "name": "native_retry_emits_duplicate_request",
+      "path": "agents/core/autonomy/smart_observers.py",
+      "selectors": [
+        "tests/test_h485_smart_observer_dispatch.py::test_native_retry_emits_one_request_and_one_decision"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.813,
+      "log": "/tmp/h485-observer-mutations-2vqa5a34/logs/native_retry_emits_duplicate_request.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_observer_dispatch::test_native_retry_emits_one_request_and_one_decision"
+      ]
+    },
+    {
+      "name": "failed_parent_reenabled_by_child",
+      "path": "agents/core/autonomy/smart_observers.py",
+      "selectors": [
+        "tests/test_h485_smart_observer_dispatch.py::test_parent_preparation_failure_is_not_retried_in_wait_for_child"
+      ],
+      "outcome": "killed",
+      "returncode": 1,
+      "timed_out": false,
+      "seconds": 1.8,
+      "log": "/tmp/h485-observer-mutations-2vqa5a34/logs/failed_parent_reenabled_by_child.log",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h485_smart_observer_dispatch::test_parent_preparation_failure_is_not_retried_in_wait_for_child"
+      ]
+    }
+  ],
+  "baseline": {
+    "returncode": 0,
+    "timed_out": false,
+    "seconds": 2.495,
+    "log": "/tmp/h485-observer-mutations-2vqa5a34/logs/baseline.log",
+    "tests": 38,
+    "failures": 0,
+    "errors": 0,
+    "failed_tests": []
+  },
+  "restored_baseline": {
+    "returncode": 0,
+    "timed_out": false,
+    "seconds": 2.222,
+    "log": "/tmp/h485-observer-mutations-2vqa5a34/logs/restored_baseline.log",
+    "tests": 38,
+    "failures": 0,
+    "errors": 0,
+    "failed_tests": []
+  },
+  "live_source_unchanged": true,
+  "counts": {
+    "killed": 9,
+    "survived": 0,
+    "invalid": 0
+  },
+  "status": "complete"
+}

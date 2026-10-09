@@ -1,0 +1,119 @@
+{
+  "goal": "Complete all 697 accepted Hermes capabilities locally; H487 remains unfinished",
+  "base_sha": "bd38d00c816a9c2072892bba4040ce0d4ac9464c",
+  "generated_at": "2026-10-03",
+  "paths": {
+    "agents/core/autonomy/consent_ledger.py": "d90be8055a90032ea55517428e4a927332e22c6b0fb7fd036968d0cc50b95de9",
+    "agents/core/autonomy/consent_head_store.py": "4f74c6eb23012c827428821bc1cfff92b7e17ca2bdc5cb7d32fd604cb3ba1451",
+    "tests/test_h487_consent_ledger.py": "2516e2f13a97c444fa326d1963ea6b68f789a1ea46ff1eada9c8fd611236c851",
+    "tests/test_h487_consent_head_store.py": "7a7eb3e1c75a49044c6d9ee9fe21e404574be6f5b429bc44cd277497d854b614",
+    "tests/test_h487_consent_anchor_integration.py": "d3157b0256c8d315a99b14be2d1c1eb7a97f9838d124f13db9cfdf0d7eec8099"
+  },
+  "anchor_integration": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "83",
+      "time": "1.677",
+      "timestamp": "2026-10-03T22:45:18.307577+03:00",
+      "hostname": "Macmini"
+    }
+  ],
+  "guarded_integration": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "686",
+      "time": "12.119",
+      "timestamp": "2026-10-03T22:47:44.232558+03:00",
+      "hostname": "Macmini"
+    }
+  ],
+  "backend_collected": 22093,
+  "backend_collection_modules": 1073,
+  "full_backend_run": false,
+  "models": {
+    "anchored_ledger": "gpt-6-sol high",
+    "consent_file_anchor": "gpt-6-sol high",
+    "read_only_integration_review": "gpt-6-sol high"
+  },
+  "review": {
+    "actual_file_factory_cases_reported": 19,
+    "actionable_findings_reported": 0,
+    "scope": "Database rollback with preserved trusted external anchor; no owner/dispatch authority"
+  },
+  "graft": {
+    "graph_ok": true,
+    "nodes": 48717,
+    "deep_context_missing": true
+  },
+  "artifacts": {
+    "/tmp/nerva-h487-consent-anchor-integration-red-20261003.log": "7d3b263ad4adcbf3d76252cc45525512213e66bdf7bc594f14e24aeba8dcc4af",
+    "/tmp/nerva-h487-consent-anchor-integration-red-20261003.xml": "867e666bb7b8bc21876b1f72eb125b41636af92724b083dde9bb3db8b02fb501",
+    "/tmp/nerva-h487-consent-anchor-integration-final-20261003.log": "3f384efc38ce43974978e9aced983f1fdf98684d494c5d09e5a1df12f4658741",
+    "/tmp/nerva-h487-consent-anchor-integration-final-20261003.xml": "7f179720d6deb5fb964c774b0c3cd465d1c8af5cf7172809c6aa8d934052d036",
+    "/tmp/nerva-h487-consent-anchor-guarded-union-20261003.log": "41d5fcb371e027a60f8164961c398511813ad8735745fca7b86b4da597bc667f",
+    "/tmp/nerva-h487-consent-anchor-guarded-union-20261003.xml": "28308af4e093a4826e9c2899ea89aea0d1494166c2cdc82aa7441caf5260358e",
+    "/tmp/nerva-h487-consent-anchor-collection-20261003.log": "22c08cda3f084accba25173f95a6ed1676c2a39a332ab2e987f5fd1ba452a0aa",
+    "/tmp/nerva-h487-consent-anchor-bandit-20261003.json": "c3873fc2e10b7909568b02d62321ad3e29b25dd06bdaf6c7fd95185a7e1b457b",
+    "/tmp/nerva-h487-consent-anchor-graft-check-20261003.json": "a73748f2bc0c553fe4914b020429258c392375d825d1e032be10e5253e420543",
+    "/tmp/nerva-h487-consent-anchor-record-gates-20261003.log": "a9d6c55ed9d807b32d5bf39b92352c1be384488db2b8135a515cc9266b970a29",
+    "/tmp/nerva-h487-consent-anchor-record-gates-20261003.xml": "9da42eed56bd1febf275811b90312d851a6bde124deb62e63be9c92a64ee4680",
+    "/tmp/nerva-h487-consent-anchor-current-guarded-20261003.log": "41d5fcb371e027a60f8164961c398511813ad8735745fca7b86b4da597bc667f",
+    "/tmp/nerva-h487-consent-anchor-current-guarded-20261003.xml": "640a55d5a3961573673e4c72ff97d753143e01f788ab6816ec95aa95ce8dc9ae",
+    "/tmp/nerva-h487-consent-anchor-gitleaks-20261003.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+  },
+  "scans": {
+    "bandit_new_findings": 0,
+    "bandit_errors": 0,
+    "gitleaks_findings": 0
+  },
+  "hermes_metrics": {
+    "equivalent": 173,
+    "partial": 259,
+    "missing": 62,
+    "needs_review": 203,
+    "excluded": 0,
+    "total": 697,
+    "all_percent": 24.8
+  },
+  "published": false,
+  "activated": false,
+  "remaining": [
+    "Authenticated owner choices",
+    "Atomic follower settlement with separate mediated receipts",
+    "Live registration/policy/target/category validation at physical dispatch",
+    "HTTP/HUD/Telegram and other producers",
+    "Reviewed operator recovery after head/SQL mismatch",
+    "Fresh full guarded backend execution"
+  ],
+  "threat_scope": "Consent DB/row rollback only, with preserved external head and trusted signer/CAS; whole-runtime-directory rollback is outside the guarantee",
+  "record_gates": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "108",
+      "time": "4.288",
+      "timestamp": "2026-10-03T22:58:57.246236+03:00",
+      "hostname": "Macmini"
+    }
+  ],
+  "precommit_guarded_integration": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "686",
+      "time": "11.182",
+      "timestamp": "2026-10-03T22:59:46.602791+03:00",
+      "hostname": "Macmini"
+    }
+  ]
+}

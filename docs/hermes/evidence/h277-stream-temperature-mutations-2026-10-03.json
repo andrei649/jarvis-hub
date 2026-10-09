@@ -1,0 +1,173 @@
+{
+  "base": "4668be6cd3cfcc2c231edcb7feeaeca30ff26265",
+  "baseline": {
+    "errors": 0,
+    "failed_tests": [],
+    "failures": 0,
+    "log": "/tmp/h277-stream-temperature-mutations-j8p1ika7/logs/baseline.log",
+    "returncode": 0,
+    "seconds": 2.074,
+    "tests": 31,
+    "timed_out": false
+  },
+  "counts": {
+    "invalid": 0,
+    "killed": 8,
+    "survived": 0
+  },
+  "excluded_equivalent_mutant": {
+    "name": "activity_guard_removed",
+    "prior_observation": "A prior isolated run stayed green with only the activity flag disabled.",
+    "reason": "Native retryable HTTP status is captured before frame parsing. A later callback exception exits the response context without setting response_cleanup_ok, so the separate cleanup gate still prevents replay. The single-guard mutation did not change reachable retry behavior."
+  },
+  "mutants": [
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_stream_temperature_backend::test_temperature_repair_requires_exact_scope[False]"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-stream-temperature-mutations-j8p1ika7/logs/temperature_scope_removed.log",
+      "name": "temperature_scope_removed",
+      "outcome": "killed",
+      "path": "agents/core/llm/auxiliary_recovery.py",
+      "returncode": 1,
+      "seconds": 1.725,
+      "tests": 1,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_stream_temperature_backend::test_reasoning_frame_blocks_replay_even_if_callback_raises_unload_status"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-stream-temperature-mutations-j8p1ika7/logs/partial_activity_replay_allowed.log",
+      "name": "partial_activity_replay_allowed",
+      "outcome": "killed",
+      "path": "agents/core/llm/base.py",
+      "returncode": 1,
+      "seconds": 1.733,
+      "tests": 1,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_stream_temperature_backend::test_cleanup_exception_that_looks_like_rejection_never_retries"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-stream-temperature-mutations-j8p1ika7/logs/cleanup_gate_removed.log",
+      "name": "cleanup_gate_removed",
+      "outcome": "killed",
+      "path": "agents/core/llm/base.py",
+      "returncode": 1,
+      "seconds": 1.726,
+      "tests": 1,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_stream_temperature_backend::test_revoked_scope_blocks_unload_retry"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-stream-temperature-mutations-j8p1ika7/logs/revoked_scope_ignored.log",
+      "name": "revoked_scope_ignored",
+      "outcome": "killed",
+      "path": "agents/core/llm/auxiliary_recovery.py",
+      "returncode": 1,
+      "seconds": 1.669,
+      "tests": 1,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_stream_temperature_backend::test_same_rejection_twice_stops_after_two_sends[failure0]"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-stream-temperature-mutations-j8p1ika7/logs/repeated_temperature_retry.log",
+      "name": "repeated_temperature_retry",
+      "outcome": "killed",
+      "path": "agents/core/llm/base.py",
+      "returncode": 1,
+      "seconds": 1.661,
+      "tests": 2,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_stream_temperature_backend::test_incomplete_error_refused_or_degraded_repair_is_not_learned[repaired0]",
+        "tests.test_h277_stream_temperature_backend::test_incomplete_error_refused_or_degraded_repair_is_not_learned[repaired1]",
+        "tests.test_h277_stream_temperature_backend::test_incomplete_error_refused_or_degraded_repair_is_not_learned[repaired2]",
+        "tests.test_h277_stream_temperature_backend::test_incomplete_error_refused_or_degraded_repair_is_not_learned[repaired3]"
+      ],
+      "failures": 4,
+      "log": "/tmp/h277-stream-temperature-mutations-j8p1ika7/logs/cache_incomplete_or_error.log",
+      "name": "cache_incomplete_or_error",
+      "outcome": "killed",
+      "path": "agents/core/llm/base.py",
+      "returncode": 1,
+      "seconds": 1.808,
+      "tests": 6,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_stream_temperature_backend::test_repaired_response_cannot_cache_on_client_replaced_during_cleanup"
+      ],
+      "failures": 1,
+      "log": "/tmp/h277-stream-temperature-mutations-j8p1ika7/logs/exact_route_identity_removed.log",
+      "name": "exact_route_identity_removed",
+      "outcome": "killed",
+      "path": "agents/core/llm/auxiliary_recovery.py",
+      "returncode": 1,
+      "seconds": 1.708,
+      "tests": 1,
+      "timed_out": false
+    },
+    {
+      "errors": 0,
+      "failed_tests": [
+        "tests.test_h277_compression_temperature_recovery::test_summary_worker_scope_is_revoked_before_cancellation_cleanup[idle]",
+        "tests.test_h277_compression_temperature_recovery::test_summary_worker_scope_is_revoked_before_cancellation_cleanup[cancel]"
+      ],
+      "failures": 2,
+      "log": "/tmp/h277-stream-temperature-mutations-j8p1ika7/logs/supervisor_revoke_removed.log",
+      "name": "supervisor_revoke_removed",
+      "outcome": "killed",
+      "path": "agents/core/compaction_hold.py",
+      "returncode": 1,
+      "seconds": 1.703,
+      "tests": 2,
+      "timed_out": false
+    }
+  ],
+  "python": "/tmp/nerva-pr-python-20261001/bin/python",
+  "restoration_sha256_match": true,
+  "restored_baseline": {
+    "errors": 0,
+    "failed_tests": [],
+    "failures": 0,
+    "log": "/tmp/h277-stream-temperature-mutations-j8p1ika7/logs/restored_baseline.log",
+    "returncode": 0,
+    "seconds": 1.883,
+    "tests": 31,
+    "timed_out": false
+  },
+  "source_and_test_sha256": {
+    "agents/core/compaction_hold.py": "647882aad2a2f35205ab8dca5ceb27f18539aa6b5daed22c3dcbdd1c04bd664a",
+    "agents/core/llm/auxiliary_recovery.py": "ddb0f9245d72017c4fb499a892309fbca873cb87b1251c98f9d49d85081d94f5",
+    "agents/core/llm/auxiliary_text.py": "a0a878432a42488d268219ce392533acd3e8fe772f895b094c8965d82624f6e7",
+    "agents/core/llm/base.py": "098d53fed4251e43cf152be0aa4de1f6659fbdd09c262b0647766fca9725cc9c",
+    "tests/test_h277_compression_temperature_recovery.py": "9c0a667d42ce7b55677b57f64747487df3269b31b643dfffe0ef5c77f75874ae",
+    "tests/test_h277_stream_temperature_backend.py": "ae7f3f6c8b86a3fd8249eabdee733efd2a5840f2130542a7d639ee14588990b5"
+  },
+  "status": "complete",
+  "survivor_gaps": [],
+  "temporary_root": "/tmp/h277-stream-temperature-mutations-j8p1ika7",
+  "timestamp_utc": "2026-10-03T05:26:23.874804+00:00"
+}

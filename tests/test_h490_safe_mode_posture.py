@@ -214,6 +214,9 @@ _NUMBERS_NOT_FORCED = {
     # retention windows: how long data is kept, not what may run
     "retention.artifact_ttl_days", "retention.conversation_ttl_days", "retention.audit_ttl_days",
     "retention.ingestion_ttl_days", "retention.min_interval_hours", "retention.min_vacuum_interval_days",
+    # Retention of delivered ephemeral notices only; zero retains them. Pending
+    # prompts explicitly use TTL0, and durable decisions/history are unaffected.
+    "display.ephemeral_system_ttl",
 }
 
 

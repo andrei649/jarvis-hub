@@ -344,6 +344,7 @@ class HybridRouter(LLMRouter):
         self._compatible_backend = None
         self._compatible_model = self._admin_setting("compatible_model", "")
         provider_id = self._admin_setting("compatible_provider", "")
+        self._compatible_provider_id = provider_id
         if provider_id == "xai" and self._compatible_model:
             from .xai import XAIBackend
             key = env_str("XAI_API_KEY", "")
@@ -361,6 +362,23 @@ class HybridRouter(LLMRouter):
                     key, retention=self._admin_setting("responses_cache_retention", "in_memory"),
                 )
                 self._cloud_available = True
+        if provider_id == "deepinfra" and self._compatible_model:
+            from .deepinfra import DeepInfraBackend, validated_main_base
+            from .vision_deepinfra import DEEPINFRA_VISION_BASE
+
+            key = env_str("DEEPINFRA_API_KEY", "")
+            base_url = env_str("DEEPINFRA_BASE_URL", "") or DEEPINFRA_VISION_BASE
+            try:
+                base_url = validated_main_base(base_url)
+                if key:
+                    self._compatible_backend = DeepInfraBackend(
+                        api_key=key, base_url=base_url,
+                        reasoning_effort=self._admin_setting("reasoning_effort", ""),
+                        effort_declarations=self._admin_setting("compatible_effort_declarations", ""),
+                    )
+                    self._cloud_available = True
+            except ValueError:
+                logger.error("DeepInfra main route refused: invalid configured authority")
         if provider_id in {"openrouter", "openai-compatible"} and self._compatible_model:
             from dataclasses import replace
 
@@ -496,6 +514,18 @@ class HybridRouter(LLMRouter):
             raise ModelNotApprovedError(msg)
         logger.warning("model pin violation (JARVIS_STRICT_MODELS=0, allowing): %s", msg)
 
+    def preview_backend(self, agent_id: str, prompt: str) -> tuple[LLMBackend, str, str]:
+        """Read-only route preview; no job pin resolution or provider dispatch."""
+        backend, model, route = self._select_backend_inner(agent_id, prompt)
+        compatible = getattr(self, "_compatible_backend", None)
+        if compatible is not None and route.startswith("cloud"):
+            backend, model, route = compatible, self._compatible_model, "cloud-compatible"
+        if (getattr(self, "_compatible_provider_id", "") == "deepinfra"
+                and route.startswith("cloud") and compatible is None):
+            raise LocalBackendUnavailableError("explicit DeepInfra main route is unavailable")
+        self._enforce_approved_models(agent_id, model, route)
+        return backend, model, route
+
     def select_backend(self, agent_id: str, prompt: str) -> tuple[LLMBackend, str, str]:
         """Select backend + model + route, then enforce the agent's approved-model
         allowlist (H23.2). Returns: (backend, model_name, route_name)."""
@@ -505,6 +535,11 @@ class HybridRouter(LLMRouter):
             backend, model, route = compatible, self._compatible_model, "cloud-compatible"
         from .job_selection import apply_selection
         backend, model, route = apply_selection(self, agent_id, backend, model, route)
+        if (getattr(self, "_compatible_provider_id", "") == "deepinfra"
+                and route.startswith("cloud")
+                and getattr(self, "_compatible_backend", None) is None):
+            raise LocalBackendUnavailableError(
+                "explicit DeepInfra main route is unavailable")
         self._enforce_approved_models(agent_id, model, route)
         return backend, model, route
 

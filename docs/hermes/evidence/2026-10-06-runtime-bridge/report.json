@@ -1,0 +1,95 @@
+{
+  "date": "2026-10-06",
+  "base_pr_head": "5b749ee90b9d997231ffa7c60e4c7561c6a7a6a8",
+  "source_pin": "0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
+  "source_distribution": {
+    "project": "NousResearch/hermes-agent",
+    "commit": "0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
+    "tree_sha1": "d9d9232e36e067a90d92e4a264de1f741b1ee1b4",
+    "source_sha256": "413107320c0af4993e8e484c2c180016c26486f3a7def835f1784ca1361b5dc4",
+    "git_tree_sha1": "ee58f424daf921cbb47a203038cf2c1cc9e059d2",
+    "archive_url": "https://codeload.github.com/NousResearch/hermes-agent/tar.gz/0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
+    "archive_sha256": "4174aa7661a591bf822097c66d1d1109ffbde0e3af8be881dd495a8a8b243f63",
+    "archive_root": "hermes-agent-0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
+    "license": "MIT"
+  },
+  "catalog": {
+    "rpc_methods": 251,
+    "server_requests": 13,
+    "notifications": 75,
+    "read_tier": 85,
+    "session_prompt_tier": 15,
+    "approval_floor_tier": 151
+  },
+  "verification": {
+    "focused_backend": {
+      "tests": 267,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2,
+      "seconds": 18.229
+    },
+    "real_pinned_runtime": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 34.309
+    },
+    "frontend": {
+      "files": 215,
+      "passed": 1980,
+      "failed": 0,
+      "typecheck": "passed",
+      "build": "passed"
+    },
+    "ruff": "passed",
+    "bandit": {
+      "new_findings": 0,
+      "baseline_changed": false
+    },
+    "semgrep": {
+      "findings": 0,
+      "exit_code": 0,
+      "generated_js_warnings": 6,
+      "configuration": "p/python + p/security-audit; agents worldview"
+    },
+    "gitleaks": {
+      "findings": 0,
+      "version": "8.30.1",
+      "snapshot_files": 65,
+      "bytes_scanned": 2816983,
+      "configuration_changed": false
+    },
+    "route_openapi_status_parity": "passed",
+    "safe_full_archive_reextraction": "passed"
+  },
+  "aggregate_backend_attempt": {
+    "tests": 16290,
+    "failures": 93,
+    "errors": 2,
+    "skipped": 7,
+    "seconds": 412.081,
+    "exit_code": 3,
+    "complete": false,
+    "reason": "worker terminated; xdist restarted worker hit scheduler KeyError; tree changed during this earlier run",
+    "baseline_samples": "H579/chat/invocation HTTP, H517 voice/named approval, H273d settings failures reproduced on untouched base 5b749ee9",
+    "fixed_contracts": "common archive extractor; -S CLI lazy imports; stale route/OpenAPI/status snapshots",
+    "claim": "No full-backend or GitHub-CI success claim"
+  },
+  "native_parity": {
+    "equivalent": 125,
+    "partial": 226,
+    "missing": 56,
+    "needs_review": 290,
+    "scope": 697,
+    "reason": "Six source-bound review receipts became stale after changed files; fresh derived reports withdraw five old equivalents and one partial until re-reviewed. Runtime/catalog import earns no native-equivalence credit."
+  },
+  "limits": [
+    "Single-owner installation; all Hub admin identities share its private profile.",
+    "REST, PTY, original SPA and standalone Hermes CLI not exposed through worker.",
+    "151 RPC methods plus unverified tool effects retain approval floors; durable governed queue execution remains follow-on.",
+    "Provider/device/native adapters are not certified by offline fake-provider tests.",
+    "Frozen/packaged launch not verified; install and current verification use checkout CLI."
+  ]
+}

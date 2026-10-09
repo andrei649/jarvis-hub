@@ -1,0 +1,275 @@
+{
+  "head_at_copy": "4f265c6cdbe8d04d905230919bd0e717d6a3c5c4",
+  "results": [
+    {
+      "index": 1,
+      "label": "omit_openrouter_physical_provider_block",
+      "fault": "Omit the OpenRouter provider preferences from the physical request body while keeping the approved identity.",
+      "file": "agents/core/video_analysis.py",
+      "test": "tests/test_h277_openrouter_video.py::test_signed_openrouter_request_emits_full_video_and_provider_block",
+      "syntax": "valid_ast",
+      "focused": {
+        "returncode": 1,
+        "elapsed_seconds": 2.37,
+        "command": [
+          "/tmp/nerva-pr-python-20261001/bin/python",
+          "-B",
+          "-m",
+          "pytest",
+          "-p",
+          "no:cacheprovider",
+          "--tb=short",
+          "--junitxml=/tmp/nerva-h277-openrouter-video-mutations-20261004/xml/omit_openrouter_physical_provider_block.xml",
+          "tests/test_h277_openrouter_video.py::test_signed_openrouter_request_emits_full_video_and_provider_block"
+        ],
+        "tests": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_openrouter_video::test_signed_openrouter_request_emits_full_video_and_provider_block",
+            "message": "KeyError: 'provider'",
+            "trace_tail": "tests/test_h277_openrouter_video.py:116: in test_signed_openrouter_request_emits_full_video_and_provider_block\n    assert body[\"provider\"] == {\"only\": [\"provider-a\"], \"order\": [\"provider-a\", \"provider-b\"],\n           ^^^^^^^^^^^^^^^^\nE   KeyError: 'provider'"
+          }
+        ],
+        "errors": [],
+        "xml": "/tmp/nerva-h277-openrouter-video-mutations-20261004/xml/omit_openrouter_physical_provider_block.xml",
+        "log": "/tmp/nerva-h277-openrouter-video-mutations-20261004/logs/omit_openrouter_physical_provider_block.log",
+        "classification": "killed_behavioral_exception"
+      },
+      "classification": "killed_behavioral_exception",
+      "restored_input_count": 2066,
+      "restoration_ok": true
+    },
+    {
+      "index": 2,
+      "label": "omit_primary_provider_preference_binding",
+      "fault": "Drop preference bytes only from primary signed binding; preserve identity.provider_block and wire body.",
+      "file": "agents/core/llm/video_policy.py",
+      "test": "tests/test_h277_openrouter_video.py::test_approved_openrouter_route_change_refuses_before_dispatch[preference]",
+      "syntax": "valid_ast",
+      "focused": {
+        "returncode": 1,
+        "elapsed_seconds": 2.26,
+        "command": [
+          "/tmp/nerva-pr-python-20261001/bin/python",
+          "-B",
+          "-m",
+          "pytest",
+          "-p",
+          "no:cacheprovider",
+          "--tb=short",
+          "--junitxml=/tmp/nerva-h277-openrouter-video-mutations-20261004/xml/omit_primary_provider_preference_binding.xml",
+          "tests/test_h277_openrouter_video.py::test_approved_openrouter_route_change_refuses_before_dispatch[preference]"
+        ],
+        "tests": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_openrouter_video::test_approved_openrouter_route_change_refuses_before_dispatch[preference]",
+            "message": "AssertionError: assert [<Request('PO...ompletions')>] == []\n  \n  Left contains one more item: <Request('POST', 'https://openrouter.ai/api/v1/chat/completions')>\n  Use -v to get more diff",
+            "trace_tail": "tests/test_h277_openrouter_video.py:180: in test_approved_openrouter_route_change_refuses_before_dispatch\n    assert rig.requests == []\nE   AssertionError: assert [<Request('PO...ompletions')>] == []\nE     \nE     Left contains one more item: <Request('POST', 'https://openrouter.ai/api/v1/chat/completions')>\nE     Use -v to get more diff"
+          }
+        ],
+        "errors": [],
+        "xml": "/tmp/nerva-h277-openrouter-video-mutations-20261004/xml/omit_primary_provider_preference_binding.xml",
+        "log": "/tmp/nerva-h277-openrouter-video-mutations-20261004/logs/omit_primary_provider_preference_binding.log",
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_input_count": 2066,
+      "restoration_ok": true
+    },
+    {
+      "index": 3,
+      "label": "borrow_vision_key_across_physical_url",
+      "fault": "Borrow guarded vision key from same provider even when native physical URLs differ.",
+      "file": "agents/core/llm/video_policy.py",
+      "test": "tests/test_h277_openrouter_video.py::test_explicit_openrouter_may_reuse_only_exact_matching_guarded_vision_key",
+      "syntax": "valid_ast",
+      "focused": {
+        "returncode": 1,
+        "elapsed_seconds": 2.1,
+        "command": [
+          "/tmp/nerva-pr-python-20261001/bin/python",
+          "-B",
+          "-m",
+          "pytest",
+          "-p",
+          "no:cacheprovider",
+          "--tb=short",
+          "--junitxml=/tmp/nerva-h277-openrouter-video-mutations-20261004/xml/borrow_vision_key_across_physical_url.xml",
+          "tests/test_h277_openrouter_video.py::test_explicit_openrouter_may_reuse_only_exact_matching_guarded_vision_key"
+        ],
+        "tests": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_openrouter_video::test_explicit_openrouter_may_reuse_only_exact_matching_guarded_vision_key",
+            "message": "Failed: DID NOT RAISE VideoPolicyRefused",
+            "trace_tail": "tests/test_h277_openrouter_video.py:315: in test_explicit_openrouter_may_reuse_only_exact_matching_guarded_vision_key\n    with pytest.raises(vp.VideoPolicyRefused, match=\"key is unset\"):\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   Failed: DID NOT RAISE VideoPolicyRefused"
+          }
+        ],
+        "errors": [],
+        "xml": "/tmp/nerva-h277-openrouter-video-mutations-20261004/xml/borrow_vision_key_across_physical_url.xml",
+        "log": "/tmp/nerva-h277-openrouter-video-mutations-20261004/logs/borrow_vision_key_across_physical_url.log",
+        "classification": "killed_expectation"
+      },
+      "classification": "killed_expectation",
+      "restored_input_count": 2066,
+      "restoration_ok": true
+    },
+    {
+      "index": 4,
+      "label": "openrouter_fallback_uses_primary_key",
+      "fault": "Use the primary video role key instead of the fixed fallback slot key only for OpenRouter.",
+      "file": "agents/core/llm/video_routes.py",
+      "test": "tests/test_h277_openrouter_video.py::test_approved_openrouter_fallback_uses_only_slot_key_and_frozen_provider_block",
+      "syntax": "valid_ast",
+      "focused": {
+        "returncode": 1,
+        "elapsed_seconds": 2.58,
+        "command": [
+          "/tmp/nerva-pr-python-20261001/bin/python",
+          "-B",
+          "-m",
+          "pytest",
+          "-p",
+          "no:cacheprovider",
+          "--tb=short",
+          "--junitxml=/tmp/nerva-h277-openrouter-video-mutations-20261004/xml/openrouter_fallback_uses_primary_key.xml",
+          "tests/test_h277_openrouter_video.py::test_approved_openrouter_fallback_uses_only_slot_key_and_frozen_provider_block"
+        ],
+        "tests": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_openrouter_video::test_approved_openrouter_fallback_uses_only_slot_key_and_frozen_provider_block",
+            "message": "AssertionError: assert 'Bearer wrong-primary-key' == 'Bearer synthetic-slot-key'\n  \n  - Bearer synthetic-slot-key\n  + Bearer wrong-primary-key",
+            "trace_tail": "tests/test_h277_openrouter_video.py:258: in test_approved_openrouter_fallback_uses_only_slot_key_and_frozen_provider_block\n    assert sent[1].headers[\"Authorization\"] == \"Bearer synthetic-slot-key\"\nE   AssertionError: assert 'Bearer wrong-primary-key' == 'Bearer synthetic-slot-key'\nE     \nE     - Bearer synthetic-slot-key\nE     + Bearer wrong-primary-key"
+          }
+        ],
+        "errors": [],
+        "xml": "/tmp/nerva-h277-openrouter-video-mutations-20261004/xml/openrouter_fallback_uses_primary_key.xml",
+        "log": "/tmp/nerva-h277-openrouter-video-mutations-20261004/logs/openrouter_fallback_uses_primary_key.log",
+        "classification": "killed_assertion"
+      },
+      "classification": "killed_assertion",
+      "restored_input_count": 2066,
+      "restoration_ok": true
+    },
+    {
+      "index": 5,
+      "label": "allow_openrouter_without_dedicated_or_matching_vision_key",
+      "fault": "Allow unkeyed explicit OpenRouter video when no exact matching guarded vision credential exists.",
+      "file": "agents/core/llm/video_policy.py",
+      "test": "tests/test_h277_openrouter_video.py::test_explicit_openrouter_requires_valid_dedicated_key_without_matching_vision[missing]",
+      "syntax": "valid_ast",
+      "focused": {
+        "returncode": 1,
+        "elapsed_seconds": 2.43,
+        "command": [
+          "/tmp/nerva-pr-python-20261001/bin/python",
+          "-B",
+          "-m",
+          "pytest",
+          "-p",
+          "no:cacheprovider",
+          "--tb=short",
+          "--junitxml=/tmp/nerva-h277-openrouter-video-mutations-20261004/xml/allow_openrouter_without_dedicated_or_matching_vision_key.xml",
+          "tests/test_h277_openrouter_video.py::test_explicit_openrouter_requires_valid_dedicated_key_without_matching_vision[missing]"
+        ],
+        "tests": 1,
+        "failures": [
+          {
+            "case": "tests.test_h277_openrouter_video::test_explicit_openrouter_requires_valid_dedicated_key_without_matching_vision[missing]",
+            "message": "Failed: DID NOT RAISE VideoPolicyRefused",
+            "trace_tail": "tests/test_h277_openrouter_video.py:154: in test_explicit_openrouter_requires_valid_dedicated_key_without_matching_vision\n    with pytest.raises(vp.VideoPolicyRefused, match=\"key is unset\"):\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   Failed: DID NOT RAISE VideoPolicyRefused"
+          }
+        ],
+        "errors": [],
+        "xml": "/tmp/nerva-h277-openrouter-video-mutations-20261004/xml/allow_openrouter_without_dedicated_or_matching_vision_key.xml",
+        "log": "/tmp/nerva-h277-openrouter-video-mutations-20261004/logs/allow_openrouter_without_dedicated_or_matching_vision_key.log",
+        "classification": "killed_expectation"
+      },
+      "classification": "killed_expectation",
+      "restored_input_count": 2066,
+      "restoration_ok": true
+    }
+  ],
+  "scope": "Five new native OpenRouter video faults only; original49 campaign stays separately scoped",
+  "baseline_tests": 22,
+  "final_tests": 22,
+  "source_sha256": {
+    "agents/core/llm/model_roles.py": "4377de4ae1ccce4bca46a8ad332c455e946d69fad42dc800e5ba2d17b80d4f68",
+    "agents/core/llm/video_policy.py": "e32c063f358832f37c40a5b7b1e4148d4715a8e397d5618c041f6e1a664c5a92",
+    "agents/core/llm/video_routes.py": "daf71275804e7c9833b764c5fdd8d611ecd18df8de3cb1f0b7acd7e0e592888d",
+    "agents/core/video_analysis.py": "9865d53cfe1ca9300f5c352ace9ebcae370391d253c5d9cb92db743b55fd0301",
+    "tests/test_h277_openrouter_video.py": "0a6bf2b57d0849ef549bc8555ce1127a143a28caaa325e0a7fc2aaeff5dcd860",
+    "tests/test_h277_openrouter_vision_resolution.py": "5a974ea62acc4afadbec0644787fe50714ba2b9547301cd7ab27fba48d7b651b"
+  },
+  "mapping": [
+    {
+      "label": "omit_openrouter_physical_provider_block",
+      "file": "agents/core/video_analysis.py",
+      "a": "            body[\"provider\"] = json.loads(identity.provider_block)",
+      "b": "            pass",
+      "test": "tests/test_h277_openrouter_video.py::test_signed_openrouter_request_emits_full_video_and_provider_block",
+      "fault": "Omit the OpenRouter provider preferences from the physical request body while keeping the approved identity.",
+      "anchor_count": 1,
+      "syntax": "valid_ast"
+    },
+    {
+      "label": "omit_primary_provider_preference_binding",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "    elif role.provider_id == \"openrouter\":\n        binding += (\"openrouter_provider\", provider_block)",
+      "b": "    elif role.provider_id == \"openrouter\":\n        binding += (\"openrouter_provider\", \"\")",
+      "test": "tests/test_h277_openrouter_video.py::test_approved_openrouter_route_change_refuses_before_dispatch[preference]",
+      "fault": "Drop preference bytes only from primary signed binding; preserve identity.provider_block and wire body.",
+      "anchor_count": 1,
+      "syntax": "valid_ast"
+    },
+    {
+      "label": "borrow_vision_key_across_physical_url",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "and str(httpx.URL(native.request_url)) == str(httpx.URL(request_url))",
+      "b": "and True",
+      "test": "tests/test_h277_openrouter_video.py::test_explicit_openrouter_may_reuse_only_exact_matching_guarded_vision_key",
+      "fault": "Borrow guarded vision key from same provider even when native physical URLs differ.",
+      "anchor_count": 1,
+      "syntax": "valid_ast"
+    },
+    {
+      "label": "openrouter_fallback_uses_primary_key",
+      "file": "agents/core/llm/video_routes.py",
+      "a": "        key = _read(env, f\"JARVIS_ROLE_VIDEO_FALLBACK_{slot}_KEY\")",
+      "b": "        key = _read(env, \"JARVIS_ROLE_VIDEO_KEY\") if provider == \"openrouter\" else _read(env, f\"JARVIS_ROLE_VIDEO_FALLBACK_{slot}_KEY\")",
+      "test": "tests/test_h277_openrouter_video.py::test_approved_openrouter_fallback_uses_only_slot_key_and_frozen_provider_block",
+      "fault": "Use the primary video role key instead of the fixed fallback slot key only for OpenRouter.",
+      "anchor_count": 1,
+      "syntax": "valid_ast"
+    },
+    {
+      "label": "allow_openrouter_without_dedicated_or_matching_vision_key",
+      "file": "agents/core/llm/video_policy.py",
+      "a": "    if role.provider_id == \"openrouter\" and not key:",
+      "b": "    if False:",
+      "test": "tests/test_h277_openrouter_video.py::test_explicit_openrouter_requires_valid_dedicated_key_without_matching_vision[missing]",
+      "fault": "Allow unkeyed explicit OpenRouter video when no exact matching guarded vision credential exists.",
+      "anchor_count": 1,
+      "syntax": "valid_ast"
+    }
+  ],
+  "final_audit": {
+    "head_at_copy": "4f265c6cdbe8d04d905230919bd0e717d6a3c5c4",
+    "head_at_end": "4f265c6cdbe8d04d905230919bd0e717d6a3c5c4",
+    "input_count": 2066,
+    "input_manifest_sha256": "070d3bd5f68aeffaac69967c3f5a9ba19fe34df81afaf81cd1e799eccc6fbe18",
+    "path_hash_fingerprint": "4bccde9ea61c6da62463306178a20886a0be231009f4cb4a8dcfa20def35e005",
+    "explicit_video_test_sha256": "0a6bf2b57d0849ef549bc8555ce1127a143a28caaa325e0a7fc2aaeff5dcd860",
+    "snapshot_mismatches": [],
+    "source_mismatches": [],
+    "snapshot_extra_paths": [],
+    "node_modules_link_present": false
+  },
+  "limits": [
+    "Two assertions, two expected-refusal failures and one behavioral KeyError are distinct",
+    "No setup/import/timeouts or invalid-anchor/syntax kill credit",
+    "No live/provider/model acceptance or full H277 equivalence"
+  ]
+}

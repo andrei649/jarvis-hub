@@ -44,6 +44,7 @@ class VideoIdentity:
     request_url: str = field(repr=False)
     authorization: str = field(repr=False)
     binding: tuple = field(repr=False)
+    provider_block: str = field(default="", repr=False)
 
     @property
     def request_headers(self) -> dict[str, str]:
@@ -63,7 +64,7 @@ def _describe_primary_video_target() -> VideoIdentity | None:
     role = route.role
     if not role.configured:
         return None
-    if role.provider_id not in {"lm-studio", "openai-compatible", "gemini"}:
+    if role.provider_id not in {"lm-studio", "openai-compatible", "gemini", "openrouter"}:
         raise VideoPolicyRefused("video provider has no native adapter")
     try:
         url = httpx.URL(role.base_url)
@@ -82,10 +83,22 @@ def _describe_primary_video_target() -> VideoIdentity | None:
         raise VideoPolicyRefused("invalid video role destination") from exc
     profile = get_profile(role.provider_id)
     policy, note = profile.data_policy_for(role.model)
-    if role.provider_id == "openai-compatible" or not local:
+    provider_block = ""
+    if role.provider_id == "openrouter":
+        from .vision_openrouter import current_provider_block, policy_for
+
+        try:
+            block = current_provider_block()
+            policy, note = policy_for(role.model, block)
+            provider_block = json.dumps(block, sort_keys=True, separators=(",", ":"),
+                                        ensure_ascii=False, allow_nan=False)
+        except (ValueError, TypeError) as exc:
+            raise VideoPolicyRefused("invalid OpenRouter video routing policy") from exc
+    elif role.provider_id == "openai-compatible" or not local:
         policy, note = "unknown", "Video endpoint data handling is unknown."
     raw_key = env_str("JARVIS_ROLE_VIDEO_KEY", "")
-    if role.provider_id == "gemini" and (len(raw_key) > 4096 or any(not 32 <= ord(c) <= 126 for c in raw_key)):
+    if role.provider_id in {"gemini", "openrouter"} and (
+            len(raw_key) > 4096 or any(not 32 <= ord(c) <= 126 for c in raw_key)):
         raise VideoPolicyRefused("invalid video role key")
     key = raw_key.strip()
     if not key and role.provider_id != "gemini":
@@ -103,13 +116,17 @@ def _describe_primary_video_target() -> VideoIdentity | None:
                 key = vision.api_key
         except (ValueError, VLMNotConfigured, VisionPolicyUnavailable):
             pass
+    if role.provider_id == "openrouter" and not key:
+        raise VideoPolicyRefused("OpenRouter video role key is unset")
     authorization = key if role.provider_id == "gemini" else f"Bearer {key}" if key else ""
     binding = (role.provider_id, role.model, role.base_url, request_url, authorization,
                local, policy, note, env_flag("JARVIS_ROLE_VIDEO_ALLOW_REMOTE"))
     if role.provider_id == "gemini":
         binding += ("gemini_generate_content", "x-goog-api-key")
+    elif role.provider_id == "openrouter":
+        binding += ("openrouter_provider", provider_block)
     return VideoIdentity(VIDEO_TARGET, role.provider_id, role.model, "dedicated", policy, note,
-                         local, request_url, authorization, binding)
+                         local, request_url, authorization, binding, provider_block)
 
 
 def describe_video_route_set() -> tuple[VideoIdentity, ...]:
@@ -128,7 +145,18 @@ def describe_video_route_set() -> tuple[VideoIdentity, ...]:
         local = _is_loopback_base(route.base_url)
         profile = get_profile(route.provider)
         policy, note = profile.data_policy_for(route.model)
-        if route.provider == "openai-compatible" or not local:
+        provider_block = ""
+        if route.provider == "openrouter":
+            from .vision_openrouter import current_provider_block, policy_for
+
+            try:
+                block = current_provider_block()
+                policy, note = policy_for(route.model, block)
+                provider_block = json.dumps(block, sort_keys=True, separators=(",", ":"),
+                                            ensure_ascii=False, allow_nan=False)
+            except (ValueError, TypeError) as exc:
+                raise VideoPolicyRefused("invalid OpenRouter video routing policy") from exc
+        elif route.provider == "openai-compatible" or not local:
             policy, note = "unknown", "Video endpoint data handling is unknown."
         base = route.base_url.rstrip("/")
         request_url = (gemini_request_url(base, route.model) if route.provider == "gemini" else
@@ -138,9 +166,11 @@ def describe_video_route_set() -> tuple[VideoIdentity, ...]:
                    local, policy, note, env_flag("JARVIS_ROLE_VIDEO_ALLOW_REMOTE"))
         if route.provider == "gemini":
             binding += ("gemini_generate_content", "x-goog-api-key")
+        elif route.provider == "openrouter":
+            binding += ("openrouter_provider", provider_block)
         identities.append(VideoIdentity(f"role:video_fallback_{route.slot}", route.provider,
                                         route.model, "dedicated", policy, note, local,
-                                        request_url, authorization, binding))
+                                        request_url, authorization, binding, provider_block))
     return tuple(identities)
 
 

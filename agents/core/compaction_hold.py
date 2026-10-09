@@ -21,6 +21,7 @@ import asyncio
 import inspect
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import AbstractContextManager, nullcontext
 from typing import Any
 
 logger = logging.getLogger("jarvis.compaction")
@@ -86,13 +87,17 @@ def _accepts(method: Callable, name: str) -> bool:
 
 
 async def stream_summary(backend, idle: float, *, model: str, prompt: str, system: str,
-                         max_tokens: int, temperature: float) -> str:
+                         max_tokens: int, temperature: float,
+                         call_scope: Callable[[], AbstractContextManager] | None = None) -> str:
     """One summary from a local *backend*, cut after *idle* seconds with nothing received.
 
     Everything the backend receives counts as the stream talking: a visible token, and
     — through ``on_activity`` where the backend offers it — a reasoning chunk that
     shows no text. A backend with no stream at all is awaited whole (it cannot say it
-    is alive, so the deadline covers the whole call)."""
+    is alive, so the deadline covers the whole call). An optional task-bound scope
+    is entered inside the owned worker. Its yielded revocation callback runs
+    before cancellation, so a cancellation-resistant worker cannot keep retry
+    permission during cleanup."""
     from .llm.base import is_degraded_reply
 
     loop = asyncio.get_running_loop()
@@ -105,15 +110,21 @@ async def stream_summary(backend, idle: float, *, model: str, prompt: str, syste
     async def on_token(_text: str) -> None:
         alive()
 
-    streamer = getattr(backend, "generate_stream", None)
-    if streamer is None:
-        call = backend.generate(model=model, prompt=prompt, system=system,
-                                max_tokens=max_tokens, temperature=temperature)
-    else:
-        extra = {"on_activity": alive} if _accepts(streamer, "on_activity") else {}
-        call = streamer(model=model, prompt=prompt, system=system, max_tokens=max_tokens,
-                        temperature=temperature, on_token=on_token, **extra)
-    task = asyncio.ensure_future(call)
+    revoke_call = None
+
+    async def invoke():
+        nonlocal revoke_call
+        with (call_scope() if call_scope is not None else nullcontext()) as revoke:
+            revoke_call = revoke if callable(revoke) else None
+            streamer = getattr(backend, "generate_stream", None)
+            if streamer is None:
+                return await backend.generate(model=model, prompt=prompt, system=system,
+                                              max_tokens=max_tokens, temperature=temperature)
+            extra = {"on_activity": alive} if _accepts(streamer, "on_activity") else {}
+            return await streamer(model=model, prompt=prompt, system=system, max_tokens=max_tokens,
+                                  temperature=temperature, on_token=on_token, **extra)
+
+    task = asyncio.ensure_future(invoke())
     try:
         while not task.done():
             quiet_left = last + idle - loop.time()
@@ -121,6 +132,8 @@ async def stream_summary(backend, idle: float, *, model: str, prompt: str, syste
                 raise SummaryStalled(f"the summarizer sent nothing for {idle:.0f}s")
             await asyncio.wait({task}, timeout=quiet_left)
     finally:
+        if revoke_call is not None:
+            revoke_call()
         if not task.done():
             # Close the stream (its HTTP response with it) before going on; a backend
             # that will not stop within the grace is left to finish on its own.

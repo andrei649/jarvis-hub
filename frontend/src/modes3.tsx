@@ -4,6 +4,7 @@ import { Icon as Ic3, ICONS as IK3, Glyph as Gl3, statusClass as sc3 } from './u
 import { queueChannelReply, togglePlugin, getEstopStatus, engageEstop, resumeEstop } from './api/actions';
 import { RoomsPanel } from './gap';
 import { ConfirmAction, RISK_TIER } from './confirm';
+import { HermesRuntimePanel } from './hermes-runtime-panel';
 /* HUD v2 · MODES III — Chat (focus), Comms, Admin */
 
 function SubH3({ children, style }: { children?: any; style?: any }){ return <div className="sub-h" style={style}>{children}</div>; }
@@ -267,6 +268,7 @@ function AdminMode({ t }){
             )) : <NotConnected what="no backup feed"/>}
             <SubH3 style={{marginTop:16}}>AUTONOMY PAUSE (ESTOP)</SubH3>
             <EstopCard/>
+            <HermesRuntimePanel/>
           </div>
           <div>
             <SubH3>PLUGIN REGISTRY{plugins.length ? ` · ${plugins.filter(p=>p.on).length}/${plugins.length} enabled` : ''}{plugins.some(p=>p.honesty) ? ' · '+plugins.filter(p=>p.honesty && p.honesty.status==='live').length+' live' : ''}</SubH3>

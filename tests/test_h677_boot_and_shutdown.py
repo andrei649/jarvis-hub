@@ -247,6 +247,7 @@ async def test_a_channel_turn_while_warming_is_logged(caplog):
     from agents.core.orchestrator import Orchestrator
 
     orch = Orchestrator.__new__(Orchestrator)
+    orch._session_id_default = None
     orch.handle_input = AsyncMock(return_value="ok")
     lb.WARMUP.track(asyncio.get_running_loop().create_future())
     with caplog.at_level(logging.INFO, logger="jarvis.orchestrator"):
@@ -741,6 +742,7 @@ async def test_telegram_stop_drains_the_lanes_within_budget(monkeypatch):
     channel = tg.TelegramChannel.__new__(tg.TelegramChannel)
     channel._running = True
     channel._poll_task = None
+    channel._ephemeral_deletes = tg.EphemeralDeletes()
     channel.client = SimpleNamespace(aclose=AsyncMock())
     channel._lanes = ChatLanes(name="telegram")
     channel._lanes.submit(1, _hang)

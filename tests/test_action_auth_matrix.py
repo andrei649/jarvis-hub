@@ -13,6 +13,7 @@ route-auth suite:
 
 import inspect
 import json
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -77,7 +78,12 @@ class _SpyKernel:
 
 def _exercise(kind, spy, tmp_path, monkeypatch=None):
     """Drive the broker/route that owns *kind* through its real entry-point."""
-    if kind == "call.outbound":
+    if kind == "hermes.runtime":
+        from agents.core.hermes_runtime.policy import HermesGate, RuntimeDenied
+
+        with suppress(RuntimeDenied):
+            HermesGate(kernel=spy).authorize("rpc", "session.list", {}, "test-generation")
+    elif kind == "call.outbound":
         from agents.core.autonomy.call_broker import CallBroker
 
         CallBroker(enqueue=lambda *a, **k: 1, kernel=spy).request(
@@ -771,6 +777,51 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             checks=(SuccessCheck(id="brief", describe="the brief exists"),),
         )
         propose(draft, lambda **kwargs: 1, authorizer=spy, now=0.0)
+    elif kind in {"checkpoint.restore", "checkpoint.maintenance"}:
+        import asyncio
+
+        from agents.core.checkpoint_commands import _parse
+        from agents.core.checkpoint_controller import CheckpointController
+        from agents.core.commands import Principal
+        from agents.core.kernel import kernel_enabled
+        from tests.test_h011_checkpoint_owner_pipeline import checkpoint, make_pipeline
+
+        enabled = kernel_enabled()
+
+        async def exercise_checkpoint():
+            checkpoint_tmp = tmp_path / kind
+            checkpoint_tmp.mkdir()
+            async with make_pipeline(checkpoint_tmp, monkeypatch) as (orch, root, snapshots, _sid):
+                if not enabled:
+                    monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+                orch.autonomy.bind_mediation(spy, orch.autonomy_queue._mediation_signer)
+                _note, identifier = await checkpoint(root, snapshots)
+                args = ("restore " + identifier + " --execute"
+                        if kind == "checkpoint.restore" else "clear --execute")
+                result = await CheckpointController(orch).request(
+                    Principal(channel="web", admin=True), _parse(args, rollback=False))
+                assert result["status"] == (
+                    "queued" if enabled and spy._verdict is not Verdict.DENY else
+                    "refused" if enabled else "unavailable")
+
+        asyncio.run(exercise_checkpoint())
+    elif kind == "kanban.worker":
+        import asyncio
+
+        from agents.core.kernel import kernel_enabled
+        from tests.test_hermes_kanban_dispatcher import OWNER, create, fixture_runtime
+
+        enabled = kernel_enabled()
+        controller, orch, _, _, _ = fixture_runtime(tmp_path, monkeypatch)
+        if not enabled:
+            monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+        orch.autonomy.bind_mediation(spy, orch.autonomy_queue._mediation_signer)
+        try:
+            create(controller)
+            result = asyncio.run(controller.request(OWNER))
+            assert bool(result["queued"]) == (enabled and spy._verdict is not Verdict.DENY)
+        finally:
+            orch.autonomy_queue.close()
     elif kind == "research":
         # A governed autonomy research proposal crosses the injected kernel
         # before it can reach the queue. The task is never dispatched here, so

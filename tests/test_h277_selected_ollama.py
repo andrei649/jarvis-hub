@@ -142,6 +142,20 @@ def test_user_scope_cannot_read_prepare_or_send_selected_owner_images(selected):
     assert selected.memory.sessions["selected_s"] == []
 
 
+def test_user_scope_cannot_use_legacy_selected_turn_routes(selected):
+    prepare = {"prompt": "What is shown?", "agent": "jarvis",
+               "session_id": "selected_s", "selected_turn": True,
+               "image_digests": [hashlib.sha256(PNG.encode()).hexdigest()]}
+    send = {"prompt": "What is shown?", "agent": "jarvis",
+            "session_id": "selected_s", "selected_turn": True,
+            "images": [PNG], "review_token": "unusable-review-token-123456",
+            "expected_destination": "http://127.0.0.1:11434", "expected_binding": "0" * 64}
+    assert selected.user_client.post("/api/vlm/composer/prepare", json=prepare).status_code == 401
+    assert selected.user_client.post("/api/vlm/composer/describe-prepared", json=send).status_code == 401
+    assert selected.user_client.post("/api/vlm/composer/chat-prepared", json=send).status_code == 401
+    assert selected.calls == [] and selected.orch.committed == []
+
+
 def test_selected_review_binds_resolved_owner_profile():
     store = VisionReviewStore()
     args = {"session_id": "selected_s", "agent_id": "jarvis", "prompt": "question",

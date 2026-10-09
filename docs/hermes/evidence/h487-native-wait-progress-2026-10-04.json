@@ -1,0 +1,83 @@
+{
+  "generated_at": "2026-10-03T23:57:32.012211+00:00",
+  "goal": "All697 pinned Hermes capabilities; H487 live native human wait accounting",
+  "base_sha": "ce96e6aef3d26f64c3138c71c5f56cf9b61209f7",
+  "state": "Local timing integration verified by focused regressions; frozen full backend milestone pending",
+  "source_sha256": {
+    "agents/core/agent_runtime.py": "a86bc87b2af6c2bd992f8bd1721cba1eece2ab1addc186fdeec0049847ac79dd",
+    "agents/core/native_human_wait.py": "e5cc74291707cdee8f078660d8184d104b76e61261703c703c023e40c32852d7",
+    "agents/core/autonomy/consent_prompts.py": "076d0581b37454122c65d295d87fffb481289b7f21a8f7d2b4e2e7772849ebe0",
+    "agents/core/autonomy/owner_once_prompts.py": "e185a676b69720c5ebe9c73f7832a380b8b4ba9b35de4747f25351bc3e271096",
+    "tests/test_native_human_wait.py": "27fbad5090c914eade08130974de0b688b902bc1d8f850847ff39cb980f27c7f",
+    "tests/test_h487_native_runtime_human_wait.py": "94f35c29ffb98ec2899737e5806151996e7721e2c7a8c2401d274325e067676e",
+    "tests/test_h487_telegram_consent_integration.py": "bb5658627414e250ea67f18ff7a6572fbc794818b24a631626ed2748b741c24d"
+  },
+  "focused": {
+    "tests": 2812,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1,
+    "passed": 2811,
+    "junit_sha256": "8b4e7883b44ba49243e91c6989fee028b8d06e4173a02b01b95d12494c7f4c7b"
+  },
+  "focused_files": 114,
+  "final_connected": {
+    "tests": 133,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 133,
+    "junit_sha256": "bf4323923d0e47378d5013a6e8f3ce1ea6dd0f531118f8652dc76dec10fcb94c"
+  },
+  "red_green": [
+    "Real reusable Telegram tool/wall owner wait:4 RED then4 GREEN",
+    "Real guardian-denied owner-once tool/wall wait:4 RED with root hook removed then4 GREEN after restore",
+    "Cancelled resistant prompt credit:7s RED versus2s expected, then GREEN",
+    "Module-local fake clock isolation:old global patch moved event-loop clock29s RED, then GREEN"
+  ],
+  "timing_contract": "Fresh per-run scope, union actual delivered native waits, finite expiry/current/task fences, baseline per owned tool/wall deadline; event sinks retain original limits. Timing grants no execution authority. Final unsampled interval at authority loss may conservatively omit <=20ms of credit.",
+  "regression_budget": "Real execution measured~0.124s around approval; regression allows0.25s execution while owner delay0.5s exceeds it. Product defaults unchanged.",
+  "mobile": "Separate local commit ce96e6ae implements mobile consent:185 Jest passes, TypeScript and offline iOS/Android exports. No real native device/provider acceptance.",
+  "current_claim_review": {
+    "rows": 15,
+    "unchanged_verdicts": true,
+    "new_equivalent_credit": 0,
+    "older_stale_rows": "Left unchanged; source preservation is not blanket recertification",
+    "ast_changed_functions": [
+      "run",
+      "_run_turn",
+      "_execute_rpc",
+      "_await_owned"
+    ],
+    "moved_citations": {
+      "H328": "agents/core/agent_runtime.py:265 ->267",
+      "H507": "agents/core/agent_runtime.py:1593 ->1613"
+    },
+    "independent_review": "No concrete production defect; test clock isolation concern fixed."
+  },
+  "checks": {
+    "ruff": "passed affected source/tests",
+    "bandit": "passed actual agents/scripts with existing baseline",
+    "graft": "rebuilt core/CLI/frontend/mobile/tests/scripts wiring cache; check saved separately; no global MCP available"
+  },
+  "backend_collection": 22347,
+  "full_backend": {
+    "state": "not yet started",
+    "previous_green_checkpoint": {
+      "base_sha": "87b2a1b8",
+      "tests": 22327,
+      "passed": 22292,
+      "skipped": 34,
+      "existing_xfail": 1,
+      "applies_to_current_runtime_changes": false
+    }
+  },
+  "remaining": [
+    "Browser/kernel/specialized reusable consent producers",
+    "Native deadline authoring and longer hard prompt windows",
+    "Native inline denial reasons and explicit unanswered outcomes",
+    "Legacy markerless expired-run recovery and cross-store crash audit limitations",
+    "Live transport/provider/device acceptance",
+    "All other unfinished accepted Hermes rows"
+  ]
+}

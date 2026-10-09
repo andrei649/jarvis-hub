@@ -1,0 +1,11 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/judge_parse_fractional_risk_allowed.xml", "tests/test_h277_approval_judge.py::test_parse_verdict_rejects"]
+......F.....                                                             [100%]
+=================================== FAILURES ===================================
+____________ test_parse_verdict_rejects[{"risk": 10.5, "why": "x"}] ____________
+tests/test_h277_approval_judge.py:327: in test_parse_verdict_rejects
+    assert parse_verdict(text) is None
+E   assert Verdict(score=10, rationale='x') is None
+E    +  where Verdict(score=10, rationale='x') = parse_verdict('{"risk": 10.5, "why": "x"}')
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_parse_verdict_rejects[{"risk": 10.5, "why": "x"}]
+1 failed, 11 passed in 1.49s

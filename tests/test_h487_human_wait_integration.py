@@ -96,6 +96,24 @@ async def test_actual_runtime_binds_real_pending_task_reader_and_preserves_raw_w
 
 
 @pytest.mark.asyncio
+async def test_real_runtime_long_deadline_preserves_wait_beyond_360_seconds(rig, monkeypatch):
+    enqueue = rig.q.enqueue
+
+    def with_deadline(*args, **kwargs):
+        kwargs["approval_deadline_at"] = datetime.fromtimestamp(BASE + 900, UTC).isoformat()
+        return enqueue(*args, **kwargs)
+
+    monkeypatch.setattr(rig.q, "enqueue", with_deadline)
+    _, run, task = await first_ask(rig, seconds=30)
+    assert task.status == "blocked" and task.approval_deadline_at is not None
+    rig.now[0] = BASE + 500
+    state = rig.ledger.budget_state(run.id)
+    assert state["wall_seconds_used"] == 500
+    assert state["human_wait_seconds"] == 500
+    assert state["seconds_used"] == 0 and state["exceeded"] is None
+
+
+@pytest.mark.asyncio
 async def test_autoapproved_task_id_does_not_purchase_wait_credit(rig):
     runtime, run, task = await first_ask(
         rig, kind="draft_email", autonomy_level="act", risk_tier=1
@@ -180,10 +198,19 @@ async def test_expiry_closes_credit_at_deadline_before_atomic_resume_budget_chec
 
 
 @pytest.mark.asyncio
-async def test_absolute_goal_deadline_still_outranks_human_wait_credit(rig):
+async def test_absolute_goal_deadline_still_outranks_long_human_wait_credit(rig, monkeypatch):
+    enqueue = rig.q.enqueue
+
+    def with_deadline(*args, **kwargs):
+        kwargs["approval_deadline_at"] = datetime.fromtimestamp(BASE + 900, UTC).isoformat()
+        return enqueue(*args, **kwargs)
+
+    monkeypatch.setattr(rig.q, "enqueue", with_deadline)
     _, run, _ = await first_ask(rig, deadline=BASE + 90)
     rig.now[0] += 100
-    assert rig.ledger.budget_state(run.id)["exceeded"] == "deadline"
+    state = rig.ledger.budget_state(run.id)
+    assert state["human_wait_seconds"] == 100
+    assert state["seconds_used"] == 0 and state["exceeded"] == "deadline"
 
 
 @pytest.mark.asyncio

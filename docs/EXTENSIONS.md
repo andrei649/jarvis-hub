@@ -74,10 +74,10 @@ range expressions and direct URLs are unsupported.
 
 `boats.summarize` is the qualified tool declaration. Commands cannot collide with
 the core command registry or another descriptor in the batch. Capabilities must
-exactly match non-empty declaration categories. Only `command.completed`,
-`session.started`, `session.ended` and `tool.completed` may be declared as events.
-Declared events are still prospective: **no event is delivered to an extension**,
-in S1 or S2. That is S3. Extension dependencies are exact versions, sorted before
+exactly match non-empty declaration categories. Events are `command.completed`,
+`session.started`, `session.ended`, `tool.completed`, `approval.smart.requested`
+and `approval.smart.decided`. Only activated, consented sandbox observers receive
+events; descriptor inspection alone delivers none. Extension dependencies are exact versions, sorted before
 dependents; cycles fail the batch, and missing or failed dependencies propagate to
 dependents. `validate_registration` is what S2's activation compares the isolated
 registration against — validating a descriptor still registers nothing and authorizes
@@ -197,11 +197,10 @@ proof on a host with Docker is the owner's.
 A declared event is delivered to an activated extension. It is **observation only**,
 and the distance between that and a hook is deliberate.
 
-The rows that ask for lifecycle extensibility (H567, H622) ask for more than this: 37
-hook points, shell hooks whose exit code blocks a call, `pre_tool_call` able to veto,
-`pre_llm_call` able to inject text into the turn. Three other rows in the same
-inventory — **H021**, **H163** and **H514** — deliberately exclude exactly that, and
-their reasons are the right ones:
+The full lifecycle backlog (H567, H622, H021, H163 and H514) asks for more than
+this: 37 hook points, blocking shell hooks, tool vetoes and prompt modifications.
+Previously excluded rows are now in the accepted full-parity scope. Their
+implementation must preserve the existing authority boundary:
 
 > a hook is *"arbitrary owner-authored code executing beside the kernel on every
 > lifecycle event, governed by a consent file and an mtime check rather than by an
@@ -209,21 +208,21 @@ their reasons are the right ones:
 > product"*, firing *"with no human in the loop at fire time"*, running **around** the
 > HARDLINE denylist and the accepted-task requirement rather than through them.
 
-Each of those exclusions names the same re-open path: a `hook.exec` kernel kind with a
-per-hook capability token and a hash-pinned script. That is an owner decision about the
-kernel, not something to take by writing code. **So Nerva ships the watching half and
-not the blocking half**, and these rows stay partial until that decision is made.
+The recorded integration path is a `hook.exec` kernel kind with a per-hook
+capability token and a hash-pinned script. Autonomous local kernel development is
+owner-authorized; these broader mechanisms remain unimplemented in this observer
+bus. Their absence remains a functional gap, not an active scope exclusion.
 
 ### What makes it watching
 
 | property | how |
 |---|---|
 | **Nothing comes back** | the delivery script prints no envelope, and `observe` reads the exit code and not one byte of output — there is no channel for a veto, an injection, an identity or an escalation, so none is filtered out |
-| **Allowlist, not redaction** | each event has a fixed, tiny field set, built from scratch here; a body, an argument, a result or a principal is never assembled, and a caller passing one is **refused**, not stripped |
+| **Fixed fields** | original events carry tiny summaries; guardian events add explicitly declared, force-scanned command/description excerpts; unknown fields are refused |
 | **Never blocks** | `emit` builds the payload, picks observers and returns; delivery runs on its own task, from the loop thread or a worker thread |
 | **Bounded** | past `MAX_PENDING` deliveries in flight, events are dropped and counted — a wedged observer costs a counter, never the chat |
 
-### The four events, and exactly what they carry
+### Events and exactly what they carry
 
 | event | fields | raised at |
 |---|---|---|
@@ -231,8 +230,21 @@ not the blocking half**, and these rows stay partial until that decision is made
 | `session.started` | `session_id` | `Orchestrator.new_session`, after the checkpoint is flushed |
 | `session.ended` | `session_id` | the same boundary, emitted before `session.started` |
 | `tool.completed` | `tool`, `status` | the tool-event store, on `tool_result`/`tool_failed` only — arguments and results are not omitted there, they never reach it |
+| `approval.smart.requested` | `request_id`, `surface=smart`, `command`, `description` | one validated native guardian send attempt; does not prove remote receipt; static DENYs and advisory scoring do not emit it |
+| `approval.smart.decided` | same fields plus `choice=smart_approve|smart_deny`, `decided_by=aux_llm` | after the corresponding exact task verdict is committed; stale, duplicate, ESCALATE and abandoned results emit no response |
 
 Every payload also carries `event`, a unique `event_id` and `occurred_at`.
+
+Guardian `request_id` is a random per-inference UUID, not a session/principal.
+Command and description use both SecretScanner and the credential/identifier
+catalogue on their full bounded inputs before truncation to 200 characters.
+Log-redaction preferences cannot disable this preparation. These excerpts can
+still contain private paths/prose or unknown opaque credentials; subscribing to
+the new events explicitly expands the manifest's consent scope. No raw prompt,
+model answer, provider/key configuration, operator policy or execution receipt is
+included. Preparation failure skips observation; decisions remain unchanged.
+The paired response reuses sanitized excerpts and observer tasks run in a fresh
+context. Events are best effort, not a durable delivery or ordered execution gate.
 
 ### An observing extension
 

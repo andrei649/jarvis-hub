@@ -1,0 +1,107 @@
+[
+  {
+    "id": "H063",
+    "path": "agents/core/channels/telegram.py",
+    "matches_immediate_preimage": true,
+    "preimage_sha256": "bd4ab5b2a62fa5d47e5add22d01dcfe08bfc7c5ae14c5bd7a5148120edc25cdd",
+    "postimage_sha256": "b1eb0a640f3b4a2d7c725620c6d01890c6e3145a001122ed6c605955555fbce3"
+  },
+  {
+    "id": "H063",
+    "path": "agents/core/orchestrator.py",
+    "matches_immediate_preimage": true,
+    "preimage_sha256": "86c835d3ec4e8c36515e80325c55f356304a57a149ae90ebb03920e22c0ed051",
+    "postimage_sha256": "7ca01e59b679bd52d9fd0198779119eeed4af24873ba8e798f607ea8b631949e"
+  },
+  {
+    "id": "H063",
+    "path": "agents/core/settings_db.py",
+    "matches_immediate_preimage": true,
+    "preimage_sha256": "cb678830b11642c93328140f5e2d0c9b57d291c3ca610baee2240049538d64c2",
+    "postimage_sha256": "e3a2a087409879db861c9d803b31ab76959d631474742f965cb8d57fdf3f3792"
+  },
+  {
+    "id": "H063",
+    "path": "agents/core/orchestrator_bindings.py",
+    "matches_immediate_preimage": true,
+    "preimage_sha256": "9d4a54b537c4e454b468189a6fddc15b2e4fab8b738191bae2c596c26196a6eb",
+    "postimage_sha256": "557e81cf6e5c7435a9baa92f041e08c6ba5291c1427b1f51b5b0abb20af870ef"
+  },
+  {
+    "id": "H075",
+    "path": "agents/core/autonomy_coordinator.py",
+    "matches_immediate_preimage": true,
+    "preimage_sha256": "54613302e9a0f0a4d306bee188823fc3f1d4fbe2af50bf05c5a33ccdf37cd748",
+    "postimage_sha256": "157ef58da0f2f2ba2e431d4226b4867d068babff2f7540e8052fabf04d5c6d21"
+  },
+  {
+    "id": "H075",
+    "path": "agents/core/settings_db.py",
+    "matches_immediate_preimage": false,
+    "preimage_sha256": "cb678830b11642c93328140f5e2d0c9b57d291c3ca610baee2240049538d64c2",
+    "postimage_sha256": "e3a2a087409879db861c9d803b31ab76959d631474742f965cb8d57fdf3f3792"
+  },
+  {
+    "id": "H075",
+    "path": "agents/core/orchestrator.py",
+    "matches_immediate_preimage": false,
+    "preimage_sha256": "86c835d3ec4e8c36515e80325c55f356304a57a149ae90ebb03920e22c0ed051",
+    "postimage_sha256": "7ca01e59b679bd52d9fd0198779119eeed4af24873ba8e798f607ea8b631949e"
+  },
+  {
+    "id": "H075",
+    "path": "agents/core/orchestrator_bindings.py",
+    "matches_immediate_preimage": true,
+    "preimage_sha256": "9d4a54b537c4e454b468189a6fddc15b2e4fab8b738191bae2c596c26196a6eb",
+    "postimage_sha256": "557e81cf6e5c7435a9baa92f041e08c6ba5291c1427b1f51b5b0abb20af870ef"
+  },
+  {
+    "id": "H099",
+    "path": "agents/core/orchestrator.py",
+    "matches_immediate_preimage": true,
+    "preimage_sha256": "86c835d3ec4e8c36515e80325c55f356304a57a149ae90ebb03920e22c0ed051",
+    "postimage_sha256": "7ca01e59b679bd52d9fd0198779119eeed4af24873ba8e798f607ea8b631949e"
+  },
+  {
+    "id": "H515",
+    "path": "agents/core/autonomy_coordinator.py",
+    "matches_immediate_preimage": true,
+    "preimage_sha256": "54613302e9a0f0a4d306bee188823fc3f1d4fbe2af50bf05c5a33ccdf37cd748",
+    "postimage_sha256": "157ef58da0f2f2ba2e431d4226b4867d068babff2f7540e8052fabf04d5c6d21"
+  },
+  {
+    "id": "H515",
+    "path": "agents/core/orchestrator_bindings.py",
+    "matches_immediate_preimage": true,
+    "preimage_sha256": "9d4a54b537c4e454b468189a6fddc15b2e4fab8b738191bae2c596c26196a6eb",
+    "postimage_sha256": "557e81cf6e5c7435a9baa92f041e08c6ba5291c1427b1f51b5b0abb20af870ef"
+  },
+  {
+    "id": "H581",
+    "path": "agents/core/autonomy_coordinator.py",
+    "matches_immediate_preimage": true,
+    "preimage_sha256": "54613302e9a0f0a4d306bee188823fc3f1d4fbe2af50bf05c5a33ccdf37cd748",
+    "postimage_sha256": "157ef58da0f2f2ba2e431d4226b4867d068babff2f7540e8052fabf04d5c6d21"
+  },
+  {
+    "id": "H581",
+    "path": "agents/core/settings_db.py",
+    "matches_immediate_preimage": false,
+    "preimage_sha256": "cb678830b11642c93328140f5e2d0c9b57d291c3ca610baee2240049538d64c2",
+    "postimage_sha256": "e3a2a087409879db861c9d803b31ab76959d631474742f965cb8d57fdf3f3792"
+  },
+  {
+    "id": "H581",
+    "path": "agents/core/orchestrator.py",
+    "matches_immediate_preimage": false,
+    "preimage_sha256": "86c835d3ec4e8c36515e80325c55f356304a57a149ae90ebb03920e22c0ed051",
+    "postimage_sha256": "7ca01e59b679bd52d9fd0198779119eeed4af24873ba8e798f607ea8b631949e"
+  },
+  {
+    "id": "H581",
+    "path": "agents/core/orchestrator_bindings.py",
+    "matches_immediate_preimage": true,
+    "preimage_sha256": "9d4a54b537c4e454b468189a6fddc15b2e4fab8b738191bae2c596c26196a6eb",
+    "postimage_sha256": "557e81cf6e5c7435a9baa92f041e08c6ba5291c1427b1f51b5b0abb20af870ef"
+  }
+]

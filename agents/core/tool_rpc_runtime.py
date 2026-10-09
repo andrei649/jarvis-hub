@@ -370,6 +370,7 @@ class ToolRPCSandboxRuntime:
         sinks=None,
         before_execute=None,
         execution_context: dict | None = None,
+        on_tool_call: Callable[[], None] | None = None,
     ) -> ToolRPCSandboxRun:
         """``sinks`` is handed straight to the sandbox; see ``Sandbox.execute_python``.
 
@@ -420,7 +421,8 @@ class ToolRPCSandboxRuntime:
 
         try:
             while not task.done():
-                tool_calls = await self._service_pending(store, processed, tool_calls)
+                tool_calls = await self._service_pending(store, processed, tool_calls,
+                                                         on_tool_call=on_tool_call)
                 if loop.time() >= deadline:
                     task.cancel()
                     with suppress(asyncio.CancelledError):
@@ -435,7 +437,8 @@ class ToolRPCSandboxRuntime:
                     )
                 await asyncio.sleep(self.poll_interval)
 
-            tool_calls = await self._service_pending(store, processed, tool_calls)
+            tool_calls = await self._service_pending(store, processed, tool_calls,
+                                                     on_tool_call=on_tool_call)
             result = await task
             return ToolRPCSandboxRun(
                 result=result,
@@ -461,6 +464,7 @@ class ToolRPCSandboxRuntime:
         store: FileRPCStore,
         processed: set[int],
         tool_calls: int,
+        *, on_tool_call: Callable[[], None] | None = None,
     ) -> int:
         for request in store.pending_requests(limit=self._pending_read_limit):
             if request.seq in processed:
@@ -483,6 +487,8 @@ class ToolRPCSandboxRuntime:
             store.write_response(request.seq, response)
             self._consume_request(store, request.seq)
             tool_calls += 1
+            if on_tool_call is not None:
+                on_tool_call()
 
         return tool_calls
 

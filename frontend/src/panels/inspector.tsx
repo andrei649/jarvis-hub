@@ -5,8 +5,8 @@
    the owner or a stranger on an external channel, or no human (a job). The status line
    says what serves the agent; the sections below it fold open: the tools its profile
    offers (gated and untrusted-output marked, the withheld ones counted), the skills its
-   prompt names, the MCP servers with their liveness, and the resolved prompt for an empty
-   user message, secrets masked by the hub and capped at 64 KB. Read-only. */
+   prompt names, the MCP servers with their liveness, and a fixed empty-turn prompt
+   preview, secrets masked by the hub and capped at 64 KB. Read-only. */
 import React, { useMemo, useState } from 'react';
 import { Card, Row, State, Tag, inpS, mono, useApi } from '../panel-kit';
 
@@ -45,6 +45,19 @@ function Section({ title, sub, children }: { title: string; sub?: string; childr
 }
 
 const pre = { ...mono, fontSize: 10, whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const, margin: '4px 0', maxHeight: 360, overflow: 'auto' };
+
+function promptResolution(prompt: any): string {
+  if (prompt.resolved === true) {
+    if (typeof prompt.model === 'string' && prompt.model && typeof prompt.route === 'string' && prompt.route) {
+      return `resolved empty-turn preview · model ${prompt.model} · route ${prompt.route}`;
+    }
+    return 'unresolved · route details incomplete';
+  }
+  if (prompt.resolved === false) {
+    return `unresolved · base system prompt only · ${prompt.route_error === 'unavailable' ? 'route unavailable' : 'route not resolved'}`;
+  }
+  return 'legacy preview · route resolution not reported';
+}
 
 export function InspectorPanel() {
   const [agent, setAgent] = useState('jarvis');
@@ -111,6 +124,9 @@ export function InspectorPanel() {
         <Section title="System prompt" sub={prompt.withheld ? 'withheld' : `about ${prompt.tokens} tokens before any history · ${prompt.bytes} bytes${prompt.truncated ? `, shown to ${prompt.cap}` : ''}`}>
           {prompt.withheld ? <div style={{ fontSize: 10, color: 'var(--amber)' }}>withheld: the secret redactor could not be loaded</div> : (
             <>
+              <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>{promptResolution(prompt)}</div>
+              {prompt.resolved == null ? <div style={{ fontSize: 10, color: 'var(--amber)' }}>model-specific prompt additions unverified</div> : null}
+              <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>Fixed empty-turn preview (an empty user message); active history, user input and tool schemas omitted; cached runtime facts may differ.</div>
               <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>system</div>
               <pre aria-label="System part" style={pre}>{prompt.system}</pre>
               <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>turn (an empty user message)</div>

@@ -79,6 +79,7 @@ def _recorder(backend: str):
             raise HostProtocolRefused(reason)
         _record(backend, request, allowed=True)
 
+    _hook._nerva_egress_recorder = True
     return _hook
 
 

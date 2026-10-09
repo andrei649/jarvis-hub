@@ -1,0 +1,379 @@
+{
+  "goal": "All original697 pinned Hermes capabilities; H277 original49 current-source refresh only",
+  "generated_at": "2026-10-04T23:14:44Z",
+  "head": "a7ffad6676cfb28e7ac374d495b4a5889e5f4646",
+  "dirty_local_snapshot": true,
+  "original_faults": 49,
+  "inputs": 997,
+  "outcomes": {
+    "killed_assertion": 43,
+    "killed_behavioral_exception": 6
+  },
+  "baseline_python": {
+    "tests": 360,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "baseline_hud": {
+    "numTotalTests": 40,
+    "numPassedTests": 40,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true
+  },
+  "restored_python": {
+    "tests": 360,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "restored_hud": {
+    "numTotalTests": 40,
+    "numPassedTests": 40,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true
+  },
+  "source_drift": [],
+  "snapshot_drift": [],
+  "xml_derivatives": [
+    {
+      "artifact": "baseline.xml",
+      "derivative_sha256": "17b594e913b372ee77262a649be0382f256b8b2789d46949e4ef65b3e7152928",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/baseline.xml",
+      "raw_sha256": "5d0f0b0bdd75ce50386cdb31dfef193ccc6b7504c4ead107ddade35fdd2b6194",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "post-baseline.xml",
+      "derivative_sha256": "76585a1f259fc48b38f4f92f001773ec9d4fa7713e70019701e76ca458d5941c",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/post-baseline.xml",
+      "raw_sha256": "00b95a2b10eb675a8d3c2c12bff9d52fcd829027bd011205ce72ab3898e6530b",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/doctor_model_roles_attention_ignored.xml",
+      "derivative_sha256": "eb4a0658c5e28c5601e3fa3568e686b4a91f209c22cdd7510b1eba0ed162e18b",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/doctor_model_roles_attention_ignored.xml",
+      "raw_sha256": "21768b9104a2238a8d5503fe3f42db6e1f1d15609e5a1ae5c75596579418fa61",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/doctor_model_roles_ignored_not_flagged.xml",
+      "derivative_sha256": "d6b8ecb50fbd2e974a409b9461e9e0d027d91ab66e72743a942802c82f81a2de",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/doctor_model_roles_ignored_not_flagged.xml",
+      "raw_sha256": "423e7e49b089a168328aec20b4c792bf11fbb5eab8a3206bc24eea69cd7ea0fc",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_allow_remote_inverted.xml",
+      "derivative_sha256": "891da2c3ac95e0695fbd69f0d7a22f1282529f53ab86b19aaa43bb0b0eabe140",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_allow_remote_inverted.xml",
+      "raw_sha256": "0c66fe36b4fad658011e99d4cca3e83845e01eed7fee9a5c4486f9f656bbbf3c",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_clamp_upper_bound_raised.xml",
+      "derivative_sha256": "1f5f16912a6a1af7d4796f55056426e070bf24ade09664f3f595b601be0cc1d0",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_clamp_upper_bound_raised.xml",
+      "raw_sha256": "e7da24fc7e6b3979cabcd04c03bbcbd7ee5b3afb99d830cf0404b5cc1183d1cc",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_cloud_fallback_never_ignored.xml",
+      "derivative_sha256": "addda4366b5e11fdd42c5360a579b031956b8e9fdb26379989a72b4b07dfc0b1",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_cloud_fallback_never_ignored.xml",
+      "raw_sha256": "8ed9fef7f9689f5eeb1e55e2fc7acde0f9f6f07736290497b6182d401fd096b8",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_h378_findings_ignored.xml",
+      "derivative_sha256": "5ce6e08f2356fbceb097c37028696de8909f3b3cf36fb9f1d76b13a9ba0072b8",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_h378_findings_ignored.xml",
+      "raw_sha256": "df1dea21882bcee4d19a073f8ecc0e57ed62f956a765c99e4109ac0af6c35c4b",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_parse_code_fence_unanchored.xml",
+      "derivative_sha256": "8b7a40ae4aea753a163df2d9a2c4312d56aa6af5b6439604d29246d546176cee",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_parse_code_fence_unanchored.xml",
+      "raw_sha256": "397eae2b273c6b789614d06952672d7e627c382ff32e75b41a5b91b4ac6d70f6",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_parse_empty_why_allowed.xml",
+      "derivative_sha256": "7621e88f49a455f56a40ca89fac71752837126e2a1fa8ef4c283265bc1e5e59c",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_parse_empty_why_allowed.xml",
+      "raw_sha256": "e84463c3973007e6e7ad8be4c1f2c960294c886a88150de32c6896072719c7bc",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_parse_extra_keys_allowed.xml",
+      "derivative_sha256": "a9d5c95b1bff0795f898614ded4b606ecccc29dca2070429b060000f8756b9d3",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_parse_extra_keys_allowed.xml",
+      "raw_sha256": "56810168eae576b2c75b44d61efaed57ba9c38de0eb7806b7b5368f3e39232e4",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_parse_fractional_risk_allowed.xml",
+      "derivative_sha256": "fac4d84f0c73edcba7883e20d1da0abd25fba05982257b3011d204e9cbed455f",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_parse_fractional_risk_allowed.xml",
+      "raw_sha256": "90e5ab5551d95aaac7b8ad8517e015c73bdb5fcb992ea5654d84347ce799ed40",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_prompt_not_fenced.xml",
+      "derivative_sha256": "02f7f79f8842918f7bf5f5777dca7b43051063cf003111d148b8b1f95ecd7489",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_prompt_not_fenced.xml",
+      "raw_sha256": "89b59b28a9954b016819e769285c927cfbfb643d31b4b111234c30d2dff97564",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_protocol_refusal_dropped.xml",
+      "derivative_sha256": "12e4130d8becf4b254fcd3eeccb36df6c488c7cec20e377a07c7442a7acba638",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_protocol_refusal_dropped.xml",
+      "raw_sha256": "993e43892eeba07ab7f275c843fe96d36e12f7f3c60a7e9c7b44edc998d4b0cd",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_public_leaks_remote_base_url.xml",
+      "derivative_sha256": "6d5a3d53f17b443d54fc4fad7eb8c96b2df065312097617cfd1d33651f29a5a1",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_public_leaks_remote_base_url.xml",
+      "raw_sha256": "dbc94cab7f6c7d40e8523429bfeb3f3a142cb30171df443c9c18fe8de2e498fa",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_rationale_fence_markers_kept.xml",
+      "derivative_sha256": "1d562402beeb5786851b831a5cb7540accb7ce1295dc692d4edac703608d1ac8",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_rationale_fence_markers_kept.xml",
+      "raw_sha256": "8ddf2fe4b36dc061096d691cd7004e485375bc03043ee16bcde845c32d5dd10d",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_remote_gate_applies_to_local.xml",
+      "derivative_sha256": "e6e6e5f4b353f6f707bf76308f806b882ab3adddbb80af2e41a6bbc426a6fd87",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_remote_gate_applies_to_local.xml",
+      "raw_sha256": "8e578d96fe2d67d27353b24da8d0ccece2d0d26ff8841d5dff167c2dc3c9a6d0",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_safe_mode_check_dropped.xml",
+      "derivative_sha256": "9558dc395db7ff0c28e73c5f9859ae8ee757920b57da21b46f823b3e69b314e3",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_safe_mode_check_dropped.xml",
+      "raw_sha256": "1c2c4d065d026fec586b3e506ef08e1a58dd3d5f201416b8060cb6f1cc92fde3",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_selection_pin_check_inverted.xml",
+      "derivative_sha256": "65c6afdc2523d01e7cbb9f95fa745886900d1919b93b9a28cef0283f5d477d97",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_selection_pin_check_inverted.xml",
+      "raw_sha256": "bb163e1e7eb2bf512bdcfdefcef1e57f412e21911a2e4154d88b4ba6266b8080",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_strict_local_ignored.xml",
+      "derivative_sha256": "6b4dbeda1940ba94c8d99f63dc72a6ad00d2f2b1d1f12768297561875d8bcc03",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_strict_local_ignored.xml",
+      "raw_sha256": "fa89c03ff4a06020aea913be0ce4a22285ece516b725abbb38888bf87794a799",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_timeout_floor_dropped.xml",
+      "derivative_sha256": "e5b65b921b04b847bfce9a930adffd65585622d029ee82563a1e3f2a746a3347",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_timeout_floor_dropped.xml",
+      "raw_sha256": "82c7dcb381076db4b3f006ad569599ed319f1fb4a26720d538d6bd4d5c901a1b",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_wants_local_agent_sent_remote.xml",
+      "derivative_sha256": "be2d32fa58ce90e4ad171ebff61fb490ca767ac9a6209a32eca821b25e563b17",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_wants_local_agent_sent_remote.xml",
+      "raw_sha256": "4cec4ec7db9e74a18006c6ebcaf387a7e0a50f292a04af1d6a8b8111a88cf80c",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_wants_skill_card_judged.xml",
+      "derivative_sha256": "bcf90e8f2ba1edf243cdb4f656b783fbf31a793ade54cdf93acb29ef2685bbf2",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_wants_skill_card_judged.xml",
+      "raw_sha256": "30ce5bc749ffe150a01ab33c5c16a38c3af71db93177b7ec1e1104e7d1370c0a",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_wants_tainted_sent_remote.xml",
+      "derivative_sha256": "4bda83c0addcaff12d3dcd615ac88c5d3fa29572393e71883f1ac6299d9fa6c6",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_wants_tainted_sent_remote.xml",
+      "raw_sha256": "b1bfd289e911a6f574d7ed9cb5677ce3c5051836b6cdedbb32056b76fd62a399",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/judge_wants_unconfigured_guard_dropped.xml",
+      "derivative_sha256": "8b67b799cbc0c25b6fc5ad9570a8d9a53377ea0c698854dedf3aa96c9d480367",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/judge_wants_unconfigured_guard_dropped.xml",
+      "raw_sha256": "e7decd25ec38161a2d82487cda19bf6059c29df27e81079cd39c94a205085b10",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/model_config_override_flag_inverted.xml",
+      "derivative_sha256": "24bd2fa85eadbe92aa90dc0bf3191e38534b3b42b6aac0d7d17cac5bcb677e9f",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/model_config_override_flag_inverted.xml",
+      "raw_sha256": "286e71ddd69b598d2bdee3711073b5a7cd7b5939d1553b6e00d072d9bb2ae7ac",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/queue_annotate_after_decision.xml",
+      "derivative_sha256": "4c2d989698fa5538b50ffb5361e100d32ab94addfeeaaea03e36ec6081d0481f",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_annotate_after_decision.xml",
+      "raw_sha256": "73f4a8ef282bdfa52c4a99cd23378c32e3c947d1e1cbcdefa70c640b55d575cf",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/queue_annotate_low_score_auto_approves.xml",
+      "derivative_sha256": "7a38552480702bf0c14d62d2478886ebfd085766886c8686a1b67d9d8b74d851",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_annotate_low_score_auto_approves.xml",
+      "raw_sha256": "2d608461ae73e42b96a526b0f8bd84967b9507a7b593113a98b8ccde6beebdc7",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/queue_annotate_second_answer_overwrites.xml",
+      "derivative_sha256": "e3b91fdd8a1a37ab125b93a9c306d988ba8fa961d9b5bdffbf7ccb07c7dea6d5",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_annotate_second_answer_overwrites.xml",
+      "raw_sha256": "7690bcca9581c3a4629811bef96ad5d6e7ee6f55742a852da0055aec28643890",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/queue_decided_audit_drops_judge_identity.xml",
+      "derivative_sha256": "1fc82d31369564f1085e5f1622912e9c3677bc9ead236aad6e1faeaa908c0e95",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_decided_audit_drops_judge_identity.xml",
+      "raw_sha256": "879efaa8c6ebc8fcc527aef35a09d0da04c03b93cd0cc82de5b993a272c1d765",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/queue_judge_inherits_caller_context.xml",
+      "derivative_sha256": "8f2945e3557bdd5b4c78a4bda6960d8c3073f71e1b99d89dac01ec2c7a51798a",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_judge_inherits_caller_context.xml",
+      "raw_sha256": "9db8db7a0d706c677301dbae7c2946ddd710c10d99f8ed6d6d06929ff2080e9f",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/queue_judged_audit_drops_judge_identity.xml",
+      "derivative_sha256": "ee51fb1c7fac493e03d830256b60a53e49170380ab142025326920e69e547fbe",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_judged_audit_drops_judge_identity.xml",
+      "raw_sha256": "087890f7963bd7da0ff99729d1f3716f7d90ad7f4ba23c35254ce4776792c074",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/queue_short_lived_loop_not_judged_on_hub.xml",
+      "derivative_sha256": "db5111c230503228b45ca22734739b228acc3a4dc149c3d14dd28a663de4e45f",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_short_lived_loop_not_judged_on_hub.xml",
+      "raw_sha256": "477da2895274e1f4e5e47dd832375a1fcf5b2d2d6e1049e9852469d0a32e7ffd",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/queue_snapshot_is_stored_item.xml",
+      "derivative_sha256": "6b64e15d0e65aeb71f0df702552551c363d6a8f7dd3a79a26136b5886d00e8c1",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/queue_snapshot_is_stored_item.xml",
+      "raw_sha256": "b78f39a85d91b3e110c9b9adbc44d9f84b55d972e27f66d33834ff42d9e172f9",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/roles_describe_catches_wrong_error.xml",
+      "derivative_sha256": "ba53e51dadd69f2695668656d2219bbe0115f0cf4fa19832ca3b944418998245",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_describe_catches_wrong_error.xml",
+      "raw_sha256": "a2bd72e6b82b2152183d092278c34735d30a6f757140e818468ab7499d1a01c2",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/roles_env_role_default_provider_ollama.xml",
+      "derivative_sha256": "9e0c7408d47aa8a2dcdc5ea291be25dc174888f2babd3c3939c4a3ba58bdab66",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_env_role_default_provider_ollama.xml",
+      "raw_sha256": "d004ed5453afafac372fe4a091675110364f6f487e8c86ef521c3236128b9223",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/roles_env_role_unset_model_guard_dropped.xml",
+      "derivative_sha256": "a9fcbacccf3edabd8f63fde2ecd9ec2f52323515d50de9ca0f3e93c6905629c9",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_env_role_unset_model_guard_dropped.xml",
+      "raw_sha256": "7cb2962c1525ac9a74b0e0be252b1286043569804558be2d770980a37d90575d",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/roles_locality_or_instead_of_and.xml",
+      "derivative_sha256": "12a5667e6c3bc1bfa451aa5fc8dc8df11665528afe2687131d777c88106d19dc",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_locality_or_instead_of_and.xml",
+      "raw_sha256": "5b98fe71be39169f08993bb8b38f769cce97f1991d4289144ad637d7e155d4d9",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/roles_main_becomes_env_selectable.xml",
+      "derivative_sha256": "a77a53975a3afd9451c84ec08ed910db2fba8caeb15de515eafd8b3fab464a7c",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_main_becomes_env_selectable.xml",
+      "raw_sha256": "9cede081bb0f09256ec3e37bdbf83642d37d30f9c9f685374ad240e77915fb36",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/roles_pick_legacy_fallback_dropped.xml",
+      "derivative_sha256": "e2222561a296f078f3442c1589c6bcb4f27462772d870df31b82fc503d6f16ea",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_pick_legacy_fallback_dropped.xml",
+      "raw_sha256": "d1e02d84fd77b2f980ddac8392cdf24780f103b930538d97dbb562a654617b9a",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/roles_pick_legacy_wins_over_role_name.xml",
+      "derivative_sha256": "2df7f4bb036dbdd2740fa42fd6a3ec06cf69c5652256fbe09011f2588b148e8e",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_pick_legacy_wins_over_role_name.xml",
+      "raw_sha256": "016368b6dd553342260b9d94aa71b16b37d4bbecfeacdd928b058aabf02c2df0",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/roles_pick_shadowed_legacy_not_reported.xml",
+      "derivative_sha256": "b30ed38e813be777d050ebe7d4105a5f07047dde0f37f7fa339050293fc4b1cd",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_pick_shadowed_legacy_not_reported.xml",
+      "raw_sha256": "0f63deb092de39bd3c65dd68f92019adaec4f8acb1a5cc331ff8804ce4481000",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/roles_validate_supported_set_check_dropped.xml",
+      "derivative_sha256": "ae829b1490b5232996c8aacacf126c216547bf46ea91beaf528462f4498ab74a",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_validate_supported_set_check_dropped.xml",
+      "raw_sha256": "dcf66dcc569c2b252052aa0619e843cc7e915dbd928ad1656510eb1351129a09",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/roles_vision_lmstudio_default_url_dropped.xml",
+      "derivative_sha256": "90c314717e7c439260fecfc63ec42f9b3da50d4c1358c29a3a301c37cd82da5b",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_vision_lmstudio_default_url_dropped.xml",
+      "raw_sha256": "c2b73f782c991aa86d82b06232d41b5dcd4e118e9498e1f3ca4417d5571b528f",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/roles_vision_view_legacy_url_wins.xml",
+      "derivative_sha256": "a1be5ad7ccee8bb190d622ff1ceab0089c9396e13e1ebd57a239527cc550fcbd",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_vision_view_legacy_url_wins.xml",
+      "raw_sha256": "05599c4b51508b13769afa0810c37880e86fd50ac387f23658aef20de3db043b",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/roles_vision_view_provider_not_validated.xml",
+      "derivative_sha256": "a4e1804003bcea653a04188cecc7ff6a6c3834980b117b36b781c038d7a51fb5",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/roles_vision_view_provider_not_validated.xml",
+      "raw_sha256": "37fb2aa5353a95a9f3ea8a2efb648dec601cb1fa9252b934630abc9a58f816d9",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/route_pending_drops_judge_key.xml",
+      "derivative_sha256": "c48d4c2f0168fa6b33e3f9fc4a8c2daed6f9140ff1bf8df9b3ac060597f7453f",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/route_pending_drops_judge_key.xml",
+      "raw_sha256": "09dfec64ab1ee7524dda0df6c4ad3182b33c1aa1cb72bac5c1cff7f6fae9eb56",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    },
+    {
+      "artifact": "xml/vlm_role_error_reason_masked.xml",
+      "derivative_sha256": "12db0360dfde804c9ee82554a79255052c1b5aa0ed6862407a0be0d0dcfa9852",
+      "raw_local_path": "/tmp/nerva-h277-prepared49-resume-current-20261005/xml/vlm_role_error_reason_masked.xml",
+      "raw_sha256": "97781a90b62f5fff27bf2eff2bea2ef32436845e98c14a422c554fd3e839e59c",
+      "transformation": "Parameterized names hashed; failure/error diagnostics omitted with raw diagnostic hash. Class, method, outcome, type, counts and timing preserved."
+    }
+  ],
+  "limit": "All49 original faults mapped to current source. Does not prove full H277 functional parity, live providers, current full backend or remaining Hermes capabilities. Source changes are local and uncommitted."
+}

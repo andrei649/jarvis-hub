@@ -24,6 +24,112 @@
 
 - 2026-10-08 native recovery (H595/H660): owner-enabled execute_code defaults to persistent sessions when an isolated backend is configured. Project/strict context, backend-local interpreter selection, owner-scoped skill environment declarations and import stubs use existing per-cell authorization. Bounded project snapshots are read-only, exclude secrets/links/generated trees, and use native Windows handle containment. Admin settings persist and reject invalid values. Cancellation/teardown regressions include selected-interpreter descendants and bounded Docker failure; live Windows Docker and remote transports remain unverified. Recovered from #1233 without importing Hermes runtime.
 
+- 2026-10-06 PR #1233 runtime continuation: the complete pinned Hermes engine
+  now uses canonical, exact-action approvals with one-use Kernel revalidation,
+  generation revocation and original-frame tool continuation. Owner HUD and
+  authenticated operator CLI expose pending decisions and execution disposition.
+  A private installed profile supports subsequent sessions; providers remain
+  owner-configured. Runtime coverage does not add native equivalence credit.
+  See [operator instructions](docs/hermes/OPERATOR.md) and the
+  [operational verification receipt](docs/hermes/evidence/2026-10-06-runtime-operations/report.json):
+  full backend 24,611 passed, 55 skips and one expected failure; frontend 1,985 passed.
+
+- 2026-10-04 H487 live native wait continuation: actual delivered reusable and
+  owner-once Telegram prompts now credit the per-run union of human wait time
+  to model wall/tool execution budgets. Expiry, authority loss and cancellation
+  stop accrual; event-sink and ordinary hang limits remain unchanged. Exact real
+  tool/wall owner-wait RED/GREEN cases pass. Affected-row regressions pass2,811
+  with1 skip (2,812 total); final connected133 cases pass. The frozen full
+  backend run passes22,312 cases with34 skips and1 existing expected failure
+  (22,347 total), zero failures/errors and no drift across2,982 frozen paths.
+  No new equivalent or live credit. See focused and full receipts:
+  `docs/hermes/evidence/h487-native-wait-progress-2026-10-04.json` and
+  `docs/hermes/evidence/h487-native-wait-full-2026-10-04.json`.
+
+- 2026-10-04 H487 native mobile continuation: validated current offers expose
+  session / always / deny with exact revision and optional280-code-point reasons.
+  Synchronous busy exclusion, strict <=64 distinct committed-task confirmation
+  and connection epochs prevent duplicate/stale application; desktop approval
+  remains in Owner HUD, with ordinary reject/defer retained on mobile.
+  All185 mobile tests, TypeScript and offline iOS/Android exports pass.
+  No device/provider activation or new equivalent credit; H487 stays partial.
+  See `docs/hermes/evidence/h487-mobile-consent-progress-2026-10-04.json`.
+
+- 2026-10-04 H487 Telegram / CLI continuation: actual owner callbacks now choose
+  session / always / deny on verified native cards, including web-origin requests.
+  Signed decider attribution is distinct from the captured request grant scope.
+  Reserved callbacks use a bounded independent lane, refusing stale / malformed /
+  revoked / expired cards; refreshed identical followers settle their own receipts.
+  Real model tool-runtime child tasks join the owner reply without granting sibling
+  tasks authority. Native `nerva approvals consent` requires the explicit current
+  revision and uses the existing authenticated route. Focused Telegram union190,
+  CLI135 and API44 cases pass; these counts overlap. Full backend collection is
+  now22,327. Integrated regressions pass5,957 cases with13 skips (5,970 total);
+  the31 previously-current collateral claims were source-reviewed without upgrades.
+  The corrected frozen full backend run passes22,292 cases with34 skips and
+  one existing expected failure (22,327 total), zero new failures or errors.
+  H487 remains partial for remaining accepted producers, mobile/deadline controls
+  and live acceptance; no new equivalent credit. Local source only, no publication.
+  See `docs/hermes/h487-telegram-consent-plan-2026-10-04.md`.
+
+- 2026-10-04 H487 connected terminal continuation: authenticated HUD session /
+  always / deny choices now bind exact signed source, current credentials,
+  category witnesses and pending followers (including real QA4 off-mode intake).
+  Future compatible requests reuse consent without fabricated human attribution.
+  Private one-use worker claims reach adjacent local / SSH / Docker dispatch gates;
+  halt, policy / target changes, revoke and cancellation after claim prevent spawn.
+  Actual effects are mocked, not live acceptance. 167 connected focused cases,
+  4,456 collateral passes with 11 skips, all 1,889 frontend cases and 17 route /
+  doc / typegen gates pass; these counts overlap. SSH canonical tuple serialization
+  was fixed after a real producer regression. Full collection is 22,210 cases;
+  the full run had six collateral failures (API sweep, auth snapshot and queue
+  test doubles), corrected with 52 focused passes; a full rerun remains required.
+  H487 stays partial:
+  At that terminal checkpoint, Telegram reusable callbacks and remaining accepted
+  producers were not delivered; the newer continuation is recorded above.
+  Shared changed pins require claim-specific review before restoring counts;
+  no new equivalent credit. See `docs/hermes/h487-owner-consent-runtime-plan-2026-10-03.md`.
+
+- 2026-10-03 H487 full-backend review: 22,093 guarded cases executed at c70e0407;
+  22,057 pass, 34 skip, one existing xfail, and one exact binding-writer inventory
+  failure. The focused RED reproduced 14 coordinator callsites displaced by
+  seven provenance lines; their literal coordinates were corrected without
+  weakening ownership or AST guards, and all 50 binding tests pass. A complete
+  guarded rerun completed on 01191f70: 22,058 pass, 34 skip and one existing
+  xfail, with all 2,525 frozen source paths unchanged. This is baseline proof,
+  not coverage of the later runtime. See
+  `docs/hermes/evidence/h487-baseline-full-verified-2026-10-04.json`.
+  Claim-specific source/diff/module review of
+  H262/H298/H309/H314/H315/H507/H594/H681 restores their existing equivalent
+  verdicts: 181/697 (26.0%), not new feature delivery. H487 remains unfinished.
+  See `docs/hermes/evidence/h487-consent-anchor-full-review-2026-10-03.md`.
+- 2026-10-03 H487 revocation continuation: an optional signed consent-state head
+  now uses a separate durable monotonic anchor outside SQLite. Restoring old
+  signed rows or the whole consent database cannot revive revoked grants while
+  that external anchor remains current. Corrupt/missing anchors, stale CAS and
+  caller rollback fail closed; legacy unanchored grants are not adopted.
+  686 guarded relevant cases pass, including the 83-case anchor integration
+  union; these counts overlap. Full collection is 22,093 cases, not a fresh
+  full-backend pass. Real owner choices, follower receipts and physical dispatch
+  integration remain unfinished; no equivalent credit is added. See
+  `docs/hermes/evidence/h487-consent-anchor-progress-2026-10-03.md`.
+- 2026-10-03 H487 producer continuation: ported the pinned Hermes terminal warning
+  detector and closed category catalog; added registrar-owned stable provenance
+  and signed private source capture at the real terminal enqueue. Sources bind
+  the exact ready owner-turn association, task birth/intent/deadline and policy;
+  ordinary approvals survive metadata failures. Session purge and settled
+  retention remove the private source in the existing cleanup transaction.
+  Session/always owner choices, follower receipts, monotonic revocation and
+  physical dispatch checks remain unfinished; no equivalent credit is added.
+  See `docs/hermes/evidence/h487-producer-source-progress-2026-10-03.md`.
+- 2026-10-03 H487 local continuation: new CompanyMode approval-wait windows use
+  initial verified deadlines plus the 60-second Hermes margin; followers cannot
+  renew the ceiling and legacy windows retain 360 seconds. An adjacent signed
+  category-consent ledger covers persistence, isolation and revocation evidence,
+  but is not yet connected to owner choices or execution. 841 guarded integration
+  cases pass; full collection contains 22,010 cases, not a fresh full-suite run.
+  H487 remains unfinished and no equivalent credit is added. See
+  `docs/hermes/evidence/h487-consent-wait-progress-2026-10-03.md`.
 - 2026-09-28 Codex-sprint review and ledger recovery (Claude, PR #1207): six red-first
   fix rounds on `beb2ee5a` make capability outcomes honest (failure when an attempt could
   have touched the world or machinery broke; nothing for a governance refusal/withhold or a
@@ -142,6 +248,81 @@
   See `docs/hermes/h277-completion-plan.md` and `docs/handoff/h277/verification/`.
   Generated equivalence counts now reflect stale evidence honestly; older headline
   counts below are dated history, not the current acceptance total. No publication.
+
+- 2026-10-03 H277/H485 smart terminal increment: explicit owner opt-in adds
+  strict APPROVE/DENY/ESCALATE, trusted operator policy and signed one-operation
+  task authority. Exact production intake and the real Action Kernel accept only
+  the ordinary terminal ASK in AUTO after receipt validation; e-stop, taint,
+  budgets, target policy and revocation retain their gates. Human override remains
+  one task, with separate machine attribution. The 137 new backend cases,
+  725 focused regressions and 11 authority mutants pass offline; all 1,884
+  frontend tests, TypeScript and HUD build pass. Final full backend exits zero: 21,509 passed,
+  34 skipped and one expected failure. Native mobile guardian rendering, broader
+  shell/script placement, denial breaker and live model acceptance remain open.
+  Both rows stay **partial**; no new equivalence credit or publication.
+  See `docs/hermes/h277-smart-terminal-plan-2026-10-03.md` and its mutation evidence.
+
+- 2026-10-03 H485 denial feedback increment: committed guardian DENYs now carry
+  a session-instance/principal-bound consecutive count to the next authenticated
+  owner turn. The default threshold is three; approval resets start a fresh epoch,
+  so older denials cannot revive a warning. Feedback uses the existing bounded
+  observational prompt flow and grants no authority. Same-turn shell/script
+  feedback, forced-redacted observer hooks, native controls and live acceptance
+  remain open. Verification is recorded in
+  `docs/hermes/h485-denial-feedback-plan-2026-10-03.md`; H485 stays **partial**.
+
+- 2026-10-03 H485 guardian observers: declared, consented sandbox extensions can
+  receive a force-scanned excerpt before one valid native model send attempt and
+  after its exact smart APPROVE/DENY is committed. Observer output, failure and
+  timeout grant no authority. Static DENY, advisory, ESCALATE and stale stores do
+  not claim a model decision event. Synchronous shell/script placement, native
+  controls and live acceptance remain open; H485 stays **partial**. See
+  `docs/hermes/h485-smart-observers-plan-2026-10-03.md` for verification and privacy limits.
+
+- 2026-10-03 H485 synchronous review foundation: an exact scheduled task/revision
+  can now be joined across caller/hub loops with a bounded deadline covering slot
+  wait and native inference. Cancellation invalidates that attempt before any
+  further send/store; resistant tasks retain capacity until actually finished.
+  Opted-in terminal notifications wait for review, then recheck the deadline,
+  leader and notifier and send fresh persisted card bytes. APPROVE suppresses an
+  obsolete card; unavailable/ESCALATE/timeout preserves manual handling. DENY
+  still leaves the owner card available; same-invocation ToolRPC feedback and
+  execution waiting remain required. H485/H277 stay **partial**, with no new
+  equivalence credit or activation. See
+  `docs/hermes/h485-synchronous-review-plan-2026-10-03.md` for scope and evidence.
+
+- 2026-10-03 H485 same-invocation terminal continuation: the registrar now joins
+  the exact native review before returning to the model. APPROVE executes only
+  its named task through the existing worker and requires signed completion
+  evidence; DENY returns sanitized feedback without a pending-approval footer.
+  The authenticated session breaker blocks a fourth gated operation even in one
+  batch. Durable-answer acknowledgment requires exact model-visible facts;
+  truncated/failed-answer feedback remains. All 66 new cases, 3,293 earlier focused
+  regressions and 101 final compatibility checks pass; nine isolated faults are killed.
+  The full run returned 21,701 passed and two failures: stale callsite positions
+  and an invocation that disabled pytest's configured socket guard. Their focused
+  reproduction/correction now passes all 119 binding/socket/new-case checks;
+  the complete guarded rerun passes 21,703 tests with 34 skipped and one existing
+  xfailed, and its count/frozen hashes match. Broader shell/nested/scheduled
+  behavior, context-aware DENY notifications and
+  native/live acceptance remain; H277/H485 stay **partial**, with no new parity
+  credit, publication or activation. See
+  `docs/hermes/evidence/h485-toolrpc-actuation-verification-2026-10-03.md`.
+
+- 2026-10-03 H485 Telegram owner identity prerequisite: a group destination no
+  longer grants authority to every sender. Persisted `autonomy.owner_user_ids`
+  separates owner identity from ingress admission; an absent/null setting keeps
+  the legacy sender list. Exact private sender/chat/owner fallback, malformed-ID
+  refusal, environment-first destination binding and stale-card revocation are
+  verified with 400 final focused checks. Owner authority reads a bounded,
+  read-only persisted snapshot: revocation takes effect immediately, and an
+  unavailable/locked store refuses authority. The HUD preserves JSON null;
+  callback acknowledgment reflects whether the decision was applied. The earlier
+  2,109 H277/H485/safe-mode checks predate these final fixes. The final guarded
+  full backend passes 21,790 tests, with 34 skips and one existing xfail; its
+  21,825-case count guard and 2,806 frozen hashes match. H277/H485 stay **partial**, with no new parity
+  credit, publication or activation. See
+  `docs/hermes/evidence/h485-owner-identity-verification-2026-10-03.md`.
 
 - 2026-09-27 H613 ✅ choose how it sounds and how it hears: Piper as a local voice, and the owner's own TTS/STT programs, each run only as a human approved it (equivalent; #1207; headline 190/697).
 
@@ -1916,6 +2097,13 @@
   provider or VRAM orchestration acceptance is claimed. See
   [implementation and verification](docs/hermes/2026-10-01-comfy-publication-guard.md).
 
+- 2026-10-04 HEQ-1 OpenRouter native-video continuation: explicit primary,
+  guarded vision inheritance/model override and fixed-slot fallback now preserve
+  signed approvals, scoped keys and the actual provider privacy request block.
+  597 affected offline tests pass; full backend and live/model acceptance remain
+  separate. H277 stays partial. See the
+  [integration plan](docs/hermes/h277-openrouter-video-plan-2026-10-04.md).
+
 - 2026-10-02 HEQ-1 local continuation: revalidated H277 shared-judge scheduling with
   14 killed mutations on the exact main snapshot and 310 focused current regressions.
   Permission-grant replay now retains one task-bound effect across audit/commit
@@ -1970,6 +2158,37 @@
   remains a terminal failure without another model call.
   Broader auxiliary routing, SDK recovery and live acceptance remain open. This does not close
   H277 or HEQ-1.
+  Explicit OpenRouter vision now uses a real composer/native transport with scoped
+  credentials and all live upstream routing/privacy controls bound through the
+  final HTTP hook. Unknown/malformed settings, stale confirmations and unauthorized
+  training/cost choices refuse. Signed OpenRouter video remains open; this is an
+  adapter dependency, not full H277 parity.
+  Image turns now expose independent per-turn training/cost confirmations in HUD
+  and CLI, bind complete guard details to the reviewed destination, and record
+  required training consent before dispatch. Changes revoke the confirmation;
+  this grants no unattended role or provider permission.
+  Explicit DeepInfra vision now prepares the first served chat/vision catalog model
+  before preview, or uses an explicit model without metadata I/O. Refresh revokes
+  stale selection, key/base changes isolate cache entries, and POST never discovers
+  a replacement. Responses are bounded even without retry; duplicate model keys
+  and late configuration changes refuse. This remains one H277 dependency. See the
+  [DeepInfra plan](docs/hermes/h277-deepinfra-vision-plan-2026-10-02.md).
+  Nous now has a separate encrypted Nerva account store, owner-only device-code
+  API/CLI login, status/logout and serialized refresh-aware inference credentials.
+  Explicit Nous vision now uses those credentials for tier-aware recommendations,
+  welcome-host selection and bounded Chat Completions or native Messages inference.
+  Selection is encrypted and revoked by account/configuration changes; image POST
+  never refreshes credentials or discovers a replacement. Catalog refresh leaves
+  usable OAuth credentials intact. Account UI, provider acceptance and full H277
+  completion remain open. See [account setup](docs/nous-auth.md).
+  Opt-in image-composer auto routing now tries a supplied selected-main vision
+  route, then OpenRouter, Nous and DeepInfra; the standalone composer has no
+  selected main route, so only the latter three are active there. Status prepares
+  metadata, displays provider/model/destination and binds the source; image POST
+  performs no discovery or OAuth refresh. Candidate, credential and policy drift
+  revoke consent before image egress. Auto is unavailable to inherited video and
+  local-only consumers; main-runtime plumbing, signed video, live acceptance and
+  other H277 obligations remain open.
 
 - 2026-10-09 H512 local auth-audit continuation: HTTP user/admin allow and deny decisions plus managed token issue/rotate/revoke now emit value-free typed events to the existing hash chain, including offline CLI mutations. Separate SQLite connections serialize the chain tail and append in one write transaction. Best-effort dispatch preserves authorization and token results when the audit sink fails or stalls. The full login/session/WebSocket/native-app event contract remains open; this is a partial local candidate, with no push or deployment. See [implementation evidence](docs/hermes/evidence/2026-10-09-auth-events.md).
 
@@ -8601,7 +8820,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ---
 
-## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 19/21
+## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 21/30
 
 > Client mobil nativ (Expo SDK 56 / RN 0.85) sub `mobile/`, peste **același API HTTP** (`agents/web.py`)
 > ca HUD-ul browser — niciun backend nou. Fundația livrată în **PR #161**. Restul = paritate progresivă
@@ -8646,6 +8865,7 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 | H18.31 | **Native selected-image review and history** — carry the concrete conversation and selected agent through owner prepare/send; review the actual selected local Ollama model and exact image bytes, choose bounded active-image handles and invalidate pending work on topic/agent changes. Browser/desktop ships in native H277 recovery; keep owner authorization and text/provenance-only transcript persistence. | 2 | 🟡 implemented in local candidate; device/live-Hub acceptance open | H18.1, H18.30, H277 | mobile/docs/h1831-selected-images.md |
 | H18.32 | 🟡 **Native task mediation status** — local implementation reads admin-guarded `GET /autonomy/mediation` in Status after Trust; separates effective off/hold/enforce mode from evidence validity, validates all four counters, and hides stale/unverifiable counts. Connection changes, overlapping reads and pull-to-refresh invalidate old results. Missing admin credentials link to Settings; no enable/approval control or raw signed events. **21 API +21 mounted regressions**; physical-device/live-hub acceptance remains open. See [evidence](mobile/docs/h1832-task-mediation-status.md). | 1 | P3 | H18.1, DRA-59 | mobile parity |
 | H18.33 | **Native current-turn duration** — local candidate consumes the server-selected `outcome.latency_ms` from explicit SSE ends, accepting only nonnegative safe integers including zero. One accessible current-turn strip clears on new work, stop/error, history/session/agent and connection changes; changing agents preserves an in-flight reply while suppressing its duration. No metric enters transcript storage. Host/API/controller tests cover lifecycle and persistence; physical-device accessibility and live-Hub acceptance remain open. See [evidence](mobile/docs/h1833-turn-duration.md). | 1 | 🟡 implemented in local candidate; device/live-Hub acceptance open | H18.1, H18.30, H686 | mobile/PARITY.md |
+| H18.34 | **Native Kanban board and worker controls** — expose durable H075/H581 board metadata and admin-governed `POST /api/autonomy/kanban/dispatch`, with exact-prompt approvals on the existing queue. Distinguish pending approval, claimed run, review, failed and completed; preserve separate default-off flags and unavailable states. Dedicated browser and native board controls remain open; synthetic backend acceptance does not prove device or provider operation. | 3 | P3 | H18.11, H075, H581 | PARITY.md |
 | H18.21 ✅ | **Native Media Director parity** — the metadata-only Media tab reads the owner-curated `/api/media/devices` registry and `/api/media/session` board, then exposes explicit user present/restore controls over the unchanged guarded API. Safe bounded normalization preserves disabled/error states and distinguishes queued, refused, unverified, and verified nested outcomes; a stale/unregistered target cannot be submitted. Device register/remove controls are isolated behind the configured admin token and no remote media is embedded. Red/green: missing client/screen contracts failed first, then mobile Jest passed (65) + `tsc --noEmit` clean. | 3 | ✅ done (2026-07-13) | O29 | PARITY.md |
 | H18.22 ✅ | **Mobile capability registry board** — folded into the existing Status tab (not a new top-level tab: 13 tabs already fill the bar) as a **Capabilities** card alongside Trust, over the same user-guarded `GET /api/capabilities` the browser's `ReadinessPanel` reads: SEAM/WIRED/VERIFIED/GA counts + the honest "harness pending — wired, not yet proven" note (never claims VERIFIED it can't back). Read-only — no action execution or token-management controls; approvals stay on H18.11. `fetchCapabilities`/`normalizeCapability` in `mobile/src/api/client.ts`. Red/green: `capabilities.test.ts` (+3: shape mapping, malformed-entry drop + honest defaults, sparse-payload normalization), mobile Jest passed (93) + `tsc --noEmit` clean. | 2 | ✅ done (2026-07-19) | H18.1, H27.8 | mobile parity |
 

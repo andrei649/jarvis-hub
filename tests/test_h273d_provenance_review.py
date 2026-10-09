@@ -735,9 +735,9 @@ def test_a_403_is_asked_again_with_the_admin_token(tmp_path):
     assert check.detail.startswith("read from the running hub")
 
 
-def test_a_stored_posture_that_is_not_json_is_off_for_another_categorys_listing(tmp_path, monkeypatch):
-    """S04: a posture row written around the API as text that is not JSON is read as
-    off, so listing any other category still works."""
+def test_a_stored_posture_that_is_not_json_marks_the_store_unreadable(tmp_path, monkeypatch):
+    """Corrupt persisted JSON follows the current whole-store integrity contract;
+    listing another category must not silently treat corruption as a posture."""
     from agents.core import settings_db
 
     monkeypatch.setattr(settings_db, "DB_PATH", tmp_path / "settings.db")
@@ -747,7 +747,13 @@ def test_a_stored_posture_that_is_not_json_is_off_for_another_categorys_listing(
     conn.execute("UPDATE settings SET value=? WHERE category='product' AND key='posture'", ("not json {",))
     conn.commit()
     conn.close()
-    assert settings_db.get_category("llm")
+    with pytest.raises(settings_db.SettingsUnreadable):
+        settings_db.get_category("llm")
+    conn = settings_db.get_conn()
+    try:
+        assert conn.execute("SELECT value FROM settings WHERE category='product' AND key='posture'").fetchone()[0] == "not json {"
+    finally:
+        conn.close()
 
 
 def test_a_third_load_keeps_the_attribution_the_first_made(tmp_path, monkeypatch):

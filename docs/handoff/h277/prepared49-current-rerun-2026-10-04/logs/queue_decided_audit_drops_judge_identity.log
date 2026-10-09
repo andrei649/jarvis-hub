@@ -1,0 +1,10 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/queue_decided_audit_drops_judge_identity.xml", "tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________________ test_audit_rows_carry_the_judge_identity ___________________
+tests/test_h277_approval_judge.py:265: in test_audit_rows_carry_the_judge_identity
+    assert decided["metadata"]["judge"] == {"provider": "lm-studio", "model": "judge-m", "local": True}
+E   AssertionError: assert None == {'provider': 'lm-studio', 'model': 'judge-m', 'local': True}
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_audit_rows_carry_the_judge_identity
+1 failed in 1.47s

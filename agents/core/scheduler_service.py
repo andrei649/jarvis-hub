@@ -42,7 +42,7 @@ class SchedulerService:
         self.schedule_daily_budget_reset()
         self.schedule_worldview_kg_sync()
         self.schedule_retention()
-        self.schedule_session_expiry()
+        self.schedule_session_lifecycle()
         self.schedule_exec_cache_prune()
         self.schedule_memory_maintenance()
         self.schedule_tech_scout()
@@ -203,16 +203,18 @@ class SchedulerService:
         except Exception as e:
             logger.warning(f"Failed to schedule retention sweep: {e}")
 
-    def schedule_session_expiry(self):
-        """Advance idle/daily conversation routes without waiting for inbound text."""
+    def schedule_session_lifecycle(self):
+        """Advance session routes and check for genuine-progress stalls."""
         sched = getattr(self._orch.heartbeat_scheduler, "scheduler", None)
         if sched is None:
             return
         try:
             sched.add_job(self.run_session_expiry, "interval", minutes=1,
                           id="channel-session-expiry", replace_existing=True)
+            sched.add_job(self.run_session_stalls, "interval", seconds=30,
+                          id="channel-session-stalls", replace_existing=True)
         except Exception:
-            logger.warning("Failed to schedule channel session expiry", exc_info=True)
+            logger.warning("Failed to schedule channel session maintenance", exc_info=True)
 
     async def run_session_expiry(self):
         from .channels.session_lifecycle import lifecycle
@@ -221,6 +223,15 @@ class SchedulerService:
             return await lifecycle(self._orch).expire()
         except Exception:
             logger.warning("Channel session expiry failed", exc_info=True)
+            return {"_scheduler_status": "failed"}
+
+    async def run_session_stalls(self):
+        from .channels.session_lifecycle import lifecycle
+
+        try:
+            return {"notified": await lifecycle(self._orch).check_stalls()}
+        except Exception:
+            logger.warning("Session stall check failed", exc_info=True)
             return {"_scheduler_status": "failed"}
 
     def schedule_exec_cache_prune(self):

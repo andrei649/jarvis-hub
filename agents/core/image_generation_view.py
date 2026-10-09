@@ -31,6 +31,8 @@ class ImageTaskView(BaseModel):
     task_id: int
     state: Literal["awaiting_approval", "queued", "generating", "ready", "failed", "rejected", "deferred", "refused", "uncertain"]
     artifact: ImageArtifactView | None = None
+    resume_available: bool = False
+    enhance_available: bool = False
 
 
 def _cloud_provider_response_failed(task) -> bool:

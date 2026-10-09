@@ -108,13 +108,49 @@ H277 role configuration lives in `agents/core/llm/model_roles.py`. User-authenti
 URLs; `reachable: null` means no connectivity probe was performed. Vision dispatch
 at `/api/vlm/describe` requires a loopback endpoint and checks the actual requested
 model through selection guards before creating a client. The opt-in `video_analyze`
-ToolRPC consumer dispatches approved video through compatible or native Gemini
-routes, with signed source/route binding and independent role consent; inbound
+ToolRPC consumer dispatches approved video through compatible, native Gemini or
+OpenRouter routes, with signed source/route binding and independent role consent.
+OpenRouter primary/inherited/fallback routes bind the validated provider privacy
+preferences and emit full-video data URLs; credential reuse requires the same
+guarded provider and exact physical URL. Model-specific video support remains
+unverified. Inbound
 video ingestion remains separate work.
-The optional approval judge is advisory: `autonomy/advisory_judgements.py` shares
+The optional approval judge is advisory by default: `autonomy/advisory_judgements.py` shares
 bounded work between action cards and `autonomy/task_approval_judge.py` for blocked
 Decision Inbox tasks. Task opinions are stored separately from signed payloads and
 receipts, and checked against the current execution digest before publication.
+Trusted `JARVIS_SMART_APPROVALS=1` instead lets eligible `terminal_run` tasks use
+the named guardian's strict APPROVE/DENY/ESCALATE response. The queue applies a
+one-operation approval through an exact-snapshot transaction and a separate signed
+receipt; execution verifies the receipt and live judge/policy binding. Owner
+decisions retain their own attribution and control. Smart Docker commands additionally
+cross the `terminal.exec` contract/kernel. Human-approved manual Docker tasks also
+require the current kernel grant and originating task/receipt at the physical
+dispatch gate; local and SSH backend behavior remains separate.
+Action-card scores and other task kinds remain advisory. No flag is enabled by
+development or by model output. See `hermes/h277-smart-terminal-plan-2026-10-03.md`.
+H485 adds paired observer-only guardian events through the consented extension
+bus: one validated native send attempt and the corresponding committed
+APPROVE/DENY. Forced scanner/catalogue masking precedes bounded excerpt output;
+preparation and delivery cannot alter decisions. See `EXTENSIONS.md` for the
+privacy limits and `hermes/h485-smart-observers-plan-2026-10-03.md` for verification.
+
+Explicit DeepInfra main selection uses its own native text/tool/SSE adapter and
+canonical HTTPS API authority, with the selected model/key reused only by guarded
+main-image dispatch. It remains opt-in under the current data policy.
+Native Telegram `/deny [reason]` can reject an owner-once or reusable-consent offer
+only as an original direct reply to its delivered card. Pure selectors choose
+exactly one registry; private bounded dispatch releases the occupied tool turn.
+Owner/source/card/native-deadline checks precede the existing queue rejection CAS.
+Text supplies denial metadata only. Owner-once reasons have a separate MAC bound
+to the original durable task/denial/offer/card and human decision; one-shot outcome
+reconciliation cannot attribute coherently modified text to the owner. Accepted
+claims and execution authority are unchanged.
+The explicitly configured native compatible approval judge may repeat one request
+after a structured unsupported-temperature HTTP400. Its exact caller output cap
+and all other payload fields stay fixed, under one total timeout and current role,
+H513, queue, transport and request-body guards at each physical send. This does not
+change the seven strict-local auxiliary routes or enable a provider.
 
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
@@ -133,7 +169,7 @@ receipts, and checked against the current execution digest before publication.
 | `agents/core/environments/output_limits.py` | The one place that says how much output a tool may return: `MAX_OUTPUT_BYTES` (50 KB), `MAX_OUTPUT_LINES` (2 000), `MAX_LINE_LENGTH` (2 000), imported rather than re-declared by `code_tools` and `session_kernels`. `truncate_text` / `read_capped_stream` bound bytes; `cap_lines` bounds shape — which a byte cap cannot see — and never drops a line carrying an earlier layer's truncation notice. `read_capped_stream(sink=…)` hands every chunk to a spool on the way past, so the middle it discards can still be kept without the host ever holding the stream (H305/H595) | `truncate_text`, `read_capped_stream`, `render_capped`, `cap_lines`, `StreamSinks` |
 | `agents/cli/` (`nerva.py`, `client.py`; `scripts/nerva.py` wrapper) | The `nerva` command: `doctor`, `status`, `config`, `approvals`, `kernel explain`, `logs`, `estop`, `sessions`, `chat`, `completion`. Online verbs use the hub's own admin/user routes with the same credentials; offline verbs read the same data root | `build_parser`, `main`, `explain_action`, `HubClient` |
 | `agents/core/commands.py` | Chat slash-command plane: one tiered registry dispatched by the orchestrator before skills and the model; the turn's `Principal` decides owner commands | `CommandRegistry.dispatch`, `build_default_registry`, `Principal`, `SlashCommand` |
-| `agents/core/channels/ntfy.py` | Outbound-only push to the owner's phone through an ntfy server the owner names (`NTFY_URL`, `NTFY_TOPIC`, optional `NTFY_TOKEN` / `NTFY_TITLE`): plain text chunked at 4,096, title and priority headers; nothing inbound is ever read (the topic is the identity), the topic is never logged; on the manager's `channel.send` contract, reached by escalations and jobs | `NtfyChannel.from_env`, `NtfyChannel.send` |
+| `agents/core/channels/ntfy.py` | Owner-configured ntfy push (`NTFY_URL`/`NTFY_SERVER_URL`, `NTFY_TOPIC`, optional token/title/publish topic/Markdown). `NTFY_INBOUND=1` adds a persistent bounded JSON stream, TTL dedup, echo suppression and reconnect backoff; configured topic identity goes through shared pairing, taint and Inbox. Automatic replies require exact-message `channel.reply` approval, current pairing and destination/epoch checks after DNS waits; restart invalidates old replies. GET/POST use PluginHTTPClient restricted egress, DNS pinning and no redirects. Outbound notices keep `channel.send`; UTF-8 bodies are chunked at 4,096 bytes | `NtfyChannel.from_env`, `NtfyChannel.send`, `NtfyChannel.send_reply` |
 | `agents/core/channels/descriptor.py` + `agents/core/channels/render.py` | What a channel can display (`ChannelDescriptor`: dialect, message cap, edit / media / threads — the base adapter declares the honest minimum) and the one renderer registry keyed by dialect (`telegram_html`, `slack_mrkdwn`, `markdown` for Discord, `plain`): only balanced markers become markup, text is escaped before any tag, every marker span is bounded (500 characters, so one long line renders in linear time), chunking happens on the source and never splits a fenced block; Telegram renders to HTML at 4096 and falls back to plain text on a 400, Slack to mrkdwn at 40,000, Discord is chunked at 2,000; on a channel whose descriptor says it can edit, `Orchestrator.channel_handler` streams the turn into a draft (`TelegramDraft`: first token sends, later tokens edit under the edit budget, `finish()` settles the final render) unless `channels.streaming_replies` is off | `ChannelDescriptor`, `render_outbound`, `chunk`, `to_telegram_html`, `to_plain`, `RENDERERS`, `TelegramDraft`, `Orchestrator._begin_channel_draft` |
 | `agents/core/tool_profiles.py` | Least privilege at the moment of offering: a tool profile keyed by agent × surface × principal (operator / inbound / internal × owner / guest / system) decides which registered tools the model loop even sees; postures withhold gated tools off the owner's own doors unless `llm.inbound_actuation` / `llm.internal_actuation`, a guest on an inbound channel gets `llm.guest_tools` (default echo, time, todo); on the shared default session the session-scoped tools (`todo`) are offered to the owner's turns only; a per-agent `tools:` list in `agents.yaml` narrows further; resolved sets pinned in `tests/_snapshots/tool_profiles.json` | `classify_turn`, `resolve_tools`, `ToolProfileResolver`, `POSTURES` |
 | `agents/core/memory/rag_tool.py` | Agentic-RAG `search_memory`: hits scanned and redacted when injection-flagged, per-hit taint verdict; registered as an ungated ToolRPC tool over `orch.memory.recall` (fused hits flattened, result carries `tainted` so the tool loop fences and marks the turn only when true) | `MemorySearchTool`, `register_search_memory`, `flatten_hit`, `preflight`, `TOOL_SPEC` |
@@ -211,6 +247,13 @@ receipts, and checked against the current execution digest before publication.
 
 ### Security
 
+The optional Hermes engine is an isolated, pinned Python 3.14 runtime, controlled
+through the owner-only Hub RPC/event adapter and mandatory Kernel bridge.
+See [runtime integration](hermes/RUNTIME_INTEGRATION.md) for setup, the complete
+251-method catalog, approval floors, process boundaries and current availability.
+Its source/environment/profile live under `data_path("hermes-runtime")`; it does
+not participate as an `LLMBackend` in Jarvis's native tool loop.
+
 | Path | Purpose | Key symbols |
 |------|---------|-------------|
 | `agents/core/security/guardrails.py` | Scan/redact/block wrapper around LLM | `GuardrailsEngine`, `SecurityBlockError` |
@@ -241,6 +284,7 @@ receipts, and checked against the current execution digest before publication.
 | `agents/core/channels/email.py` | SMTP + IMAP | `EmailChannel` |
 | `agents/core/channels/slack.py` | Slack bot; optional `SLACK_APP_TOKEN` Socket Mode ingress admits human DMs/mentions through the existing paired inbox, with bounded queue/replay cache and no direct replies. Bot-token-only hosts retain manual event ingress. [Setup](SLACK_SETUP.md) | `SlackChannel`, `receive_event` |
 | `agents/core/channels/gateway.py` | Message routing gateway (incl. inbound rate limit, the pairing hold, and a per-channel `held_senders` count that stores nothing of the sender) | `Gateway.route` |
+| `agents/core/channels/session_lifecycle.py`, `session_reset.py`, `session_stall.py` | H063 gateway session lifecycle: default-none reset policies by channel and dm/group/thread, exact reset commands, persistent generation fences, routing-index expiry without transcript deletion, and bounded owner notices from actual pending-turn progress. Stable/current/selected session leases protect answering turns; observed context retains its no-answer/no-turn-lease contract. Scheduler runs expiry/stall checks; Telegram forum replies and media remain topic-scoped | `ChannelSessionLifecycle.run/expire/check_stalls/close`, `SessionResetStore`, `resolve_policy`, `StallWatcher` |
 | `agents/core/channels/webhook_channels.py` | HTTP webhook channels (WhatsApp/Signal/Matrix/Teams/Google Chat) | `WebhookChannel`, `build_send`, `parse_inbound` |
 | `agents/core/channels/send_rate_limit.py` | 0.44 opt-in per-channel **outbound** send rate limit (`JARVIS_CHANNEL_SEND_RATE[S]`) | `allow_send`, `SendRateLimiter`, `limit_for` |
 | `agents/core/channels/pairing.py` | Which senders may talk to Nerva, plus the **60-second path**: single-use Telegram deeplinks. The token is the credential — one use ever, 5-minute TTL, wrong/spent/expired indistinguishable, channel-bound, ≤20 outstanding (oldest dropped), revocable. Minting is admin-guarded (`POST /api/channels/pairing/link`) and returns the value exactly once | `SenderPairing`, `mint_deeplink`, `redeem_deeplink`, `outstanding_deeplinks`, `revoke_deeplinks`, `DEEPLINK_TTL_SECONDS` |

@@ -1,0 +1,137 @@
+{
+  "generated_at": "2026-10-04T05:45:13.263929+00:00",
+  "goal": "All 697 pinned Hermes capabilities; H011 first integrated file-history dependency",
+  "base_sha": "516a0e1e927a54432f3db27b9991289e2cf08e0a",
+  "head_sha": "Pending local source-unit commit; source bytes pinned below",
+  "changed_paths": [
+    "agents/core/file_tools.py",
+    "agents/core/file_checkpoint_history.py",
+    "tests/test_h011_file_checkpoint_history.py",
+    "tests/test_h011_file_checkpoint_restore.py",
+    "tests/test_h011_file_checkpoint_maintenance.py",
+    "docs/hermes/h011-file-history-integration-plan-2026-10-04.md"
+  ],
+  "source_sha256": {
+    "agents/core/file_tools.py": "1adc3abb0d1abd5fd2a1bcfb4999efc9b202fa0df21d25be61c8d27ba292c073",
+    "agents/core/file_checkpoint_history.py": "85baf4246034bd98cf483bb51357af88ff2931766d23c9867e596414d54b193f",
+    "tests/test_h011_file_checkpoint_history.py": "00c9e2f34253d60f655bf91d4cee64bfbe68b13ecabd591ed9eafee099e56dd3",
+    "tests/test_h011_file_checkpoint_restore.py": "f14987fe28d14e13bf43b561f5993f208c9f6a1045438041a2f5b0ab6dc72457",
+    "tests/test_h011_file_checkpoint_maintenance.py": "0b51a56203b65268844818082028cf3366e69205aedcf7ff54f53a955d7a8e40",
+    "docs/hermes/h011-file-history-integration-plan-2026-10-04.md": "538404f081d8bc494991d387938e360e3d4122446b562ddefb711a4f8b9ecb84"
+  },
+  "delivered_package_sha256": "701057154f56cc0b30dbb5a1a09a2cba9d21ee38d91fd5a87bcc5cbd44996bcb",
+  "state": "Root-integrated first unit; H011 incomplete, no equivalent credit",
+  "behavior": [
+    "Actual governed FileTools write/delete produce ordered pre/post history, preserving generic refs and existing restore_snapshot API",
+    "Bounded no-follow preimage and blob reads; exact preauthorization root identity and current contents checked before actuation",
+    "Trusted internal restore takes pre-undo snapshots, skips later edits and leaves uncertain effects incomplete",
+    "Secret/PII-redacted byte-bounded diff and conservative shared-ref garbage collection"
+  ],
+  "root_runs": {
+    "nerva-h011-file-history-root-red": {
+      "cases": 1,
+      "passed": 0,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "74b4f9ff059cb38b429b58317319db4387b3199949bf991d4bfeb7d72989e2b6",
+      "log_sha256": "89fe95bc4e42cfb7085d7d692c90bac06de582f09216c47d8dd3769ae4e7b501",
+      "kind": "expected regression RED"
+    },
+    "nerva-h011-file-history-root-green": {
+      "cases": 143,
+      "passed": 143,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "dbcb4b171df1f2aac0e34746d0ce96dd0be9e410a49865f868ee09086a5210a5",
+      "log_sha256": "91dcb8076ccd39d3b7c026c953d5a5e2a9df3a2cebbe5c2c4aab69bb5eb45838",
+      "kind": "affected suite GREEN"
+    },
+    "nerva-h011-file-history-root-blob-red": {
+      "cases": 2,
+      "passed": 0,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "9d74e66cd48d9f7cf0d8a37cb303c03ee7bd64f7236c004456154b7ed91638eb",
+      "log_sha256": "a09d3c4d8ce34a445518b7d2e62a640ebde4bbdc2d85769ef76a87c03ce24bbf",
+      "kind": "expected regression RED"
+    },
+    "nerva-h011-file-history-root-bounded-green": {
+      "cases": 145,
+      "passed": 145,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "c28721f397297e8be2038c24bacf8ecf9d56801da9e94e4d7681309804e472c0",
+      "log_sha256": "4a99fa8409126f55b4471018efa4874126881292125719d257e843e62357d118",
+      "kind": "affected suite GREEN"
+    },
+    "nerva-h011-file-history-root-capture-blob-red": {
+      "cases": 1,
+      "passed": 0,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "0e37e19ed079a18fbfd5cd8d2a21600e8234edc9e92e39c82c780b12edc8810c",
+      "log_sha256": "40cc6152cdfc74e5976403410d5c7a3be7e7b5ccba92faf726c81fa76d47bdfb",
+      "kind": "expected regression RED"
+    },
+    "nerva-h011-file-history-root-capture-bounded-green": {
+      "cases": 146,
+      "passed": 146,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_sha256": "6812b79c03dcd78e8e8be5f9eda3e74e1c60794b488099e46819d6539841cc4c",
+      "log_sha256": "f24b0ee38cbdf15269c7724da1f3143f026dc85a8058799166ce6a9a39672381",
+      "kind": "affected suite GREEN"
+    }
+  },
+  "affected_modules": [
+    "tests/test_file_read_documents.py",
+    "tests/test_file_search.py",
+    "tests/test_file_tools.py",
+    "tests/test_file_tools_instruction_class_toolrpc.py",
+    "tests/test_file_tools_instruction_floor.py",
+    "tests/test_h011_file_checkpoint_history.py",
+    "tests/test_h011_file_checkpoint_maintenance.py",
+    "tests/test_h011_file_checkpoint_restore.py"
+  ],
+  "root_corrections": [
+    "Stored pre/post blobs in history used unbounded reads; genuine two-case RED then bounded verified descriptor reads",
+    "Capture verification through generic blob() could still bulk-read corrupt existing content-addressed blobs; genuine one-case RED then exact-size regular no-follow bounded verification before publishing a record",
+    "Existing replaced-file test detector was narrowed to its actual oversized fd so legitimate bounded reads no longer cause false failure"
+  ],
+  "static_checks": {
+    "ruff": "Actual repository pyproject configuration, five paths, exit 0; passing baseline file alone as --config was an incorrect configuration invocation and is not the acceptance check",
+    "bandit": {
+      "exit_code": 0,
+      "baseline": ".bandit-baseline.json",
+      "log_sha256": "0ecd458ebe063aeeb3fa9c37727c478804b1d817e1da1a40fbc422aeca484146"
+    }
+  },
+  "collection": {
+    "backend": 22718,
+    "new_cases": 19,
+    "frontend_historical": 1889,
+    "mobile_historical": 185,
+    "meaning": "Collection only; previous full 22699 excludes this unit"
+  },
+  "resource_plan": {
+    "implementer": "gpt-6-sol high, isolated snapshot",
+    "review_and_integration": "Coordinator owns actual checkout and critical review",
+    "measured_account_savings": null
+  },
+  "limits": [
+    "Internal restore/prune are not public authorized commands; no CLI/slash integration yet",
+    "POSIX history only; ordinary governed Windows FileTools retained",
+    "16 MiB preimage cap; no arbitrary terminal/process/network rollback claim",
+    "Conversation rewind, terminal groups, approved maintenance and currentness/turn wiring remain open",
+    "Root-directory rename after descriptor acquisition cannot be globally prevented; effect bound to opened inode",
+    "Full backend must run at a later frozen integrated milestone; no coverage threshold or 100 percent/live acceptance claim",
+    "No push, merge, deploy, paid provider activation or real device/terminal effects"
+  ],
+  "next_action": "Finish source/reference gates and local commit; revalidate only substantively reviewed collateral, then integrate H011 conversation and terminal/owner wiring"
+}

@@ -1,0 +1,12 @@
+COMMAND ["/tmp/nerva-pr-python-20261001/bin/python", "-B", "-m", "pytest", "-p", "no:cacheprovider", "--tb=short", "--junitxml=docs/handoff/h277/prepared49-current-rerun-2026-10-04/xml/judge_clamp_upper_bound_raised.xml", "tests/test_h277_approval_judge.py::test_parse_verdict_clamps"]
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________________________ test_parse_verdict_clamps ___________________________
+tests/test_h277_approval_judge.py:338: in test_parse_verdict_clamps
+    assert parse_verdict('{"risk": 250, "why": "x"}').score == 100
+E   assert 250 == 100
+E    +  where 250 = Verdict(score=250, rationale='x').score
+E    +    where Verdict(score=250, rationale='x') = parse_verdict('{"risk": 250, "why": "x"}')
+=========================== short test summary info ============================
+FAILED tests/test_h277_approval_judge.py::test_parse_verdict_clamps - assert ...
+1 failed in 1.44s

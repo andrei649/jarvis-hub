@@ -585,6 +585,16 @@ if __name__ == "__main__":
     async def execute_shell(self, command: str) -> SandboxResult:
         if self._has_docker:
             return await self._execute_docker_shell(command)
+        from .environments.consent_dispatch import consent_dispatch_scope_present
+        from .environments.legacy_terminal_dispatch import legacy_terminal_scope_present
+        from .environments.owner_once_dispatch import owner_once_scope_present
+
+        if legacy_terminal_scope_present():
+            return SandboxResult(stderr="Legacy terminal Docker backend unavailable", exit_code=-1)
+        if owner_once_scope_present():
+            return SandboxResult(stderr="Owner-once Docker backend unavailable", exit_code=-1)
+        if consent_dispatch_scope_present():
+            return SandboxResult(stderr="Consented Docker backend unavailable", exit_code=-1)
         if not self.allow_subprocess:
             return SandboxResult(
                 stderr="Code execution disabled: no Docker/WASM isolation and the host "
@@ -653,6 +663,25 @@ if __name__ == "__main__":
             "-w", "/workspace",
             self.docker_image,
         ] + cmd
+
+        from .environments.consent_dispatch import physical_gate as consent_physical_gate
+
+        if consent_physical_gate(self, backend="docker", argv=tuple(cmd), cwd="/workspace",
+                                 timeout=self.timeout) is False:
+            return SandboxResult(stderr="Consent dispatch unavailable", exit_code=-1,
+                                 duration=time.monotonic() - start)
+        from .environments.owner_once_dispatch import physical_gate
+
+        if physical_gate(self, backend="docker", argv=tuple(cmd), cwd="/workspace",
+                         timeout=self.timeout) is False:
+            return SandboxResult(stderr="Owner-once dispatch unavailable", exit_code=-1,
+                                 duration=time.monotonic() - start)
+        from .environments.legacy_terminal_dispatch import physical_gate as legacy_terminal_gate
+
+        if legacy_terminal_gate(self, backend="docker", argv=tuple(cmd), cwd="/workspace",
+                                timeout=self.timeout) is False:
+            return SandboxResult(stderr="Legacy terminal dispatch unavailable", exit_code=-1,
+                                 duration=time.monotonic() - start)
 
         proc = None
         try:
@@ -755,6 +784,19 @@ if __name__ == "__main__":
                     await self._stop_docker_context(proc, container_name)
                 return SandboxResult(stderr="Context Docker backend unavailable",
                                      exit_code=-1, refusal_reason="context_backend_unsupported")
+            from .environments.consent_dispatch import consent_dispatch_scope_present
+            from .environments.legacy_terminal_dispatch import legacy_terminal_scope_present
+            from .environments.owner_once_dispatch import owner_once_scope_present
+
+            if legacy_terminal_scope_present():
+                return SandboxResult(stderr="Legacy terminal Docker backend unavailable",
+                                     exit_code=-1, duration=time.monotonic() - start)
+            if owner_once_scope_present():
+                return SandboxResult(stderr="Owner-once Docker backend unavailable",
+                                     exit_code=-1, duration=time.monotonic() - start)
+            if consent_dispatch_scope_present():
+                return SandboxResult(stderr="Consented Docker backend unavailable",
+                                     exit_code=-1, duration=time.monotonic() - start)
             if not self.allow_subprocess:
                 return SandboxResult(
                     stderr="Code execution disabled: Docker not available and the host "

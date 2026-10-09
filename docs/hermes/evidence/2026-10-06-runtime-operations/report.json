@@ -1,0 +1,148 @@
+{
+  "date": "2026-10-06",
+  "base_pr_head": "c6a855183b26a8b45200d47834565d69aa6dcb0f",
+  "source_pin": "0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
+  "goal": "Usable canonical Hermes approvals and operator CLI for later sessions",
+  "verification": {
+    "focused_backend": {
+      "tests": 147,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 4,
+      "seconds": 13.953,
+      "scope_note": "Before final canonical JSON binding repair; exact_json_binding and final full_backend include the repair."
+    },
+    "real_pinned_runtime": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 51.951,
+      "scope_note": "Local fake provider, no paid/real provider calls; final Hub operator probe was repeated after final canonical JSON binding repair."
+    },
+    "exact_json_binding": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 1.547
+    },
+    "collateral_18_failure_groups": {
+      "tests": 322,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "seconds": 15.01
+    },
+    "image_source_review": {
+      "tests": 77,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 6.521
+    },
+    "evidence_review_tool": {
+      "tests": 137,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 7.368
+    },
+    "generated_contracts": {
+      "tests": 109,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 5.772
+    },
+    "frontend": {
+      "files": 215,
+      "passed": 1985,
+      "failed": 0,
+      "typecheck": "passed",
+      "e2e_typecheck": "passed",
+      "build": "passed"
+    },
+    "scopes_overlap": true,
+    "ruff": "passed",
+    "bandit": {
+      "new_findings": 0,
+      "baseline_changed": false
+    },
+    "gitleaks": {
+      "findings": 0,
+      "configuration_changed": false
+    },
+    "full_backend": {
+      "tests": 24667,
+      "passed": 24611,
+      "skipped": 55,
+      "expected_failures": 1,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 762.222,
+      "frozen_paths": 5455,
+      "input_drift": 0
+    },
+    "semgrep": {
+      "findings": 0,
+      "exit_code": 0,
+      "scope": [
+        "agents",
+        "worldview"
+      ],
+      "rules": [
+        "p/python",
+        "p/security-audit"
+      ],
+      "configuration_changed": false
+    },
+    "full_backend_note": "Run completed after the 18 failures in the preceding complete diagnostic run were corrected. Earlier historical receipts retain their original scope."
+  },
+  "hub_operator_probe": {
+    "transport": "authenticated local Hub via scripts/hermes_control.py",
+    "source_pin": "0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
+    "profile_installed": true,
+    "read_rpc": "passed",
+    "no_execution_before_approval": true,
+    "approved_shell_exec_once": true,
+    "native_result_retained": true,
+    "duplicate_approval_refused": true,
+    "denied_shell_no_effect": true,
+    "native_jsonrpc_error_recorded_failed": true,
+    "restart_revoked_prior_approval": true,
+    "paid_or_real_provider_calls": 0,
+    "managed_runtime_stopped": true
+  },
+  "native_parity": {
+    "scope": 697,
+    "equivalent": 124,
+    "partial": 226,
+    "missing": 56,
+    "needs_review": 291,
+    "runtime_import_credit": 0
+  },
+  "limits": [
+    "Single owner; all Hub administrators share one private profile.",
+    "Providers require explicit configuration; no provider credentials imported or real/paid provider calls made.",
+    "Native device/payment/connector families require configured dependencies and their own acceptance probes.",
+    "Upstream REST, PTY, original SPA and standalone CLI are not exposed by the worker.",
+    "Frozen launch has not been verified; provisioning uses checkout CLI.",
+    "Lost acknowledgements or unsupported bounded results remain outcome-unknown and never retry automatically."
+  ],
+  "runtime_catalog": {
+    "rpc_methods": 251,
+    "server_requests": 13,
+    "notifications": 75,
+    "tier_0": 85,
+    "tier_2": 15,
+    "tier_3": 151
+  },
+  "future_use": {
+    "operator_guide": "docs/hermes/OPERATOR.md",
+    "cli": "scripts/hermes_control.py",
+    "private_installation": "outside repository; managed pinned Python 3.14.7 environment verified",
+    "private_credentials": "not included in evidence or Git",
+    "process_state_after_probe": "Hub and managed worker stopped"
+  }
+}

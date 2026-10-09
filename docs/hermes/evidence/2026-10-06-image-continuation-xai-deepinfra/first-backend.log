@@ -1,0 +1,259 @@
+........................................................................ [  9%]
+........................................................................ [ 18%]
+........................................................................ [ 27%]
+........................................................................ [ 36%]
+........................................................................ [ 45%]
+........................................................................ [ 54%]
+......................FF..FF....FFFFFFFFFFFFFFFFFFFF.................... [ 64%]
+........................................................................ [ 73%]
+........................................................................ [ 82%]
+........................................................................ [ 91%]
+..................................................................       [100%]
+=================================== FAILURES ===================================
+_____ test_composer_observes_one_approved_image_and_can_resume_reads[off] ______
+tests/test_image_generation_api_flow.py:32: in test_composer_observes_one_approved_image_and_can_resume_reads
+    assert pending.json() == {"task_id": task_id, "state": "awaiting_approval", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+___ test_composer_observes_one_approved_image_and_can_resume_reads[enforce] ____
+tests/test_image_generation_api_flow.py:32: in test_composer_observes_one_approved_image_and_can_resume_reads
+    assert pending.json() == {"task_id": task_id, "state": "awaiting_approval", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_ test_owner_projection_redacts_payload_paths_urls_and_unrelated_results[toolrpc.image_generate] _
+tests/test_image_generation_view.py:40: in test_owner_projection_redacts_payload_paths_urls_and_unrelated_results
+    assert response.json() == {"task_id": 17, "state": "ready", "artifact": {"id": "a" * 32, "bytes": 80, "width": 512, "height": 512}}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...height': 512}}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_ test_owner_projection_redacts_payload_paths_urls_and_unrelated_results[tool.rpc] _
+tests/test_image_generation_view.py:40: in test_owner_projection_redacts_payload_paths_urls_and_unrelated_results
+    assert response.json() == {"task_id": 17, "state": "ready", "artifact": {"id": "a" * 32, "bytes": 80, "width": 512, "height": 512}}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...height': 512}}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_______ test_done_without_valid_success_is_uncertain_not_generated[None] _______
+tests/test_image_generation_view.py:63: in test_done_without_valid_success_is_uncertain_not_generated
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_____ test_done_without_valid_success_is_uncertain_not_generated[result1] ______
+tests/test_image_generation_view.py:63: in test_done_without_valid_success_is_uncertain_not_generated
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+________ test_done_without_valid_success_is_uncertain_not_generated[12] ________
+tests/test_image_generation_view.py:63: in test_done_without_valid_success_is_uncertain_not_generated
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_____ test_done_without_valid_success_is_uncertain_not_generated[result3] ______
+tests/test_image_generation_view.py:63: in test_done_without_valid_success_is_uncertain_not_generated
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_____ test_done_without_valid_success_is_uncertain_not_generated[result4] ______
+tests/test_image_generation_view.py:63: in test_done_without_valid_success_is_uncertain_not_generated
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_____ test_done_without_valid_success_is_uncertain_not_generated[result5] ______
+tests/test_image_generation_view.py:63: in test_done_without_valid_success_is_uncertain_not_generated
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_____ test_done_without_valid_success_is_uncertain_not_generated[result6] ______
+tests/test_image_generation_view.py:63: in test_done_without_valid_success_is_uncertain_not_generated
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_____ test_done_without_valid_success_is_uncertain_not_generated[result7] ______
+tests/test_image_generation_view.py:63: in test_done_without_valid_success_is_uncertain_not_generated
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_____ test_done_without_valid_success_is_uncertain_not_generated[result8] ______
+tests/test_image_generation_view.py:63: in test_done_without_valid_success_is_uncertain_not_generated
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_____ test_done_without_valid_success_is_uncertain_not_generated[result9] ______
+tests/test_image_generation_view.py:63: in test_done_without_valid_success_is_uncertain_not_generated
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_____ test_done_without_valid_success_is_uncertain_not_generated[result10] _____
+tests/test_image_generation_view.py:63: in test_done_without_valid_success_is_uncertain_not_generated
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_____ test_done_without_valid_success_is_uncertain_not_generated[result11] _____
+tests/test_image_generation_view.py:63: in test_done_without_valid_success_is_uncertain_not_generated
+    assert response.json() == {"task_id": 17, "state": "uncertain", "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_ test_exact_queue_states_are_projected_without_inventing_progress[blocked-awaiting_approval] _
+tests/test_image_generation_view.py:72: in test_exact_queue_states_are_projected_without_inventing_progress
+    assert response.json() == {"task_id": 17, "state": state, "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_ test_exact_queue_states_are_projected_without_inventing_progress[proposed-awaiting_approval] _
+tests/test_image_generation_view.py:72: in test_exact_queue_states_are_projected_without_inventing_progress
+    assert response.json() == {"task_id": 17, "state": state, "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_ test_exact_queue_states_are_projected_without_inventing_progress[approved-queued] _
+tests/test_image_generation_view.py:72: in test_exact_queue_states_are_projected_without_inventing_progress
+    assert response.json() == {"task_id": 17, "state": state, "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_ test_exact_queue_states_are_projected_without_inventing_progress[running-generating] _
+tests/test_image_generation_view.py:72: in test_exact_queue_states_are_projected_without_inventing_progress
+    assert response.json() == {"task_id": 17, "state": state, "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_ test_exact_queue_states_are_projected_without_inventing_progress[rejected-rejected] _
+tests/test_image_generation_view.py:72: in test_exact_queue_states_are_projected_without_inventing_progress
+    assert response.json() == {"task_id": 17, "state": state, "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_ test_exact_queue_states_are_projected_without_inventing_progress[deferred-deferred] _
+tests/test_image_generation_view.py:72: in test_exact_queue_states_are_projected_without_inventing_progress
+    assert response.json() == {"task_id": 17, "state": state, "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_ test_exact_queue_states_are_projected_without_inventing_progress[failed-uncertain] _
+tests/test_image_generation_view.py:72: in test_exact_queue_states_are_projected_without_inventing_progress
+    assert response.json() == {"task_id": 17, "state": state, "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+_ test_exact_queue_states_are_projected_without_inventing_progress[quarantined-refused] _
+tests/test_image_generation_view.py:72: in test_exact_queue_states_are_projected_without_inventing_progress
+    assert response.json() == {"task_id": 17, "state": state, "artifact": None}
+E   AssertionError: assert {'task_id': 1...lable': False} == {'task_id': 1...tifact': None}
+E     
+E     Omitting 3 identical items, use -vv to show
+E     Left contains 1 more item:
+E     {'resume_available': False}
+E     Use -v to get more diff
+=============================== warnings summary ===============================
+tests/test_cloud_image.py::test_actual_media_route_worker_gallery_and_export
+  /Users/andrei649/Projects/nerva-hub/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_image_generation_api_flow.py::test_composer_observes_one_approved_image_and_can_resume_reads[off]
+FAILED tests/test_image_generation_api_flow.py::test_composer_observes_one_approved_image_and_can_resume_reads[enforce]
+FAILED tests/test_image_generation_view.py::test_owner_projection_redacts_payload_paths_urls_and_unrelated_results[toolrpc.image_generate]
+FAILED tests/test_image_generation_view.py::test_owner_projection_redacts_payload_paths_urls_and_unrelated_results[tool.rpc]
+FAILED tests/test_image_generation_view.py::test_done_without_valid_success_is_uncertain_not_generated[None]
+FAILED tests/test_image_generation_view.py::test_done_without_valid_success_is_uncertain_not_generated[result1]
+FAILED tests/test_image_generation_view.py::test_done_without_valid_success_is_uncertain_not_generated[12]
+FAILED tests/test_image_generation_view.py::test_done_without_valid_success_is_uncertain_not_generated[result3]
+FAILED tests/test_image_generation_view.py::test_done_without_valid_success_is_uncertain_not_generated[result4]
+FAILED tests/test_image_generation_view.py::test_done_without_valid_success_is_uncertain_not_generated[result5]
+FAILED tests/test_image_generation_view.py::test_done_without_valid_success_is_uncertain_not_generated[result6]
+FAILED tests/test_image_generation_view.py::test_done_without_valid_success_is_uncertain_not_generated[result7]
+FAILED tests/test_image_generation_view.py::test_done_without_valid_success_is_uncertain_not_generated[result8]
+FAILED tests/test_image_generation_view.py::test_done_without_valid_success_is_uncertain_not_generated[result9]
+FAILED tests/test_image_generation_view.py::test_done_without_valid_success_is_uncertain_not_generated[result10]
+FAILED tests/test_image_generation_view.py::test_done_without_valid_success_is_uncertain_not_generated[result11]
+FAILED tests/test_image_generation_view.py::test_exact_queue_states_are_projected_without_inventing_progress[blocked-awaiting_approval]
+FAILED tests/test_image_generation_view.py::test_exact_queue_states_are_projected_without_inventing_progress[proposed-awaiting_approval]
+FAILED tests/test_image_generation_view.py::test_exact_queue_states_are_projected_without_inventing_progress[approved-queued]
+FAILED tests/test_image_generation_view.py::test_exact_queue_states_are_projected_without_inventing_progress[running-generating]
+FAILED tests/test_image_generation_view.py::test_exact_queue_states_are_projected_without_inventing_progress[rejected-rejected]
+FAILED tests/test_image_generation_view.py::test_exact_queue_states_are_projected_without_inventing_progress[deferred-deferred]
+FAILED tests/test_image_generation_view.py::test_exact_queue_states_are_projected_without_inventing_progress[failed-uncertain]
+FAILED tests/test_image_generation_view.py::test_exact_queue_states_are_projected_without_inventing_progress[quarantined-refused]

@@ -1,7 +1,9 @@
 """Tests for the admin settings store (seeding, get/put, unknown-key handling)."""
 
 import json
+import sqlite3
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -25,6 +27,31 @@ def temp_db(tmp_path, monkeypatch):
     monkeypatch.setattr(settings_db, "_initialized", False)
     monkeypatch.setattr(settings_db, "_wal_set", False)
     return settings_db
+
+
+def test_transient_writer_lock_does_not_make_healthy_store_unreadable(temp_db):
+    """The integrity read should wait for a short SQLite lock to clear."""
+    temp_db.ensure_initialized()
+    writer = sqlite3.connect(temp_db.DB_PATH, check_same_thread=False)
+    writer.execute("PRAGMA locking_mode=EXCLUSIVE")
+    writer.execute("BEGIN EXCLUSIVE")
+    released = threading.Event()
+
+    def release():
+        writer.commit()
+        writer.close()
+        released.set()
+
+    timer = threading.Timer(0.1, release)
+    timer.start()
+    try:
+        temp_db.ensure_initialized()
+        assert released.is_set()
+    finally:
+        timer.join()
+        if not released.is_set():
+            writer.rollback()
+            writer.close()
 
 
 def test_seeds_all_categories(temp_db):

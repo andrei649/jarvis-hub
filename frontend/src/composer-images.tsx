@@ -3,10 +3,15 @@ import {apiFetchOnce} from './api/client';
 
 const TYPES=['image/png','image/jpeg','image/gif','image/webp'];
 const MAX_BYTES=4*1024*1024, MAX_IMAGES=8;
-export type VisionDraft={images:string[];names:string[];expected_destination:string;expected_binding:string;remote_ack:boolean;review_token?:string;agent?:string;session_id?:string;active_image_handles?:string[]};
-type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;data?:string;error?:string};
-type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;empty_retries?:number;retry_notice?:string};
+type SelectionNeed='acknowledge_training'|'confirm_expensive';
+type SelectionRequirement={needs:SelectionNeed;message:string};
 type ActiveImage={handle:string;count:number;question:string};
+export type VisionDraft={images:string[];names:string[];active_image_handles?:string[];expected_destination:string;expected_binding:string;review_token:string;agent:string;session_id:string;selected_turn?:true;selected_main?:true;selected_ollama?:true;remote_ack:boolean;acknowledge_training?:true;confirm_expensive?:true};
+type Draft={id:number;name:string;identity:string;url:string;reader:FileReader;data?:string;error?:string};
+type Destination={configured:boolean;destination?:string;binding?:string;review_token?:string;model?:string;backend?:string;local?:boolean;warning?:string;data_policy_note?:string;empty_retries?:number;retry_notice?:string;selection_source?:string;selection_requirements?:SelectionRequirement[];session_id?:string;selected_turn?:boolean;selected_ollama?:boolean;active_image_count?:number};
+
+const AUTO_SOURCES=new Set(['auto:main','auto:override','auto:openrouter','auto:nous','auto:deepinfra']);
+const PROVIDER_NAMES:Record<string,string>={openrouter:'OpenRouter',nous:'Nous',deepinfra:'DeepInfra',anthropic:'Anthropic Claude',gemini:'Google Gemini','openai-responses':'OpenAI Responses',xai:'xAI Grok',lmstudio:'LM Studio',ollama:'Ollama',custom:'Custom'};
 
 function validRetryMetadata(data:Destination){
   const hasBudget=Object.prototype.hasOwnProperty.call(data,'empty_retries');
@@ -17,38 +22,88 @@ function validRetryMetadata(data:Destination){
     notice.length<=500&&!/[\x00-\x1f\x7f]/.test(notice);
 }
 
+function validSelectionRequirements(data:Destination){
+  if(!Object.prototype.hasOwnProperty.call(data,'selection_requirements'))return true;
+  const requirements:unknown=data.selection_requirements;
+  if(!Array.isArray(requirements)||requirements.length>8)return false;
+  const seen=new Set<SelectionNeed>();
+  for(const item of requirements){
+    if(!item||typeof item!=='object'||Array.isArray(item))return false;
+    const {needs,message}=item as Record<string,unknown>;
+    if(needs!=='acknowledge_training'&&needs!=='confirm_expensive')return false;
+    if(seen.has(needs)||typeof message!=='string'||!message.trim()||message.length>500||/[\x00-\x1f\x7f]/.test(message))return false;
+    seen.add(needs);
+  }
+  return true;
+}
+
 export function useComposerImages(prompt='',agent='jarvis',sessionId='',selectedTurn=false){
   const records=useRef<Draft[]>([]), serial=useRef(0);
-  const context=useRef('');
-  context.current=`${sessionId}\u0000${agent}\u0000${selectedTurn}`;
+  const activeRequest=useRef<AbortController|null>(null);
   const [images,setImages]=useState<Draft[]>([]),[note,setNote]=useState('');
-  const [destination,setDestination]=useState<Destination|null>(null),[ack,setAck]=useState('');
-  const [refreshId,setRefreshId]=useState(0);
   const [activeImages,setActiveImages]=useState<ActiveImage[]>([]);
   const [selectedHandles,setSelectedHandles]=useState<string[]>([]);
-  const [reviewed,setReviewed]=useState('');
-  const activeCount=selectedHandles.reduce((sum,handle)=>sum+(activeImages.find(row=>row.handle===handle)?.count||0),0);
+  const [activeSession,setActiveSession]=useState('');
+  const [activeState,setActiveState]=useState<'idle'|'loading'|'ready'|'unavailable'>('idle');
+  const [destination,setDestination]=useState<Destination|null>(null),[ack,setAck]=useState('');
+  const [reviewedSelection,setReviewedSelection]=useState<string|null>(null);
+  const [consents,setConsents]=useState<Partial<Record<SelectionNeed,string>>>({});
+  const [refreshId,setRefreshId]=useState(0);
+  const refreshCatalog=useRef(false);
+  const activeCount=selectedHandles.reduce((total,handle)=>total+(activeImages.find(image=>image.handle===handle)?.count||0),0);
+  const reviewPrompt=prompt.trim()||'Describe these images.';
+  const invalidateReview=()=>{setDestination(null);setReviewedSelection(null);setAck('');setConsents({});};
   const publish=()=>setImages([...records.current]);
   const dispose=(entry:Draft)=>{entry.reader.onload=null;entry.reader.onerror=null;entry.reader.onabort=null;if(entry.reader.readyState===1)entry.reader.abort();if(entry.url)URL.revokeObjectURL(entry.url);};
-  const clear=()=>{records.current.forEach(dispose);records.current=[];publish();setSelectedHandles([]);setDestination(null);setReviewed('');setNote('');setAck('');};
-  const remove=(id:number)=>{const entry=records.current.find(item=>item.id===id);records.current=records.current.filter(item=>item.id!==id);if(entry)dispose(entry);setReviewed('');publish();};
+  const clear=()=>{activeRequest.current?.abort();records.current.forEach(dispose);records.current=[];publish();setActiveImages([]);setSelectedHandles([]);setActiveSession('');setActiveState('idle');invalidateReview();setNote('');};
+  useEffect(()=>{clear();},[sessionId,agent,selectedTurn]); // eslint-disable-line react-hooks/exhaustive-deps
+  const remove=(id:number)=>{const entry=records.current.find(item=>item.id===id);records.current=records.current.filter(item=>item.id!==id);if(entry){dispose(entry);invalidateReview();}publish();};
+  const loadActiveImages=async()=>{
+    activeRequest.current?.abort();
+    const controller=new AbortController();activeRequest.current=controller;
+    setActiveState('loading');setActiveImages([]);setSelectedHandles([]);setActiveSession('');invalidateReview();
+    try {
+      const response=await apiFetchOnce(`/api/vlm/composer/active-images?agent=${encodeURIComponent(agent)}${sessionId?`&session_id=${encodeURIComponent(sessionId)}`:''}`,{signal:controller.signal});
+      if(!response.ok)throw new Error('active images unavailable');
+      const text=await response.text();if(text.length>8192)throw new Error('invalid active images');
+      const data=JSON.parse(text) as {session_id?:unknown;images?:unknown};
+      if(typeof data.session_id!=='string'||data.session_id.length>128||!/^[-_A-Za-z0-9]+$/.test(data.session_id)||
+        !Array.isArray(data.images)||data.images.length>32)throw new Error('invalid active images');
+      const rows=data.images as ActiveImage[];
+      if(rows.some(row=>!row||typeof row.handle!=='string'||!/^[-_A-Za-z0-9]{20,128}$/.test(row.handle)||
+        !Number.isInteger(row.count)||row.count<1||row.count>8||typeof row.question!=='string'||
+        row.question.length>120||/[\x00-\x1f\x7f]/.test(row.question))||
+        new Set(rows.map(row=>row.handle)).size!==rows.length)throw new Error('invalid active images');
+      if(sessionId&&data.session_id!==sessionId)throw new Error('active image session changed');
+      if(!controller.signal.aborted){setActiveImages(rows);setActiveSession(data.session_id);setActiveState(rows.length?'ready':'unavailable');}
+    } catch {if(!controller.signal.aborted){setActiveImages([]);setActiveSession('');setActiveState('unavailable');}}
+    finally {if(activeRequest.current===controller)activeRequest.current=null;}
+  };
+  const toggleActive=(handle:string)=>{
+    const row=activeImages.find(image=>image.handle===handle);if(!row)return;
+    const next=selectedHandles.includes(handle)?selectedHandles.filter(item=>item!==handle):[...selectedHandles,handle];
+    const count=next.reduce((total,item)=>total+(activeImages.find(image=>image.handle===item)?.count||0),0);
+    if(count+records.current.length>MAX_IMAGES){setNote('At most eight images across previous and new selections');return;}
+    setSelectedHandles(next);setNote('');invalidateReview();
+  };
   const addFiles=(files:Iterable<File>)=>{
-    const errors:string[]=[];
+    const errors:string[]=[];let changed=false;
     for(const file of files){
       const identity=[file.name,file.size,file.lastModified,file.type].join(':');
       if(records.current.some(item=>item.identity===identity))continue;
       if(!TYPES.includes(file.type)){errors.push(`${file.name}: use PNG, JPEG, GIF or WebP`);continue;}
       if(!file.size || file.size>MAX_BYTES){errors.push(`${file.name}: image must be between 1 byte and 4 MiB`);continue;}
-      if(records.current.length+activeCount>=MAX_IMAGES){errors.push('At most eight images, including images still reading');continue;}
+      if(records.current.length+activeCount>=MAX_IMAGES){errors.push('At most eight images, including previous selections and images still reading');continue;}
       const reader=new FileReader();
       const entry:Draft={id:++serial.current,name:file.name||'image',identity,url:URL.createObjectURL(file),reader};
       // Reserve synchronously; later paste/drop events count unfinished reads.
-      records.current.push(entry);
+      records.current.push(entry);changed=true;
       reader.onload=()=>{if(!records.current.includes(entry))return;entry.data=typeof reader.result==='string'?reader.result:undefined;if(!entry.data)entry.error='Image could not be read';publish();};
       reader.onerror=()=>{if(records.current.includes(entry)){entry.error='Image could not be read';publish();}};
       try {reader.readAsDataURL(file);} catch {entry.error='Image could not be read';}
     }
-    setNote(errors.join(' · '));setReviewed('');publish();
+    if(changed)invalidateReview();
+    setNote(errors.join(' · '));publish();
   };
   const transfer=(data:DataTransfer)=>{
     const files=Array.from(data.files||[]);
@@ -57,85 +112,117 @@ export function useComposerImages(prompt='',agent='jarvis',sessionId='',selected
   };
   const onPaste=(event:React.ClipboardEvent)=>{const files=transfer(event.clipboardData).filter(file=>file.type.startsWith('image/'));if(files.length){event.preventDefault();addFiles(files);}};
   const onDrop=(event:React.DragEvent)=>{const files=transfer(event.dataTransfer);if(files.length){event.preventDefault();addFiles(files);}};
-  useEffect(()=>()=>{context.current='';records.current.forEach(dispose);records.current=[];},[]);
-  useEffect(()=>{clear();setActiveImages([]);},[sessionId,agent,selectedTurn]); // eslint-disable-line react-hooks/exhaustive-deps
-  const loadActive=async()=>{
-    if(!sessionId)return;
-    const requestedContext=context.current;
-    try{
-      const response=await apiFetchOnce(`/api/vlm/composer/active-images?session_id=${encodeURIComponent(sessionId)}&agent=${encodeURIComponent(agent)}`);
-      const text=await response.text();if(!response.ok||text.length>8192)throw new Error();
-      const data=JSON.parse(text);
-      if(data.session_id!==sessionId||!Array.isArray(data.images)||data.images.length>32||
-        data.images.some((row:ActiveImage)=>!row||typeof row.handle!=='string'||!/^[-_A-Za-z0-9]{20,128}$/.test(row.handle)||
-          !Number.isInteger(row.count)||row.count<1||row.count>8||typeof row.question!=='string'||row.question.length>120))throw new Error();
-      if(context.current===requestedContext)setActiveImages(data.images);
-    }catch{if(context.current===requestedContext){setActiveImages([]);setSelectedHandles([]);setNote('Previous images are unavailable');}}
-  };
-  const toggleActive=(handle:string)=>{
-    const row=activeImages.find(item=>item.handle===handle);if(!row)return;
-    const next=selectedHandles.includes(handle)?selectedHandles.filter(item=>item!==handle):[...selectedHandles,handle];
-    if(next.reduce((sum,item)=>sum+(activeImages.find(entry=>entry.handle===item)?.count||0),0)+images.length>MAX_IMAGES){setNote('At most eight images');return;}
-    setSelectedHandles(next);setReviewed('');setNote('');
-  };
+  useEffect(()=>()=>{activeRequest.current?.abort();records.current.forEach(dispose);records.current=[];},[]);
   const enabled=images.length>0||selectedHandles.length>0;
-  const selection=images.map(image=>image.id).join(',')+'|'+selectedHandles.join(',');
-  const readReady=images.every(image=>!!image.data&&!image.error);
+  const selectionKey=`${images.map(image=>image.id).join(',')}|${selectedHandles.join(',')}`;
   useEffect(()=>{
-    setAck('');setDestination(null);setReviewed('');
-    if(!enabled||selectedTurn&&!sessionId)return;
+    setAck('');setConsents({});setDestination(null);setReviewedSelection(null);
+    if(!enabled||selectedTurn&&!sessionId||selectedHandles.length>0&&!prompt.trim()&&!selectedTurn||
+      activeCount+images.length>MAX_IMAGES||!images.every(image=>!!image.data&&!image.error))return;
     const controller=new AbortController();let active=true;
-    const prepare=async()=>{
-      if(selectedTurn){
-        if(!readReady||activeCount+images.length>MAX_IMAGES)return;
+    const timer=setTimeout(async()=>{
+      if(!active)return;
+      try {
+        if(!globalThis.crypto?.subtle)throw new Error('Image review unavailable in this browser');
         const image_digests=await Promise.all(images.map(async image=>{
-          const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(image.data!));
-          return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+          const hash=await globalThis.crypto.subtle.digest('SHA-256',new TextEncoder().encode(image.data!));
+          return Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,'0')).join('');
         }));
-        return apiFetchOnce('/api/vlm/composer/selected-prepare',{method:'POST',body:{prompt:prompt.trim()||'Describe these images.',agent,session_id:sessionId,image_digests,active_image_handles:selectedHandles},signal:controller.signal});
-      }
-      return apiFetchOnce('/api/vlm/composer/status',{signal:controller.signal});
-    };
-    const timer=setTimeout(()=>{prepare().then(async response=>{
-      if(!response)return;
-      if(!response.ok)throw new Error('Vision status unavailable');
-      const text=await response.text();if(text.length>8192)throw new Error('Invalid vision status');
-      const data=JSON.parse(text) as Destination;
-      if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!(selectedTurn?/^[-_A-Za-z0-9]{20,128}$/.test(data.review_token||''):/^\w{64}$/.test(data.binding||''))))throw new Error('Invalid vision status');
-      if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision status');
-      if(!validRetryMetadata(data))throw new Error('Invalid vision status');
-      if(active){setDestination(data);setReviewed(selection+'|'+prompt+'|'+agent+'|'+sessionId);}
-    }).catch(()=>{if(active)setDestination({configured:false});});},selectedTurn?200:0);
+        if(!active)return;
+        let response:Response;
+        let selectedOllama=false;
+        if(selectedTurn&&sessionId){
+          response=await apiFetchOnce('/api/vlm/composer/selected-prepare',{method:'POST',body:{prompt:reviewPrompt,agent,session_id:sessionId,image_digests,active_image_handles:selectedHandles},signal:controller.signal});
+          selectedOllama=response.ok;
+        }else response=new Response(null,{status:409});
+        if(!selectedOllama){
+          const statusPath='/api/vlm/composer/prepare'+(refreshCatalog.current?'?refresh_catalog=true':'');
+          response=await apiFetchOnce(statusPath,{method:'POST',body:{prompt:reviewPrompt,agent,selected_turn:true,
+            ...(sessionId?{session_id:sessionId}:{}),...(images.length?{image_digests}:{}),...(selectedHandles.length?{active_image_handles:selectedHandles}:{})},signal:controller.signal});
+        }
+        refreshCatalog.current=false;
+        const text=await response.text();if(text.length>8192)throw new Error('Invalid vision status');
+        const data=JSON.parse(text) as Destination&{reason?:string};
+        if(selectedOllama){data.binding=data.review_token;data.selected_turn=true;data.selected_ollama=true;}
+        if(!response.ok){
+          if(active&&selectedHandles.length&&response.status===409&&data.reason==='vlm_active_image_unavailable'){
+            setActiveImages([]);setSelectedHandles([]);setActiveSession('');setActiveState('unavailable');
+          }
+          throw new Error('Vision status unavailable');
+        }
+        if(typeof data.configured!=='boolean' || data.configured && (typeof data.destination!=='string'||typeof data.model!=='string'||typeof data.backend!=='string'||typeof data.local!=='boolean'||!(selectedOllama?/^[-_A-Za-z0-9]{20,128}$/.test(data.binding||''):/^\w{64}$/.test(data.binding||''))||!/^[-\w]{20,128}$/.test(data.review_token||'')))throw new Error('Invalid vision status');
+        if(data.warning!==undefined&&(typeof data.warning!=='string'||data.warning.length>500))throw new Error('Invalid vision status');
+        if(data.data_policy_note!==undefined&&(typeof data.data_policy_note!=='string'||data.data_policy_note.length>500))throw new Error('Invalid vision status');
+        if(data.configured&&(data.selected_turn!==true||typeof data.session_id!=='string'||data.session_id.length>128||!/^[-_A-Za-z0-9]+$/.test(data.session_id)))throw new Error('Invalid vision status');
+        if(data.selection_source!==undefined&&(!AUTO_SOURCES.has(data.selection_source)||
+          data.selection_source==='auto:override'&&data.backend!=='custom'||
+          !['auto:main','auto:override'].includes(data.selection_source)&&data.selection_source!==`auto:${data.backend}`))throw new Error('Invalid vision status');
+        if(selectedHandles.length&&(!data.selected_ollama&&data.selection_source!=='auto:main'||data.session_id!==activeSession||
+          data.active_image_count!==undefined&&data.active_image_count!==activeCount))throw new Error('Invalid active image selection');
+        if(!validRetryMetadata(data)||!validSelectionRequirements(data))throw new Error('Invalid vision status');
+        if(active){setDestination(data);setReviewedSelection(selectionKey);}
+      } catch {if(active)setDestination({configured:false});}
+    },200);
     return()=>{active=false;clearTimeout(timer);controller.abort();};
-  },[enabled,refreshId,selectedTurn?selection:'',selectedTurn?readReady:true,selectedTurn?prompt:'',selectedTurn?agent:'',sessionId,selectedTurn]);
-  const ready=enabled&&images.every(image=>!!image.data&&!image.error)&&destination?.configured&&
-    (!selectedTurn||!!sessionId&&reviewed===selection+'|'+prompt+'|'+agent+'|'+sessionId)&&(destination.local===true||ack===destination.binding);
-  const submission=():VisionDraft|null=>ready?{images:images.map(image=>image.data!),names:[...images.map(image=>image.name),...selectedHandles.map(()=>'previous image')],expected_destination:destination!.destination!,expected_binding:destination!.binding||destination!.review_token!,remote_ack:destination!.local!==true&&ack===destination!.binding,
-    ...(selectedTurn?{review_token:destination!.review_token!,agent,session_id:sessionId,active_image_handles:selectedHandles}:{} )}:null;
-  return {images,note,destination,ack,ready,addFiles,onPaste,onDrop,clear,remove,submission,activeImages,selectedHandles,loadActive,toggleActive,sessionId,selectedTurn,
-    acknowledge:(checked:boolean)=>setAck(checked?destination?.binding||'':''),refresh:()=>setRefreshId(id=>id+1)};
+  },[images,selectedHandles,refreshId,prompt,agent,activeSession,sessionId,selectedTurn]);
+  const requirements=destination?.selection_requirements||[];
+  const xaiUnsupported=destination?.backend==='xai'&&images.some(image=>
+    !!image.data&&!/^data:image\/(png|jpeg);base64,/.test(image.data));
+  const ready=enabled&&(!selectedHandles.length||!!prompt.trim()||selectedTurn)&&reviewedSelection===selectionKey&&
+    activeCount+images.length<=MAX_IMAGES&&images.every(image=>!!image.data&&!image.error)&&destination?.configured&&
+    !xaiUnsupported&&(destination.local===true||ack===destination.binding)&&requirements.every(item=>consents[item.needs]===destination.binding);
+  const submission=():VisionDraft|null=>ready?{
+    images:images.map(image=>image.data!),names:[...images.map(image=>image.name),
+      ...selectedHandles.map(handle=>`Previous: ${activeImages.find(image=>image.handle===handle)?.question||'image'}`)],
+    ...(selectedHandles.length?{active_image_handles:selectedHandles}:{}),
+    expected_destination:destination!.destination!,expected_binding:destination!.binding!,review_token:destination!.review_token!,agent,
+    selected_turn:true,session_id:destination!.session_id!,
+    ...(destination!.selection_source==='auto:main'?{selected_main:true as const}:{}),
+    ...(destination!.selected_ollama?{selected_ollama:true as const}:{}),
+    remote_ack:destination!.local!==true&&ack===destination!.binding,
+    ...(requirements.some(item=>item.needs==='acknowledge_training')?{acknowledge_training:true as const}:{}),
+    ...(requirements.some(item=>item.needs==='confirm_expensive')?{confirm_expensive:true as const}:{}),
+  }:null;
+  return {images,note,destination,ack,consents,ready,xaiUnsupported,addFiles,onPaste,onDrop,clear,remove,submission,
+    activeImages,selectedHandles,activeState,activeCount,enabled,loadActiveImages,toggleActive,sessionId,selectedTurn,
+    acknowledge:(checked:boolean)=>setAck(checked?destination?.binding||'':''),
+    confirm:(need:SelectionNeed,checked:boolean)=>setConsents(current=>({...current,[need]:checked?destination?.binding||'':''})),
+    refresh:()=>{refreshCatalog.current=true;setConsents({});setRefreshId(id=>id+1);}};
 }
 
 export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImages>}){
-  if(!draft.images.length&&!draft.selectedHandles.length&&!draft.note&&!draft.selectedTurn)return null;
   const d=draft.destination;
   return <div style={{padding:'6px 8px',fontSize:11}}>
+    <button type="button" className="tool-btn" onClick={draft.loadActiveImages}>Use previous image</button>
+    {draft.activeState==='loading'&&<span role="status"> Checking earlier images…</span>}
+    {draft.activeState==='unavailable'&&<span role="status"> Earlier images are unavailable in this session. Attach them again if needed.</span>}
+    {draft.activeState==='ready'&&<div style={{display:'flex',gap:8,overflowX:'auto',marginTop:5}}>
+      {draft.activeImages.map(image=><label key={image.handle} style={{flex:'0 0 150px',border:'1px solid var(--panel-line)',borderRadius:6,padding:5}}>
+        <input type="checkbox" checked={draft.selectedHandles.includes(image.handle)} onChange={()=>draft.toggleActive(image.handle)}/>
+        {`Use previous image: ${image.question} (${image.count})`}
+        {draft.selectedHandles.includes(image.handle)&&<span>{` · #${draft.selectedHandles.indexOf(image.handle)+1}`}</span>}
+      </label>)}
+    </div>}
     <div style={{display:'flex',gap:8,overflowX:'auto'}}>{draft.images.map(image=><div key={image.id} style={{flex:'0 0 92px'}}>
       <img src={image.url} alt={image.name} style={{width:88,height:64,objectFit:'contain'}}/>
       <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{image.name}</div>
       <button className="tool-btn" onClick={()=>draft.remove(image.id)} aria-label={`Remove ${image.name}`}>Remove</button>
       {!image.data&&!image.error&&<span> Reading…</span>}{image.error&&<span>{image.error}</span>}
     </div>)}</div>
-    {!!draft.sessionId&&<button className="tool-btn" onClick={draft.loadActive}>Use previous image</button>}
-    {!!draft.activeImages.length&&<div>{draft.activeImages.map(row=><label key={row.handle} style={{display:'block'}}><input type="checkbox" checked={draft.selectedHandles.includes(row.handle)} onChange={()=>draft.toggleActive(row.handle)}/>{row.question} · {row.count} image(s)</label>)}</div>}
-    <div role="status">{draft.note || (draft.images.length||draft.selectedHandles.length ? draft.selectedTurn&&!draft.sessionId?'Selecting conversation…':!d?'Checking vision configuration…':!d.configured?'Vision model unavailable. Remove images to send text.':`${d.model} · ${d.destination} · ${d.local?'loopback':'remote'} · reachability not probed` : '')}</div>
+    {(draft.enabled||draft.note)&&<div role="status">{draft.note || (draft.selectedTurn&&!draft.sessionId?'Selecting conversation…':!d?'Checking vision configuration…':!d.configured?'Vision model unavailable. Remove image selections to send text.':`${d.selection_source?`Automatically selected ${PROVIDER_NAMES[d.backend||'']||d.backend} · `:''}${d.model} · ${d.destination} · ${d.local?'loopback':'remote'} · reachability not probed`)}</div>}
+    {draft.xaiUnsupported&&<div role="status" style={{color:'var(--amber)'}}>xAI accepts PNG or JPEG images. Remove GIF/WebP images before sending.</div>}
     {d?.configured&&d.warning&&<div style={{color:'var(--amber)'}}>{d.warning}</div>}
+    {d?.configured&&d.backend==='openai-responses'&&d.data_policy_note&&<div>{d.data_policy_note}</div>}
     {d?.configured&&d.retry_notice&&<div role="status" style={{color:'var(--amber)'}}>{d.retry_notice}</div>}
-    {!!(draft.images.length||draft.selectedHandles.length)&&<button className="tool-btn" onClick={draft.refresh}>Refresh vision destination</button>}
+    {draft.enabled&&<button className="tool-btn" onClick={draft.refresh}>Refresh vision destination</button>}
     {d?.configured&&d.local!==true&&<label style={{display:'block'}}>
       <input type="checkbox" checked={draft.ack===d.binding} onChange={event=>draft.acknowledge(event.target.checked)}/>
-      {`Send these images to ${d.destination}. I acknowledge they leave this host.`}
+      {`Send these images and the assembled conversation prompt to ${d.destination}. The prompt may include earlier messages, agent context and a checkpoint. I acknowledge they leave this host.`}
     </label>}
-    {!!(draft.images.length||draft.selectedHandles.length)&&<div>Up to eight static images · 4 MiB each · recent images expire locally after 30 minutes.</div>}
+    {d?.configured&&d.selection_requirements?.map(requirement=><label key={requirement.needs} style={{display:'block'}}>
+      <input type="checkbox" checked={draft.consents[requirement.needs]===d.binding} onChange={event=>draft.confirm(requirement.needs,event.target.checked)}/>
+      {requirement.needs==='acknowledge_training'?'Training use: ':'Cost confirmation: '}{requirement.message}
+    </label>)}
+    {draft.enabled&&<div>Selected {draft.activeCount} previous + {draft.images.length} new images · up to eight static images total · 4 MiB each · {d?.selection_source==='auto:main'?'image bytes are transient; the question and answer are saved in this conversation.':'images are transient and are not added to agent memory.'}</div>}
   </div>;
 }

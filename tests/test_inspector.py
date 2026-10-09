@@ -182,11 +182,13 @@ async def test_every_view_is_the_posture_it_names(tmp_path, view, principal, ori
     assert _names(payload) == _expected(o, principal, origin)
 
 
-async def test_the_owner_on_the_hud_is_offered_the_whole_registry(tmp_path):
+async def test_the_owner_on_the_hud_is_offered_the_enabled_registry(tmp_path):
     o = _orch(tmp_path)
     payload = await ins.build_inspector(o, "jarvis", view="owner", sections=["tools"])
-    assert _names(payload) == [t["name"] for t in o.tool_rpc.tools() if allows(t["name"])]
-    assert payload["tools"]["withheld"] == []
+    assert _names(payload) == [t["name"] for t in o.tool_rpc.tools()
+                               if allows(t["name"]) and not t["name"].startswith("kanban_")]
+    assert set(payload["tools"]["withheld"]) == {
+        t["name"] for t in o.tool_rpc.tools() if t["name"].startswith("kanban_")}
 
 
 async def test_the_agents_own_list_narrows_the_offer(tmp_path):
@@ -627,3 +629,79 @@ def test_the_view_and_section_names_are_one_list():
     assert tuple(nerva.INSPECT_VIEWS) == tuple(ins.VIEWS)
     assert set(nerva.INSPECT_SECTIONS.values()) == set(ins.SECTIONS)
 
+
+
+async def test_prompt_preview_includes_guidance_from_the_resolved_empty_turn_route(tmp_path):
+    from agents.core.llm.hybrid_router import POLICY_LOCAL, HybridRouter
+
+    o = _orch(tmp_path, settings={'llm.operating_guidance': {'enabled': True}})
+    backend = SimpleNamespace(supports_tools=True)
+    router = HybridRouter.__new__(HybridRouter)
+    router._local_available = True
+    router._backend = backend
+    router._local_model = 'gpt-5'
+    router._compatible_backend = None
+    router.get_agent_policy = lambda aid: POLICY_LOCAL
+    router.is_model_approved = lambda aid, model: True
+    o.llm_router = router
+    o.agents['jarvis'].tool_runtime = o.agent_tool_runtime
+    o.agents['jarvis'].model_system_prompt = types.MethodType(Agent.model_system_prompt, o.agents['jarvis'])
+    prompt = (await ins.build_inspector(o, 'jarvis', sections=['system_prompt']))['system_prompt']
+    assert '# Finishing the job' in prompt['system']
+    assert '# Tool-use enforcement' in prompt['system']
+    assert prompt['system'].startswith('You are Jarvis, the house brain.')
+    assert prompt['model'] == 'gpt-5' and prompt['route'] == 'local'
+    assert prompt['resolved'] is True
+
+
+async def test_prompt_preview_refused_route_does_not_present_base_as_resolved(tmp_path):
+    o = _orch(tmp_path)
+
+    def refused(*args):
+        raise RuntimeError('synthetic secret detail')
+
+    o.llm_router.preview_backend = refused
+    prompt = (await ins.build_inspector(o, 'jarvis', sections=['system_prompt']))['system_prompt']
+    assert prompt['resolved'] is False and prompt['route_error'] == 'unavailable'
+    assert 'synthetic secret detail' not in str(prompt)
+
+
+def test_read_only_router_preview_does_not_resolve_job_pins():
+    from agents.core.llm.hybrid_router import POLICY_LOCAL, HybridRouter
+    from agents.core.llm.job_selection import selection_scope
+
+    backend = SimpleNamespace(supports_tools=True)
+    router = HybridRouter.__new__(HybridRouter)
+    router._local_available = True
+    router._backend = backend
+    router._local_model = 'local-model'
+    router._compatible_backend = None
+    router.get_agent_policy = lambda aid: POLICY_LOCAL
+    router.is_model_approved = lambda aid, model: True
+    with selection_scope({'model': 'different-job-model'}) as selection:
+        assert router.preview_backend('jarvis', '') == (backend, 'local-model', 'local')
+        assert selection.lifetime.resolved is None
+
+
+async def test_prompt_preview_never_runs_python_probes_or_populates_toolchain_cache(tmp_path, monkeypatch):
+    from agents.core import execution_guidance_context as facts
+    from agents.core.llm.hybrid_router import POLICY_LOCAL, HybridRouter
+
+    monkeypatch.setenv('JARVIS_TERMINAL_TARGETS', '1')
+    monkeypatch.setenv('JARVIS_TERMINAL_LOCAL_HOST', '1')
+    monkeypatch.setenv('JARVIS_TERMINAL_LOCAL_ROOTS', str(tmp_path))
+    observed = []
+    monkeypatch.setattr(facts, '_build_probe_line', lambda: observed.append('probe') or '')
+    facts._toolchain_cache.clear()
+    o = _orch(tmp_path, settings={'llm.operating_guidance': {'enabled': True}})
+    router = HybridRouter.__new__(HybridRouter)
+    router._local_available, router._backend, router._local_model = True, SimpleNamespace(supports_tools=True), 'gpt-5'
+    router._compatible_backend = None
+    router.get_agent_policy = lambda aid: POLICY_LOCAL
+    router.is_model_approved = lambda aid, model: True
+    o.llm_router = router
+    o.agents['jarvis'].tool_runtime = o.agent_tool_runtime
+    o.agents['jarvis'].model_system_prompt = types.MethodType(Agent.model_system_prompt, o.agents['jarvis'])
+    prompt = (await ins.build_inspector(o, 'jarvis', sections=['system_prompt']))['system_prompt']
+    assert prompt['resolved'] is True and 'local-host' in prompt['system']
+    assert observed == [] and facts._toolchain_cache == {}

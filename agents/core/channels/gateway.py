@@ -25,8 +25,14 @@ class Gateway:
     """
 
     def __init__(self, handler: Optional[Callable] = None, pairing: Any = None,
-                 inbox_store: Any = None):
+                 inbox_store: Any = None, pending_handler: Optional[Callable] = None,
+                 pending_callback_handler: Optional[Callable] = None,
+                 interrupt_handler: Optional[Callable] = None):
         self.handler = handler
+        # A trusted, pending-only consumer: it cannot start a new model turn.
+        self.pending_handler = pending_handler
+        self.pending_callback_handler = pending_callback_handler
+        self.interrupt_handler = interrupt_handler
         # H12.19 — optional inbound sender-pairing gate. When set (and pairing is
         # enabled), unknown senders are held for approval instead of reaching the
         # handler. None → unchanged behavior.
@@ -68,6 +74,8 @@ class Gateway:
         # An observed group message (Hermes absorption 0.4) is recorded, never answered,
         # so it neither spends the reply rate budget nor earns a reply of any kind.
         observe_only = bool(kwargs.get("observe_only"))
+        if await self.route_pending(text, channel=channel, **kwargs):
+            return ""
         if not observe_only and not self._check_rate_limit(channel):
             logger.warning("Gateway: rate limit exceeded for channel '%s'", log_safe(channel))
             return "Rate limit exceeded. Please wait before sending another message."
@@ -76,6 +84,8 @@ class Gateway:
         # that isn't allowed is held for owner approval; the message never reaches
         # the handler. No pairing gate or no sender → routes as before.
         sender = kwargs.get("sender")
+        if channel == "ntfy" and (self.pairing is None or sender is None):
+            return None
         if self.pairing is not None and sender is not None:
             try:
                 decision = self.pairing.gate_inbound(channel, str(sender),
@@ -113,7 +123,7 @@ class Gateway:
 
         try:
             origin = origin_for_channel(channel)
-            if channel in {"slack", "discord"}:
+            if channel in {"slack", "discord", "ntfy"}:
                 kwargs["origin"] = origin
             else:
                 kwargs.setdefault("origin", origin)
@@ -125,14 +135,84 @@ class Gateway:
             kwargs.pop("_inbox_message_id", None)
             metadata = {**kwargs, **inbound_meta}
             recorded = self._record_inbox(channel, text, sender=sender, metadata=metadata)
-            if channel in {"slack", "discord"}:
+            if channel in {"slack", "discord", "ntfy"}:
                 kwargs["_inbox_message_id"] = recorded.get("id", "") if recorded else ""
-            result = await self.handler(text, channel=channel, **kwargs)
+            from .. import code_interruptions
+            admission_token = code_interruptions.bind_admitted_channel(channel)
+            try:
+                result = await self.handler(text, channel=channel, **kwargs)
+            finally:
+                code_interruptions.reset_admitted_channel(admission_token)
             self._channels[channel]["last_activity"] = time.time()
             return result
         except Exception as e:
             self._channels[channel]["error_count"] += 1
             logger.error("Gateway: handler error on channel '%s': %s", log_safe(channel), e)
+            return None
+
+    async def route_pending(self, text: str, channel: str = "telegram", **kwargs) -> bool:
+        """Resolve an already delivered question without spending a new-turn slot.
+
+        Native adapters also call this before chat batching/lanes. No model fallback is
+        permitted here; false leaves normal routing responsible for the message.
+        """
+        target = {"telegram": "chat_id", "slack": "slack_channel", "discord": "channel_id",
+                  "ntfy": "ntfy_topic"}.get(channel)
+        if (target is None or kwargs.get("observe_only")
+                or kwargs.get("pending_input_eligible", True) is not True
+                or not isinstance(text, str) or not callable(self.pending_handler)
+                or not kwargs.get("sender") or not kwargs.get(target)
+                or (channel != "telegram" and self.pairing is None)):
+            return False
+        try:
+            if self.pairing is not None and self.pairing.is_allowed(
+                    channel, str(kwargs["sender"])) is not True:
+                return False
+            consumed = await self.pending_handler(text, channel=channel, **kwargs)
+        except Exception:
+            logger.warning("Gateway: pending reply not applied on '%s'", log_safe(channel))
+            return False
+        if consumed is not True:
+            return False
+        if channel not in self._channels:
+            self.register_channel(channel)
+        self._channels[channel]["message_count"] += 1
+        self._channels[channel]["last_activity"] = time.time()
+        return True
+
+    async def route_pending_callback(self, callback: dict, channel: str = "telegram"):
+        """Verified pending-only button ingress; never dispatch a model turn."""
+        if not isinstance(callback, dict) or not callable(self.pending_callback_handler):
+            return None
+        if channel in {"slack", "discord"}:
+            from .pending_input_workspace import valid_callback
+
+            if not valid_callback(callback, channel) or self.pairing is None:
+                return None
+            try:
+                if self.pairing.is_allowed(channel, callback["sender"]) is not True:
+                    return None
+                return await self.pending_callback_handler(callback, channel=channel)
+            except Exception:
+                logger.warning("Gateway: workspace pending callback not applied")
+                return None
+        if channel != "telegram":
+            return None
+        sender = callback.get("from")
+        message = callback.get("message")
+        if not isinstance(sender, dict) or not isinstance(message, dict):
+            return None
+        chat = message.get("chat")
+        uid = sender.get("id")
+        if (type(uid) is not int or uid <= 0 or not isinstance(chat, dict)
+                or type(chat.get("id")) is not int or chat["id"] == 0):
+            return None
+        try:
+            if self.pairing is not None and self.pairing.is_allowed("telegram", str(uid)) is not True:
+                return None
+            return await self.pending_callback_handler(callback)
+        except Exception:
+            logger.warning("Gateway: pending callback not applied")
             return None
 
     def _check_rate_limit(self, channel: str) -> bool:
@@ -146,6 +226,28 @@ class Gateway:
             return False
         self._rate_limits[channel].append(now)
         return True
+
+    def pre_lane_interrupt(self, *, channel: str, sender: str, chat_id,
+                           message_thread_id=None) -> bool:
+        """Probe Telegram's current admission before its occupied chat lane.
+
+        This does not reserve a rate slot or pair anyone. The later route still
+        makes the actual admission decision against then-current state.
+        """
+        if channel != "telegram" or not callable(self.interrupt_handler):
+            return False
+        now = time.time()
+        if sum(now - stamp < self._window for stamp in self._rate_limits.get(channel, ())) >= self._max_rate:
+            return False
+        try:
+            if self.pairing is not None and self.pairing.is_allowed(channel, str(sender)) is not True:
+                return False
+            return bool(self.interrupt_handler(
+                channel=channel, sender=str(sender), chat_id=chat_id,
+                message_thread_id=message_thread_id))
+        except Exception:
+            logger.warning("Telegram pre-lane code interruption unavailable", exc_info=True)
+            return False
 
     def get_channel_info(self, channel_id: str = None) -> dict:
         if channel_id:

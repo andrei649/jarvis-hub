@@ -1,0 +1,154 @@
+{
+  "generated_at": "2026-10-04T07:00:03.055626+00:00",
+  "goal": "All 697 pinned Hermes capabilities; H011 bounded terminal checkpoints and exact queue provenance",
+  "base_sha": "57d00f5029d9df6694d200e7ec1a2d589d31ba72",
+  "head_sha": "Pending local source commit; exact changed source bytes below",
+  "changed_paths": [
+    "agents/core/autonomy_coordinator.py",
+    "agents/core/environments/execution.py",
+    "agents/core/environments/local_transport.py",
+    "agents/core/file_checkpoint_history.py",
+    "tests/test_h011_terminal_queue_integration.py",
+    "tests/test_h011_terminal_root_boundary.py",
+    "tests/test_h011_terminal_group_checkpoint.py",
+    "tests/test_h011_group_restore.py",
+    "tests/test_h011_group_maintenance.py",
+    "docs/hermes/h011-terminal-root-integration-plan-2026-10-04.md",
+    "agents/core/orchestrator_bindings.py"
+  ],
+  "source_sha256": {
+    "agents/core/autonomy_coordinator.py": "a09181b46a5b52e512bcb91de57474dbb4814ffca6405749e07987e1380715e7",
+    "agents/core/environments/execution.py": "774d19a059052fa81fd3d4ace459c581a877d49b6b4a044acdb3bedd768aece5",
+    "agents/core/environments/local_transport.py": "f550bf2d109dc213ae4f5ada62d374954562f2c8e4db1159902f16c148c8ad7b",
+    "agents/core/file_checkpoint_history.py": "bad8da453c2079d73cd425d152a08dfa9c8da7fee54a24416708749c12757dbe",
+    "tests/test_h011_terminal_queue_integration.py": "bfb6700718b97b8291f801ac921a98c62bb9ea9e07ae1fdd9dda3d1b4f5ddc35",
+    "tests/test_h011_terminal_root_boundary.py": "cf4d4d1a369425f67b70058004eafa37e17077b290d64b1ba1fe2749de80e6bb",
+    "tests/test_h011_terminal_group_checkpoint.py": "a1951c606080fa5d46024691cdddb1347a8c7fff331acc99b3d47e7556f75e49",
+    "tests/test_h011_group_restore.py": "a3e0fd906aa98baad9f54591d1fa375ddfd625108a489c8d1d4cf92c314499e8",
+    "tests/test_h011_group_maintenance.py": "5ec8d3fb5181e0bb2ce078005e0cd244409e73dd2d9b6e76e9cda0e26ea426fd",
+    "docs/hermes/h011-terminal-root-integration-plan-2026-10-04.md": "4a620a332b7c4c80c97c46c51eb0eac5ee6da59dc115b2ebdda02d601e638032",
+    "agents/core/orchestrator_bindings.py": "bea2910fcde690f6f78453e55e18788b48ef45da476049da6917e66b541c0e95"
+  },
+  "state": "Integrated local dependency unit; H011 remains partial; no new equivalent credit",
+  "behavior": [
+    "Known destructive argv on built-in local transport captures pre/post scoped cwd images, opt-in default off",
+    "Slow capture rechecks request, root and exact task birth/origin before one-use physical owner/consent dispatch CAS",
+    "Actual producer/queue/worker/coordinator provenance uses ISO Task.created_at and normalizes private UUID hex to canonical dashed v4; provenance grants no authority",
+    "Scoped restore preserves later user edits, records pre-undo snapshots, excludes recovery/runtime/dependency/secret/oversize/symlink/hardlink paths",
+    "Timeout/cancel kill and reap before finalization; already-pending or newly-arriving cancellation observes background scan for at most 0.25 seconds",
+    "Derived external writer inventory changed only fourteen unchanged coordinator callsite line numbers; writer identities and columns retained"
+  ],
+  "root_runs": {
+    "terminal-root-red": {
+      "kind": "meaningful missing checkpoint RED",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "junit_path": "/tmp/nerva-h011-terminal-root-red-20261004.xml",
+      "junit_sha256": "f3e678063e482d1a4e6d91326dc60b8f9ddda466975b1a0e03572736f348ad39"
+    },
+    "terminal-root-cancel-red": {
+      "kind": "pending cancellation regression RED",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "junit_path": "/tmp/nerva-h011-terminal-root-cancel-red-20261004.xml",
+      "junit_sha256": "2a56c47f7dc3a2322e15ee5a3c716f9c2aa529e048584f1e398eaced50e103cb"
+    },
+    "terminal-root-origin-behavior-red": {
+      "kind": "actual producer provenance RED",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 0,
+      "junit_path": "/tmp/nerva-h011-terminal-root-origin-behavior-red-20261004.xml",
+      "junit_sha256": "313a19339e5b09c77ec081dff89a09a81ccfbd9afb4a44895a7bba273e6ed66b"
+    },
+    "terminal-root-final-green": {
+      "kind": "final affected GREEN",
+      "tests": 645,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 645,
+      "junit_path": "/tmp/nerva-h011-terminal-root-final-green-20261004.xml",
+      "junit_sha256": "0951c1ebaea5651a2afb4e0915aab001fff3d990b2706c9352a2741af3a810bd",
+      "log_sha256": "af785514f0e0b578654e74646bd408483a3bb27fb928bc7de1381e2f3c79a7fe",
+      "modules": [
+        "tests/test_file_tools.py",
+        "tests/test_file_tools_instruction_class_toolrpc.py",
+        "tests/test_file_tools_instruction_floor.py",
+        "tests/test_h011_checkpoint_origin_turn.py",
+        "tests/test_h011_file_checkpoint_history.py",
+        "tests/test_h011_file_checkpoint_maintenance.py",
+        "tests/test_h011_file_checkpoint_restore.py",
+        "tests/test_h011_group_maintenance.py",
+        "tests/test_h011_group_restore.py",
+        "tests/test_h011_terminal_group_checkpoint.py",
+        "tests/test_h011_terminal_queue_integration.py",
+        "tests/test_h011_terminal_root_boundary.py",
+        "tests/test_h277_smart_terminal_integration.py",
+        "tests/test_h28_target_execution.py",
+        "tests/test_h485_owner_once_actuation.py",
+        "tests/test_h485_owner_once_transport.py",
+        "tests/test_h487_consent_physical_runtime.py",
+        "tests/test_h487_terminal_consent_provenance.py",
+        "tests/test_local_transport.py",
+        "tests/test_ssh_transport.py"
+      ]
+    },
+    "terminal-root-reference-red": {
+      "kind": "binding callsite inventory RED",
+      "tests": 56,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 55,
+      "junit_path": "/tmp/nerva-h011-terminal-root-reference-green-20261004.xml",
+      "junit_sha256": "62269fa709839d73b3d644ca9218556dd98e2f2645a97d4fb9a41b42cbd985bc"
+    },
+    "terminal-root-reference-final-green": {
+      "kind": "reference and binding GREEN",
+      "tests": 56,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed": 56,
+      "junit_path": "/tmp/nerva-h011-terminal-root-reference-final-green-20261004.xml",
+      "junit_sha256": "1408777f13dbd8f98a52c2179e5d75feb25794fa452dee4ccebbb88d7e47f66f"
+    }
+  },
+  "static_checks": {
+    "ruff": "Ten owned Python files passed current repository configuration",
+    "bandit": {
+      "command": "PYTHONPATH=/tmp/nerva-smart-bandit-20261003 /tmp/nerva-pr-python-20261001/bin/python -m bandit -r agents scripts -q -b .bandit-baseline.json",
+      "exit_code": 0,
+      "log_sha256": "ec5fc63e133115b45f35eb2269cf705188100e9cdefb1d9efd626187fc6aa715",
+      "scope_note": "Full agents/scripts scan passed before derived callsite line-number refresh; no executable binding behavior changed"
+    }
+  },
+  "immutable_packages": {
+    "original": {
+      "path": "/tmp/nerva-h011-terminal-group-proto-20261004/implementation.patch",
+      "sha256": "24e47214c3803b4228ab6b9a2943ca05dd8b25ac228c5ae21c652875482e3d1c"
+    },
+    "correction": {
+      "path": "/tmp/nerva-h011-terminal-cleanup-correction-20261004/correction.patch",
+      "sha256": "c29012351c516395ad73bbe8a21738440e490c9075928699c64f19cf0129beca"
+    }
+  },
+  "limits": [
+    "Actual producer/worker/coordinator physical test uses the existing synthetic GRANT authorizer and process, not live kernel/device acceptance",
+    "Existing actual-kernel manual local request returns kernel_queued; its receipt/physical authority integration requires a separate unit",
+    "Owner slash/CLI restore, approved maintenance executor and effect journal remain unimplemented",
+    "Background OS filesystem worker can outlive canceled caller; closure depends on OS read finishing; unfinished groups are not restorable",
+    "Arbitrary scripts/outside cwd/Docker/SSH checkpoints not covered; poststate is observation, not causal proof",
+    "No full backend suite rerun for this H011 unit, no coverage-threshold claim, no live providers or publication"
+  ],
+  "next_action": "Integrate corrected owner inventory, connect owner UX and approved restore/maintenance effect journal; reassess affected records at coherent milestone"
+}

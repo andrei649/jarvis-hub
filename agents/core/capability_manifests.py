@@ -116,6 +116,32 @@ def _action(
 
 # Explicit product decisions.  A drift test pins this key set to ACTION_REGISTRY.
 ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
+    "hermes.runtime": _action(
+        "hermes.runtime",
+        "Run one exact governed operation in the pinned private Hermes runtime.",
+        required=("operation", "target", "arguments", "generation", "owner", "risk_tier"),
+        risk="irreversible_or_money",
+        supports=("execute", "approve", "deny"),
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Stop the runtime to revoke waiting operations before dispatch.",
+            limitations="Completed upstream effects have their own rollback contracts and are never automatically repeated.",
+        ),
+        implementation="agents.core.hermes_runtime.policy:HermesGate.authorize",
+    ),
+    "kanban.worker": _action(
+        "kanban.worker",
+        "Run an exact approved board prompt in its isolated agent session and claimed run.",
+        required=("submission_id", "task_id", "board", "input_sha256", "prompt", "prompt_sha256"),
+        risk="sensitive",
+        supports=("execute", "review"),
+        rollback=RollbackContract(
+            mode="none",
+            description="A failed or cancelled turn releases only its own current board claim.",
+            limitations="Board bookkeeping does not undo tool effects; each tool retains its own authorization and rollback contract.",
+        ),
+        implementation="agents.core.kanban.dispatcher:KanbanDispatcher.execute",
+    ),
     "research": _action(
         "research",
         "Run a read-only research task through configured websearch network egress; "
@@ -442,6 +468,34 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         ),
         implementation="agents.core.permission_ledger:PermissionLedger.apply_grant",
         contract_ref="agents.core.permission_ledger:PERMISSION_GRANT_CONTRACT",
+    ),
+    "checkpoint.restore": _action(
+        "checkpoint.restore",
+        "Restore one owner-selected file checkpoint after human approval and a fresh exact-target check.",
+        required=("approved_task_id",),
+        risk="reversible",
+        supports=("restore",),
+        rollback=RollbackContract(
+            mode="restore",
+            description="A successful restore captures a pre-restore undo snapshot when available.",
+            automatic=False,
+            handler_ref="agents.core.file_checkpoint_history:FileCheckpointHistory.restore",
+            limitations="Instruction-sensitive restores require irreversible-tier approval; an undo snapshot is bounded by retention, and partial file/chat failure needs owner review.",
+        ),
+        implementation="agents.core.file_checkpoint_history:FileCheckpointHistory.restore",
+    ),
+    "checkpoint.maintenance": _action(
+        "checkpoint.maintenance",
+        "Prune or clear only owner-approved checkpoint index rows selected by a fresh scoped preview.",
+        required=("approved_task_id", "action"),
+        risk="irreversible_or_money",
+        supports=("prune", "clear", "clear-legacy"),
+        rollback=RollbackContract(
+            mode="none",
+            description="Deleted checkpoint index rows cannot be restored by this operation.",
+            limitations="Maintenance is index-scoped; shared snapshot blobs are retained, so success does not promise full storage erasure or recovered blob bytes.",
+        ),
+        implementation="agents.core.checkpoint_maintenance:CheckpointMaintenance.apply",
     ),
     "terminal.exec": _action(
         "terminal.exec",

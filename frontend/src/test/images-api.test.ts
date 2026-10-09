@@ -130,11 +130,11 @@ describe('owner image transport', () => {
   });
   it('only exposes validated task fields', async () => {
     vi.mocked(fetch).mockResolvedValue(reply({ task_id: 17, state: 'ready', artifact: { ...artifact, path: 'PRIVATE' }, payload: 'PRIVATE' }));
-    expect(await imageTask(17)).toEqual({ task_id: 17, state: 'ready', artifact });
+    expect(await imageTask(17)).toEqual({ task_id: 17, state: 'ready', artifact, enhance_available: false });
   });
   it('accepts only the finite failed projection with no artifact or leaked provider detail', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(reply({ task_id: 17, state: 'failed', artifact: null, reason: 'PRIVATE', prompt: 'PRIVATE' }));
-    expect(await imageTask(17)).toEqual({ task_id: 17, state: 'failed', artifact: null });
+    expect(await imageTask(17)).toEqual({ task_id: 17, state: 'failed', artifact: null, enhance_available: false });
     for (const value of [
       { task_id: 17, state: 'failed', artifact },
       { task_id: 18, state: 'failed', artifact: null },

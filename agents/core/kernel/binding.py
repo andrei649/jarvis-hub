@@ -69,7 +69,7 @@ class MediationKernelBridge:
         self._kernel = kernel
         self._pending = ContextVar(f"mediation_kernel_decision_{id(self)}", default=None)
 
-    def __call__(self, action, capability=None, budget=None):
+    def __call__(self, action, capability=None, budget=None, *, approval_check=None):
         if not callable(self._kernel):
             raise RuntimeError("action kernel is unavailable")
         self._pending.set(None)
@@ -77,12 +77,22 @@ class MediationKernelBridge:
             authorized_action = deepcopy(action)
         except Exception as exc:
             raise RuntimeError("action could not be snapshotted for mediation") from exc
-        if capability is None and budget is None:
-            decision = self._kernel(action)
+        # Preserve the existing call shapes exactly unless the trusted
+        # receipt callback is explicitly supplied by the runner.
+        if approval_check is None:
+            if capability is None and budget is None:
+                decision = self._kernel(action)
+            elif budget is None:
+                decision = self._kernel(action, capability)
+            else:
+                decision = self._kernel(action, capability=capability, budget=budget)
+        elif capability is None and budget is None:
+            decision = self._kernel(action, approval_check=approval_check)
         elif budget is None:
-            decision = self._kernel(action, capability)
+            decision = self._kernel(action, capability, approval_check=approval_check)
         else:
-            decision = self._kernel(action, capability=capability, budget=budget)
+            decision = self._kernel(action, capability=capability, budget=budget,
+                                    approval_check=approval_check)
         self._pending.set(_OneShotDecision(authorized_action, decision))
         return decision
 
@@ -93,6 +103,20 @@ class MediationKernelBridge:
         if released is None or released[0] != action:
             return None
         return released[1]
+
+    def revalidate(self, action, capability=None, *, approval_check=None):
+        """Check live kernel floors without changing the pending B7 handoff."""
+        from . import Decision, Verdict
+
+        check = getattr(self._kernel, "revalidate", None)
+        if not callable(check):
+            return Decision(Verdict.DENY, reason="kernel revalidation unavailable")
+        try:
+            if approval_check is None:
+                return check(action, capability=capability)
+            return check(action, capability=capability, approval_check=approval_check)
+        except Exception:
+            return Decision(Verdict.DENY, reason="kernel revalidation unavailable")
 
     def consume_for_enqueue(self, *, agent, kind, title, payload, origin):
         """Release a broker decision matching the exact persisted task fields.
@@ -177,22 +201,43 @@ def make_action_kernel(orch, *, loop_detector=None, budget_ledger=None):
     The import of ``authorize`` is local so this module stays cheap and cycle-free
     (a broker importing ``binding`` must not pull the whole kernel/autonomy graph).
     """
+    from . import Decision, Verdict
     from . import authorize as _authorize_action
+    from . import revalidate as _revalidate_action
 
     pol = getattr(getattr(orch, "autonomy", None), "policy", None) or getattr(
         orch, "autonomy_policy", None
     )
     if pol is None:
         return None
-    return functools.partial(
-        _authorize_action,
-        kill_switch=getattr(orch, "kill_switch", None),
-        capabilities=getattr(orch, "capabilities", None),
-        policy=pol,
-        audit=getattr(orch, "intent_log", None),
-        loop_detector=loop_detector,
-        budget_ledger=budget_ledger,
-    )
+    bound = {
+        "kill_switch": getattr(orch, "kill_switch", None),
+        "capabilities": getattr(orch, "capabilities", None),
+        "policy": pol,
+        "audit": getattr(orch, "intent_log", None),
+        "loop_detector": loop_detector,
+        "budget_ledger": budget_ledger,
+    }
+    kernel = functools.partial(_authorize_action, **bound)
+
+    def revalidate_bound(action, capability=None, budget=None, *, approval_check=None):
+        # A runtime rewire revokes the captured gate for an in-flight dispatch.
+        # Ordinary authorize retains its existing binding until the next bind.
+        try:
+            current_policy = getattr(getattr(orch, "autonomy", None), "policy", None) or getattr(
+                orch, "autonomy_policy", None
+            )
+            if (current_policy is not pol
+                    or getattr(orch, "kill_switch", None) is not bound["kill_switch"]
+                    or getattr(orch, "capabilities", None) is not bound["capabilities"]):
+                return Decision(Verdict.DENY, reason="kernel binding changed")
+            return _revalidate_action(action, capability, budget,
+                                      approval_check=approval_check, **bound)
+        except Exception:
+            return Decision(Verdict.DENY, reason="kernel revalidation unavailable")
+
+    kernel.revalidate = revalidate_bound
+    return kernel
 
 
 def make_egress_kernel_hook(get_kernel):

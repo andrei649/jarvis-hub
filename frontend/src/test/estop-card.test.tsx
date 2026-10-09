@@ -27,8 +27,13 @@ beforeEach(() => {
 describe('EstopCard (AUTONOMY PAUSE)', () => {
   it('reports a pending read until the server settles, then ready without changing the state text', async () => {
     let release!: (value: unknown) => void;
-    global.fetch = vi.fn(() => new Promise(resolve => { release = resolve; }));
+    global.fetch = vi.fn((url, init) =>
+      String(url) === '/api/ops/estop' && (init?.method || 'GET') === 'GET'
+        ? new Promise(resolve => { release = resolve; })
+        : Promise.resolve({ ok: true, status: 200, json: async () => ({}) })
+    );
     render(<AdminMode t={t} />);
+    expect(fetch).toHaveBeenCalledWith('/api/ops/estop', expect.objectContaining({ method: 'GET' }));
     const card = screen.getByTestId('estop-card');
     expect(card.getAttribute('data-estop-readiness')).toBe('pending');
     expect(card.getAttribute('aria-busy')).toBe('true');

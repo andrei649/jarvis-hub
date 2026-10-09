@@ -262,6 +262,20 @@ async def _prompt(orch, agent_id: str, agent) -> dict:
     rails = orch._runtime_state_block() + orch._language_block() + orch._data_grounding_block({})
     text = await orch._build_agent_turn_text(agent_id, "", runtime_block=rails, freeze_core=False)
     turn = orch._build_agent_prompt(agent, text, {})
+    route_info: dict[str, Any] = {"resolved": False}
+    preview = getattr(getattr(orch, "llm_router", None), "preview_backend", None)
+    if callable(preview):
+        try:
+            backend, model, route = preview(agent_id, turn)
+            prepare = getattr(agent, "model_system_prompt", None)
+            if callable(prepare):
+                from .operating_prompt import guidance_preview_scope
+
+                with guidance_preview_scope():
+                    system = prepare(backend, model, system)
+            route_info.update(resolved=True, model=model, route=route)
+        except Exception:
+            route_info["route_error"] = "unavailable"
     # What every turn pays before history, the user's words and the tool schemas.
     tokens = estimate_tokens(system) + estimate_tokens(turn)
     system, turn = redactor.redact_text(system), redactor.redact_text(turn)
@@ -269,7 +283,7 @@ async def _prompt(orch, agent_id: str, agent) -> dict:
     shown_system = _cap(system, PROMPT_CAP_BYTES)
     shown_turn = _cap(turn, PROMPT_CAP_BYTES - len(shown_system.encode("utf-8")))
     return {"system": shown_system, "turn": shown_turn, "bytes": total, "tokens": tokens,
-            "cap": PROMPT_CAP_BYTES, "truncated": total > PROMPT_CAP_BYTES, "withheld": False}
+            "cap": PROMPT_CAP_BYTES, "truncated": total > PROMPT_CAP_BYTES, "withheld": False, **route_info}
 
 
 __all__ = ["DESCRIPTION_CHARS", "PROMPT_CAP_BYTES", "SECTIONS", "VIEWS", "build_inspector"]

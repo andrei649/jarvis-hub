@@ -83,7 +83,7 @@ def build_session_key(source: SessionSource) -> str:
 
 
 def session_type(source: SessionSource) -> str:
-    """A transport chat ID alone does not imply a thread."""
+    """A transport conversation ID is not itself proof of a threaded chat."""
     kind = str(source.chat_type or "").lower()
     if kind in {"thread", "topic"}:
         return "thread"

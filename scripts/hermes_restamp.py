@@ -890,7 +890,15 @@ def stamp(root: Path, patch: Any, *, base_sha: str | None = None, assessed_at: s
         kept = [review for review in data["reviews"] if review.get("id") not in reviews]
         frozen = _serialize([kept, data.get("scope_reopenings")])
         result = dict(data)   # same key order; untouched values stay the very same objects
-        result["reviews"] = sorted([*kept, *reviews.values()], key=lambda review: review["id"])
+        # Preserve the existing order as well as bytes of untouched reviews.
+        # Historical assessments may append batches rather than sort every row.
+        existing_ids = {review["id"] for review in data["reviews"]}
+        result["reviews"] = [reviews.get(review["id"], review) for review in data["reviews"]]
+        for review in sorted(reviews.values(), key=lambda review: review["id"]):
+            if review["id"] not in existing_ids:
+                position = next((i for i, row in enumerate(result["reviews"])
+                                 if row["id"] > review["id"]), len(result["reviews"]))
+                result["reviews"].insert(position, review)
     except (AttributeError, KeyError, TypeError) as exc:
         raise Refused(f"the recorded reviews are malformed: {exc}") from exc
     result["base_sha"] = base_sha if base_sha is not None else \

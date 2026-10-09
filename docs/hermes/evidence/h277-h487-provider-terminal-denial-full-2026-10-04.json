@@ -1,0 +1,97 @@
+{
+  "generated_at": "2026-10-04T05:12:03.605346+00:00",
+  "goal": "All697 pinned Hermes capabilities; provider, terminal kernel, native denial and active judge integration milestone",
+  "base_sha": "e84f0922b230a2349933c67d8511cd3684c17e1a",
+  "head_sha": "3e21a7cddc64f0c4645eaec6e0dd600f4de1a248",
+  "integrated_commits": [
+    "9bfa085c2caa4d82ec5efe20082904052c5aae85",
+    "e37ffa765d667d4ea8494695a5279ee698b1d06b",
+    "326c6bef89d078a0aab464b912fa5457f8b5e50e",
+    "02aba7049efb455ed43dbee8afa3d0d2bbaab2c6",
+    "06812d4e36c8a5a6380b464e3a26503b80a25f4e",
+    "9a23ea72645df7e48cf183364bb4118090a015e1",
+    "1f48fa6fb072940edab0a4040688a8e27f4e480a",
+    "220052441ca2befdd5a839dc98a937486e0b1cb6",
+    "23af87a931a8f16a4c457af4436901eb527ae535",
+    "c6b24af4860ad29544c384eb7129a692ebe05ba8",
+    "27eeccd40f7cfb2d0415fd8ea596c8d961b3a918",
+    "3e21a7cddc64f0c4645eaec6e0dd600f4de1a248"
+  ],
+  "source_commits": [
+    "e37ffa765d667d4ea8494695a5279ee698b1d06b",
+    "326c6bef89d078a0aab464b912fa5457f8b5e50e",
+    "02aba7049efb455ed43dbee8afa3d0d2bbaab2c6",
+    "06812d4e36c8a5a6380b464e3a26503b80a25f4e",
+    "9a23ea72645df7e48cf183364bb4118090a015e1",
+    "1f48fa6fb072940edab0a4040688a8e27f4e480a",
+    "23af87a931a8f16a4c457af4436901eb527ae535",
+    "c6b24af4860ad29544c384eb7129a692ebe05ba8"
+  ],
+  "state": "Successful terminal frozen full backend run; local only",
+  "full_backend": {
+    "tests": 22699,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 35,
+    "passed": 22664,
+    "ordinary_skips": 34,
+    "existing_xfail": 1,
+    "expected_failure_cases": [
+      "tests.test_h28_action_hierarchy_router::test_tool_backed_ids_match_the_real_toolrpc_registrations"
+    ],
+    "junit_sha256": "f1dd53a9bb68d93e1e80b93405e82f82ed61cedabc8a5124d39174137235812e",
+    "log_sha256": "880cbef3e6a003162b574f89c090424081a1a7d6783ea64ac44174f0d3359e89",
+    "exit_code": 0,
+    "command": [
+      "/tmp/nerva-pr-python-20261001/bin/python",
+      "-m",
+      "pytest",
+      "tests",
+      "--timeout=90",
+      "-q",
+      "--tb=short",
+      "--junitxml=/tmp/nerva-h277-h487-provider-terminal-denial-full-20261004.xml"
+    ]
+  },
+  "frozen_inputs": {
+    "paths": 3049,
+    "drift": 0,
+    "manifest_sha256": "004d169a1e9f5d3b261ead864fa0c52d390a0cb3159ae7d54d1c169212626873"
+  },
+  "source_sha256": {
+    "agents/core/autonomy/approval_judge.py": "a31ef152f88eb118723c1bc058ca322c46afdbd248d6422550054a60a1b73f2c",
+    "agents/core/autonomy/consent_prompts.py": "a9a9374fa2944a86b4d628e96ed5defc8f1fcfe678981a507f5127f0748ef19c",
+    "agents/core/autonomy/owner_once_prompts.py": "868b7cf1eb338a83326291c9b2c486ecb463345f266ac90856013524555448d8",
+    "agents/core/autonomy/queue.py": "439c735c4ee14c45cc3e56c90528750a00a06994e992c7277caa001b00367470",
+    "agents/core/autonomy/terminal_review.py": "217c8be2323c0f0f2bf7d6b052c8a03e17a367714f83ab45dbd941cad99d10f2",
+    "agents/core/autonomy_coordinator.py": "66d9cd9e790a33b68a23c17ed9501dfb81788c398a99dd28e1d2e252ed27f5d3",
+    "agents/core/channels/telegram.py": "2a7f5e392f04d11a6e7072bbe5d6900a3efa091e1902a0c63ea2f359c7064b1e",
+    "agents/core/environments/execution.py": "2109367db7189c70038d047b9f06c263676e3fae097be3b1094ae5f4ebb699b4",
+    "agents/core/environments/legacy_terminal_dispatch.py": "bad5094d35e31ff500b8eca2547ea743d7ead8481598b0627582b7e407c7dc53",
+    "agents/core/llm/auxiliary_recovery.py": "f10f14a0912d14811e7ae108ebcefd23af4eeea55eb7d96d2ff817685528e4b5",
+    "agents/core/llm/deepinfra.py": "d1e2c830bc74e7db7dc6be778c8c9bee80409c75cc2eee6c1a6582ccf4e93cc6",
+    "agents/core/llm/hybrid_router.py": "407a823d44acb2dc4985485fad4d2174d2912e523fcc73882a3b9cd62dd34595",
+    "agents/core/llm/providers/__init__.py": "ece9ff566f1be1f05fe3ad634a162418587fe0f82e0269c194fb2e6a322a2174",
+    "agents/core/llm/vision_main.py": "3c3dd0eb678fea4240e43e7571cd05329f7ba25583106ff9e37229831d243073",
+    "agents/core/orchestrator_bindings.py": "4ce62b9ae203b1057a074417fd65cd176c9975d3c326b2fc5bd91682042b8d23",
+    "agents/core/sandbox.py": "42bef3d5a553d6339646fe0067a9ab45ea0ec7e7c0ee9cd04b9daca92b266305",
+    "agents/core/settings_db.py": "38cfbd29879cc32215376c696eae5ccb62878e891fd290f7ece31fd10ae29ccc",
+    "tests/test_h277_auxiliary_active_route_recovery.py": "3f091ce9dd262f453ac6480418d6d28cd2a398bd157b5a2337ea4afea251a3e0",
+    "tests/test_h277_auxiliary_rejection_wording.py": "3a467d53481f5bab5a2d7f605f500df8bddae0628722d25051d414ff81f22d65",
+    "tests/test_h277_deepinfra_main.py": "93bb0f67bfe2a6f17a81e55cd32d4ec801d53f05fd56ce60b5479ddfac092f5d",
+    "tests/test_h277_deepinfra_vision_roles.py": "ace9d232665032190f86302cb757b79187b380ed6281e51eba34498e3f69403c",
+    "tests/test_h277_legacy_docker_kernel.py": "e12e6d88817a993545aac108fe0a039c54bf800479ed61a950ebae73f18eaf96",
+    "tests/test_h277_smart_terminal_integration.py": "bf6c342fc71fbe55311099f2456a07ec39d1aeeca796023e837570d5bfaa0823",
+    "tests/test_h487_telegram_consent_denial.py": "793a460eac8fdad0a3936cba4dfdd148f39c22e00d02260417b0a42afebd1b76",
+    "tests/test_h487_telegram_owner_once_denial.py": "0daca5bbeab787980926504d72ab1d7211680c82b921756956ea0feb8a03d026"
+  },
+  "limits": [
+    "Ordinary skips and existing xfail are separate; no configured coverage threshold or100percent coverage claim",
+    "Frontend/mobile counts remain historical; this receipt verifies backend only",
+    "H277/H487 remain incomplete; no new equivalent credit",
+    "Existing warnings retained; no live provider/device/remote CI acceptance",
+    "No push, merge, deploy or provider activation",
+    "Later source or test changes require separate verification; external H011 prototypes are not covered"
+  ],
+  "next_action": "Integrate reviewed H011 store and durable conversation rewind, then terminal and owner CLI/slash wiring; continue all697"
+}

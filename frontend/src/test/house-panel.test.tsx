@@ -70,6 +70,30 @@ describe('HousePanel (H30.5)', () => {
     expect(alerts.some((el) => /presence write failed/i.test(el.textContent || ''))).toBe(true);
   });
 
+  it('explains only a fresh, explicitly selected pseudonym and labels model text', async () => {
+    const fetchMock = vi.fn((url, opts = {}) => String(url).includes('/api/house/presence/explain')
+      ? response({ status: 'explained', decision: { status: 'present', privacy_context: 'household', room_id: 'kitchen' }, explanation: 'Motion and tracker agree.' })
+      : response(state()));
+    global.fetch = fetchMock;
+    render(<HousePanel />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /explain presence.*aaaaaaaa/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/house/presence/explain'))).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: /explain presence.*aaaaaaaa/i }));
+    await waitFor(() => expect(screen.getByText(/model explanation · Motion and tracker agree/i)).toBeTruthy());
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/house/presence/explain'));
+    expect(JSON.parse(call[1].body)).toEqual({ occupant_id: `occ-${'a'.repeat(32)}` });
+  });
+
+  it('does not offer model explanation for stale or unavailable presence', async () => {
+    global.fetch = vi.fn(() => response(state({ presence_status: 'degraded', presence: [
+      { occupant_id: `occ-${'a'.repeat(32)}`, status: 'present', fresh: false },
+    ] })));
+    render(<HousePanel />);
+    await waitFor(() => expect(screen.getByText(/presence write failed/i)).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /explain presence/i })).toBeNull();
+  });
+
   it('shows an honest default-off state and no control forms', async () => {
     global.fetch = vi.fn(() => response(state({ enabled: false, status: 'disabled', reason: 'house_brain_disabled', rooms: [], devices: [], presence: [] })));
 

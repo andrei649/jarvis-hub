@@ -19,6 +19,7 @@ class ToolLoopExitReason(StrEnum):
     NO_CAPABILITY = "no_capability"
     NO_TOOLS = "no_tools"
     TOOLS_WITHDRAWN = "tools_withdrawn"
+    GUARDIAN_DENIED = "guardian_denied"
     REPEATED_CALL = "repeated_call"
     APPROVAL_REQUIRED = "approval_required"
     FAILING_TOOL = "failing_tool"

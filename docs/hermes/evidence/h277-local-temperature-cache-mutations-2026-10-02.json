@@ -1,0 +1,55 @@
+{
+  "scope": "H277 local auxiliary temperature capability memory",
+  "files_sha256": {
+    "agents/core/llm/auxiliary_recovery.py": "b7d8d54751e6c56dcef7a5642bc237df8f65bdbae82d6faa0148e35c9ca0172e",
+    "agents/core/llm/base.py": "8713eea2a267d8da7c0a09709877692ca8eba806bbb17a95f37dfe96952a19b3",
+    "tests/test_h277_auxiliary_parameter_recovery.py": "b45ab8472b111fb06f411009688fc95e9bafe24f78f74a208fa62a4d566dea22"
+  },
+  "baseline_passed": 3,
+  "mutants_killed": 3,
+  "mutants_total": 3,
+  "results": [
+    {
+      "case": "ignore_cache",
+      "mutant": false,
+      "exit_code": 0,
+      "baseline_passed": true,
+      "killed": false
+    },
+    {
+      "case": "forget_rejection",
+      "mutant": false,
+      "exit_code": 0,
+      "baseline_passed": true,
+      "killed": false
+    },
+    {
+      "case": "reuse_other_client",
+      "mutant": false,
+      "exit_code": 0,
+      "baseline_passed": true,
+      "killed": false
+    },
+    {
+      "case": "ignore_cache",
+      "mutant": true,
+      "exit_code": 1,
+      "baseline_passed": false,
+      "killed": true
+    },
+    {
+      "case": "forget_rejection",
+      "mutant": true,
+      "exit_code": 1,
+      "baseline_passed": false,
+      "killed": true
+    },
+    {
+      "case": "reuse_other_client",
+      "mutant": true,
+      "exit_code": 1,
+      "baseline_passed": false,
+      "killed": true
+    }
+  ]
+}

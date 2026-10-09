@@ -33,6 +33,7 @@ import logging
 import math
 import re
 import secrets
+import time
 from collections.abc import Callable, Coroutine, Iterable, Mapping
 from contextlib import suppress
 from functools import partial
@@ -50,6 +51,7 @@ from .llm.tool_protocol import (
     ToolSpec,
     ToolTurn,
 )
+from .native_human_wait import current_human_wait_scope, runtime_human_wait_scope
 from .security.quarantine import (
     fence_tool_result,
     injection_flag_names,
@@ -211,9 +213,11 @@ class AgentToolRuntime:
         result_store: Any | None = None,
         result_thresholds: Callable[[], Mapping[str, object]] | None = None,
         context_window_tokens: Callable[[], int] | None = None,
+        guidance_context: Callable[[str], Mapping[str, Any] | None] | None = None,
     ) -> None:
         self._server = server
         self._tool_profile = tool_profile
+        self._guidance_context = guidance_context
         # Separate from the offer hook: the coordinator's offer wrapper writes
         # H661 turn notes, while dispatch needs authorization only.
         self._execution_profile = execution_profile
@@ -334,6 +338,63 @@ class AgentToolRuntime:
         }
         return tools, gated_tools, untrusted_tools
 
+    def _guided_system(self, base: str, *, model: str, agent_id: str,
+                       metadata: list[dict[str, Any]], backend: Any = None) -> str:
+        """Optional upstream advice over the exact offer, never tool authority."""
+        from .conversation_clock import active_clock, render_snapshot
+        from .kanban.context import current_context as current_kanban_context
+        from .operating_guidance import build_operating_guidance
+        from .operating_prompt import OperatingPrompt, original_prompt
+        from .steering import steering_available
+
+        frame = active_clock()
+        base = render_snapshot(original_prompt(base), frame.snapshot if frame is not None else None)
+        if self._guidance_context is None:
+            return base
+        try:
+            context = self._guidance_context(agent_id)
+            if context is None:
+                return base
+            capabilities = frozenset({"parallel_tool_calls", *(
+                "tool:" + row["name"] for row in metadata)})
+            environment = context.get("environment")
+            facts = context.get("execution_context")
+            if (callable(facts) and "tool:terminal_run" in capabilities
+                    and (context.get("enabled") or {}).get("environment_hint", True)):
+                try:
+                    environment = facts().get("environment")
+                except Exception:
+                    logger.debug("optional execution facts unavailable")
+            board_context = current_kanban_context()
+            assigned_task = (board_context.task_id if board_context is not None
+                             and board_context.profile == agent_id
+                             and board_context.can_mutate and not board_context.delegated else None)
+            guidance = build_operating_guidance(
+                model=model, surface=context.get("surface", ""),
+                enabled=context.get("enabled"), capabilities=capabilities,
+                environment=environment,
+                platform_overrides=context.get("platform_overrides"),
+                profile=context.get("profile"),
+                steer_available=steering_available(agent_id),
+                kanban_task=assigned_task,
+                provider=getattr(getattr(backend, "profile", None), "id", ""),
+            )
+        except Exception:
+            logger.warning("optional operating guidance could not be built; tool profile unchanged")
+            return base
+        return OperatingPrompt("\n\n".join(part for part in (base, guidance) if part), base=base, model=model)
+
+    def prepare_system(self, base: str, *, backend: Any, model: str,
+                       agent_id: str, allow_tools: bool = True) -> str:
+        """Prepare the same prefix before cache acquisition or text generation."""
+        metadata = self._resolve_offer(agent_id) if allow_tools and self.can_run(backend, agent_id=agent_id) else []
+        return self._guided_system(base, model=model, agent_id=agent_id, metadata=metadata, backend=backend)
+
+    def guidance_budget_tokens(self, agent_id: str) -> int:
+        """Conservative family/registry union for planning before model selection."""
+        return estimate_messages([{"role": "system", "content": self._guided_system(
+            "", model="gpt gemini", agent_id=agent_id, metadata=self._server.tools())}])
+
     def _resolve_offer(self, agent_id: str) -> list[dict[str, Any]]:
         """Re-resolve the offer from the LIVE registry, for a compaction boundary (H672).
 
@@ -412,12 +473,13 @@ class AgentToolRuntime:
         # what the model sent in this turn from what an earlier turn or a script wrote.
         turn = bind_tool_turn(secrets.token_hex(8))
         try:
-            result = await self._run_turn(
-                agent_id=agent_id, backend=backend, model=model, prompt=prompt, system=system,
-                max_tokens=max_tokens, temperature=temperature, event_sink=event_sink,
-                wall_seconds=wall_seconds, usage_sink=usage_sink, effective_window=effective_window,
-                before_model_call=before_model_call,
-            )
+            with runtime_human_wait_scope():
+                result = await self._run_turn(
+                    agent_id=agent_id, backend=backend, model=model, prompt=prompt, system=system,
+                    max_tokens=max_tokens, temperature=temperature, event_sink=event_sink,
+                    wall_seconds=wall_seconds, usage_sink=usage_sink, effective_window=effective_window,
+                    before_model_call=before_model_call,
+                )
         finally:
             reset_tool_turn(turn)
         # Only this outer owner reports a settled exit. A cancellation-resistant child
@@ -481,6 +543,7 @@ class AgentToolRuntime:
             try:
                 return await self._await_owned(
                     loop, timeout=effective_wall_seconds, context=turn_context,
+                    exclude_human_wait=True,
                 )
             except _OwnedTimeout:
                 return ToolLoopResult(_DEADLINE_REPLY, ToolLoopExitReason.DEADLINE)
@@ -583,7 +646,8 @@ class AgentToolRuntime:
             return ToolLoopResult(_NO_TOOLS_REPLY, ToolLoopExitReason.NO_TOOLS)
         tools, gated_tools, untrusted_tools = self._specs_for(metadata)
         messages = [
-            {"role": "system", "content": system},
+            {"role": "system", "content": self._guided_system(
+                system, model=model, agent_id=agent_id, metadata=metadata, backend=backend)},
             {"role": "user", "content": prompt},
         ]
         limit = self._iteration_limit()
@@ -595,6 +659,7 @@ class AgentToolRuntime:
         restated: dict[str, str] = {}   # a restated tool's last answer, as a revision
         scripts_run = 0                 # scripts this turn: each one opens a new revision
         seen_results: dict[str, str] = {}
+        guardian_stopped = False
 
         # H298 — what this turn has already put in the window, and how big that window
         # is. One cap cannot express the first: five results at 40% of the limit each
@@ -606,6 +671,9 @@ class AgentToolRuntime:
                                  "effective_window": known_window or 0}
         schema_tokens = estimate_tokens(json.dumps([tool.as_openai() for tool in tools])) if known_window else 0
         while budget.consume():
+            from .steering import prepare_steering_rows
+            steering = prepare_steering_rows(agent_id)
+            messages.extend(steering.rows)
             folds_before = len(compacted)
             if (known_window is not None or len(messages) > 2) and not await self._compact_context(
                 messages,
@@ -666,6 +734,16 @@ class AgentToolRuntime:
                         estimate_tokens(json.dumps([tool.as_openai() for tool in tools]))
                         if known_window else 0
                     )
+                rebuilt = self._guided_system(system, model=model, agent_id=agent_id,
+                                              metadata=metadata, backend=backend)
+                if rebuilt != messages[0]["content"]:
+                    messages[0] = {**messages[0], "content": rebuilt}
+                    if not await self._compact_context(
+                        messages, compacted, model=model, max_tokens=max_tokens,
+                        effective_window=known_window, schema_tokens=schema_tokens,
+                        agent_id=agent_id, event_sink=event_sink,
+                    ):
+                        return _CONTEXT_REPLY
             # H513: every round rechecks revocation after tool/profile awaits.
             # Errors propagate before provider I/O; an unreadable gate never widens.
             if before_model_call is not None:
@@ -675,16 +753,23 @@ class AgentToolRuntime:
             from .llm.data_handling import physical_request_scope
             # Scope only generation/retries, never ToolRPC or spawned judge work.
             with physical_request_scope(before_model_call):
+                from .approval_outcomes import mark_invocation_outcomes_visible
+                mark_invocation_outcomes_visible(messages)
                 turn = await backend.generate_tool_turn(
                     model=model,
-                    messages=messages,
-                    tools=tools,
+                    messages=[{key: value for key, value in row.items() if key != "display_kind"}
+                              for row in messages],
+                    tools=[] if guardian_stopped else tools,
                     max_tokens=max_tokens,
                     temperature=temperature,
                 )
+            steering.acknowledge()
             self._report_usage(usage_sink, turn)
             if not turn.tool_calls:
                 return ToolLoopResult(turn.content, ToolLoopExitReason.MODEL_RESPONSE)
+            if guardian_stopped:
+                from .approval_outcomes import DENIAL_BREAKER_NOTICE
+                return ToolLoopResult(DENIAL_BREAKER_NOTICE, ToolLoopExitReason.GUARDIAN_DENIED)
 
             # A provider response is untrusted input. Keep at most the executable
             # fan-out plus one representative overflow call so both scheduling
@@ -781,6 +866,11 @@ class AgentToolRuntime:
                     _approval_reply(result for result, _ in observations),
                     ToolLoopExitReason.APPROVAL_REQUIRED,
                 )
+            from .approval_outcomes import _has_active_denial_breaker
+            if any(result.get('reason') == 'guardian_denied' and _has_active_denial_breaker(result)
+                   for result, _ in observations):
+                guardian_stopped = True
+                continue
             failing = self._note_failures(bounded_calls, observations, failure_streaks)
             if failing is not None:
                 call, result = failing
@@ -1135,7 +1225,7 @@ class AgentToolRuntime:
             )
 
         approval_lock = asyncio.Lock()
-        approval_state = {"required": False}
+        approval_state = {"required": False, "guardian_stopped": False}
         pending = [
             self._execute_one(
                 call,
@@ -1300,6 +1390,12 @@ class AgentToolRuntime:
 
         if gated:
             async with approval_lock:
+                if approval_state.get('guardian_stopped'):
+                    from .approval_outcomes import DENIAL_BREAKER_NOTICE
+                    return await self._local_failure(
+                        call, agent_id=agent_id, reason='guardian_denied',
+                        event_sink=event_sink, extra={'notice': DENIAL_BREAKER_NOTICE}, spent=spent,
+                    )
                 if approval_state["required"]:
                     return await self._local_failure(
                         call,
@@ -1316,6 +1412,10 @@ class AgentToolRuntime:
                 )
                 if observation[0].get("reason") == "approval_required":
                     approval_state["required"] = True
+                from .approval_outcomes import _has_active_denial_breaker
+                if (observation[0].get('reason') == 'guardian_denied'
+                        and _has_active_denial_breaker(observation[0])):
+                    approval_state['guardian_stopped'] = True
                 return observation
 
         # `spent` belongs here above all: this is the path an ordinary tool call
@@ -1352,6 +1452,7 @@ class AgentToolRuntime:
                     **handle_kwargs,
                 ),
                 timeout=self._tool_timeout_seconds,
+                exclude_human_wait=True,
             )
         except _OwnedTimeout:
             raw_result = {
@@ -1533,6 +1634,8 @@ class AgentToolRuntime:
         }
 
     async def _emit(self, event_sink: ToolEventSink | None, event: dict[str, Any]) -> None:
+        from .channels.session_lifecycle import note_session_activity
+        note_session_activity()
         if event_sink is None:
             return
         sink_id = id(event_sink)
@@ -1585,10 +1688,25 @@ class AgentToolRuntime:
         *,
         timeout: float,
         context: contextvars.Context | None = None,
+        exclude_human_wait: bool = False,
     ) -> Any:
+        scope = current_human_wait_scope() if exclude_human_wait else None
+        baseline = scope.seconds() if scope is not None else 0.0
+        deadline = time.monotonic() + timeout
         task = asyncio.create_task(coroutine, context=context)
         try:
-            done, _ = await asyncio.wait({task}, timeout=timeout)
+            if scope is None:
+                done, _ = await asyncio.wait({task}, timeout=timeout)
+            else:
+                # Only this deadline excludes credit earned after its own start.
+                # Poll while a native prompt is pending so a newly opened window
+                # can extend the deadline before the original timeout fires.
+                while True:
+                    credited = max(0.0, scope.seconds() - baseline)
+                    remaining = deadline + credited - time.monotonic()
+                    done, _ = await asyncio.wait({task}, timeout=max(0.0, min(0.02, remaining)))
+                    if task in done or remaining <= 0:
+                        break
         except BaseException:
             self._detach(task)
             raise

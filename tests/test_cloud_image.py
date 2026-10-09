@@ -701,6 +701,7 @@ async def test_a_provider_failure_is_a_failure_under_its_own_reason(cloud, respo
     assert task.status == "done"
     assert cloud.runtime.project(task).model_dump() == {
         "task_id": task.id, "state": "failed", "artifact": None,
+        "resume_available": False, "enhance_available": False,
     }
     assert len(cloud.requests) == 1
     assert not list((cloud.root / "media" / "generated").glob("*.png"))
@@ -952,7 +953,8 @@ async def test_a_mediation_store_that_breaks_at_dispatch_fails_the_task_before_t
     """Round 6, item 2, the worker's own pre-dispatch check: a store that cannot be read
     fails the task before any handler runs (as a refused validation always did), names
     the store, and records nothing for the capability — the handler never ran."""
-    hits = _break_mediation_store_inside(cloud.queue, "tick")
+    # Serial and parallel ticks share this exact pre-handler validation seam.
+    hits = _break_mediation_store_inside(cloud.queue, "_run_runnable")
     task = await finish(cloud)
     assert hits and not cloud.requests
     assert task.status == "failed"

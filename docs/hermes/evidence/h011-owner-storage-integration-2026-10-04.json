@@ -1,0 +1,217 @@
+{
+  "goal": "Complete all 697 pinned Hermes capabilities; H011 remains partial",
+  "generated_at": "2026-10-04T07:54:50.093971Z",
+  "base_sha": "2757922d4d0ee48376a538ec529add9125976c5f",
+  "source_head": "6abf999f8fe341ed7483719b16157b5792989906",
+  "scope": "Local owner checkpoint query/CLI/preappend flow, manual local/SSH kernel mediation, selected/forced restore and exact index-maintenance primitives",
+  "source": [
+    {
+      "path": "agents/cli/nerva.py",
+      "sha256": "7682bc79625cb1b438987f9348f7c08d6da6346b31ca93dc382b4b95a92d4bc0"
+    },
+    {
+      "path": "agents/core/checkpoint_commands.py",
+      "sha256": "2ee64e98b9cd2a4c36d990a473d4578775ecf7cb6c9e68ebb5db4daae335b33a"
+    },
+    {
+      "path": "agents/core/checkpoint_inventory.py",
+      "sha256": "27887df2325f8a65b2d01056d46cc3ebc33e3d04210550a87b92ba521f04eda3"
+    },
+    {
+      "path": "agents/core/checkpoint_maintenance.py",
+      "sha256": "6dbea7fcc274dd8df5e83a23ccc14f021f92b023923d865730630a69f0683d29"
+    },
+    {
+      "path": "agents/core/commands.py",
+      "sha256": "2adb7d96d9a2f4a54d7a8f11e339f42de4ffbcd71061d1e7aff2f8a9d314a501"
+    },
+    {
+      "path": "agents/core/environments/execution.py",
+      "sha256": "eaff9aa16c5d07d6556475601898bc555327bb575a689ada65eed206dc658d5d"
+    },
+    {
+      "path": "agents/core/environments/legacy_terminal_dispatch.py",
+      "sha256": "242081397d741f9e5d0229784c36651797eb77e1c4a30fab6f01943c63ed84eb"
+    },
+    {
+      "path": "agents/core/environments/local_transport.py",
+      "sha256": "7b742f3ebc1325225f2779035b71acd3967ef762120eb3eea6185839ba674e1f"
+    },
+    {
+      "path": "agents/core/environments/ssh_transport.py",
+      "sha256": "49d8e0491f5034151b4b8ac5088c0df11f50b5f64cfc8f7a39ab20965d3c8bb2"
+    },
+    {
+      "path": "agents/core/file_checkpoint_history.py",
+      "sha256": "7fea56380d56a1b8981a2567d358990da7c6cbbfd2aa33636adec3908055aa43"
+    },
+    {
+      "path": "agents/core/orchestrator.py",
+      "sha256": "ed8f76769a1ae7c25e46a3ad10f761c50d43c8e5d86eb4299f4bae1ba6b4ec6a"
+    },
+    {
+      "path": "agents/web.py",
+      "sha256": "c849fd048c7bb90bab1a9e6d0566d39a46dc11beb1b6f0d5edb249352efe798f"
+    },
+    {
+      "path": "docs/hermes/h011-owner-command-integration-plan-2026-10-04.md",
+      "sha256": "d15a5642786ad943866b7d5dcd9192ca674def4bdcd220567d07d5218b5b6a74"
+    },
+    {
+      "path": "docs/hermes/h011-preappend-command-integration-plan-2026-10-04.md",
+      "sha256": "7d199079dccc206b1c0df3a0d80660c15afd1c2142b1a7e21fd6cb4d1fc400d0"
+    },
+    {
+      "path": "docs/hermes/h011-selected-maintenance-integration-plan-2026-10-04.md",
+      "sha256": "4f188e95bdfa2d15ee4e845bfa361778c6a0ffd4dda94c91467729d85c37b8d3"
+    },
+    {
+      "path": "tests/test_h011_checkpoint_inventory.py",
+      "sha256": "808846b690b40b988e2ebf67656311600141781d567f7445fbd7bad062c54e1c"
+    },
+    {
+      "path": "tests/test_h011_checkpoint_maintenance_executor.py",
+      "sha256": "61e214fde943bd392ab82a464f1ada8fe735fe8db5e07d6a24bbd0484bf1d545"
+    },
+    {
+      "path": "tests/test_h011_checkpoints_cli.py",
+      "sha256": "3ca732a4b095fdd56f4b03f021bd192c25da1065151fc01ad5ad725bc59e978b"
+    },
+    {
+      "path": "tests/test_h011_manual_host_kernel.py",
+      "sha256": "7b33c487f19d92820f745fd7e87e4fe4a534d8ff47d43381d44d96b00efc8bb3"
+    },
+    {
+      "path": "tests/test_h011_owner_checkpoint_commands.py",
+      "sha256": "531ba69069b64ec923b7f800246d956dfc276466d19145fa09fe5594a6ba367f"
+    },
+    {
+      "path": "tests/test_h011_preappend_commands.py",
+      "sha256": "be006da87bcfc0b0a1919ec89f94f68058e11822a0586e677eef29c34164ff34"
+    },
+    {
+      "path": "tests/test_h011_selected_force_restore.py",
+      "sha256": "66baf1c563c7dca5c4d963ced96f8b41a05e43d8fdc2411649009950d86cc7de"
+    },
+    {
+      "path": "tests/test_h011_terminal_queue_integration.py",
+      "sha256": "1b53f762d6676ce673d909df4fc141f164cc38f1e01b620d0570f3a0942b6c12"
+    },
+    {
+      "path": "tests/test_nerva_cli.py",
+      "sha256": "21c8e92dc0a964d85ec32d89833b868e6961491020f53325cd0bcccf78aa4331"
+    },
+    {
+      "path": "tests/test_slash_commands.py",
+      "sha256": "70a7298ec67a184a6ac08096d731a8118982088bebe823e276386b014c3aa0b4"
+    }
+  ],
+  "root_tests": {
+    "selected-force-root-red": {
+      "xml": "/tmp/nerva-h011-selected-force-root-red-20261004.xml",
+      "xml_sha256": "735b37d215e227291ec465d96298fc8a2c903eb2c08e456e9f80a570220a0b40",
+      "tests": 19,
+      "failures": 19,
+      "errors": 0,
+      "skipped": 0
+    },
+    "selected-force-root-green": {
+      "xml": "/tmp/nerva-h011-selected-force-root-green-20261004.xml",
+      "xml_sha256": "3d56cdd1aadd40f1e8b1453398800ec65ee78a51625b4af582ea525e68c36f9c",
+      "tests": 111,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "maintenance-root-late-red": {
+      "xml": "/tmp/nerva-h011-maintenance-root-late-red-20261004.xml",
+      "xml_sha256": "4de941db24221781e3b316c00f720d79824cd25f3808dbfc29909a34559e24d0",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "maintenance-selected-root-final-green": {
+      "xml": "/tmp/nerva-h011-maintenance-selected-root-final-green-20261004.xml",
+      "xml_sha256": "7ad2d8935bd5ef3c9df4f06f4fc137dedf1983f1b6d040fa7054afa8437e5bd8",
+      "tests": 139,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "owner-storage-root-affected-green": {
+      "xml": "/tmp/nerva-h011-owner-storage-root-affected-green-20261004.xml",
+      "xml_sha256": "f69d739fad9f3d625e00b4cd9db567957851c2a6b3eb5749c722ae1818dcb819",
+      "tests": 1307,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 3
+    },
+    "h515-collateral-root-green": {
+      "xml": "/tmp/nerva-h011-h515-collateral-root-green-20261004.xml",
+      "xml_sha256": "c8813cbe4abb805ef244539c3e32b9202e2f78d3a8890408fc02b0aa9d0e8560",
+      "tests": 399,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "h660-collateral-root-green": {
+      "xml": "/tmp/nerva-h011-h660-collateral-root-green-20261004.xml",
+      "xml_sha256": "18965c04deadd96b1732c3284b9e3f8fddb42c47a3394fe18da9734c7ab8ffdf",
+      "tests": 239,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 7
+    },
+    "h595-collateral-root-green": {
+      "xml": "/tmp/nerva-h011-h595-collateral-root-green-20261004.xml",
+      "xml_sha256": "97800e42f4b95c65257cff8a22943056f38dbfb887d7c879d9a573159760f793",
+      "tests": 77,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "verification": {
+    "ruff_python_paths": 22,
+    "ruff": "passed",
+    "bandit_full_agents_scripts": "passed after replacing constant table interpolation with literal statements",
+    "exact_staged_gitleaks_paths": 25,
+    "gitleaks_findings": 0,
+    "backend_collection": 22972,
+    "frontend_tests": {
+      "count": 1889,
+      "freshness": "historical reused"
+    },
+    "mobile_tests": {
+      "count": 185,
+      "freshness": "historical reused"
+    },
+    "full_backend_suite": "not run on this source",
+    "github_ci": "not run; local-only",
+    "coverage_threshold": "not configured",
+    "graft": {
+      "graph_ok": true,
+      "added": 0,
+      "removed": 0,
+      "changed": 0,
+      "stale": 0,
+      "nodes": 49917,
+      "optional_context_missing": true,
+      "cache": "/tmp/nerva-consent-graft-20261004"
+    }
+  },
+  "review": {
+    "query_manual_host": "/tmp/nerva-h011-query-manual-host-review-20261004.md",
+    "selected_maintenance": "/tmp/nerva-h011-selected-maintenance-review-20261004.md",
+    "result": "No reproducible substantive source finding; reviewers did not rerun tests"
+  },
+  "limits": [
+    "Owner restore/cleanup approvals and effect orchestration are not connected; command execution honestly returns unavailable.",
+    "Selected/forced restore primitives grant no authority.",
+    "Index maintenance retains every generic SnapshotStore record/blob, including shared undo data.",
+    "Partial group effects never establish full chat rewind.",
+    "No live local/SSH process, provider, device, push, merge or deployment acceptance.",
+    "No new H011 equivalence credit; unrelated stale reviews stay stale."
+  ]
+}

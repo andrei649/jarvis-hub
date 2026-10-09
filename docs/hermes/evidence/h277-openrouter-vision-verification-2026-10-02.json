@@ -1,0 +1,65 @@
+{
+  "head": "cf02fe36c0d734a592471d856ad03712a52c7846",
+  "head_after": "cf02fe36c0d734a592471d856ad03712a52c7846",
+  "command": [
+    "/tmp/nerva-pr-python-20261001/bin/python",
+    "-m",
+    "pytest",
+    "tests/",
+    "-n",
+    "4",
+    "--dist",
+    "loadfile",
+    "--timeout=90",
+    "--junitxml=/tmp/nerva-openrouter-vision-full-20261002.xml"
+  ],
+  "returncode": 0,
+  "seconds": 226.3361096251756,
+  "changed_tracked_files": [],
+  "git_status_after": "",
+  "tracked_regular_files": 4339,
+  "fingerprint": "360a29a77aa9afe26df742c852304ccc6215f7e5418c2919d70ef2a9eda8b7a7",
+  "generated_at": "2026-10-02T05:36:20.854720+00:00",
+  "results": {
+    "passed": 20797,
+    "skipped": 34,
+    "xfailed": 1,
+    "warnings": 64,
+    "total": 20832
+  },
+  "scope": "Offline local backend verification of the explicit OpenRouter vision adapter; no automatic discovery or live-provider acceptance.",
+  "artifacts": {
+    "artifacts": [
+      {
+        "path": "/tmp/nerva-openrouter-vision-integration-20261002.xml",
+        "sha256": "90eb7c84715436b6cd732f5d50e6d957e91dad4b8e750496a03caac5bbe35273"
+      },
+      {
+        "path": "/tmp/nerva-openrouter-vision-final-focused-20261002.xml",
+        "sha256": "7f48183e0d29a5bf67bc1f61bac8a506c7fde2bbdc22b888e7daf2af8c7874ea"
+      },
+      {
+        "path": "/tmp/nerva-openrouter-vision-records-20261002.xml",
+        "sha256": "52de9b38f9da9579355a44e5a74d18ed4dec443853065eb87629101ef14f91cc"
+      },
+      {
+        "path": "/tmp/nerva-openrouter-vision-review-20261002.md",
+        "sha256": "f20f2f0982e7da4811f1b3723c4612878233125832e64e813df5fa441912b8a8"
+      },
+      {
+        "path": "/tmp/nerva-openrouter-vision-full-20261002.xml",
+        "sha256": "e743d466ed1dcce53cab109fb3cec044212e23f41cb73e62bc1200c784a7627b"
+      },
+      {
+        "path": "/tmp/nerva-openrouter-vision-full-20261002.log",
+        "sha256": "b4a69b2f2df0651413965b3a62668ec1a991b090f75dfef8faf3b6d6b6d67884"
+      },
+      {
+        "path": "/tmp/nerva-openrouter-vision-full-20261002.manifest.json",
+        "sha256": "8037bfee35596b77d9555c4e83c0aebfdcd99e6b518f77c44ac644c90065640c"
+      }
+    ],
+    "reused_frontend_baseline": "9cffba3d75aff21e9c63599736536eb92d338efc",
+    "frontend_diff_empty": true
+  }
+}

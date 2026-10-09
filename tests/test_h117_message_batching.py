@@ -669,9 +669,9 @@ async def test_a_discord_burst_is_one_turn(monkeypatch):
     assert got == []
     await asyncio.sleep(0.15)
     assert sorted(got, key=lambda g: g[0]) == [
-        ("first part\nsecond part", {"channel": "discord", "sender": "5", "channel_id": "77"}),
-        ("other author", {"channel": "discord", "sender": "6", "channel_id": "77"}),
-        ("other channel", {"channel": "discord", "sender": "5", "channel_id": "78"}),
+        ("first part\nsecond part", {"channel": "discord", "sender": "5", "channel_id": "77", "chat_type": "private"}),
+        ("other author", {"channel": "discord", "sender": "6", "channel_id": "77", "chat_type": "private"}),
+        ("other channel", {"channel": "discord", "sender": "5", "channel_id": "78", "chat_type": "private"}),
     ]
 
 

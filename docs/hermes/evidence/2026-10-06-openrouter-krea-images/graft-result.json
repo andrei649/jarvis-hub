@@ -1,0 +1,13 @@
+{
+  "graph": {
+    "ok": true,
+    "missing": false
+  },
+  "counts": {
+    "added": 0,
+    "removed": 0,
+    "changed": 0,
+    "stale": 0
+  },
+  "context_missing": true
+}
