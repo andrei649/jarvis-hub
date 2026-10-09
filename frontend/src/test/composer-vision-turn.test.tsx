@@ -26,10 +26,13 @@ beforeEach(()=>{
   }));
 });
 afterEach(()=>{cleanup();vi.unstubAllGlobals();});
-const mount=async()=>{submit=undefined;render(<App/>);await screen.findByLabelText('Attach images');};
+const mount=async()=>{submit=undefined;render(<App/>);await screen.findByLabelText('Attach images');await act(async()=>{});};
 it('sends a vision turn from the actual shared input and labels actual provenance',async()=>{
   await mount();
   fireEvent.change(screen.getByLabelText('Attach images'),{target:{files:[new File(['image'],'shot.png',{type:'image/png'})]}});
+  // The transmit button starts enabled for an empty text draft. Wait until the
+  // image has entered the composer before checking its ready state.
+  await screen.findByRole('img',{name:'shot.png'});
   const send=screen.getByRole('button',{name:/TRANSMIT/});
   await waitFor(()=>expect(send.hasAttribute('disabled')).toBe(false));fireEvent.click(send);
   await waitFor(()=>expect(requests.some(r=>r.path.endsWith('/composer/describe'))).toBe(true));
