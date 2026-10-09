@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from agents.core.media_backends.comfyui import _HISTORY_ERROR_MARKER, _HISTORY_ERROR_REASON
 from agents.core.media_backends.local_openai_image import (
     _RESPONSE_FAILURE_MARKER,
     _RESPONSE_FAILURE_REASONS,
@@ -51,7 +52,7 @@ def _cloud_provider_response_failed(task) -> bool:
 
 
 def _local_provider_response_failed(task) -> bool:
-    """Recognize only the canonical local OpenAI image response-failure marker."""
+    """Recognize only the canonical local backend marker and reason pairs."""
     payload = task.payload
     execution = task.result
     if not (task.kind == "tool.rpc"
@@ -62,8 +63,7 @@ def _local_provider_response_failed(task) -> bool:
             and set(execution) == {"status", "reason", "tool", "result"}
             and execution["status"] == "failed"
             and execution["tool"] == "image_generate"
-            and type(execution["reason"]) is str
-            and execution["reason"] in _RESPONSE_FAILURE_REASONS):
+            and type(execution["reason"]) is str):
         return False
     media = execution["result"]
     return (type(media) is dict
@@ -72,7 +72,10 @@ def _local_provider_response_failed(task) -> bool:
             and type(media["reason"]) is str
             and media["reason"] == execution["reason"]
             and type(media["provider_response_failed"]) is str
-            and media["provider_response_failed"] == _RESPONSE_FAILURE_MARKER)
+            and ((media["provider_response_failed"] == _RESPONSE_FAILURE_MARKER
+                  and execution["reason"] in _RESPONSE_FAILURE_REASONS)
+                 or (media["provider_response_failed"] == _HISTORY_ERROR_MARKER
+                     and execution["reason"] == _HISTORY_ERROR_REASON)))
 
 
 def project_image_task(task) -> ImageTaskView:

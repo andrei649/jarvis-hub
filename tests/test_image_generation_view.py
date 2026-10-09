@@ -31,9 +31,9 @@ def cloud_task(*, status="done", result=None, task_id=17):
     )
 
 
-def local_response_failure(reason="invalid_response"):
+def local_response_failure(reason="invalid_response", marker="local_openai_images_v1"):
     return {"status": "failed", "reason": reason, "tool": "image_generate", "result": {
-        "ok": False, "reason": reason, "provider_response_failed": "local_openai_images_v1",
+        "ok": False, "reason": reason, "provider_response_failed": marker,
     }}
 
 
@@ -278,3 +278,44 @@ def test_local_legacy_and_comfyui_failure_reasons_remain_uncertain():
             "result": {"ok": False, "reason": reason},
         })
         assert project_image_task(task).state == "uncertain"
+
+
+@pytest.mark.asyncio
+async def test_exact_comfyui_history_error_is_redacted_and_admin_only(app, monkeypatch):
+    task = image_task(kind="tool.rpc", result=local_response_failure(
+        "generation_failed", "comfyui_history_error_v1",
+    ))
+    monkeypatch.setattr(multimodal, "get_orch", lambda: SimpleNamespace(
+        autonomy_queue=SimpleNamespace(get=lambda _task_id: task),
+    ))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+        assert (await client.get("/api/media/generation-tasks/17")).status_code == 401
+        response = await client.get(
+            "/api/media/generation-tasks/17", headers={"X-Admin-Token": "owner-test"},
+        )
+    assert response.status_code == 200
+    assert "no-store" in response.headers["cache-control"]
+    assert response.json() == {"task_id": 17, "state": "failed", "artifact": None}
+    assert "generation_failed" not in response.text
+    assert "comfyui_history_error_v1" not in response.text
+    assert "PRIVATE" not in response.text
+
+
+@pytest.mark.parametrize("result", [
+    local_response_failure("generation_failed", "local_openai_images_v1"),
+    local_response_failure("invalid_response", "comfyui_history_error_v1"),
+    local_response_failure("generation_failed", "comfyui_history_error_v2"),
+    {**local_response_failure("generation_failed", "comfyui_history_error_v1"), "detail": "PRIVATE"},
+    {**local_response_failure("generation_failed", "comfyui_history_error_v1"), "reason": "other"},
+    {**local_response_failure("generation_failed", "comfyui_history_error_v1"),
+     "result": {"ok": False, "reason": "other", "provider_response_failed": "comfyui_history_error_v1"}},
+    {**local_response_failure("generation_failed", "comfyui_history_error_v1"),
+     "result": {"ok": 0, "reason": "generation_failed", "provider_response_failed": "comfyui_history_error_v1"}},
+    {**local_response_failure("generation_failed", "comfyui_history_error_v1"),
+     "result": {"ok": False, "reason": "generation_failed", "provider_response_failed": True}},
+])
+def test_comfyui_marker_and_reason_must_be_exactly_paired(result):
+    task = image_task(kind="tool.rpc", result=result)
+    assert project_image_task(task).model_dump() == {
+        "task_id": 17, "state": "uncertain", "artifact": None,
+    }

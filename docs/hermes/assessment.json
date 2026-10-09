@@ -4519,7 +4519,7 @@
         },
         {
           "path": "agents/core/image_generation_view.py",
-          "sha256": "699601631a46bee0bd04cff324576a99828e56646f03788d59889053c030db8f"
+          "sha256": "a908d1bd00e113d70846e29f55a67896929057bed865b810be66f8fb49d30049"
         },
         {
           "path": "agents/core/routers/multimodal.py",
@@ -7658,7 +7658,7 @@
         },
         {
           "path": "agents/core/media_backends/comfyui.py",
-          "sha256": "ba9ccae42a0b88f9ff51f5caa2da64cbbd823e636ca350eecd16e32b3b83b654"
+          "sha256": "66fc168df08fc193416f1b756855ac0b9673bb5b332b8d1e7cbe027a51904496"
         },
         {
           "path": "agents/core/media_gen.py",
@@ -8904,11 +8904,11 @@
       "evidence": [
         {
           "path": "agents/core/media_backends/comfyui.py",
-          "sha256": "ba9ccae42a0b88f9ff51f5caa2da64cbbd823e636ca350eecd16e32b3b83b654"
+          "sha256": "66fc168df08fc193416f1b756855ac0b9673bb5b332b8d1e7cbe027a51904496"
         },
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "6f7780915e67dcc141973bbc4adf029059576fa542056c83e59d00fc47a51ebc"
+          "sha256": "e0cc57a97e8caa38870507865eafde7716f35bb621b0d158f5f9132b73ed94e4"
         },
         {
           "path": "agents/core/media_library.py",
@@ -9053,11 +9053,11 @@
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "6f7780915e67dcc141973bbc4adf029059576fa542056c83e59d00fc47a51ebc"
+          "sha256": "e0cc57a97e8caa38870507865eafde7716f35bb621b0d158f5f9132b73ed94e4"
         },
         {
           "path": "agents/core/media_backends/comfyui.py",
-          "sha256": "ba9ccae42a0b88f9ff51f5caa2da64cbbd823e636ca350eecd16e32b3b83b654"
+          "sha256": "66fc168df08fc193416f1b756855ac0b9673bb5b332b8d1e7cbe027a51904496"
         },
         {
           "path": "agents/core/media_backends/local_openai_image.py",
@@ -9210,11 +9210,11 @@
       "evidence": [
         {
           "path": "agents/core/media_backends/comfyui.py",
-          "sha256": "ba9ccae42a0b88f9ff51f5caa2da64cbbd823e636ca350eecd16e32b3b83b654"
+          "sha256": "66fc168df08fc193416f1b756855ac0b9673bb5b332b8d1e7cbe027a51904496"
         },
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "6f7780915e67dcc141973bbc4adf029059576fa542056c83e59d00fc47a51ebc"
+          "sha256": "e0cc57a97e8caa38870507865eafde7716f35bb621b0d158f5f9132b73ed94e4"
         },
         {
           "path": "agents/core/media_library.py",
@@ -9311,11 +9311,11 @@
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "6f7780915e67dcc141973bbc4adf029059576fa542056c83e59d00fc47a51ebc"
+          "sha256": "e0cc57a97e8caa38870507865eafde7716f35bb621b0d158f5f9132b73ed94e4"
         },
         {
           "path": "agents/core/image_generation_view.py",
-          "sha256": "699601631a46bee0bd04cff324576a99828e56646f03788d59889053c030db8f"
+          "sha256": "a908d1bd00e113d70846e29f55a67896929057bed865b810be66f8fb49d30049"
         },
         {
           "path": "agents/core/routers/multimodal.py",
@@ -10308,11 +10308,11 @@
       "evidence": [
         {
           "path": "agents/core/image_generation_runtime.py",
-          "sha256": "6f7780915e67dcc141973bbc4adf029059576fa542056c83e59d00fc47a51ebc"
+          "sha256": "e0cc57a97e8caa38870507865eafde7716f35bb621b0d158f5f9132b73ed94e4"
         },
         {
           "path": "agents/core/image_generation_view.py",
-          "sha256": "699601631a46bee0bd04cff324576a99828e56646f03788d59889053c030db8f"
+          "sha256": "a908d1bd00e113d70846e29f55a67896929057bed865b810be66f8fb49d30049"
         },
         {
           "path": "agents/core/routers/multimodal.py",
@@ -10328,7 +10328,7 @@
         },
         {
           "path": "agents/core/media_backends/comfyui.py",
-          "sha256": "ba9ccae42a0b88f9ff51f5caa2da64cbbd823e636ca350eecd16e32b3b83b654"
+          "sha256": "66fc168df08fc193416f1b756855ac0b9673bb5b332b8d1e7cbe027a51904496"
         },
         {
           "path": "tests/test_image_edit.py",

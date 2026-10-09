@@ -351,15 +351,18 @@ configuration-only local status, exact-prompt proposals through the existing app
 queue, task restoration across the approval handoff, manual status refresh and
 authenticated PNG preview/save. It does not initiate cloud generation or repeat a
 proposal automatically. Real-device/live-generator acceptance stays open. The server
-projects three exact, normally completed cloud provider-response failures and five
-typed local OpenAI-compatible response failures as `failed`. The local adapter
-persists a fixed producer marker; legacy rows without it stay uncertain. Verified
-cloud artifact recovery keeps precedence. Web/native readers state that no usable
-image was verified and add no preview or automatic proposal. Generic/ComfyUI
-failures, malformed results, ambiguous delivery and withheld output remain
+projects three exact, normally completed cloud provider-response failures, five
+typed local OpenAI-compatible response failures and the documented ComfyUI history
+error shape as `failed`. Local adapters persist fixed producer markers; legacy
+rows without them stay uncertain. The ComfyUI marker requires the matching prompt
+history with exact error/false status fields; malformed or incomplete history is
+not enough. Verified cloud artifact recovery keeps precedence. Web/native readers
+state that no usable image was verified and add no preview or automatic proposal.
+Generic failures, malformed results, ambiguous delivery and withheld output remain
 `uncertain`; native cloud proposal controls are unchanged. See
-[cloud evidence](../project-image-provider-failure-20261009.md) and
-[typed local evidence](../project-local-image-response-20261009.md).
+[cloud evidence](../project-image-provider-failure-20261009.md),
+[typed local evidence](../project-local-image-response-20261009.md) and
+[ComfyUI history evidence](../project-comfyui-response-20261009.md).
 
 **HA-4i-S1 declarative extension inspection (2026-09-09):** user-guarded
 `GET /api/plugins/extensions` projects already-composed acquired package declarations

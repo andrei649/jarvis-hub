@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import math
 import os
 import re
 import stat
@@ -29,12 +30,21 @@ from ..env_config import truthy
 _IMPORTED_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 _READ_CHUNK_BYTES = 64 * 1024
 _DIGEST_SIDECAR_MAX_BYTES = 128
+_HISTORY_ERROR_REASON = "generation_failed"
+_HISTORY_ERROR_MARKER = "comfyui_history_error_v1"
 
 
 class ImageGenerationError(ValueError):
     def __init__(self, reason: str):
         self.reason = reason
         super().__init__(reason)
+
+
+class _ComfyHistoryError(ImageGenerationError):
+    """The matching ComfyUI history entry reports an execution error."""
+
+    def __init__(self):
+        super().__init__(_HISTORY_ERROR_REASON)
 
 
 class ImageWithheldAfterGeneration(ImageGenerationError):
@@ -462,7 +472,25 @@ class ComfyUIBackend:
         if binary:
             return bytes(data)
         try:
-            value = json.loads(data)
+            def unique_object(pairs):
+                value = {}
+                for key, item in pairs:
+                    if key in value:
+                        raise ValueError("duplicate JSON key")
+                    value[key] = item
+                return value
+
+            def refuse_nonfinite(_constant):
+                raise ValueError("non-finite JSON number")
+
+            def finite_float(raw):
+                value = float(raw)
+                if not math.isfinite(value):
+                    raise ValueError("non-finite JSON number")
+                return value
+
+            value = json.loads(data, object_pairs_hook=unique_object,
+                               parse_constant=refuse_nonfinite, parse_float=finite_float)
         except (ValueError, UnicodeError, RecursionError):
             raise ImageGenerationError("invalid_response") from None
         if not isinstance(value, dict):
@@ -531,6 +559,13 @@ class ComfyUIBackend:
                     if not isinstance(entry, dict):
                         raise ImageGenerationError("invalid_response")
                     status = entry.get("status", {})
+                    if (type(history) is dict and set(history) == {prompt_id}
+                            and type(entry) is dict and type(status) is dict
+                            and set(status) == {"status_str", "completed", "messages"}
+                            and status["status_str"] == "error"
+                            and status["completed"] is False
+                            and type(status["messages"]) is list):
+                        raise _ComfyHistoryError()
                     if not isinstance(status, dict) or status.get("status_str") != "success" or status.get("completed") is not True:
                         raise ImageGenerationError("generation_failed")
                     try:
