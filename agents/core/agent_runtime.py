@@ -204,6 +204,7 @@ class AgentToolRuntime:
         repeat_limit: int = _DEFAULT_REPEAT_LIMIT,
         failure_limit: int = _DEFAULT_FAILURE_LIMIT,
         tool_profile: ToolProfileHook | None = None,
+        execution_profile: ToolProfileHook | None = None,
         per_tool_limit: int | Callable[[], int] = 0,
         duplicate_stub_bytes: int = _DEFAULT_DUPLICATE_STUB_BYTES,
         result_store: Any | None = None,
@@ -212,6 +213,9 @@ class AgentToolRuntime:
     ) -> None:
         self._server = server
         self._tool_profile = tool_profile
+        # Separate from the offer hook: the coordinator's offer wrapper writes
+        # H661 turn notes, while dispatch needs authorization only.
+        self._execution_profile = execution_profile
         self._repeat_limit = _safe_int(repeat_limit, default=_DEFAULT_REPEAT_LIMIT, minimum=0)
         self._failure_limit = _safe_int(failure_limit, default=_DEFAULT_FAILURE_LIMIT, minimum=0)
         self._per_tool_limit = per_tool_limit
@@ -292,6 +296,20 @@ class AgentToolRuntime:
             logger.warning("tool profile resolution failed closed", exc_info=True)
             return [], None
         return [dict(tool) for tool in offered if allows(str(tool.get("name") or ""))], decision
+
+    def _profile_allows_execution(self, agent_id: str, name: str, row: Mapping[str, Any]) -> bool:
+        """Fresh authorization only; never rebuild the model's offer or taint views."""
+        if self._execution_profile is None:
+            return True
+        try:
+            offered, _decision = self._execution_profile(agent_id, [dict(row)])
+        except Exception:
+            logger.warning("tool execution profile resolution failed closed")
+            return False
+        return (
+            isinstance(offered, (list, tuple))
+            and any(isinstance(tool, Mapping) and tool.get("name") == name for tool in offered)
+        )
 
     @staticmethod
     def _specs_for(
@@ -1283,11 +1301,16 @@ class AgentToolRuntime:
             event_sink,
             self._event(call, agent_id, "tool_started", "running"),
         )
+        handle_kwargs: dict[str, Any] = {"actor": agent_id}
+        if self._execution_profile is not None:
+            handle_kwargs["_execution_check"] = (
+                lambda name, row: self._profile_allows_execution(agent_id, name, row)
+            )
         try:
             raw_result = await self._await_owned(
                 self._server.handle(
                     {"tool": call.name, "args": call.arguments},
-                    actor=agent_id,
+                    **handle_kwargs,
                 ),
                 timeout=self._tool_timeout_seconds,
             )

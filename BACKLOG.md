@@ -1969,6 +1969,8 @@
 
 - 2026-10-09 H477 cloud generated-ID continuation: newly approved cloud PNGs now use the same reserved-ID, sidecar-first publisher as local providers. Raw delivery and edit references verify their stored expected digest; task recovery retains its independent completion SHA. The final storage and live authority checks preserve existing unknown/withheld/failure outcomes without another provider request. Legacy sidecar-free IDs remain unbound on raw reads and are not migrated. See [cloud standalone image proof](docs/plans/2026-10-09-cloud-generated-artifact-digest.md).
 
+- 2026-10-09 H672 execution-admission continuation: the production agent loop now rechecks current tool profile permissions inside ToolRPC dispatch, after any event-sink await and before preflight, approval intake or handler admission. Revoked tools and resolver failures refuse locally between folds, while schemas, taint/gate views and H661 turn-offer bookkeeping stay unchanged. Direct/script calls, already-running handlers and queued approvals retain their existing contracts. This closes the tested admission gap without completing the persona/compaction row. See [profile execution proof](docs/plans/2026-10-09-profile-execution-recheck.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
   Reassess inherited judgments, finish the full accepted

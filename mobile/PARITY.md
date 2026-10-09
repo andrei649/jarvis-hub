@@ -25,6 +25,8 @@ intentionally owner-HUD-only; native clients expose no discovery, frame, stream,
 
 Media integrity (local backend candidate, 2026-10-09): newly cloud-finalized, ComfyUI and local OpenAI PNG `md-*` catalog rows bind their producer digest for shared delivery and export. Both clients inherit a refusal for mismatched bytes on those catalog URLs. Existing blob headers and gallery controls are unchanged; verified/unbound status is export metadata only. New ComfyUI, local OpenAI and cloud standalone generated-image URLs and edit references also verify an expected sidecar digest through the shared server reader; mismatches and invalid bindings use the existing opaque refusal. These built-in producers share the reserved-ID publisher, while cloud task recovery keeps its independent completion hash. Missing sidecars retain legacy availability without digest verification. Legacy/other unsupplied catalog rows retain their own limits. Native wire shapes and UI stay unchanged (H477 partial).
 
+Tool profile permissions (local backend candidate, 2026-10-09): both clients inherit a live profile check before each new tool dispatch in the enabled production agent loop. A tool withdrawn since the model saw it is refused before preflight or approval intake. Existing error shapes and client controls are unchanged; already-running tools and queued approvals are outside this check (H672 partial).
+
 ## Combined local mobile candidate — 2026-10-09
 
 The local integration branch combines session continuity, command discovery, connected memory,
