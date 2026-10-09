@@ -262,15 +262,22 @@ def anthropic_usage(data: Mapping[str, Any]) -> TokenUsage:
 
     Each field must be an exact nonnegative integer. Invalid fields become zero
     without discarding valid sibling counts from the parsed provider response.
+    All four disjoint categories must be explicit to mark this observation
+    complete for accounting; omitted optional cache fields remain unknown.
     """
     raw = data.get("usage") if isinstance(data, Mapping) else None
     if not isinstance(raw, Mapping):
-        return TokenUsage()
+        return TokenUsage(counts_complete=False)
+    keys = ("input_tokens", "output_tokens", "cache_read_input_tokens",
+            "cache_creation_input_tokens")
+    observed = {key: raw.get(key) for key in keys}
     return TokenUsage(
-        input_tokens=_local_count(raw, "input_tokens"),
-        output_tokens=_local_count(raw, "output_tokens"),
-        cache_read=_local_count(raw, "cache_read_input_tokens"),
-        cache_write=_local_count(raw, "cache_creation_input_tokens"),
+        input_tokens=_local_count(observed, "input_tokens"),
+        output_tokens=_local_count(observed, "output_tokens"),
+        cache_read=_local_count(observed, "cache_read_input_tokens"),
+        cache_write=_local_count(observed, "cache_creation_input_tokens"),
+        counts_complete=all(type(value) is int and value >= 0
+                            for value in observed.values()),
     )
 
 
