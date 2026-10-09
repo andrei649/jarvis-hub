@@ -77,7 +77,7 @@ class CommandOutcome:
     """What dispatch decided, so callers can log and record it honestly."""
 
     name: str
-    status: str  # answered | refused | unknown | failed
+    status: str  # answered | queued | refused | unknown | failed
     reply: str
 
 
@@ -121,7 +121,8 @@ class CommandRegistry:
             return None
         return match.group(1).lower(), (match.group(2) or "").strip()[:_MAX_ARGS]
 
-    async def dispatch(self, text: str, *, orch: Any, principal: Principal) -> CommandOutcome | None:
+    async def dispatch(self, text: str, *, orch: Any, principal: Principal,
+                       _quick_seen: frozenset[str] = frozenset()) -> CommandOutcome | None:
         """Answer a slash command, or return None when *text* is not one."""
         parsed = self.parse(text)
         if parsed is None:
@@ -129,6 +130,12 @@ class CommandRegistry:
         name, args = parsed
         command = self.get(name)
         if command is None:
+            from .quick_commands import dispatch_quick
+
+            quick = await dispatch_quick(self, name, args, text=text,
+                                         orch=orch, principal=principal, seen=_quick_seen)
+            if quick is not None:
+                return self._observed(quick)
             # Deliberately NOT observed. `name` here is whatever the sender typed, so
             # emitting it would push arbitrary message text through a field that
             # promises to carry command names — a body leak wearing a safe label.
@@ -168,9 +175,13 @@ class CommandRegistry:
 
 
 def _help(ctx: CommandContext) -> str:
+    from .quick_commands import help_lines
+
     registry = getattr(ctx.orch, "commands", None)
     commands = registry.visible(ctx.principal) if isinstance(registry, CommandRegistry) else []
     lines = [command.summary for command in commands]
+    if ctx.principal.admin and isinstance(registry, CommandRegistry):
+        lines.extend(help_lines(registry))
     if not ctx.principal.admin:
         lines.append("Owner commands (such as /pause, /resume, /stop, /remind and /refine) answer only "
                      "the owner's channel.")
@@ -405,6 +416,9 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("help", "the commands you can use here", _help))
     registry.register(SlashCommand("status", "backend, agents, autonomy mode, e-stop", _status))
     registry.register(SlashCommand("sessions", "the five most recent sessions", _sessions))
+    registry.register(SlashCommand("new", "start a fresh conversation and save this one", _session_change, tier=ADMIN))
+    registry.register(SlashCommand("reset", "same as /new", _session_change, tier=ADMIN))
+    registry.register(SlashCommand("undo", "remove the last exchange while preserving history", _session_change, tier=ADMIN))
     registry.register(SlashCommand("recap", "this conversation's last exchanges, with no model call", _recap, usage="[exchanges]"))
     registry.register(SlashCommand("usage", "cloud provider quota left, and any 429 hold", _usage, tier=ADMIN))
     registry.register(SlashCommand("pause", "engage the emergency stop", _pause, tier=ADMIN, usage="[reason]"))
@@ -415,3 +429,11 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("voice", "spoken replies in this chat: off, voice-for-voice, or always", _voice, usage="[off|voice|always]"))
     registry.register(SlashCommand("refine", "review this conversation now for memories and skill changes", _refine, tier=ADMIN, usage="[focus]"))
     return registry
+
+
+async def _session_change(ctx: CommandContext) -> str:
+    change = getattr(ctx.orch, "_direct_session_command", None)
+    if change is None:
+        return "Conversation change unavailable; nothing was applied."
+    result = await change(f"/{ctx.name}", ctx.principal.channel, None)
+    return result or "Conversation change unavailable; nothing was applied."

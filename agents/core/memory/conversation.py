@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import re
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -34,10 +36,10 @@ _memory_dir = memory_dir   # internal alias, kept so use sites read tersely
 
 
 class Turn:
-    __slots__ = ("role", "content", "agent_id", "timestamp", "token_count", "tools")
+    __slots__ = ("role", "content", "agent_id", "timestamp", "token_count", "tools", "media")
 
     def __init__(self, role: str, content: str, agent_id: str = None, token_count: int = 0,
-                 tools: list[str] | None = None):
+                 tools: list[str] | None = None, media: dict | None = None):
         self.role = role
         self.content = content
         self.agent_id = agent_id
@@ -45,6 +47,7 @@ class Turn:
         self.token_count = token_count
         # H441 — the tools a reply called (names only), so a recap can collapse them.
         self.tools = _tool_names(tools)
+        self.media = validated_media(media) if media is not None else None
 
     def to_dict(self):
         out = {
@@ -56,6 +59,8 @@ class Turn:
         }
         if self.tools:               # absent when none: older readers see the shape they know
             out["tools"] = list(self.tools)
+        if self.media is not None:
+            out["media"] = dict(self.media)
         return out
 
 
@@ -66,10 +71,39 @@ def _tool_names(value) -> list[str]:
     return [name.strip()[:64] for name in value[:200] if isinstance(name, str) and name.strip()]
 
 
+_BACKEND_ID = re.compile(r"[a-z][a-z0-9_-]{0,63}\Z")
+
+
+def validated_media(value: object) -> dict:
+    """Keep bounded image provenance in history; never keep image bytes there."""
+    if not isinstance(value, dict) or set(value) != {"kind", "count", "model", "backend", "local"}:
+        raise ValueError("invalid image provenance")
+    count, model, backend, local = (value[key] for key in ("count", "model", "backend", "local"))
+    if (value["kind"] != "image" or type(count) is not int or not 1 <= count <= 8
+            or not isinstance(model, str) or not 0 < len(model) <= 512
+            or any(ord(char) < 33 or ord(char) == 127 for char in model)
+            or any(token in model.lower() for token in ("data:", "base64,", "authorization", "api_key"))
+            or not isinstance(backend, str) or _BACKEND_ID.fullmatch(backend) is None
+            or type(local) is not bool):
+        raise ValueError("invalid image provenance")
+    return {"kind": "image", "count": count, "model": model, "backend": backend, "local": local}
+
+
+def restored_media(value: object) -> dict | None:
+    try:
+        return validated_media(value) if value is not None else None
+    except ValueError:
+        return None
+
+
 class ConversationMemory:
     def __init__(self, max_turns: int = 100, persist: bool = True):
+        from agents.core.llm.vision_history import ActiveImageHistory
+
         self.sessions: dict[str, list[Turn]] = {}
         self.instances: dict[str, str] = {}
+        self.active_images = ActiveImageHistory()
+        self._active_image_instances: dict[str, str] = {}
         self.max_turns = max_turns
         self.persist = persist
         self.current_session_id: Optional[str] = None
@@ -84,14 +118,14 @@ class ConversationMemory:
         if sessions:
             sid = sessions[0]
             snapshot = load_memory_snapshot(sid)
-            turns_data = snapshot.get("turns", [])
-            if snapshot.get("instance_id"):
-                self.instances[sid] = snapshot["instance_id"]
-            if turns_data:
+            turns_data = snapshot.get("turns")
+            if snapshot.get("session_id") == sid and isinstance(turns_data, list):
+                if snapshot.get("instance_id"):
+                    self.instances[sid] = snapshot["instance_id"]
                 self.sessions[sid] = []
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
-                                tools=t.get("tools"))
+                                tools=t.get("tools"), media=restored_media(t.get("media")))
                     turn.timestamp = t.get("timestamp") or turn.timestamp
                     self.sessions[sid].append(turn)
                 self.current_session_id = sid
@@ -106,6 +140,16 @@ class ConversationMemory:
             self.current_session_id = sid
             return sid
 
+    def active_image_instance(self, session_id: str) -> str | None:
+        """Separate process-local image history from any durable session ID reuse."""
+        if session_id not in self.sessions:
+            return None
+        return self._active_image_instances.setdefault(session_id, secrets.token_urlsafe(24))
+
+    def invalidate_active_images(self, session_id: str) -> None:
+        self.active_images.clear(session_id)
+        self._active_image_instances.pop(session_id, None)
+
     async def resume_session(self, session_id: str) -> bool:
         """Make a specific past session current, loading it from disk if needed.
 
@@ -114,16 +158,17 @@ class ConversationMemory:
         """
         async with self._lock:
             if session_id not in self.sessions:
+                self.invalidate_active_images(session_id)
                 snapshot = load_memory_snapshot(session_id)
-                turns_data = snapshot.get("turns", [])
+                turns_data = snapshot.get("turns")
+                if snapshot.get("session_id") != session_id or not isinstance(turns_data, list):
+                    return False
                 if snapshot.get("instance_id"):
                     self.instances[session_id] = snapshot["instance_id"]
-                if not turns_data:
-                    return False
                 self.sessions[session_id] = []
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
-                                tools=t.get("tools"))
+                                tools=t.get("tools"), media=restored_media(t.get("media")))
                     turn.timestamp = t.get("timestamp") or turn.timestamp
                     self.sessions[session_id].append(turn)
                 logger.info(f"Resumed session {session_id} ({len(turns_data)} turns)")
@@ -131,11 +176,12 @@ class ConversationMemory:
             return True
 
     async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None,
-                       tools: list[str] | None = None):
+                       tools: list[str] | None = None, media: dict | None = None):
         async with self._lock:
             if session_id not in self.sessions:
                 self.sessions[session_id] = []
-            turn = Turn(role, content, agent_id, token_count=len(content) // 4, tools=tools)
+            turn = Turn(role, content, agent_id, token_count=len(content) // 4,
+                        tools=tools, media=media)
             self.sessions[session_id].append(turn)
             if len(self.sessions[session_id]) > self.max_turns:
                 self.sessions[session_id].pop(0)
@@ -195,9 +241,12 @@ class ConversationMemory:
     async def clear(self, session_id: str = None):
         async with self._lock:
             if session_id:
+                self.invalidate_active_images(session_id)
                 self.sessions.pop(session_id, None)
                 self.instances.pop(session_id, None)
             else:
+                self.active_images.clear()
+                self._active_image_instances.clear()
                 self.sessions.clear()
                 self.instances.clear()
 

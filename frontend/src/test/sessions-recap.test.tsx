@@ -32,6 +32,7 @@ beforeEach(() => {
     const u = String(url);
     calls.push({ url: u, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : undefined });
     if (u.endsWith('/sessions')) return reply(200, { sessions: [{ session_id: 's-old', turns: 10 }, { session_id: 's-new' }] });
+    if (u.endsWith('/sessions?archived=true')) return reply(200, { sessions: [{ session_id: 's-archived', turns: 3 }] });
     if (u.endsWith(RESUME_PATH)) return resumeReply();
     return reply(404, {});
   });
@@ -39,6 +40,8 @@ beforeEach(() => {
 
 describe('SessionsPanel — H441 recap', () => {
   it('resumes and shows the recap, tools as a count, newest exchanges', async () => {
+    const selected = vi.fn();
+    window.addEventListener('nerva:session-selected', selected, { once: true });
     const { container } = render(<SessionsPanel />);
     await waitFor(() => expect(screen.getByText('s-old')).toBeTruthy());
     fireEvent.click(screen.getByLabelText('resume s-old'));
@@ -46,6 +49,8 @@ describe('SessionsPanel — H441 recap', () => {
     const post = calls.find((c) => c.url.endsWith(RESUME_PATH));
     expect(post.method).toBe('POST');
     expect(post.body).toEqual({ session_id: 's-old' });
+    expect(selected).toHaveBeenCalledOnce();
+    expect(selected.mock.calls[0][0].detail).toEqual({ sessionId: 's-old', turns: [] });
     expect(screen.getByText(/RESUMED s-old · LAST 2 OF 5 EXCHANGES/)).toBeTruthy();
     expect(screen.getAllByTestId('recap-exchange')).toHaveLength(2);
     expect(screen.getByText('[3 tool calls: web_search, web_fetch]')).toBeTruthy();
@@ -73,5 +78,14 @@ describe('SessionsPanel — H441 recap', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('resumed s-old'));
     expect(toolLine({ tool_calls: 1, tools: ['terminal_run'] })).toBe('[1 tool call: terminal_run]');
     expect(toolLine({ tool_calls: 0 })).toBe('');
+  });
+
+  it('reopens an archived topic directly with its exact session id', async () => {
+    resumeReply = () => reply(200, { ok: true, session: 's-archived', turns: [] });
+    render(<SessionsPanel />);
+    fireEvent.click(screen.getByRole('tab', { name: 'archived' }));
+    await waitFor(() => expect(screen.getByLabelText('resume s-archived')).toBeTruthy());
+    fireEvent.click(screen.getByLabelText('resume s-archived'));
+    await waitFor(() => expect(calls.some(c => c.url.endsWith(RESUME_PATH) && c.body?.session_id === 's-archived')).toBe(true));
   });
 });
