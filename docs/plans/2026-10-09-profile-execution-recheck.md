@@ -22,5 +22,18 @@ new-call admission from in-flight/direct/queued execution and persona/fold limit
 
 Full collection confirms 21,114 backend cases (+8); frontend 1,962/mobile 284/routes
 554 remain unchanged. Ruff, diff and generated project/Hermes freshness gates pass.
-A full-backend integration run follows this source checkpoint; no full-suite result
-is claimed yet. No provider, device, publication or deployment was performed.
+A full-backend integration run followed this source checkpoint. No provider,
+device, publication or deployment was performed.
+
+Integration checkpoint (2026-10-09, source `a5642a1`): 21,114 backend cases yielded
+21,076 passed, 37 skipped, one failure and zero errors in 266.299 seconds. The only
+failure was the strict external-binding callsite inventory: the new coordinator
+constructor argument moved 12 existing binding calls by one line. A separate run
+reproduced that failure before repair. Only those 12 inventory line coordinates
+were updated; names, paths, columns, binding behavior and the assertion are intact.
+The H515 inventory-file evidence pin was already stale before this unit and remains
+untouched. After repair, the complete binding module plus status/Hermes regressions
+passed 136/136; the original failing node is included and passes. Ruff, exact backend
+count and generated freshness gates pass. The full suite was not repeated after
+this metadata-only correction; the recorded full result remains a failed checkpoint.
+See [integration evidence](../project-profile-execution-integration-20261009.md).
