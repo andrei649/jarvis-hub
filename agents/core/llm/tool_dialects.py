@@ -245,25 +245,17 @@ def gemini_usage(data: Mapping[str, Any]) -> TokenUsage:
 def anthropic_usage(data: Mapping[str, Any]) -> TokenUsage:
     """The provider's own token counts, or an empty usage when it said nothing.
 
-    Every field is coerced and floored at zero rather than trusted: this is a parsed
-    response body from outside the box, and a negative or non-numeric count reaching
-    the cost meter would report a negative bill.
+    Each field must be an exact nonnegative integer. Invalid fields become zero
+    without discarding valid sibling counts from the parsed provider response.
     """
     raw = data.get("usage") if isinstance(data, Mapping) else None
     if not isinstance(raw, Mapping):
         return TokenUsage()
-
-    def _count(key: str) -> int:
-        try:
-            return max(0, int(raw.get(key) or 0))
-        except (TypeError, ValueError, OverflowError):
-            return 0
-
     return TokenUsage(
-        input_tokens=_count("input_tokens"),
-        output_tokens=_count("output_tokens"),
-        cache_read=_count("cache_read_input_tokens"),
-        cache_write=_count("cache_creation_input_tokens"),
+        input_tokens=_local_count(raw, "input_tokens"),
+        output_tokens=_local_count(raw, "output_tokens"),
+        cache_read=_local_count(raw, "cache_read_input_tokens"),
+        cache_write=_local_count(raw, "cache_creation_input_tokens"),
     )
 
 
