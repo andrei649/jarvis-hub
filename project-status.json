@@ -199,7 +199,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "332b16ca857a3fd126a89be411e2e6ca17de4e91",
+  "latest_ci_commit": "f3cdfdd50b46626433dfb349791b57d2a3b63fe1",
   "open_release_gates": [
     {
       "id": "A1",
@@ -224,8 +224,8 @@
   ],
   "routes": 629,
   "tests": {
-    "backend": 25971,
-    "frontend": 2192,
+    "backend": 25979,
+    "frontend": 2198,
     "mobile": 359
   },
   "version": "1.0.0"
