@@ -20,6 +20,16 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
 
+H441 local candidate (2026-10-10): native clients inherit owner-only access to
+imported/derived sessions and suppression from guest session/checklist lists.
+The existing exact-ID resume and recap contract is retained. This batch adds
+CLI/API selectors and foreign imports, with no browser/native import picker.
+Reading Claude Code/Codex source files is intentionally CLI-host administration;
+there is no native-device acceptance claim. See
+[resume/import guide](../docs/foreign-session-resume.md). H398 completeness/risk
+handling and H667 temporary-directory resolution are shared runtime behavior,
+with no new native chat field or control.
+
 H329 local update (2026-10-10): the browser Skill Switches panel and terminal
 picker show re-enable requests as pending until the approved worker applies
 them. Disabled skills stay installed. Shared server enforcement applies to all

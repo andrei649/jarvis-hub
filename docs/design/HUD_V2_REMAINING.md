@@ -16,6 +16,15 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
+H441 local candidate (2026-10-10): owner CLI/API selectors and Claude Code/Codex
+transcript imports extend the existing free Sessions recap. Imported/derived
+sessions are owner-only at the shared server boundaries; guest session and
+checklist lists omit them. Browser import/selector controls are not added in
+this batch. Foreign source discovery remains CLI-host administration; see
+`docs/foreign-session-resume.md`. H398's fixed completeness notice and internal
+risk advisory affect model tool results, with no new public chat field. H667's
+existing temporary-directory setting now describes standard environment fallback.
+
 H329 local update (2026-10-10): Skill Switches renders HTTP 202 as pending
 owner approval and retains the disabled state until the worker applies the
 exact request. Global and channel settings remain distinct. Canonical approver

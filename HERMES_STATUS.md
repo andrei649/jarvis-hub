@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**137 / 697 = 19.7% echivalente complet în evaluarea documentată.**
+**143 / 697 = 20.5% echivalente complet în evaluarea documentată.**
 
-Din acestea, **29** au fost reevaluate pe cod în această livrare; **108** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **35** au fost reevaluate pe cod în această livrare; **108** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,15 +10,15 @@ Din acestea, **29** au fost reevaluate pe cod în această livrare; **108** păs
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 137 | 19.7% |
-| Parțial | 230 | 33.0% |
+| Echivalent | 143 | 20.5% |
+| Parțial | 229 | 32.9% |
 | Lipsă | 56 | 8.0% |
 | Exclus intenționat | 0 | 0.0% |
-| De reverificat | 274 | 39.3% |
+| De reverificat | 269 | 38.6% |
 
-**Ținta acceptată în produs:** 697 rânduri; progres 137/697 = **19.7%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
+**Ținta acceptată în produs:** 697 rânduri; progres 143/697 = **20.5%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
 
-**Acoperirea reevaluării curente:** 67/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 72/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -29,7 +29,7 @@ Din acestea, **29** au fost reevaluate pe cod în această livrare; **108** păs
 | cli | 56 | 16 | 12 | 1 | 0 | 27 |
 | gateway | 33 | 5 | 8 | 3 | 0 | 17 |
 | platforms | 39 | 5 | 11 | 3 | 0 | 20 |
-| web | 40 | 8 | 11 | 3 | 0 | 18 |
+| web | 40 | 10 | 11 | 3 | 0 | 16 |
 | desktop | 54 | 6 | 27 | 6 | 0 | 15 |
 | tui | 25 | 1 | 9 | 2 | 0 | 13 |
 | config | 18 | 5 | 7 | 2 | 0 | 4 |
@@ -37,19 +37,19 @@ Din acestea, **29** au fost reevaluate pe cod în această livrare; **108** păs
 | tools — the agent-callable surface | 32 | 8 | 12 | 1 | 0 | 11 |
 | skills | 33 | 13 | 8 | 2 | 0 | 10 |
 | providers | 27 | 5 | 8 | 1 | 0 | 13 |
-| agent-core | 36 | 9 | 8 | 7 | 0 | 12 |
-| memory | 27 | 8 | 7 | 0 | 0 | 12 |
+| agent-core | 36 | 10 | 7 | 7 | 0 | 12 |
+| memory | 27 | 9 | 7 | 0 | 0 | 11 |
 | automation | 32 | 2 | 14 | 2 | 0 | 14 |
 | security | 34 | 9 | 9 | 1 | 0 | 15 |
 | media | 27 | 5 | 12 | 2 | 0 | 8 |
 | acp-mcp-dev | 33 | 3 | 12 | 11 | 0 | 7 |
 | docs-features | 48 | 8 | 18 | 3 | 0 | 19 |
 | rest-api | 33 | 12 | 15 | 2 | 0 | 4 |
-| delta | 42 | 7 | 11 | 3 | 0 | 21 |
+| delta | 42 | 9 | 11 | 3 | 0 | 19 |
 
 ## Actualizare
 
-Evaluare: `2026-10-10T03:38:26Z`. Cod inspectat: `dd10d840b7782cab3d93ae64e2e2e44fc9189f63`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-10-10T04:20:40Z`. Cod inspectat: `1b26e3037f9d4dbd05a7f6c11eccd23de9336570`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
 
