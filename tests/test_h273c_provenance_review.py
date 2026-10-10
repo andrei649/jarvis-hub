@@ -85,7 +85,8 @@ def test_every_nerva_name_read_while_the_hub_is_imported_is_classified(tmp_path)
     owned = {name for name in read if name.startswith(("JARVIS_", "NERVA_", "NEO4J_"))
              or name in _declared_in_example() or name in hub_names}
     assert read >= ep.READ_AGAIN_AFTER_LOAD           # stale READ_BEFORE_LOAD entries: the start test (H273d)
-    unclassified = owned - ep.READ_BEFORE_LOAD - ep.READ_AGAIN_AFTER_LOAD
+    unclassified = (owned - ep.READ_BEFORE_LOAD - ep.READ_AGAIN_AFTER_LOAD
+                    - set(ep.SPLIT_NOTES) - set(ep.OPTIONAL_SPLIT_NOTES))
     assert not unclassified, (
         f"{sorted(unclassified)} are read while the hub is imported, before any .env is loaded. "
         "List each in env_provenance.READ_BEFORE_LOAD (a .env value is not in effect) or, when "
@@ -110,6 +111,13 @@ def test_the_note_says_the_hub_reads_it_before_the_load(key):
     assert "before the .env files are loaded" in note and "serve.py" not in note
     assert ep.note_for(key, ep.USER_ENV) == note and ep.note_for(key, ep.PROCESS) == ""
     assert ep.note_for("DEV_MODE", ep.REPO_ENV) == ""                   # read again after the load
+    # SDK presence varies; do not promise that a late .env CA path changes an
+    # aiohttp context already constructed during import.
+    tls_note = ep.note_for("SSL_CERT_FILE", ep.REPO_ENV)
+    assert "may cache TLS trust before" in tls_note
+    assert "not those cached contexts" in tls_note
+    assert ep.note_for("SSL_CERT_FILE", ep.USER_ENV) == tls_note
+    assert ep.note_for("SSL_CERT_FILE", ep.PROCESS) == ""
 
 
 # ── B2: no value material printed as a name ──────────────────────────────────────

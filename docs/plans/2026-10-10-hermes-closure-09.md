@@ -105,3 +105,37 @@ and removed temporary state. Source digests were unchanged during the run.
 A pre-existing nonstream context-anchor warning was observed; usage is recorded
 before that callback, so turn totals remain. The separate H673 issue is recorded
 in next-context-anchor.json and is not represented as repaired by this batch.
+
+## Frozen integration result and repairs
+
+The frozen backend milestone completed 25,951 cases: 25,906 passed, five
+failed, and 40 skipped/xfail. All 5,718 tracked/nonignored inputs were verified
+unchanged before any repair. An initial launch was interrupted during collection
+because a status-check CLI spelling prevented the planned freeze; its separate
+log is retained and it is not used as milestone evidence.
+
+Three intermittent test failures were fixture defects: the consent test relied
+on a fixed 400ms sleep instead of its completion event; the renderer cost test
+charged unrelated scheduling wall time to a synchronous CPU bound; and the skill
+warning test assumed two generated names shared a wall-clock second. Repairs
+retain original outcome/refusal assertions, the 0.5s CPU ceiling and real duplicate
+path early return. All three original nodes and all 245 cases in their modules
+pass. No product behavior changed for those three repairs.
+
+Two environment-provenance guards exposed an optional-SDK configuration caveat:
+aiohttp constructs a shared TLS context at import and reads SSL_CERT_FILE before
+dotenv. Later clients may read that name again. A finite optional split-phase note
+now tells .env users the cached context is unaffected and consistent trust needs
+the process value. Environment loading/precedence and TLS trust behavior remain
+unchanged; mandatory read classifications are still measured. Both complete
+review modules pass 130/130 with optional SDKs; both original import/start guards
+also pass without them. This is not a claim that the original full run was green.
+
+No frontend/mobile source changed in this batch: their latest completed 2,181/359
+counts are reused with provenance, not reported as rerun. Backend collection is
+fresh at 25,951 and route count remains 629. The unrelated H673 warning observed
+in this batch is repaired separately in batch10, not retroactively claimed here.
+A read-only H526 review found missing speech-verifier-footer stripping; that row
+remains unclosed and its repair will be a separate local batch.
+
+Next action: guarded whole H067 acceptance and final metadata checks.

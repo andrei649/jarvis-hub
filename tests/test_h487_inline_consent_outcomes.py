@@ -291,8 +291,9 @@ async def test_committed_choice_is_not_misreported_while_native_wake_is_delayed(
             monkeypatch.setattr(prompts, 'decision_committed', lambda *args: None)
         response = await _post(app, task.id, revision=offer.revision, choice=choice)
         assert response.status_code == 200
-        await asyncio.sleep(0.4)
-        assert h.finished.is_set(), 'a committed exact choice cannot be lost behind a delayed wake'
+        # Completion depends on the native waiter, not a particular amount of
+        # scheduler time after the HTTP commit.
+        await asyncio.wait_for(h.finished.wait(), 2)
         assert h.replies[0]['ok'] is (choice != 'deny')
         if choice == 'deny':
             assert h.replies[0]['reason'] == 'owner_denied' and h.effects == []
