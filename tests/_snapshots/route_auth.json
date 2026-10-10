@@ -605,6 +605,8 @@
   "POST /sandbox/execute": "user",
   "POST /sandbox/kernels/reset": "user",
   "POST /sessions/continue": "admin",
+  "POST /sessions/import": "admin",
+  "POST /sessions/resolve": "admin",
   "POST /sessions/resume": "user",
   "POST /sessions/{session_id}/archive": "user",
   "POST /sessions/{session_id}/pin": "user",

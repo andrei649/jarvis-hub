@@ -40,10 +40,13 @@ _memory_dir = memory_dir   # internal alias, kept so use sites read tersely
 
 
 class Turn:
-    __slots__ = ("role", "content", "agent_id", "timestamp", "token_count", "tools", "media")
+    __slots__ = ("role", "content", "agent_id", "timestamp", "token_count", "tools", "media", "foreign_origin")
 
     def __init__(self, role: str, content: str, agent_id: str = None, token_count: int = 0,
-                 tools: list[str] | None = None, media: dict | None = None):
+                 tools: list[str] | None = None, media: dict | None = None,
+                 foreign_origin: str | None = None):
+        if foreign_origin is not None and foreign_origin not in {"claude", "codex"}:
+            raise ValueError("invalid foreign origin")
         self.role = role
         self.content = content
         self.agent_id = agent_id
@@ -52,6 +55,7 @@ class Turn:
         # H441 — the tools a reply called (names only), so a recap can collapse them.
         self.tools = _tool_names(tools)
         self.media = validated_media(media) if media is not None else None
+        self.foreign_origin = foreign_origin
 
     def to_dict(self):
         out = {
@@ -65,6 +69,8 @@ class Turn:
             out["tools"] = list(self.tools)
         if self.media is not None:
             out["media"] = dict(self.media)
+        if self.foreign_origin is not None:
+            out["foreign_origin"] = self.foreign_origin
         return out
 
 
@@ -106,6 +112,7 @@ class ConversationMemory:
 
         self.sessions: dict[str, list[Turn]] = {}
         self.instances: dict[str, str] = {}
+        self.foreign_origins: dict[str, object] = {}
         self.revisions: dict[str, int] = {}
         self.rewound_sessions: set[str] = set()
         self.pending_rewinds: set[str] = set()
@@ -128,6 +135,9 @@ class ConversationMemory:
             snapshot = load_memory_snapshot(sid)
             turns_data = snapshot.get("turns")
             if snapshot.get("session_id") == sid and isinstance(turns_data, list):
+                if isinstance(snapshot.get("foreign_history"), dict):
+                    from ..foreign_history import Origin
+                    self.foreign_origins[sid] = Origin(**snapshot["foreign_history"])
                 if snapshot.get("instance_id"):
                     self.instances[sid] = snapshot["instance_id"]
                 self.revisions[sid] = snapshot.get("revision", 0)
@@ -137,7 +147,8 @@ class ConversationMemory:
                 self.sessions[sid] = []
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
-                                tools=t.get("tools"), media=restored_media(t.get("media")))
+                                tools=t.get("tools"), media=restored_media(t.get("media")),
+                                foreign_origin=t.get("foreign_origin"))
                     turn.timestamp = t.get("timestamp") or turn.timestamp
                     self.sessions[sid].append(turn)
                 self.current_session_id = sid
@@ -180,6 +191,9 @@ class ConversationMemory:
                 turns_data = snapshot.get("turns")
                 if snapshot.get("session_id") != session_id or not isinstance(turns_data, list):
                     return False
+                if isinstance(snapshot.get("foreign_history"), dict):
+                    from ..foreign_history import Origin
+                    self.foreign_origins[session_id] = Origin(**snapshot["foreign_history"])
                 if snapshot.get("instance_id"):
                     self.instances[session_id] = snapshot["instance_id"]
                 if snapshot.get("rewound") is True:
@@ -189,7 +203,8 @@ class ConversationMemory:
                 self.revisions[session_id] = snapshot.get("revision", 0)
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
-                                tools=t.get("tools"), media=restored_media(t.get("media")))
+                                tools=t.get("tools"), media=restored_media(t.get("media")),
+                                foreign_origin=t.get("foreign_origin"))
                     turn.timestamp = t.get("timestamp") or turn.timestamp
                     self.sessions[session_id].append(turn)
                 logger.info(f"Resumed session {session_id} ({len(turns_data)} turns)")
@@ -198,12 +213,20 @@ class ConversationMemory:
 
     def restore_verified_rewind(self, session_id: str, snapshot: dict) -> None:
         """Only the bound manager calls this after validating the SQLite head."""
+        marker = snapshot.get("foreign_history")
+        if marker is not None:
+            from ..foreign_history import Origin
+            if not isinstance(marker, dict) or set(marker) != {"kind", "source", "instance_id"}:
+                raise ValueError("invalid foreign rewind marker")
+            self.foreign_origins[session_id] = Origin(**marker)
+        else:
+            self.foreign_origins.pop(session_id, None)
         rows = snapshot["turns"]
         restored = []
         for value in rows:
             turn = Turn(value["role"], value["content"], value.get("agent_id"),
                         value.get("token_count", 0), tools=value.get("tools"),
-                        media=restored_media(value.get("media")))
+                        media=restored_media(value.get("media")), foreign_origin=value.get("foreign_origin"))
             turn.timestamp = value.get("timestamp") or turn.timestamp
             restored.append(turn)
         self.invalidate_active_images(session_id)
@@ -243,7 +266,7 @@ class ConversationMemory:
                     await asyncio.to_thread(self._persist_turn, session_id, turn_dict, turns_data,
                                             self.instances.get(session_id), self.revisions[session_id],
                                             session_id in self.rewound_sessions)
-                except RewindPersistenceError:
+                except Exception:
                     self.sessions[session_id] = prior_turns
                     self.revisions[session_id] = prior_revision
                     if not was_dirty:
@@ -261,14 +284,18 @@ class ConversationMemory:
             if instance_id:
                 save_memory(session_id, turns_data, instance_id=instance_id, revision=revision,
                             checkpoint_mgr=self._rewind_checkpoint_mgr,
-                            require_rewind=require_rewind)
+                            require_rewind=require_rewind,
+                            foreign_origin=self.foreign_origins.get(session_id))
             else:
                 save_memory(session_id, turns_data, revision=revision,
                             checkpoint_mgr=self._rewind_checkpoint_mgr,
-                            require_rewind=require_rewind)
+                            require_rewind=require_rewind,
+                            foreign_origin=self.foreign_origins.get(session_id))
         except RewindPersistenceError:
             raise
         except Exception as e:
+            if session_id in self.foreign_origins:
+                raise RewindPersistenceError("foreign conversation append not persisted") from e
             logger.warning(f"Snapshot save failed: {e}")
 
     def _save_snapshot(self, session_id: str):
@@ -280,11 +307,13 @@ class ConversationMemory:
                 save_memory(session_id, turns_data, instance_id=instance_id,
                             revision=self.revisions.get(session_id, 0),
                             checkpoint_mgr=self._rewind_checkpoint_mgr,
-                            require_rewind=session_id in self.rewound_sessions)
+                            require_rewind=session_id in self.rewound_sessions,
+                            foreign_origin=self.foreign_origins.get(session_id))
             else:
                 save_memory(session_id, turns_data, revision=self.revisions.get(session_id, 0),
                             checkpoint_mgr=self._rewind_checkpoint_mgr,
-                            require_rewind=session_id in self.rewound_sessions)
+                            require_rewind=session_id in self.rewound_sessions,
+                            foreign_origin=self.foreign_origins.get(session_id))
         except RewindPersistenceError:
             raise
         except Exception as e:
@@ -303,10 +332,11 @@ class ConversationMemory:
         turns = await self.get_history(session_id, last_n)
         if not turns:
             return ""
+        from ..foreign_history import render_turn
+        tainted = session_id in self.foreign_origins
         lines = []
         for t in turns:
-            speaker = t["agent_id"] or t["role"]
-            lines.append(f"[{speaker}]: {t['content']}")
+            lines.append(render_turn(t, tainted=tainted))
         return "\n".join(lines)
 
     async def clear(self, session_id: str = None):
@@ -315,6 +345,7 @@ class ConversationMemory:
                 self.invalidate_active_images(session_id)
                 self.sessions.pop(session_id, None)
                 self.instances.pop(session_id, None)
+                self.foreign_origins.pop(session_id, None)
                 self.revisions.pop(session_id, None)
                 self.rewound_sessions.discard(session_id)
                 self.pending_rewinds.discard(session_id)
@@ -323,6 +354,7 @@ class ConversationMemory:
                 self._active_image_instances.clear()
                 self.sessions.clear()
                 self.instances.clear()
+                self.foreign_origins.clear()
                 self.revisions.clear()
                 self.rewound_sessions.clear()
                 self.pending_rewinds.clear()

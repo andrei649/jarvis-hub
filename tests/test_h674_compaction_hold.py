@@ -493,7 +493,18 @@ async def test_aclose_stops_a_deferred_summary():
 # ── the notice reaches the owner ─────────────────────────────────────────────
 
 
-def test_chat_carries_the_notice(monkeypatch):
+@pytest.fixture
+def native_chat_checkpoints(tmp_path):
+    from agents.core.checkpoint import CheckpointManager
+
+    checkpoints = CheckpointManager(str(tmp_path / "notice-sessions.db"))
+    checkpoints.initialize()
+    checkpoints.create_session_record("compaction_notice")
+    yield checkpoints
+    checkpoints.close()
+
+
+def test_chat_carries_the_notice(monkeypatch, native_chat_checkpoints):
     from fastapi.testclient import TestClient
 
     from agents import web
@@ -505,6 +516,8 @@ def test_chat_carries_the_notice(monkeypatch):
         return "ok"
 
     mock = MagicMock()
+    mock.session_id = "compaction_notice"
+    mock.checkpoints = native_chat_checkpoints
     mock.handle_input = AsyncMock(side_effect=handle_input)
     monkeypatch.setattr(web, "orch", mock)
     client = TestClient(web.app)
@@ -514,13 +527,15 @@ def test_chat_carries_the_notice(monkeypatch):
     assert client.post("/chat", json={"message": "hi"}).json()["notices"] == [], "one turn's notice never leaks into the next"
 
 
-async def test_chat_leaves_no_collector_bound(monkeypatch):
+async def test_chat_leaves_no_collector_bound(monkeypatch, native_chat_checkpoints):
     from starlette.requests import Request
 
     from agents import web
     from agents.core import turn_notices
 
     mock = MagicMock()
+    mock.session_id = "compaction_notice"
+    mock.checkpoints = native_chat_checkpoints
     mock.handle_input = AsyncMock(return_value="ok")
     mock.notes = None
     monkeypatch.setattr(web, "orch", mock)

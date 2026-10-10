@@ -241,7 +241,11 @@ def test_resume_answers_with_a_recap_and_calls_no_model(monkeypatch):
 
     turns = _conversation(15)
     turns[-1]["tools"] = ["web_search"]
-    orch = SimpleNamespace(memory=_Memory(turns), session_id="s-now", llm_router=_NoModel(), backend=_NoModel())
+    from agents.core.checkpoint import CheckpointManager
+    checkpoints = CheckpointManager(":memory:")
+    checkpoints.initialize()
+    orch = SimpleNamespace(memory=_Memory(turns), session_id="s-now", llm_router=_NoModel(),
+                           backend=_NoModel(), checkpoints=checkpoints)
     monkeypatch.setattr(route, "get_orch", lambda: orch)
     got = TestClient(web.app).post("/sessions/resume", json={"session_id": "s-old"})
     assert got.status_code == 200

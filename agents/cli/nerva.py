@@ -359,6 +359,10 @@ def build_parser() -> argparse.ArgumentParser:
     continuation.add_argument("source_session_id")
     continuation.add_argument("--request-id", required=True, help="stable UUID for safe retry")
     continuation.add_argument("--json", action="store_true")
+    imported = session_verbs.add_parser("import", help="import a local Claude Code/Codex JSONL conversation")
+    imported.add_argument("--from", dest="foreign_source", choices=("claude", "codex"), required=True)
+    imported.add_argument("path", help="owner-selected local JSONL path")
+    imported.add_argument("--json", action="store_true")
 
     chat = verbs.add_parser(
         "chat",
@@ -394,7 +398,11 @@ def build_parser() -> argparse.ArgumentParser:
     # Keep CLI help/completion stdlib-only; test parity with the runtime ladder.
     chat.add_argument("--reasoning", choices=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
                       help="reasoning effort for this invocation only")
-    chat.add_argument("--session", help="explicit existing conversation session")
+    selection = chat.add_mutually_exclusive_group()
+    selection.add_argument("--session", help="explicit existing conversation session")
+    selection.add_argument("-r", "--resume", metavar="SELECTOR", help="exact ID, unique prefix, title, latest, or @claude/@codex")
+    selection.add_argument("-c", "--continue", dest="continue_latest", action="store_true",
+                           help="use the latest unarchived conversation and print a free recap")
     chat.add_argument("--json", action="store_true")
     chat.add_argument("--image", action="append", metavar="PATH",
                       help="ask the vision model about this PNG/JPEG/GIF/WebP file (up to 8, 4 MiB "
@@ -1983,6 +1991,25 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
         else:
             ctx.say(f"Created {reply['session_id']}; continue with nerva chat --session {reply['session_id']} MESSAGE")
         return EXIT_OK
+    if getattr(ns, "session_action", None) == "import":
+        from .client import is_loopback_url
+        from .foreign_sessions import ForeignSourceError, read_file
+
+        if not is_loopback_url(hub_url(ctx.environ)):
+            ctx.err.write("foreign transcripts can only be imported to a local hub\n")
+            return EXIT_AUTH
+        try:
+            parsed = read_file(ns.foreign_source, ns.path)
+        except ForeignSourceError as exc:
+            ctx.err.write(f"{exc}\n")
+            return EXIT_FAILED
+        import uuid
+        reply = ctx.client().post("/sessions/import", {**parsed, "request_id": str(uuid.uuid4())})
+        if ns.json:
+            ctx.dump(reply)
+        else:
+            ctx.say(f"Imported {reply['session_id']}; resume with nerva chat -r {reply['session_id']} MESSAGE")
+        return EXIT_OK
     reply = ctx.client().get("/sessions")
     sessions = (reply or {}).get("sessions") or []
     if ns.json:
@@ -2371,6 +2398,41 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.err.write(f"{why}\n")
         return finish(EXIT_USAGE, status="usage", reason=why)
 
+    selected_session = getattr(ns, "session", None)
+    selector = getattr(ns, "resume", None)
+    latest_mode = bool(getattr(ns, "continue_latest", False))
+    if selector or latest_mode:
+        from .foreign_sessions import ForeignSourceError
+        try:
+            if selector and selector.startswith(("@claude", "@codex")):
+                from .client import is_loopback_url
+                from .foreign_sessions import discover, read_file
+
+                if not is_loopback_url(hub_url(ctx.environ)):
+                    raise ForeignSourceError("foreign transcripts can only be imported to a local hub")
+                source, _, external_id = selector[1:].partition(":")
+                if source not in {"claude", "codex"}:
+                    raise ForeignSourceError("invalid foreign selector")
+                parsed = read_file(source, discover(source, external_id or None))
+                import uuid
+                imported = ctx.client().post("/sessions/import", {**parsed, "request_id": str(uuid.uuid4())})
+                selector = imported["session_id"]
+            resolved = ctx.client().post("/sessions/resolve", {
+                "selector": selector or "latest", "latest_mode": latest_mode})
+            selected_session = resolved["session_id"]
+            recap = resolved.get("recap")
+            if recap:
+                ctx.err.write(str(recap.get("text", "") if isinstance(recap, dict) else recap).rstrip() + "\n")
+        except ForeignSourceError as exc:
+            ctx.err.write(f"{exc}\n")
+            return finish(EXIT_FAILED, status="failed", reason=str(exc))
+        except HubError as exc:
+            ctx.err.write(f"{exc}\n")
+            return finish(EXIT_AUTH if exc.status in {401, 403} else EXIT_FAILED,
+                          status="unauthorised" if exc.status in {401, 403} else "failed", reason=str(exc))
+    if selected_session:
+        ns.session = selected_session
+
     if getattr(ns, "image", None) or getattr(ns, "clipboard_image", False):
         return _vision_turn(ns, ctx, message, finish=finish, oneshot=oneshot)
     if getattr(ns, "remote_vision", None) is not None:
@@ -2387,8 +2449,8 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         body["agent"] = ns.agent
     if getattr(ns, "reasoning", None) is not None:
         body["reasoning"] = ns.reasoning
-    if getattr(ns, "session", None):
-        body["session_id"] = ns.session
+    if selected_session:
+        body["session_id"] = selected_session
     try:
         reply = ctx.client().post("/chat", body)
     except KeyboardInterrupt:

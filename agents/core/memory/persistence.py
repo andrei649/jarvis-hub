@@ -102,7 +102,8 @@ def read_snapshot_for_rewind(session_id: str) -> tuple[dict, str]:
 def replace_memory_if_current(session_id: str, *, instance_id: str, revision: int,
                               digest: str, turns: list[dict],
                               already_locked: bool = False,
-                              expected_missing: bool = False) -> tuple[dict | None, str]:
+                              expected_missing: bool = False,
+                              foreign_origin=None) -> tuple[dict | None, str]:
     """Strict durable compare-and-replace; errors never become a successful undo."""
     with nullcontext() if already_locked else session_snapshot_lock(session_id):
         path = _memory_dir() / f"{session_id}.json"
@@ -121,6 +122,12 @@ def replace_memory_if_current(session_id: str, *, instance_id: str, revision: in
         updated = {"session_id": session_id, "turns": turns,
                    "instance_id": instance_id, "revision": revision + 1,
                    "rewound": True}
+        if foreign_origin is not None:
+            marker = {"kind": foreign_origin.kind, "source": foreign_origin.source,
+                      "instance_id": foreign_origin.instance_id}
+            if current is not None and current.get("foreign_history") != marker:
+                raise ValueError("foreign lineage changed")
+            updated["foreign_history"] = marker
         atomic_write_json(path, updated)
         return current, snapshot_digest(updated)
 
@@ -146,24 +153,43 @@ def restore_memory_if_current(session_id: str, *, digest: str, previous: dict | 
 
 def save_memory(session_id: str, turns: list[dict], *, instance_id: str | None = None,
                 revision: int | None = None, checkpoint_mgr=None,
-                require_rewind: bool = False):
+                require_rewind: bool = False, foreign_origin=None):
     # AUD-5: never let an id that isn't an inert identifier reach the path — a
     # second line of defense behind the router validation, so any internal caller
     # is protected too.
     if not is_valid_session_id(session_id):
+        if foreign_origin is not None:
+            raise ValueError("invalid foreign session identifier")
         logger.warning("refusing to save memory for invalid session_id")
         return
-    _memory_dir().mkdir(parents=True, exist_ok=True)
-    path = _memory_dir() / f"{session_id}.json"
     try:
+        _memory_dir().mkdir(parents=True, exist_ok=True)
+        path = _memory_dir() / f"{session_id}.json"
         # tmp+replace, not open(path, "w"): the truncate-then-stream form left a
         # half-written snapshot on disk whenever the dump raised (or the process
         # died) mid-turn, and load_memory() reads that as an empty conversation.
         payload = {"session_id": session_id, "turns": turns,
                    **({"instance_id": instance_id} if instance_id else {}),
                    **({"revision": revision} if revision is not None else {})}
+        if foreign_origin is not None:
+            payload["foreign_history"] = {"kind": foreign_origin.kind, "source": foreign_origin.source,
+                                          "instance_id": foreign_origin.instance_id}
         with (checkpoint_mgr._lock if checkpoint_mgr is not None else nullcontext()), session_snapshot_lock(session_id):
             conn = getattr(checkpoint_mgr, "_conn", None)
+            if foreign_origin is not None:
+                from ..foreign_history import status_locked
+                if conn is None or status_locked(conn, session_id) != foreign_origin:
+                    raise ValueError("foreign lineage changed")
+                # Mark the immutable seed non-recoverable before attempting a
+                # newer snapshot. A crash can conservatively refuse this session;
+                # it must never resurrect a seed that omits an acknowledged reply.
+                changed = conn.execute(
+                    "UPDATE session_imports SET snapshot_required=1 "
+                    "WHERE session_id=? AND instance_id=?", (session_id, foreign_origin.instance_id),
+                )
+                if changed.rowcount != 1:
+                    raise ValueError("foreign receipt changed")
+                conn.commit()
             try:
                 head = (conn.execute(
                     "SELECT instance_id,revision,snapshot_sha256 FROM session_history_rewinds "
@@ -239,7 +265,7 @@ def save_memory(session_id: str, turns: list[dict], *, instance_id: str | None =
     except RewindPersistenceError:
         raise
     except Exception as e:
-        if require_rewind:
+        if require_rewind or foreign_origin is not None:
             raise RewindPersistenceError("conversation rewind not persisted") from e
         logger.warning(f"Failed to save memory: {e}")
 

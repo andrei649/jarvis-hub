@@ -28,14 +28,77 @@ from agents.core.validation import is_valid_session_id
 router = APIRouter(tags=["sessions"])
 
 
+class ResolveSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    selector: str
+    latest_mode: bool = False
+
+
+@router.post("/sessions/resolve", dependencies=[Depends(admin_guard)])
+async def resolve_session(body: ResolveSessionRequest):
+    """Select and recap without changing the shared active/default session."""
+    from agents.core.memory.recap import render_recap
+    from agents.core.session_continuation import ContinuationRefused, prepare_session
+    from agents.core.session_selectors import SessionSelectionError, resolve
+
+    orch = get_orch()
+    if orch is None:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        import asyncio
+        sid = await asyncio.to_thread(resolve, orch.checkpoints, body.selector,
+                                      latest_mode=body.latest_mode)
+        await prepare_session(orch, sid)
+        history = await orch.memory.get_history(sid)
+    except (SessionSelectionError, ContinuationRefused) as exc:
+        return JSONResponse({"error": exc.reason,
+                             **({"candidates": exc.candidates} if getattr(exc, "candidates", None) else {})},
+                            status_code=exc.status)
+    return JSONResponse({"session_id": sid, "recap": render_recap(history)}, headers=_NO_STORE)
+
+
+class ImportSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: str
+    external_id: str
+    turns: list[dict]
+    request_id: UUID
+    source_sha256: str | None = None
+
+
+@router.post("/sessions/import", dependencies=[Depends(admin_guard)])
+async def import_session(body: ImportSessionRequest):
+    """Accept owner-attested, canonical text only; SQLite owns the durable seed."""
+    from agents.core.foreign_history import ForeignHistoryRefused
+    from agents.core.session_import import import_turns
+
+    orch = get_orch()
+    if orch is None:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        import asyncio
+        result = await asyncio.to_thread(import_turns, orch.checkpoints, source=body.source,
+                                         external_id=body.external_id, turns=body.turns,
+                                         request_id=str(body.request_id), source_sha256=body.source_sha256)
+    except ForeignHistoryRefused as exc:
+        return JSONResponse({"error": exc.reason}, status_code=exc.status)
+    return JSONResponse(result, status_code=201, headers=_NO_STORE)
+
+
 @router.get("/sessions", dependencies=[Depends(user_guard)])
-async def get_sessions(archived: bool = False):
+async def get_sessions(req: Request, archived: bool = False):
     """The newest sessions; H218: archived ones only with ``?archived=true``, never mixed in.
     H262: each row carries its ``pinned_at``."""
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     sessions = orch.checkpoints.get_sessions(limit=20, archived=archived)
+    from agents import web
+    from agents.core.foreign_history import status
+    if not web._web_principal(req).admin:
+        import asyncio
+        sessions = [row for row in sessions if not (await asyncio.to_thread(
+            status, orch.checkpoints, row.get("session_id") or row.get("id"))).tainted]
     from ..session_titles import title_fields  # H413: each session's title and its source
 
     return {"sessions": [{**row, **title_fields(row.get("metadata")), **_stamp_fields(row)} for row in sessions]}
@@ -57,12 +120,14 @@ def _stamp_fields(row: dict) -> dict:
 _STAMPS = {"archived": "set_archived", "pinned": "set_pinned"}
 
 
-def _set_stamp(session_id: str, field: str, on: bool):
+async def _set_stamp(session_id: str, field: str, on: bool, req: Request):
     if not is_valid_session_id(session_id):
         return JSONResponse({"error": "invalid session_id"}, status_code=400)
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    from agents.core.foreign_history import http_owner_guard
+    await http_owner_guard(orch.checkpoints, session_id, req)
     if (field, on) == ("archived", False):
         done = _keep(orch.checkpoints, session_id)
     else:
@@ -82,27 +147,27 @@ def _keep(checkpoints, session_id: str):
 
 
 @router.post("/sessions/{session_id}/archive", dependencies=[Depends(user_guard)])
-async def archive_session(session_id: str):
+async def archive_session(session_id: str, req: Request):
     """H218 — put a conversation away: it leaves the list, nothing is deleted."""
-    return _set_stamp(session_id, "archived", True)
+    return await _set_stamp(session_id, "archived", True, req)
 
 
 @router.post("/sessions/{session_id}/unarchive", dependencies=[Depends(user_guard)])
-async def unarchive_session(session_id: str):
+async def unarchive_session(session_id: str, req: Request):
     """H218 — bring an archived conversation back to the list (a pinned one too)."""
-    return _set_stamp(session_id, "archived", False)
+    return await _set_stamp(session_id, "archived", False, req)
 
 
 @router.post("/sessions/{session_id}/pin", dependencies=[Depends(user_guard)])
-async def pin_session(session_id: str):
+async def pin_session(session_id: str, req: Request):
     """H262 — pin a conversation: never auto-archived, never deleted by retention."""
-    return _set_stamp(session_id, "pinned", True)
+    return await _set_stamp(session_id, "pinned", True, req)
 
 
 @router.post("/sessions/{session_id}/unpin", dependencies=[Depends(user_guard)])
-async def unpin_session(session_id: str):
+async def unpin_session(session_id: str, req: Request):
     """H262 — take the pin off; the chat is archived and retained like any other again."""
-    return _set_stamp(session_id, "pinned", False)
+    return await _set_stamp(session_id, "pinned", False, req)
 
 
 _DELETE_STATUS = {"active_session": 409, "session_busy": 409, "has_continuations": 409, "not_found": 404,
@@ -142,19 +207,35 @@ RECENT_PLANS = 20
 
 
 @router.get("/sessions/todo", dependencies=[Depends(user_guard)])
-async def get_recent_plans():
+async def get_recent_plans(req: Request):
     """H315 — the checklists the agent keeps, the one it most recently wrote or read
     first (each carries ``updated_at``, when its list last changed)."""
     from agents.core import todo_tool
 
-    return JSONResponse({"plans": todo_tool.TODOS.recent(RECENT_PLANS)}, headers=_NO_STORE)
+    plans = todo_tool.TODOS.recent(RECENT_PLANS)
+    from agents import web
+    if not web._web_principal(req).admin:
+        orch = get_orch()
+        if orch is None:
+            return JSONResponse({"error": "not initialized"}, status_code=503)
+        import asyncio
+
+        from agents.core.foreign_history import status
+        plans = [plan for plan in plans if not (await asyncio.to_thread(
+            status, orch.checkpoints, plan.get("session_id", ""))).tainted]
+    return JSONResponse({"plans": plans}, headers=_NO_STORE)
 
 
 @router.get("/sessions/{session_id}/todo", dependencies=[Depends(user_guard)])
-async def get_session_plan(session_id: str):
+async def get_session_plan(session_id: str, req: Request):
     """H315 — one session's checklist; a session with none answers an empty list."""
     if not is_valid_session_id(session_id):
         return JSONResponse({"error": "invalid session_id"}, status_code=400)
+    from agents.core.foreign_history import http_owner_guard
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    await http_owner_guard(orch.checkpoints, session_id, req)
     from agents.core import todo_tool
 
     return JSONResponse(todo_tool.TODOS.read(session_id), headers=_NO_STORE)
@@ -176,11 +257,14 @@ async def resume_session(req: Request):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    from agents.core.foreign_history import http_owner_guard
+    await http_owner_guard(orch.checkpoints, sid, req)
+    from agents.core.foreign_history import ForeignHistoryRefused
     from agents.core.session_continuation import ContinuationRefused
 
     try:
         ok = await orch.memory.resume_session(sid)
-    except ContinuationRefused as exc:     # a continued chat whose history cannot be restored
+    except (ContinuationRefused, ForeignHistoryRefused) as exc:  # history cannot be restored
         return JSONResponse({"error": exc.reason}, status_code=exc.status)
     if not ok:
         return JSONResponse({"error": f"session '{sid}' not found"}, status_code=404)

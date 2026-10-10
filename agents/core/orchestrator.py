@@ -35,6 +35,7 @@ from .llm.tokenizer import estimate_tokens
 from .memory import turn_tools
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
+from .foreign_history import ForeignHistoryRefused
 from .heartbeat import HeartbeatScheduler
 from .scheduler_service import SchedulerService
 from .autonomy_coordinator import AutonomyCoordinator
@@ -2321,6 +2322,22 @@ class Orchestrator:
         # had.
         self._meter_store()["_last_reported_usage"] = dict(value or {})
 
+    async def _guard_foreign_turn(self, sid: str) -> None:
+        """Check server-owned lineage before even a direct command reads history."""
+        from .foreign_history import ForeignHistoryRefused, status
+        from .security.recall_taint import mark_turn_recall_tainted
+
+        manager = getattr(self, "checkpoints", None)
+        if manager is None:
+            if sid in getattr(getattr(self.memory, "conversation", None), "foreign_origins", {}):
+                raise ForeignHistoryRefused()
+            return
+        origin = await asyncio.to_thread(status, manager, sid)
+        if origin.tainted:
+            if not current_principal().admin:
+                raise ForeignHistoryRefused("owner_required", 403)
+            mark_turn_recall_tainted()
+
     @measure_turn_latency
     async def handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                            session_id: str = None) -> str:
@@ -2354,6 +2371,8 @@ class Orchestrator:
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
             return CONTINUATION_REFUSED_REPLY
+        except ForeignHistoryRefused:
+            return CONTINUATION_REFUSED_REPLY
         finally:
             state = _TURN_CHAT_OUTCOMES.get()
             close_approval_turn(state["context"] if state else None, outcome_token)
@@ -2381,6 +2400,7 @@ class Orchestrator:
         # single-shared-session behavior (or to honor a session a caller like
         # `channel_handler` already pinned in this context).
         self._resolve_session(session_id)
+        await self._guard_foreign_turn(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
             return session_reply
@@ -2566,6 +2586,8 @@ class Orchestrator:
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
             return CONTINUATION_REFUSED_REPLY
+        except ForeignHistoryRefused:
+            return CONTINUATION_REFUSED_REPLY
         finally:
             state = _TURN_CHAT_OUTCOMES.get()
             close_approval_turn(state["context"] if state else None, outcome_token)
@@ -2592,6 +2614,7 @@ class Orchestrator:
         # BUG-5: see handle_input — pin this turn to its own session so it can
         # never read or write another concurrent request's conversation.
         self._resolve_session(session_id)
+        await self._guard_foreign_turn(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
             if on_token:
@@ -3888,6 +3911,8 @@ class Orchestrator:
     def _spawn_background_review(self, text: str, synthesized: str, channel: str) -> None:
         """H20: spawn the per-turn learning distiller (fire-and-forget, gated)."""
         try:
+            if self.session_id in self.memory.conversation.foreign_origins:
+                return
             if is_degraded_reply(synthesized):
                 return
             cog = getattr(self, "cognition", None)
@@ -3921,11 +3946,14 @@ class Orchestrator:
         (``cognition.review_enabled``) is on: the owner asked. Returns the reviewer's
         result; the command reports it."""
         from .learning.background_review import conversation_snapshot
+        from .foreign_history import status
 
         reviewer = getattr(self, "reviewer", None)
         if reviewer is None or not hasattr(reviewer, "run_on_demand"):
             return {"ran": False, "reason": "unavailable", "actions": []}
         key = self._lease_key(session_id)
+        if (await asyncio.to_thread(status, self.checkpoints, key)).tainted:
+            return {"ran": False, "reason": "foreign_history_not_promotable", "actions": []}
         lock = self.__dict__.get("_turn_leases", {}).get(key)
         if lock is not None and lock.locked() and key not in _held_turn_leases.get():
             return {"ran": False, "reason": "turn_in_flight", "actions": []}
@@ -3962,6 +3990,9 @@ class Orchestrator:
 
     async def _background_review_task(self, text: str, synthesized: str) -> None:
         """Run one review pass in the background and surface its actions."""
+        from .foreign_history import status
+        if (await asyncio.to_thread(status, self.checkpoints, self.session_id or "default")).tainted:
+            return
         history = ""
         try:
             turns = await self.memory.get_history(self.session_id or "default", last_n=6)
@@ -3987,6 +4018,8 @@ class Orchestrator:
         channel: str,
     ) -> None:
         """Feed completed LLM turns into LivingMemory + decay when cognition is on."""
+        if self.session_id in self.memory.conversation.foreign_origins:
+            return
         cog = getattr(self, "cognition", None)
         if cog is None or not cog.sub_enabled("memory_enabled"):
             return
@@ -4275,7 +4308,7 @@ class Orchestrator:
 
         return _summarize
 
-    def _summary_gate(self, sid: str, cache: dict, prior):
+    def _summary_gate(self, sid: str, cache: dict, prior, *, tainted: bool = False):
         """H674 — the bounded hold for this turn's LLM summary (see ``compaction_hold``).
 
         A summary that lands after the turn went on seeds this session's merge prior —
@@ -4291,7 +4324,8 @@ class Orchestrator:
         async def gate(make, covered):
             def seed(summary: str) -> None:
                 if cache.get(sid) is prior:
-                    cache[sid] = {"summary": summary, "covered": covered}
+                    cache[sid] = {"summary": summary, "covered": covered,
+                                  "summary_tainted": tainted}
                     logger.info("deferred compaction summary landed; it seeds the next turn")
 
             return await holds.wait(sid, make, hold, seed)
@@ -4417,6 +4451,8 @@ class Orchestrator:
         from .session_continuation import prepare_continuation_turn
 
         await prepare_continuation_turn(self, sid)
+        from .foreign_history import render_summary, render_turn
+        tainted_history = sid in getattr(getattr(self.memory, "conversation", None), "foreign_origins", {})
         manager = getattr(self, "checkpoints", None)
         snapshot = capture_clock(manager, sid)
         prompt_clock.set(snapshot)
@@ -4438,13 +4474,16 @@ class Orchestrator:
         if cache is None:
             cache = self._ctx_summary_cache = {}
         prior = cache.get(sid) if summarizer is not None else None
+        if tainted_history and prior is not None and prior.get("summary_tainted") is not True:
+            prior = None
         compressor = ContextCompressor(
             summarizer=summarizer,
             max_tokens=int(self.get_setting("memory.compression_max_tokens", 2000)),
             keep_first=int(self.get_setting("memory.compression_keep_first", 0) or 0),
             structured=summarizer is not None,
             checkpoint=_precompress_checkpoint(self, sid),   # H427
-            gate=self._summary_gate(sid, cache, prior) if summarizer is not None else None,   # H674
+            gate=self._summary_gate(sid, cache, prior, tainted=tainted_history) if summarizer is not None else None,   # H674
+            untrusted_history=tainted_history,
         )
         # The compaction path knows the model's own window, so a long run on a
         # local 32k model is bounded by the thing that actually limits it rather
@@ -4487,6 +4526,8 @@ class Orchestrator:
             prior=prior,
             anchor=shared_anchor if shared_budget is not None else (None if pinned_window is not None else self._usage_anchor(len(turns))),
         )
+        if tainted_history:
+            result["summary_tainted"] = True
         if result.get("checkpoint_aborted") and int(result.get("tokens") or 0) >= int(result.get("window") or 0):
             # H427 — a required checkpoint did not land, so no turn was evicted (old images
             # may be); a prompt that cannot fit unsummarised is refused rather than sent over
@@ -4513,18 +4554,19 @@ class Orchestrator:
             elif summarizer is not None and result["compressed"]:
                 # Iterative merge state (bounded: one entry per live session key).
                 cache[sid] = {"summary": result["summary"],
-                                          "covered": result["covered"]}
+                                          "covered": result["covered"],
+                                          "summary_tainted": tainted_history}
             if result["compressed"]:
                 # H672 — the commit is the boundary: the persona the next prompt is
                 # built from is re-read here, after the CAS above, never before it.
                 _refresh_souls_at_boundary(self)
         def _fmt(ts):
-            return [f"[{t.get('agent_id') or t.get('role', '')}]: {t.get('content', '')}"
-                    for t in ts]
+            return [render_turn(t, tainted=tainted_history) for t in ts]
 
         if result["compressed"] and result["summary"]:
             rendered = "\n".join(_fmt(result.get("kept_first", []))
-                             + [result["summary"]] + _fmt(result["kept"]))
+                             + [render_summary(result["summary"], tainted=tainted_history)]
+                             + _fmt(result["kept"]))
         else:
             rendered = "\n".join(_fmt(result["kept"]))
         if staged:
@@ -4551,6 +4593,10 @@ class Orchestrator:
 
         history = prior(await self._history_for_prompt(last_n, raw=True))
         rows = await self.memory.get_history(self.session_id, last_n)
+        if self.session_id in getattr(getattr(self.memory, "conversation", None), "foreign_origins", {}) and rows and rows[-1].get("role") == "user" and rows[-1].get("content") == text:
+            from .foreign_history import render_turn
+            last = render_turn(rows[-1], tainted=True)
+            history = history[:-len(last)-1] if history.endswith("\n" + last) else ("" if history == last else history)
         snapshot = prompt_clock.get()
         instance = snapshot.instance_id if snapshot is not None else ""
         if not hasattr(self, "_managed_route_anchors"):
@@ -4630,7 +4676,13 @@ class Orchestrator:
         """
         history_text = await self._history_for_prompt(last_n)
         if current_user_text is not None:
-            current_entry = f"[user]: {current_user_text}"
+            sid = self.session_id if "_session_id_default" in self.__dict__ else None
+            if sid in getattr(
+                    getattr(getattr(self, "memory", None), "conversation", None), "foreign_origins", {}):
+                from .foreign_history import render_turn
+                current_entry = render_turn({"role": "user", "content": current_user_text}, tainted=True)
+            else:
+                current_entry = f"[user]: {current_user_text}"
             if history_text == current_entry:
                 history_text = ""
             else:

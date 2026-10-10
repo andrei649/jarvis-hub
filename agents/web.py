@@ -1271,6 +1271,8 @@ def _selected_turn_outcome(orchestrator, measured: dict | None) -> dict | None:
 async def chat(req: ChatRequest, request: Request):
     if not orch:
         return ChatResponse(reply="Jarvis not initialized.")
+    from agents.core.foreign_history import http_owner_guard
+    await http_owner_guard(orch.checkpoints, req.session_id or getattr(orch, "session_id", None), request)
     # Declared before the try so the failure branch can report it too: a turn that
     # queued an action and *then* raised still left those rows on the queue, and
     # answering "Internal error." with an empty list would hide them.
@@ -1490,6 +1492,8 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
 async def chat_stream(req: ChatRequest, request: Request):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    from agents.core.foreign_history import http_owner_guard
+    await http_owner_guard(orch.checkpoints, req.session_id or getattr(orch, "session_id", None), request)
 
     if req.session_id is not None:
         from agents.core.session_continuation import ContinuationRefused, prepare_session

@@ -17,6 +17,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 import agents.web as web
+from agents.core.checkpoint import CheckpointManager
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,9 +40,18 @@ def _parse_sse(text: str) -> list[dict]:
     return events
 
 
+def _mock_orch() -> MagicMock:
+    """A chat fake still has the real durable session-status authority."""
+    mock = MagicMock()
+    mock.session_id = "test_session"
+    mock.checkpoints = CheckpointManager(":memory:")
+    mock.checkpoints.initialize()
+    return mock
+
+
 def _mock_orch_with_stream(tokens: list[str], full: str | None = None) -> MagicMock:
     """Build a minimal mock Orchestrator whose handle_input_stream emits *tokens*."""
-    m = MagicMock()
+    m = _mock_orch()
     m.agents = {}
     m.observer = None
 
@@ -71,7 +81,7 @@ def test_chat_no_orch_returns_not_initialized():
 # ---------------------------------------------------------------------------
 
 def test_chat_with_mock_orch_returns_reply(monkeypatch):
-    mock = MagicMock()
+    mock = _mock_orch()
     mock.handle_input = AsyncMock(return_value="Salut!")
     monkeypatch.setattr(web, "orch", mock)
 
@@ -82,7 +92,7 @@ def test_chat_with_mock_orch_returns_reply(monkeypatch):
 
 
 def test_chat_returns_selected_session_id_after_new_command(monkeypatch):
-    mock = MagicMock()
+    mock = _mock_orch()
     mock.session_id = "old_topic"
 
     async def change_session(*args, **kwargs):
@@ -106,7 +116,9 @@ def test_resume_old_topic_returns_its_exact_saved_history(monkeypatch):
             return [{"role": "user", "content": "old question"},
                     {"role": "assistant", "content": "old answer"}]
 
-    selected = SimpleNamespace(memory=Memory(), session_id="session_new_topic", checkpoints=None)
+    checkpoints = CheckpointManager(":memory:")
+    checkpoints.initialize()
+    selected = SimpleNamespace(memory=Memory(), session_id="session_new_topic", checkpoints=checkpoints)
     monkeypatch.setattr(web, "orch", selected)
     response = TestClient(web.app).post("/sessions/resume", json={"session_id": "old_topic"})
     assert response.status_code == 200
@@ -116,7 +128,7 @@ def test_resume_old_topic_returns_its_exact_saved_history(monkeypatch):
 
 
 def test_chat_agent_override_not_jarvis(monkeypatch):
-    mock = MagicMock()
+    mock = _mock_orch()
     mock.handle_input = AsyncMock(return_value="Friday here.")
     monkeypatch.setattr(web, "orch", mock)
 
@@ -127,7 +139,7 @@ def test_chat_agent_override_not_jarvis(monkeypatch):
 
 
 def test_chat_agent_jarvis_passes_no_override(monkeypatch):
-    mock = MagicMock()
+    mock = _mock_orch()
     mock.handle_input = AsyncMock(return_value="Jarvis here.")
     monkeypatch.setattr(web, "orch", mock)
 
@@ -204,7 +216,7 @@ def test_chat_stream_end_event_carries_agent(monkeypatch):
 
 
 def test_chat_stream_error_produces_end_event(monkeypatch):
-    mock = MagicMock()
+    mock = _mock_orch()
     mock.agents = {}
     mock.observer = None
 

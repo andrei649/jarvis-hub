@@ -110,6 +110,8 @@ class CheckpointManager:
                 value TEXT DEFAULT '{}'
             )
         """)
+        from .foreign_history import initialize as initialize_foreign_history
+        initialize_foreign_history(self._conn)
         from .session_continuation import initialize
         initialize(self._conn)
         # list_sessions() orders by started_at and the table grows one row per
@@ -547,6 +549,7 @@ class CheckpointManager:
                        ("session_continuations", "continuation", "session_id", False),
                        ("session_history_instances", "history_instance", "session_id", False),
                        ("session_history_rewinds", "rewind", "session_id", False),
+                       ("session_imports", "import", "session_id", False),
                        ("sessions", "session", "id", False))
 
     def session_rows_for_backup(self, session_id: str) -> dict:

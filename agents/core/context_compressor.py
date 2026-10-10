@@ -310,12 +310,14 @@ class ContextCompressor:
                  keep_first: int = 0, structured: bool = False,
                  checkpoint: Optional[Callable[["list[dict]", "list[dict]"], Awaitable[Any]]] = None,
                  gate: Optional[Callable[[Callable[[], Awaitable[str]], int], Awaitable[Optional[str]]]] = None,
+                 untrusted_history: bool = False,
                  ) -> None:
         self._summarize = summarizer
         self.max_tokens = max_tokens
         self.keep_recent = keep_recent
         self.keep_first = max(0, int(keep_first))
         self.structured = structured
+        self.untrusted_history = untrusted_history
         # H427: awaited with exactly the turns about to be summarised away (and the whole
         # transcript) before the summary replaces them; CheckpointAborted keeps them.
         self._checkpoint = checkpoint
@@ -349,17 +351,25 @@ class ContextCompressor:
             lines.append(f"- {t.get('role', '')}: {first[:160]}")
         return "[summary of earlier conversation]\n" + "\n".join(lines)
 
-    @staticmethod
-    def _block(turns: "list[dict]") -> str:
+    def _block(self, turns: "list[dict]") -> str:
+        if self.untrusted_history:
+            from .foreign_history import render_turn
+            return "\n".join(render_turn(turn, tainted=True) for turn in turns)
         return "\n".join(f"{t.get('role', '')}: {t.get('content', '')}" for t in turns)
 
     def _summarizer_input(self, new_older: "list[dict]", prior_summary: str) -> str:
         block = self._block(new_older)
         if self.structured:
+            if prior_summary and self.untrusted_history:
+                from .foreign_history import render_summary
+                prior_summary = render_summary(prior_summary, tainted=True)
             prior_block = (f"Previous summary (fold it in, do not repeat verbatim):\n"
                            f"{prior_summary}\n" if prior_summary else "")
             return SUMMARY_PROMPT.format(prior_block=prior_block, block=block)
         if prior_summary:
+            if self.untrusted_history:
+                from .foreign_history import render_summary
+                prior_summary = render_summary(prior_summary, tainted=True)
             return f"[previous summary]\n{prior_summary}\n{block}"
         return block
 
