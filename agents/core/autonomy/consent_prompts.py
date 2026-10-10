@@ -57,6 +57,7 @@ class _Prompt:
     inflight: bool = False
     denial_task: asyncio.Task | None = None
     settled_result: ConsentDecisionResult | None = None
+    retired_outcome: ConsentWaitOutcome | None = None
 
 
 class ConsentPrompts:
@@ -271,6 +272,13 @@ class ConsentPrompts:
                 # Publish the receipt before deactivation, even when the future
                 # must be woken on a different event loop.
                 prompt.settled_result = result
+            elif prompt.settled_result is None and prompt.retired_outcome is None:
+                # A concurrent notification may prune an expired inline prompt
+                # before its waiter resumes. Record the first no-result exit now:
+                # an earlier withdrawal must not become a timeout merely because
+                # its wake callback ran after the deadline.
+                state = 'timeout' if time.monotonic() >= prompt.deadline else 'withdrawn'
+                prompt.retired_outcome = ConsentWaitOutcome(state, prompt.offer.revision)
             prompt.active = False
             if self._pending.get(prompt.nonce) is prompt:
                 self._pending.pop(prompt.nonce, None)
@@ -451,6 +459,10 @@ class ConsentPrompts:
                     committed = self._committed_reply(prompt)
                     if committed is not None:
                         return committed
+                    with self._lock:
+                        retired = prompt.retired_outcome
+                    if retired is not None:
+                        return retired
                     remaining = prompt.deadline - time.monotonic()
                     if remaining <= 0:
                         return ConsentWaitOutcome('timeout', prompt.offer.revision)
@@ -461,6 +473,7 @@ class ConsentPrompts:
                     # for the original hard deadline. Polling earns no authority.
                     await asyncio.wait({prompt.future}, timeout=min(0.05, remaining))
                 return (self._committed_reply(prompt) or prompt.future.result()
+                        or prompt.retired_outcome
                         or ConsentWaitOutcome('withdrawn', prompt.offer.revision))
         except asyncio.CancelledError:
             raise
