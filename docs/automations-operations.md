@@ -39,6 +39,46 @@ Then `jobs run JOB_ID` can execute that newly armed slot immediately. The manual
 and scheduled paths share the reservation, so a racing timer cannot execute it
 twice.
 
+## Tool limits and reasoning
+
+Model-bearing `ask` jobs can select installed tool groups and a reasoning effort.
+In the web Jobs form, use Advanced → Toolsets and Reasoning effort. In the CLI,
+flags are folded into the complete options object you explicitly supply:
+
+```bash
+nerva jobs edit JOB_ID --options '{"deliver":[],"continuity":false}' --toolsets web,recall --reasoning-effort low
+nerva jobs edit JOB_ID --options '{"deliver":[],"enabled_toolsets":["web"]}' --reasoning-effort default
+```
+
+`--options` replaces the whole object: include the other options you want to keep.
+`default` removes the reasoning pin. Exact effort names are `none`, `minimal`,
+`low`, `medium`, `high`, `xhigh`, `max` and `ultra`; `none` is an explicit choice,
+not the same as leaving it unset. Reasoning and toolset choices are unavailable
+for actions that do not call a model or scripts with Skip model enabled.
+
+Tool selection uses the job's list first, then Settings → LLM → platform toolsets
+(`{"cron":["web","recall"]}`), then the registered default tools. An explicit
+empty list means no tools at either level. The operator's disabled tool groups
+under Settings → Agents are always removed, even if the job selects them.
+`clarify` and `messaging` are always removed from scheduled model work. The
+Autonomy setting allowing agent scheduling only lifts the `cronjob` loop guard;
+it grants no effect approval. Unavailable selected groups or an unreadable policy
+fail the model phase. `nerva jobs doctor` shows the chosen source, exclusions and
+tool upper bound; later posture, agent configuration and approvals can narrow it.
+
+Groups cover basic tools, files, terminal, video, web, recall, isolated code,
+skills, planning, desktop, OSINT, image, voice, notes, checklist, canvas and the
+optional scheduling tool. Doctor reports the exact members and availability.
+Selecting a group neither installs tools nor enables their optional runtime.
+
+A reasoning pin overrides the configured preference for that job. Cloud adapters
+fit it to the selected model's supported levels; models with undeclared or absent
+controls omit the parameter under the existing provider rules. This is not a
+guaranteed cost ceiling for every model. LM Studio and Ollama currently refuse an
+explicit job pin before generation because their adapters do not apply it. Clear
+the pin to use their normal behavior. The requested value never changes shared
+model settings or another job's preference.
+
 ## Independent notes and previous output
 
 ```bash

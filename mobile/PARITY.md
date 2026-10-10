@@ -20,6 +20,11 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
 
+H456 local candidate (2026-10-10): CLI/web Jobs author per-job reasoning effort
+and expanded installed tool groups; scheduled dispatch applies operator and
+platform restrictions. Native mobile authoring for these choices remains open.
+No native-device validation is claimed. See [job policy](../docs/automations-operations.md#tool-limits-and-reasoning).
+
 H453/H454 local candidate (2026-10-10): scheduled scripts distinguish complete
 safe stdout from bounded summaries; CLI/admin API author cross-job `context_from`
 alongside own-output continuity. Native mobile source selection, output inspection

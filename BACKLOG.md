@@ -2222,6 +2222,8 @@
 
 - 2026-10-10 full-contract closure batch 07 (local): H453 delivers complete permitted script stdout, checks emptiness/wake gates before excerpts, and preserves monitor detection semantics. H454 adds bounded latest-output continuity/chaining, atomic CLI/API source edits, source-identity checks and frozen delayed contexts. Assessment: 150 equivalent, 228 partial, 56 missing, 263 needing review; 697 accepted, 547 unfinished. Frozen backend: 25,909 cases, one stale roadmap-count failure, 59 skipped/xfail; all 22 document/parity cases pass after the count repair. Final core delta, actual local subprocess pipeline, disposable CLI/API/orchestrator smoke, route/typegen and TypeScript checks pass. No green full-run, live-provider or native-host claim. No push, merge or deployment. See [contracts, review and verification](docs/plans/2026-10-10-hermes-closure-07.md).
 
+- 2026-10-10 full-contract closure batch 08 (local, verification pending): H456 implements job/cron/legacy toolset precedence, operator restrictions, mandatory interactive-tool exclusions and canonical per-job reasoning pins with transport enforcement. CLI/HUD/doctor expose the controls; nested code RPC restrictions and offline actual CLI/API/orchestrator flow pass. Whole-contract count is unchanged until the frozen integration milestone and evidence review complete. See [scope and verification](docs/plans/2026-10-10-hermes-closure-08.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
   Reassess inherited judgments, finish the full accepted

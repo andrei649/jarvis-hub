@@ -22,12 +22,21 @@ from .auxiliary_recovery import (
 )
 from .egress import llm_async_client
 from .host_protocol import HostProtocolRefused
+from .reasoning_effort import ReasoningEffortRefused
 from .repetition_guard import is_repetition_dominated
+from .request_context import required_job_reasoning
 from .tool_dialects import lmstudio_usage, ollama_messages, ollama_tool_calls, ollama_usage
 from .tool_protocol import ToolSpec, ToolTurn, parse_openai_tool_calls
 from .usage_context import report_text_usage
 
 logger = logging.getLogger("jarvis.llm.base")
+
+
+def _require_no_job_reasoning():
+    # These local adapters have no verified per-model effort control. Refuse an
+    # explicit scheduled pin before a generation request instead of ignoring it.
+    if required_job_reasoning() is not None:
+        raise ReasoningEffortRefused()
 
 
 # ── Output-budget ("max tokens") resolution ───────────────────────────────────
@@ -546,6 +555,7 @@ class LMStudioBackend(LLMBackend):
         temperature_retried = False
         output_cap_retried = False
         for _ in range(2 + int(auxiliary_recovery) + int(cap_recovery and "max_tokens" in current)):
+            _require_no_job_reasoning()
             resp = await self.client.post("/v1/chat/completions", json=current)
             try:
                 resp.raise_for_status()
@@ -582,6 +592,7 @@ class LMStudioBackend(LLMBackend):
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7
     ) -> str:
+        _require_no_job_reasoning()
         payload = {
             "model": model,
             "messages": _chat_messages(system, prompt),
@@ -601,6 +612,8 @@ class LMStudioBackend(LLMBackend):
             answer = _finalize_lmstudio_message(msg, finish, model)
             report_text_usage(lmstudio_usage(data))
             return answer
+        except ReasoningEffortRefused:
+            raise
         except Exception as e:
             return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e, model=model)
 
@@ -612,6 +625,7 @@ class LMStudioBackend(LLMBackend):
         max_tokens: int = 1024,
         temperature: float = 0.7,
     ) -> ToolTurn:
+        _require_no_job_reasoning()
         payload = {
             "model": model,
             "messages": messages,
@@ -640,6 +654,8 @@ class LMStudioBackend(LLMBackend):
                 finish_reason=finish,
                 usage=lmstudio_usage(data),
             )
+        except ReasoningEffortRefused:
+            raise
         except Exception as e:
             return ToolTurn(
                 content=local_backend_degraded_reply(
@@ -673,6 +689,7 @@ class LMStudioBackend(LLMBackend):
         temperature_retried = False
         output_cap_retried = False
         for _ in range(2 + int(auxiliary_recovery) + int(cap_recovery and "max_tokens" in payload)):
+            _require_no_job_reasoning()
             emitted = ""          # filtered text actually streamed to the user
             reasoning_full = ""   # accumulated reasoning_content (never emitted live)
             finish = None
@@ -886,6 +903,7 @@ class OllamaBackend(LLMBackend):
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7
     ) -> str:
+        _require_no_job_reasoning()
         payload = {
             "model": model,
             "prompt": prompt,
@@ -931,6 +949,7 @@ class OllamaBackend(LLMBackend):
         temperature: float = 0.7,
     ) -> ToolTurn:
         """One tool-enabled turn over /api/chat; calls cross `parse_openai_tool_calls`."""
+        _require_no_job_reasoning()
         payload: dict[str, Any] = {
             "model": model,
             "messages": ollama_messages(messages),
@@ -974,6 +993,7 @@ class OllamaBackend(LLMBackend):
         on_token: Callable[[str], None] = None,
         on_activity: Callable[[], None] | None = None,
     ) -> str:
+        _require_no_job_reasoning()
         payload = {
             "model": model,
             "prompt": prompt,

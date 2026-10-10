@@ -6,6 +6,11 @@
 > Companion: `HUD_V2_IMPLEMENTATION_PLAN.md`, `HUD_V2_COVERAGE_AND_PLAN.md`. Generated 2026‑06‑05;
 > **re‑audited 2026‑06‑10** (see §10).
 
+H456 local candidate (2026-10-10): the shared web Jobs form adds requested
+reasoning effort and the installed tool catalog. Existing Settings controls
+author the cron default and operator restrictions. These do not close the
+separate operations/context controls below or native-mobile authoring.
+
 H453/H454 local candidate (2026-10-10): CLI/admin API can configure cross-job
 `context_from`; complete safe script stdout is separate from bounded history and
 context excerpts. Dedicated web source selection, latest-output inspection and

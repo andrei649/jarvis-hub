@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { inpS } from '../panel-kit';
 
-export type JobOptions = { repeat?: number | null; deliver?: string[]; model?: string; provider?: string; script?: string; no_agent?: boolean; workdir?: string; enabled_toolsets?: string[] | null };
+const REASONING_EFFORTS = ['none','minimal','low','medium','high','xhigh','max','ultra'] as const;
+export type JobOptions = { repeat?: number | null; deliver?: string[]; model?: string; provider?: string; script?: string; no_agent?: boolean; workdir?: string; enabled_toolsets?: string[] | null; reasoning_effort?: typeof REASONING_EFFORTS[number] };
 export type JobToolset = {id:string;tools:string[];available:boolean};
 
 export function ScheduleBuilder({ onChange }: { onChange: (value: string) => void }) {
@@ -38,19 +39,24 @@ export function OptionsEditor({value,onChange,toolsets=[]}: {value:JobOptions;on
   return <fieldset style={{border:'1px solid var(--panel-line)',display:'grid',gap:6}}>
     <legend>Advanced</legend>
     <label>Python script (ask jobs)<input aria-label="job script" style={inpS} value={value.script ?? ''} onChange={e=>{const next={...value};if(e.target.value)next.script=e.target.value;else {delete next.script;delete next.no_agent;delete next.workdir;}onChange(next);}}/></label>
-    <label><input type="checkbox" aria-label="skip model" checked={value.no_agent === true} onChange={e=>{const next={...value,no_agent:e.target.checked};if(!e.target.checked)delete next.workdir;onChange(next);}}/> Skip model; deliver script output</label>
+    <label><input type="checkbox" aria-label="skip model" checked={value.no_agent === true} onChange={e=>{const next={...value,no_agent:e.target.checked};if(e.target.checked){delete next.enabled_toolsets;delete next.reasoning_effort;delete next.model;delete next.provider;}else delete next.workdir;onChange(next);}}/> Skip model; deliver script output</label>
     {value.script && value.no_agent === true && <label>Workdir (optional)<input aria-label="job workdir" maxLength={1024} style={inpS} value={value.workdir ?? ''} onChange={e=>{const next={...value};if(e.target.value)next.workdir=e.target.value;else delete next.workdir;onChange(next);}}/><small>Existing absolute directory inside configured terminal roots. Each run still needs approval. Applies only to the script subprocess; grants no model workspace access.</small></label>}
 
-    <label>Toolsets (model-bearing ask only)<select aria-label="job toolsets mode" style={inpS} value={toolMode} onChange={e=>{
+    <label>Toolsets (model-bearing ask only)<select aria-label="job toolsets mode" style={inpS} value={toolMode} disabled={value.no_agent === true} onChange={e=>{
       const next={...value}; setSelecting(e.target.value==='selected');
       if(e.target.value==='default') delete next.enabled_toolsets; else next.enabled_toolsets=[];
       onChange(next);
-    }}><option value="default">Existing defaults</option><option value="none">No tools</option><option value="selected">Selected installed groups</option></select></label>
-    {toolMode==='selected' && <div>{choices.length===0 && <small>No installed catalog loaded. Use doctor to inspect availability.</small>}{choices.map(row=><label key={row.id} style={{display:'block'}}><input type="checkbox" aria-label={`toolset ${row.id}`} checked={value.enabled_toolsets?.includes(row.id) ?? false} disabled={!row.available && !value.enabled_toolsets?.includes(row.id)} onChange={e=>onChange({...value,enabled_toolsets:e.target.checked?[...(value.enabled_toolsets??[]),row.id]:(value.enabled_toolsets??[]).filter(id=>id!==row.id)})}/>{row.id}{!row.available?' (unavailable)':''}{row.tools.length?` · ${row.tools.join(', ')}`:''}</label>)}</div>}
-    <small>Selected groups only restrict tools; posture, configured backends and approvals still apply. Empty selection means no tools. The dedicated code-runner, delegation and dynamic plugin tool groups are not included. Clear this option for non-model actions.</small>
+    }}><option value="default">Cron policy, else installed tools</option><option value="none">No tools</option><option value="selected">Selected installed groups</option></select></label>
+    {toolMode==='selected' && <div>{choices.length===0 && <small>No installed catalog loaded. Use doctor to inspect availability.</small>}{choices.map(row=><label key={row.id} style={{display:'block'}}><input type="checkbox" aria-label={`toolset ${row.id}`} checked={value.enabled_toolsets?.includes(row.id) ?? false} disabled={value.no_agent === true || (!row.available && !value.enabled_toolsets?.includes(row.id))} onChange={e=>onChange({...value,enabled_toolsets:e.target.checked?[...(value.enabled_toolsets??[]),row.id]:(value.enabled_toolsets??[]).filter(id=>id!==row.id)})}/>{row.id}{!row.available?' (unavailable)':''}{row.tools.length?` · ${row.tools.join(', ')}`:''}</label>)}</div>}
+    <small>Default uses the configured cron groups, then all installed tools when no cron groups are set. Selected groups only restrict tools; operator-disabled groups, live-human exclusions, posture and approvals still apply. Empty selection means no tools. Code execution is a separate group; dynamic plugin groups are not selectable. Clear this option for non-model actions.</small>
 
-    <label>Model pin (ask jobs)<input aria-label="job model" style={inpS} maxLength={256} value={value.model ?? ''} onChange={e=>{const next={...value};if(e.target.value) next.model=e.target.value;else delete next.model;onChange(next);}}/></label>
-    <label>Provider pin (ask jobs)<select aria-label="job provider" style={inpS} value={value.provider ?? ''} onChange={e=>{const next={...value};if(e.target.value) next.provider=e.target.value;else delete next.provider;onChange(next);}}>
+    <label>Reasoning effort (model-bearing ask only)<select aria-label="job reasoning effort" style={inpS} value={value.reasoning_effort ?? ''} disabled={value.no_agent === true} onChange={e=>{const next={...value};if(e.target.value)next.reasoning_effort=e.target.value as JobOptions['reasoning_effort'];else delete next.reasoning_effort;onChange(next);}}>
+      <option value="">Existing model setting</option>{REASONING_EFFORTS.map(level=><option key={level} value={level}>{level}</option>)}
+    </select></label>
+    <small>An explicit effort overrides the global and model defaults for this job. The selected model may support a weaker level or refuse the pin; local routes without a verified effort control refuse a pin.</small>
+
+    <label>Model pin (ask jobs)<input aria-label="job model" style={inpS} maxLength={256} value={value.model ?? ''} disabled={value.no_agent === true} onChange={e=>{const next={...value};if(e.target.value) next.model=e.target.value;else delete next.model;onChange(next);}}/></label>
+    <label>Provider pin (ask jobs)<select aria-label="job provider" style={inpS} value={value.provider ?? ''} disabled={value.no_agent === true} onChange={e=>{const next={...value};if(e.target.value) next.provider=e.target.value;else delete next.provider;onChange(next);}}>
       <option value="">Existing routing</option>{['lm-studio','ollama','gemini','anthropic','openrouter','openai-compatible'].map(p=><option key={p} value={p}>{p}</option>)}
     </select></label>
     <small>Pins require a configured, policy-permitted adapter. Cloud pins must match the existing route; unavailable pins fail instead of falling back. Changing local models requires loaded context metadata; other model changes require a known window. The current default retains its existing window estimate. Completion is capped at 25% of the resolved window. Pinned jobs retain recent conversation and agent context, use deterministic history compression, and omit embedding-based long-term recall.</small>

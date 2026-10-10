@@ -348,3 +348,27 @@ it('loads installed toolsets and posts the chosen restriction through the real c
   fireEvent.click(screen.getByText('create job'));
   await waitFor(()=>expect(calls.find(c=>c.method==='POST')?.body.options).toEqual({enabled_toolsets:['basic']}));
 });
+it('posts a selected reasoning effort on a custom ask job', async()=>{
+  const calls=mockFetch({'GET /api/jobs/doctor':{toolsets:[{id:'web',tools:['web_search','web_extract'],available:true}]},'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[],scheduler:{alive:true}},'POST /api/jobs':{ok:true,job:JOB}});
+  render(<JobsPanel/>);
+  fireEvent.click(screen.getByText('custom job'));
+  fireEvent.change(screen.getByLabelText('job name'),{target:{value:'Research'}});
+  fireEvent.change(screen.getByLabelText('job action'),{target:{value:'ask'}});
+  fireEvent.change(screen.getByLabelText('job message'),{target:{value:'Review changes'}});
+  fireEvent.change(screen.getByLabelText('job toolsets mode'),{target:{value:'selected'}});
+  fireEvent.click(await screen.findByLabelText('toolset web'));
+  fireEvent.change(screen.getByLabelText('job reasoning effort'),{target:{value:'medium'}});
+  fireEvent.click(screen.getByText('create job'));
+  await waitFor(()=>expect(calls.find(c=>c.method==='POST')?.body.options).toEqual({enabled_toolsets:['web'],reasoning_effort:'medium'}));
+});
+it('loads and clears a saved reasoning pin when editing without dropping other options', async()=>{
+  const saved={...PAUSED,options:{repeat:2,enabled_toolsets:['web'],reasoning_effort:'high'}};
+  const calls=mockFetch({'GET /api/jobs/doctor':{toolsets:[{id:'web',tools:['web_search','web_extract'],available:true}]},'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[saved],scheduler:{alive:true}},'PATCH /api/jobs/def456def456':{ok:true,job:saved}});
+  render(<JobsPanel/>);
+  await screen.findByText('inbox');
+  fireEvent.click(screen.getByText('edit'));
+  expect((screen.getByLabelText('job reasoning effort') as HTMLSelectElement).value).toBe('high');
+  fireEvent.change(screen.getByLabelText('job reasoning effort'),{target:{value:''}});
+  fireEvent.click(screen.getByText('save'));
+  await waitFor(()=>expect(calls.find(c=>c.method==='PATCH')?.body.options).toEqual({repeat:2,enabled_toolsets:['web']}));
+});

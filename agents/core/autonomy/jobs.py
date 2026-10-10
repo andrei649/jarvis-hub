@@ -357,8 +357,8 @@ def validate_action(action: Any, options: dict | None = None) -> list[str]:
     if not isinstance(action, dict):
         return ["action must be an object"]
     kind = action.get("type")
-    if options and "enabled_toolsets" in options and kind != "ask":
-        return ["enabled_toolsets requires a model-bearing ask action"]
+    if options and ("enabled_toolsets" in options or "reasoning_effort" in options) and kind != "ask":
+        return ["toolsets and reasoning effort require a model-bearing ask action"]
     if options and ("model" in options or "provider" in options) and kind != "ask":
         return ["model/provider pins require an ask action"]
     if options and (options.get("script") or (options.get("monitor_script") or options.get("monitor_url"))) and kind != "ask":
@@ -437,7 +437,7 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         raise ValueError("options must be an object")
     from ..llm.job_selection import validate_pins
     validate_pins(options)
-    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets", "continuity", "context_from"}
+    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets", "reasoning_effort", "continuity", "context_from"}
     if unknown:
         raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
     if 'enabled_toolsets' in options:
@@ -445,6 +445,13 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         validate(options['enabled_toolsets'])
         if options.get('no_agent') is True:
             raise ValueError('enabled_toolsets requires a model-bearing ask action')
+    if 'reasoning_effort' in options:
+        from ..llm.reasoning_effort import LADDER
+
+        if type(options['reasoning_effort']) is not str or options['reasoning_effort'] not in LADDER:
+            raise ValueError('reasoning_effort must be a canonical effort level')
+        if options.get('no_agent') is True:
+            raise ValueError('reasoning_effort requires a model-bearing ask action')
     if 'workdir' in options:
         if not options.get('script') or options.get('no_agent') is not True or options.get('monitor_script') or options.get('monitor_url'):
             raise ValueError('workdir requires script with no_agent true')
@@ -1557,6 +1564,11 @@ class JobRunner:
             raise ValueError("options must be an object")
         return resolve((options or {}).get('enabled_toolsets'), getattr(self._orch, 'tool_rpc', None))
 
+    def _job_tool_policy(self, options):
+        from ..job_toolsets import resolve_job_policy
+
+        return resolve_job_policy(options, getattr(self._orch, 'tool_rpc', None))
+
     def create(self, **kwargs: Any) -> Job:
         return self.arm(**kwargs)[0]
 
@@ -1893,7 +1905,11 @@ class JobRunner:
             raise RuntimeError("no model path is available for ask jobs")
         from ..job_toolsets import toolset_scope
         from ..llm.job_selection import SelectionError, selection_scope
-        with toolset_scope(self._toolset_names(job.options)), selection_scope(job.options) as selection:
+        from ..llm.request_context import job_reasoning_scope
+
+        policy = self._job_tool_policy(job.options)
+        with (toolset_scope(policy.allowed_names), selection_scope(job.options) as selection,
+              job_reasoning_scope(job.options.get('reasoning_effort'))):
             if selection is not None:
                 router = getattr(self._orch, "llm_router", None)
                 if not callable(getattr(router, "select_backend", None)):

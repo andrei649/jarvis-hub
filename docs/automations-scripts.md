@@ -47,7 +47,7 @@ Restart recovery preserves pending attempts and their history. If submission or 
 
 ## Current limits
 
-This runtime supports local POSIX targets and self-contained Python only: at most 2,000 UTF-8 source bytes within the existing terminal command limit. Execution uses the configured Python interpreter with `-I -c`; `__file__`, script-relative imports, shell scripts, arbitrary working directories, and per-job provider/model/toolset/skill overrides are unsupported. Source is visible in the durable approval payload, so use the existing secret mechanisms instead of embedding credentials in scripts.
+This runtime supports local POSIX targets and self-contained Python only: at most 2,000 UTF-8 source bytes within the existing terminal command limit. Execution uses the configured Python interpreter with `-I -c`; `__file__`, script-relative imports, shell scripts and per-job interpreter/skill overrides are unsupported. An approved workdir is available only for a no-agent script and must be inside configured terminal roots. A script's later model phase can use the job's model/provider, toolset and reasoning options; these do not change the script subprocess or its approval. See [tool limits and reasoning](automations-operations.md#tool-limits-and-reasoning). Source is visible in the durable approval payload, so use the existing secret mechanisms instead of embedding credentials in scripts.
 
 The API and CLI accept these options; a dedicated script-authoring form is not implemented. Existing terminal target configuration, hardline refusals, approval, execution limits and emergency stop remain authoritative. See [the implementation and verification record](superpowers/plans/2026-09-15-governed-job-scripts.md).
 
