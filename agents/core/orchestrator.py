@@ -1220,6 +1220,14 @@ class Orchestrator:
             logger.info(f"Session: {self.session_id}")
 
         self.load_runtime_settings()
+        # The executor builds ToolRPC before the initial settings load. Reconcile
+        # this opt-in once against the effective runtime settings on that same
+        # server; the setting remains restart-to-apply for new registrations.
+        server = getattr(self, "tool_rpc", None)
+        if server is not None and not server.allows("clarify"):
+            from .channels.pending_input_runtime import register_clarify_tool
+
+            register_clarify_tool(server, self)
         # HEARTBEAT.md (and its .local.md overlay) wins: cadence + checklist. The
         # agents.yaml interval only fills agents that ship no heartbeat file, and an
         # agent whose file the injection scan refused is scheduled from neither source
