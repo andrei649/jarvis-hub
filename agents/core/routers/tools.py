@@ -10,6 +10,7 @@ singleton is referenced by these handlers, so nothing stays behind in web.py
 beyond the route surface.
 """
 
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
@@ -74,6 +75,7 @@ async def digest_run(body: DigestRunBody):
 async def schedule_parse(req: Request):
     """H10.27 — parse a natural-language schedule into a cron expression."""
     from agents.core.autonomy.nl_schedule import parse_schedule
+    from agents.core.autonomy.schedule_timezone import app_schedule_timezone
     try:
         body = await req.json()
     except Exception:
@@ -81,5 +83,11 @@ async def schedule_parse(req: Request):
     text = (body or {}).get("text", "")
     if not text:
         return JSONResponse({"error": "text required"}, status_code=400)
-    result = parse_schedule(text)
+    runner = getattr(get_orch(), "jobs", None)
+    try:
+        resolver = runner.scheduler_timezone if runner is not None else app_schedule_timezone
+        zone = await asyncio.to_thread(resolver)
+    except ValueError as exc:
+        return nocache_json({"ok": False, "error": str(exc)}, status_code=422)
+    result = parse_schedule(text, zone=zone)
     return nocache_json(result, status_code=200 if result.get("ok") else 422)

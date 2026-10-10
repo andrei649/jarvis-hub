@@ -517,11 +517,16 @@ def test_a_database_error_on_the_first_run_still_arms_the_job(hub, monkeypatch):
     ("*/5 * * * *", "2026-09-24T11:16:30+00:00", (210.0, 300.0)),
     ("0 8 * * 1-5", "2026-09-25T09:00:00+00:00", (3 * 86400 - 3600.0, 86400.0)),   # Friday → Monday, Tuesday
 ])
-def test_the_slot_timing_reads_the_real_cron(tmp_path, cron, now, expected):
+def test_the_slot_timing_reads_the_real_cron(tmp_path, monkeypatch, cron, now, expected):
     from datetime import datetime
 
+    from agents.core import settings_db
+
+    monkeypatch.setattr(settings_db, "DB_PATH", tmp_path / "settings.db")
+    settings_db.init_db(force=True)
+    settings_db.put_category("general", {"timezone": "UTC"})
     sched = _Scheduler()
-    sched.timezone = "UTC"
+    sched.timezone = "Europe/Bucharest"  # Host scheduler must not override the app zone.
     runner = JobRunner(JobStore(tmp_path / "jobs.db"), orch=None, scheduler=lambda: sched, quiet=lambda: False)
     job = SimpleNamespace(cron=cron)
     assert runner.slot_timing(job, now=datetime.fromisoformat(now)) == expected

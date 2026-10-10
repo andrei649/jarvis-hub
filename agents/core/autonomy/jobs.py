@@ -48,6 +48,7 @@ from typing import Any
 from agents.core.paths import data_path
 
 from .nl_schedule import parse_schedule
+from .schedule_timezone import app_schedule_timezone
 
 logger = logging.getLogger("jarvis.autonomy.jobs")
 
@@ -988,10 +989,9 @@ class JobStore:
         return job
 
     def _schedule_zone(self):
-        """The zone a one-shot said in words is anchored to: the scheduler's, once a
-        runner has bound it (``schedule_zone``), else the local one."""
+        """Use the bound runner's app zone, or the saved app zone without a runner."""
         zone = getattr(self, "schedule_zone", None)
-        return zone() if callable(zone) else None
+        return zone() if callable(zone) else app_schedule_timezone()
 
     def claim_tick(self, job_id: str, slot: str) -> bool:
         with self._lock:
@@ -1122,8 +1122,10 @@ class JobRunner:
         quiet: Callable[[], bool] | None = None,
     ) -> None:
         self.store = store
-        # H450: one-shots said in words are anchored to the scheduler's zone.
+        # H450: every owner-job schedule uses one app zone pinned on first use.
         self.store.schedule_zone = self.scheduler_timezone
+        self._pinned_timezone = None
+        self._timezone_lock = threading.Lock()
         self._orch = orch
         self._scheduler = scheduler
         self._now = now
@@ -1155,12 +1157,12 @@ class JobRunner:
     # scheduler --------------------------------------------------------------
 
     def scheduler_timezone(self):
-        """Use the configured scheduler zone, or the same local default as APScheduler."""
-        from apscheduler.util import astimezone
-        from tzlocal import get_localzone
-
-        sched = self._scheduler()
-        return astimezone(getattr(sched, "timezone", None) or get_localzone())
+        """Pin the app zone for this runner, independent of the host scheduler."""
+        if self._pinned_timezone is None:
+            with self._timezone_lock:
+                if self._pinned_timezone is None:
+                    self._pinned_timezone = app_schedule_timezone()
+        return self._pinned_timezone
 
     def scheduler_alive(self) -> bool:
         sched = self._scheduler()
@@ -1192,6 +1194,7 @@ class JobRunner:
             id=f"job-{job.id}",
             replace_existing=True,
             misfire_grace_time=300,
+            timezone=self.scheduler_timezone(),
             **cron_kwargs(job.cron),
         )
         return True
