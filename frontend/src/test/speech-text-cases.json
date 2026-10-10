@@ -280,5 +280,41 @@
   "lang": "ro",
   "text": "ș_ab_ c",
   "spoken": "ș_ab_ c"
+ },
+ {
+  "name": "verifier_footer_after_reply",
+  "lang": "en",
+  "text": "Done.\n\n⚠️ File-mutation verifier: 1 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.\n  • `/tmp/a.md` — [patch] Could not find old_string",
+  "spoken": "Done."
+ },
+ {
+  "name": "verifier_footer_only",
+  "lang": "en",
+  "text": "⚠️ File-mutation verifier: 1 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.\n  • `/tmp/a.md` — [patch] Could not find old_string",
+  "spoken": ""
+ },
+ {
+  "name": "verifier_footer_with_following_text",
+  "lang": "en",
+  "text": "Before.\r\n\r\n⚠ File-mutation verifier: 11 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.\r\n  • `/tmp/fișier-0.md` — [patch] Failed 0\r\n  • `/tmp/fișier-1.md` — [patch] Failed 1\r\n  • `/tmp/fișier-2.md` — [patch] Failed 2\r\n  • `/tmp/fișier-3.md` — [patch] Failed 3\r\n  • `/tmp/fișier-4.md` — [patch] Failed 4\r\n  • `/tmp/fișier-5.md` — [patch] Failed 5\r\n  • `/tmp/fișier-6.md` — [patch] Failed 6\r\n  • `/tmp/fișier-7.md` — [patch] Failed 7\r\n  • `/tmp/fișier-8.md` — [patch] Failed 8\r\n  • `/tmp/fișier-9.md` — [patch] Failed 9\r\n  • … and 1 more\r\nAfter.",
+  "spoken": "Before. After."
+ },
+ {
+  "name": "verifier_header_without_bullet",
+  "lang": "en",
+  "text": "Done.\n\n⚠️ File-mutation verifier: 1 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.",
+  "spoken": "Done. File-mutation verifier: 1 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run git status or read_file to confirm what actually landed."
+ },
+ {
+  "name": "ordinary_verification_warning",
+  "lang": "en",
+  "text": "Warning: file-mutation verification matters.",
+  "spoken": "Warning: file-mutation verification matters."
+ },
+ {
+  "name": "verifier_empty_bullet_is_not_producer",
+  "lang": "en",
+  "text": "⚠️ File-mutation verifier: 1 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.\n  • ",
+  "spoken": "File-mutation verifier: 1 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run git status or read_file to confirm what actually landed. •"
  }
 ]

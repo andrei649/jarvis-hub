@@ -170,6 +170,18 @@ describe('useVoice — H526 speech, not markdown', () => {
     expect(await liveTurn(['Verifică dacă a ', '<b'])).toEqual(['Verifică dacă a <b']);
   });
 
+  it('a live turn keeps the visible reply but never synthesizes a split verifier advisory', async () => {
+    const deltas = [
+      'Done.\r', '\n\r\n⚠', '️ File-mutation ver',
+      'ifier: 1 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. ',
+      'Run `git status` or `read_file` to confirm what actually landed.\r\n  • ',
+      '`/tmp/a.md` — [patch] Could not find old_string\r\nNext.',
+    ];
+    const visibleReply = deltas.join('');
+    expect(visibleReply).toContain('Could not find old_string');
+    expect(await liveTurn(deltas)).toEqual(['Done.', 'Next.']);
+  });
+
   it('a live turn plays nothing for a sentence the hub answers 204', async () => {
     installMedia();
     const bodies = installFetch({ ttsStatus: 204 });

@@ -159,6 +159,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Status / telemetry | `GET /status` | ✅ | ✅; local refresh-order fix protects model/Trust/brief data and loading/error state from older responses | H18.1; [refresh evidence](docs/native-status-refresh-order.md) |
 | Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ✅ | H18.5 |
 | Voice / TTS | `POST /tts` | ✅ | ✅ | H18.5 |
+| Speech-only verifier advisory filtering (H526 checkpoint) | Shared hub TTS normalizer; footer-only replies return 204 | Whole replies and live deltas filter the exact structured advisory; visible text stays intact | Existing native `/tts` path inherits hub normalization; no separate client parser or device-audio claim | H526 final whole-contract acceptance pending |
 | Approved speech command configuration | `GET/POST /api/admin/voice/commands` | ✅ Settings → Voice → Command providers; independent named TTS/STT, signed registration, human approval, revisioned clear and STT selection | ⬜ native provider configuration; hub TTS playback remains available | H517 / H613; vendor/plugin breadth remains open |
 | Stream timeout / reconnect | — (client-side) | ✅ | ✅ | H18.6 |
 | Dashboard (weather/news) | `GET /dashboard` | ✅ | ✅ | H18.14 |
