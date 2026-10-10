@@ -8,8 +8,7 @@ tainted, so an action planned from it escalates GRANT to QUEUE. The composer com
 """
 from __future__ import annotations
 
-import asyncio
-import json
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -358,15 +357,28 @@ async def test_an_inbound_turn_keeps_its_more_specific_origin():
     assert origins == [INBOUND_ACTION_ORIGIN]
 
 
-def test_the_expansion_runs_off_the_event_loop_in_the_routes():
-    import inspect
-
+@pytest.mark.parametrize("path", ["chat", "stream"])
+async def test_the_expansion_runs_off_the_event_loop_in_the_routes(golden, monkeypatch, path):
     from agents import web
 
-    src = inspect.getsource(web.chat) + inspect.getsource(web.chat_stream)
-    assert src.count("asyncio.to_thread(context_refs.expand, req.message)") == 2
-    assert json.dumps(cr.REFERENCE_TYPES) == '["file"]'
-    assert asyncio.iscoroutinefunction(web.chat)
+    event_loop_thread = threading.get_ident()
+    observed: list[tuple[str, int]] = []
+    original = cr.expand
+
+    def traced(message):
+        observed.append((message, threading.get_ident()))
+        return original(message)
+
+    monkeypatch.setattr(cr, "expand", traced)
+    message = "what does @file:notes.md say?"
+    if path == "chat":
+        reply = await web.chat(web.ChatRequest(message=message), _web_request())
+        assert reply.reply
+    else:
+        assert '"type": "end"' in await _stream(message)
+    assert len(observed) == 1 and observed[0][0] == message
+    assert observed[0][1] != event_loop_thread
+    assert cr.REFERENCE_TYPES == ("file",)
 
 
 # ── review round: what the turn reads, and the edges of the parser and the reader ─
