@@ -111,7 +111,10 @@ def resolve_auxiliary_model(
     raw = env_str(name) if env is None else env.get(name, "")
     if not isinstance(raw, str) or len(raw) > 256 or not raw.isprintable():
         raise AuxiliaryConfigError("invalid auxiliary model override")
-    return raw.strip(" ") or active_model or fallback
+    selected = raw.strip(" ")
+    # A cosmetic title always defaults to the declared small local model. Other
+    # auxiliary tasks keep their existing active-model fallback.
+    return selected or (fallback if task == "session_title" else active_model or fallback)
 
 
 def prepare_local_auxiliary(router, task: str):
@@ -121,7 +124,8 @@ def prepare_local_auxiliary(router, task: str):
     exclude_job_pins = _TASKS[task][2]
     if exclude_job_pins and current_selection() is not None:
         raise SelectionError("job model pins exclude auxiliary calls")
-    model = resolve_auxiliary_model(task, getattr(router, "active_model", None))
+    active_model = None if task == "session_title" else getattr(router, "active_model", None)
+    model = resolve_auxiliary_model(task, active_model)
     backend = router.local_backend
 
     async def generate(*, system: str, prompt: str, max_tokens: int,

@@ -634,11 +634,13 @@ def _titler_orch(model="local-small"):
 
 
 def test_the_titler_uses_the_local_backend_at_temperature_zero_and_few_tokens():
+    from agents.core.llm.model_config import DEFAULT_LOCAL_MODEL
+
     orch, backend = _titler_orch()
     out = asyncio.run(orch._session_titler()(system="s", prompt="p"))
     assert out == "Brasov trip planning"
     (call,) = backend.calls
-    assert call == {"model": "local-small", "prompt": "p", "system": "s",
+    assert call == {"model": DEFAULT_LOCAL_MODEL, "prompt": "p\n/no_think", "system": "s",
                     "max_tokens": st.MAX_TOKENS, "temperature": st.TEMPERATURE}
     assert st.MAX_TOKENS == 24 and st.TEMPERATURE == 0
 
@@ -651,9 +653,31 @@ def test_no_active_model_falls_back_to_the_default_local_model():
     assert backend.calls[0]["model"] == DEFAULT_LOCAL_MODEL
 
 
+async def test_missing_dedicated_model_keeps_instant_title_without_chat_model_retry():
+    from agents.core.llm.model_config import DEFAULT_LOCAL_MODEL
+
+    cp = _Checkpoints()
+    orch, backend = _titler_orch(model="large-chat-70b")
+    orch.checkpoints = cp
+    orch._session_id_default = "s-1"
+
+    async def unavailable(**kwargs):
+        backend.calls.append(kwargs)
+        if kwargs["model"] == DEFAULT_LOCAL_MODEL:
+            raise RuntimeError("small model unavailable")
+        return "Wrong fallback title"
+
+    backend.generate = unavailable
+    orch._title_session("Plan the Brasov trip")
+    await _drain(orch)
+    assert cp.titles["s-1"] == {"title": "Plan the Brasov trip", "source": "first_words"}
+    assert [call["model"] for call in backend.calls] == [DEFAULT_LOCAL_MODEL]
+
+
 @pytest.mark.parametrize("model,switched", [("qwen3:7b", True), ("Qwen3-14B-GGUF", True), ("llama3.1:8b", False)])
-def test_a_thinking_qwen3_model_is_told_not_to_think(model, switched):
-    orch, backend = _titler_orch(model)
+def test_a_thinking_qwen3_model_is_told_not_to_think(monkeypatch, model, switched):
+    monkeypatch.setenv("JARVIS_AUX_SESSION_TITLE_MODEL", model)
+    orch, backend = _titler_orch("large-chat-70b")
     asyncio.run(orch._session_titler()(system="s", prompt="p"))
     assert backend.calls[0]["prompt"].endswith("\n/no_think") is switched
 
