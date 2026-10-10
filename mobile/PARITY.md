@@ -20,6 +20,20 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
 
+H413/H689 local update (2026-10-10): existing session lists receive the same
+instant and background-upgraded titles; automatic naming now uses the dedicated
+small local model, and keeps the instant title when it is unavailable. Profiles
+share installation identity while retaining separate credentials and stores.
+Existing owner node-registration and sender-link endpoints refuse missing
+identity with HTTP 503; identity reconciliation/re-pairing remains host
+administration, with no new native management screen or device acceptance claim.
+See [migration guide](../docs/install-identity.md) and
+[batch verification](../docs/plans/2026-10-10-hermes-closure-02.md).
+
+H256 local update (2026-10-10): existing owner consent endpoints now refuse a
+damaged settings store before audit or grant/revoke. Their existing error path
+is retained; this adds no mobile consent or configuration-repair screen.
+
 Camera parity is read/search parity over the same bounded metadata API. Admin ONVIF onboarding is
 intentionally owner-HUD-only; native clients expose no discovery, frame, stream, or private URL.
 

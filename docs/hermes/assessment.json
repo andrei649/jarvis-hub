@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "9f139e0d3f7d0c8e6f2a84e6791884e2c0f5f0c2",
-  "assessed_at": "2026-10-10T02:41:01Z",
+  "base_sha": "293536f560f8cc9b0297b7d8c3e849e1e7a2f709",
+  "assessed_at": "2026-10-10T03:06:53Z",
   "reviews": [
     {
       "id": "H001",
@@ -3525,7 +3525,7 @@
       "id": "H153",
       "row_sha256": "4cf373559835467b03603fea55b6ed2f0a4f3cb840b0dbc4a0fb9db3b73bc510",
       "status": "equivalent",
-      "summary": "The accepted webhook subscription contract remains: admin CRUD and audited receiver settings, signed/filtered/template deliveries, bounded body and render paths, and delivery to the named owner-facing channels (agents/core/routers/webhooks.py; agents/core/webhooks.py; agents/core/channels/outbound.py). The outbound Telegram route still uses send_to_target -> ChannelManager.send -> TelegramChannel.send with plain text, no parse mode/link preview/voice for webhook text (agents/core/channels/outbound.py:174-228; agents/core/channels/manager.py:128-149; agents/core/channels/telegram.py:406-496). The new send_owner_once_card method at telegram.py:600-629 is a separate approval-card API; the webhook router does not call it. Prior backend and panel evidence still supports the equivalent verdict. This collateral review makes no live-delivery or new mutation claim. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): The new native consent denial handler only sends its short acknowledgement via the existing Telegram send API. It does not alter webhook `send_to_target` or the plain outbound webhook path; the owner-once card send citation moved with the new channel code. No new webhook or live delivery claim.\n\nOwner-denial collateral review (2026-10-04, base 22005244): the moved Telegram `send` and `send_owner_once_card` anchors still implement separate APIs. The new `/deny` acknowledgement calls the same plain channel-send path, while webhook `send_to_target` and `ChannelManager.send` retain their original dispatch and plain-text flags. The owner-once additions do not change subscription CRUD, webhook rendering, or delivery; no fresh live webhook claim is made.",
+      "summary": "The accepted webhook subscription contract remains: admin CRUD and audited receiver settings, signed/filtered/template deliveries, bounded body and render paths, and delivery to the named owner-facing channels (agents/core/routers/webhooks.py; agents/core/webhooks.py; agents/core/channels/outbound.py). The outbound Telegram route still uses send_to_target -> ChannelManager.send -> TelegramChannel.send with plain text, no parse mode/link preview/voice for webhook text (agents/core/channels/outbound.py:174-228; agents/core/channels/manager.py:128-149; agents/core/channels/telegram.py:406-496). The new send_owner_once_card method at telegram.py:600-629 is a separate approval-card API; the webhook router does not call it. Prior backend and panel evidence still supports the equivalent verdict. This collateral review makes no live-delivery or new mutation claim. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): The new native consent denial handler only sends its short acknowledgement via the existing Telegram send API. It does not alter webhook `send_to_target` or the plain outbound webhook path; the owner-once card send citation moved with the new channel code. No new webhook or live delivery claim.\n\nOwner-denial collateral review (2026-10-04, base 22005244): the moved Telegram `send` and `send_owner_once_card` anchors still implement separate APIs. The new `/deny` acknowledgement calls the same plain channel-send path, while webhook `send_to_target` and `ChannelManager.send` retain their original dispatch and plain-text flags. The owner-once additions do not change subscription CRUD, webhook rendering, or delivery; no fresh live webhook claim is made.\n\nBatch-02 collateral review (2026-10-10): the production webhook paths are unchanged. The delivery audit test now uses the existing action-event filter, asserts exactly create/update and retains both destination assertions; this removes a race with queued authentication telemetry without weakening the webhook audit requirement. The six-module webhook/authentication selection passes 306 cases; no new feature or live-delivery claim.",
       "remaining": "",
       "evidence": [
         {
@@ -3594,7 +3594,7 @@
         },
         {
           "path": "tests/test_h153b_webhook_delivery.py",
-          "sha256": "40e54c8265135a4b7c71cdb0291aefdd9cffbab277155a0b5049c1561a5ab55e"
+          "sha256": "9f17647d836636ee74ccbbbae8c627e124af03021828652787f33e83a047c3ae"
         },
         {
           "path": "tests/test_h153c_webhook_sends.py",
@@ -4753,24 +4753,40 @@
       "id": "H256",
       "row_sha256": "1d84672649ccd0aee5c7b3781152fab586b9b4587962790bda2cef3c4b33165d",
       "status": "equivalent",
-      "summary": "Complete pinned configuration recovery contract: YAML and SQLite/JSON validated before shared hub startup and writes; running reads retain last-good policy, fresh unreadable policy refuses startup including raw I/O errors. Path/mtime/size warning deduplication and private no-follow corrupt-byte snapshots; per-store initialization and already-initialized revalidation tested. H067 completion impact2026-10-05:1277 affected cases passed and final transport probes verify localized Telegram restart. Explicit paired workspace owners, async clarification batches, signed ephemeral metadata and same-instance lifecycle recovery do not change external vault or corrupt-config contracts. Other historical suite claims remain dated, not fresh whole-suite evidence. Typed ntfy H067 collateral review2026-10-05: shared orchestrator AST changes are limited to pending ingress and explicit ntfy owner identity; lifecycle, corrupt-config and external-vault startup functions are unchanged.619 affected probes passed before final localized corrections;126 final probes verify endpoint consent, donor own answers and native SDK/RPC regression behavior. Immediate matching preimage pins only are refreshed. See docs/hermes/evidence/2026-10-05-pending-input-completion/ntfy-report.json. ntfy owner-setting label review2026-10-05: exact change is one label string; category/key/default/kind and consumers are unchanged. Existing settings tests pass. This refreshes only the matching immediate settings preimage; unrelated stale pins and original verdicts remain.\n\nH595 one-shot/interruption integration (2026-10-05): reviewed this batch against exact preimages in the pinned paths. Parent context, admitted conversation routing and bounded result aliases preserve the existing row contract and remaining limits. Composition297, final affected109 and startup44 cases pass; see docs/hermes/evidence/2026-10-05-code-interruption/report.json. Existing stale pins are retained; no new full-capability or live-provider credit.",
+      "summary": "Unreadable YAML is reported once per path/mtime/size, copied privately when possible, and retains last-good running policy. Settings SQLite integrity plus stored value/opts JSON are checked before initialization and writes; last-good values are scoped to the store. Fresh startup refuses without known-good policy, as the frozen Nerva rationale explicitly requires rather than restoring potentially weaker defaults. Provider and role consent writers now validate before connection and again under BEGIN IMMEDIATE before audit or mutation; unrelated corruption and the preflight-to-lock race refuse without a grant, revoke, audit or listener. Ten new red-first regressions and both independent 95-test focused selections pass, including repair recovery. Corrupt snapshots use Nerva's private backups/config location; no live/personal database was used.",
       "remaining": "",
       "evidence": [
         {
-          "path": "agents/core/config.py",
-          "sha256": "d2707153a604179f4b42a7d6bd866ea861b8adb505b0b4dc171ad2c1a0c7ec8a"
+          "path": "agents/core/appearance.py",
+          "sha256": "4619bff46044e5e95c540b8cacd4d2cbfb61b6868f5d5a0869fb3e617fb78615"
         },
         {
-          "path": "agents/core/settings_db.py",
-          "sha256": "4a740dc6d4eaefab47a02059eca20200b5efcc39e3a97a9c514d847186c8f7cf"
+          "path": "agents/core/config.py",
+          "sha256": "d2707153a604179f4b42a7d6bd866ea861b8adb505b0b4dc171ad2c1a0c7ec8a"
         },
         {
           "path": "agents/core/config_read_errors.py",
           "sha256": "4a0e09454bae79e1d9347cb7c6104767148638dae0967ba86c4ccb115dde45b2"
         },
         {
+          "path": "agents/core/llm/data_handling.py",
+          "sha256": "cd88529cb1209816b86a5294c38ef12eb597be87b088914fefdacf56fbc3f702"
+        },
+        {
           "path": "agents/core/orchestrator.py",
-          "sha256": "2fd5c9b3b1e76891c037d892249b9457ddf276a3fb86927e0434ec364e141d13"
+          "sha256": "185d66f6b94d0aedf7a7969b197eddb607a8a986c0ef563dd836b4ca12595daf"
+        },
+        {
+          "path": "agents/core/routers/composer_vision.py",
+          "sha256": "e23624ecce36f207b5e68d3adb10c69af66911da570526550c0f14e01257bed1"
+        },
+        {
+          "path": "agents/core/routers/security.py",
+          "sha256": "c0852d0329b60043c5a9723fd1f682bf79814da0a1b09a0af7e2f474a6c4c1a8"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "3ad699a7beb58ca0af1783a814a1f094874b4aa16e6da79c97ac2843eab62338"
         },
         {
           "path": "tests/test_config_recovery_h256.py",
@@ -4781,32 +4797,16 @@
           "sha256": "1718a92b7b95772b4e0ee7c7e28981a3382a1dbabcabb2587f4eaa5d3118b3e6"
         },
         {
-          "path": "docs/hermes/evidence/2026-10-05-direct-ports/report.json",
-          "sha256": "fb79187fe8a82436e9dc1b18ffc3d77d99de8dba8a9392a85e29ef613ef76feb"
+          "path": "tests/test_h256_consent_writes.py",
+          "sha256": "f83b02437c3dfe43502adb3407b902771424c4bc9d5237c397bec1214837fb76"
         },
         {
-          "path": "docs/hermes/evidence/2026-10-05-direct-ports/final-corrections-result.xml",
-          "sha256": "384b37b56ca9e1f84210a08c68f108d2ea9364d3cbc0fab4da1110cae9690081"
+          "path": "tests/test_h513_data_handling.py",
+          "sha256": "c98d2ec2b3681f1841c3ce80d4d5805b63e6ad74a7ffd3b2528dd162ab46cabb"
         },
         {
-          "path": "docs/hermes/evidence/2026-10-05-direct-ports/scoped-inputs.json",
-          "sha256": "42617678e3b2a21d436e1f989d58a8cf52193e48c52eb1fc10d76d06aefc5362"
-        },
-        {
-          "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/report.json",
-          "sha256": "e8f3c0efe69608244c3d4a30c5190648300cd558cb9f89a5d448ea4dcea3665b"
-        },
-        {
-          "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/integration-result.xml",
-          "sha256": "e9d02e78ca057f80ad736e29020140426cb6f918553e34b0cf9148b97fd69845"
-        },
-        {
-          "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/final-transport-result.xml",
-          "sha256": "9283c20776eda9cff88b6aadc88c6e284eac3362e90de678f6d6d4c7f7e48574"
-        },
-        {
-          "path": "docs/hermes/evidence/2026-10-05-pending-input-completion/ntfy-report.json",
-          "sha256": "f8cacded92205a8d987f74878ce7a3579fccc50d7d07bb8e61e067790c936454"
+          "path": "tests/test_h513_judge_consent.py",
+          "sha256": "44a8783f6f53c057995e386a88f3fcb621eb380372b0ecf8b8d7d67a0af39c03"
         }
       ]
     },
@@ -6775,61 +6775,45 @@
     {
       "id": "H296",
       "row_sha256": "b9a9ae73c74897142114c7d465f46bd3cd754d47d3df63dff928322c778777a9",
-      "status": "equivalent",
-      "summary": "A tool now tells the model what this install can do, and the live shape reaches a running session. register_tool takes schema_overrides (agents/core/tool_rpc.py:329), a zero-argument hook (SchemaOverrides, agents/core/tool_rpc.py:99) refused at registration when it is not callable. ToolRPCServer.tools() (agents/core/tool_rpc.py:397) asks every hook each time the tool list is built and merges the answer over the static description and schema (advertised_schema, agents/core/tool_rpc.py:172). The merge (_apply_override, agents/core/tool_rpc.py:125) takes only a `description` (non-empty text of at most 2,048 characters), `properties` whose keys are merged over properties the static schema already declares (an override never invents an argument, changes a declared type, raises or removes a declared maximum, lowers a declared minimum or widens a declared enum; keys it cannot compare, such as a pattern or nested items, are the hook's to keep narrow) and `required` (a list naming declared properties that keeps every statically required name); None or {} changes nothing, and the result must be plain JSON. A hook that raises, or answers with an unknown key, an undeclared property, a non-mapping, a bad `required` or a value JSON cannot carry, is logged at WARNING once per tool, naming the tool and the exception type but not its message, and the static schema is advertised (_OVERRIDE_WARNED, agents/core/tool_rpc.py:52); a hook that recovers is cleared and warns again if it fails again. The static schema is never mutated and every row is a copy. The registry projection gets the same shape, because its records are built from tools() on every snapshot (_tool_records, agents/core/observability/capability_registry.py:314, inputs at agents/core/observability/capability_registry.py:339), except on the two routes that answer without a token: GET /sandbox/status (tools(live=False)) and GET /api/metrics/capabilities (snapshot(live_schemas=False)) carry the static schemas, so speaker ids, room names and terminal target names never reach an unauthenticated client. At the H672 compaction boundary refresh_tools compares each still-offered tool's description and schema (_shape, agents/core/session_refresh.py:95) and reports the ones that moved as `reshaped` (agents/core/session_refresh.py:153), which is a change and a rebuild (agents/core/session_refresh.py:159); the runtime's tool_offer_refreshed event names them (agents/core/agent_runtime.py:642) and rebuilds the specs, and boundary_note says \"tool schemas moved: …\" (agents/core/session_refresh.py:180). Four tools use it. terminal_run (agents/core/autonomy_coordinator.py:834) advertises `target` as the targets its runner would run on (TargetRegistry.usable_names(\"jarvis\", \"terminal.exec\"), agents/core/environments/targets.py:250, a non-auditing read of what authorize() would not deny: enabled, open to the agent, granting terminal.exec), sorted and at most 64, or says in its description that terminal targets are switched off (JARVIS_TERMINAL_TARGETS) or that no target it can run on is enabled, so every call is refused (_terminal_run_overrides, agents/core/autonomy_coordinator.py:1282). desktop_run (agents/core/autonomy_coordinator.py:751) says the desktop operator is switched off (JARVIS_DESKTOP_HOST, JARVIS_DESKTOP_ISOLATED) or names the driver_for_host refusal, and otherwise advertises its step `action` as the validator's actions that this host's driver performs (the driver's supported_actions; launch only with the Windows driver), the host being looked at at most once a minute (_desktop_run_overrides, agents/core/autonomy_coordinator.py:131). speak (agents/core/voice/speak_tool.py:718) advertises `target` as the announce-capable device ids, the rooms whose one announce default resolves (an ambiguous room, or one named like a registered device, is left out) and presence:auto when the presence room resolves, each only when its device has a media driver, at most 64, past which no enum is advertised and the description says so (MAX_ADVERTISED_TARGETS, agents/core/voice/speak_tool.py:146), or says that the Media Director is not available, that no speaker can announce yet, or that no speaker that can announce has a media driver (JARVIS_MEDIA_DRIVERS) (SpeakTool.schema_overrides, agents/core/voice/speak_tool.py:328). memory (H314; its hook at agents/core/memory_tool.py:459, registered at agents/core/memory_tool.py:526) adds to its description that memory is switched off on this hub and every call is refused while cognition memory is off, safe mode is on or the memory module cannot be read, and otherwise changes nothing. An override changes what the model is told; each handler still checks every call. tests/test_h296_schema_overrides.py (71 cases) covers the registration check, the merge, a row as a copy, nothing to change, the hook asked on every build, seventeen malformed or failing answers falling back to the static schema, the longest description, the one warning and its re-arm after recovery, the capability-registry projection, the boundary's reshape (a moved schema, a moved description, key order that is not a move, an added tool that is not also a reshape), a real tool loop in which a target registered mid-loop is offered after the fold with the event naming it, terminal_run switched off, with no target and with targets (sorted and bounded), desktop_run's enum without touching the static schema, and speak's devices, rooms and presence, an ambiguous room, a room named like a device, a stable room order, the bound, no announce speaker, no Media Director and the registered tool picking up a new speaker at once; the review round added usable targets from default_targets and a mixed registry with no audit entry, desktop flags off, no driver, the cross-platform and Windows action sets and the once-a-minute probe, the open routes serving static schemas, a shadowed room, driverless speakers, no warning per build from a failing director, the widening refusals and the over-bound speak description; tests/test_agent_runtime_v2.py pins the two changed rows of the wired tool list. 35 mutants over the merge, the fallback, the boundary, the event and the three overrides: 33 caught (five after their cases were added: an unknown key beside a known one, pairs instead of a mapping, a tuple for `required`, a row shared with the registered schema, the room order) and two equivalent (removing the mapping check or the declared-property check still raises on the next line). Test manual: GOV-261, GOV-262. Adapted from Hermes: dynamic_schema_overrides becomes a registration hook merged over a static schema that bounds what it may change, and a changed shape is picked up at Nerva's compaction boundary rather than on every call.\n\nIndependent #1233 review (historical scope): A tool now tells the model what this install can do, and the live shape reaches a running session. register_tool takes schema_overrides (agents/core/tool_rpc.py:329), a zero-argument hook (SchemaOverrides, agents/core/tool_rpc.py:99) refused at registration when it is not callable. ToolRPCServer.tools() (agents/core/tool_rpc.py:397) asks every hook each time the tool list is built and merges the answer over the static description and schema (advertised_schema, agents/core/tool_rpc.py:172). The merge (_apply_override, agents/core/tool_rpc.py:125) takes only a `description` (non-empty text of at most 2,048 characters), `properties` whose keys are merged over properties the static schema already declares (an override never invents an argument, changes a declared type, raises or removes a declared maximum, lowers a declared minimum or widens a declared enum; keys it cannot compare, such as a pattern or nested items, are the hook's to keep narrow) and `required` (a list naming declared properties that keeps every statically required name); None or {} changes nothing, and the result must be plain JSON. A hook that raises, or answers with an unknown key, an undeclared property, a non-mapping, a bad `required` or a value JSON cannot carry, is logged at WARNING once per tool, naming the tool and the exception type but not its message, and the static schema is advertised (_OVERRIDE_WARNED, agents/core/tool_rpc.py:52); a hook that recovers is cleared and warns again if it fails again. The static schema is never mutated and every row is a copy. The registry projection gets the same shape, because its records are built from tools() on every snapshot (_tool_records, agents/core/observability/capability_registry.py:314, inputs at agents/core/observability/capability_registry.py:339), except on the two routes that answer without a token: GET /sandbox/status (tools(live=False)) and GET /api/metrics/capabilities (snapshot(live_schemas=False)) carry the static schemas, so speaker ids, room names and terminal target names never reach an unauthenticated client. At the H672 compaction boundary refresh_tools compares each still-offered tool's description and schema (_shape, agents/core/session_refresh.py:95) and reports the ones that moved as `reshaped` (agents/core/session_refresh.py:153), which is a change and a rebuild (agents/core/session_refresh.py:159); the runtime's tool_offer_refreshed event names them (agents/core/agent_runtime.py:593) and rebuilds the specs, and boundary_note says \"tool schemas moved: …\" (agents/core/session_refresh.py:180). Four tools use it. terminal_run (agents/core/autonomy_coordinator.py:834) advertises `target` as the targets its runner would run on (TargetRegistry.usable_names(\"jarvis\", \"terminal.exec\"), agents/core/environments/targets.py:250, a non-auditing read of what authorize() would not deny: enabled, open to the agent, granting terminal.exec), sorted and at most 64, or says in its description that terminal targets are switched off (JARVIS_TERMINAL_TARGETS) or that no target it can run on is enabled, so every call is refused (_terminal_run_overrides, agents/core/autonomy_coordinator.py:1282). desktop_run (agents/core/autonomy_coordinator.py:751) says the desktop operator is switched off (JARVIS_DESKTOP_HOST, JARVIS_DESKTOP_ISOLATED) or names the driver_for_host refusal, and otherwise advertises its step `action` as the validator's actions that this host's driver performs (the driver's supported_actions; launch only with the Windows driver), the host being looked at at most once a minute (_desktop_run_overrides, agents/core/autonomy_coordinator.py:131). speak (agents/core/voice/speak_tool.py:718) advertises `target` as the announce-capable device ids, the rooms whose one announce default resolves (an ambiguous room, or one named like a registered device, is left out) and presence:auto when the presence room resolves, each only when its device has a media driver, at most 64, past which no enum is advertised and the description says so (MAX_ADVERTISED_TARGETS, agents/core/voice/speak_tool.py:146), or says that the Media Director is not available, that no speaker can announce yet, or that no speaker that can announce has a media driver (JARVIS_MEDIA_DRIVERS) (SpeakTool.schema_overrides, agents/core/voice/speak_tool.py:328). memory (H314; its hook at agents/core/memory_tool.py:459, registered at agents/core/memory_tool.py:526) adds to its description that memory is switched off on this hub and every call is refused while cognition memory is off, safe mode is on or the memory module cannot be read, and otherwise changes nothing. An override changes what the model is told; each handler still checks every call. tests/test_h296_schema_overrides.py (71 cases) covers the registration check, the merge, a row as a copy, nothing to change, the hook asked on every build, seventeen malformed or failing answers falling back to the static schema, the longest description, the one warning and its re-arm after recovery, the capability-registry projection, the boundary's reshape (a moved schema, a moved description, key order that is not a move, an added tool that is not also a reshape), a real tool loop in which a target registered mid-loop is offered after the fold with the event naming it, terminal_run switched off, with no target and with targets (sorted and bounded), desktop_run's enum without touching the static schema, and speak's devices, rooms and presence, an ambiguous room, a room named like a device, a stable room order, the bound, no announce speaker, no Media Director and the registered tool picking up a new speaker at once; the review round added usable targets from default_targets and a mixed registry with no audit entry, desktop flags off, no driver, the cross-platform and Windows action sets and the once-a-minute probe, the open routes serving static schemas, a shadowed room, driverless speakers, no warning per build from a failing director, the widening refusals and the over-bound speak description; tests/test_agent_runtime_v2.py pins the two changed rows of the wired tool list. 35 mutants over the merge, the fallback, the boundary, the event and the three overrides: 33 caught (five after their cases were added: an unknown key beside a known one, pairs instead of a mapping, a tuple for `required`, a row shared with the registered schema, the room order) and two equivalent (removing the mapping check or the declared-property check still raises on the next line). Test manual: GOV-261, GOV-262. Adapted from Hermes: dynamic_schema_overrides becomes a registration hook merged over a static schema that bounds what it may change, and a changed shape is picked up at Nerva's compaction boundary rather than on every call.",
-      "remaining": "",
+      "status": "partial",
+      "summary": "The zero-argument dynamic-schema hook runs on each live tool-list build, validates narrowing-only overrides, isolates static schemas, logs/falls back on failure and refreshes offered tools after committed compaction. The two focused modules pass 144 tests. Current production hooks cover terminal, desktop, speak and disabled-memory description; these do not establish the frozen named-producer coverage.",
+      "remaining": "Complete dynamic producers for delegation, patch/model dialect, image generation, video generation, file reading and browser execution, plus memory target-enum and TARGETS description narrowing. Some producer tools are themselves absent or differently scoped; equivalent cannot be inferred from the generic hook or substitute Nerva hooks.",
       "evidence": [
         {
-          "path": "agents/core/tool_rpc.py",
-          "sha256": "cec064a3c274628114df954a1622551cb309468a33b028bbc621a173296db68e"
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "ef28188b6635a7d4e3b34365190b2e86549d1e746d9636748b0f4c88e215a80f"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "4459deead8273910f3fe6e2d3659acb25e3dc09ea7907681e09a1531b07085f1"
+        },
+        {
+          "path": "agents/core/file_tools.py",
+          "sha256": "fc00a71bcaf565b3d4695d071ab1f3be3691dd6cebf95776efa559119579bea0"
+        },
+        {
+          "path": "agents/core/memory_tool.py",
+          "sha256": "5f4afc0132a088a106dfc0f9ba262cb2b84c6473dba19a1303abfad42fb1f6f5"
         },
         {
           "path": "agents/core/session_refresh.py",
           "sha256": "8e2af5916a05d142fb934a7ca5ea3a7459408a0fa1d6ad20f62675a04c416d86"
         },
         {
-          "path": "agents/core/agent_runtime.py",
-          "sha256": "7ac303e0b4efd8d4fcbeae391bb8a5d149e79c15c8d41acf5eb769cdd3ee7a1e"
-        },
-        {
-          "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "a834ab8414109b558abe35d2fd02882e39f5eb3ac9cfdb354a35703bd6198279"
+          "path": "agents/core/tool_rpc.py",
+          "sha256": "dd93da714b8267ea3d9be583b9073d148c1df32e4c01c8bf91573b7dc0e80ec9"
         },
         {
           "path": "agents/core/voice/speak_tool.py",
           "sha256": "303bf67a214d01cda5af054fa9808cc13d92db34e5dfa86b820ddc249d2dc975"
         },
         {
-          "path": "agents/core/environments/targets.py",
-          "sha256": "d26f9a3f98d4afa2c29745b3ed523f899ebb37d9794c8223b4e5537254839839"
-        },
-        {
-          "path": "agents/core/observability/capability_registry.py",
-          "sha256": "5c82fb446d988288ec194a1f09ef7ba6c8ba4b5a51ddfce6be1e13fe69618df6"
+          "path": "tests/test_agent_runtime_v2.py",
+          "sha256": "4c0e2898bd9065179d1c09d2e2e5d35582cc3e37342f23cd538f11987b609b06"
         },
         {
           "path": "tests/test_h296_schema_overrides.py",
           "sha256": "f639a6a14d3a61baeb688e4ee4ba40b6adfc830baf10f09774c5bf2c9822ce89"
-        },
-        {
-          "path": "tests/test_agent_runtime_v2.py",
-          "sha256": "77717e2a068a36d7e9e09b90f2f744037039ba805e9aaff6308c7e45c4070d1c"
-        },
-        {
-          "path": "agents/core/desktop_host.py",
-          "sha256": "9b99da15b2d65c39defc041488b38283706d5a0d9859f2449a0b893799fd4818"
-        },
-        {
-          "path": "agents/core/desktop_drivers/base.py",
-          "sha256": "6ff2813d96102a0e9d8811fea6dc7e3ec5efb1023c52c70994842c0f50a02f8b"
-        },
-        {
-          "path": "agents/core/routers/analytics.py",
-          "sha256": "81c48b68a6950bb3c907a2be1d726d7bdbd717e20b120f27258e880522b62cf9"
-        },
-        {
-          "path": "agents/core/routers/skills.py",
-          "sha256": "4abb3392bf00c532c6d77e2a5c0428ea5b20f83a7e5d4e726f04817f30680910"
         }
       ]
     },
@@ -6837,140 +6821,52 @@
       "id": "H298",
       "row_sha256": "d516cf7e38eda13e728191a930ad08eecc1fdf248dd718e220a19b1713ded66f",
       "status": "equivalent",
-      "summary": "The complete frozen tool-result contract is wired into real tool turns:\n- the threshold precedence: pinned infinity (PINNED_THRESHOLDS: file_read, keyed on READ_TOOL, and since H315's review `todo`, whose store keeps its whole answer under 7,000 bytes), then owner override, the MCP family, tool declaration and the default threshold;\n- per-result/per-turn scaling;\n- bounded previews with full-file paths, sizes and hashes;\n- finalized-file retention;\n- centralized byte/line/line-length limits.\n\nSince H661 the spill notice is an exact, followable call. `page_recipe` fills in `file_read(path=…, offset=0, max_bytes=…)` with the resolved path, the preview and execute_code stream fields carry it as text and as `read_with` arguments, and `file_read` pages from any offset and returns `next_offset`. The call is checked, not assumed: the store's `read_back` probe is asked about that exact path. The coordinator wires it to three checks: registry + job-toolset allowance, the turn's own offer, and FileTools reach. The spill directory is also a read-only door for exact spill names, and spill names never look like secrets. When file_read cannot page the file from this turn, the notice says the file is kept for the owner and does not name a dead call.\n\nOther guarantees:\n- Exclusive per-writer temporary files preserve concurrent stream and whole-result receipts.\n- A shape-truncated stream keeps its bytes even when its annotation makes the preview longer.\n- Upstream byte truncation and small-output discard still work.\n\nOrdinary Agent and Orchestrator tool paths snapshot configured/cached backend capacity before guardrails. They forward immutable per-turn metadata without unwrapping or bypassing generation. Known capacity and resolved job bounds constrain the completion reserve, initial and later transcripts, schemas, structured tool arguments and finite result thresholds, and file_read never re-spills. Invalid metadata refuses the tool turn. Unknown capacity, including adapters without loaded metadata, keeps the documented model-family estimate, and token accounting remains heuristic.\n\nRe-run at 55d625f: 243 cases pass across tests/test_tool_result_store.py, test_tool_loop_result_spill.py, test_environment_output_limits.py, test_code_tools.py, test_effective_tool_window.py and test_spill_paging.py.\n\nHonest limits:\n- A *streamed* spill now has a ceiling, DEFAULT_MAX_STREAM_BYTES = 5,000,000, which the code calls Hermes' own figure. Past it, the file ends in one explicit '[... spill capped ...]' marker, the result reports capped/kept_bytes/file_bytes, and the stream's end survives only in the inline tail. Whole-result spills are uncapped.\n- Retention has a newest-file exception.\n- Interrupted captures, orphan cleanup and arbitrary storage failure are not permanent complete-output guarantees.\n- This is code equivalence, not live provider/Windows containment proof.\n\nIndependent #1233 review (historical scope): Oversized tool results still use bounded previews, durable spill files, exact read-back-checked file_read paging recipes, and the accepted threshold/retention rules. The coordinator still constructs the same ToolResultStore and offer-aware read-back probe; owner-once only adds a terminal review continuation. The Sandbox change gates owner-once Docker shell dispatch and blocks its host fallback, leaving ordinary execute_code and spill handling outside that private scope. The prior equivalent code verdict remains supported. The frozen local checkpoint selected 1,346 tests: 1,338 passed and 8 skipped, with no full-suite, provider, or live-service claim.\n\nClaim-specific provenance review (2026-10-03, c70e0407): matched the stale coordinator/ToolRPC pins to local historical Git contents and inspected their complete diffs. Terminal consent registration metadata preserves this capability's accepted code contract; every other evidence pin already matches current bytes. This capability's referenced backend modules in the frozen guarded run have 378 passing cases and 0 skips, with no failures; module counts overlap across capabilities. The overall 22,093-case run has one unrelated exact binding-callsite inventory failure, reproduced and corrected separately; it is not a full-suite success. No new frontend, provider, device or live-service acceptance, and historical mutation reports are not fresh mutation runs. See docs/hermes/evidence/h487-consent-anchor-full-review-2026-10-03.md. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Native human-wait collateral review (2026-10-04, base87b2a1b8): the runtime changes only per-run timing scope and tool/wall deadline consumption around verified native human waits. AST/source review preserves existing offer resolution, loop guards, result spill/guidance/taint, provider wire formats, compaction, recovery and conversation clocks claimed by this row. Event-sink limits and ordinary hangs remain bounded. Existing verdict and gaps retained; affected-row regressions and exact native integrations are recorded separately, without fresh mutation/live acceptance or new completion credit. Owner-once outcome collateral review (2026-10-04): The sole changed actuation-test expectation reports the actual authenticated owner denial instead of the earlier guardian label. Its CAS and zero-effect assertions and the underlying tool-result spill/paging implementations are unchanged. Existing equivalent verdict and limits are preserved; no new completion credit. Batch collateral review (2026-10-04, base9bfa085c): Manual Docker now has a private physical shell gate. ToolResultStore construction and bounded spill/read-back paths remain unchanged. This does not renew spill mutation or filesystem evidence.\n\nH011 file-history collateral review (2026-10-04, dfc26172): claim-specific source diff/AST and affected regressions preserve this verdict and its limits. Only snapshot/index actuation changes; detailed evidence is in docs/hermes/evidence/h011-file-history-collateral-review-2026-10-04.json. No new parity or live acceptance credit.\n\nH595 one-shot/interruption integration (2026-10-05): reviewed this batch against exact preimages in the pinned paths. Parent context, admitted conversation routing and bounded result aliases preserve the existing row contract and remaining limits. Composition297, final affected109 and startup44 cases pass; see docs/hermes/evidence/2026-10-05-code-interruption/report.json. Existing stale pins are retained; no new full-capability or live-provider credit.",
+      "summary": "Pinned/owner/MCP/declaration/default threshold precedence, window-scaled result/turn spill budgets, retained full-result files, bounded previews and actual file_read paging are wired through the tool loop. Paging recipes require current registration, job/turn offer and exact path reachability; read-back stays tainted. Shared byte/line/line-length limits have real code/terminal consumers. Four focused modules pass. file_read is intentionally pinned against recursive spill, so repeated bounded pages can exceed the nominal spill allowance; request-context checks remain separate. Whole-result capture, capped 5 MB streamed capture, retention expiry and bounded lossy I/O fallback are distinguished; this does not promise permanent retention after storage failure.",
       "remaining": "",
       "evidence": [
         {
-          "path": "agents/core/tool_result_store.py",
-          "sha256": "fe05b525d70f98fdc9db55f0b9d85079adcd37fc20e901d114f3d89e5110c2cc"
-        },
-        {
-          "path": "tests/test_tool_result_store.py",
-          "sha256": "1384edef022d3a2da196b5fa3fa43b0d019e5fc4a311105f9a118498735fef74"
-        },
-        {
           "path": "agents/core/agent_runtime.py",
-          "sha256": "7ac303e0b4efd8d4fcbeae391bb8a5d149e79c15c8d41acf5eb769cdd3ee7a1e"
+          "sha256": "ef28188b6635a7d4e3b34365190b2e86549d1e746d9636748b0f4c88e215a80f"
         },
         {
-          "path": "tests/test_tool_loop_result_spill.py",
-          "sha256": "240a14bc3288fc3257255ad6d686c5c517a1067f07392c4cc8bc30c339fddb7c"
-        },
-        {
-          "path": "agents/core/environments/output_limits.py",
-          "sha256": "28665037575d856d714dde91f51662fe54aad0f18bf4b9de9fd2d004e8709022"
-        },
-        {
-          "path": "tests/test_environment_output_limits.py",
-          "sha256": "d4b6d7fafd858786e03aa4458efd21aa1ecdc93f7a930a9ff85fb4b53b9ef00e"
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "4459deead8273910f3fe6e2d3659acb25e3dc09ea7907681e09a1531b07085f1"
         },
         {
           "path": "agents/core/code_tools.py",
           "sha256": "545b8935d62cbc4461b827cf80225c4ae22aacf4bafa5b96c3952daacaee6f3b"
         },
         {
-          "path": "tests/test_code_tools.py",
-          "sha256": "ca759a5c31ed10d3dab7128e97f5de6c0c8ce0c44951f7d70ac272c09df55a50"
-        },
-        {
-          "path": "agents/core/session_kernels.py",
-          "sha256": "d2d5330355e52230c4e137076258531f0b438ff79e62bb75800f4720c8b6ede9"
-        },
-        {
-          "path": "agents/core/tool_rpc.py",
-          "sha256": "cec064a3c274628114df954a1622551cb309468a33b028bbc621a173296db68e"
-        },
-        {
-          "path": "agents/core/autonomy_coordinator.py",
-          "sha256": "a834ab8414109b558abe35d2fd02882e39f5eb3ac9cfdb354a35703bd6198279"
-        },
-        {
-          "path": "agents/core/sandbox.py",
-          "sha256": "228adcfa9334b3c71926308606d88f38d897ecbba9a5026747df8ecc302413f1"
-        },
-        {
-          "path": "agents/core/tool_rpc_runtime.py",
-          "sha256": "7fe1873972c97908d618fe13358e58a597ac80a749c8ef5422072062def63add"
-        },
-        {
-          "path": "agents/core/llm/effective_window.py",
-          "sha256": "af3e77635e98852f41439dac2168eb92cc710f5a6ae906cc9ac24ce6149d9ee0"
-        },
-        {
-          "path": "agents/core/agent.py",
-          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
-        },
-        {
-          "path": "agents/core/orchestrator.py",
-          "sha256": "4e31f75e9907e53f37935a72c474223b8933dd560f41133327bd2fd402193513"
+          "path": "agents/core/environments/output_limits.py",
+          "sha256": "28665037575d856d714dde91f51662fe54aad0f18bf4b9de9fd2d004e8709022"
         },
         {
           "path": "agents/core/file_tools.py",
-          "sha256": "96304eb6a777e4beb6be3396daec1118edefd00b6bbf0a5aa4f822314a75a3f3"
+          "sha256": "fc00a71bcaf565b3d4695d071ab1f3be3691dd6cebf95776efa559119579bea0"
         },
         {
-          "path": "tests/test_effective_tool_window.py",
-          "sha256": "e679ffded81dc215b1e17c1eb741191dd909ebf715871b92164fcf44a02a6941"
+          "path": "agents/core/session_kernels.py",
+          "sha256": "67035351e3ab6fa11a318137f23f0054625c5390cea936e713b77c3231e872cf"
         },
         {
-          "path": "tests/test_agent_runtime_v2.py",
-          "sha256": "77717e2a068a36d7e9e09b90f2f744037039ba805e9aaff6308c7e45c4070d1c"
+          "path": "agents/core/tool_result_store.py",
+          "sha256": "fe05b525d70f98fdc9db55f0b9d85079adcd37fc20e901d114f3d89e5110c2cc"
+        },
+        {
+          "path": "tests/test_environment_output_limits.py",
+          "sha256": "d4b6d7fafd858786e03aa4458efd21aa1ecdc93f7a930a9ff85fb4b53b9ef00e"
         },
         {
           "path": "tests/test_spill_paging.py",
           "sha256": "51087d48435c0b949b652b35be17ef111d4a0c0a2c190815a401b1b08f6540b8"
         },
         {
-          "path": "docs/superpowers/plans/2026-09-15-effective-tool-window.md",
-          "sha256": "23be8e4072c511c1ea9a7ffcbea1869c20d85a8d15c5df2d092144bc4d3cae87"
+          "path": "tests/test_tool_loop_result_spill.py",
+          "sha256": "240a14bc3288fc3257255ad6d686c5c517a1067f07392c4cc8bc30c339fddb7c"
         },
         {
-          "path": "docs/superpowers/plans/2026-09-15-shape-capture.md",
-          "sha256": "fec2ebdbee661cd87e92828aa599dcc83d478dd9d69bfd935454d98774b2e23d"
-        },
-        {
-          "path": "tests/test_h485_owner_once_actuation.py",
-          "sha256": "7d49719bb62a872f50b526e3a838adefe1a654dab149a441e702c3607e181429"
-        },
-        {
-          "path": "tests/test_h485_owner_once_transport.py",
-          "sha256": "e5c048c7e8a23318faa2812a0d33d4f271d8035383fc7c058dc23292867e3f6a"
-        },
-        {
-          "path": "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md",
-          "sha256": "919db624f593ccfbe10974970d2680ed35b9ab65b401d6ae7f3fa342a44caf1a"
-        },
-        {
-          "path": "agents/core/native_human_wait.py",
-          "sha256": "e5cc74291707cdee8f078660d8184d104b76e61261703c703c023e40c32852d7"
-        },
-        {
-          "path": "docs/hermes/evidence/h487-native-wait-progress-2026-10-04.json",
-          "sha256": "6579d76b92aef4d4cdfa771e983d958f08d37448284a80db7deeec5e0e10a0e0"
-        },
-        {
-          "path": "docs/hermes/evidence/h487-owner-once-outcomes-collateral-review-2026-10-04.md",
-          "sha256": "f6ccca719caf2298d1ea256212f2bd8986a815ceb0314f1a954f86cd8a31afad"
-        },
-        {
-          "path": "agents/core/tool_rpc_stubs.py",
-          "sha256": "49b02f5a264b2569048b425b9ed539c5add06e31ecbbb0c2539641aa4563ffe8"
-        },
-        {
-          "path": "docs/hermes/evidence/2026-10-05-code-imports/report.json",
-          "sha256": "70d97d765508394d842eb3580fd9e56eea9b10bd6ff55782224dc3421d8f131c"
-        },
-        {
-          "path": "agents/core/code_context.py",
-          "sha256": "77bdc057c50f82b6bc0516177e0575c0b640d2cabb3271ab60289ecabec4ee3b"
-        },
-        {
-          "path": "agents/core/code_env.py",
-          "sha256": "e64a6bd305004e290b60617893c5919e2cfdf482a2a43f9735b26f9cc30ee835"
-        },
-        {
-          "path": "docs/hermes/evidence/2026-10-05-code-context/report.json",
-          "sha256": "b9b99df94416237dc7873d63499a2b952d4b878632d03b44a4bcc8fe07749d5a"
+          "path": "tests/test_tool_result_store.py",
+          "sha256": "1384edef022d3a2da196b5fa3fa43b0d019e5fc4a311105f9a118498735fef74"
         }
       ]
     },
@@ -9737,33 +9633,65 @@
     {
       "id": "H413",
       "row_sha256": "8bd59b96a60f2a4ade11e5743bb7451c03a0ba9deb0155ce507a89c10c67a0fe",
-      "status": "partial",
-      "summary": "Instant first-word titles, background naming-only generation, strict-local auxiliary routing, once-only lifecycle and compare-and-set replacement are implemented. Current verification: all 131 title cases and 54 auxiliary-model cases pass in the backend milestone, using fake model generation. The shared selector prefers a configured task override, then the active local model, then its qwen3:7b fallback; no small-model size restriction is enforced. This review therefore does not close the complete frozen title contract.",
-      "remaining": "The auxiliary model selector uses a task override if set, otherwise the router's active model, otherwise qwen3:7b (agents/core/llm/auxiliary_text.py:26, 104-116). HybridRouter.active_model is the detected/configured live model (agents/core/llm/hybrid_router.py:317-322, 741-757), with no small-model constraint. A deployment whose active local model is large uses that model for the cosmetic title, so the frozen small-model clause is not guaranteed. The default qwen3:7b and an explicit small override satisfy it only conditionally. The 24-token output cap does not constrain model size.",
+      "status": "equivalent",
+      "summary": "Two-stage session titles use the owner's first words immediately, then one background naming-only strict-local call with compare-and-set replacement. The default now selects the declared small local qwen3:7b independently of the active chat model; an unavailable title model leaves the instant title without chat/cloud fallback. Explicit owner task overrides remain deliberate configuration. CLI, session API, HUD and mobile retain their existing title displays and owner visibility. Verification: 399 implementer-focused and 250 independent tests passed (overlapping selections); fake generation/HTTP, no installed-model quality claim.",
+      "remaining": "",
       "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "e7f6c091518ebf881b2806aaaa92e7206ff5d572629cbff5455a9d8fcc14f74b"
+        },
         {
           "path": "agents/core/checkpoint.py",
           "sha256": "9db6385132872e43d0fdc398566328dd94a22999dd781f843ec3fbbab825849f"
         },
         {
           "path": "agents/core/llm/auxiliary_text.py",
-          "sha256": "d88e152794fbab5750b01ce10657da82cf02d3519afd09e30f9cc9f860b73c94"
+          "sha256": "270d24999c97d444d8f61798019bd5cb62698012dc1fb13c0a22d3500585dc64"
         },
         {
           "path": "agents/core/llm/hybrid_router.py",
           "sha256": "8d82bd265dba73324cd125eeda1bc09e346f6bbc076dee9656a78bde6e2c3a22"
         },
         {
+          "path": "agents/core/llm/model_config.py",
+          "sha256": "06c03a37c0eeac3278ebb3dce23a4e5a00fb0ab0c294ce510f2adcd21dfd9217"
+        },
+        {
           "path": "agents/core/orchestrator.py",
           "sha256": "185d66f6b94d0aedf7a7969b197eddb607a8a986c0ef563dd836b4ca12595daf"
+        },
+        {
+          "path": "agents/core/routers/sessions.py",
+          "sha256": "ef6ae05caf4c2f57e651d88b600345dea59bb31e3cb95d8822d0191a3507e01b"
         },
         {
           "path": "agents/core/session_titles.py",
           "sha256": "0d447c7c77dc46d08da4f37c305308f132bec0a61b3b065990b3203f97bf7391"
         },
         {
+          "path": "frontend/src/panels/sessions.tsx",
+          "sha256": "a1ca74610b286a36c9761f87d2472cb2ac672301b73557d1abaa70535a864e80"
+        },
+        {
+          "path": "mobile/src/components/SessionsModal.tsx",
+          "sha256": "d3d36f10f151644af0fa7960f1f4e1b4a41bfb253dc8470a45a5ac72df1c926f"
+        },
+        {
+          "path": "tests/test_h277_auxiliary_parameter_recovery.py",
+          "sha256": "6ebae9ea1d758283309ff198d1a3f5b5bf72032ea737b40fc49e56e5e282ac0d"
+        },
+        {
+          "path": "tests/test_h277_local_auxiliary.py",
+          "sha256": "780a3a337c31ad0c9f9f3cba166a1fcc8c4371c0be6ee6af51dbc45ffac24b28"
+        },
+        {
           "path": "tests/test_h413_session_titles.py",
-          "sha256": "731432e29bca37229604ba9cb52ec35b0801d26251771d8a5b9b21137e02f1cb"
+          "sha256": "070a5df65d729a5113774ddfe6f51c3ca14288756e5708cc36ca142694f45036"
+        },
+        {
+          "path": "tests/test_h513_auxiliary_integration.py",
+          "sha256": "fa882d51f0fbfc4d29fb6ff110a15bee5f0ace2c12cb6f37bf9006a109a49bdc"
         }
       ]
     },
@@ -12667,7 +12595,7 @@
         },
         {
           "path": "docs/FLAGS.md",
-          "sha256": "fbebe011ab90296165aad2adfda4f9c6518d49b864d3114cb6ce690613fef1f4"
+          "sha256": "51f4df50a9bbc8b767a445d953309ad3a65451bc858bf82d52eb220568a05b68"
         },
         {
           "path": "tests/test_h504_tls_trust.py",
@@ -17368,196 +17296,56 @@
       "id": "H671",
       "row_sha256": "b9a5e8778376a36ec6f418ae6719f515f06293d18ee86954c840c13ce2b1d05c",
       "status": "equivalent",
-      "summary": "Durable session birth is resolved through an immutable, generation-checked continuation root. Explicit owner-created child sessions carry bounded retained context and root birth through multiple generations, text/stream/process entrypoints and restart without switching the shared default. SQLite atomically commits child identity, seed, lineage and initial clock; idempotent request receipts resolve retries. Corrupt newer snapshots, reused identities and failed recovery stop dispatch or writes instead of silently replacing context. Accepted history/tool compaction alone advances the durable rebuild clock through compare-and-swap; request snapshots preserve same-day prefix bytes, reject late inherited commits, and add the trusted current-date line only when rebuild and root-birth days differ. Production rendering resolves explicit TZ or existing local IANA discovery and uses historical/current DST rules with an explicit UTC offset. Unknown birth is omitted; invalid or unavailable zone discovery preserves truthful offset-only rendering rather than inventing an IANA name. Independent actual-route, Agent, restart, concurrency, cancellation, failed-resume and observe-only regressions support the full frozen clock contract. This is code-equivalence, not a live-provider claim; ordinary subsequent JSON persistence remains best effort and turn leases are process-local. H672 hangs the persona re-read on the same commit: `_history_for_prompt`'s `publish()` calls `_refresh_souls_at_boundary` after the clock CAS and only when the compressor reported a compression, so a refused `commit_clock` migrates nothing and an accepted one is followed by the refresh in that order (`test_a_refused_clock_commit_migrates_nothing`, `test_an_accepted_clock_commit_is_followed_by_the_refresh_in_that_order`); the re-read neither reads nor writes the clock, so the same-day prefix bytes and the current-date line are untouched by it. #1188's edit to `orchestrator.py` is the pairing store's registry path, nothing on this row. Local auxiliary diff review (2026-10-02,aa4865b5): the claimed behavior is outside the four changed producer methods. Parent AST comparison and re-read source/citations confirm unchanged mechanisms; the cited backend test modules pass in the frozen full run. Existing frontend evidence remains tied to unchanged source. No new capability or mutation claim is added. Source citation review (2026-10-02): the base.py diff is confined to an import and _post_chat parameter recovery. Session birth/clock behavior and its cited sources are unchanged; this adds no session semantics and preserves the existing status. Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review.\n\nIndependent #1233 review (historical scope): Durable session birth is resolved through an immutable, generation-checked continuation root. Explicit owner-created child sessions carry bounded retained context and root birth through multiple generations, text/stream/process entrypoints and restart without switching the shared default. SQLite atomically commits child identity, seed, lineage and initial clock; idempotent request receipts resolve retries. Corrupt newer snapshots, reused identities and failed recovery stop dispatch or writes instead of silently replacing context. Accepted history/tool compaction alone advances the durable rebuild clock through compare-and-swap; request snapshots preserve same-day prefix bytes, reject late inherited commits, and add the trusted current-date line only when rebuild and root-birth days differ. Production rendering resolves explicit TZ or existing local IANA discovery and uses historical/current DST rules with an explicit UTC offset. Unknown birth is omitted; invalid or unavailable zone discovery preserves truthful offset-only rendering rather than inventing an IANA name. Independent actual-route, Agent, restart, concurrency, cancellation, failed-resume and observe-only regressions support the full frozen clock contract. This is code-equivalence, not a live-provider claim; ordinary non-rewound JSON persistence remains best effort and turn leases are process-local; explicitly rewound histories now require exact durable head agreement. H672 hangs the persona re-read on the same commit: `_history_for_prompt`'s `publish()` calls `_refresh_souls_at_boundary` after the clock CAS and only when the compressor reported a compression, so a refused `commit_clock` migrates nothing and an accepted one is followed by the refresh in that order (`test_a_refused_clock_commit_migrates_nothing`, `test_an_accepted_clock_commit_is_followed_by_the_refresh_in_that_order`); the re-read neither reads nor writes the clock, so the same-day prefix bytes and the current-date line are untouched by it. #1188's edit to `orchestrator.py` is the pairing store's registry path, nothing on this row. Local auxiliary diff review (2026-10-02,aa4865b5): the claimed behavior is outside the four changed producer methods. Parent AST comparison and re-read source/citations confirm unchanged mechanisms; the cited backend test modules pass in the frozen full run. Existing frontend evidence remains tied to unchanged source. No new capability or mutation claim is added. Source citation review (2026-10-02): the base.py diff is confined to an import and _post_chat parameter recovery. Session birth/clock behavior and its cited sources are unchanged; this adds no session semantics and preserves the existing status. Image-recovery collateral review (2026-10-02): changes to shared CLI/image-turn or HUD local-panel disclosure are outside this row's claimed symbols. Complete base evidence pins and unchanged text anchors verified; existing capability/status preserved. Claim-specific source inspection is recorded in the bounded image source review. Image-turn confirmation review (2026-10-02): the agents/cli/nerva.py diff adds selection flags only to chat image turns, rejects them on text chat, validates optional bounded requirements and forwards explicit flags. Other CLI command handlers, settings/job flag semantics, session/approval dispatch and command-tree structure are unchanged. This row had current hashes before the edit; source diff review and229 focused image/API/CLI tests preserve its existing verdict. Full milestone results are recorded separately. DeepInfra collateral review (2026-10-02): the providers registry diff adds only a vision/model-catalog/cloud profile with unknown data policy and no main-chat capability. Existing context-window, session-clock, compaction and reasoning-vocabulary implementations and declarations are unchanged. Every pre-edit evidence hash matched0e617d63; profile/role regressions pass. This preserves the existing verdict without expanding its claimed scope. Nous account collateral review (2026-10-02): compared the complete diff from 7a73bf03. Existing CLI command implementations are unchanged; only auth parser/dispatch registration is additive. The exact command-tree expectation includes auth, and existing CLI/fish regressions pass. Existing OAuth handler bodies are unchanged; four separate owner-only Nous routes and documentation are added. All pre-edit evidence hashes matched the prior checkpoint. This preserves the existing verdict without claiming new capability completion; the 266-pass/3-skip integration suite includes existing OAuth, secrets and route gates. Nous registry collateral review (2026-10-02,43c669b0): the only changed evidence file adds a separate OAuth vision/model-catalog/cloud profile with unknown data policy. Existing provider declarations, context-window/session-clock and reasoning-vocabulary implementations are unchanged. Pre-edit evidence hashes matched54e5bf1b; existing verdict preserved without scope expansion. Selected Claude image review (2026-10-02, a472c0b3): Collateral review: Anthropic profile now advertises vision. Conversation-clock and session-date code and its evidence are unchanged, so the existing code-equivalent verdict is preserved. Selected Gemini image review (2026-10-02, 7d62f95f): Collateral review: Gemini profile now advertises vision. The conversation-clock and session-date implementation is unchanged; its existing code-equivalent verdict is preserved. Selected Responses image collateral review (2026-10-02, eb2df633): The GPT-4.1 profile now advertises vision. Conversation-clock and session-date implementation is unchanged; the existing code-equivalent verdict remains. Selected xAI image collateral review (2026-10-02, 1a97dba3): The fixed xAI profile now advertises vision; conversation-clock and session-date implementation remains unchanged. Existing code-equivalent verdict is preserved. Selected-main image collateral review (2026-10-02, 2fce39ca): The source diff adds optional bounded image provenance and a new reviewed conversation-image path. Existing no-media memory, text turns, previous composer route, and unrelated orchestrator/HUD behavior retain their prior branches; focused H277/H513/composer/session tests, 1,872 frontend tests, TypeScript and HUD build pass. Existing verdict preserved; this note does not claim live-provider acceptance or a new Hermes capability. Collateral review (2026-10-02, e741f6bc): the shared source diff is confined to a backend-owned cache for typed temperature rejection on selected non-streaming local auxiliary calls. Existing cloud, tool-turn, stream, provider-selection and unrelated consumer branches are unchanged; the focused H277/H513/LM Studio union passes. This does not expand this row’s claimed capability or close its remaining gaps. Collateral active-image review (2026-10-03, a30603e0): resume, clear and explicit load now discard process-local active image handles, while persisted conversation turns and their timestamps remain unchanged. The pinned time-awareness citations are unchanged and session/continuation regressions pass. Existing equivalent verdict preserved. Streaming auxiliary collateral review (2026-10-03, base 4668be6c): source changes are confined to scoped LM Studio generate_stream retry and the compression worker call context. Nonstreaming producers, ordinary streams, cloud/Ollama adapters and unrelated task/kernel paths retain their existing branches. The row-specific cited tests are included in the 3433-case affected-row regression, which passes. Existing verdict preserved without new feature or live-provider credit. Collateral actuation review (2026-10-03, Task3 working tree): The tool runtime adds an observation-visibility check immediately before model dispatch and a stop after exact guardian denial; its context compaction/clock CAS body and the orchestrator continuation roots remain unchanged. This adds no new clock or birth claim. Existing equivalent verdict and remaining limits are preserved; this is source review, not live-provider evidence. Collateral review (2026-10-03, fresh owner authority): Session lineage, continuation root and birth checks are unchanged. Fresh Telegram owner reads occur at principal/callback authorization, outside continuation persistence. The prior equivalent verdict is retained from claim-specific source review; this is no new parity or live acceptance claim. Telegram/CLI collateral review (2026-10-04, base42840e3d): reviewed the bounded source diff and this row's claimed entry points. Changes are confined to approval consent, reserved callback lanes and terminal wiring; existing unrelated producer/consumer branches and this verdict are retained. Current citation/source review and separate regression evidence are recorded in the Telegram milestone; no new completion or fresh live/mutation acceptance credit. Native human-wait collateral review (2026-10-04, base87b2a1b8): the runtime changes only per-run timing scope and tool/wall deadline consumption around verified native human waits. AST/source review preserves existing offer resolution, loop guards, result spill/guidance/taint, provider wire formats, compaction, recovery and conversation clocks claimed by this row. Event-sink limits and ordinary hangs remain bounded. Existing verdict and gaps retained; affected-row regressions and exact native integrations are recorded separately, without fresh mutation/live acceptance or new completion credit. Local auxiliary output-cap collateral review (2026-10-04): Continuation identity, retained context, root birth and clock persistence are unchanged; auxiliary retry does not change session lineage or principal ownership. This preserves the existing verdict and limits from semantic review; no new completion or live acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): The DeepInfra profile’s chat capability and its vision-role fixture changed, but continuation root/birth/session-clock code did not. No session behavior or live-provider claim is added.\n\nH011 rewind/origin collateral review (2026-10-04, source abc2fd89): Session continuation retains immutable root/seed, instance binding and existing clock CAS. The new rewind index is additive; ordinary snapshot saves remain best effort, while explicitly rewound sessions require exact durable JSON/SQLite head agreement on load and later append. Failed/missing/forged heads refuse only the affected session. Current continuation, birth, compaction clock and tool-loop regressions pass; no new clock/provider/live capability is claimed.",
+      "summary": "The durable conversation clock renders a stable birth line with truthful timezone details and adds today only when the accepted rebuild day differs. Continuation lineage retains the root birthday across generations/restart; independent new sessions have their own birth. Orchestrator summary publication and tool-loop compaction advance the clock only after successful CAS commit; failures, cancellation, races and no-op folds preserve prior context. Request-owned snapshots isolate concurrent sessions. Current focused clock/continuation verification passes 111 cases; host zone discovery falls back to a numeric offset when no IANA zone is available.",
       "remaining": "",
       "evidence": [
         {
           "path": "agents/core/agent.py",
-          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
+          "sha256": "304a0494223430af2a86d58d069847d4b521616bc1adbaea07283b08c2871ac5"
+        },
+        {
+          "path": "agents/core/agent_runtime.py",
+          "sha256": "ef28188b6635a7d4e3b34365190b2e86549d1e746d9636748b0f4c88e215a80f"
         },
         {
           "path": "agents/core/checkpoint.py",
           "sha256": "9db6385132872e43d0fdc398566328dd94a22999dd781f843ec3fbbab825849f"
         },
         {
-          "path": "agents/core/context_compressor.py",
-          "sha256": "57ee9666bf5a8dd4e07832700b0d786c2e421e26012e4ed04836b3108e7c2252"
-        },
-        {
           "path": "agents/core/conversation_clock.py",
           "sha256": "38ed73c554e65c8eeb00100d80dac13aad7a2bb52aa7885bb68cc1658d519931"
         },
         {
-          "path": "agents/core/llm/base.py",
-          "sha256": "a0a8eebd9c28540f2bb090727dd9d8e743739fc6271f837b52492df50be37788"
-        },
-        {
-          "path": "agents/core/llm/gemini.py",
-          "sha256": "564d5dd61db4a0f4fffd025bc9ae7698c4b1d0630356f068a5452a884af059da"
-        },
-        {
-          "path": "agents/core/llm/hybrid_router.py",
-          "sha256": "e014f46c684e529234940d581dcc275331ac69b7ea498ff72e26e88f6edc843b"
-        },
-        {
-          "path": "agents/core/llm/openrouter.py",
-          "sha256": "83df08c05f0046eee5da067d5f79bcdd902ac2a3eb511ef4474e27ac6c106e32"
-        },
-        {
-          "path": "agents/core/llm/provider_request.py",
-          "sha256": "26fae917f893c97888f4e1bed919ca52c3e7737d304fb7dac0dffbd604b09747"
-        },
-        {
-          "path": "agents/core/llm/providers/__init__.py",
-          "sha256": "ece9ff566f1be1f05fe3ad634a162418587fe0f82e0269c194fb2e6a322a2174"
-        },
-        {
-          "path": "agents/core/llm/request_context.py",
-          "sha256": "7d35fb8ebdaf983a5fde4b4537d1a918ddf1a68a644446131dce0fe5cd58a0a3"
+          "path": "agents/core/operating_prompt.py",
+          "sha256": "7061ac0e312f29762531bf6ee5e3c6fbf380096c95111a547511813f38d337bb"
         },
         {
           "path": "agents/core/orchestrator.py",
-          "sha256": "35278e6c4410450f47ffb9cebc0482ca8ed694ee2bd0ec57b3652102d3097c94"
+          "sha256": "185d66f6b94d0aedf7a7969b197eddb607a8a986c0ef563dd836b4ca12595daf"
         },
         {
-          "path": "agents/core/settings_db.py",
-          "sha256": "d28302c6cbf6eadb290a23e17f536d687ce5846c7f26d6e1c0635338a0bf9eed"
-        },
-        {
-          "path": "tests/test_conversation_clock.py",
-          "sha256": "4970dd052e8f913042e11e831ec953a4a347d01c2bc8c6096c27f86fe3e4bbc6"
-        },
-        {
-          "path": "tests/test_provider_context_limits.py",
-          "sha256": "73f7614d3e1969cffa287035303b13005ced2ec7ca605e3f75babc9d56b5f618"
-        },
-        {
-          "path": "tests/test_provider_request_profiles.py",
-          "sha256": "bf88449f24a4de3a72035136713d4eb67b9a1c6efc7258d30d465976e5965160"
-        },
-        {
-          "path": "tests/test_session_birth_persistence.py",
-          "sha256": "a01587258469b968bbcd0ea1316d4eb550a17ed051f4a8c839ced19570bb5a00"
-        },
-        {
-          "path": "tests/test_models_review_regressions.py",
-          "sha256": "a0fd5bd1dd4664d5d84339fbff09763fff3b166cb0e605dea5339eddea496ed1"
-        },
-        {
-          "path": "agents/core/llm/reasoning_effort.py",
-          "sha256": "4d7b2b8b4841bc6117fd1471e9684e88c3d2ea5214d74947f65fad643912bc6c"
-        },
-        {
-          "path": "agents/core/agent_runtime.py",
-          "sha256": "7ac303e0b4efd8d4fcbeae391bb8a5d149e79c15c8d41acf5eb769cdd3ee7a1e"
+          "path": "agents/core/session_continuation.py",
+          "sha256": "c92229cc0554a91bb2dc515e7d5eb901b85f9a148deda111de503fa9dc1dc160"
         },
         {
           "path": "tests/test_compaction_clock.py",
           "sha256": "b14286424bf21f77cc005d4776502a1e0140b063b09a022331e366efad85aa20"
         },
         {
-          "path": "tests/test_tool_loop_compaction.py",
-          "sha256": "619f89daa4d9aed7f39d9bfaed88a976938d0f7c516bea5290a84bcc4c89b283"
+          "path": "tests/test_conversation_clock.py",
+          "sha256": "4970dd052e8f913042e11e831ec953a4a347d01c2bc8c6096c27f86fe3e4bbc6"
         },
         {
-          "path": "docs/superpowers/plans/2026-09-15-compaction-clock.md",
-          "sha256": "0805331aadead237d2fd1b47ab626ead861091ebd05ef539ee39744edba502d6"
-        },
-        {
-          "path": "agents/core/session_continuation.py",
-          "sha256": "92493cbbe12d1ab0526ea1cb6c1179784d560d6485d93aa413c71d6490b1bffb"
-        },
-        {
-          "path": "agents/core/memory/manager.py",
-          "sha256": "eafbe1a21fbfa39da81b55a625df6215976c5c0359a7799267b269a57f622eef"
-        },
-        {
-          "path": "agents/core/memory/conversation.py",
-          "sha256": "3abce7b509581c6a248f4476653e54f5b9941d13f6ba36582634c33a23e73d41"
-        },
-        {
-          "path": "agents/core/memory/persistence.py",
-          "sha256": "7c6d757c3a4c26d4d457aeb6fa630a6878076d0a303fb95010e8b26c22ce9c1f"
-        },
-        {
-          "path": "agents/core/routers/sessions.py",
-          "sha256": "ef6ae05caf4c2f57e651d88b600345dea59bb31e3cb95d8822d0191a3507e01b"
-        },
-        {
-          "path": "agents/web.py",
-          "sha256": "dcc12104b83ae86f807462b592fc68bd8109a6d4224909d9a6f707afff9a745e"
-        },
-        {
-          "path": "agents/cli/nerva.py",
-          "sha256": "275e3dfac1b23ab63fe77216eea583dc313ce52ac826a1b54aa4c43ae03d376c"
+          "path": "tests/test_session_birth_persistence.py",
+          "sha256": "a01587258469b968bbcd0ea1316d4eb550a17ed051f4a8c839ced19570bb5a00"
         },
         {
           "path": "tests/test_session_continuation.py",
           "sha256": "19d8c49fbde51546b70922f7f4a6a841a67b830c8e218a90c281d09416afbdde"
         },
         {
-          "path": "docs/superpowers/plans/2026-09-15-session-continuation.md",
-          "sha256": "a5ca34b6a1d3493a6a0bb8c57d34119fb20e12dfe448b6e247f317a8b447aea4"
-        },
-        {
-          "path": "tests/test_h277_vision_selection_cli.py",
-          "sha256": "17959b3d0e26822c429c670517fae66da5991f259622b9abdd0fd1288218ce79"
-        },
-        {
-          "path": "docs/hermes/h277-vision-selection-consent-plan-2026-10-02.md",
-          "sha256": "c4724e7a0cc4d34daaa1c42a8b0a54f4b10546d321df8f57e0bc514455bce25b"
-        },
-        {
-          "path": "tests/test_h277_deepinfra_vision_roles.py",
-          "sha256": "ace9d232665032190f86302cb757b79187b380ed6281e51eba34498e3f69403c"
-        },
-        {
-          "path": "docs/hermes/h277-deepinfra-vision-plan-2026-10-02.md",
-          "sha256": "4f23c52cc80587f3c35e37b67dc0649a1902b09896e4382d2311583c8979a3d6"
-        },
-        {
-          "path": "tests/test_h277_nous_auth_surface.py",
-          "sha256": "d6b76f1cbdfc95b2bd36e8369a6b097f8ee1d23d05b6567488a44ca96798437e"
-        },
-        {
-          "path": "docs/hermes/h277-nous-auth-plan-2026-10-02.md",
-          "sha256": "97952bed7e16e2a4d18ee8e5889ae91bfd1cc177e8b3224ab7f5b445b7bc874e"
-        },
-        {
-          "path": "docs/hermes/h277-nous-vision-plan-2026-10-02.md",
-          "sha256": "3fede4130bbdd4886511f17871ffa7bad5d94f550f6886328f0c7af2e9e7d4f8"
-        },
-        {
-          "path": "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md",
-          "sha256": "919db624f593ccfbe10974970d2680ed35b9ab65b401d6ae7f3fa342a44caf1a"
-        },
-        {
-          "path": "agents/core/native_human_wait.py",
-          "sha256": "e5cc74291707cdee8f078660d8184d104b76e61261703c703c023e40c32852d7"
-        },
-        {
-          "path": "docs/hermes/evidence/h487-native-wait-progress-2026-10-04.json",
-          "sha256": "6579d76b92aef4d4cdfa771e983d958f08d37448284a80db7deeec5e0e10a0e0"
-        },
-        {
-          "path": "docs/hermes/evidence/h277-auxiliary-output-cap-collateral-review-2026-10-04.md",
-          "sha256": "78becfaf8b2b0adc3d16baa7e9d9eb0798ebc22cb2e8497166484c4501a80c31"
-        },
-        {
-          "path": "tests/test_h277_deepinfra_main.py",
-          "sha256": "93bb0f67bfe2a6f17a81e55cd32d4ec801d53f05fd56ce60b5479ddfac092f5d"
-        },
-        {
-          "path": "tests/test_h011_rollback_conversation.py",
-          "sha256": "0e4a6cf17b5f46ea627bf96db1f457475cc741b3ab29dff787f1ff27cd71b9db"
-        },
-        {
-          "path": "tests/test_h011_rewind_boot_lifecycle.py",
-          "sha256": "e6873635c506a4e61492b1077565a04d7a3aee8c4ae5428405bf2e56a328ff9d"
-        },
-        {
-          "path": "tests/test_h011_rewind_session_backup.py",
-          "sha256": "2af0047735c12459572cc4cfada6cfd7c0f966f59b4ca095354d58554efd4686"
+          "path": "tests/test_tool_loop_compaction.py",
+          "sha256": "619f89daa4d9aed7f39d9bfaed88a976938d0f7c516bea5290a84bcc4c89b283"
         }
       ]
     },
@@ -18091,44 +17879,20 @@
       "id": "H679",
       "row_sha256": "0cf627d19b3738a25a359ba7761a0a2ae5cce2b328a640d82ba84ea29b502237",
       "status": "equivalent",
-      "summary": "Cached per-model tri-state hooks now preserve undeclared defaults, suppress all reasoning controls for explicit empty declarations, and canonically clamp nonempty vocabularies to the nearest weaker level. Below-minimum requests refuse before HTTP rather than escalating or restoring defaults. Immutable backend-owned Gemini/compatible declarations retain cold/reconnect/concurrent isolation; actual Anthropic text/stream/tool requests enforce empty declarations, including registry precedence and default-on families. Budget-only models expose existing product rungs while emitting only their budget schema, never an invented effort field. Independent 162-case guarded review and original mocked-wire counterexamples pass. Operator declarations must match actual provider capabilities; no live acceptance/billing or catalog-discovery proof is claimed. New Nebius/local wire support is not required by this frozen contract. Local auxiliary diff review (2026-10-02,aa4865b5): the claimed behavior is outside the four changed producer methods. Parent AST comparison and re-read source/citations confirm unchanged mechanisms; the cited backend test modules pass in the frozen full run. Existing frontend evidence remains tied to unchanged source. No new capability or mutation claim is added. Source citation review (2026-10-02): the base.py import/_post_chat change does not touch reasoning-vocabulary normalization or its callers. No reasoning capability or status change is claimed. DeepInfra collateral review (2026-10-02): the providers registry diff adds only a vision/model-catalog/cloud profile with unknown data policy and no main-chat capability. Existing context-window, session-clock, compaction and reasoning-vocabulary implementations and declarations are unchanged. Every pre-edit evidence hash matched0e617d63; profile/role regressions pass. This preserves the existing verdict without expanding its claimed scope. Nous registry collateral review (2026-10-02,43c669b0): the only changed evidence file adds a separate OAuth vision/model-catalog/cloud profile with unknown data policy. Existing provider declarations, context-window/session-clock and reasoning-vocabulary implementations are unchanged. Pre-edit evidence hashes matched54e5bf1b; existing verdict preserved without scope expansion. Selected Claude image review (2026-10-02, a472c0b3): Collateral review: Anthropic profile now advertises vision. Its reasoning-effort vocabulary declaration and canonical clamp code are unchanged; the existing code-equivalent verdict is preserved. Selected Gemini image review (2026-10-02, 7d62f95f): Collateral review: Gemini profile now advertises vision. The reasoning-effort vocabulary and canonical clamp implementation are unchanged; its existing code-equivalent verdict is preserved. Selected Responses image collateral review (2026-10-02, eb2df633): The GPT-4.1 profile now advertises vision. Reasoning-effort vocabulary and clamp implementation is unchanged; the existing code-equivalent verdict remains. Selected xAI image collateral review (2026-10-02, 1a97dba3): The fixed xAI profile now advertises vision; canonical reasoning vocabulary and clamp logic remain unchanged. Existing code-equivalent verdict is preserved. Selected-main image collateral review (2026-10-02, 2fce39ca): The source diff adds optional bounded image provenance and a new reviewed conversation-image path. Existing no-media memory, text turns, previous composer route, and unrelated orchestrator/HUD behavior retain their prior branches; focused H277/H513/composer/session tests, 1,872 frontend tests, TypeScript and HUD build pass. Existing verdict preserved; this note does not claim live-provider acceptance or a new Hermes capability. Collateral review (2026-10-02, e741f6bc): the shared source diff is confined to a backend-owned cache for typed temperature rejection on selected non-streaming local auxiliary calls. Existing cloud, tool-turn, stream, provider-selection and unrelated consumer branches are unchanged; the focused H277/H513/LM Studio union passes. This does not expand this row’s claimed capability or close its remaining gaps. Collateral active-image review (2026-10-03, a30603e0): the only drifted evidence for this row is agents/core/orchestrator.py. Its diff changes complete_selected_image_turn for explicitly reviewed browser image turns; this row's cited implementation lines and feature path are unchanged. The focused active-image and route regressions pass, and this existing code-equivalent verdict is preserved. Streaming auxiliary collateral review (2026-10-03, base 4668be6c): source changes are confined to scoped LM Studio generate_stream retry and the compression worker call context. Nonstreaming producers, ordinary streams, cloud/Ollama adapters and unrelated task/kernel paths retain their existing branches. The row-specific cited tests are included in the 3433-case affected-row regression, which passes. Existing verdict preserved without new feature or live-provider credit. Collateral actuation review (2026-10-03, Task3 working tree): The orchestrator change acknowledges approval observations after persistence and does not touch reasoning-effort declarations, vocabulary clamping or provider request shaping. Existing equivalent verdict and remaining limits are preserved; this is source review, not live-provider evidence. Collateral review (2026-10-03, fresh owner authority): The added autonomy setting and Telegram owner principal do not change model capability declarations, reasoning request controls or provider routing. The prior equivalent verdict is retained from claim-specific source review; this is no new parity or live acceptance claim. Local auxiliary output-cap collateral review (2026-10-04): Tri-state reasoning metadata and wire projection remain unchanged; cap omission does not infer reasoning support or alter the effort vocabulary. This preserves the existing verdict and limits from semantic review; no new completion or live acceptance credit. Batch collateral review (2026-10-04, base9bfa085c): The DeepInfra profile is now chat+vision and the explicit main adapter adopts compatible declaration shaping. Existing tri-state reasoning normalization/clamping code is unchanged; this adds no live acceptance or broader provider claim.\n\nH011 rewind/origin collateral review (2026-10-04, source abc2fd89): Checkpoint source changes only its per-session backup inventory tuple, with all method bodies unchanged. Reasoning vocabulary/declarations, normalization and request projection source remain unchanged. Existing verdict is preserved without expanded provider or live proof.",
+      "summary": "ProviderProfile supplies a cache-only per-model tri-state vocabulary: undeclared None preserves transport defaults, explicit empty suppresses reasoning controls, and canonical nonempty levels clamp monotonically to the nearest weaker level. Below-minimum requests refuse before HTTP rather than buying stronger defaults. Immutable adapter snapshots isolate declarations; Anthropic empty controls, budget mappings and compatible/Gemini shaping use the shared rule. The ultra/xhigh inversion is regression-tested on the native generic provider rail. Current focused registry/adapter/invocation verification passes 207 cases with fake HTTP; no live provider acceptance is claimed.",
       "remaining": "",
       "evidence": [
         {
-          "path": "agents/core/agent.py",
-          "sha256": "aed42f44f4bc46f09138206aa782b30d7396aee37cdda914e7370594af18fa2d"
-        },
-        {
-          "path": "agents/core/checkpoint.py",
-          "sha256": "9db6385132872e43d0fdc398566328dd94a22999dd781f843ec3fbbab825849f"
-        },
-        {
-          "path": "agents/core/context_compressor.py",
-          "sha256": "57ee9666bf5a8dd4e07832700b0d786c2e421e26012e4ed04836b3108e7c2252"
-        },
-        {
-          "path": "agents/core/conversation_clock.py",
-          "sha256": "38ed73c554e65c8eeb00100d80dac13aad7a2bb52aa7885bb68cc1658d519931"
-        },
-        {
           "path": "agents/core/llm/anthropic.py",
           "sha256": "3a0a7ea1e3eb857cd11c979f518ace9245998c1dc6a02ad4d70848d04fe1e724"
-        },
-        {
-          "path": "agents/core/llm/base.py",
-          "sha256": "a0a8eebd9c28540f2bb090727dd9d8e743739fc6271f837b52492df50be37788"
         },
         {
           "path": "agents/core/llm/gemini.py",
           "sha256": "564d5dd61db4a0f4fffd025bc9ae7698c4b1d0630356f068a5452a884af059da"
         },
         {
-          "path": "agents/core/llm/hybrid_router.py",
-          "sha256": "e014f46c684e529234940d581dcc275331ac69b7ea498ff72e26e88f6edc843b"
-        },
-        {
           "path": "agents/core/llm/openrouter.py",
-          "sha256": "83df08c05f0046eee5da067d5f79bcdd902ac2a3eb511ef4474e27ac6c106e32"
+          "sha256": "3fe80a097619952cc912f725b99c6c5846429676bf6f85270d86f77517f7d35f"
         },
         {
           "path": "agents/core/llm/provider_request.py",
@@ -18147,72 +17911,28 @@
           "sha256": "7d35fb8ebdaf983a5fde4b4537d1a918ddf1a68a644446131dce0fe5cd58a0a3"
         },
         {
-          "path": "agents/core/orchestrator.py",
-          "sha256": "35278e6c4410450f47ffb9cebc0482ca8ed694ee2bd0ec57b3652102d3097c94"
-        },
-        {
-          "path": "agents/core/settings_db.py",
-          "sha256": "d28302c6cbf6eadb290a23e17f536d687ce5846c7f26d6e1c0635338a0bf9eed"
-        },
-        {
-          "path": "tests/test_conversation_clock.py",
-          "sha256": "4970dd052e8f913042e11e831ec953a4a347d01c2bc8c6096c27f86fe3e4bbc6"
-        },
-        {
-          "path": "tests/test_provider_context_limits.py",
-          "sha256": "73f7614d3e1969cffa287035303b13005ced2ec7ca605e3f75babc9d56b5f618"
+          "path": "tests/test_invocation_reasoning.py",
+          "sha256": "6309b11a87391b9a4db6280f3417b7b7577c7b4b76ccef81eb487a992e123b46"
         },
         {
           "path": "tests/test_provider_request_profiles.py",
           "sha256": "bf88449f24a4de3a72035136713d4eb67b9a1c6efc7258d30d465976e5965160"
         },
         {
-          "path": "tests/test_reasoning_vocabulary_registry.py",
-          "sha256": "de784583b8f6f83a20d728cbd44b6296f562ca0991e768cb5a6e32238871c622"
-        },
-        {
-          "path": "tests/test_session_birth_persistence.py",
-          "sha256": "a01587258469b968bbcd0ea1316d4eb550a17ed051f4a8c839ced19570bb5a00"
-        },
-        {
-          "path": "tests/test_models_review_regressions.py",
-          "sha256": "a0fd5bd1dd4664d5d84339fbff09763fff3b166cb0e605dea5339eddea496ed1"
-        },
-        {
-          "path": "tests/test_reasoning_no_escalation.py",
-          "sha256": "7e3a440fe1672be1bfdba72abb588309fe2ffe074c4faf1a45a082df72978a17"
+          "path": "tests/test_reasoning_effort_ladder.py",
+          "sha256": "d2efa3e8481c5bf65b7243196c1ab1070efafbe041ebe01ae26c6f4429f0084a"
         },
         {
           "path": "tests/test_reasoning_empty_contract.py",
           "sha256": "6035f9fc3126225b943ac336f2532b5341c11514fda51a0654e13388e20a853a"
         },
         {
-          "path": "docs/superpowers/plans/2026-09-15-reasoning-no-escalation.md",
-          "sha256": "12f6c03ae6450b94ebfbd56d3ae0e117f4b1d9b1c4070ed6e0b5ffadaaeac484"
+          "path": "tests/test_reasoning_no_escalation.py",
+          "sha256": "7e3a440fe1672be1bfdba72abb588309fe2ffe074c4faf1a45a082df72978a17"
         },
         {
-          "path": "docs/hermes/h679-reasoning-contract.md",
-          "sha256": "3e6a7a6aa798c10f99b5a4a0831d2eed598ca99426cc938a9e43f30263250826"
-        },
-        {
-          "path": "tests/test_h277_deepinfra_vision_roles.py",
-          "sha256": "ace9d232665032190f86302cb757b79187b380ed6281e51eba34498e3f69403c"
-        },
-        {
-          "path": "docs/hermes/h277-deepinfra-vision-plan-2026-10-02.md",
-          "sha256": "4f23c52cc80587f3c35e37b67dc0649a1902b09896e4382d2311583c8979a3d6"
-        },
-        {
-          "path": "docs/hermes/h277-nous-vision-plan-2026-10-02.md",
-          "sha256": "3fede4130bbdd4886511f17871ffa7bad5d94f550f6886328f0c7af2e9e7d4f8"
-        },
-        {
-          "path": "docs/hermes/evidence/h277-auxiliary-output-cap-collateral-review-2026-10-04.md",
-          "sha256": "78becfaf8b2b0adc3d16baa7e9d9eb0798ebc22cb2e8497166484c4501a80c31"
-        },
-        {
-          "path": "tests/test_h277_deepinfra_main.py",
-          "sha256": "93bb0f67bfe2a6f17a81e55cd32d4ec801d53f05fd56ce60b5479ddfac092f5d"
+          "path": "tests/test_reasoning_vocabulary_registry.py",
+          "sha256": "de784583b8f6f83a20d728cbd44b6296f562ca0991e768cb5a6e32238871c622"
         }
       ]
     },
@@ -18673,29 +18393,73 @@
     {
       "id": "H689",
       "row_sha256": "1ca32221323ba8cba685894f79abc33e53f4049339319a3a83fec1bf19438793",
-      "status": "partial",
-      "summary": "Stable 32-hex ID per data root, but not shared across profiles as frozen contract requires. Per-profile roots, hub exclusion and profile-scoped .env credentials. Current verification: 71 passed on Linux, including cross-process lock/profile cases. Identity is currently stable per data root, which differs from install-wide identity shared across profiles.",
-      "remaining": "Frozen contract explicitly requires one install_id shared by all profiles. Nerva puts install_id under each profile data_root (agents/core/paths.py:168-183; agents/core/install_identity.py:121-141), so sibling profile roots mint distinct IDs. Stable per-profile IDs are not the same install-wide authority for cross-profile machine comparison. Separate an install-scoped identity root from profile data/credential roots, preserve existing consumer authority and migrate/read existing IDs safely; test two profiles share one ID while credentials/locks remain isolated. No demonstrated contract gap from source review. Windows msvcrt branch is not executed in this environment; byte-64 lock without an identical upstream prewrite is not itself proof of failure. Native Windows process-lock acceptance remains an evidence limit, not a claimed defect.",
+      "status": "equivalent",
+      "summary": "One durable 32-hex installation ID now belongs to the validated unprofiled root and is shared across default/named profiles; data, credentials and hub locks stay profile-local. Locked atomic publication adopts only one unambiguous legacy identity, preserves canonical/legacy bytes and refuses conflicting or damaged state. Activation migration requires the selected profile's matching legacy proof; foreign records require reconciliation. Missing ID refuses node grants/deeplinks with fixed 503; unbound old links cannot approve senders. Windows PID updates preserve the lock inode and byte. Verification: 199 implementer and 169 independent focused tests passed (overlapping), including process races and simulated Windows reacquisition; native Windows acceptance not claimed.",
+      "remaining": "",
       "evidence": [
+        {
+          "path": "agents/core/channels/pairing.py",
+          "sha256": "5b52c4dc871ea60dce4e3c4b70e6a4e5ecf314e82e07ddbe30c365a9c91fa5f4"
+        },
         {
           "path": "agents/core/env_provenance.py",
           "sha256": "9a1ef07fb9627b0c18c403ebaae85a38b2a195f8df01b727b735937db7a3a8de"
         },
         {
+          "path": "agents/core/first_action.py",
+          "sha256": "d0ccdbe4b071da91032454945095965f2280ff2709e34c134f48cb99bc6569dc"
+        },
+        {
           "path": "agents/core/install_identity.py",
-          "sha256": "f381257e61c01d3716b818daa17f4b587ebb618d1e8535be1a21c783057f6fdc"
+          "sha256": "3c7f627f94ab1d1c9068b5482868a7d665d5b6d6fcff46847f19cc1be22685e0"
+        },
+        {
+          "path": "agents/core/node_mesh.py",
+          "sha256": "cf691342478b0728d914308a1df89524cc527522b63687afb3bfdb1c1413cfb2"
         },
         {
           "path": "agents/core/paths.py",
-          "sha256": "e64558800ea1c793282b2b9c0e379db011dfa3a4ffff8b330a126cef39db2725"
+          "sha256": "abe5a73620d7673e3ad5f0d5f917bbca393f5f03c41f6439444704b674df31c1"
+        },
+        {
+          "path": "agents/core/routers/mesh.py",
+          "sha256": "79c89d43c62083420969af97a02ea57779cfca3812cbce29ff59e978512c6e3f"
+        },
+        {
+          "path": "agents/core/routers/pairing.py",
+          "sha256": "3a5be04edeff1e0d59915d6615be7050e79a17609816e0682050f9171cdec9c3"
+        },
+        {
+          "path": "agents/core/satellite_hub.py",
+          "sha256": "d5e32d14d0f94f6e09fdd370ed8cb938d948ddad09a63218aa3bc067ce3fdeed"
+        },
+        {
+          "path": "tests/test_first_run_first_action.py",
+          "sha256": "e4ee2b7d456280c4c94379ac39d0965a5d668841d0a317c997949fc806dfad80"
         },
         {
           "path": "tests/test_h689_install_identity.py",
-          "sha256": "a73808d9c5aad8f59debaeb7cd1f7b0a4a1a025979e4d0e45f3061d0c6ceab8c"
+          "sha256": "36d9ebcdeb55aa513f717f77d60b5aed26d43480c155e3b3235e59539988ee4f"
+        },
+        {
+          "path": "tests/test_h689_shared_identity.py",
+          "sha256": "bda8b589ff3c0565e716967c49f0c0ba312c7c783e547495f879229bd7e45e7e"
         },
         {
           "path": "tests/test_h689b_profile_env.py",
           "sha256": "33ac8a9007871d262eb582ab448408665eeef749d83c71c62b1eef6fa6052b32"
+        },
+        {
+          "path": "tests/test_node_mesh_h12_17.py",
+          "sha256": "f647271c08038192c512076c0ce57c8eaa434257b01f3b9f9fd5d8a0f5a94cd1"
+        },
+        {
+          "path": "tests/test_pairing_secrets_at_rest.py",
+          "sha256": "509a1f8ce0351ac01c2b64ba8b549edd34d7e4663225e5624fd364d0dbb0d57e"
+        },
+        {
+          "path": "tests/test_satellite_hub_h12_8.py",
+          "sha256": "688c2953171efa97a290496af50f0dbfb6eb932d72af57396db4ff06ba6b1ed1"
         }
       ]
     },

@@ -16,6 +16,19 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
+H413/H689 local update (2026-10-10): existing Sessions displays retain instant
+and background-upgraded titles; automatic naming now uses a dedicated small
+local model. An unavailable model keeps the instant title. Profiles share the
+installation identity while their stores and credentials remain isolated.
+Existing node-registration and sender-link APIs return 503 when identity is
+unavailable; reconciliation and re-pairing remain host administration, with no
+new identity-repair panel. See `docs/install-identity.md` and
+`docs/plans/2026-10-10-hermes-closure-02.md` for migration and verification limits.
+
+H256 local update (2026-10-10): existing owner consent actions refuse corrupt
+settings before audit or grant/revoke, including the preflight-to-lock race.
+The existing error response remains the UI boundary; no repair panel is added.
+
 Session ID validation (local backend candidate, 2026-10-09): existing chat and
 session routes reject a terminal newline through the corrected shared validator,
 before session or memory work. Valid IDs keep their exact value; no new HUD

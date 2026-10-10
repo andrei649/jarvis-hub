@@ -875,7 +875,7 @@ on the router's existing local backend independently of the conversation model:
 
 | Setting | Consumer | Fallback when unset or ASCII-space-only |
 |---|---|---|
-| `JARVIS_AUX_SESSION_TITLE_MODEL` | Session title generation | Active local model, then `qwen3:7b` |
+| `JARVIS_AUX_SESSION_TITLE_MODEL` | Session title generation | Dedicated `qwen3:7b`; an unavailable model keeps the instant title |
 | `JARVIS_AUX_QUERY_REWRITE_MODEL` | Recall query rewriting | Active local model, then `qwen3:7b` |
 | `JARVIS_AUX_REVIEW_MODEL` | Background/on-demand conversation review | Active local model, then `google/gemma-4-31b-a4b` |
 | `JARVIS_AUX_COMPRESSION_MODEL` | Context compression summary | Active local model, then `qwen3:7b` |
