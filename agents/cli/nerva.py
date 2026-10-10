@@ -3074,51 +3074,99 @@ def _fish_completion(parser: argparse.ArgumentParser) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _completion_paths(parser: argparse.ArgumentParser) -> dict[tuple[str, ...], tuple[str, ...]]:
+    """Each parser node's exact command path and its immediate child names."""
+    paths = {}
+
+    def walk(node: argparse.ArgumentParser, path: tuple[str, ...]) -> None:
+        children = {
+            name: child
+            for action in node._actions if isinstance(action, argparse._SubParsersAction)
+            for name, child in action.choices.items()
+        }
+        if children:
+            paths[path] = tuple(sorted(children))
+            for name, child in sorted(children.items()):
+                walk(child, (*path, name))
+
+    walk(parser, ())
+    return paths
+
+
+def _shell_candidates(names: tuple[str, ...]) -> str:
+    """An array of literal shell words, never code or a split completion string."""
+    return " ".join(shlex.quote(name) for name in names)
+
+
 def completion_script(shell: str, parser: argparse.ArgumentParser | None = None) -> str:
     if shell not in {"bash", "zsh", "fish"}:
         raise ValueError(f"unsupported completion shell: {shell!r}")
     if shell == "fish":
         return _fish_completion(parser or build_parser())
-    tree = command_tree(parser)
-    verbs = " ".join(sorted(tree))
+    paths = _completion_paths(parser or build_parser())
+    root = _shell_candidates(paths.get((), ()))
     if shell == "bash":
-        cases = "\n".join(
-            f'        {verb}) COMPREPLY=( $(compgen -W "{" ".join(subs)}" -- "$cur") ) ;;'
-            for verb, subs in sorted(tree.items())
-            if subs
+        lines = [
+            '# nerva bash completion — generated from the parser tree; eval "$(nerva completion bash)"',
+            "_nerva() {",
+            '    local cur="${COMP_WORDS[COMP_CWORD]}" candidate',
+            "    local -a candidates=()",
+            "    COMPREPLY=()",
+            "    if (( COMP_CWORD == 1 )); then",
+            f"        candidates=({root})",
+            "    elif (( COMP_CWORD == 2 )); then",
+            '        case "${COMP_WORDS[1]}" in',
+        ]
+        for path, names in sorted(paths.items()):
+            if len(path) == 1:
+                lines.append(f"            {shlex.quote(path[0])}) COMPREPLY=(); candidates=({_shell_candidates(names)}) ;;")
+        lines.append("        esac")
+        for path, names in sorted(paths.items()):
+            if len(path) < 2:
+                continue
+            checks = " && ".join(
+                f'[[ "${{COMP_WORDS[{i}]}}" == {shlex.quote(part)} ]]'
+                for i, part in enumerate(path, 1)
+            )
+            lines.extend([
+                f"    elif (( COMP_CWORD == {len(path) + 1} )) && {checks}; then",
+                f"        candidates=({_shell_candidates(names)})",
+            ])
+        lines.extend([
+            "    fi",
+            '    for candidate in "${candidates[@]}"; do',
+            '        [[ "$candidate" == "$cur"* ]] && COMPREPLY+=("$candidate")',
+            "    done",
+            "}",
+            "complete -F _nerva nerva",
+        ])
+        return "\n".join(lines) + "\n"
+    lines = [
+        "#compdef nerva",
+        "# nerva zsh completion — generated from the parser tree",
+        "_nerva() {",
+        "    local -a candidates=()",
+        "    if (( CURRENT == 2 )); then",
+        f"        candidates=({root})",
+    ]
+    for path, names in sorted(paths.items()):
+        if not path:
+            continue
+        checks = " && ".join(
+            f'[[ "${{words[{i}]}}" == {shlex.quote(part)} ]]'
+            for i, part in enumerate(path, 2)
         )
-        return (
-            "# nerva bash completion — generated from the parser tree; eval \"$(nerva completion bash)\"\n"
-            "_nerva() {\n"
-            '    local cur="${COMP_WORDS[COMP_CWORD]}"\n'
-            "    if [ \"$COMP_CWORD\" -eq 1 ]; then\n"
-            f'        COMPREPLY=( $(compgen -W "{verbs}" -- "$cur") ); return\n'
-            "    fi\n"
-            '    case "${COMP_WORDS[1]}" in\n'
-            f"{cases}\n"
-            "        *) COMPREPLY=() ;;\n"
-            "    esac\n"
-            "}\n"
-            "complete -F _nerva nerva\n"
-        )
-    lines = "\n".join(
-        f"        {verb}) _values 'action' {' '.join(subs)} ;;"
-        for verb, subs in sorted(tree.items())
-        if subs
-    )
-    return (
-        "#compdef nerva\n"
-        "# nerva zsh completion — generated from the parser tree\n"
-        "_nerva() {\n"
-        "    if (( CURRENT == 2 )); then\n"
-        f"        _values 'verb' {verbs}; return\n"
-        "    fi\n"
-        "    case \"${words[2]}\" in\n"
-        f"{lines}\n"
-        "    esac\n"
-        "}\n"
-        "_nerva \"$@\"\n"
-    )
+        lines.extend([
+            f"    elif (( CURRENT == {len(path) + 2} )) && {checks}; then",
+            f"        candidates=({_shell_candidates(names)})",
+        ])
+    lines.extend([
+        "    fi",
+        '    (( ${#candidates[@]} )) && compadd -- "${candidates[@]}"',
+        "}",
+        '_nerva "$@"',
+    ])
+    return "\n".join(lines) + "\n"
 
 
 def cmd_completion(ns: argparse.Namespace, ctx: Context) -> int:
