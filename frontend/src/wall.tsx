@@ -16,7 +16,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { NeuralBurst, burstEnergy } from './burst';
 import { isExecutingAgent } from './mesh';
-import { runningTasks } from './task-state';
+import { runningTasks, effectiveTaskState } from './task-state';
 
 const two = (n: number) => String(n).padStart(2, '0');
 
@@ -32,9 +32,16 @@ export function wallState({ voice = null, agents = [], tasks = [], serverUp = fa
   if (status === 'listening') return { word: 'listening', tone: 'live' };
   if (status === 'transcribing') return { word: 'thinking', tone: 'work' };
   if (status === 'speaking') return { word: 'speaking', tone: 'live' };
-  const firing = (Array.isArray(agents) ? agents : []).filter(isExecutingAgent).length;
-  const running = runningTasks(Array.isArray(tasks) ? tasks : []).length;
-  if (firing || running) return { word: 'working', tone: 'work' };
+  // Bolt Optimization: Check for executing agents and running tasks directly via indexed for loops
+  // with early return to avoid allocating intermediate filtered arrays from .filter() and runningTasks().
+  const agentList = Array.isArray(agents) ? agents : [];
+  for (let i = 0; i < agentList.length; i++) {
+    if (isExecutingAgent(agentList[i])) return { word: 'working', tone: 'work' };
+  }
+  const taskList = Array.isArray(tasks) ? tasks : [];
+  for (let i = 0; i < taskList.length; i++) {
+    if (effectiveTaskState(taskList[i]) === 'running') return { word: 'working', tone: 'work' };
+  }
   if (!serverUp) return { word: 'offline', tone: 'bad' };
   return { word: 'standing by', tone: 'idle' };
 }
@@ -263,7 +270,10 @@ export function BriefingWall({
   const evidenceTasks = taskEvidence && Array.isArray(tasks) ? tasks : [];
   const running = runningTasks(evidenceTasks);
   const waiting = evidenceTasks.length - running.length;
-  const firing = evidenceAgents.filter(isExecutingAgent).length;
+  let firing = 0;
+  for (let i = 0; i < evidenceAgents.length; i++) {
+    if (isExecutingAgent(evidenceAgents[i])) firing++;
+  }
   const state = wallState({ voice, agents: evidenceAgents, tasks: evidenceTasks, serverUp });
   const energy = burstEnergy({ agents: evidenceAgents, tasks: evidenceTasks, voice, demo });
   const caps = (voice && voice.caps) || null;
