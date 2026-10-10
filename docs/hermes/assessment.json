@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "17f8019e80c5975264b9054b17f8adb8cdefb5a9",
-  "assessed_at": "2026-10-10T06:46:55Z",
+  "base_sha": "38df244934cca627aa64afe9234757e4ef46d6e8",
+  "assessed_at": "2026-10-10T15:26:19Z",
   "reviews": [
     {
       "id": "H001",
@@ -501,11 +501,11 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0ad55a9f06e073572e6b48569ac7e5b678c85d7d99cc3d5cd55601fe0c4a9eca"
+          "sha256": "f91ba6af657d7de2eba0a9d4b85066c3a9c3bbc0513f5f88705b036e2076023b"
         },
         {
           "path": "agents/core/autonomy/jobs_incidents.py",
-          "sha256": "1d69614838998b54d9cc4de415081a9c54ee32401e96619507fa60e3e01e6861"
+          "sha256": "401fc60cedf42b4bb64d670bb35f33b1637b215e6523c1e4ef0fa988da55293a"
         },
         {
           "path": "agents/core/autonomy/jobs_notepad.py",
@@ -2581,7 +2581,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0ad55a9f06e073572e6b48569ac7e5b678c85d7d99cc3d5cd55601fe0c4a9eca"
+          "sha256": "f91ba6af657d7de2eba0a9d4b85066c3a9c3bbc0513f5f88705b036e2076023b"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -10550,7 +10550,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0ad55a9f06e073572e6b48569ac7e5b678c85d7d99cc3d5cd55601fe0c4a9eca"
+          "sha256": "f91ba6af657d7de2eba0a9d4b85066c3a9c3bbc0513f5f88705b036e2076023b"
         },
         {
           "path": "agents/core/autonomy/nl_schedule.py",
@@ -10619,7 +10619,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0ad55a9f06e073572e6b48569ac7e5b678c85d7d99cc3d5cd55601fe0c4a9eca"
+          "sha256": "f91ba6af657d7de2eba0a9d4b85066c3a9c3bbc0513f5f88705b036e2076023b"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -10644,7 +10644,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0ad55a9f06e073572e6b48569ac7e5b678c85d7d99cc3d5cd55601fe0c4a9eca"
+          "sha256": "f91ba6af657d7de2eba0a9d4b85066c3a9c3bbc0513f5f88705b036e2076023b"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -10660,7 +10660,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs_incidents.py",
-          "sha256": "1d69614838998b54d9cc4de415081a9c54ee32401e96619507fa60e3e01e6861"
+          "sha256": "401fc60cedf42b4bb64d670bb35f33b1637b215e6523c1e4ef0fa988da55293a"
         },
         {
           "path": "tests/test_h015_job_operations.py",
@@ -10677,7 +10677,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0ad55a9f06e073572e6b48569ac7e5b678c85d7d99cc3d5cd55601fe0c4a9eca"
+          "sha256": "f91ba6af657d7de2eba0a9d4b85066c3a9c3bbc0513f5f88705b036e2076023b"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
@@ -10762,7 +10762,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0ad55a9f06e073572e6b48569ac7e5b678c85d7d99cc3d5cd55601fe0c4a9eca"
+          "sha256": "f91ba6af657d7de2eba0a9d4b85066c3a9c3bbc0513f5f88705b036e2076023b"
         },
         {
           "path": "agents/core/autonomy/jobs_outputs.py",
@@ -10831,7 +10831,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0ad55a9f06e073572e6b48569ac7e5b678c85d7d99cc3d5cd55601fe0c4a9eca"
+          "sha256": "f91ba6af657d7de2eba0a9d4b85066c3a9c3bbc0513f5f88705b036e2076023b"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -10864,7 +10864,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0ad55a9f06e073572e6b48569ac7e5b678c85d7d99cc3d5cd55601fe0c4a9eca"
+          "sha256": "f91ba6af657d7de2eba0a9d4b85066c3a9c3bbc0513f5f88705b036e2076023b"
         },
         {
           "path": "agents/core/autonomy/jobs_health.py",
@@ -17897,7 +17897,7 @@
       "evidence": [
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0ad55a9f06e073572e6b48569ac7e5b678c85d7d99cc3d5cd55601fe0c4a9eca"
+          "sha256": "f91ba6af657d7de2eba0a9d4b85066c3a9c3bbc0513f5f88705b036e2076023b"
         },
         {
           "path": "agents/core/routers/jobs.py",
@@ -18256,7 +18256,7 @@
         },
         {
           "path": "agents/core/autonomy/jobs.py",
-          "sha256": "0ad55a9f06e073572e6b48569ac7e5b678c85d7d99cc3d5cd55601fe0c4a9eca"
+          "sha256": "f91ba6af657d7de2eba0a9d4b85066c3a9c3bbc0513f5f88705b036e2076023b"
         },
         {
           "path": "agents/core/autonomy/jobs_scripts.py",
