@@ -2,11 +2,12 @@
 
 Generated 2026-10-10 UTC. Goal: repair clarification registration at fresh startup
 and restore typed choice coercion after Other, then re-review the whole frozen
-H067 pending-input contract. Initial base/head:
-`16bfdc1282554ada805968383ced004046173b2c`, the frozen H456 source checkpoint.
-Branch `codex/hermes-closure-09-20261010`. Next action: fresh-start red regression.
-This isolated worktree will incorporate final batch08 metadata before its own
-integration milestone. H067 currently needs_review, not accepted-complete credit.
+H067 pending-input contract. Integration base: `08ba81a6be061c9b593873cb63e4da11268ab0bc` (final batch08).
+Current source head: `7e7aecafe1609dd6108aeec7368b207240b4dd42`.
+Branch `codex/hermes-closure-09-20261010`. Next action: frozen full backend
+verification, whole-clause review and guarded assessment update. The clean rebase
+preserved both H067 production and regression digests.
+H067 currently needs_review, not accepted-complete credit.
 Local only; no push, remote merge, deployment, live accounts or paid providers.
 
 ## Design and scope

@@ -2224,6 +2224,8 @@
 
 - 2026-10-10 full-contract closure batch 08 (local): H456 implements job/cron/legacy toolset precedence, operator restrictions, mandatory interactive-tool exclusions and canonical per-job reasoning with transport enforcement; CLI/HUD/doctor expose controls. Assessment: 151 equivalent, 228 partial, 56 missing, 262 needing review; 697 accepted, 546 unfinished. Frozen backend: 25,935 cases, one approval-test timing failure, 59 skipped/xfail; the repaired fixture and all 46 adjacent owner-once cases pass. All 2,181 frontend tests, build/typecheck, built-browser, nested-code restriction and actual offline CLI/API/model proofs pass. No green full-run, live-provider or native-host claim. No push, merge or deployment. See [contracts and verification](docs/plans/2026-10-10-hermes-closure-08.md).
 
+- 2026-10-10 full-contract closure batch 09 (local, verification pending): H067 restores enabled clarification registration after initial effective settings load and valid choice coercion after Other. Startup/parser regressions, all formerly skipped Slack/Discord cases and actual offline fresh-app HTTP/model/ToolRPC clarification pass. Whole-contract acceptance awaits the frozen full backend milestone; no count increase claimed. No push, merge or deployment. See [contract and verification](docs/plans/2026-10-10-hermes-closure-09.md).
+
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
   Reassess inherited judgments, finish the full accepted
