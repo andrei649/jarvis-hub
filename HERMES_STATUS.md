@@ -11,14 +11,14 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 116 | 16.6% |
-| Parțial | 222 | 31.9% |
+| Parțial | 223 | 32.0% |
 | Lipsă | 56 | 8.0% |
 | Exclus intenționat | 0 | 0.0% |
-| De reverificat | 303 | 43.5% |
+| De reverificat | 302 | 43.3% |
 
 **Ținta acceptată în produs:** 697 rânduri; progres 116/697 = **16.6%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
 
-**Acoperirea reevaluării curente:** 38/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 39/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -40,7 +40,7 @@ Din acestea, **8** au fost reevaluate pe cod în această livrare; **108** păst
 | agent-core | 36 | 7 | 7 | 7 | 0 | 15 |
 | memory | 27 | 8 | 7 | 0 | 0 | 12 |
 | automation | 32 | 1 | 14 | 2 | 0 | 15 |
-| security | 34 | 8 | 8 | 1 | 0 | 17 |
+| security | 34 | 8 | 9 | 1 | 0 | 16 |
 | media | 27 | 5 | 12 | 2 | 0 | 8 |
 | acp-mcp-dev | 33 | 3 | 12 | 11 | 0 | 7 |
 | docs-features | 48 | 8 | 17 | 3 | 0 | 20 |

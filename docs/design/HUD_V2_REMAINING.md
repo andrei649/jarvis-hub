@@ -608,6 +608,12 @@ No new route or dashboard control is added. The native audit reader remains open
 in `mobile/PARITY.md`; native bearer requests are covered by the shared server guards.
 The broader login/session/WebSocket/native-auth event contract remains incomplete.
 
+H512 MCP token continuation (2026-10-10): successful `/api/mcp/token` signing adds
+a `token_issued` row with literal `surface=mcp` to that same admin audit reader.
+The admin authorization row remains separate; minted credential tier is `user`.
+No endpoint or UI control changes. The native audit reader and broader H512 event
+coverage remain open, and the bounded audit queue still permits dropped events.
+
 DRA-59 local observability (2026-10-09): Autonomy Control now reads admin-only
 `GET /autonomy/mediation` and displays the effective queue mode separately from
 evidence validity. Only verified recorded event counts are shown; unavailable,

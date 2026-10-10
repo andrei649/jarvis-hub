@@ -359,6 +359,12 @@ async def mcp_issue_token(req: Request):
     token = _web()._get_mcp_rs().issue_token(
         subject=(body or {}).get("subject", "local-client"),
         resource=resource, scopes=scopes, ttl=ttl)
+    # Signing succeeded; audit delivery is best-effort and cannot hold the token.
+    with suppress(Exception):
+        submit_auth_event(
+            "token_issued", tier="user", reason="issue", count=1,
+            revoke_env=False, surface="mcp",
+        )
     return nocache_json({"ok": True, "token": token, "resource": resource, "scopes": scopes})
 
 

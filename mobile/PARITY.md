@@ -157,7 +157,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Nightly reflection (status + manual run) | `GET /api/reflection/status`, `POST /api/reflection/run` | ✅ | ⬜ | |
 | Security skills browser (ATT&CK tactics → curated techniques, read-only) | `GET /api/security-skills/tactics`, `GET /api/security-skills/techniques` | ✅ | ⬜ | |
 | Prompt-injection scan | `POST /api/security/scan-injection` | ✅ | ⬜ | |
-| Authentication audit events (H512) | Admin `GET /api/admin/audit`; typed guard/token lifecycle rows | ✅ existing admin audit reader | ⬜ intentionally owner-HUD/CLI only in this local slice; native requests are logged server-side | H512 |
+| Authentication audit events (H512) | Admin `GET /api/admin/audit`; typed guard/token lifecycle rows, including MCP RPC auth and successful MCP token signing (`surface=mcp`) | ✅ existing admin audit reader | ⬜ intentionally owner-HUD/CLI only in this local slice; native requests are logged server-side | H512 |
 | Audit-chain verification (tamper-evidence read) | `GET /api/security/audit/intent`, `GET /api/security/audit/verify` | ✅ | ⬜ | |
 | Channel pairing ceremony | admin `GET /api/channels/pairing`, `POST /api/channels/pairing/code`, `POST /api/channels/pairing/decide` | ✅ | ➖ admin ceremony run from the owner HUD (triage 2026-09-01) | — |
 | Governed social drafts (draft-before-send) | `GET/POST /api/integrations/social` | ✅ | ⬜ | |
