@@ -601,6 +601,8 @@
   "POST /sandbox/execute": "sandbox_execute_sandbox_execute_post",
   "POST /sandbox/kernels/reset": "sandbox_kernel_reset_sandbox_kernels_reset_post",
   "POST /sessions/continue": "continue_session_sessions_continue_post",
+  "POST /sessions/import": "import_session_sessions_import_post",
+  "POST /sessions/resolve": "resolve_session_sessions_resolve_post",
   "POST /sessions/resume": "resume_session_sessions_resume_post",
   "POST /sessions/{session_id}/archive": "archive_session_sessions__session_id__archive_post",
   "POST /sessions/{session_id}/pin": "pin_session_sessions__session_id__pin_post",

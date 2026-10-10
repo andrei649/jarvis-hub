@@ -17,7 +17,7 @@ counts its idle time again, so the next sweep does not archive it straight back.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -127,7 +127,13 @@ async def _set_stamp(session_id: str, field: str, on: bool, req: Request):
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
     from agents.core.foreign_history import http_owner_guard
-    await http_owner_guard(orch.checkpoints, session_id, req)
+    try:
+        await http_owner_guard(orch.checkpoints, session_id, req)
+    except HTTPException as exc:
+        if exc.status_code != 503:
+            raise
+        return JSONResponse({"error": "the session store is unavailable", "reason": "store_unavailable"},
+                            status_code=503)
     if (field, on) == ("archived", False):
         done = _keep(orch.checkpoints, session_id)
     else:

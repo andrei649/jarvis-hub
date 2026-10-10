@@ -9,6 +9,7 @@ from starlette.requests import Request
 
 from agents import web
 from agents.core.native_human_wait import runtime_human_wait_scope
+from tests.h441_native_fixture import bind_native
 from tests.test_pending_input_runtime import runtime_host
 
 
@@ -21,6 +22,7 @@ def request(headers=None):
 async def stream_host(tmp_path, monkeypatch, *, choices=None, multi=False, headers=None, store=None, timeout=None):
     orch, cap, _gw, server, _ready, _pair, answers = runtime_host(tmp_path)
     cap["server"] = server
+    bind_native(orch, monkeypatch, session_ids=("web_shared",))
     monkeypatch.setattr(web, "orch", orch)
     from agents.core.routers._deps import user_guard
     monkeypatch.delitem(web.app.dependency_overrides, web._user_guard, raising=False)

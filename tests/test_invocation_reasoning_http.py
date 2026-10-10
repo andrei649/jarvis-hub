@@ -12,6 +12,7 @@ from agents.cli.nerva import Context, main
 from agents.core.llm.openrouter import OpenRouterBackend
 from agents.core.llm.providers import ProviderProfile
 from agents.core.llm.reasoning_effort import LADDER
+from tests.h441_native_fixture import bind_native
 
 
 def setup_hub(monkeypatch):
@@ -27,8 +28,10 @@ def setup_hub(monkeypatch):
     async def stream(message, on_token, **kwargs):
         answer = await backend.generate_stream('m', message, on_token=on_token)
         return answer
-    monkeypatch.setattr(web, 'orch', SimpleNamespace(
-        notes=None, session_id='reasoning_session', handle_input=turn, handle_input_stream=stream))
+    orch = SimpleNamespace(notes=None, session_id='reasoning_session',
+                           handle_input=turn, handle_input_stream=stream)
+    bind_native(orch, monkeypatch, session_ids=('reasoning_session',))
+    monkeypatch.setattr(web, 'orch', orch)
     return TestClient(web.app), client, backend, seen
 
 
@@ -157,8 +160,10 @@ def test_http_explicit_none_disables_supported_anthropic_model(monkeypatch, path
         return await backend.generate('claude-opus-5', message, max_tokens=4096)
     async def stream(message, on_token, **kwargs):
         return await backend.generate_stream('claude-opus-5', message, max_tokens=4096, on_token=on_token)
-    monkeypatch.setattr(web, 'orch', SimpleNamespace(
-        notes=None, session_id='anthropic_session', handle_input=turn, handle_input_stream=stream))
+    orch = SimpleNamespace(notes=None, session_id='anthropic_session',
+                           handle_input=turn, handle_input_stream=stream)
+    bind_native(orch, monkeypatch, session_ids=('anthropic_session',))
+    monkeypatch.setattr(web, 'orch', orch)
     try:
         response = TestClient(web.app).post(path, json={'message': 'hi', 'reasoning': 'none'})
         assert response.status_code == 200

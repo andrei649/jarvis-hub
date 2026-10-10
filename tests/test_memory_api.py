@@ -18,11 +18,12 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 import agents.web as web
+from tests.h441_native_fixture import bind_native
 
 _NO_ORCH_CLIENT = TestClient(web.app)  # no lifespan → orch stays None
 
 
-def _mock_orch() -> MagicMock:
+def _mock_orch(monkeypatch) -> MagicMock:
     m = MagicMock()
     m.session_id = "sess-test-001"
     m.memory.get_history = AsyncMock(return_value=[
@@ -31,7 +32,7 @@ def _mock_orch() -> MagicMock:
     ])
     m.memory.clear = AsyncMock(return_value=None)
     m.memory.new_session = AsyncMock(return_value="sess-test-002")
-    m.checkpoints.create_session_record = MagicMock()
+    bind_native(m, monkeypatch, session_ids=(m.session_id,))
     return m
 
 
@@ -45,7 +46,7 @@ def test_memory_no_orch_returns_503():
 
 
 def test_memory_returns_session_and_turns(monkeypatch):
-    monkeypatch.setattr(web, "orch", _mock_orch())
+    monkeypatch.setattr(web, "orch", _mock_orch(monkeypatch))
     client = TestClient(web.app)
     resp = client.get("/memory")
     assert resp.status_code == 200
@@ -56,14 +57,14 @@ def test_memory_returns_session_and_turns(monkeypatch):
 
 
 def test_memory_returns_correct_session_id(monkeypatch):
-    monkeypatch.setattr(web, "orch", _mock_orch())
+    monkeypatch.setattr(web, "orch", _mock_orch(monkeypatch))
     client = TestClient(web.app)
     data = client.get("/memory").json()
     assert data["session"] == "sess-test-001"
 
 
 def test_memory_turns_have_role_content(monkeypatch):
-    monkeypatch.setattr(web, "orch", _mock_orch())
+    monkeypatch.setattr(web, "orch", _mock_orch(monkeypatch))
     client = TestClient(web.app)
     turns = client.get("/memory").json()["turns"]
     assert len(turns) == 2
@@ -81,7 +82,7 @@ def test_memory_clear_no_orch_returns_503():
 
 
 def test_memory_clear_requires_confirm_header_in_prod_mode(monkeypatch):
-    monkeypatch.setattr(web, "orch", _mock_orch())
+    monkeypatch.setattr(web, "orch", _mock_orch(monkeypatch))
     monkeypatch.setattr(web, "DEV_MODE", False)
     client = TestClient(web.app)
     resp = client.post("/memory/clear")
@@ -90,7 +91,7 @@ def test_memory_clear_requires_confirm_header_in_prod_mode(monkeypatch):
 
 
 def test_memory_clear_succeeds_with_confirm_header(monkeypatch):
-    monkeypatch.setattr(web, "orch", _mock_orch())
+    monkeypatch.setattr(web, "orch", _mock_orch(monkeypatch))
     monkeypatch.setattr(web, "DEV_MODE", False)
     client = TestClient(web.app)
     resp = client.post("/memory/clear", headers={"X-Confirm": "true"})
@@ -99,7 +100,7 @@ def test_memory_clear_succeeds_with_confirm_header(monkeypatch):
 
 
 def test_memory_clear_new_session_id_returned(monkeypatch):
-    monkeypatch.setattr(web, "orch", _mock_orch())
+    monkeypatch.setattr(web, "orch", _mock_orch(monkeypatch))
     monkeypatch.setattr(web, "DEV_MODE", False)
     client = TestClient(web.app)
     data = client.post("/memory/clear", headers={"X-Confirm": "true"}).json()
@@ -107,7 +108,7 @@ def test_memory_clear_new_session_id_returned(monkeypatch):
 
 
 def test_memory_clear_succeeds_in_dev_mode(monkeypatch):
-    monkeypatch.setattr(web, "orch", _mock_orch())
+    monkeypatch.setattr(web, "orch", _mock_orch(monkeypatch))
     monkeypatch.setattr(web, "DEV_MODE", True)
     client = TestClient(web.app)
     resp = client.post("/memory/clear")
@@ -134,7 +135,7 @@ def test_memory_search_returns_structure_with_mock(monkeypatch):
     hit.sources = ["turn:3"]
     hit.payload = {"text": "jarvis can do calendar"}
 
-    mock = _mock_orch()
+    mock = _mock_orch(monkeypatch)
     mock.memory.embed = AsyncMock(return_value=[0.1, 0.2])
     mock.memory.hybrid_search = AsyncMock(return_value=[hit])
     monkeypatch.setattr(web, "orch", mock)
@@ -149,7 +150,7 @@ def test_memory_search_returns_structure_with_mock(monkeypatch):
 
 
 def test_memory_search_empty_query_returns_structure(monkeypatch):
-    mock = _mock_orch()
+    mock = _mock_orch(monkeypatch)
     mock.memory.hybrid_search = AsyncMock(return_value=[])
     monkeypatch.setattr(web, "orch", mock)
     client = TestClient(web.app)
@@ -158,7 +159,7 @@ def test_memory_search_empty_query_returns_structure(monkeypatch):
 
 
 def test_memory_search_top_k_clamped_to_50(monkeypatch):
-    mock = _mock_orch()
+    mock = _mock_orch(monkeypatch)
     mock.memory.embed = AsyncMock(return_value=None)
     mock.memory.hybrid_search = AsyncMock(return_value=[])
     monkeypatch.setattr(web, "orch", mock)
@@ -178,7 +179,7 @@ def test_memory_remember_no_orch_returns_503():
 
 
 def test_memory_remember_empty_text_returns_400(monkeypatch):
-    monkeypatch.setattr(web, "orch", _mock_orch())
+    monkeypatch.setattr(web, "orch", _mock_orch(monkeypatch))
     client = TestClient(web.app)
     resp = client.post("/api/memory/remember", json={"text": ""})
     assert resp.status_code == 400
@@ -186,14 +187,14 @@ def test_memory_remember_empty_text_returns_400(monkeypatch):
 
 
 def test_memory_remember_missing_text_returns_400(monkeypatch):
-    monkeypatch.setattr(web, "orch", _mock_orch())
+    monkeypatch.setattr(web, "orch", _mock_orch(monkeypatch))
     client = TestClient(web.app)
     resp = client.post("/api/memory/remember", json={})
     assert resp.status_code == 400
 
 
 def test_memory_remember_stores_and_returns_ok(monkeypatch):
-    mock = _mock_orch()
+    mock = _mock_orch(monkeypatch)
     mock.memory.remember = AsyncMock(return_value="mem-uuid-42")
     monkeypatch.setattr(web, "orch", mock)
     client = TestClient(web.app)
@@ -205,7 +206,7 @@ def test_memory_remember_stores_and_returns_ok(monkeypatch):
 
 
 def test_memory_remember_passes_metadata(monkeypatch):
-    mock = _mock_orch()
+    mock = _mock_orch(monkeypatch)
     mock.memory.remember = AsyncMock(return_value="mem-uuid-99")
     monkeypatch.setattr(web, "orch", mock)
     client = TestClient(web.app)

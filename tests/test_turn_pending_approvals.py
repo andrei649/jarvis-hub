@@ -18,6 +18,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.h441_native_fixture import bind_native
+
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
@@ -158,8 +160,15 @@ async def test_turn_without_a_caller_sink_collects_into_its_own(entry):
 
 # ── the wire: /chat carries the ids ──────────────────────────────────────────
 
-def test_chat_reports_the_ids_the_turn_queued(monkeypatch):
+def _native_mock(monkeypatch):
     mock = MagicMock()
+    mock.session_id = "approval_test"
+    bind_native(mock, monkeypatch, session_ids=(mock.session_id,))
+    return mock
+
+
+def test_chat_reports_the_ids_the_turn_queued(monkeypatch):
+    mock = _native_mock(monkeypatch)
 
     async def _turn(message, channel="web", agent_override=None, **kw):
         record_pending_approval(41)
@@ -175,7 +184,7 @@ def test_chat_reports_the_ids_the_turn_queued(monkeypatch):
 
 
 def test_chat_reports_an_empty_list_for_an_ordinary_turn(monkeypatch):
-    mock = MagicMock()
+    mock = _native_mock(monkeypatch)
     mock.handle_input = AsyncMock(return_value="Salut!")
     monkeypatch.setattr(web, "orch", mock)
 
@@ -188,7 +197,7 @@ def test_chat_reports_an_empty_list_for_an_ordinary_turn(monkeypatch):
 def test_chat_stream_end_event_carries_the_ids(monkeypatch):
     """Stream parity: the HUD's primary surface is /chat/stream, so an approval
     queued there must be nameable too — the runner task's context copy included."""
-    mock = MagicMock()
+    mock = _native_mock(monkeypatch)
 
     async def _stream(message, channel, on_token, agent_override=None, **kw):
         await on_token("one moment")
@@ -220,7 +229,7 @@ def test_a_turn_that_queued_then_failed_still_names_what_it_queued(monkeypatch):
     waiting for a decision. Reporting an empty list would tell the caller nothing is
     pending while a row it can neither see nor name is.
     """
-    mock = MagicMock()
+    mock = _native_mock(monkeypatch)
 
     async def _turn(message, channel="web", agent_override=None, **kw):
         record_pending_approval(55)
@@ -240,7 +249,7 @@ def test_a_turn_that_queued_then_failed_still_names_what_it_queued(monkeypatch):
 
 def test_a_stream_that_queued_then_failed_still_names_what_it_queued(monkeypatch):
     """Stream parity for the same case — the error end event carries the ids too."""
-    mock = MagicMock()
+    mock = _native_mock(monkeypatch)
 
     async def _stream(message, channel, on_token, agent_override=None, **kw):
         record_pending_approval(56)
@@ -294,7 +303,7 @@ def test_the_governed_rpc_route_still_answers_a_gated_call(monkeypatch):
     returns `approval_required` + a task id. It runs no turn, so this is the
     user-visible shape of the bug: a 500 in place of a 422 carrying the id."""
     queue = _FakeQueue()
-    mock = MagicMock()
+    mock = _native_mock(monkeypatch)
     mock.tool_rpc = _gated_server(queue.enqueue)
     monkeypatch.setattr(web, "orch", mock)
 

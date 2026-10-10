@@ -16,6 +16,7 @@ import pytest
 
 from agents.core import context_refs as cr
 from agents.core.file_tools import FileScope
+from tests.h441_native_fixture import bind_native
 
 
 @pytest.fixture
@@ -261,9 +262,11 @@ def hub(root, monkeypatch):
         await on_token("done")
         return "done"
 
-    monkeypatch.setattr(web, "orch", SimpleNamespace(handle_input=handle_input,
-                                                     handle_input_stream=handle_input_stream,
-                                                     session_id="context_ref_session", notes=None))
+    orch = SimpleNamespace(handle_input=handle_input,
+                           handle_input_stream=handle_input_stream,
+                           session_id="context_ref_session", notes=None)
+    bind_native(orch, monkeypatch, session_ids=("context_ref_session",))
+    monkeypatch.setattr(web, "orch", orch)
     return TestClient(web.app), seen
 
 

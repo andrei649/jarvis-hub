@@ -21,6 +21,7 @@ from agents.core import session_titles as st
 from agents.core import settings_db
 from agents.core.checkpoint import CheckpointManager
 from agents.core.llm.providers import get_profile
+from tests.h441_native_fixture import bind_native
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # golden_harness lives beside the tests
 
@@ -588,8 +589,10 @@ def chat_hub(tmp_path, monkeypatch):
         return "done"
 
     notes = SimpleNamespace(context_for=lambda sid: "[Session notes]\nmy bank PIN hint is the dog's birthday\n\n")
-    monkeypatch.setattr(web, "orch", SimpleNamespace(handle_input=handle_input, handle_input_stream=handle_input_stream,
-                                                     notes=notes, session_id="s-1"))
+    route_orch = SimpleNamespace(handle_input=handle_input, handle_input_stream=handle_input_stream,
+                                 notes=notes, session_id="s-1")
+    bind_native(route_orch, monkeypatch, session_ids=("s-1",))
+    monkeypatch.setattr(web, "orch", route_orch)
     return TestClient(web.app), cp, queued
 
 
@@ -780,7 +783,9 @@ def test_the_sessions_route_returns_each_title(monkeypatch):
         {"id": "g", "metadata": "[1]"},
         {"id": "h", "metadata": 5},
     ]
-    orch = SimpleNamespace(checkpoints=SimpleNamespace(get_sessions=lambda limit=20, **_: rows))
+    orch = SimpleNamespace()
+    bind_native(orch, monkeypatch, session_ids=tuple(row["id"] for row in rows))
+    orch.checkpoints.get_sessions = lambda limit=20, **_: rows
     monkeypatch.setattr(route, "get_orch", lambda: orch)
     got = TestClient(web.app).get("/sessions")
     assert got.status_code == 200

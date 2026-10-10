@@ -28,6 +28,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 from agents.core.agent import Agent
 from agents.core.config import JarvisConfig
 from agents.core.orchestrator import Orchestrator
+from tests.h441_native_fixture import bind_native
 
 
 class _Intent:
@@ -41,8 +42,10 @@ class _Intent:
 
 
 @pytest.fixture
-def orch():
-    return Orchestrator(JarvisConfig())
+def orch(monkeypatch):
+    instance = Orchestrator(JarvisConfig())
+    bind_native(instance, monkeypatch)
+    return instance
 
 
 def _wire_stubs(o, *, both_started: asyncio.Event, started_count: dict):

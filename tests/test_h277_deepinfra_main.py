@@ -22,6 +22,7 @@ from agents.core.llm.router import LLMRouter
 from agents.core.llm.vision_main import selected_main_config
 from agents.core.llm.vlm import VLMNotConfigured
 from agents.core.orchestrator import Orchestrator
+from tests.h441_native_fixture import bind_native
 from tests.test_composer_vision import PNG
 from tests.test_h277_vision_auto_consumer import approved, route  # noqa: F401
 
@@ -136,6 +137,7 @@ def test_selected_image_config_keeps_deepinfra_key_model_and_url():
 def test_reviewed_deepinfra_selected_image_sends_and_commits_history(route, monkeypatch, tmp_path):
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
     orch = Orchestrator(JarvisConfig())
+    bind_native(orch, monkeypatch)
     orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
     backend = _backend(client=object())
     orch.llm_router.select_backend = lambda _agent, _prompt: (backend, MODEL, "cloud-compatible")
@@ -179,6 +181,7 @@ def test_reviewed_deepinfra_selected_image_sends_and_commits_history(route, monk
 
 def test_reviewed_deepinfra_rejects_key_change_before_image_egress(route, monkeypatch):
     orch = Orchestrator(JarvisConfig())
+    bind_native(orch, monkeypatch)
     orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
     backend = _backend(client=object())
     orch.llm_router.select_backend = lambda _agent, _prompt: (backend, MODEL, "cloud-compatible")
@@ -574,6 +577,7 @@ async def test_deepinfra_router_refuses_wrong_same_host_path_with_gemini_present
                                   "https://api.deepinfra.com/v1/openai/other"])
 def test_reviewed_deepinfra_image_path_change_refuses_before_egress(route, monkeypatch, base):
     orch = Orchestrator(JarvisConfig())
+    bind_native(orch, monkeypatch)
     orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
     backend = _backend(client=object())
     orch.llm_router.select_backend = lambda _agent, _prompt: (backend, MODEL, "cloud-compatible")

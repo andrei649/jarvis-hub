@@ -19,6 +19,7 @@ from agents.core.llm.egress import llm_async_client
 from agents.core.llm.vision_main import selected_main_config
 from agents.core.llm.xai import XAIBackend
 from agents.core.orchestrator import Orchestrator
+from tests.h441_native_fixture import bind_native
 from tests.test_composer_vision import PNG
 from tests.test_h277_vision_auto_consumer import approved, route  # noqa: F401
 
@@ -28,6 +29,7 @@ IMAGE_DIGEST = hashlib.sha256(PNG.encode("utf-8")).hexdigest()
 
 def _selected(monkeypatch, *, effort=""):
     orch = Orchestrator(JarvisConfig())
+    bind_native(orch, monkeypatch)
     orch.agents["jarvis"] = Agent("jarvis", {}, orch.llm_router)
     backend = XAIBackend("selected-xai-key", reasoning_effort=effort)
     orch.llm_router.select_backend = lambda _agent, _prompt: (backend, MODEL, "cloud-compatible")

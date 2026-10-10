@@ -506,6 +506,8 @@ _CLIENT_GLOBS = (
 # inheriting a bare list. The audit's own count came down from 86 to 68 precisely because
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
+    "/sessions/import": "Owner CLI imports a bounded transcript from its local host (agents/cli/nerva.py)",
+    "/sessions/resolve": "Owner CLI resolves -c/-r selectors and retrieves a free recap (agents/cli/nerva.py)",
     "/api/kanban/command": "owner host CLI bridge, used by nerva kanban; board UI uses dedicated REST routes",
     "/api/kanban/projects/command": "owner host CLI bridge, used by nerva project; project inventory uses the dedicated REST route",
     "/api/vlm/composer/status":
