@@ -3162,7 +3162,10 @@ def completion_script(shell: str, parser: argparse.ArgumentParser | None = None)
         ])
     lines.extend([
         "    fi",
-        '    (( ${#candidates[@]} )) && compadd -- "${candidates[@]}"',
+        '    if (( ${#candidates[@]} )); then',
+        '        compadd -- "${candidates[@]}"',
+        '    fi',
+        "    return 0",
         "}",
         '_nerva "$@"',
     ])
