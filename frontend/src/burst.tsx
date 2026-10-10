@@ -54,7 +54,9 @@ export function burstRegions({ agents = [], tasks = [] }: any = {}) {
   // Bolt Optimization: Maintain O(1) agent-id -> tier-key map to avoid O(Tasks * Tiers * Agents) nested array scans
   const agentToTier = new Map<string, string>();
 
-  list.forEach((a) => {
+  // Bolt Optimization: Use indexed for loops instead of .forEach() closures to avoid allocation overhead on state updates
+  for (let i = 0; i < list.length; i++) {
+    const a = list[i];
     const tier = tierOf(a) || 'cabinet';
     const key = tier.toLowerCase();
     const look = lookOf(tier);
@@ -67,16 +69,17 @@ export function burstRegions({ agents = [], tasks = [] }: any = {}) {
       agentToTier.set(agentId, key);
     }
     byTier.set(key, cur);
-  });
+  }
 
-  running.forEach((tk) => {
+  for (let i = 0; i < running.length; i++) {
+    const tk = running[i];
     const owner = ownerOf(tk);
     const tierKey = agentToTier.get(owner);
     if (tierKey) {
       const r = byTier.get(tierKey);
       if (r) r.tasks += 1;
     }
-  });
+  }
 
   // stable order → the field doesn't reshuffle between renders
   return Array.from(byTier.values()).sort((a, b) => a.key.localeCompare(b.key));
@@ -341,11 +344,15 @@ export function NeuralBurst({ agents = [], tasks = [], voice = null, motion = 'l
     ctx.globalAlpha = 1;
     for (let ci = 0; ci < numClusters; ci++) {
       const c = clusters[ci];
-      const label = c._label || (c._label = String(c.label || c.key).toUpperCase());
-      const pct = c.nodes ? Math.round((c.firing / c.nodes) * 100) : 0;
-      const sub = `${c.nodes} agent${c.nodes === 1 ? '' : 's'} · firing ${pct}%${c.tasks ? ' · ' + c.tasks + ' task' + (c.tasks === 1 ? '' : 's') : ''}`;
-      // Bolt Optimization: Cache ctx.measureText results on cluster object c to avoid expensive browser text layout measurements every 60FPS frame
-      if (c._sub !== sub) {
+      // Bolt Optimization: Cache nodes, firing, and task state on cluster object c to avoid
+      // re-constructing sub-line template strings on every 60 FPS animation frame.
+      if (c._nodes !== c.nodes || c._firing !== c.firing || c._tasks !== c.tasks) {
+        c._nodes = c.nodes;
+        c._firing = c.firing;
+        c._tasks = c.tasks;
+        const label = c._label || (c._label = String(c.label || c.key).toUpperCase());
+        const pct = c.nodes ? Math.round((c.firing / c.nodes) * 100) : 0;
+        const sub = `${c.nodes} agent${c.nodes === 1 ? '' : 's'} · firing ${pct}%${c.tasks ? ' · ' + c.tasks + ' task' + (c.tasks === 1 ? '' : 's') : ''}`;
         c._sub = sub;
         ctx.font = '700 10px "JetBrains Mono",monospace';
         const tw = ctx.measureText(label).width;
@@ -353,6 +360,8 @@ export function NeuralBurst({ agents = [], tasks = [], voice = null, motion = 'l
         const sw = ctx.measureText(sub).width;
         c._w = Math.max(tw, sw) + 22;
       }
+      const label = c._label;
+      const sub = c._sub;
       const w = c._w, h = 30;
       // Anchor part-way out along the tree, then clamp into a safe band: the wall's
       // stat cards own the outer fifths and the top/bottom bars own the edges, so a
