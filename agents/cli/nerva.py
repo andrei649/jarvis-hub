@@ -254,6 +254,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     logs = verbs.add_parser("logs", help="the newest records of the hub log, read from the end "
                             "and redacted (offline; -n counts records, a traceback is one)")
+    logs.add_argument("name", nargs="?", help="exact configured log basename or numbered rotation; "
+                      "'list' shows available files (use --name to read a file named 'list')")
+    logs.add_argument("--name", dest="exact_name", help="exact configured log basename, including 'list'")
     logs.add_argument("-n", "--lines", type=int, default=50)
 
     skills = verbs.add_parser("skills", help="skill authoring tools (offline)")
@@ -1505,6 +1508,13 @@ def log_path(environ: Mapping[str, str]) -> Path:
     return data_path("logs", "jarvis.log")
 
 
+def _log_display(value: Any, width: int = 200, *, keep_tail: bool = False) -> str:
+    """Printable log filename/error text, including bidi and surrogate-safe names."""
+    visible = re.sub(r"[\u202a-\u202e\u2066-\u2069]", "", str(value))
+    visible = visible.encode("utf-8", "backslashreplace").decode("utf-8")
+    return _plain(visible, width, keep_tail=keep_tail)
+
+
 def _skill_files(raw: str) -> list[Path] | None:
     """The SKILL.md files *raw* names: itself, a skill folder's, or each skill folder's."""
     path = Path(raw)
@@ -1575,31 +1585,60 @@ def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 def cmd_logs(ns: argparse.Namespace, ctx: Context) -> int:
+    positional_name = getattr(ns, "name", None)
+    exact_name = getattr(ns, "exact_name", None)
+    if positional_name is not None and exact_name is not None:
+        ctx.err.write("choose one log name: positional NAME or --name NAME\n")
+        return EXIT_USAGE
+    name = exact_name if exact_name is not None else positional_name
     path = log_path(ctx.environ)
-    if not path.exists():
+    from agents.core import log_tail
+
+    files = log_tail.list_files(path)
+    if positional_name == "list":
+        if not files:
+            ctx.say("no log files for the configured hub log")
+        else:
+            for item in files:
+                ctx.say(f"{_log_display(item['name'], 120)}  {item['size']} bytes  "
+                        f"modified {item['modified']}")
+        return EXIT_OK
+    if not files:
+        if path.exists():
+            ctx.err.write(f"{_log_display(path, 200, keep_tail=True)} could not be read "
+                          "(not a regular log file)\n")
+            return EXIT_FAILED
         ctx.err.write(
-            f"no log file at {path} — file logging is off unless system.log_to_file is on "
+            f"no log file at {_log_display(path, 200, keep_tail=True)} — file logging is off unless system.log_to_file is on "
             "(`nerva config set system.log_to_file on`) or JARVIS_LOG_FILE is set\n"
         )
         return EXIT_FAILED
+    allowed = {item["name"] for item in files}
+    if name is not None and name not in allowed:
+        available = ", ".join(_log_display(item["name"], 120) for item in files[:10])
+        more = " …" if len(files) > 10 else ""
+        ctx.err.write(f"no configured log named {_log_display(name, 120)}; available: {available}{more}\n")
+        return EXIT_FAILED
+    chosen = files[0]["name"] if name is None else name
+    selected = path.parent / chosen
     # H145: read from the end within a byte budget and redacted again, as the HUD's log
     # page reads it; a multi-gigabyte log costs the same as a small one.
-    from agents.core import log_tail
-
     if ns.lines <= 0:
         return EXIT_OK
     try:
-        tail = log_tail.read_path(path, lines=ns.lines, cap=max(ns.lines, 1))
+        tail = log_tail.read_path(selected, lines=ns.lines, cap=max(ns.lines, 1))
     except log_tail.RedactionUnavailable as exc:
-        ctx.err.write(f"the secret redactor could not be loaded ({exc}); the log is not shown\n")
+        ctx.err.write(f"the secret redactor could not be loaded ({_log_display(exc)}); the log is not shown\n")
         return EXIT_FAILED
     except OSError as exc:
-        ctx.err.write(f"{path} could not be read ({exc.strerror or exc.__class__.__name__})\n")
+        ctx.err.write(f"{_log_display(selected, 200, keep_tail=True)} could not be read "
+                      f"({_log_display(exc.strerror or exc.__class__.__name__)})\n")
         return EXIT_FAILED
     for entry in tail["entries"]:
         ctx.say(entry["text"])
     if tail["truncated"] and len(tail["entries"]) < ns.lines:
-        ctx.err.write(f"(only the last {tail['scanned_bytes'] // 1024} KiB of {path} were read)\n")
+        ctx.err.write(f"(only the last {tail['scanned_bytes'] // 1024} KiB of "
+                      f"{_log_display(selected, 200, keep_tail=True)} were read)\n")
     return EXIT_OK
 
 
