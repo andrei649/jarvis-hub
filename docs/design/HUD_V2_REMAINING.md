@@ -16,6 +16,14 @@ provisioning remains open. See docs/hermes/evidence/2026-09-15-docker-containmen
 
 ## 0. Do this first
 
+H329 local update (2026-10-10): Skill Switches renders HTTP 202 as pending
+owner approval and retains the disabled state until the worker applies the
+exact request. Global and channel settings remain distinct. Canonical approver
+audit is transactional; the IntentLog projection is optional. Missing or corrupt
+state returns an unavailable response. The existing approval inbox is the
+review surface; the interactive `nerva skills config` picker uses the same API.
+H299/H397 default to guidance with an explicit runtime setting for stall stops.
+
 H413/H689 local update (2026-10-10): existing Sessions displays retain instant
 and background-upgraded titles; automatic naming now uses a dedicated small
 local model. An unavailable model keeps the instant title. Profiles share the

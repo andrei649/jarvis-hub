@@ -20,6 +20,15 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
 
+H329 local update (2026-10-10): the browser Skill Switches panel and terminal
+picker show re-enable requests as pending until the approved worker applies
+them. Disabled skills stay installed. Shared server enforcement applies to all
+channels; corrupt/missing switch state refuses nonessential skills. Native
+mobile currently has the read-only skills browser, with no switch editor or
+interactive picker; these controls remain desktop/host administration. Existing
+approval surfaces consume the same bounded task. H299/H397 stall guidance and
+opt-in stops are shared runtime behavior, with no new native screen.
+
 H413/H689 local update (2026-10-10): existing session lists receive the same
 instant and background-upgraded titles; automatic naming now uses the dedicated
 small local model, and keeps the instant title when it is unavailable. Profiles
