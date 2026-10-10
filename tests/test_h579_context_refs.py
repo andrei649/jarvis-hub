@@ -357,8 +357,7 @@ async def test_an_inbound_turn_keeps_its_more_specific_origin():
     assert origins == [INBOUND_ACTION_ORIGIN]
 
 
-@pytest.mark.parametrize("path", ["chat", "stream"])
-async def test_the_expansion_runs_off_the_event_loop_in_the_routes(golden, monkeypatch, path):
+async def test_the_expansion_runs_off_the_event_loop_in_the_routes(golden, monkeypatch):
     from agents import web
 
     event_loop_thread = threading.get_ident()
@@ -371,13 +370,15 @@ async def test_the_expansion_runs_off_the_event_loop_in_the_routes(golden, monke
 
     monkeypatch.setattr(cr, "expand", traced)
     message = "what does @file:notes.md say?"
-    if path == "chat":
-        reply = await web.chat(web.ChatRequest(message=message), _web_request())
-        assert reply.reply
-    else:
-        assert '"type": "end"' in await _stream(message)
-    assert len(observed) == 1 and observed[0][0] == message
-    assert observed[0][1] != event_loop_thread
+    for path in ("chat", "stream"):
+        observed.clear()
+        if path == "chat":
+            reply = await web.chat(web.ChatRequest(message=message), _web_request())
+            assert reply.reply
+        else:
+            assert '"type": "end"' in await _stream(message)
+        assert len(observed) == 1 and observed[0][0] == message, path
+        assert observed[0][1] != event_loop_thread, path
     assert cr.REFERENCE_TYPES == ("file",)
 
 
