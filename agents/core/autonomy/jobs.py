@@ -57,6 +57,7 @@ MAX_NAME = 80
 MAX_TEXT = 2_000
 MAX_NOTEPAD = 4_096
 MAX_RUNS_KEPT = 200
+MAX_GLOBAL_RUNS_KEPT = 10_000
 MAX_FAILURES = 3
 MAX_FIRES_PER_DAY = 288  # one firing per five minutes, at most
 ACTION_TYPES = ("remind", "ask", "brief", "task")
@@ -127,6 +128,7 @@ class Job:
     options: dict = field(default_factory=dict)
     attempts: int = 0
     last_delivery_status: str | None = None
+    _frozen_kv: list[dict] | None = field(default=None, compare=False, repr=False)
 
     @property
     def runnable(self) -> bool:
@@ -433,7 +435,7 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         raise ValueError("options must be an object")
     from ..llm.job_selection import validate_pins
     validate_pins(options)
-    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets"}
+    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets", "continuity"}
     if unknown:
         raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
     if 'enabled_toolsets' in options:
@@ -454,6 +456,8 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         url_screen(options['monitor_url'])
     if 'no_agent' in options and type(options['no_agent']) is not bool:
         raise ValueError('no_agent must be true or false')
+    if 'continuity' in options and type(options['continuity']) is not bool:
+        raise ValueError('continuity must be true or false')
     if options.get('no_agent') and not options.get('script'):
         raise ValueError('no_agent requires a script')
     if options.get('monitor_script') and (options.get('script') or options.get('no_agent')):
@@ -780,6 +784,15 @@ class JobStore:
         self.script_attempts = ScriptAttempts(self)
         from .jobs_dispatch import ManualDispatch
         self.dispatch = ManualDispatch(self)
+        from .jobs_incidents import JobIncidents
+        from .jobs_notepad import JobNotepadKV
+        self.incidents = JobIncidents(self)
+        self.notepad_kv = JobNotepadKV(self)
+        with self._lock:
+            self._conn.execute("""CREATE TABLE IF NOT EXISTS job_direct_attempts (
+                run_id INTEGER PRIMARY KEY, job_id TEXT NOT NULL)""")
+            self._conn.execute("CREATE INDEX IF NOT EXISTS job_direct_attempts_job ON job_direct_attempts(job_id)")
+            self._conn.commit()
 
 
     def record_scheduler_result(self, job_id: str, status: str) -> None:
@@ -929,6 +942,7 @@ class JobStore:
         schedule_text: str | None = None,
         action: Mapping[str, Any] | None = None,
         options: dict | None = None,
+        continuity: bool | None = None,
     ) -> Job:
         """Change what an existing job *is*, under the same rules that created it.
 
@@ -943,41 +957,64 @@ class JobStore:
         and ``paused_reason`` are outcomes, not settings: an edit must not silently resume a
         paused job or forgive its failures — ``resume`` is the verb for that.
         """
-        current = self.get(job_id)
-        if current is None:
-            raise KeyError(job_id)
-        if name is None and schedule_text is None and action is None and options is None:
+        if continuity is not None and type(continuity) is not bool:
+            raise ValueError("continuity must be true or false")
+        if continuity is not None and options is not None:
+            raise ValueError("continuity and replacement options cannot be combined")
+        if all(value is None for value in (name, schedule_text, action, options, continuity)):
             raise ValueError("an edit needs a name, a schedule or an action")
 
-        fields: dict[str, Any] = {}
-        if options is not None:
-            fields["options"] = validate_options(options, url_screen=getattr(self, "url_screen", None))
-        if name is not None:
-            cleaned = " ".join(str(name).split())
-            if not cleaned:
-                raise ValueError("a job needs a name")
-            if len(cleaned) > MAX_NAME:
-                raise ValueError(f"the name is longer than {MAX_NAME} characters")
-            fields["name"] = cleaned
-        if action is not None or options is not None:
-            errors = validate_action(action if action is not None else current.action,
-                                     fields.get('options', current.options))
-            if errors:
-                raise ValueError("; ".join(errors))
-            if action is not None:
-                fields["action"] = dict(action)
-        if schedule_text is not None:
-            text = str(schedule_text).strip()
-            if not text:
-                raise ValueError("a job needs a schedule")
-            cron, _description = resolve_schedule(text, zone=self._schedule_zone())
-            fields["schedule_text"] = text
-            fields["cron"] = cron
-        job = self.update(job_id, **fields)
-        if is_one_shot(job.cron) and job.cron != current.cron:
-            # H450: a one-shot given a new time is a new run, whatever the old one spent.
-            job = self._reset_attempts(job_id)
-        return job
+        with self._lock:
+            conn = self._conn
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+                if row is None:
+                    raise KeyError(job_id)
+                current = self._row_to_job(row)
+                fields: dict[str, Any] = {}
+                proposed_options = options
+                if continuity is not None:
+                    proposed_options = {**current.options, "continuity": continuity}
+                if proposed_options is not None:
+                    fields["options"] = validate_options(
+                        proposed_options, url_screen=getattr(self, "url_screen", None))
+                if name is not None:
+                    cleaned = " ".join(str(name).split())
+                    if not cleaned:
+                        raise ValueError("a job needs a name")
+                    if len(cleaned) > MAX_NAME:
+                        raise ValueError(f"the name is longer than {MAX_NAME} characters")
+                    fields["name"] = cleaned
+                if action is not None or proposed_options is not None:
+                    errors = validate_action(action if action is not None else current.action,
+                                             fields.get("options", current.options))
+                    if errors:
+                        raise ValueError("; ".join(errors))
+                    if action is not None:
+                        fields["action"] = dict(action)
+                if schedule_text is not None:
+                    text = str(schedule_text).strip()
+                    if not text:
+                        raise ValueError("a job needs a schedule")
+                    cron, _description = resolve_schedule(text, zone=self._schedule_zone())
+                    fields["schedule_text"] = text
+                    fields["cron"] = cron
+                for key in ("action", "options"):
+                    if key in fields:
+                        fields[key] = json.dumps(fields[key], ensure_ascii=False)
+                fields["updated_at"] = utc_now()
+                assignment = ", ".join(f"{key}=?" for key in fields)
+                conn.execute(f"UPDATE jobs SET {assignment} WHERE id=?", (*fields.values(), job_id))
+                if schedule_text is not None and is_one_shot(cron) and cron != current.cron:
+                    # The new one-shot time is a new chance, in this same edit transaction.
+                    conn.execute("UPDATE jobs SET attempts=0 WHERE id=?", (job_id,))
+                updated = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+        return self._row_to_job(updated)
 
     def _reset_attempts(self, job_id: str) -> Job:
         with self._lock:
@@ -1014,12 +1051,183 @@ class JobStore:
 
     def delete(self, job_id: str) -> bool:
         with self._lock:
-            cursor = self._conn.execute("DELETE FROM jobs WHERE id = ?", (str(job_id),))
-            self._conn.execute("DELETE FROM job_runs WHERE job_id = ?", (str(job_id),))
-            self._conn.execute("DELETE FROM job_held WHERE job_id = ?", (str(job_id),))
-            self._conn.execute("DELETE FROM job_ticks WHERE job_id = ?", (str(job_id),))
-            self._conn.commit()
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                # A historical run and incident remain inspectable after configuration removal.
+                cursor = self._conn.execute("DELETE FROM jobs WHERE id = ?", (str(job_id),))
+                self._conn.execute("DELETE FROM job_notepad_kv WHERE job_id = ?", (str(job_id),))
+                self._conn.execute("DELETE FROM job_held WHERE job_id = ?", (str(job_id),))
+                self._conn.execute("DELETE FROM job_ticks WHERE job_id = ?", (str(job_id),))
+                self._prune_run_history_locked(self._conn, str(job_id))
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
         return cursor.rowcount > 0
+
+    @staticmethod
+    def _prune_run_history_locked(conn, job_id: str, *, keep_id: int | None = None) -> None:
+        """Bound terminal history, protecting live producer and manual references."""
+        protected = """id IN (SELECT id FROM job_script_attempts WHERE state NOT IN ('done','failed'))
+            OR id IN (SELECT run_id FROM job_requests WHERE status IN ('queued','running','waiting')
+                      AND run_id IS NOT NULL)"""
+        # Status, rather than a timestamp supplied by legacy callers, defines a
+        # terminal row. A pending script remains protected even after 200 skips.
+        terminal = "status NOT IN ('pending','running')"
+        keep = " AND id != ?" if keep_id is not None else ""
+        keep_args = (keep_id,) if keep_id is not None else ()
+        per_job_limit = MAX_RUNS_KEPT - (keep_id is not None)
+        global_limit = MAX_GLOBAL_RUNS_KEPT - (keep_id is not None)
+        conn.execute(f"""DELETE FROM job_runs WHERE job_id=? AND {terminal} AND NOT ({protected})
+            {keep} AND id NOT IN (SELECT id FROM job_runs WHERE job_id=? {keep}
+                                  ORDER BY id DESC LIMIT ?)""",
+            (job_id, *keep_args, job_id, *keep_args, per_job_limit))
+        conn.execute(f"""DELETE FROM job_runs WHERE {terminal} AND NOT ({protected})
+            {keep} AND id NOT IN (SELECT id FROM job_runs WHERE {terminal} {keep}
+                                  ORDER BY id DESC LIMIT ?)""",
+            (*keep_args, *keep_args, global_limit))
+
+    def record_failure(self, job_id: str, *, started_at: str, finished_at: str,
+                       error_code: str, error: object, broker=None) -> tuple[JobRun, int]:
+        """One durable failed run, live counter and incident in a write transaction."""
+        from .jobs_incidents import safe_diagnostic
+
+        safe_error = safe_diagnostic(error, broker=broker)
+        with self._lock:
+            conn = self._conn
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute("SELECT consecutive_failures FROM jobs WHERE id=?", (job_id,)).fetchone()
+                failures = int(row[0]) + 1 if row else 1
+                paused_reason = (f"{failures} consecutive failures; last: {safe_error}"[:MAX_TEXT]
+                                 if failures >= MAX_FAILURES else None)
+                if row:
+                    conn.execute("""UPDATE jobs SET last_run_at=?,last_status=?,last_summary=?,
+                        consecutive_failures=?,paused_reason=COALESCE(?,paused_reason),updated_at=?
+                        WHERE id=?""", (finished_at, STATUS_FAILED, safe_error, failures,
+                                        paused_reason, finished_at, job_id))
+                cursor = conn.execute("""INSERT INTO job_runs
+                    (job_id,started_at,finished_at,status,summary,error) VALUES (?,?,?,?,?,?)""",
+                    (job_id, started_at, finished_at, STATUS_FAILED, safe_error, safe_error))
+                self.incidents.observe_failure_locked(conn, job_id, error_code, safe_error, failures)
+                self._prune_run_history_locked(conn, job_id)
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+        return JobRun(int(cursor.lastrowid), job_id, started_at, finished_at,
+                      STATUS_FAILED, safe_error, safe_error), failures
+
+    def start_direct_run(self, job_id: str, started_at: str) -> JobRun | None:
+        """Reserve the cadence and its durable pending row before external effects."""
+        with self._lock:
+            conn = self._conn
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                claimed = conn.execute("""UPDATE jobs SET attempts=attempts+1,
+                    last_status='pending',last_summary='Direct job execution pending' WHERE id=?
+                    AND (json_extract(options,'$.repeat') IS NULL OR
+                         attempts<json_extract(options,'$.repeat'))
+                    AND (cron NOT LIKE '@at %' OR attempts<1)""", (job_id,)).rowcount
+                if not claimed:
+                    conn.rollback()
+                    return None
+                cursor = conn.execute("""INSERT INTO job_runs
+                    (job_id,started_at,finished_at,status,summary)
+                    VALUES (?,?,'','pending','Direct job execution pending')""",
+                    (job_id, started_at))
+                run_id = int(cursor.lastrowid)
+                conn.execute("INSERT INTO job_direct_attempts(run_id,job_id) VALUES (?,?)",
+                             (run_id, job_id))
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+        return JobRun(run_id, job_id, started_at, "", "pending", "Direct job execution pending")
+
+    def finish_direct_run(self, run_id: int, job_id: str, *, status: str,
+                          summary: str = "", notepad: str | None = None,
+                          error_code: str = "", broker=None) -> tuple[JobRun, int]:
+        """CAS the one pending row into its terminal outcome and incident."""
+        from .jobs_incidents import safe_diagnostic
+
+        if status not in {STATUS_OK, STATUS_FAILED, "unknown"}:
+            raise ValueError("invalid direct job result")
+        if status == STATUS_FAILED:
+            summary = safe_diagnostic(summary, broker=broker)
+        elif status == "unknown":
+            summary = "Direct job outcome unknown after interruption; not replayed"
+        else:
+            summary = str(summary or "")[:MAX_TEXT]
+        finished = utc_now()
+        with self._lock:
+            conn = self._conn
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute("""SELECT r.started_at,j.consecutive_failures
+                    FROM job_runs r JOIN job_direct_attempts d ON d.run_id=r.id
+                    LEFT JOIN jobs j ON j.id=d.job_id
+                    WHERE r.id=? AND r.job_id=? AND r.status='pending'""",
+                    (run_id, job_id)).fetchone()
+                if row is None:
+                    raise RuntimeError("direct job attempt is no longer pending")
+                failures = int(row["consecutive_failures"] or 0) + 1 if status == STATUS_FAILED else 0
+                conn.execute("""UPDATE job_runs SET finished_at=?,status=?,summary=?,error=? WHERE id=?""",
+                             (finished, status, summary, summary if status == STATUS_FAILED else None, run_id))
+                if status == STATUS_FAILED:
+                    pause = (f"{failures} consecutive failures; last: {summary}"[:MAX_TEXT]
+                             if failures >= MAX_FAILURES else None)
+                    conn.execute("""UPDATE jobs SET last_run_at=?,last_status=?,last_summary=?,
+                        consecutive_failures=?,paused_reason=COALESCE(?,paused_reason),updated_at=?
+                        WHERE id=?""", (finished, status, summary, failures, pause, finished, job_id))
+                    self.incidents.observe_failure_locked(conn, job_id, error_code, summary, failures)
+                elif status == STATUS_OK:
+                    conn.execute("""UPDATE jobs SET last_run_at=?,last_status=?,last_summary=?,
+                        consecutive_failures=0,notepad=COALESCE(?,notepad),updated_at=? WHERE id=?""",
+                        (finished, status, summary, notepad[:MAX_NOTEPAD] if notepad is not None else None,
+                         finished, job_id))
+                else:
+                    conn.execute("""UPDATE jobs SET last_run_at=?,last_status=?,last_summary=?,updated_at=?
+                        WHERE id=?""", (finished, status, summary, finished, job_id))
+                conn.execute("DELETE FROM job_direct_attempts WHERE run_id=?", (run_id,))
+                self._prune_run_history_locked(conn, job_id, keep_id=run_id)
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+        return JobRun(run_id, job_id, row["started_at"], finished, status, summary,
+                      summary if status == STATUS_FAILED else None), failures
+
+    def pending_direct_jobs(self) -> list[str]:
+        with self._lock:
+            rows = self._conn.execute("""SELECT DISTINCT d.job_id FROM job_direct_attempts d
+                JOIN job_runs r ON r.id=d.run_id WHERE r.status='pending'""").fetchall()
+        return [row[0] for row in rows]
+
+    def recover_direct_pending_under_gate(self, job_id: str) -> int:
+        """Caller holds dispatch.gate(job_id): no cooperating executor can be live."""
+        with self._lock:
+            conn = self._conn
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                ids = [int(row[0]) for row in conn.execute("""SELECT r.id FROM job_runs r
+                    JOIN job_direct_attempts d ON d.run_id=r.id
+                    WHERE d.job_id=? AND r.status='pending'""", (job_id,))]
+                for run_id in ids:
+                    conn.execute("""UPDATE job_runs SET status='unknown',finished_at=?,
+                        summary='Direct job outcome unknown after interruption; not replayed'
+                        WHERE id=? AND status='pending'""", (utc_now(), run_id))
+                    conn.execute("DELETE FROM job_direct_attempts WHERE run_id=?", (run_id,))
+                if ids:
+                    conn.execute("""UPDATE jobs SET last_status='unknown',
+                        last_summary='Direct job outcome unknown after interruption; not replayed'
+                        WHERE id=?""", (job_id,))
+                    self._prune_run_history_locked(conn, job_id)
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+        return len(ids)
 
     def pause(self, job_id: str, reason: str) -> Job:
         return self.update(job_id, paused_reason=str(reason or "paused")[:MAX_TEXT])
@@ -1040,21 +1248,19 @@ class JobStore:
         summary = str(summary or "")[:MAX_TEXT]
         error = None if error is None else str(error)[:MAX_TEXT]
         with self._lock:
-            cursor = self._conn.execute(
-                """INSERT INTO job_runs (job_id, started_at, finished_at, status, summary, error)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (str(job_id), started_at, finished_at, status, summary, error),
-            )
-            run_id = int(cursor.lastrowid)
-            self._conn.execute(
-                """DELETE FROM job_runs WHERE job_id = ? AND id NOT IN (
-                       SELECT id FROM job_script_attempts WHERE state NOT IN ('done','failed'))
-                       AND id NOT IN (SELECT run_id FROM job_requests WHERE status='waiting' AND run_id IS NOT NULL)
-                       AND id NOT IN (
-                       SELECT id FROM job_runs WHERE job_id = ? ORDER BY id DESC LIMIT ?)""",
-                (str(job_id), str(job_id), MAX_RUNS_KEPT),
-            )
-            self._conn.commit()
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                cursor = self._conn.execute(
+                    """INSERT INTO job_runs (job_id, started_at, finished_at, status, summary, error)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (str(job_id), started_at, finished_at, status, summary, error),
+                )
+                run_id = int(cursor.lastrowid)
+                self._prune_run_history_locked(self._conn, str(job_id))
+                self._conn.commit()
+            except BaseException:
+                self._conn.rollback()
+                raise
         return JobRun(run_id, str(job_id), started_at, finished_at, status, summary, error)
 
     # held deliveries (quiet hours) ---------------------------------------
@@ -1105,6 +1311,19 @@ class JobStore:
             for r in rows
         ]
 
+    def runs_recent(self, limit: int = 100, job_id: str | None = None) -> list[JobRun]:
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("run limit must be 1-100")
+        with self._lock:
+            if job_id is None:
+                rows = self._conn.execute("SELECT * FROM job_runs ORDER BY id DESC LIMIT ?",
+                                          (limit,)).fetchall()
+            else:
+                rows = self._conn.execute("SELECT * FROM job_runs WHERE job_id=? ORDER BY id DESC LIMIT ?",
+                                          (str(job_id), limit)).fetchall()
+        return [JobRun(int(r["id"]), r["job_id"], r["started_at"], r["finished_at"],
+                       r["status"], r["summary"] or "", r["error"]) for r in rows]
+
 
 # ── the runner ───────────────────────────────────────────────────────────────
 
@@ -1133,11 +1352,15 @@ class JobRunner:
         self._quiet = quiet
         from .jobs_scripts import ScriptRuntime
         self._script_runtime = ScriptRuntime(self)
+        self._submit_task = None
         from .jobs_media import ScheduledMedia
         self.media = ScheduledMedia(self)
 
     def bind_scripts(self, *, submit, get, find):
         self._script_runtime.bind(submit=submit, get=get, find=find)
+
+    def bind_task_intake(self, *, submit):
+        self._submit_task = submit
 
     def bind_url_monitor(self, adapter):
         self._script_runtime.url_adapter = adapter
@@ -1225,6 +1448,12 @@ class JobRunner:
                           misfire_grace_time=300, max_instances=1)
 
     def register_all(self) -> int:
+        # A pending direct row is unknown only once the cross-process execution
+        # gate proves no cooperating owner can still complete it.
+        for job_id in self.store.pending_direct_jobs():
+            with self.store.dispatch.gate(job_id) as acquired:
+                if acquired:
+                    self.store.recover_direct_pending_under_gate(job_id)
         self.register_manual()
         registered = 0
         for job in self.store.list():
@@ -1464,6 +1693,7 @@ class JobRunner:
         """Execute only while the caller holds the shared job gate."""
         from agents.core import estop
 
+        self.store.recover_direct_pending_under_gate(job_id)
         started = utc_now()
         job = self.store.get(job_id)
         if job is None:
@@ -1491,59 +1721,53 @@ class JobRunner:
                 raise ValueError('; '.join(errors))
         except ValueError as exc:
             return self._failed(job, started, exc)
-        if is_one_shot(job.cron) and not self.store.reserve_attempt(job_id):
-            # H450: the one run is reserved before any executor, script ones included.
-            self.unregister(job_id)
-            return self.store.record_run(job_id, started_at=started, finished_at=utc_now(),
-                                         status=STATUS_SKIPPED, summary=ONE_SHOT_SPENT)
-        if job.options.get('script') or (job.options.get('monitor_script') or job.options.get('monitor_url')):
+        script_job = bool(job.options.get('script') or job.options.get('monitor_script')
+                          or job.options.get('monitor_url'))
+        if script_job:
             return await self._script_runtime.fire(job, started)
-        if not is_one_shot(job.cron) and not self.store.reserve_attempt(job_id):
+        pending = self.store.start_direct_run(job_id, started)
+        if pending is None:
             self.unregister(job_id)
             return self.store.record_run(job_id, started_at=started, finished_at=utc_now(),
-                                         status=STATUS_SKIPPED, summary="repeat limit exhausted")
+                                         status=STATUS_SKIPPED,
+                                         summary=ONE_SHOT_SPENT if is_one_shot(job.cron)
+                                         else "repeat limit exhausted")
         from .jobs_gates import JobSuppressed
         try:
             summary, notepad = await self._execute(job)
         except JobSuppressed as suppressed:
             summary, notepad = f"Suppressed: {suppressed.reason}", suppressed.notepad
         except Exception as exc:
-            return self._failed(job, started, exc)
-        finished = utc_now()
-        fields: dict[str, Any] = {
-            "last_run_at": finished,
-            "last_status": STATUS_OK,
-            "last_summary": summary,
-            "consecutive_failures": 0,
-        }
-        if notepad is not None:
-            fields["notepad"] = notepad
-        with contextlib.suppress(KeyError):  # deleted while running
-            updated = self.store.update(job.id, **fields)
+            return self._failed(job, started, exc, run_id=pending.id)
+        except BaseException:
+            self.store.finish_direct_run(pending.id, job.id, status="unknown")
+            raise
+        run, _ = self.store.finish_direct_run(pending.id, job.id, status=STATUS_OK,
+                                              summary=summary, notepad=notepad)
+        with contextlib.suppress(KeyError):
+            updated = self.store.get(job.id)
+            if updated is None:
+                raise KeyError(job.id)
             if not updated.runnable:
                 self.unregister(job.id)
-        return self.store.record_run(job.id, started_at=started, finished_at=finished, status=STATUS_OK, summary=summary)
+        return run
 
-    def _failed(self, job: Job, started: str, exc: Exception) -> JobRun:
+    def _failed(self, job: Job, started: str, exc: Exception, *, run_id: int | None = None) -> JobRun:
         finished = utc_now()
-        error = f"{type(exc).__name__}: {exc}"[:MAX_TEXT]
-        failures = job.consecutive_failures + 1
-        fields: dict[str, Any] = {
-            "last_run_at": finished,
-            "last_status": STATUS_FAILED,
-            "last_summary": error,
-            "consecutive_failures": failures,
-        }
+        arguments = {"error_code": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}",
+                     "broker": getattr(self._orch, "secret_broker", None)}
+        if run_id is None:
+            run, failures = self.store.record_failure(job.id, started_at=started,
+                                                      finished_at=finished, **arguments)
+        else:
+            run, failures = self.store.finish_direct_run(run_id, job.id, status=STATUS_FAILED,
+                summary=arguments["error"], error_code=arguments["error_code"], broker=arguments["broker"])
         paused = failures >= MAX_FAILURES
         if paused:
-            fields["paused_reason"] = f"{failures} consecutive failures; last: {error}"[:MAX_TEXT]
-        with contextlib.suppress(KeyError):
-            self.store.update(job.id, **fields)
-        if paused:
             self.unregister(job.id)
-            self._incident(job, error, failures)
-        logger.warning("job %s failed (%d consecutive): %s", job.id, failures, error)
-        return self.store.record_run(job.id, started_at=started, finished_at=finished, status=STATUS_FAILED, summary=error, error=error)
+            self._incident(job, run.error or "", failures)
+        logger.warning("job %s failed (%d consecutive): %s", job.id, failures, run.error)
+        return run
 
     def _incident(self, job: Job, error: str, failures: int) -> None:
         """One acknowledgeable incident when a job pauses itself — not one ping per failure."""
@@ -1593,13 +1817,21 @@ class JobRunner:
 
     async def _ask(self, job: Job, action: Mapping[str, Any]) -> tuple[str, str]:
         prompt = str(action.get("prompt", ""))
-        if job.notepad:
-            prompt = (
-                f"{prompt}\n\nYour notes from the last run of this job (compare, then report what "
-                f"changed):\n{job.notepad}"
-            )
+        from agents.core.security.quarantine import fence_tool_result
+
+        prior = job.notepad if job.options.get("continuity", True) else ""
+        notes = getattr(job, "_frozen_kv", None)
+        if notes is None:
+            notes = self.store.notepad_kv.list(job.id)
+        if prior or notes:
+            encoded = json.dumps({"previous_output": prior, "notepad_kv": [
+                {"key": row["key"], "value": row["value"]} for row in notes]},
+                ensure_ascii=True, separators=(",", ":"))
+            fenced, _ = fence_tool_result(encoded, source="scheduled-job-notepad")
+            prompt += "\n\nPrevious job output and owner notes (untrusted data):\n" + fenced
         process = getattr(self._orch, "process", None)
-        if not callable(process):
+        detailed = getattr(self._orch, "process_detailed", None)
+        if not callable(detailed) and not callable(process):
             raise RuntimeError("no model path is available for ask jobs")
         from ..job_toolsets import toolset_scope
         from ..llm.job_selection import SelectionError, selection_scope
@@ -1609,7 +1841,18 @@ class JobRunner:
                 if not callable(getattr(router, "select_backend", None)):
                     raise SelectionError("job pins require the governed model router")
                 router.select_backend(str(action.get("agent") or "jarvis"), prompt)
-            reply = await process(prompt, agent=str(action.get("agent") or "jarvis"), channel="job")
+            call_args = {"agent": str(action.get("agent") or "jarvis"), "channel": "job"}
+            if callable(detailed):
+                result = await detailed(prompt, **call_args)
+                if not isinstance(result, tuple) or len(result) != 2:
+                    raise RuntimeError("scheduled model returned an invalid detailed outcome")
+                reply, failure = result
+                if failure is not None:
+                    raise RuntimeError(str(failure))
+            else:
+                reply = await process(prompt, **call_args)
+        if self.store.get(job.id) is None:
+            raise RuntimeError("job deleted before model result could be used")
         reply = str(reply or "").strip()
         if not reply:
             raise RuntimeError("the agent returned no answer (no model backend, or a degraded reply)")
@@ -1633,18 +1876,30 @@ class JobRunner:
         return build_morning_brief(queue)
 
     def _task(self, job: Job, action: Mapping[str, Any]) -> str:
-        queue = getattr(self._orch, "autonomy_queue", None)
-        if queue is None:
-            raise RuntimeError("no task queue is available")
+        if self.store.get(job.id) is None:
+            raise RuntimeError("job deleted before task intake")
+        submit = self._submit_task
+        if not callable(submit):
+            raise RuntimeError("governed scheduled-task intake is unavailable")
         tier = action.get("risk_tier")
-        task_id = queue.enqueue(
-            agent="jarvis",
-            kind=str(action["kind"]),
-            title=str(action["title"]),
-            payload=dict(action.get("payload") or {}),
-            risk_tier=int(tier) if tier is not None else 3,
-            origin=f"job:{job.id}",
-        )
+        from ..action_origin import bind_action_origin, reset_action_origin
+
+        origin = f"inbound:job:{job.id}"
+        token = bind_action_origin(origin)
+        try:
+            task_id = submit(
+                agent="jarvis",
+                kind=str(action["kind"]),
+                title=str(action["title"]),
+                payload=dict(action.get("payload") or {}),
+                risk_tier=int(tier) if tier is not None else 3,
+                autonomy_level="ask",
+                origin=origin,
+            )
+        finally:
+            reset_action_origin(token)
+        if type(task_id) is not int or task_id <= 0:
+            raise RuntimeError("governed scheduled-task intake returned no task")
         return f"queued task #{task_id} for the autonomy policy to decide"
 
     # quiet hours ------------------------------------------------------------
@@ -1705,6 +1960,8 @@ class JobRunner:
                        urgent: bool = False) -> str:
         """Send *text* to the owner, or hold it through quiet hours; returns a summary
         fragment, raises when it cannot send."""
+        if job is not None and self.store.get(job.id) is None:
+            raise RuntimeError("job deleted before owner delivery")
         if job is not None and "media_ids" in job.action:
             return await self.media.deliver(job, text)
         if job is not None and "deliver" in job.options:

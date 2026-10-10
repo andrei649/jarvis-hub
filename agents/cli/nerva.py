@@ -18,6 +18,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlencode
 
 from .client import HubClient, HubError, HubUnavailable, hub_url
 
@@ -315,6 +316,11 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_create.add_argument("--workdir", help="script-only cwd; requires complete --options with script and no_agent true")
     jobs_create.add_argument("--media-id", action="append", help="opaque artifact ID for an explicit reminder action; repeat up to 8 times")
     jobs_create.add_argument("--options", help='JSON options: repeat, deliver ([] disables delivery); ask jobs accept model/provider pins (configured route only; deterministic compression, no embedding recall)')
+    create_continuity = jobs_create.add_mutually_exclusive_group()
+    create_continuity.add_argument("--continuity", dest="continuity", action="store_true", default=None,
+                                   help="include previous model output on later runs")
+    create_continuity.add_argument("--no-continuity", dest="continuity", action="store_false",
+                                   help="omit previous model output on later runs")
     _selection_flags(jobs_create)
     jobs_edit = jobs_verbs.add_parser("edit", help="change an existing job's name, schedule or action")
     jobs_edit.add_argument("job_id")
@@ -326,22 +332,36 @@ def build_parser() -> argparse.ArgumentParser:
     jobs_edit.add_argument("--workdir", help="script-only cwd; requires complete --options; empty clears the field")
     jobs_edit.add_argument("--media-id", action="append", help="replace reminder attachments; requires --action and explicitly reauthorizes content/owner")
     jobs_edit.add_argument("--options", help="replace advanced options as JSON; model/provider pins use deterministic compression and omit embedding recall")
+    edit_continuity = jobs_edit.add_mutually_exclusive_group()
+    edit_continuity.add_argument("--continuity", dest="continuity", action="store_true", default=None,
+                                 help="include previous model output on later runs")
+    edit_continuity.add_argument("--no-continuity", dest="continuity", action="store_false",
+                                 help="omit previous model output on later runs")
     _selection_flags(jobs_edit)
-    for verb in ("doctor", "incidents", "tick"):
+    for verb in ("doctor", "tick"):
         sub = jobs_verbs.add_parser(verb)
         sub.add_argument("--json", action="store_true")
-    notepad = jobs_verbs.add_parser("notepad", help="read or replace a job's bounded notes")
+    incidents = jobs_verbs.add_parser("incidents", help="list or acknowledge durable job failures")
+    incidents.add_argument("operation", nargs="?", choices=("list", "ack"), default="list")
+    incidents.add_argument("incident_id", nargs="?", type=int)
+    incidents.add_argument("--state", choices=("detected", "alerted", "closed"))
+    incidents.add_argument("--job-id")
+    incidents.add_argument("--limit", type=int)
+    incidents.add_argument("--json", action="store_true")
+    notepad = jobs_verbs.add_parser("notepad", help="read legacy note or manage named job notes")
     notepad.add_argument("job_id")
+    notepad.add_argument("operation", nargs="?", choices=("list", "get", "set", "delete"), default="list")
+    notepad.add_argument("key", nargs="?")
+    notepad.add_argument("value", nargs="?")
     notepad.add_argument("--text", help="replacement text; an empty string clears notes")
     notepad.add_argument("--json", action="store_true")
     for name, help_text in (
         ("status", "job configuration and recent runs"),
-        ("remove", "remove a job and its history"),
+        ("remove", "remove a job but retain its run history"),
         ("pause", "stop a job from firing"),
         ("resume", "let a paused job fire again"),
         ("run", "fire a job now, even if paused"),
-        ("delete", "remove a job and its history"),
-        ("runs", "the last attempts of a job"),
+        ("delete", "remove a job but retain its run history"),
     ):
         sub = jobs_verbs.add_parser(name, help=help_text)
         sub.add_argument("job_id")
@@ -350,6 +370,10 @@ def build_parser() -> argparse.ArgumentParser:
             sub.add_argument("--reason", default="")
         if name == "status":
             sub.add_argument("--request", help="durable manual-run receipt id")
+    runs = jobs_verbs.add_parser("runs", help="recent attempts, including deleted jobs")
+    runs.add_argument("job_id", nargs="?")
+    runs.add_argument("--limit", type=int)
+    runs.add_argument("--json", action="store_true")
 
     todo = verbs.add_parser("todo", help="the checklists the agent keeps while it works")
     todo.add_argument("session", nargs="?", help="one session's plan (else the recent ones)")
@@ -1515,6 +1539,13 @@ def _log_display(value: Any, width: int = 200, *, keep_tail: bool = False) -> st
     return _plain(visible, width, keep_tail=keep_tail)
 
 
+def _job_note_display(value: str) -> str:
+    """Preserve a bounded note's line breaks while removing terminal controls and bidi marks."""
+    visible = re.sub(r"[\u202a-\u202e\u2066-\u2069]", "", value)
+    visible = visible.encode("utf-8", "backslashreplace").decode("utf-8")
+    return "\n".join(_plain(line, len(line) + 1) for line in visible.split("\n"))
+
+
 def _skill_files(raw: str) -> list[Path] | None:
     """The SKILL.md files *raw* names: itself, a skill folder's, or each skill folder's."""
     path = Path(raw)
@@ -1861,19 +1892,98 @@ def _job_cli_options(ns):
             value.pop('enabled_toolsets', None)
         else:
             value['enabled_toolsets'] = [] if ns.toolsets == 'none' else ns.toolsets.split(',')
+    if ns.continuity is not None:
+        value['continuity'] = ns.continuity
     return value
 
 
 def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
-    if ns.action in ("doctor", "incidents", "tick", "status", "notepad"):
+    def machine(payload: Any) -> None:
+        ctx.out.write(json.dumps(payload, indent=2, ensure_ascii=True, default=str) + "\n")
+
+    if ns.action == "incidents":
+        if ns.operation == "ack":
+            if ns.incident_id is None or ns.incident_id <= 0 or ns.state or ns.job_id or ns.limit is not None:
+                ctx.err.write("ack requires one positive incident ID and no list filters\n")
+                return EXIT_USAGE
+            reply = client.post(f"/api/jobs/incidents/{ns.incident_id}/ack", {})
+            if ns.json:
+                machine(reply)
+            else:
+                ctx.say(f"acknowledged incident {ns.incident_id}; job remains unchanged")
+            return EXIT_OK
+        if ns.incident_id is not None or (ns.limit is not None and not 1 <= ns.limit <= 100):
+            ctx.err.write("list accepts filters and a limit from 1 to 100, not an incident ID\n")
+            return EXIT_USAGE
+        params = {key: value for key, value in (("state", ns.state), ("job_id", ns.job_id),
+                                                ("limit", ns.limit)) if value is not None}
+        reply = client.get("/api/jobs/incidents" + ("?" + urlencode(params) if params else ""))
+        if ns.json:
+            machine(reply)
+        else:
+            for row in reply.get("incidents") or []:
+                ctx.say(f"#{row.get('id')}  {_log_display(row.get('state'), 20)}  "
+                        f"{_log_display(row.get('job_id'), 80)}  {_log_display(row.get('safe_error'), 160)}")
+            if not reply.get("incidents"):
+                ctx.say("no incidents")
+        return EXIT_OK
+    if ns.action == "notepad":
+        job_path = f"/api/jobs/{quote(ns.job_id, safe='')}"
+        if ns.text is not None and (ns.operation != "list" or ns.key is not None or ns.value is not None):
+            ctx.err.write("--text replaces the legacy note and cannot be combined with a key operation\n")
+            return EXIT_USAGE
+        if ns.text is not None:
+            reply = client.request("PUT", job_path + "/notepad", {"text": ns.text})
+        else:
+            path = job_path + "/notepad/keys"
+            if ns.operation == "list":
+                if ns.key is not None or ns.value is not None:
+                    ctx.err.write("notepad list takes no key or value\n")
+                    return EXIT_USAGE
+                entries = client.get(path).get("entries") or []
+                legacy = (client.get(job_path).get("job") or {}).get("notepad") or ""
+                reply = {"entries": entries, "notepad": legacy}
+            elif ns.operation == "get":
+                if ns.key is None or ns.value is not None:
+                    ctx.err.write("notepad get requires one key\n")
+                    return EXIT_USAGE
+                reply = client.get(path + "?" + urlencode({"key": ns.key}))
+            elif ns.operation == "set":
+                if ns.key is None or ns.value is None:
+                    ctx.err.write("notepad set requires a key and value\n")
+                    return EXIT_USAGE
+                reply = client.request("PUT", path, {"key": ns.key, "value": ns.value})
+            else:
+                if ns.key is None or ns.value is not None:
+                    ctx.err.write("notepad delete requires one key\n")
+                    return EXIT_USAGE
+                reply = client.request("DELETE", path + "?" + urlencode({"key": ns.key}))
+        if ns.json:
+            machine(reply)
+        elif ns.operation == "list" and ns.text is None:
+            for row in reply["entries"]:
+                ctx.say(f"{_log_display(row.get('key'), 128)}  {_log_display(row.get('value'), 200)}")
+            if reply["notepad"]:
+                ctx.say(f"previous output: {_log_display(reply['notepad'], 200)}")
+            elif not reply["entries"]:
+                ctx.say("no notes")
+        elif ns.operation == "get" and ns.text is None:
+            value = (reply.get("entry") or {}).get("value")
+            if not isinstance(value, str):
+                ctx.err.write("unexpected note reply from hub\n")
+                return EXIT_FAILED
+            shown = _job_note_display(value)
+            ctx.out.write(shown + ("" if shown.endswith("\n") else "\n"))
+        else:
+            ctx.say("note updated" if ns.operation == "set" or ns.text is not None else "note deleted")
+        return EXIT_OK
+    if ns.action in ("doctor", "tick", "status"):
         if ns.action == "tick":
             reply = client.post("/api/jobs/tick", {})
-        elif ns.action == "notepad" and ns.text is not None:
-            reply = client.request("PUT", f"/api/jobs/{ns.job_id}/notepad", {"text":ns.text})
         elif ns.action == "status" and ns.request:
             reply = client.get(f"/api/jobs/{ns.job_id}/requests/{ns.request}")
-        elif ns.action in ("status", "notepad"):
+        elif ns.action == "status":
             reply = client.get(f"/api/jobs/{ns.job_id}")
         else:
             reply = client.get(f"/api/jobs/{ns.action}")
@@ -1909,7 +2019,8 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.action == "create":
         body: dict[str, Any] = {}
         try:
-            if ns.options is not None or ns.workdir is not None or ns.toolsets is not None:
+            if (ns.options is not None or ns.workdir is not None or ns.toolsets is not None
+                    or ns.continuity is not None):
                 body["options"] = _job_cli_options(ns)
             if ns.media_id and ns.blueprint:
                 raise ValueError("--media-id requires an explicit --action reminder, not a blueprint")
@@ -1958,6 +2069,8 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
             except ValueError as exc:
                 ctx.err.write(f"{exc}\n")
                 return EXIT_USAGE
+        elif ns.continuity is not None:
+            body["continuity"] = ns.continuity
         if ns.name:
             body["name"] = ns.name
         if ns.when:
@@ -1988,15 +2101,20 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"edited {job.get('id')}  {job.get('schedule_text')} ({job.get('cron')})  {job.get('name')}")
         return EXIT_OK
     if ns.action == "runs":
-        reply = client.get(f"/api/jobs/{ns.job_id}/runs") or {}
+        if ns.limit is not None and not 1 <= ns.limit <= 100:
+            ctx.err.write("run limit must be 1-100\n")
+            return EXIT_USAGE
+        path = (f"/api/jobs/{quote(ns.job_id, safe='')}/runs" if ns.job_id else "/api/jobs/runs")
+        reply = client.get(path + ("?" + urlencode({"limit": ns.limit}) if ns.limit is not None else "")) or {}
         if ns.json:
-            ctx.dump(reply)
+            machine(reply)
             return EXIT_OK
         runs = reply.get("runs") or []
         if not runs:
             ctx.say("no runs yet")
         for run in runs:
-            ctx.say(f"{run.get('started_at')}  {run.get('status'):7s} {run.get('summary', '')[:100]}")
+            ctx.say(f"{_log_display(run.get('job_id'), 80)}  {_log_display(run.get('started_at'), 40)}  "
+                    f"{_log_display(run.get('status'), 20):7s} {_log_display(run.get('summary'), 100)}")
         return EXIT_OK
     if ns.action in ("delete", "remove"):
         reply = client.request("DELETE", f"/api/jobs/{ns.job_id}") or {}

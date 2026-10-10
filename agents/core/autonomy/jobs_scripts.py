@@ -121,7 +121,8 @@ class ScriptAttempts:
                     conn.rollback()
                     return int(row['id'])
                 claimed = conn.execute("UPDATE jobs SET attempts=attempts+1 WHERE id=? AND "
-                    "(json_extract(options,'$.repeat') IS NULL OR attempts<json_extract(options,'$.repeat'))",
+                    "(json_extract(options,'$.repeat') IS NULL OR attempts<json_extract(options,'$.repeat')) "
+                    "AND (cron NOT LIKE '@at %' OR attempts<1)",
                     (job.id,)).rowcount
                 if not claimed:
                     conn.rollback()
@@ -133,7 +134,9 @@ class ScriptAttempts:
                 live_job = conn.execute('SELECT * FROM jobs WHERE id=?', (job.id,)).fetchone()
                 job = self.store._row_to_job(live_job)
                 data = {'job': {'action': job.action, 'options': job.options, 'notepad': job.notepad,
-                                'name': job.name}, 'origin': f'job-script:{job.id}:{run_id}'}
+                                'name': job.name,
+                                '_frozen_kv': self.store.notepad_kv.snapshot_locked(conn, job.id)},
+                        'origin': f'job-script:{job.id}:{run_id}'}
                 if (job.options.get('monitor_script') or job.options.get('monitor_url')):
                     from .jobs_monitor import generation
                     data['monitor_generation'] = generation(conn, job.id)
@@ -163,10 +166,12 @@ class ScriptAttempts:
 
     def finish(self, row, *, error=None):
         from .jobs import MAX_FAILURES, MAX_RUNS_KEPT, MAX_TEXT, utc_now
+        from .jobs_incidents import safe_diagnostic
         now = utc_now()
         status = 'failed' if error else 'ok'
         reason = row['data'].get('suppressed_reason')
-        summary = str(error or (f'Suppressed: {reason}' if reason else row['data'].get('output', '')))[:MAX_TEXT]
+        summary = (safe_diagnostic(error) if error else
+                   str(f'Suppressed: {reason}' if reason else 'Scheduled script completed')[:MAX_TEXT])
         with self.store._lock:
             conn = self.store._conn
             conn.execute('BEGIN IMMEDIATE')
@@ -185,14 +190,17 @@ class ScriptAttempts:
                 if error:
                     conn.execute('UPDATE jobs SET paused_reason=? WHERE id=? AND consecutive_failures>=?',
                                  ('Scheduled script repeatedly failed', row['job_id'], MAX_FAILURES))
+                    count = conn.execute('SELECT consecutive_failures FROM jobs WHERE id=?',
+                                         (row['job_id'],)).fetchone()
+                    self.store.incidents.observe_failure_locked(
+                        conn, row['job_id'], type(error).__name__ if isinstance(error, Exception)
+                        else 'ScheduledScriptFailure', summary, int(count[0]) if count else 1)
                 if 'notepad' in row['data'] and not error:
                     conn.execute('UPDATE jobs SET notepad=? WHERE id=?', (row['data']['notepad'], row['job_id']))
                 conn.execute('DELETE FROM job_script_attempts WHERE job_id=? AND state IN (\'done\',\'failed\') '
                     'AND id NOT IN (SELECT id FROM job_script_attempts WHERE job_id=? ORDER BY id DESC LIMIT ?)',
                     (row['job_id'], row['job_id'], MAX_RUNS_KEPT))
-                conn.execute('DELETE FROM job_runs WHERE job_id=? AND id!=? AND id NOT IN '
-                    '(SELECT id FROM job_runs WHERE job_id=? AND id!=? ORDER BY id DESC LIMIT ?)',
-                    (row['job_id'], row['id'], row['job_id'], row['id'], MAX_RUNS_KEPT - 1))
+                self.store._prune_run_history_locked(conn, row['job_id'], keep_id=row['id'])
                 conn.commit()
                 return True
             except BaseException:
@@ -209,6 +217,9 @@ class ScriptRuntime:
 
     def finish(self, row, *, error=None):
         from .jobs import MAX_FAILURES
+        from .jobs_incidents import safe_diagnostic
+        if error:
+            error = safe_diagnostic(error, broker=getattr(self.runner._orch, 'secret_broker', None))
         changed = self.attempts.finish(row, error=error)
         job = self.runner.store.get(row['job_id']) if changed else None
         if job is not None:

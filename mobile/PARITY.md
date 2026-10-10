@@ -20,6 +20,13 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
 
+H015 local candidate (2026-10-10): shared admin APIs add incident acknowledgement,
+named job notes, explicit continuity and history after job removal. Native mobile
+administration for these operations remains open; this batch supplies no new
+mobile adapter or native-device acceptance. The existing web Jobs diagnostic and
+legacy notes controls remain. H049 named log reading is host CLI administration.
+See [scheduled-job operations](../docs/automations-operations.md).
+
 H002 local candidate (2026-10-10): JSON chat replies and SSE end events carry an
 additive request-owned generation-usage snapshot. Native clients retain their
 existing chat rendering; no native spend panel is implemented in this batch.

@@ -719,6 +719,14 @@ class AutonomyCoordinator:
             title='Scheduled Python script awaiting this run approval', payload=payload,
             risk_tier=3, autonomy_level='ask', origin=origin)
 
+    def _submit_job_task(self, **kwargs):
+        """An unattended job may propose one ASK task through the live worker only."""
+        worker = getattr(self._orch, 'autonomy', None)
+        enqueue = getattr(worker, 'govern_enqueue', None)
+        if not callable(enqueue):
+            raise RuntimeError('governed scheduled-task intake is unavailable')
+        return enqueue(**kwargs)
+
     def _wire_agent_tool_runtime(self, action_kernel=None):
         """Build the shared, default-off governed tool loop for loaded agents."""
         # Keep imports local: AgentToolRuntime imports ToolRPCServer, while the
@@ -1783,6 +1791,8 @@ class AutonomyCoordinator:
         if callable(getattr(jobs, 'bind_scripts', None)) and queue is not None:
             jobs.bind_scripts(submit=self._submit_job_script, get=queue.get,
                               find=lambda origin: queue.list(origin=origin, limit=2))
+        if callable(getattr(jobs, 'bind_task_intake', None)):
+            jobs.bind_task_intake(submit=self._submit_job_task)
 
         async def _approved_desktop_tool_rpc_execute(task):
             # Publish the durable row for the length of this turn so a gated tool can

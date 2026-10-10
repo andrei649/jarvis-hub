@@ -6,6 +6,13 @@
 > Companion: `HUD_V2_IMPLEMENTATION_PLAN.md`, `HUD_V2_COVERAGE_AND_PLAN.md`. Generated 2026‑06‑05;
 > **re‑audited 2026‑06‑10** (see §10).
 
+H015 local candidate (2026-10-10): admin API/CLI add durable incident acknowledgement,
+named job notes, explicit continuity and historical runs after job removal. The
+current Jobs panel shows incident JSON and retains its legacy note editor. Dedicated
+acknowledgement, KV, continuity and deleted-job history controls remain open; no new
+web control is claimed. See `docs/automations-operations.md`. H049 named log reading
+is a host CLI capability; the existing web Logs selector remains supported.
+
 H002 local candidate (2026-10-10): JSON chat replies and SSE end events add a
 request-owned generation-usage snapshot. Existing HUD chat rendering is retained;
 this batch does not add a spend panel. Atomic usage-file export belongs to the

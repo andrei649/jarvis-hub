@@ -827,6 +827,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/incidents/{incident_id}/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Jobs Incident Ack */
+        post: operations["jobs_incident_ack_api_jobs_incidents__incident_id__ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jobs Runs Recent */
+        get: operations["jobs_runs_recent_api_jobs_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/tick": {
         parameters: {
             query?: never;
@@ -839,6 +873,25 @@ export interface paths {
         /** Jobs Tick */
         post: operations["jobs_tick_api_jobs_tick_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/notepad/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Jobs Notepad Keys */
+        get: operations["jobs_notepad_keys_api_jobs__job_id__notepad_keys_get"];
+        /** Jobs Notepad Key Set */
+        put: operations["jobs_notepad_key_set_api_jobs__job_id__notepad_keys_put"];
+        post?: never;
+        /** Jobs Notepad Key Delete */
+        delete: operations["jobs_notepad_key_delete_api_jobs__job_id__notepad_keys_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -12531,6 +12584,8 @@ export interface components {
             options?: {
                 [key: string]: unknown;
             } | null;
+            /** Continuity */
+            continuity?: boolean | null;
             /**
              * Confirm Expensive
              * @default false
@@ -12546,6 +12601,13 @@ export interface components {
         JobNotepadBody: {
             /** Text */
             text: string;
+        };
+        /** JobNotepadKeyBody */
+        JobNotepadKeyBody: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: string;
         };
         /** JobPauseBody */
         JobPauseBody: {
@@ -15061,7 +15123,11 @@ export interface operations {
     };
     jobs_incidents_api_jobs_incidents_get: {
         parameters: {
-            query?: never;
+            query?: {
+                job_id?: string | null;
+                state?: ("detected" | "alerted" | "closed") | null;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -15075,6 +15141,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_incident_ack_api_jobs_incidents__incident_id__ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incident_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_runs_recent_api_jobs_runs_get: {
+        parameters: {
+            query?: {
+                job_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -15095,6 +15233,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    jobs_notepad_keys_api_jobs__job_id__notepad_keys_get: {
+        parameters: {
+            query?: {
+                key?: string | null;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_notepad_key_set_api_jobs__job_id__notepad_keys_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobNotepadKeyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jobs_notepad_key_delete_api_jobs__job_id__notepad_keys_delete: {
+        parameters: {
+            query: {
+                key: string;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
