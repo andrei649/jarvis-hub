@@ -542,6 +542,9 @@ class Orchestrator:
         self.context_cache: ContextCache | None = None
         self._cache_tasks: set[asyncio.Task] = set()
         self.memory = MemoryManager()
+        from .route_compaction import ManagedAnchorStore
+
+        self._managed_route_anchors = ManagedAnchorStore()
 
         # G38 / ADV-130: lifecycle owners outside this module populate these
         # extension slots. Declare every slot before those writers run so a
@@ -2988,8 +2991,6 @@ class Orchestrator:
                         from .route_compaction import remember_usage
                         remember_usage(self._managed_route_anchors, self.session_id, _agent_id,
                             plan.routes[_agent_id], list(plan.anchor_rows), plan.instance, usage)
-                    else:
-                        self._record_context_anchor(_agent_id, usage)
 
                 with request_scope:
                     from .llm.effective_window import resolve_effective_window
@@ -4606,7 +4607,6 @@ class Orchestrator:
     async def _shared_route_plan(self, agent_ids, text, context, plugin_block, recall_block, runtime_block, *, stream=False):
         from .conversation_clock import render_snapshot
         from .route_compaction import HistoryStage, plan_shared, trusted_anchor
-        from collections import OrderedDict
         from dataclasses import replace
         import json
 
@@ -4627,8 +4627,6 @@ class Orchestrator:
             history = history[:-len(last)-1] if history.endswith("\n" + last) else ("" if history == last else history)
         snapshot = prompt_clock.get()
         instance = snapshot.instance_id if snapshot is not None else ""
-        if not hasattr(self, "_managed_route_anchors"):
-            self._managed_route_anchors = OrderedDict()
         async def build(value):
             prompts = {}
             for aid in agent_ids:
@@ -4799,8 +4797,6 @@ class Orchestrator:
                     from .route_compaction import remember_usage
                     remember_usage(self._managed_route_anchors, self.session_id, agent_id,
                         plan.routes[agent_id], list(plan.anchor_rows), plan.instance, usage)
-                else:
-                    self._record_context_anchor(agent_id, usage)
 
             try:
                 with observer_scope(meter):
