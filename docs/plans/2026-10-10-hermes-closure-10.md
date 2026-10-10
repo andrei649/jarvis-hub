@@ -5,8 +5,10 @@ contract, starting with reproducible flaws; no partial slice earns whole credit.
 Initial base/head: `f925c3d3637fbf09aec2e5a0c568bf42aad0b977`, batch09 frozen source.
 Branch `codex/hermes-closure-10-20261010`. Next action: settle rendered-prefix
 binding from the actual native and frozen donor flows, then red/green regressions.
-Batch09 is independently frozen and running its full suite; no batch10 edits go
-there. Incorporate its final metadata before this batch's integration milestone.
+Batch09 completed at 17f09315 and its metadata is incorporated. The owner now
+requested a published draft checkpoint followed by a pause. This batch's full
+integration milestone and phase 2 implementation are deferred; see the progress
+handoff. The bounded source is preserved at combined head 0719d908.
 Local only: no push, merge, deployment, paid providers or external messages.
 
 ## Contract and diagnosis

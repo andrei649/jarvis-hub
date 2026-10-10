@@ -58,19 +58,19 @@ Single writer review_1233 (gpt-6-sol/high), no delegation. Owned files:
 Existing public interfaces stay `for_speech`, `speechText`, and
 `SpeechStreamFilter.push/flush`. Root owns plan, parity notes, evidence and integration.
 
-- [ ] Add shared cases: exact one-path advisory after Done -> Done; advisory-only
+- [x] Add shared cases: exact one-path advisory after Done -> Done; advisory-only
   -> empty; ten paths plus overflow; Unicode paths; warning variation selector;
   preceding/following prose preserved; incomplete/near-miss header remains spoken.
-- [ ] Add real route footer-only 204 and HUD voice stream test with the marker
+- [x] Add real route footer-only 204 and HUD voice stream test with the marker
   split across deltas. Assert emitted speech excludes the advisory and visible
   source reply remains available; test ordinary warning prose still plays.
-- [ ] Run new regressions before production edits; retain expected failures.
-- [ ] Implement speech-only stripping and bounded stream handling, sharing the
+- [x] Run new regressions before production edits; retain expected failures.
+- [x] Implement speech-only stripping and bounded stream handling, sharing the
   marker logic within TypeScript to avoid divergent whole/stream classification.
-- [ ] Run focused Python H526/tts/emotion/spoken_reply suites; HUD speech-text,
+- [x] Run focused Python H526/tts/emotion/spoken_reply suites; HUD speech-text,
   voice-speech-text and ttsStream suites; Ruff/diff checks. Retain commands,
   results, source hashes and remaining limitations in scratch batch11/report.json.
-- [ ] Root reviews changed code, clause coverage and exact test outputs.
+- [x] Root reviews changed code, clause coverage and exact test outputs.
 
 ## Task 2: complete acceptance checkpoint
 
@@ -84,3 +84,5 @@ after freezing inputs; diagnose failures before any acceptance claim. Update
 generated counts/status and guarded assessment only after whole-contract review.
 No change to the assessment guard or frozen inventory. Rollback is this coherent
 speech-only behavior unit; dependencies are batch09's completed local checkpoint.
+
+Checkpoint results: 170 focused backend and 91 focused HUD cases passed; final combined H526/H673 selection passed 352/352. TypeScript, Ruff, regenerated HUD build and actual built-browser speech/display checks passed. H526 full-backend acceptance remains deferred. Source is saved in the combined progress branch; the owner requested a pause after publishing its draft PR.
