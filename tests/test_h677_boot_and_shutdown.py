@@ -210,6 +210,10 @@ def test_a_turn_served_while_warming_is_marked(monkeypatch, native_checkpoints):
     assert client.post("/chat", json={"message": "hi"}).json()["warming"] is False
     lb.WARMUP.track(asyncio.Future(loop=asyncio.new_event_loop()))
     reply = client.post("/chat", json={"message": "hi"}).json()
+    usage = reply.pop("usage")
+    assert usage["usage_basis"] == usage["cost_basis"] == "measured_zero"
+    assert usage["api_calls"] == 0
+    assert reply.pop("runtime_stops") == []
     assert reply == {"reply": "Salut!", "session_id": "warmup_session",
                      "pending_approvals": [], "warming": True, "notices": [], "outcome": None}
 

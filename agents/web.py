@@ -1128,6 +1128,8 @@ class TurnOutcome(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     session_id: str | None = None
+    usage: dict | None = None
+    runtime_stops: list[str] = []
     # The turn's reply is prose ("…this action requires approval"), which names
     # nothing the client can show, poll or link to. These are the queue ids the
     # turn pushed onto the approval queue — a report, not a grant: every one of
@@ -1271,6 +1273,13 @@ def _selected_turn_outcome(orchestrator, measured: dict | None) -> dict | None:
 async def chat(req: ChatRequest, request: Request):
     if not orch:
         return ChatResponse(reply="Jarvis not initialized.")
+    from agents.core.turn_usage import turn_usage_scope
+    from agents.core.turn_stops import turn_stops_scope
+    with turn_usage_scope() as collector, turn_stops_scope() as stops:
+        return await _chat_with_usage(req, request, collector, stops)
+
+
+async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops):
     from agents.core.foreign_history import http_owner_guard
     await http_owner_guard(orch.checkpoints, req.session_id or getattr(orch, "session_id", None), request)
     # Declared before the try so the failure branch can report it too: a turn that
@@ -1284,7 +1293,8 @@ async def chat(req: ChatRequest, request: Request):
             try:
                 await prepare_session(orch, req.session_id)
             except ContinuationRefused as exc:
-                return JSONResponse({"error": exc.reason}, status_code=exc.status)
+                return JSONResponse({"error": exc.reason, "usage": collector.snapshot(),
+                                     "runtime_stops": stops.snapshot()}, status_code=exc.status)
         from agents.core import code_interruptions
         code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
         # H579: @file:path references in the owner's own message are attached for this turn:
@@ -1321,7 +1331,8 @@ async def chat(req: ChatRequest, request: Request):
             with reasoning_scope(req.reasoning):
                 async with _turn_lease(orch, req.session_id) as acquired:
                     if not acquired:
-                        return ChatResponse(reply=TURN_BUSY_REPLY)
+                        return ChatResponse(reply=TURN_BUSY_REPLY, usage=collector.snapshot(),
+                                            runtime_stops=stops.snapshot())
                     if req.session_id is not None:
                         await prepare_session(orch, req.session_id)
                     from agents.core.routers.chat_pending import http_chat_binding
@@ -1345,12 +1356,15 @@ async def chat(req: ChatRequest, request: Request):
             session_titles.reset_own_words(words_token)
         return ChatResponse(reply=reply, session_id=orch.session_id if isinstance(orch.session_id, str) else None,
                             pending_approvals=queued_approvals, warming=warming, notices=turn_notices,
-                            outcome=_selected_turn_outcome(orch, measured_outcome))
+                            outcome=_selected_turn_outcome(orch, measured_outcome), usage=collector.snapshot(),
+                            runtime_stops=stops.snapshot())
     except Exception:
         # Constant reply — exception text in the client body is an
         # information-exposure pattern; the log line above keeps the specifics.
         logger.exception("chat error")
-        return ChatResponse(reply="Internal error.", pending_approvals=queued_approvals, notices=turn_notices)
+        return ChatResponse(reply="Internal error.", pending_approvals=queued_approvals,
+                            notices=turn_notices, usage=collector.snapshot(),
+                            runtime_stops=stops.snapshot())
 
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
@@ -1381,6 +1395,12 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         return await acknowledged
 
     async def runner():
+        from agents.core.turn_usage import turn_usage_scope
+        from agents.core.turn_stops import turn_stops_scope
+        with turn_usage_scope() as collector, turn_stops_scope() as stops:
+            await run_in_scope(collector, stops)
+
+    async def run_in_scope(collector, stops):
         # The principal is bound inside the task: a ContextVar set on the endpoint would
         # not reliably reach a generator Starlette drives later. The approval collector
         # is bound here for the same reason.
@@ -1401,7 +1421,8 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             session = orch.session_id
             measured = outcome_sink.close()
             await queue.put(("end", (text, session if isinstance(session, str) else None,
-                                     _selected_turn_outcome(orch, measured))))
+                                     _selected_turn_outcome(orch, measured), collector.snapshot(),
+                                     stops.snapshot())))
 
         try:
             with reasoning_scope(reasoning):
@@ -1439,7 +1460,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             # queued before it raised is still sitting on the approval queue.
             queued_approvals[:] = sink
             turn_notices[:] = notices
-            await queue.put(("error", ""))
+            await queue.put(("error", (collector.snapshot(), stops.snapshot())))
         finally:
             outcome_sink.close()
             reset_turn_outcome(outcome_token)
@@ -1465,14 +1486,15 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                 if not acknowledged.done():
                     acknowledged.set_result(True)
             elif kind == "end":
-                full, actual_session, outcome = data
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': full, 'session_id': actual_session, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': outcome})}\n\n"
+                full, actual_session, outcome, usage, stops = data
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': full, 'session_id': actual_session, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': outcome, 'usage': usage, 'runtime_stops': stops})}\n\n"
                 break
             elif kind == "error":
                 # Same shape on the error end event — a client that always reads the
                 # field should never have to special-case the failure branch, and a
                 # turn that queued something before failing still has to name it.
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'session_id': None, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': None})}\n\n"
+                usage, stops = data
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'session_id': None, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': None, 'usage': usage, 'runtime_stops': stops})}\n\n"
                 break
     finally:
         # Runs on normal completion AND on client disconnect (GeneratorExit). Awaiting

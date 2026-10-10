@@ -493,6 +493,8 @@ class AgentToolRuntime:
         # detached at the deadline can never publish a second or late result.
         with suppress(Exception):
             logger.info("tool_loop_exit agent=%r reason=%s", _bounded_identity(agent_id), result.exit_reason.value)
+        from .turn_stops import record_runtime_stop
+        record_runtime_stop(result.exit_reason)
         return result
 
     async def _run_turn(
@@ -570,6 +572,9 @@ class AgentToolRuntime:
         A sink that raises is the meter's problem, not the answer's.
         """
         usage = getattr(turn, "usage", None)
+        if usage is not None:
+            from .turn_usage import record_usage
+            record_usage(usage)
         if usage_sink is None or usage is None:
             return
         complete = getattr(usage, "counts_complete", None)
@@ -775,14 +780,16 @@ class AgentToolRuntime:
             with physical_request_scope(before_model_call):
                 from .approval_outcomes import mark_invocation_outcomes_visible
                 mark_invocation_outcomes_visible(messages)
-                turn = await backend.generate_tool_turn(
-                    model=model,
-                    messages=[{key: value for key, value in row.items() if key != "display_kind"}
-                              for row in messages],
-                    tools=[] if guardian_stopped else tools,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
+                from .turn_usage import model_usage_scope
+                with model_usage_scope(model=model, route=""):
+                    turn = await backend.generate_tool_turn(
+                        model=model,
+                        messages=[{key: value for key, value in row.items() if key != "display_kind"}
+                                  for row in messages],
+                        tools=[] if guardian_stopped else tools,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
             steering.acknowledge()
             self._report_usage(usage_sink, turn)
             if not turn.tool_calls:

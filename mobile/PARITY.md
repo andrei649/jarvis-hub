@@ -20,6 +20,14 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
 
+H002 local candidate (2026-10-10): JSON chat replies and SSE end events carry an
+additive request-owned generation-usage snapshot. Native clients retain their
+existing chat rendering; no native spend panel is implemented in this batch.
+Atomic `--usage-file` export is intentionally a host CLI capability. It counts
+accepted generation attempts and preserves unknown values instead of guessing
+costs. See [CLI receipt semantics](../docs/cli-chat-receipts.md). This is not a
+native-device acceptance claim.
+
 H441 local candidate (2026-10-10): native clients inherit owner-only access to
 imported/derived sessions and suppression from guest session/checklist lists.
 The existing exact-ID resume and recap contract is retained. This batch adds

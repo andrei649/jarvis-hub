@@ -6,6 +6,13 @@
 > Companion: `HUD_V2_IMPLEMENTATION_PLAN.md`, `HUD_V2_COVERAGE_AND_PLAN.md`. Generated 2026‑06‑05;
 > **re‑audited 2026‑06‑10** (see §10).
 
+H002 local candidate (2026-10-10): JSON chat replies and SSE end events add a
+request-owned generation-usage snapshot. Existing HUD chat rendering is retained;
+this batch does not add a spend panel. Atomic usage-file export belongs to the
+host CLI. Generated API types include the additive field and the earlier H441
+resume/import routes. See `docs/cli-chat-receipts.md` for measured, estimated and
+unknown values.
+
 H660 (2026-09-15): session kernels now use detached Docker internally. Existing
 sandbox status/reset controls remain the operator surface; backend status labels
 identify `docker-detached`. Complete Python cell streams use existing tool-result

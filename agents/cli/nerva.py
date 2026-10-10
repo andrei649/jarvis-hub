@@ -2188,9 +2188,9 @@ def _not_an_answer(answer: str) -> str | None:
     exactly the Hermes behaviour this verb exists to invert.
 
     Containment survives the wrapper. It does NOT survive the other synthesis branch,
-    where `jarvis.synthesize` re-writes the text through a model — nothing in a reply
-    string can survive that, which is why the hub reporting `pending_approvals` is the
-    real fix and why this row stays partial until that lands. The trade is deliberate:
+    where `jarvis.synthesize` re-writes the text through a model. The hub's source-assigned
+    ``runtime_stops`` and ``pending_approvals`` fields cover those paths; this table is
+    the fallback for older hubs. The trade is deliberate:
     a model that quotes one of these sentences verbatim makes the verb exit non-zero
     with a stated reason, which is the safe direction to be wrong in.
     """
@@ -2282,10 +2282,9 @@ def _elapsed_ms(started: str, finished: str) -> int | None:
 def _usage_report(**fields: Any) -> dict[str, Any]:
     """The run report, with `null` wherever the value was not actually obtained.
 
-    Never 0 for "unknown": a spend report that prints $0.00 because nobody measured is
-    the exact lie this file exists to avoid. `cost_basis` says which it is, and today it
-    is always "unavailable" — see the H002 row's remainder for why the hub cannot yet
-    attribute one turn's spend.
+    Never 0 for "unknown": a spend report that prints $0.00 because nobody measured
+    is the exact lie this file exists to avoid. A validated server snapshot can fill
+    these fields; a missing or malformed one leaves the original null values.
     """
     report: dict[str, Any] = {
         "schema": "nerva.chat.usage.v1",
@@ -2294,11 +2293,123 @@ def _usage_report(**fields: Any) -> dict[str, Any]:
         "session_id": None, "requested_session_id": None,
         "agent": None, "model": None, "provider": None,
         "api_calls": None, "input_tokens": None, "output_tokens": None,
-        "estimated_cost_usd": None, "cost_basis": "unavailable",
+        "estimated_cost_usd": None, "usage_basis": "unavailable", "cost_basis": "unavailable",
+        "runtime_stops": [],
         "pending_approvals": [], "reason": None,
     }
     report.update(fields)
     return report
+
+
+def _validated_turn_usage(value: Any) -> dict[str, Any] | None:
+    """Copy only the bounded, internally consistent v1 telemetry object.
+
+    The CLI cannot infer spend from prose, a model display name, or a legacy hub.
+    Treat any malformed field as an unavailable snapshot instead of writing a
+    plausible looking partial bill to the atomic receipt.
+    """
+    import math
+
+    if not isinstance(value, dict) or value.get("schema") != "nerva.turn.usage.v1":
+        return None
+    usage_bases = {"measured_zero", "provider_complete", "unknown"}
+    cost_bases = {"measured_zero", "local_zero", "price_table", "unknown"}
+
+    def count(item: Any, limit: int) -> bool:
+        return item is None or (type(item) is int and 0 <= item <= limit)
+
+    def cost(item: Any) -> bool:
+        return item is None or (type(item) in (int, float) and 0 <= item <= 1_000_000_000
+                                and math.isfinite(item))
+
+    def identity(item: Any, limit: int) -> bool:
+        return item is None or (isinstance(item, str) and 0 < len(item) <= limit
+                                and re.fullmatch(r"[A-Za-z0-9._/+:-]+", item) is not None
+                                and "://" not in item)
+
+    def row(item: Any) -> bool:
+        if not isinstance(item, dict):
+            return False
+        if not {"api_calls", "input_tokens", "output_tokens", "estimated_cost_usd",
+                "model", "provider", "usage_basis", "cost_basis"} <= item.keys():
+            return False
+        calls, inp, out = (item.get(key) for key in ("api_calls", "input_tokens", "output_tokens"))
+        amount = item.get("estimated_cost_usd")
+        usage, basis = item.get("usage_basis"), item.get("cost_basis")
+        if not (count(calls, 1_000_000) and count(inp, 1_000_000_000_000)
+                and count(out, 1_000_000_000_000) and cost(amount)
+                and identity(item.get("model"), 120) and identity(item.get("provider"), 64)
+                and isinstance(usage, str) and usage in usage_bases
+                and isinstance(basis, str) and basis in cost_bases):
+            return False
+        if usage == "measured_zero":
+            return (calls == inp == out == 0 and amount == 0 and basis == "measured_zero"
+                    and item.get("model") is None and item.get("provider") is None)
+        if usage == "provider_complete" and (calls is None or calls < 1 or inp is None or out is None):
+            return False
+        if usage == "unknown" and (inp is not None or out is not None):
+            return False
+        if basis == "unknown":
+            return amount is None
+        if basis == "local_zero":
+            return usage == "provider_complete" and amount == 0
+        if basis == "price_table":
+            return usage == "provider_complete" and amount is not None
+        return False
+
+    if not row(value):
+        return None
+    breakdown = value.get("breakdown")
+    if not isinstance(breakdown, list) or len(breakdown) > 16 or not all(row(entry) for entry in breakdown):
+        return None
+    if value.get("usage_basis") == "measured_zero" and breakdown:
+        return None
+    truncated = value.get("breakdown_truncated", False)
+    if type(truncated) is not bool:
+        return None
+    date = value.get("price_verified_at")
+    if (value.get("cost_basis") == "price_table") != (date is not None):
+        return None
+    if date is not None:
+        from datetime import date as calendar_date
+
+        if not isinstance(date, str) or re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) is None:
+            return None
+        try:
+            calendar_date.fromisoformat(date)
+        except ValueError:
+            return None
+    fields = {key: value[key] for key in (
+        "api_calls", "input_tokens", "output_tokens", "estimated_cost_usd",
+        "model", "provider", "usage_basis", "cost_basis",
+    )}
+    fields["breakdown"] = [{key: entry.get(key) for key in (
+        "api_calls", "input_tokens", "output_tokens", "estimated_cost_usd",
+        "model", "provider", "usage_basis", "cost_basis",
+    )} for entry in breakdown]
+    if "breakdown_truncated" in value:
+        fields["breakdown_truncated"] = truncated
+    if date is not None:
+        fields["price_verified_at"] = date
+    return fields
+
+
+# Keep this stdlib-only CLI list aligned with agents.core.turn_stops.STOP_REASONS.
+TURN_STOP_REASONS = frozenset({
+    "window_invalid", "context_refused", "turn_revoked", "replay_refused",
+    "tool_call_limit", "no_capability", "no_tools", "tools_withdrawn",
+    "guardian_denied", "repeated_call", "approval_required", "failing_tool",
+    "iteration_limit", "deadline", "thinking_exhausted", "generation_failed",
+    "generation_refused", "continuation_refused",
+})
+
+
+def _validated_runtime_stops(value: Any) -> list[str] | None:
+    if (not isinstance(value, list) or len(value) > len(TURN_STOP_REASONS)
+            or any(type(reason) is not str or reason not in TURN_STOP_REASONS for reason in value)
+            or value != sorted(set(value))):
+        return None
+    return list(value)
 
 
 def _write_usage(path: str, report: dict[str, Any], ctx: Context) -> None:
@@ -2359,6 +2470,9 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     # A request names intent; only a decoded /chat response can establish the session
     # actually used. The vision branch and every pre-response failure leave this unknown.
     observed_session_id: str | None = None
+    observed_usage: dict[str, Any] | None = None
+    observed_stops: list[str] = []
+    stops_unreadable = False
 
     def finish(code: int, *, status: str, reason: str | None = None,
                pending: list[Any] | None = None, completed: bool | None = None) -> int:
@@ -2377,7 +2491,9 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
                 session_id=observed_session_id,
                 requested_session_id=getattr(ns, "session", None) or None,
                 agent=getattr(ns, "agent", None) or None,
+                runtime_stops=list(observed_stops),
                 pending_approvals=list(pending or []), reason=reason,
+                **(observed_usage or {}),
             ), ctx)
         return code
 
@@ -2464,12 +2580,23 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
         raise
     except HubError as exc:
+        observed_usage = _validated_turn_usage(getattr(exc, "usage", None))
+        if getattr(exc, "runtime_stops", None) is not None:
+            parsed_stops = _validated_runtime_stops(exc.runtime_stops)
+            stops_unreadable = parsed_stops is None
+            observed_stops = parsed_stops or []
         status = "unauthorised" if exc.status in (401, 403) else "failed"
         finish(EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED,
-               status=status, reason=str(exc))
+               status=status, reason=("the hub returned invalid runtime-stop metadata"
+                                      if stops_unreadable else str(exc)))
         raise
 
     if isinstance(reply, dict):
+        observed_usage = _validated_turn_usage(reply.get("usage"))
+        if "runtime_stops" in reply:
+            parsed_stops = _validated_runtime_stops(reply["runtime_stops"])
+            stops_unreadable = parsed_stops is None
+            observed_stops = parsed_stops or []
         returned_session = reply.get("session_id")
         if isinstance(returned_session, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", returned_session):
             observed_session_id = returned_session
@@ -2485,8 +2612,11 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     pending, pending_unreadable = _pending_ids(
         (reply or {}).get("pending_approvals") if isinstance(reply, dict) else None)
     refusal = _not_an_answer(answer)
-    queued = bool(pending or pending_unreadable or (refusal and "approval" in refusal))
-    incomplete = bool(refusal or queued or not answer.strip())
+    queued = bool(pending or pending_unreadable or "approval_required" in observed_stops
+                  or (refusal and "approval" in refusal))
+    incomplete = bool(refusal or queued or not answer.strip() or observed_stops or stops_unreadable)
+    stop_reason = ("the hub returned invalid runtime-stop metadata" if stops_unreadable else
+                   f"model turn stopped: {', '.join(observed_stops)}" if observed_stops else None)
 
     if not oneshot:
         # The interactive shape is unchanged: print whatever came back, exit 0. Scripts
@@ -2497,11 +2627,11 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         else:
             ctx.say(str(raw))
         status = "queued_for_approval" if queued else "refused" if incomplete else "completed"
-        return finish(EXIT_OK, status=status, reason=refusal, pending=pending,
+        return finish(EXIT_OK, status=status, reason=stop_reason or refusal, pending=pending,
                       completed=not incomplete)
 
     if incomplete:
-        reason = refusal or ("the turn queued an action for approval and was not executed"
+        reason = stop_reason or refusal or ("the turn queued an action for approval and was not executed"
                              if queued else "the hub returned an empty answer")
         if pending:
             ids = ", ".join(_plain(i, 40) for i in pending)

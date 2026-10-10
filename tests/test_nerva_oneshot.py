@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import io
 import json
+import urllib.error
 
 import pytest
 
-from agents.cli.client import HubError, HubUnavailable
+from agents.cli.client import HubClient, HubError, HubUnavailable
 from agents.cli.nerva import (
     EXIT_AUTH,
     EXIT_FAILED,
@@ -33,6 +34,13 @@ from agents.cli.nerva import (
 from tests.test_nerva_cli import _FakeHub, _run
 
 ANSWER = {"POST /chat": {"reply": "the roof is fine"}}
+
+
+def test_stdlib_cli_stop_vocabulary_matches_runtime():
+    from agents.cli.nerva import TURN_STOP_REASONS
+    from agents.core.turn_stops import STOP_REASONS
+
+    assert TURN_STOP_REASONS == STOP_REASONS
 
 
 def _posted(hub):
@@ -239,6 +247,114 @@ def test_the_usage_file_never_invents_a_number(tmp_path):
     for key in ("estimated_cost_usd", "input_tokens", "output_tokens", "api_calls", "model", "provider"):
         assert report[key] is None, f"{key} must be null until it can be measured, not 0"
     assert report["cost_basis"] == "unavailable"
+
+
+def test_usage_file_copies_a_valid_attributable_server_snapshot(tmp_path):
+    path = tmp_path / "spend.json"
+    measured = {
+        "schema": "nerva.turn.usage.v1", "api_calls": 1,
+        "input_tokens": 120, "output_tokens": 30,
+        "estimated_cost_usd": 0.00042, "model": "priced-model", "provider": "openai",
+        "usage_basis": "provider_complete", "cost_basis": "price_table",
+        "breakdown": [{"provider": "openai", "model": "priced-model", "api_calls": 1,
+                       "input_tokens": 120, "output_tokens": 30,
+                       "estimated_cost_usd": 0.00042, "usage_basis": "provider_complete",
+                       "cost_basis": "price_table"}],
+        "price_verified_at": "2026-08-18",
+    }
+    code, out, err, _ = _run(["chat", "-z", "--usage-file", str(path), "hi"],
+                             hub=_FakeHub({"POST /chat": {"reply": "done", "session_id": "actual", "usage": measured}}))
+    report = json.loads(path.read_text())
+    assert code == EXIT_OK and out == "done\n" and err == ""
+    for key, value in measured.items():
+        if key != "schema":
+            assert report[key] == value
+    assert report["schema"] == "nerva.chat.usage.v1" and report["session_id"] == "actual"
+
+
+@pytest.mark.parametrize("change", [
+    {"api_calls": True}, {"input_tokens": -1}, {"output_tokens": float("inf")},
+    {"model": "https://example.invalid/private"}, {"breakdown": "bad"},
+    {"usage_basis": "provider_guessed"}, {"estimated_cost_usd": -0.1},
+    {"cost_basis": "local_zero", "estimated_cost_usd": 0.01},
+    {"usage_basis": ["provider_complete"]}, {"cost_basis": {"price_table": True}},
+    {"estimated_cost_usd": 10**1000},
+    {"price_verified_at": "2026-99-99"},
+])
+def test_usage_file_refuses_malformed_server_usage_without_losing_answer(tmp_path, change):
+    path = tmp_path / "spend.json"
+    measured = {"schema": "nerva.turn.usage.v1", "api_calls": 1,
+                "input_tokens": 2, "output_tokens": 3, "estimated_cost_usd": 0.0,
+                "model": "m", "provider": "openai", "usage_basis": "provider_complete",
+                "cost_basis": "price_table", "breakdown": []}
+    measured.update(change)
+    code, out, err, _ = _run(["chat", "-z", "--usage-file", str(path), "hi"],
+                             hub=_FakeHub({"POST /chat": {"reply": "done", "usage": measured}}))
+    report = json.loads(path.read_text())
+    assert code == EXIT_OK and out == "done\n" and err == ""
+    assert report["api_calls"] is None and report["estimated_cost_usd"] is None
+    assert report["cost_basis"] == "unavailable"
+
+
+def test_usage_file_refuses_incomplete_server_shape_without_crashing(tmp_path):
+    path = tmp_path / "spend.json"
+    measured = {"schema": "nerva.turn.usage.v1", "api_calls": 1,
+                "input_tokens": 2, "output_tokens": 3, "estimated_cost_usd": None,
+                "provider": "openai", "usage_basis": "provider_complete",
+                "cost_basis": "unknown", "breakdown": []}
+    code, out, err, _ = _run(["chat", "-z", "--usage-file", str(path), "hi"],
+                             hub=_FakeHub({"POST /chat": {"reply": "done", "usage": measured}}))
+    report = json.loads(path.read_text())
+    assert code == EXIT_OK and out == "done\n" and err == ""
+    assert report["api_calls"] is None and report["model"] is None
+
+
+def test_non_2xx_chat_error_preserves_only_bounded_usage_metadata(tmp_path):
+    from io import BytesIO
+
+    usage = {"schema": "nerva.turn.usage.v1", "api_calls": 1,
+             "input_tokens": None, "output_tokens": None, "estimated_cost_usd": None,
+             "provider": "lm-studio", "model": "local-model", "usage_basis": "unknown",
+             "cost_basis": "unknown", "breakdown": []}
+
+    def opener(request, timeout):
+        body = {"error": "generation failed", "usage": {**usage, "prompt": "private text"}}
+        raise urllib.error.HTTPError(request.full_url, 503, "failed", {},
+                                     BytesIO(json.dumps(body).encode()))
+
+    client = HubClient(opener=opener)
+    with pytest.raises(HubError) as raised:
+        client.post("/chat", {"message": "private text"})
+    assert raised.value.reason == "generation failed"
+    assert raised.value.usage == usage
+    assert "private text" not in repr(raised.value)
+
+    path = tmp_path / "spend.json"
+    code, out, _err, _ = _run(["chat", "-z", "--usage-file", str(path), "hi"],
+                             hub=_FakeHub(raise_with=raised.value))
+    report = json.loads(path.read_text())
+    assert code == EXIT_FAILED and out == ""
+    assert report["api_calls"] == 1 and report["input_tokens"] is None
+    assert report["completed"] is False and report["reason"]
+
+
+@pytest.mark.parametrize("stops,expected", [
+    (["guardian_denied"], "refused"),
+    (["generation_failed"], "refused"),
+    (["approval_required"], "queued_for_approval"),
+    (None, "refused"),
+    (["model_response"], "refused"),
+])
+def test_oneshot_refuses_rephrased_or_malformed_runtime_stops(tmp_path, stops, expected):
+    path = tmp_path / "usage.json"
+    reply = {"reply": "That sounds fine now.", "runtime_stops": stops}
+    code, out, err, _ = _run(["chat", "-z", "--usage-file", str(path), "hi"],
+                             hub=_FakeHub({"POST /chat": reply}))
+    receipt = json.loads(path.read_text())
+    assert code == EXIT_FAILED and out == "" and err
+    assert receipt["completed"] is False and receipt["status"] == expected
+    if stops and stops[0] != "model_response":
+        assert receipt["runtime_stops"] == stops
 
 
 @pytest.mark.parametrize("reply,expected_code,expected_status,interactive", [

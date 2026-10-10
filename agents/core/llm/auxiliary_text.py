@@ -137,8 +137,9 @@ def prepare_local_auxiliary(router, task: str):
         request_check = (_direct_local_request_check(
             router, backend, model, prompt, system, max_tokens, temperature)
                          if task == "soul_description" else None)
+        from agents.core.turn_usage import model_usage_scope
         with auxiliary_request_scope(router, backend, model, role=task,
-                                     request_check=request_check):
+                                     request_check=request_check), model_usage_scope(model=model, route="local"):
             if task == "compression":
                 from agents.core.compaction_hold import DEFAULT_IDLE, stream_summary
 

@@ -36,6 +36,7 @@ from .memory import turn_tools
 from .memory.manager import MemoryManager
 from .checkpoint import CheckpointManager
 from .foreign_history import ForeignHistoryRefused
+from .turn_stops import record_runtime_stop
 from .heartbeat import HeartbeatScheduler
 from .scheduler_service import SchedulerService
 from .autonomy_coordinator import AutonomyCoordinator
@@ -2366,12 +2367,16 @@ class Orchestrator:
                 self._ack_chat_outcomes(reply)
             return reply
         except DataHandlingRefused as exc:
+            record_runtime_stop("generation_refused")
             return exc.reply()
         except CompactionClockRefused:
+            record_runtime_stop("context_refused")
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
+            record_runtime_stop("continuation_refused")
             return CONTINUATION_REFUSED_REPLY
         except ForeignHistoryRefused:
+            record_runtime_stop("continuation_refused")
             return CONTINUATION_REFUSED_REPLY
         finally:
             state = _TURN_CHAT_OUTCOMES.get()
@@ -2531,9 +2536,11 @@ class Orchestrator:
                 responder_id = next(iter(responses))
                 synthesized = responses[responder_id]
         except RuntimeError:
+            record_runtime_stop("generation_failed")
             synthesized = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
             log_error(logger, E_LLM_BACKEND_MISSING, backend="synthesize")
         except Exception as e:
+            record_runtime_stop("generation_failed")
             synthesized = f"I hit an issue processing that: {e}"
             log_error(logger, E_INTERNAL_UNEXPECTED, component="synthesize", detail=str(e))
         t_synthesize = int((time.perf_counter() - t_s0) * 1000)
@@ -2581,12 +2588,16 @@ class Orchestrator:
                 self._ack_chat_outcomes(reply)
             return reply
         except DataHandlingRefused as exc:
+            record_runtime_stop("generation_refused")
             return exc.reply()
         except CompactionClockRefused:
+            record_runtime_stop("context_refused")
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
+            record_runtime_stop("continuation_refused")
             return CONTINUATION_REFUSED_REPLY
         except ForeignHistoryRefused:
+            record_runtime_stop("continuation_refused")
             return CONTINUATION_REFUSED_REPLY
         finally:
             state = _TURN_CHAT_OUTCOMES.get()
@@ -2925,6 +2936,7 @@ class Orchestrator:
                                 )
                         request_scope = backend.request_scope(request_binding)
                 except LocalBackendUnavailableError:
+                    record_runtime_stop("generation_failed")
                     msg = LOCAL_SELECTION_UNAVAILABLE_REPLY
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream-local")
                     if on_token:
@@ -2933,6 +2945,7 @@ class Orchestrator:
                             await emitted
                     return msg
                 except DataHandlingRefused as exc:
+                    record_runtime_stop("generation_refused")
                     msg = exc.reply()
                     if on_token:
                         emitted = on_token(msg)
@@ -2942,6 +2955,7 @@ class Orchestrator:
                 except CompactionClockRefused:
                     raise
                 except RuntimeError:
+                    record_runtime_stop("generation_failed")
                     msg = "I'm sorry, sir — my language backend is not available. Please start Ollama or LM Studio and try again."
                     log_error(logger, E_LLM_BACKEND_MISSING, backend="stream")
                     if on_token:
@@ -2975,22 +2989,24 @@ class Orchestrator:
                         prepared.check(self.llm_router, agent_id, prepared.prompt, self.session_id)
                     effective_window = prepared.window if prepared is not None else resolve_effective_window(backend, model)
                     guarded_backend = bind_guardrails(self.security, backend)
-                    response = await agent.generate_response(
-                        backend=guarded_backend,
-                        effective_window=effective_window,
-                        model=model,
-                        prompt=prompt,
-                        system=system_prompt,
-                        max_tokens=eff_max_tokens,
-                        temperature=temperature,
-                        on_token=on_token,
-                        wall_seconds=wall_seconds,
-                        usage_sink=_meter,
-                        session_id=self.session_id,
-                        clock_snapshot=prompt_clock.get(),
-                        **({"prepared_route": prepared, "cached_input_tokens": cached_tok}
-                           if prepared is not None else {}),
-                    )
+                    from .turn_usage import model_usage_scope
+                    with model_usage_scope(model=model, route=route_name):
+                        response = await agent.generate_response(
+                            backend=guarded_backend,
+                            effective_window=effective_window,
+                            model=model,
+                            prompt=prompt,
+                            system=system_prompt,
+                            max_tokens=eff_max_tokens,
+                            temperature=temperature,
+                            on_token=on_token,
+                            wall_seconds=wall_seconds,
+                            usage_sink=_meter,
+                            session_id=self.session_id,
+                            clock_snapshot=prompt_clock.get(),
+                            **({"prepared_route": prepared, "cached_input_tokens": cached_tok}
+                               if prepared is not None else {}),
+                        )
                 synthesized = response
                 self._last_routes[agent_id] = route_name or ""
                 # `model` is the id handed to generate_response a few lines up, so this
@@ -3373,7 +3389,9 @@ class Orchestrator:
             tasks = self._title_tasks = set()
         for manager, session, text, generate in pending:
             try:
-                task = asyncio.create_task(self._upgrade_session_title(manager, session, text, generate))
+                from .turn_usage import detached_turn_usage
+                with detached_turn_usage():
+                    task = asyncio.create_task(self._upgrade_session_title(manager, session, text, generate))
             except RuntimeError:            # no running loop: no upgrade, the instant title stays
                 return
             tasks.add(task)
@@ -3927,7 +3945,9 @@ class Orchestrator:
             if not ok:
                 logger.debug("background review skipped (%s)", reason)
                 return
-            task = asyncio.create_task(self._background_review_task(text, synthesized))
+            from .turn_usage import detached_turn_usage
+            with detached_turn_usage():
+                task = asyncio.create_task(self._background_review_task(text, synthesized))
             task.add_done_callback(_log_task_result)
         except Exception:
             logger.debug("background review spawn skipped", exc_info=True)
@@ -4786,6 +4806,7 @@ class Orchestrator:
                 # task, not the turn's (Hermes absorption 5a).
                 return agent_id, resp, self.agents[agent_id].last_latency, current_action_origin()
             except asyncio.TimeoutError:
+                record_runtime_stop("deadline")
                 self.agents[agent_id]._record_failure("timeout")
                 log_error(logger, E_LLM_TIMEOUT, timeout=int(seconds), floor=floor)
                 if floor == TIMEOUT_FLOOR_REASONING:
@@ -4794,8 +4815,10 @@ class Orchestrator:
                     reply = f"[{agent_id} timeout]"
                 return agent_id, reply, 0.0, current_action_origin()
             except CompactionClockRefused:
+                record_runtime_stop("context_refused")
                 return agent_id, CONTEXT_REFUSED_REPLY, 0.0, current_action_origin()
             except Exception as e:
+                record_runtime_stop("generation_failed")
                 self.agents[agent_id]._record_failure(str(e))
                 log_error(logger, E_INTERNAL_UNEXPECTED, component=f"agent:{agent_id}", detail=str(e))
                 # First-run UX: "no model loaded" is the single most common failure,
@@ -5118,7 +5141,9 @@ class Orchestrator:
                     )
 
     def _spawn_cache_task(self, coroutine, *, session_id: str) -> None:
-        task = asyncio.create_task(coroutine, name=f"gemini-cache:{session_id}")
+        from .turn_usage import detached_turn_usage
+        with detached_turn_usage():
+            task = asyncio.create_task(coroutine, name=f"gemini-cache:{session_id}")
         cache_tasks = getattr(self, "_cache_tasks", None)
         if cache_tasks is None:
             cache_tasks = self._cache_tasks = set()

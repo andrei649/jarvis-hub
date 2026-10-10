@@ -3172,9 +3172,9 @@ export interface paths {
         /**
          * Switch Skill
          * @description H329 — switch one skill, or every skill of a category, on or off: everywhere, or
-         *     on one channel. Nothing is uninstalled. Off is always allowed and recorded when it
-         *     can be; on widens what the hub does, so it is refused unless the intent log records
-         *     it. An essential skill is never switched off.
+         *     on one channel. Nothing is uninstalled. Off applies at once; on creates an
+         *     exact once-scoped human approval task and stays pending until its worker runs.
+         *     An essential skill is never switched off.
          */
         post: operations["switch_skill_api_skills_switch_post"];
         delete?: never;
@@ -9963,6 +9963,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Session
+         * @description Select and recap without changing the shared active/default session.
+         */
+        post: operations["resolve_session_sessions_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Session
+         * @description Accept owner-attested, canonical text only; SQLite owns the durable seed.
+         */
+        post: operations["import_session_sessions_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions": {
         parameters: {
             query?: never;
@@ -11844,6 +11884,15 @@ export interface components {
             reply: string;
             /** Session Id */
             session_id?: string | null;
+            /** Usage */
+            usage?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Runtime Stops
+             * @default []
+             */
+            runtime_stops: string[];
             /**
              * Pending Approvals
              * @default []
@@ -12403,6 +12452,24 @@ export interface components {
              * @default false
              */
             switch: boolean;
+        };
+        /** ImportSessionRequest */
+        ImportSessionRequest: {
+            /** Source */
+            source: string;
+            /** External Id */
+            external_id: string;
+            /** Turns */
+            turns: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Source Sha256 */
+            source_sha256?: string | null;
         };
         /** InstallSkillBody */
         InstallSkillBody: {
@@ -13114,6 +13181,16 @@ export interface components {
              * @default
              */
             memo: string;
+        };
+        /** ResolveSessionRequest */
+        ResolveSessionRequest: {
+            /** Selector */
+            selector: string;
+            /**
+             * Latest Mode
+             * @default false
+             */
+            latest_mode: boolean;
         };
         /** ReviewBody */
         ReviewBody: {
@@ -28783,6 +28860,72 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ExtensionActivateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_session_sessions_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_session_sessions_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportSessionRequest"];
             };
         };
         responses: {
