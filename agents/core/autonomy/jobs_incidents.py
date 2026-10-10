@@ -82,7 +82,7 @@ class JobIncidents:
         if state is not None:
             where.append("state=?")
             args.append(state)
-        sql = "SELECT * FROM job_incidents" + (" WHERE " + " AND ".join(where) if where else "")
+        sql = "SELECT * FROM job_incidents" + (" WHERE " + " AND ".join(where) if where else "")  # nosec B608 - clauses are fixed literals; values bound
         with self.store._lock:
             rows = self.store._conn.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, limit)).fetchall()
         return [_view(row) for row in rows]

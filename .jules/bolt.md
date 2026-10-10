@@ -31,3 +31,7 @@
 ## 2026-04-07 - High-Frequency SVG Animation Tick Allocation Overhead in NetworkBrain
 **Learning:** In high-frequency animated SVG components (e.g. `NetworkBrain` in `frontend/src/network.tsx` updating on a 60ms interval timer), defining path generation functions or path string computation `useMemo` hooks inside the component body creates function closures and re-evaluations on every tick. Chaining `.filter().map()` calls inside tick-driven `useMemo` hooks allocates multiple intermediate arrays on every animation tick.
 **Action:** Move static geometry generators outside component scope as module-level constants and use single-pass indexed `for` loops in tick-driven `useMemo` hooks to avoid per-tick heap allocations.
+
+## 2026-04-08 - Per-frame Template String Allocation in Canvas Label Rendering
+**Learning:** In Canvas 2D components (`NeuralBurst` in `frontend/src/burst.tsx`), constructing sub-line label template strings inside `draw()` on every 60 FPS frame allocates strings (~3,600 allocations/min) even when cluster data has not changed.
+**Action:** Cache component numerical/state inputs (`_nodes`, `_firing`, `_tasks`) on the cluster state ref and only re-construct template strings and re-measure text when underlying state changes.

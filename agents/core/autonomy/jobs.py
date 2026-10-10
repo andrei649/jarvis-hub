@@ -1025,7 +1025,7 @@ class JobStore:
                         fields[key] = json.dumps(fields[key], ensure_ascii=False)
                 fields["updated_at"] = utc_now()
                 assignment = ", ".join(f"{key}=?" for key in fields)
-                conn.execute(f"UPDATE jobs SET {assignment} WHERE id=?", (*fields.values(), job_id))
+                conn.execute(f"UPDATE jobs SET {assignment} WHERE id=?", (*fields.values(), job_id))  # nosec B608 - keys are literals set above; values bound
                 if schedule_text is not None and is_one_shot(cron) and cron != current.cron:
                     # The new one-shot time is a new chance, in this same edit transaction.
                     conn.execute("UPDATE jobs SET attempts=0 WHERE id=?", (job_id,))
@@ -1101,11 +1101,11 @@ class JobStore:
         global_limit = MAX_GLOBAL_RUNS_KEPT - (keep_id is not None)
         conn.execute(f"""DELETE FROM job_runs WHERE job_id=? AND {terminal} AND NOT ({protected})
             {keep} AND id NOT IN (SELECT id FROM job_runs WHERE job_id=? {keep}
-                                  ORDER BY id DESC LIMIT ?)""",
+                                  ORDER BY id DESC LIMIT ?)""",  # nosec B608 - fragments are fixed literals; values bound
             (job_id, *keep_args, job_id, *keep_args, per_job_limit))
         conn.execute(f"""DELETE FROM job_runs WHERE {terminal} AND NOT ({protected})
             {keep} AND id NOT IN (SELECT id FROM job_runs WHERE {terminal} {keep}
-                                  ORDER BY id DESC LIMIT ?)""",
+                                  ORDER BY id DESC LIMIT ?)""",  # nosec B608 - fragments are fixed literals; values bound
             (*keep_args, *keep_args, global_limit))
 
     def record_failure(self, job_id: str, *, started_at: str, finished_at: str,
