@@ -215,12 +215,15 @@ def test_a_profile_without_a_home_sits_beside_the_default_root(monkeypatch):
     assert paths.data_root() == paths._REPO_ROOT / "memory_logs-profiles" / "work"
 
 
-def test_two_profiles_have_two_ids(tmp_path, monkeypatch):
+def test_two_profiles_share_one_install_id(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("JARVIS_PROFILE", "one")
     one = ii.install_id()
     monkeypatch.setenv("JARVIS_PROFILE", "two")
-    assert ii.install_id() != one
+    assert ii.install_id() == one
+    assert (tmp_path / "home" / "install_id").read_text().strip() == one
+    assert not (tmp_path / "home-profiles" / "one" / "install_id").exists()
+    assert not (tmp_path / "home-profiles" / "two" / "install_id").exists()
 
 
 def test_the_secret_store_resolves_under_the_profile_root(tmp_path):
@@ -274,8 +277,9 @@ def test_a_node_grant_is_scoped_to_this_install(monkeypatch):
     assert issued[0]["source"] == f"node:pi@{'b' * 32}" and issued[0]["task_id"] == "pi"
     assert mesh._nodes["pi"]["hub_id"] == "b" * 32 and rec["token_issued"] is True
     monkeypatch.setattr(ii, "install_id", lambda root=None: None)
-    mesh.register_node("pi2", ["camera"])
-    assert issued[1]["source"] == "node:pi2" and mesh._nodes["pi2"]["hub_id"] == ""
+    with pytest.raises(ii.InstallIdentityUnavailable):
+        mesh.register_node("pi2", ["camera"])
+    assert len(issued) == 1 and "pi2" not in mesh._nodes
 
 
 def test_a_deeplink_minted_by_another_install_is_refused(tmp_path, monkeypatch):
@@ -293,14 +297,20 @@ def test_a_deeplink_minted_by_another_install_is_refused(tmp_path, monkeypatch):
     assert store.redeem_deeplink(again["token"], "telegram", "u1", now=3.0)["ok"] is True
 
 
-def test_a_deeplink_without_an_install_id_still_works(tmp_path, monkeypatch):
+def test_a_deeplink_without_an_install_id_is_refused(tmp_path, monkeypatch):
     from agents.core.channels.pairing import SenderPairing as PairingStore
+    from agents.core.channels.pairing import _hash_secret
 
     monkeypatch.setattr(ii, "install_id", lambda root=None: None)
     store = PairingStore(tmp_path / "pairing.json")
-    minted = store.mint_deeplink("telegram", now=0.0)
+    with pytest.raises(ii.InstallIdentityUnavailable):
+        store.mint_deeplink("telegram", now=0.0)
+    assert store.outstanding_deeplinks(now=0.0) == 0
+    # A legacy unbound link cannot be carried into a different install.
+    store._deeplinks["old"] = {"channel": "telegram", "hub": "", "created_at": 0.0,
+                               "expires_at": 60.0, **_hash_secret("legacy")}
     monkeypatch.setattr(ii, "install_id", lambda root=None: "e" * 32)
-    assert store.redeem_deeplink(minted["token"], "telegram", "u1", now=1.0)["ok"] is True
+    assert store.redeem_deeplink("legacy", "telegram", "u1", now=1.0)["ok"] is False
 
 
 def _pairing(hub_id=""):
@@ -473,13 +483,14 @@ def test_a_refused_hub_that_cannot_read_the_pid_is_still_refused(tmp_path, monke
     """F6: the refusal is HubAlreadyRunning even when the pid cannot be read, and the
     handle is closed."""
     opened = []
+    real_open = ii._open_hub_lock
 
-    def locked_open(*args, **kwargs):
-        opened.append(open(*args, **kwargs))  # noqa: SIM115 - closed by the code under test
+    def locked_open(path):
+        opened.append(real_open(path))  # noqa: SIM115 - closed by the code under test
         return _LockedRead(opened[-1])
 
     monkeypatch.setattr(ii, "_file_lock", lambda handle, blocking: (_ for _ in ()).throw(OSError("held")))
-    monkeypatch.setattr(ii, "open", locked_open, raising=False)
+    monkeypatch.setattr(ii, "_open_hub_lock", locked_open)
     with pytest.raises(ii.HubAlreadyRunning) as err:
         ii.acquire_hub_lock(tmp_path)
     assert err.value.pid == "" and opened[0].closed
