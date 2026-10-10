@@ -86,7 +86,11 @@ def governed(tmp_path, monkeypatch):
     worker.executor = executor.execute
     ledger = orch.permission_ledger
     assert isinstance(ledger, PermissionLedger)
-    assert executor.resolve("permission.grant") == ledger.apply_grant
+    # H329 routes skill switches through their bound approval handler. Ordinary
+    # grants still reach this ledger; the tests below prove the signed worker
+    # path and durable grant instead of requiring one function object identity.
+    handler = executor.resolve("permission.grant")
+    assert callable(handler) and handler is not executor.fallback
     consent = SessionCommandConsent(ledger, worker.govern_enqueue)
     try:
         yield consent, ledger, queue, worker, executor, kill, kernel_calls
