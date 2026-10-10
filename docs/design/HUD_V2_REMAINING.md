@@ -6,6 +6,12 @@
 > Companion: `HUD_V2_IMPLEMENTATION_PLAN.md`, `HUD_V2_COVERAGE_AND_PLAN.md`. Generated 2026‑06‑05;
 > **re‑audited 2026‑06‑10** (see §10).
 
+H453/H454 local candidate (2026-10-10): CLI/admin API can configure cross-job
+`context_from`; complete safe script stdout is separate from bounded history and
+context excerpts. Dedicated web source selection, latest-output inspection and
+continuity controls remain open. Existing diagnostics and legacy note editing do
+not constitute those controls. See `docs/automations-operations.md`.
+
 H015 local candidate (2026-10-10): admin API/CLI add durable incident acknowledgement,
 named job notes, explicit continuity and historical runs after job removal. The
 current Jobs panel shows incident JSON and retains its legacy note editor. Dedicated

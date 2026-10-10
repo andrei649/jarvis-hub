@@ -321,6 +321,8 @@ def build_parser() -> argparse.ArgumentParser:
                                    help="include previous model output on later runs")
     create_continuity.add_argument("--no-continuity", dest="continuity", action="store_false",
                                    help="omit previous model output on later runs")
+    jobs_create.add_argument("--context-from", action="append", metavar="ID",
+                             help="include the latest eligible output of this job; repeat for up to eight IDs or self")
     _selection_flags(jobs_create)
     jobs_edit = jobs_verbs.add_parser("edit", help="change an existing job's name, schedule or action")
     jobs_edit.add_argument("job_id")
@@ -337,6 +339,11 @@ def build_parser() -> argparse.ArgumentParser:
                                  help="include previous model output on later runs")
     edit_continuity.add_argument("--no-continuity", dest="continuity", action="store_false",
                                  help="omit previous model output on later runs")
+    edit_context = jobs_edit.add_mutually_exclusive_group()
+    edit_context.add_argument("--context-from", action="append", metavar="ID",
+                              help="replace external context sources; repeat for up to eight IDs or self")
+    edit_context.add_argument("--clear-context-from", action="store_true",
+                              help="clear external context sources without replacing other options")
     _selection_flags(jobs_edit)
     for verb in ("doctor", "tick"):
         sub = jobs_verbs.add_parser(verb)
@@ -1894,6 +1901,10 @@ def _job_cli_options(ns):
             value['enabled_toolsets'] = [] if ns.toolsets == 'none' else ns.toolsets.split(',')
     if ns.continuity is not None:
         value['continuity'] = ns.continuity
+    if getattr(ns, 'clear_context_from', False):
+        value['context_from'] = []
+    elif ns.context_from is not None:
+        value['context_from'] = ns.context_from
     return value
 
 
@@ -2020,7 +2031,7 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         body: dict[str, Any] = {}
         try:
             if (ns.options is not None or ns.workdir is not None or ns.toolsets is not None
-                    or ns.continuity is not None):
+                    or ns.continuity is not None or ns.context_from is not None):
                 body["options"] = _job_cli_options(ns)
             if ns.media_id and ns.blueprint:
                 raise ValueError("--media-id requires an explicit --action reminder, not a blueprint")
@@ -2069,8 +2080,13 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
             except ValueError as exc:
                 ctx.err.write(f"{exc}\n")
                 return EXIT_USAGE
-        elif ns.continuity is not None:
-            body["continuity"] = ns.continuity
+        else:
+            if ns.continuity is not None:
+                body["continuity"] = ns.continuity
+            if ns.context_from is not None:
+                body["context_from"] = ns.context_from
+            elif ns.clear_context_from:
+                body["context_from"] = []
         if ns.name:
             body["name"] = ns.name
         if ns.when:

@@ -12586,6 +12586,8 @@ export interface components {
             } | null;
             /** Continuity */
             continuity?: boolean | null;
+            /** Context From */
+            context_from?: string | string[] | null;
             /**
              * Confirm Expensive
              * @default false

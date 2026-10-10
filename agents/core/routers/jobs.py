@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
@@ -47,6 +47,7 @@ class JobEditBody(BaseModel):
     action: dict[str, Any] | None = None
     options: dict[str, Any] | None = None
     continuity: StrictBool | None = None
+    context_from: StrictStr | list[StrictStr] | None = None
     confirm_expensive: StrictBool = False
     acknowledge_training: StrictBool = False
 
@@ -289,8 +290,8 @@ async def jobs_edit(job_id: str, body: JobEditBody):
     runner = _runner()
     if runner is None:
         return _unavailable()
-    if body.continuity is not None and body.options is not None:
-        return _refused("continuity and options cannot be edited together")
+    if body.options is not None and (body.continuity is not None or body.context_from is not None):
+        return _refused("additive continuity/context_from and replacement options cannot be edited together")
     if body.options is not None:
         current = runner.store.get(job_id)
         guarded = await _guard_pin(body.options, body, getattr(current, "options", None))
@@ -299,7 +300,7 @@ async def jobs_edit(job_id: str, body: JobEditBody):
     try:
         job = runner.edit(
             job_id, name=body.name, schedule_text=body.schedule_text, action=body.action,
-            options=body.options, continuity=body.continuity,
+            options=body.options, continuity=body.continuity, context_from=body.context_from,
         )
     except KeyError:
         return JSONResponse({"error": "no such job"}, status_code=404)

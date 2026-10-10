@@ -110,7 +110,7 @@ def inspect_jobs(runner) -> dict:
             "held": runner.store.held_count(), "quiet_hours": runner.quiet_hours(),
         },
         "channels": channels, "problems": problems,
-        "supported_options": ["repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets", "continuity"],
+        "supported_options": ["repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets", "continuity", "context_from"],
         "model_pin_contract": "Configured providers only; cloud must match policy route. Changed local models require loaded context metadata; other changes require known windows. Current defaults retain existing window estimates; completion caps at 25%. Recent conversation and agent context remain; compression is deterministic and embedding recall is omitted.",
         "script_contract": "Bounded Python, fresh approval each run; no shell. Optional approved workdir only with script and no_agent true; no model workspace context",
         "toolsets": catalog(server),

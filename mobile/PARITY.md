@@ -20,6 +20,12 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
 
+H453/H454 local candidate (2026-10-10): scheduled scripts distinguish complete
+safe stdout from bounded summaries; CLI/admin API author cross-job `context_from`
+alongside own-output continuity. Native mobile source selection, output inspection
+and dedicated continuity controls remain open. No mobile adapter or native-device
+acceptance is added. See [job context](../docs/automations-operations.md).
+
 H015 local candidate (2026-10-10): shared admin APIs add incident acknowledgement,
 named job notes, explicit continuity and history after job removal. Native mobile
 administration for these operations remains open; this batch supplies no new

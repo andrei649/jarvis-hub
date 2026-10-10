@@ -129,6 +129,8 @@ class Job:
     attempts: int = 0
     last_delivery_status: str | None = None
     _frozen_kv: list[dict] | None = field(default=None, compare=False, repr=False)
+    _frozen_context: list[dict] | None = field(default=None, compare=False, repr=False)
+    _frozen_self_output: dict | None = field(default=None, compare=False, repr=False)
 
     @property
     def runnable(self) -> bool:
@@ -435,7 +437,7 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         raise ValueError("options must be an object")
     from ..llm.job_selection import validate_pins
     validate_pins(options)
-    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets", "continuity"}
+    unknown = set(options) - {"repeat", "deliver", "script", "no_agent", "monitor_script", "monitor_url", "model", "provider", "workdir", "enabled_toolsets", "continuity", "context_from"}
     if unknown:
         raise ValueError(f"unsupported job options: {', '.join(sorted(unknown))}")
     if 'enabled_toolsets' in options:
@@ -458,6 +460,10 @@ def validate_options(options: Any, *, check_scripts: bool = True, url_screen=Non
         raise ValueError('no_agent must be true or false')
     if 'continuity' in options and type(options['continuity']) is not bool:
         raise ValueError('continuity must be true or false')
+    if 'context_from' in options:
+        from .jobs_outputs import context_ids
+
+        options = {**options, 'context_from': context_ids(options['context_from'])}
     if options.get('no_agent') and not options.get('script'):
         raise ValueError('no_agent requires a script')
     if options.get('monitor_script') and (options.get('script') or options.get('no_agent')):
@@ -786,8 +792,10 @@ class JobStore:
         self.dispatch = ManualDispatch(self)
         from .jobs_incidents import JobIncidents
         from .jobs_notepad import JobNotepadKV
+        from .jobs_outputs import JobOutputs
         self.incidents = JobIncidents(self)
         self.notepad_kv = JobNotepadKV(self)
+        self.outputs = JobOutputs(self)
         with self._lock:
             self._conn.execute("""CREATE TABLE IF NOT EXISTS job_direct_attempts (
                 run_id INTEGER PRIMARY KEY, job_id TEXT NOT NULL)""")
@@ -943,6 +951,7 @@ class JobStore:
         action: Mapping[str, Any] | None = None,
         options: dict | None = None,
         continuity: bool | None = None,
+        context_from: str | list[str] | None = None,
     ) -> Job:
         """Change what an existing job *is*, under the same rules that created it.
 
@@ -959,9 +968,9 @@ class JobStore:
         """
         if continuity is not None and type(continuity) is not bool:
             raise ValueError("continuity must be true or false")
-        if continuity is not None and options is not None:
-            raise ValueError("continuity and replacement options cannot be combined")
-        if all(value is None for value in (name, schedule_text, action, options, continuity)):
+        if options is not None and (continuity is not None or context_from is not None):
+            raise ValueError("additive continuity or context_from and replacement options cannot be combined")
+        if all(value is None for value in (name, schedule_text, action, options, continuity, context_from)):
             raise ValueError("an edit needs a name, a schedule or an action")
 
         with self._lock:
@@ -974,8 +983,12 @@ class JobStore:
                 current = self._row_to_job(row)
                 fields: dict[str, Any] = {}
                 proposed_options = options
-                if continuity is not None:
-                    proposed_options = {**current.options, "continuity": continuity}
+                if continuity is not None or context_from is not None:
+                    proposed_options = dict(current.options)
+                    if continuity is not None:
+                        proposed_options["continuity"] = continuity
+                    if context_from is not None:
+                        proposed_options["context_from"] = context_from
                 if proposed_options is not None:
                     fields["options"] = validate_options(
                         proposed_options, url_screen=getattr(self, "url_screen", None))
@@ -1055,6 +1068,7 @@ class JobStore:
                 self._conn.execute("BEGIN IMMEDIATE")
                 # A historical run and incident remain inspectable after configuration removal.
                 cursor = self._conn.execute("DELETE FROM jobs WHERE id = ?", (str(job_id),))
+                self._conn.execute("DELETE FROM job_latest_outputs WHERE job_id = ?", (str(job_id),))
                 self._conn.execute("DELETE FROM job_notepad_kv WHERE job_id = ?", (str(job_id),))
                 self._conn.execute("DELETE FROM job_held WHERE job_id = ?", (str(job_id),))
                 self._conn.execute("DELETE FROM job_ticks WHERE job_id = ?", (str(job_id),))
@@ -1147,7 +1161,9 @@ class JobStore:
 
     def finish_direct_run(self, run_id: int, job_id: str, *, status: str,
                           summary: str = "", notepad: str | None = None,
-                          error_code: str = "", broker=None) -> tuple[JobRun, int]:
+                          error_code: str = "", broker=None,
+                          publish_content: str | None = None,
+                          expected_created_at: str | None = None) -> tuple[JobRun, int]:
         """CAS the one pending row into its terminal outcome and incident."""
         from .jobs_incidents import safe_diagnostic
 
@@ -1186,6 +1202,9 @@ class JobStore:
                         consecutive_failures=0,notepad=COALESCE(?,notepad),updated_at=? WHERE id=?""",
                         (finished, status, summary, notepad[:MAX_NOTEPAD] if notepad is not None else None,
                          finished, job_id))
+                    if publish_content is not None and expected_created_at is not None:
+                        self.outputs._publish_locked(conn, job_id, run_id, publish_content,
+                                                     finished, expected_created_at)
                 else:
                     conn.execute("""UPDATE jobs SET last_run_at=?,last_status=?,last_summary=?,updated_at=?
                         WHERE id=?""", (finished, status, summary, finished, job_id))
@@ -1733,8 +1752,14 @@ class JobRunner:
                                          summary=ONE_SHOT_SPENT if is_one_shot(job.cron)
                                          else "repeat limit exhausted")
         from .jobs_gates import JobSuppressed
+        candidate: str | None = None
+
+        def publish(value: str) -> None:
+            nonlocal candidate
+            candidate = value
+
         try:
-            summary, notepad = await self._execute(job)
+            summary, notepad = await self._execute(job, publish_candidate=publish)
         except JobSuppressed as suppressed:
             summary, notepad = f"Suppressed: {suppressed.reason}", suppressed.notepad
         except Exception as exc:
@@ -1743,7 +1768,9 @@ class JobRunner:
             self.store.finish_direct_run(pending.id, job.id, status="unknown")
             raise
         run, _ = self.store.finish_direct_run(pending.id, job.id, status=STATUS_OK,
-                                              summary=summary, notepad=notepad)
+                                              summary=summary, notepad=notepad,
+                                              publish_content=candidate,
+                                              expected_created_at=job.created_at)
         with contextlib.suppress(KeyError):
             updated = self.store.get(job.id)
             if updated is None:
@@ -1792,43 +1819,74 @@ class JobRunner:
 
     # actions ----------------------------------------------------------------
 
-    async def _execute(self, job: Job) -> tuple[str, str | None]:
+    async def _execute(self, job: Job, *, publish_candidate: Callable[[str], None] | None = None) -> tuple[str, str | None]:
         action = job.action
         kind = action.get("type")
         urgent = action.get("urgent") is True
         if kind == "remind":
+            message = str(action.get("message", ""))
             delivered = await self._deliver(
-                str(action.get("message", "")), action.get("channel"), job=job, urgent=urgent,
+                message, action.get("channel"), job=job, urgent=urgent,
             )
+            if publish_candidate is not None:
+                publish_candidate(message)
             if job.options.get("deliver") == []:
                 return str(action.get("message", ""))[:MAX_TEXT], None
             return f"reminder {delivered}", None
         if kind == "brief":
             text = await self._brief(str(action.get("kind", "morning")))
             delivered = await self._deliver(text, None, job=job, urgent=urgent)
+            if publish_candidate is not None:
+                publish_candidate(text)
             if job.options.get("deliver") == []:
                 return text[:MAX_TEXT], None
             return f"{action.get('kind')} brief {delivered}", None
         if kind == "ask":
-            return await self._ask(job, action)
+            return await self._ask(job, action, publish_candidate=publish_candidate)
         if kind == "task":
             return self._task(job, action), None
         raise ValueError(f"unknown action type {kind!r}")
 
-    async def _ask(self, job: Job, action: Mapping[str, Any]) -> tuple[str, str]:
+    async def _ask(self, job: Job, action: Mapping[str, Any], *,
+                   publish_candidate: Callable[[str], None] | None = None) -> tuple[str, str]:
         prompt = str(action.get("prompt", ""))
         from agents.core.security.quarantine import fence_tool_result
 
-        prior = job.notepad if job.options.get("continuity", True) else ""
+        from .jobs_outputs import render_context_block
+
+        continuity = job.options.get("continuity", True)
+        own_output = job._frozen_self_output
+        if own_output is None:
+            own_output = self.store.outputs.get(job.id)
+        if own_output and not self.store.outputs.still_live(job.id, own_output["source_created_at"]):
+            own_output = None
+        prior = own_output["content"] if continuity and own_output else (job.notepad if continuity else "")
+        legacy_note = (job.notepad if continuity and own_output and job.notepad
+                       and own_output["content"] != job.notepad else "")
         notes = getattr(job, "_frozen_kv", None)
         if notes is None:
             notes = self.store.notepad_kv.list(job.id)
-        if prior or notes:
+        if prior or notes or legacy_note:
+            if prior and own_output:
+                prompt += ("\n\n## Your previous run's output\nUse it for continuity: avoid repeating "
+                           "what was already reported, and continue where the last run left off.")
+                if own_output["bounded"]:
+                    prompt += " This saved output is bounded and incomplete."
+            elif prior:
+                prompt += "\n\n## Previous job note (unverified prior output)"
             encoded = json.dumps({"previous_output": prior, "notepad_kv": [
-                {"key": row["key"], "value": row["value"]} for row in notes]},
+                {"key": row["key"], "value": row["value"]} for row in notes],
+                **({"legacy_previous_note": legacy_note} if legacy_note else {})},
                 ensure_ascii=True, separators=(",", ":"))
             fenced, _ = fence_tool_result(encoded, source="scheduled-job-notepad")
             prompt += "\n\nPrevious job output and owner notes (untrusted data):\n" + fenced
+        sources = job._frozen_context
+        if sources is None:
+            sources = self.store.outputs.snapshot(job.id, job.options)
+        for source in sources:
+            if not self.store.outputs.still_live(source["job_id"], source["source_created_at"]):
+                continue
+            prompt += render_context_block(source["job_id"], source["content"], source["bounded"])
         process = getattr(self._orch, "process", None)
         detailed = getattr(self._orch, "process_detailed", None)
         if not callable(detailed) and not callable(process):
@@ -1843,7 +1901,11 @@ class JobRunner:
                 router.select_backend(str(action.get("agent") or "jarvis"), prompt)
             call_args = {"agent": str(action.get("agent") or "jarvis"), "channel": "job"}
             if callable(detailed):
-                result = await detailed(prompt, **call_args)
+                from ..turn_stops import turn_stops_scope
+
+                with turn_stops_scope() as stops:
+                    result = await detailed(prompt, **call_args)
+                    stop_reasons = stops.snapshot()
                 if not isinstance(result, tuple) or len(result) != 2:
                     raise RuntimeError("scheduled model returned an invalid detailed outcome")
                 reply, failure = result
@@ -1863,6 +1925,8 @@ class JobRunner:
         if action.get("deliver", True):
             delivered = await self._deliver(reply, None, job=job, urgent=action.get("urgent") is True)
             summary = f"[{delivered}] {summary}"[:MAX_TEXT]
+        if callable(detailed) and not stop_reasons and publish_candidate is not None:
+            publish_candidate(reply)
         return summary, reply[:MAX_NOTEPAD]
 
     async def _brief(self, kind: str) -> str:

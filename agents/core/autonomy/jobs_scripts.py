@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import shlex
 import stat
 import sys
@@ -20,6 +21,26 @@ from agents.core.paths import data_path
 
 MAX_SOURCE = 2000
 LEASE_SECONDS = 300
+_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def complete_stdout(result: dict) -> str:
+    """Return only a complete, successful, host-attested safe stdout projection."""
+    from agents.core.environments.output_limits import MAX_OUTPUT_BYTES
+
+    stdout = result.get('stdout')
+    capture = result.get('stdout_capture')
+    if (type(stdout) is not str or not isinstance(capture, dict)
+            or type(capture.get('version')) is not int or capture['version'] != 1
+            or capture.get('complete') is not True or capture.get('utf8_valid') is not True
+            or capture.get('snapshot_complete') is not True
+            or type(capture.get('byte_count')) is not int
+            or not 0 <= capture['byte_count'] <= MAX_OUTPUT_BYTES
+            or not isinstance(capture.get('sha256'), str)
+            or not _DIGEST.fullmatch(capture['sha256'])
+            or len(stdout.encode('utf-8')) > MAX_OUTPUT_BYTES):
+        raise ValueError('scheduled script requires complete successful UTF-8 stdout capture')
+    return stdout
 
 
 class ScriptSubmissionRefused(ValueError):
@@ -134,8 +155,10 @@ class ScriptAttempts:
                 live_job = conn.execute('SELECT * FROM jobs WHERE id=?', (job.id,)).fetchone()
                 job = self.store._row_to_job(live_job)
                 data = {'job': {'action': job.action, 'options': job.options, 'notepad': job.notepad,
-                                'name': job.name,
-                                '_frozen_kv': self.store.notepad_kv.snapshot_locked(conn, job.id)},
+                                'name': job.name, 'created_at': job.created_at,
+                                '_frozen_kv': self.store.notepad_kv.snapshot_locked(conn, job.id),
+                                '_frozen_context': self.store.outputs.snapshot_locked(conn, job.id, job.options),
+                                '_frozen_self_output': self.store.outputs.get_locked(conn, job.id) or {}},
                         'origin': f'job-script:{job.id}:{run_id}'}
                 if (job.options.get('monitor_script') or job.options.get('monitor_url')):
                     from .jobs_monitor import generation
@@ -197,6 +220,10 @@ class ScriptAttempts:
                         else 'ScheduledScriptFailure', summary, int(count[0]) if count else 1)
                 if 'notepad' in row['data'] and not error:
                     conn.execute('UPDATE jobs SET notepad=? WHERE id=?', (row['data']['notepad'], row['job_id']))
+                if (not error and not reason and row['data'].get('publish_content') is not None
+                        and row['data'].get('job', {}).get('created_at')):
+                    self.store.outputs._publish_locked(conn, row['job_id'], row['id'],
+                        row['data']['publish_content'], now, row['data']['job']['created_at'])
                 conn.execute('DELETE FROM job_script_attempts WHERE job_id=? AND state IN (\'done\',\'failed\') '
                     'AND id NOT IN (SELECT id FROM job_script_attempts WHERE job_id=? ORDER BY id DESC LIMIT ?)',
                     (row['job_id'], row['job_id'], MAX_RUNS_KEPT))
@@ -342,7 +369,13 @@ class ScriptRuntime:
                 self.finish(row, error='Job deleted; queued task remains separately governed; delivery suppressed')
                 continue
             data = row['data']
-            frozen = replace(job, **data['job'])
+            # Older persisted attempts predate these reservation fields. An absent
+            # snapshot means there was no captured output to use; fetching today's
+            # output would let a delayed attempt acquire context it never reserved.
+            frozen_fields = dict(data['job'])
+            frozen_fields.setdefault('_frozen_self_output', {})
+            frozen_fields.setdefault('_frozen_context', [])
+            frozen = replace(job, **frozen_fields)
             if row['state'] in ('preparing', 'submitting'):
                 matches = self.find(data['origin']) if callable(self.find) else []
                 if len(matches) == 1 and 'payload' in data:
@@ -388,20 +421,28 @@ class ScriptRuntime:
                 row = self.row(row['id'])
                 try:
                     from .jobs_gates import wake_agent_suppressed
-                    raw_output = str(result['result'].get('stdout', ''))
-                    output = raw_output[:MAX_TEXT]
                     monitor = bool(frozen.options.get('monitor_script') or frozen.options.get('monitor_url'))
                     if monitor:
+                        raw_output = result['result'].get('stdout')
+                        if type(raw_output) is not str:
+                            raise ValueError('monitor stdout is not text')
                         from .jobs_monitor import detect
                         data = detect(self.runner.store, row, raw_output, result['result'].get('stdout_capture'))
                         row = self.row(row['id'])
                         output = json.dumps(data.get('monitor_context', {}))
+                    else:
+                        raw_output = complete_stdout(result['result'])
+                        output = raw_output[:MAX_TEXT]
+                        context_truncated = len(raw_output) > MAX_TEXT
                     if monitor and data.get('suppressed_reason'):
                         final = {**data, 'output': ''}
-                    elif not monitor and wake_agent_suppressed(raw_output, truncated=bool(result['result'].get('truncated'))):
+                    elif not monitor and wake_agent_suppressed(raw_output):
                         final = {**data, 'output': '', 'suppressed_reason': 'wake_gate'}
-                    elif frozen.options.get('no_agent') or not output.strip():
-                        final = {**data, 'output': output}
+                    elif frozen.options.get('no_agent'):
+                        final = {**data, 'output': raw_output,
+                                 **({'publish_content': raw_output} if raw_output.strip() else {})}
+                    elif not monitor and not raw_output.strip():
+                        final = {**data, 'output': ''}
                     else:
                         from agents.core.action_origin import (
                             bind_turn_action_origin,
@@ -411,14 +452,19 @@ class ScriptRuntime:
                         fenced, _ = fence_tool_result(json.dumps(data['monitor_context']) if monitor else json.dumps({'stdout': output}),
                                                      source='scheduled-script')
                         action = {**frozen.action, 'deliver': False, 'prompt': frozen.action.get('prompt', '') +
-                                  '\n\nScheduled script output (untrusted data):\n' + fenced}
+                                  '\n\nScheduled script output (untrusted data):\n' +
+                                  ('[Host notice: this script context is truncated; complete stdout was longer.]\n'
+                                   if not monitor and context_truncated else '') + fenced}
                         origin_token = bind_turn_action_origin('job')
+                        candidates = []
                         try:
                             summary, notes = await asyncio.wait_for(
-                                self.runner._ask(replace(frozen, action=action), action), 120)
+                                self.runner._ask(replace(frozen, action=action), action,
+                                                 publish_candidate=candidates.append), 120)
                         finally:
                             reset_action_origin(origin_token)
-                        final = {**data, 'output': summary, 'notepad': notes}
+                        final = {**data, 'output': summary, 'notepad': notes,
+                                 **({'publish_content': candidates[-1]} if candidates else {})}
                     self.attempts.transition(row, 'ready', final)
                 except JobSuppressed as suppressed:
                     self.attempts.transition(row, 'ready', {**data, 'output': '',
