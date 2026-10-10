@@ -1752,6 +1752,7 @@ class AutonomyCoordinator:
             gap_callback=acquisition.capture_gap,
             context_budget_tokens=lambda: _get_setting("llm.tool_loop_context_tokens", 0),
             per_tool_limit=lambda: _get_setting("llm.tool_loop_per_tool_cap", 0),
+            stall_halt_enabled=lambda: _get_setting("llm.tool_loop_stall_halt_enabled", False) is True,
             # H298 — an oversized tool result is spilled to disk instead of being
             # thrown away, and the caps scale to the model's real context window.
             # The store writes under the file tools' default root, so the path in a

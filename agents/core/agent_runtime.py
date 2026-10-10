@@ -59,6 +59,13 @@ from .security.quarantine import (
 )
 from .security.recall_taint import mark_turn_recall_tainted
 from .security.taint import TAINTED_RECALL_ORIGIN, is_untrusted_source
+from .tool_loop_guardrails import (
+    StallObserver,
+    classify_failure,
+    is_poller,
+    recovery_hint,
+    safe_args_preview,
+)
 from .tool_loop_result import ToolLoopExitReason, ToolLoopResult
 from .tool_result_store import (
     Budget,
@@ -84,25 +91,15 @@ _CONTEXT_REPLY = "I stopped the tool loop because its context exceeded the safet
 _TOOLS_WITHDRAWN_REPLY = "I stopped the tool loop because the tools it was using were withdrawn."
 _WINDOW_REPLY = "I stopped the tool loop because the model context window metadata could not be validated."
 _REPEAT_REPLY = "I stopped the tool loop because it kept repeating the same tool call."
-# Hermes absorption 3a — a model that calls the same tool with the same arguments again and
-# again is looping, not working; the iteration limit would end it eventually, but only after
-# burning every turn and telling the model nothing. The third identical call is refused with
-# the reason (the model can change course); a fourth ends the turn with a named reply.
+# The result-aware observer warns on the third identical tool+args+result signature.
 _DEFAULT_REPEAT_LIMIT = 3
 #: Even a turn that has spent its whole budget gets this much for the next result, so
 #: an exhausted budget degrades to small previews rather than to an empty answer the
 #: model cannot act on at all.
 _MIN_TURN_REMAINDER_BYTES = 2_000
-_REPEATED_NOTICE = (
-    "This exact call (same tool, same arguments) was already made {repeats} times this turn "
-    "and was not run again: repeating it will not produce a different answer. Change the "
-    "arguments, use another tool, or answer with what you have."
-)
-# The same tool failing again and again with different arguments is the other loop: the
-# model keeps guessing at a path or a query that will not resolve. Five consecutive
-# failures of one tool end the turn with a named reply; a success resets the streak.
+# The same tool failing again and again with different arguments has a separate
+# contiguous threshold in StallObserver; hard stall stops require owner opt-in.
 _FAILURE_REPLY = "I stopped the tool loop because the same tool kept failing."
-_DEFAULT_FAILURE_LIMIT = 5
 # Hermes absorption 4f — two more guardrails from the same family. A per-tool cap ends a
 # turn that leans on one tool without end (0 = off, set from llm.tool_loop_per_tool_cap);
 # and a successful result byte-identical to one already in the transcript is replaced by a
@@ -205,7 +202,8 @@ class AgentToolRuntime:
         compaction_keep_recent: int = 2,
         compacted_result_bytes: int = 512,
         repeat_limit: int = _DEFAULT_REPEAT_LIMIT,
-        failure_limit: int = _DEFAULT_FAILURE_LIMIT,
+        failure_limit: int | None = None,
+        stall_halt_enabled: bool | Callable[[], bool] = False,
         tool_profile: ToolProfileHook | None = None,
         execution_profile: ToolProfileHook | None = None,
         per_tool_limit: int | Callable[[], int] = 0,
@@ -222,7 +220,10 @@ class AgentToolRuntime:
         # H661 turn notes, while dispatch needs authorization only.
         self._execution_profile = execution_profile
         self._repeat_limit = _safe_int(repeat_limit, default=_DEFAULT_REPEAT_LIMIT, minimum=0)
-        self._failure_limit = _safe_int(failure_limit, default=_DEFAULT_FAILURE_LIMIT, minimum=0)
+        self._failure_limit = None if failure_limit is None else _safe_int(
+            failure_limit, default=8, minimum=0,
+        )
+        self._stall_halt_enabled = stall_halt_enabled
         self._per_tool_limit = per_tool_limit
         self._duplicate_stub_bytes = _safe_int(
             duplicate_stub_bytes, default=_DEFAULT_DUPLICATE_STUB_BYTES, minimum=64,
@@ -653,8 +654,18 @@ class AgentToolRuntime:
         limit = self._iteration_limit()
         budget = IterationBudget(limit)
         compacted: set[int] = set()
-        seen_calls: dict[tuple[str, str], int] = {}
-        failure_streaks: dict[str, int] = {}
+        try:
+            halt_stalls = self._stall_halt_enabled() if callable(self._stall_halt_enabled) else self._stall_halt_enabled
+        except Exception:
+            logger.warning("stall halt setting unreadable; using advice only")
+            halt_stalls = False
+        stall = StallObserver(
+            halt_enabled=halt_stalls is True,
+            repeat_warn=self._repeat_limit,
+            same_tool_halt=8 if self._failure_limit is None else self._failure_limit,
+            track_repeats=self._repeat_limit > 0,
+            track_failures=self._failure_limit != 0,
+        )
         tool_counts: dict[str, int] = {}
         restated: dict[str, str] = {}   # a restated tool's last answer, as a revision
         scripts_run = 0                 # scripts this turn: each one opens a new revision
@@ -787,17 +798,6 @@ class AgentToolRuntime:
                     agent_id=agent_id, event_sink=event_sink,
                 ):
                     return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
-            repeated, looping = self._note_repeats(bounded_calls, seen_calls, restated)
-            if looping is not None:
-                await self._emit(
-                    event_sink,
-                    {
-                        **self._event(looping, agent_id, "tool_loop_repeated", "repeated_call"),
-                        "repeats": seen_calls[_call_key(looping, restated)],
-                        "limit": self._repeat_limit,
-                    },
-                )
-                return ToolLoopResult(_REPEAT_REPLY, ToolLoopExitReason.REPEATED_CALL)
             capped = self._note_tool_counts(bounded_calls, tool_counts)
             assistant_message = turn.as_assistant_message()
             assistant_message["tool_calls"] = [call.as_openai() for call in bounded_calls]
@@ -807,10 +807,10 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 gated_tools=gated_tools,
                 event_sink=event_sink,
-                repeated=repeated,
                 capped=capped,
                 spent=spent,
             )
+            stall_halt: tuple[ToolCall, str, int] | None = None
             # The fence's granularity is this loop, not the individual call: the batch
             # above ran concurrently and every call in it was composed from a transcript
             # that carried no untrusted byte yet, so none of them can be "a fetch the page
@@ -837,6 +837,31 @@ class AgentToolRuntime:
                 )
                 if deduped != raw:
                     content = deduped
+                if call.id not in capped:
+                    # A local cap refusal was not an executed observation. The raw
+                    # envelope, not the display stub, defines progress.
+                    stall_args = call.arguments if isinstance(call.arguments, dict) else {}
+                    if call.name in _ALWAYS_RESTATED:
+                        stall_args = {"args": stall_args, "revision": restated.get(call.name, "")}
+                    decision = stall.observe(call.name, stall_args, result)
+                    if decision.notices:
+                        notice = {"tracks": list(decision.notices)}
+                        if _is_failed_result(result):
+                            notice["recovery_hint"] = recovery_hint(result)
+                        try:
+                            displayed = json.loads(content)
+                        except (ValueError, TypeError):
+                            displayed = {"tool_result": content}
+                        if not isinstance(displayed, dict):
+                            displayed = {"tool_result": displayed}
+                        displayed["stall_notice"] = notice
+                        content = json.dumps(displayed, ensure_ascii=False)
+                        await self._emit(event_sink, {
+                            **self._event(call, agent_id, "tool_loop_stall_notice", decision.notices[0]),
+                            "tracks": list(decision.notices),
+                        })
+                    if decision.halt is not None and stall_halt is None:
+                        stall_halt = (call, decision.halt, decision.count)
                 messages.append(
                     {
                         "role": "tool",
@@ -871,20 +896,24 @@ class AgentToolRuntime:
                    for result, _ in observations):
                 guardian_stopped = True
                 continue
-            failing = self._note_failures(bounded_calls, observations, failure_streaks)
-            if failing is not None:
-                call, result = failing
+            if capped:
+                return ToolLoopResult(_CAP_NOTICE.format(calls=self._per_tool_cap(), limit=self._per_tool_cap()),
+                                      ToolLoopExitReason.TOOL_CALL_LIMIT)
+            if stall_halt is not None:
+                call, track, count = stall_halt
+                failing = track in {"exact_failure", "same_tool_failure"}
                 await self._emit(
                     event_sink,
                     {
                         **self._event(
-                            call, agent_id, "tool_loop_failing", _failure_reason(result),
+                            call, agent_id, "tool_loop_failing" if failing else "tool_loop_repeated", track,
                         ),
-                        "failures": failure_streaks[call.name],
-                        "limit": self._failure_limit,
+                        "failures" if failing else "repeats": count,
+                        "limit": 5 if track != "same_tool_failure" else stall.same_tool_halt,
                     },
                 )
-                return ToolLoopResult(_FAILURE_REPLY, ToolLoopExitReason.FAILING_TOOL)
+                return ToolLoopResult(_FAILURE_REPLY if failing else _REPEAT_REPLY,
+                                      ToolLoopExitReason.FAILING_TOOL if failing else ToolLoopExitReason.REPEATED_CALL)
 
         await self._emit(
             event_sink,
@@ -1050,37 +1079,11 @@ class AgentToolRuntime:
         return _bounded_result_envelope(
             encoded,
             tool_name=tool if isinstance(tool, str) else "",
-            ok=result.get("ok") is True,
-            reason=result.get("reason"),
+            ok=not _is_failed_result(result) if result else False,
+            reason=_failure_reason(result) if result and _is_failed_result(result) else None,
             max_bytes=self._compacted_result_bytes,
             notice=_COMPACTED_NOTICE,
         )
-
-    def _note_repeats(
-        self,
-        calls: tuple[ToolCall, ...],
-        seen: dict[tuple[str, str], int],
-        restated: Mapping[str, str] | None = None,
-    ) -> tuple[dict[str, int], ToolCall | None]:
-        """Count identical (tool, arguments) calls across the turn.
-
-        Returns the calls that just reached the limit (refused with a notice, keyed by
-        call id) and the first call past it, which ends the loop. ``repeat_limit=0``
-        disables the detector.
-        """
-        limit = self._repeat_limit
-        repeated: dict[str, int] = {}
-        if limit <= 0:
-            return repeated, None
-        for call in calls:
-            key = _call_key(call, restated)
-            count = seen.get(key, 0) + 1
-            seen[key] = count
-            if count > limit:
-                return repeated, call
-            if count == limit:
-                repeated[call.id] = count
-        return repeated, None
 
     def _per_tool_cap(self) -> int:
         limit = self._per_tool_limit
@@ -1120,16 +1123,18 @@ class AgentToolRuntime:
         """Fence an untrusted result as DATA and raise the turn's recall taint.
 
         Three reasons, any one of which is enough (Hermes absorption 5a): the tool declared
-        its output untrusted and the result is a success (a not-ok envelope — a local
-        failure, a server refusal — and a handler's own ``ok: false`` refusal are Nerva's
-        own words about a fetch that did not happen, and never fenced for this reason);
+        its output untrusted and the result is not an explicit local refusal (an outer
+        not-ok envelope or handler ``ok: false`` means no external fetch, but a missing-ok
+        handler error may still carry external text and is fenced);
         the injection scanner flagged the encoded content; or the handler's own dict says
         ``tainted`` (a tool that computed a per-hit verdict in its child task, which cannot
         reach the turn's ContextVar from there). With no reason the content is returned
         byte-identical. The event carries reasons and flag names, never the content.
         """
         reasons: list[str] = []
-        if untrusted and result.get("ok") is True and not _is_failed_result(result):
+        # A handler's missing-ok error is still external text: classify it as a
+        # failed call for stall/stub policy without downgrading ingress trust.
+        if untrusted and not _is_local_refusal(result):
             reasons.append("untrusted_tool")
         fenced, flags = fence_tool_result(content, source=call.name)
         if flags:
@@ -1162,13 +1167,14 @@ class AgentToolRuntime:
         event_sink: ToolEventSink | None,
     ) -> str:
         """A successful result already in the transcript becomes a reference stub."""
-        if call.name in _ALWAYS_RESTATED:
+        if call.name in _ALWAYS_RESTATED or is_poller(call.name):
             return content
-        if _is_failed_result(result) or len(content.encode("utf-8")) < self._duplicate_stub_bytes:
+        if _is_failed_result(result) or len(content) < self._duplicate_stub_bytes:
             return content
-        prior = seen.get(content)
+        fingerprint = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        prior = seen.get(fingerprint)
         if prior is None:
-            seen[content] = call.id
+            seen[fingerprint] = call.id
             return content
         await self._emit(
             event_sink,
@@ -1183,27 +1189,10 @@ class AgentToolRuntime:
                 "tool": call.name,
                 "same_as": prior,
                 "notice": _DUPLICATE_NOTICE.format(call_id=prior),
+                "args_preview": safe_args_preview(call.arguments if isinstance(call.arguments, dict) else {}),
             },
             ensure_ascii=False,
         )
-
-    def _note_failures(
-        self,
-        calls: tuple[ToolCall, ...],
-        observations: list[tuple[dict[str, Any], str]],
-        streaks: dict[str, int],
-    ) -> tuple[ToolCall, dict[str, Any]] | None:
-        """Track consecutive failures per tool across the turn; the call that reaches the
-        limit ends the loop. ``failure_limit=0`` disables the breaker."""
-        limit = self._failure_limit
-        for call, (result, _content) in zip(calls, observations, strict=True):
-            if not _is_failed_result(result):
-                streaks[call.name] = 0
-                continue
-            streaks[call.name] = streaks.get(call.name, 0) + 1
-            if limit > 0 and streaks[call.name] >= limit:
-                return call, result
-        return None
 
     async def _execute_turn_calls(
         self,
@@ -1212,11 +1201,9 @@ class AgentToolRuntime:
         agent_id: str,
         gated_tools: dict[str, bool],
         event_sink: ToolEventSink | None,
-        repeated: Mapping[str, int] | None = None,
         capped: Mapping[str, int] | None = None,
         spent: dict[str, int] | None = None,
     ) -> list[tuple[dict[str, Any], str]]:
-        repeated = repeated or {}
         capped = capped or {}
         for call in calls:
             await self._emit(
@@ -1236,7 +1223,6 @@ class AgentToolRuntime:
                 approval_state=approval_state,
                 agent_id=agent_id,
                 event_sink=event_sink,
-                repeats=repeated.get(call.id, 0),
                 capped_at=capped.get(call.id, 0),
                 spent=spent,
             )
@@ -1336,7 +1322,6 @@ class AgentToolRuntime:
         approval_state: dict[str, bool],
         agent_id: str,
         event_sink: ToolEventSink | None,
-        repeats: int = 0,
         capped_at: int = 0,
         spent: dict[str, int] | None = None,
     ) -> tuple[dict[str, Any], str]:
@@ -1362,15 +1347,6 @@ class AgentToolRuntime:
                 agent_id=agent_id,
                 reason="bad_tool_arguments",
                 event_sink=event_sink,
-                spent=spent,
-            )
-        if repeats:
-            return await self._local_failure(
-                call,
-                agent_id=agent_id,
-                reason="repeated_call",
-                event_sink=event_sink,
-                extra={"repeats": repeats, "notice": _REPEATED_NOTICE.format(repeats=repeats)},
                 spent=spent,
             )
         if capped_at:
@@ -1576,8 +1552,8 @@ class AgentToolRuntime:
                 spent["bytes"] = int(spent.get("bytes", 0)) + size
             return result, encoded
 
-        ok = isinstance(result, dict) and result.get("ok") is True
-        reason = result.get("reason") if isinstance(result, dict) else None
+        ok = isinstance(result, dict) and not _is_failed_result(result)
+        reason = _failure_reason(result) if isinstance(result, dict) and not ok else None
         spill = None
         if self._result_store is not None:
             try:
@@ -1610,15 +1586,14 @@ class AgentToolRuntime:
         agent_id: str,
         result: dict[str, Any],
     ) -> None:
-        ok = result.get("ok") is True
-        reason = result.get("reason")
-        status = "ok" if ok else _bounded_identity(reason if isinstance(reason, str) else "failed")
+        failed = _is_failed_result(result)
+        status = "ok" if not failed else _bounded_identity(_failure_reason(result))
         await self._emit(
             event_sink,
             self._event(
                 call,
                 agent_id,
-                "tool_result" if ok else "tool_failed",
+                "tool_failed" if failed else "tool_result",
                 status,
             ),
         )
@@ -1735,12 +1710,16 @@ class AgentToolRuntime:
 
 
 def _is_failed_result(result: Mapping[str, Any]) -> bool:
-    """A refusal by the server (``ok`` not true) or by the handler itself — an inline tool's
-    own ``{"ok": false, "reason": ...}`` arrives wrapped under ``result``."""
+    """Classify explicit and legacy failure shapes for stall and stub policy."""
+    return classify_failure(result)
+
+
+def _is_local_refusal(result: Mapping[str, Any]) -> bool:
+    """Only an explicit ToolRPC or handler refusal has no external payload to fence."""
     if result.get("ok") is not True:
         return True
     inner = result.get("result")
-    return isinstance(inner, dict) and inner.get("ok") is False
+    return isinstance(inner, Mapping) and inner.get("ok") is False
 
 
 def _declares_taint(result: Any) -> bool:
@@ -1771,25 +1750,6 @@ def _failure_reason(result: Mapping[str, Any]) -> str:
         inner = result.get("result")
         reason = inner.get("reason") if isinstance(inner, dict) else None
     return reason if isinstance(reason, str) and reason else "failed"
-
-
-def _call_key(call: ToolCall, restated: Mapping[str, str] | None = None) -> tuple[str, str]:
-    """Identity of a call for the repeat detector: the tool plus its arguments in
-    canonical JSON (key order does not make a different call). A restated tool's call
-    also carries the revision of its last answer, so the same call is a repeat only
-    while nothing changed in between."""
-    if isinstance(call.arguments, dict):
-        try:
-            encoded = json.dumps(
-                call.arguments, sort_keys=True, default=str, separators=(",", ":"),
-            )
-        except (TypeError, ValueError):
-            encoded = str(call.raw_arguments)
-    else:
-        encoded = str(call.raw_arguments)
-    if call.name in _ALWAYS_RESTATED:
-        encoded = f"{encoded}@{(restated or {}).get(call.name, '')}"
-    return (str(call.name), encoded)
 
 
 def _script_revision_due(tool: str, result: Any) -> bool:

@@ -225,6 +225,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="tool_loop_max_iterations", value=8,               label="Agent tool-loop model-turn cap", kind="number"),
     dict(category="llm",     key="tool_loop_context_tokens", value=0,               label="Agent tool-loop context budget (tokens; 0 = 75% of the model window)", kind="number"),
     dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap; todo is not capped)", kind="number"),
+    dict(category="llm",     key="tool_loop_stall_halt_enabled", value=False,        label="Stop stalled tool loops at failure/no-progress thresholds (off = guidance only)", kind="toggle"),
     dict(category="llm",     key="skills_in_prompt", value=True,                    label="List skill commands in the model prompt", kind="toggle"),
     # H594: read the project's AGENTS.md / CLAUDE.md / .cursorrules into the turn (scanned, bounded, tainting).
     # H218: the project folder whose convention files H594 reads (inside the file roots; empty = the first root).

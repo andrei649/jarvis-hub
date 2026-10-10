@@ -80,39 +80,34 @@ def _tool_results(backend):
 
 
 @pytest.mark.asyncio
-async def test_the_third_identical_call_is_refused_with_the_reason():
+async def test_the_third_identical_result_gets_a_notice_without_refusal():
     log: list[dict] = []
     runtime = AgentToolRuntime(_server(log), enabled=lambda: True)
     backend = _Backend([("lookup", {"q": "x"})] * 3)
     events: list[dict] = []
     reply = await _run(runtime, backend, events)
     assert reply == "done"
-    assert log == [{"q": "x"}, {"q": "x"}]  # the third never ran
+    assert log == [{"q": "x"}] * 3
     results = _tool_results(backend)
     assert results[0]["result"] == {"found": "x"} and results[1]["result"] == {"found": "x"}
-    refused = results[2]
-    assert refused["ok"] is False and refused["reason"] == "repeated_call"
-    assert refused["tool"] == "lookup" and refused["repeats"] == 3
-    assert "already made 3 times" in refused["notice"] and "Change the arguments" in refused["notice"]
+    assert "identical_call" in results[2]["stall_notice"]["tracks"]
     failed = [e for e in events if e["event"] == "tool_failed"]
-    assert [e["status"] for e in failed] == ["repeated_call"]
+    assert failed == []
     assert not [e for e in events if e["event"] == "tool_loop_repeated"]
 
 
 @pytest.mark.asyncio
-async def test_a_fourth_identical_call_ends_the_turn_with_a_named_reply():
+async def test_a_fourth_identical_call_does_not_halt_by_default():
     log: list[dict] = []
     runtime = AgentToolRuntime(_server(log), enabled=lambda: True)
     backend = _Backend([("lookup", {"q": "x"})] * 4 + [("lookup", {"q": "y"})])
     events: list[dict] = []
     reply = await _run(runtime, backend, events)
-    assert reply == _REPEAT_REPLY
-    assert log == [{"q": "x"}, {"q": "x"}]
-    assert len(backend.calls) == 4  # the fifth (different) call was never asked for
+    assert reply == "done"
+    assert log == [{"q": "x"}] * 4 + [{"q": "y"}]
+    assert len(backend.calls) == 6
     stop = [e for e in events if e["event"] == "tool_loop_repeated"]
-    assert len(stop) == 1
-    assert stop[0]["tool"] == "lookup" and stop[0]["repeats"] == 4 and stop[0]["limit"] == 3
-    assert stop[0]["status"] == "repeated_call"
+    assert stop == []
 
 
 @pytest.mark.asyncio
@@ -126,8 +121,8 @@ async def test_argument_order_does_not_make_a_different_call():
     ])
     reply = await _run(runtime, backend)
     assert reply == "done"
-    assert len(log) == 2
-    assert _tool_results(backend)[2]["reason"] == "repeated_call"
+    assert len(log) == 3
+    assert "identical_call" in _tool_results(backend)[2]["stall_notice"]["tracks"]
 
 
 @pytest.mark.asyncio
@@ -176,9 +171,10 @@ async def test_identical_calls_fanned_out_in_one_turn_count_too():
     backend = _FanOut([])
     reply = await _run(runtime, backend)
     assert reply == "done"
-    assert len(log) == 2
+    assert len(log) == 3
     results = _tool_results(backend)
-    assert [r.get("reason") for r in results] == [None, None, "repeated_call"]
+    assert [r.get("reason") for r in results] == [None, None, None]
+    assert "identical_call" in results[2]["stall_notice"]["tracks"]
 
 
 def _failing_server(log: list[dict]) -> ToolRPCServer:
@@ -196,17 +192,18 @@ def _failing_server(log: list[dict]) -> ToolRPCServer:
 
 
 @pytest.mark.asyncio
-async def test_the_same_tool_failing_five_times_in_a_row_ends_the_turn():
+async def test_the_same_tool_failing_eight_times_in_a_row_ends_the_turn_when_opted_in():
     log: list[dict] = []
-    runtime = AgentToolRuntime(_failing_server(log), enabled=lambda: True, max_iterations=lambda: 12)
-    backend = _Backend([("flaky", {"n": i}) for i in range(6)])
+    runtime = AgentToolRuntime(_failing_server(log), enabled=lambda: True, max_iterations=lambda: 12,
+                               stall_halt_enabled=True)
+    backend = _Backend([("flaky", {"n": i}) for i in range(9)])
     events: list[dict] = []
     reply = await _run(runtime, backend, events)
     assert reply == _FAILURE_REPLY
-    assert len(log) == 5  # the fifth failure is the last call made
+    assert len(log) == 8
     stop = [e for e in events if e["event"] == "tool_loop_failing"]
-    assert len(stop) == 1 and stop[0]["tool"] == "flaky" and stop[0]["failures"] == 5
-    assert stop[0]["limit"] == 5 and stop[0]["status"] == "not_found"
+    assert len(stop) == 1 and stop[0]["tool"] == "flaky" and stop[0]["failures"] == 8
+    assert stop[0]["limit"] == 8 and stop[0]["status"] == "same_tool_failure"
 
 
 @pytest.mark.asyncio

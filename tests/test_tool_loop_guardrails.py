@@ -73,12 +73,8 @@ async def test_a_tool_past_its_cap_is_refused_with_the_reason():
     runtime = AgentToolRuntime(_server(log), enabled=lambda: True, per_tool_limit=2,
                                max_iterations=lambda: 8)
     backend = _Backend([("small", {"n": 1}), ("small", {"n": 2}), ("small", {"n": 3}), ("big", {"n": 9})])
-    assert await _run(runtime, backend, events) == "done"
-    assert [name for name, _ in log] == ["small", "small", "big"]   # the third small never ran
-    refused = _tool_messages(backend)[2]
-    assert refused["ok"] is False and refused["reason"] == "tool_cap_reached"
-    assert refused["calls"] == 3 and refused["limit"] == 2
-    assert "already called 2 times" in refused["notice"]
+    assert "limit (2)" in await _run(runtime, backend, events)
+    assert [name for name, _ in log] == ["small", "small"]
     assert [e["status"] for e in events if e["event"] == "tool_failed"] == ["tool_cap_reached"]
 
 
@@ -104,7 +100,7 @@ async def test_an_identical_success_becomes_a_reference_stub():
     assert len(log) == 3                                    # the tool still runs each time
     first, second, third = _tool_messages(backend)
     assert first["result"] == {"page": "x" * 700}
-    assert second == {"ok": True, "tool": "big", "same_as": "call-1",
+    assert second == {"ok": True, "tool": "big", "same_as": "call-1", "args_preview": '{"n":2}',
                       "notice": "This result is byte-identical to the result of call call-1 "
                                 "earlier this turn and was not repeated; refer to that result."}
     assert third["same_as"] == "call-1"
@@ -119,5 +115,6 @@ async def test_small_results_and_failures_are_never_stubbed():
     backend = _Backend([("small", {"n": 1}), ("small", {"n": 1}), ("broken", {"n": 1}), ("broken", {"n": 1})])
     assert await _run(runtime, backend) == "done"
     msgs = _tool_messages(backend)
-    assert msgs[0] == msgs[1] and "same_as" not in msgs[1]           # under the stub size
-    assert msgs[2] == msgs[3] and msgs[3]["result"]["reason"] == "not_found"   # a failure, verbatim
+    assert msgs[0]["result"] == msgs[1]["result"] and "same_as" not in msgs[1]
+    assert msgs[2]["result"] == msgs[3]["result"] and msgs[3]["result"]["reason"] == "not_found"
+    assert "same_as" not in msgs[3]
