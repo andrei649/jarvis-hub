@@ -60,11 +60,22 @@ empty-answer and refusal checks still apply. Older hubs that omit this metadata
 retain the limits of text-based classification. Interactive chat retains its
 normal stdout and exit behavior, while its receipt can report incomplete.
 
+Ctrl-C exits 130 and attempts an interrupted receipt, including when it arrives
+while preparing input or printing a decoded response. Already observed session,
+usage, stop and queued-approval details remain available. An interrupt cannot
+retract text already written to the terminal.
+
 The hub attaches a request-owned `nerva.turn.usage.v1` snapshot to `/chat` replies
 and `/chat/stream` end events. The CLI validates it before copying its usage fields
 into the receipt. Missing, malformed or legacy snapshots leave those fields null
 with `usage_basis` and `cost_basis` set to `unavailable`. Image turns still use the
 separate vision endpoint and do not supply this chat snapshot.
+
+Authentication and early owner/session checks retain their HTTP error codes.
+When they refuse before a collector returns a snapshot, the CLI still writes a
+failure receipt with unavailable usage. A deterministic synthesis fallback can
+return completed specialist answers; its failed generation attempt still leaves
+usage unknown if the provider supplied no complete counters.
 
 `api_calls` counts accepted generation HTTP dispatch attempts, including retries,
 specialists, streamed generation, synchronous response-producing auxiliary calls
