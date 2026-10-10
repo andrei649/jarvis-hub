@@ -67,6 +67,12 @@ from .tool_loop_guardrails import (
     safe_args_preview,
 )
 from .tool_loop_result import ToolLoopExitReason, ToolLoopResult
+from .tool_output_advisory import (
+    COMPLETENESS_NOTICE,
+    ToolOutputRisk,
+    classify_output,
+    is_local_refusal,
+)
 from .tool_result_store import (
     Budget,
     budget_for_context_window,
@@ -670,6 +676,7 @@ class AgentToolRuntime:
         restated: dict[str, str] = {}   # a restated tool's last answer, as a revision
         scripts_run = 0                 # scripts this turn: each one opens a new revision
         seen_results: dict[str, str] = {}
+        output_risks: dict[int, ToolOutputRisk] = {}
         guardian_stopped = False
 
         # H298 — what this turn has already put in the window, and how big that window
@@ -695,6 +702,7 @@ class AgentToolRuntime:
                 schema_tokens=schema_tokens,
                 agent_id=agent_id,
                 event_sink=event_sink,
+                output_risks=output_risks,
             ):
                 return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
             if len(compacted) > folds_before:
@@ -753,6 +761,7 @@ class AgentToolRuntime:
                         messages, compacted, model=model, max_tokens=max_tokens,
                         effective_window=known_window, schema_tokens=schema_tokens,
                         agent_id=agent_id, event_sink=event_sink,
+                        output_risks=output_risks,
                     ):
                         return _CONTEXT_REPLY
             # H513: every round rechecks revocation after tool/profile awaits.
@@ -796,6 +805,7 @@ class AgentToolRuntime:
                     proposed, set(compacted), model=model, max_tokens=max_tokens,
                     effective_window=known_window, schema_tokens=schema_tokens,
                     agent_id=agent_id, event_sink=event_sink,
+                    output_risks=dict(output_risks),
                 ):
                     return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
             capped = self._note_tool_counts(bounded_calls, tool_counts)
@@ -819,6 +829,7 @@ class AgentToolRuntime:
             # tests/test_tool_result_taint.py::test_the_taint_fence_is_per_iteration_not_per_call
             # — and the reason the owner packet says "the next turn", not "the next call".
             for call, (result, raw) in zip(bounded_calls, observations, strict=True):
+                risk = classify_output(call.name, result, untrusted=call.name in untrusted_tools)
                 # Fenced and marked from the loop's own context (never a child task), so
                 # the recall taint lands on the turn. The stub is keyed on the RAW bytes so
                 # identical payloads still dedupe; a "same as call N" stub is Nerva's own
@@ -862,13 +873,12 @@ class AgentToolRuntime:
                         })
                     if decision.halt is not None and stall_halt is None:
                         stall_halt = (call, decision.halt, decision.count)
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call.id,
-                        "content": content,
-                    }
-                )
+                if risk.upstream_elided:
+                    content = COMPLETENESS_NOTICE + content
+                message = {"role": "tool", "tool_call_id": call.id, "content": content}
+                messages.append(message)
+                if risk.external_untrusted:
+                    output_risks[id(message)] = risk
             for call, (result, _raw) in zip(bounded_calls, observations, strict=True):
                 if call.name in _ALWAYS_RESTATED:
                     restated[call.name] = _answer_revision(result, restated.get(call.name, ""))
@@ -959,6 +969,7 @@ class AgentToolRuntime:
         event_sink: ToolEventSink | None,
         effective_window: int | None = None,
         schema_tokens: int = 0,
+        output_risks: dict[int, ToolOutputRisk] | None = None,
     ) -> bool:
         """Fold older tool results into bounded envelopes until the transcript fits.
 
@@ -1007,6 +1018,7 @@ class AgentToolRuntime:
         ]
         used = before
         folded = 0
+        replacement_risks: dict[int, ToolOutputRisk] = {}
         for positions in (
             [index for index in candidates if index < protected_from],
             [index for index in candidates if index >= protected_from],
@@ -1020,7 +1032,16 @@ class AgentToolRuntime:
                 encoded = content if isinstance(content, str) else json.dumps(content, default=str)
                 if len(encoded.encode("utf-8")) <= self._compacted_result_bytes:
                     continue
-                messages[index] = {**message, "content": self._compacted_content(encoded)}
+                risk = output_risks.get(id(message)) if output_risks is not None else None
+                if risk is not None and risk.upstream_elided and encoded.startswith(COMPLETENESS_NOTICE):
+                    encoded = encoded[len(COMPLETENESS_NOTICE):]
+                folded_content = self._compacted_content(encoded)
+                if risk is not None and risk.upstream_elided:
+                    folded_content = COMPLETENESS_NOTICE + folded_content
+                replacement = {**message, "content": folded_content}
+                messages[index] = replacement
+                if risk is not None:
+                    replacement_risks[id(replacement)] = risk.with_context_elided()
                 folded += 1
                 used = estimate_messages(messages)
         exhausted = used > budget
@@ -1042,6 +1063,13 @@ class AgentToolRuntime:
                 _active_clock.set(replace(binding, snapshot=committed))
             original_messages[:] = messages
             original_compacted.update(compacted)
+            if output_risks is not None:
+                retained = {
+                    id(message): replacement_risks.get(id(message), output_risks.get(id(message)))
+                    for message in original_messages if message.get("role") == "tool"
+                }
+                output_risks.clear()
+                output_risks.update({key: value for key, value in retained.items() if value is not None})
         await self._emit(
             event_sink,
             {
@@ -1123,9 +1151,9 @@ class AgentToolRuntime:
         """Fence an untrusted result as DATA and raise the turn's recall taint.
 
         Three reasons, any one of which is enough (Hermes absorption 5a): the tool declared
-        its output untrusted and the result is not an explicit local refusal (an outer
-        not-ok envelope or handler ``ok: false`` means no external fetch, but a missing-ok
-        handler error may still carry external text and is fenced);
+        its output untrusted and the result is not a proven local refusal (an outer
+        ToolRPC refusal or an exact native no-data reply; arbitrary handler ``ok: false``
+        errors may still carry external text and are fenced);
         the injection scanner flagged the encoded content; or the handler's own dict says
         ``tainted`` (a tool that computed a per-hit verdict in its child task, which cannot
         reach the turn's ContextVar from there). With no reason the content is returned
@@ -1134,7 +1162,7 @@ class AgentToolRuntime:
         reasons: list[str] = []
         # A handler's missing-ok error is still external text: classify it as a
         # failed call for stall/stub policy without downgrading ingress trust.
-        if untrusted and not _is_local_refusal(result):
+        if untrusted and not is_local_refusal(result, call.name):
             reasons.append("untrusted_tool")
         fenced, flags = fence_tool_result(content, source=call.name)
         if flags:
@@ -1712,14 +1740,6 @@ class AgentToolRuntime:
 def _is_failed_result(result: Mapping[str, Any]) -> bool:
     """Classify explicit and legacy failure shapes for stall and stub policy."""
     return classify_failure(result)
-
-
-def _is_local_refusal(result: Mapping[str, Any]) -> bool:
-    """Only an explicit ToolRPC or handler refusal has no external payload to fence."""
-    if result.get("ok") is not True:
-        return True
-    inner = result.get("result")
-    return isinstance(inner, Mapping) and inner.get("ok") is False
 
 
 def _declares_taint(result: Any) -> bool:
