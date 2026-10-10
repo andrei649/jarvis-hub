@@ -17,7 +17,6 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from agents.core.autonomy import jobs as jobs_mod
 from agents.core.autonomy.jobs import (
     JobRunner,
     JobStore,
@@ -322,22 +321,34 @@ def test_a_one_shot_runs_once_and_is_then_complete(tmp_path, monkeypatch):
 
 
 def test_a_spent_one_shot_script_job_does_not_run_twice(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "check.py").write_text("print('ready')\n")
     runner, store, _sched = _runner(tmp_path)
-    ran = []
+    proposed = []
 
-    async def script_fire(job, started):
-        ran.append(job.id)
-        return store.record_run(job.id, started_at=started, finished_at=started, status="ok", summary="ran")
+    def submit(payload, origin):
+        assert payload["tool"] == "terminal_run"
+        proposed.append((payload, origin))
+        return len(proposed)
 
     try:
-        job = runner.arm(name="once", schedule_text="in 1h", action=ASK)[0]
-        monkeypatch.setattr(runner, "_script_runtime", SimpleNamespace(fire=script_fire))
-        monkeypatch.setattr(store, "get", lambda job_id, _get=store.get: (
-            lambda j: j and jobs_mod.replace(j, options={**j.options, "script": "check.py"}))(_get(job_id)))
-        monkeypatch.setattr(jobs_mod, "validate_options", lambda *a, **k: {})
-        asyncio.run(runner.fire(job.id))
-        second = asyncio.run(runner.fire(job.id, force=True))
-        assert ran == [job.id] and second.summary == "one-shot already ran"
+        job = runner.arm(name="once", schedule_text="in 1h", action=ASK,
+                         options={"script": "check.py", "no_agent": True, "deliver": []})[0]
+        runner.bind_scripts(submit=submit, get=lambda task_id: None, find=lambda origin: [])
+        first = asyncio.run(runner.fire(job.id))
+        pending_again = asyncio.run(runner.fire(job.id, force=True))
+        assert first.status == "pending" and first.id > 0
+        assert pending_again == first
+        assert len(proposed) == 1 and store.get(job.id).attempts == 1
+
+        row = runner._script_runtime.row(first.id)
+        assert row is not None and row["state"] == "pending"
+        assert runner._script_runtime.finish(row, error="owner rejected")
+        spent = asyncio.run(runner.fire(job.id, force=True))
+        assert (spent.status, spent.summary) == ("skipped", "one-shot already ran")
+        assert len(proposed) == 1 and store.get(job.id).attempts == 1
     finally:
         store.close()
 

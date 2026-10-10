@@ -247,7 +247,7 @@ class ScriptRuntime:
         return JobRun(**dict(row))
 
     async def fire(self, job, started):
-        from .jobs import JobRun, utc_now
+        from .jobs import ONE_SHOT_SPENT, JobRun, is_one_shot, utc_now
         with self.runner.store._lock:
             existing = self.runner.store._conn.execute(
                 "SELECT id FROM job_script_attempts WHERE job_id=? AND state NOT IN ('done','failed')",
@@ -256,7 +256,8 @@ class ScriptRuntime:
             return self.run_result(job.id, existing['id'])
         run_id = self.attempts.reserve(job, started)
         if run_id is None:
-            return JobRun(0, job.id, started, utc_now(), 'skipped', 'repeat limit exhausted')
+            reason = ONE_SHOT_SPENT if is_one_shot(job.cron) else 'repeat limit exhausted'
+            return JobRun(0, job.id, started, utc_now(), 'skipped', reason)
         row = self.row(run_id)
         # Another connection already reserved this attempt. Only its claim may submit.
         if row is None or row['state'] != 'preparing':
