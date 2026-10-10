@@ -74,6 +74,24 @@ describe('SpeechStreamFilter — code and reasoning split across deltas', () => 
       .toEqual(['Warning: this file-mutation verifier is useful.']);
   });
 
+  it('treats the plain warning sign, with no variation selector, as the footer too', () => {
+    const plain = footer.replace('⚠️', '⚠');
+    expect(plain).not.toContain('\uFE0F');
+    const source = `Ready.\n\n${plain}\nNext.`;
+    expect(spokenFrom([source.slice(0, 12), source.slice(12, 40), source.slice(40)])).toEqual(['Ready.', 'Next.']);
+    expect(speechText(source, 'en')).toBe('Ready. Next.');
+  });
+
+  it('does not take a zero or over-long count for the producer, and speaks what the whole reply would', () => {
+    for (const count of ['0', '1' + '0'.repeat(20)]) {
+      const odd = footer.replace(': 1 file', `: ${count} file`);
+      const source = `Ready.\n\n${odd}\nNext.`;
+      const streamed = spokenFrom([source.slice(0, 12), source.slice(12, 45), source.slice(45)]).join(' ');
+      expect(streamed).toBe(speechText(source, 'en'));
+      expect(streamed).toContain('File-mutation verifier');
+    }
+  });
+
   it('bounds an invalid footer candidate instead of holding the reply', () => {
     const filter = new SpeechStreamFilter();
     const out = filter.push('⚠️ File-mutation verifier: ' + '9'.repeat(100_000));

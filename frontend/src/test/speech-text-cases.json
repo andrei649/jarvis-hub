@@ -316,5 +316,29 @@
   "lang": "en",
   "text": "⚠️ File-mutation verifier: 1 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.\n  • ",
   "spoken": "File-mutation verifier: 1 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run git status or read_file to confirm what actually landed. •"
+ },
+ {
+  "name": "verifier_count_zero_is_not_producer",
+  "lang": "en",
+  "text": "⚠️ File-mutation verifier: 0 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.\n  • `/tmp/a.md` — [patch] Could not find old_string",
+  "spoken": "File-mutation verifier: 0 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run git status or read_file to confirm what actually landed. /tmp/a.md — [patch] Could not find old_string."
+ },
+ {
+  "name": "verifier_count_longer_than_twenty_digits_is_not_producer",
+  "lang": "en",
+  "text": "⚠️ File-mutation verifier: 100000000000000000000 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.\n  • `/tmp/a.md` — [patch] Could not find old_string",
+  "spoken": "File-mutation verifier: 100000000000000000000 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run git status or read_file to confirm what actually landed. /tmp/a.md — [patch] Could not find old_string."
+ },
+ {
+  "name": "verifier_header_without_warning_icon_is_not_producer",
+  "lang": "en",
+  "text": "File-mutation verifier: 2 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.\n  • `/tmp/a.md` — [patch] Could not find old_string",
+  "spoken": "File-mutation verifier: 2 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run git status or read_file to confirm what actually landed. /tmp/a.md — [patch] Could not find old_string."
+ },
+ {
+  "name": "verifier_header_with_only_a_leading_space_is_not_producer",
+  "lang": "en",
+  "text": " File-mutation verifier: 2 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run `git status` or `read_file` to confirm what actually landed.\n  • `/tmp/a.md` — [patch] Could not find old_string",
+  "spoken": "File-mutation verifier: 2 file edit(s) FAILED this turn despite any wording above that may suggest otherwise. Run git status or read_file to confirm what actually landed. /tmp/a.md — [patch] Could not find old_string."
  }
 ]
