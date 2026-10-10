@@ -24,12 +24,12 @@ exactly what the owner needs to see. Only the shipped copy is essential, never a
 imported skill that takes its folder or name (review-H329 F2). A stored entry for one is
 ignored.
 
-Switching off narrows what the hub does and is always allowed. Switching back on widens
-it, so it is the owner's act only: the admin route records it in the intent log and
-refuses when it cannot (a switch-off that cannot be recorded still applies and says
-so). That route is the rows' only writer: a settings write, an import, a reset and
-``nerva config set`` refuse or leave them (``settings_db.ROUTE_ONLY``, review-H329 F1).
-No tool the model is offered writes these rows.
+Switching off narrows what the hub does and is immediate. Switching back on widens
+it, so the admin route queues an exact, once-scoped human approval; the worker
+changes the rows only after approval and writes attribution in the same transaction.
+An optional intent-log projection does not carry that authority. Settings writes,
+imports, resets and ``nerva config set`` cannot widen these rows
+(``settings_db.ROUTE_ONLY``). No model-facing tool writes them.
 
 This is not the H285 load set (``loadset.skills_*``), which keeps a skill from being
 loaded at all at boot, for a skill that breaks the hub; a switched-off skill is loaded
@@ -40,6 +40,7 @@ from __future__ import annotations
 import contextvars
 import logging
 import re
+import sqlite3
 import threading
 from collections.abc import Iterable
 from pathlib import Path
@@ -123,25 +124,81 @@ def channel_map_problem(value: Any) -> str | None:
 
 
 def state() -> dict:
-    """``{"disabled": [...], "channel_disabled": {...}}`` as stored now (cleaned)."""
-    from agents.core.settings_db import get_value
-
-    return {
-        GLOBAL_KEY: clean_names(get_value(CATEGORY, GLOBAL_KEY, [])),
-        CHANNEL_KEY: clean_channel_map(get_value(CATEGORY, CHANNEL_KEY, {})),
-    }
+    """The current complete switch state, or an unreadable-store refusal."""
+    return strict_state()
 
 
 def strict_state() -> dict:
-    """:func:`state`, but a store that cannot be read raises
-    ``settings_db.SettingsUnreadable`` instead of reading as no switches: a write built on
-    that would erase every other switch (review-H329 F7)."""
-    from agents.core.settings_db import read_setting
+    """Read both rows consistently; malformed or missing rows never mean enabled."""
+    from agents.core import settings_db
 
-    return {
-        GLOBAL_KEY: clean_names(read_setting(CATEGORY, GLOBAL_KEY)[1]),
-        CHANNEL_KEY: clean_channel_map(read_setting(CATEGORY, CHANNEL_KEY)[1]),
-    }
+    preflight_persisted_rows()
+    settings_db.ensure_initialized()
+    conn = settings_db.get_conn()
+    try:
+        marker = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='skill_switch_revision'"
+        ).fetchone()
+        if marker is None:
+            # The first H329 read marks this store. Later startup must
+            # never treat a missing switch row as a fresh-install default.
+            from . import switch_approval
+
+            conn.executescript(switch_approval._SCHEMA)
+        return state_from_connection(conn)
+    finally:
+        conn.close()
+
+
+def preflight_persisted_rows() -> None:
+    """A post-H329 store missing a row is damage, not a new default to reseed."""
+    from agents.core import settings_db
+
+    path = settings_db.DB_PATH
+    if not path.exists():
+        return
+    try:
+        conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
+        try:
+            marker = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='skill_switch_revision'"
+            ).fetchone()
+            if marker is None:
+                return  # fresh install or a legacy pre-bridge schema
+            rows = conn.execute("SELECT key FROM settings WHERE category='skills' "
+                                "AND key IN ('disabled','channel_disabled')").fetchall()
+            if {row[0] for row in rows} != {GLOBAL_KEY, CHANNEL_KEY}:
+                raise settings_db.SettingsUnreadable("skill switch row missing from initialized store")
+        finally:
+            conn.close()
+    except (sqlite3.Error, OSError) as exc:
+        raise settings_db.SettingsUnreadable("skill switch store unavailable") from exc
+
+
+def state_from_connection(conn) -> dict:
+    """Strict switch snapshot for a caller's SQLite transaction."""
+    import json
+
+    from agents.core.settings_db import SettingsUnreadable
+
+    try:
+        rows = conn.execute(
+            "SELECT key, value, opts FROM settings WHERE category=? AND key IN (?, ?)",
+            (CATEGORY, GLOBAL_KEY, CHANNEL_KEY),
+        ).fetchall()
+        raw = {row["key"]: json.loads(row["value"]) for row in rows}
+        for row in rows:
+            json.loads(row["opts"])
+        if set(raw) != {GLOBAL_KEY, CHANNEL_KEY}:
+            raise ValueError("missing skill switch row")
+        names, channels = raw[GLOBAL_KEY], raw[CHANNEL_KEY]
+        if (not isinstance(names, list) or len(names) > MAX_NAMES
+                or clean_names(names) != names or not isinstance(channels, dict)
+                or len(channels) > MAX_CHANNELS or clean_channel_map(channels) != channels):
+            raise ValueError("invalid skill switch state")
+        return {GLOBAL_KEY: names, CHANNEL_KEY: channels}
+    except (ValueError, TypeError, KeyError) as exc:
+        raise SettingsUnreadable("skill switch state is unreadable") from exc
 
 
 def identities(skill: Any) -> set[str]:
@@ -205,8 +262,10 @@ def off_reason(skill: Any, channel: str | None = None, *, current: dict | None =
     try:
         now = state() if current is None else current
     except Exception:
-        logger.warning("skill switches unreadable; every skill stays on", exc_info=True)
-        return ""
+        logger.warning("skill switches unreadable; nonessential skills stay off", exc_info=True)
+        return "switches unavailable"
+    if now.get("__unavailable__"):
+        return "switches unavailable"
     name = _entry(skill)
     if name in {_key(n) for n in now.get(GLOBAL_KEY, [])}:
         return "everywhere"
@@ -218,6 +277,8 @@ def off_reason(skill: Any, channel: str | None = None, *, current: dict | None =
 
 def refusal(skill: Any, reason: str) -> str:
     """The reply a command of a switched-off skill gets instead of running."""
+    if reason == "switches unavailable":
+        return f"[skill:{getattr(skill, 'name', '?')}] switches unavailable until the store is repaired"
     return (f"[skill:{getattr(skill, 'name', '?')}] is switched off {reason}; "
             "the owner can switch it back on in Console → Trust → Skill Switches")
 
@@ -226,8 +287,8 @@ def _without(names: Iterable[str], drop: set[str]) -> list[str]:
     return [n for n in names if _key(n) not in drop]
 
 
-def apply(skills: list, *, enabled: bool, channel: str = "") -> dict:
-    """Switch ``skills`` on or off, everywhere or on ``channel``: one settings write.
+def plan(skills: list, *, enabled: bool, channel: str, now: dict) -> dict:
+    """Compute a switch change without writing it.
 
     Essential skills are never switched off (they are returned under ``essential``).
     Switching on removes the entries that name the skill (ignoring case): every entry
@@ -237,20 +298,16 @@ def apply(skills: list, *, enabled: bool, channel: str = "") -> dict:
     MAX_CHANNELS) is not written and is named under ``unstorable`` (F6). The base is read
     strictly: an unreadable store raises and nothing is written (F7).
     Returns ``{"changed", "unchanged", "essential", "off_everywhere", "unstorable",
-    "state", "before"}``, ``state`` being what this call left."""
-    from agents.core.settings_db import put_category
-
+    "state", "before"}``, ``state`` being the proposed result."""
     changed: list[str] = []
     unchanged: list[str] = []
     essential: list[str] = []
     off_everywhere: list[str] = []
     unstorable: list[str] = []
-    with _WRITE_LOCK:
-        now = strict_state()
-        before = {GLOBAL_KEY: list(now[GLOBAL_KEY]), CHANNEL_KEY: {k: list(v) for k, v in now[CHANNEL_KEY].items()}}
-        glob = list(now[GLOBAL_KEY])
-        chans = {k: list(v) for k, v in now[CHANNEL_KEY].items()}
-        for skill in skills:
+    before = {GLOBAL_KEY: list(now[GLOBAL_KEY]), CHANNEL_KEY: {k: list(v) for k, v in now[CHANNEL_KEY].items()}}
+    glob = list(now[GLOBAL_KEY])
+    chans = {k: list(v) for k, v in now[CHANNEL_KEY].items()}
+    for skill in skills:
             name = getattr(skill, "name", "")
             ids = {_entry(skill)}
             target = chans.setdefault(channel, []) if channel else glob
@@ -281,27 +338,24 @@ def apply(skills: list, *, enabled: bool, channel: str = "") -> dict:
             changed.append(name)
             if still_off:
                 off_everywhere.append(name)
-        chans = {k: v for k, v in chans.items() if v}
-        if changed:
-            updated, skipped = put_category(CATEGORY, {GLOBAL_KEY: glob, CHANNEL_KEY: chans})
-            if skipped or updated != 2:
-                raise RuntimeError(f"the skill switches could not be saved: {skipped}")
-        # What a read now returns, without a second read that could fail after the write.
-        return {"changed": changed, "unchanged": unchanged, "essential": essential,
-                "off_everywhere": off_everywhere, "unstorable": unstorable,
-                "state": {GLOBAL_KEY: clean_names(glob), CHANNEL_KEY: clean_channel_map(chans)}, "before": before}
+    chans = {k: v for k, v in chans.items() if v}
+    return {"changed": changed, "unchanged": unchanged, "essential": essential,
+            "off_everywhere": off_everywhere, "unstorable": unstorable,
+            "state": {GLOBAL_KEY: clean_names(glob), CHANNEL_KEY: clean_channel_map(chans)}, "before": before}
+
+
+def apply(skills: list, *, enabled: bool, channel: str = "") -> dict:
+    """Compatibility entry for narrowing; widening requires an approved task."""
+    if enabled:
+        raise PermissionError("switch-on requires a human-approved permission.grant task")
+    from . import switch_approval
+
+    return switch_approval.disable(skills, channel=channel, actor="owner")
 
 
 def restore(before: dict, expected: dict) -> bool:
-    """Put the switches back to ``before`` if they are still ``expected`` (what one
-    :func:`apply` left); a write that landed in between wins. Whether it was put back."""
-    from agents.core.settings_db import put_category
-
-    with _WRITE_LOCK:
-        if state() != expected:
-            return False
-        updated, skipped = put_category(CATEGORY, {GLOBAL_KEY: before[GLOBAL_KEY], CHANNEL_KEY: before[CHANNEL_KEY]})
-        return not skipped and updated == 2
+    """Legacy API: restoration could widen access without approval and is refused."""
+    raise PermissionError("restoring skill switches requires an approved task")
 
 
 __all__ = [

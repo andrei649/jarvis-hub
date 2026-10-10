@@ -685,7 +685,19 @@ def test_contract_shape_for_the_manifest():
         "file_root",
         "terminal_target",
         "session_command",
+        "skill_switch",
     )
+
+
+def test_skill_switch_grant_only_accepts_exact_once_digest(ledger):
+    digest = "a" * 64
+    enq = _Enqueue()
+    assert ledger.request("skill_switch", digest, "once", "owner", enq) == 101
+    assert enq.calls[0]["payload"]["key"] == digest
+    for key, scope in (("not-a-digest", "once"), (digest, "always"), (digest, "session")):
+        with pytest.raises(pl.PermissionRequestError):
+            ledger.request("skill_switch", key, scope, "owner", enq)
+    assert len(enq.calls) == 1
 
 
 # ── routes ───────────────────────────────────────────────────────────────────

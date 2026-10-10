@@ -140,10 +140,10 @@ def test_an_essential_skill_is_never_off(tmp_path):
     assert switches.off_reason(monitor, "telegram") == ""
 
 
-def test_an_unreadable_store_leaves_every_skill_on(tmp_path, monkeypatch):
+def test_an_unreadable_store_refuses_nonessential_skill(tmp_path, monkeypatch):
     weather = _skill(tmp_path, "weather", "Weather Intel")
     monkeypatch.setattr(switches, "state", MagicMock(side_effect=RuntimeError("locked")))
-    assert switches.off_reason(weather, "web") == ""
+    assert switches.off_reason(weather, "web") == "switches unavailable"
 
 
 # ── what a switched-off skill does ───────────────────────────────────────────────
@@ -203,11 +203,11 @@ def test_the_catalog_leaves_it_out_on_its_channel_only(tmp_path):
         reset_turn_principal(token)
 
 
-def test_an_unreadable_store_keeps_the_catalog(tmp_path, monkeypatch):
+def test_an_unreadable_store_hides_the_catalog(tmp_path, monkeypatch):
     loader = _loader(_skill(tmp_path, "spotify", "Spotify"), _skill(tmp_path, "weather", "Weather Intel"))
     unreadable = MagicMock(side_effect=RuntimeError("locked"))
     monkeypatch.setattr(switches, "state", unreadable)
-    assert [r["skill"] for r in loader.prompt_catalog()] == ["Spotify", "Weather Intel"]
+    assert loader.prompt_catalog() == []
     assert unreadable.call_count == 1                        # not retried per skill
 
 
@@ -239,22 +239,25 @@ def test_apply_switches_off_and_on_everywhere(tmp_path):
     assert out["before"] == {"disabled": [], "channel_disabled": {}}
     again = switches.apply([weather], enabled=False)
     assert again["changed"] == [] and again["unchanged"] == ["Weather Intel"]
-    on = switches.apply([weather], enabled=True)
+    with pytest.raises(PermissionError):
+        switches.apply([weather], enabled=True)
+    on = switches.plan([weather], enabled=True, channel="", now=switches.state())
     assert on["changed"] == ["Weather Intel"] and on["state"]["disabled"] == ["Spotify"]
-    assert switches.apply([weather], enabled=True)["unchanged"] == ["Weather Intel"]
+    assert switches.off_reason(weather) == "everywhere"  # planning never writes
+    assert switches.plan([weather], enabled=True, channel="", now=on["state"])["unchanged"] == ["Weather Intel"]
 
 
 def test_apply_on_everywhere_clears_every_entry_and_on_a_channel_only_that_one(tmp_path):
     spotify = _skill(tmp_path, "spotify", "Spotify")
     _store(disabled=["SPOTIFY"], channel_disabled={"telegram": ["spotify"], "voice": ["Spotify", "Brief"]})
-    one = switches.apply([spotify], enabled=True, channel="telegram")
+    one = switches.plan([spotify], enabled=True, channel="telegram", now=switches.state())
     assert one["changed"] == ["Spotify"]
     assert one["state"] == {"disabled": ["SPOTIFY"], "channel_disabled": {"voice": ["Spotify", "Brief"]}}
     assert switches.off_reason(spotify, "telegram") == "everywhere"     # still off everywhere
-    assert settings_db.get_value("skills", "channel_disabled") == {"voice": ["Spotify", "Brief"]}  # no empty list kept
-    every = switches.apply([spotify], enabled=True)
+    assert settings_db.get_value("skills", "channel_disabled")["telegram"] == ["spotify"]  # no write yet
+    every = switches.plan([spotify], enabled=True, channel="", now=one["state"])
     assert every["state"] == {"disabled": [], "channel_disabled": {"voice": ["Brief"]}}
-    assert settings_db.get_value("skills", "channel_disabled") == {"voice": ["Brief"]}   # no empty channel kept
+    assert switches.off_reason(spotify) == "everywhere"
 
 
 def test_apply_off_on_a_channel(tmp_path):
@@ -273,25 +276,23 @@ def test_apply_never_switches_an_essential_skill_off(tmp_path):
 
 def test_apply_says_when_the_store_refuses(tmp_path, monkeypatch):
     weather = _skill(tmp_path, "weather", "Weather Intel")
-    monkeypatch.setattr(settings_db, "put_category", lambda cat, data: (0, list(data)))
-    with pytest.raises(RuntimeError):
+    from agents.core.skills import switch_approval
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(switch_approval, "_write_state", fail)
+    with pytest.raises(OSError):
         switches.apply([weather], enabled=False)
-    monkeypatch.setattr(settings_db, "put_category", lambda cat, data: (1, []))     # half a write
-    with pytest.raises(RuntimeError):
-        switches.apply([weather], enabled=False)
-    assert switches.restore({"disabled": [], "channel_disabled": {}}, switches.state()) is False
+    assert switches.state() == {"disabled": [], "channel_disabled": {}}
 
 
-def test_restore_puts_back_only_what_one_apply_left(tmp_path):
-    weather, spotify = _skill(tmp_path, "weather", "Weather Intel"), _skill(tmp_path, "spotify", "Spotify")
-    _store(disabled=["Weather Intel"], channel_disabled={"telegram": ["Weather Intel"]})
-    out = switches.apply([weather], enabled=True)
-    assert switches.restore(out["before"], out["state"]) is True
-    assert switches.state() == {"disabled": ["Weather Intel"], "channel_disabled": {"telegram": ["Weather Intel"]}}
-    out = switches.apply([weather], enabled=True)
-    switches.apply([spotify], enabled=False)                              # lands in between
-    assert switches.restore(out["before"], out["state"]) is False
-    assert switches.state()["disabled"] == ["Spotify"]
+def test_restore_cannot_widen_without_approval(tmp_path):
+    weather = _skill(tmp_path, "weather", "Weather Intel")
+    _store(disabled=["Weather Intel"])
+    with pytest.raises(PermissionError):
+        switches.restore({"disabled": [], "channel_disabled": {}}, switches.state())
+    assert switches.off_reason(weather) == "everywhere"
 
 
 # ── the route ────────────────────────────────────────────────────────────────────
@@ -317,11 +318,45 @@ def _client(monkeypatch, tmp_path, *, log=None):
               _skill(tmp_path, "security_monitor", "Security Monitor", category="info", shipped=True)]
     orch = MagicMock()
     orch.skills = SimpleNamespace(skills={s.name: s for s in skills})
+    orch.permission_ledger = None
+    orch.autonomy = None
+    orch.skill_usage = None
     orch.intent_log = log if log is not None else _Log()
     monkeypatch.setattr(web, "orch", orch)
     monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     return TestClient(web.app), orch
 
+
+
+def _ready_approval(monkeypatch, tmp_path, orch):
+    from agents.core.permission_ledger import PermissionLedger
+    from agents.core.skills import signing, switch_approval
+
+    monkeypatch.setattr(switch_approval, "kernel_enabled", lambda: True)
+    monkeypatch.setattr("agents.core.permission_ledger._kernel_on", lambda: True)
+    queued = []
+    def enqueue(**kwargs):
+        queued.append(kwargs)
+        return len(queued)
+    orch.permission_ledger = PermissionLedger(tmp_path / "permissions.db", enabled=True,
+                                               authorizer=lambda action: SimpleNamespace(verdict="queue"))
+    orch.autonomy = SimpleNamespace(govern_enqueue=enqueue)
+    for skill in orch.skills.skills.values():
+        skill.source_fingerprint = signing.source_snapshot(skill.path).fingerprint
+    orch._queued_switches = queued
+
+
+def _approve(orch, task_id=1):
+    from agents.core.skills import switch_approval
+
+    queued = orch._queued_switches[task_id - 1]
+    task = SimpleNamespace(id=task_id, kind="permission.grant", payload=queued["payload"],
+                           title=queued["title"], agent="jarvis",
+                           decision="accept", decided_by="alice", human_decision={"action": "accept", "by": "alice"})
+    return asyncio.run(switch_approval.apply_approved(task, ledger=orch.permission_ledger,
+                                                       loader=orch.skills,
+                                                       usage=getattr(orch, "skill_usage", None),
+                                                       intent_log=orch.intent_log))
 
 def _post(client, body):
     return client.post("/api/skills/switch", json=body, headers={"X-Admin-Token": _TOKEN})
@@ -344,12 +379,14 @@ def test_the_route_switches_off_and_records_it(monkeypatch, tmp_path):
 
 def test_the_route_switches_on_one_channel(monkeypatch, tmp_path):
     client, orch = _client(monkeypatch, tmp_path)
+    _ready_approval(monkeypatch, tmp_path, orch)
     assert _post(client, {"skill": "spotify", "enabled": False, "channel": "Telegram"}).json()["channel"] == "telegram"
-    assert switches.state() == {"disabled": [], "channel_disabled": {"telegram": ["Spotify"]}}
-    body = _post(client, {"skill": "spotify", "enabled": True, "channel": "telegram"}).json()
-    assert body["changed"] == ["Spotify"] and body["switches"]["channel_disabled"] == {}
-    assert [r["action"] for r in orch.intent_log.rows] == ["skill.disable", "skill.enable"]
-    assert orch.intent_log.rows[1]["metadata"]["channel"] == "telegram"
+    response = _post(client, {"skill": "spotify", "enabled": True, "channel": "telegram"})
+    assert response.status_code == 202 and response.json()["status"] == "pending"
+    assert switches.state()["channel_disabled"] == {"telegram": ["Spotify"]}
+    assert _approve(orch, response.json()["task_id"])["status"] == "ok"
+    assert switches.state()["channel_disabled"] == {}
+
 
 
 def test_the_route_switches_a_category_but_not_its_essential_skill(monkeypatch, tmp_path):
@@ -391,50 +428,66 @@ def test_a_manifest_name_wins_over_a_folder_of_the_same_spelling(monkeypatch, tm
 
 
 @pytest.mark.parametrize("log", [None, object()])
-def test_switching_on_needs_an_intent_log_that_records(monkeypatch, tmp_path, log):
+def test_switching_on_needs_approval_intake_not_intent_log(monkeypatch, tmp_path, log):
     client, orch = _client(monkeypatch, tmp_path)
     _store(disabled=["Weather Intel"])
     orch.intent_log = log
-    resp = _post(client, {"skill": "weather", "enabled": True})
-    assert resp.status_code == 503 and resp.json()["reason"] == "audit_unavailable"
+    response = _post(client, {"skill": "weather", "enabled": True})
+    assert response.status_code == 503 and response.json()["reason"] == "approval_unavailable"
     assert _post(client, {"skill": "spotify", "enabled": False}).json()["audited"] is False
 
 
-def test_switching_on_needs_the_intent_log(monkeypatch, tmp_path):
+
+def test_switching_on_needs_the_approval_intake(monkeypatch, tmp_path):
     client, orch = _client(monkeypatch, tmp_path)
     _store(disabled=["Weather Intel"])
     orch.intent_log = None
     resp = _post(client, {"skill": "weather", "enabled": True})
-    assert resp.status_code == 503 and resp.json()["reason"] == "audit_unavailable"
+    assert resp.status_code == 503 and resp.json()["reason"] == "approval_unavailable"
     assert switches.state()["disabled"] == ["Weather Intel"]
-    off = _post(client, {"skill": "spotify", "enabled": False}).json()      # narrowing: kept, said
+    off = _post(client, {"skill": "spotify", "enabled": False}).json()
     assert off["changed"] == ["Spotify"] and off["audited"] is False
 
 
-def test_an_unrecorded_switch_on_is_put_back(monkeypatch, tmp_path):
+
+def test_optional_intent_log_failure_does_not_erase_canonical_approval(monkeypatch, tmp_path):
     client, orch = _client(monkeypatch, tmp_path, log=_Log(fail=True))
-    _store(disabled=["Weather Intel"], channel_disabled={"voice": ["weather"]})
-    resp = _post(client, {"skill": "weather", "enabled": True})
-    assert resp.status_code == 503 and resp.json() == {
-        "error": "the switch could not be recorded, so it was not kept", "reason": "audit_failed", "restored": True}
-    assert switches.state() == {"disabled": ["Weather Intel"], "channel_disabled": {"voice": ["weather"]}}
-    off = _post(client, {"skill": "spotify", "enabled": False}).json()
-    assert off["audited"] is False and switches.state()["disabled"] == ["Weather Intel", "Spotify"]
-
-
-def test_a_restore_that_lost_the_race_says_so(monkeypatch, tmp_path):
-    client, _orch = _client(monkeypatch, tmp_path, log=_Log(fail=True))
+    _ready_approval(monkeypatch, tmp_path, orch)
     _store(disabled=["Weather Intel"])
-    monkeypatch.setattr(switches, "restore", lambda before, expected: False)
-    body = _post(client, {"skill": "weather", "enabled": True}).json()
-    assert body["restored"] is False and "later change" in body["error"]
+    resp = _post(client, {"skill": "weather", "enabled": True})
+    assert resp.status_code == 202 and switches.state()["disabled"] == ["Weather Intel"]
+    assert _approve(orch, resp.json()["task_id"])["status"] == "ok"
+    assert switches.state()["disabled"] == []
+    conn = settings_db.get_conn()
+    try:
+        row = conn.execute("SELECT approver,task_id FROM skill_switch_events WHERE action='enable'").fetchone()
+        assert row["approver"] == "alice" and row["task_id"] == resp.json()["task_id"]
+    finally:
+        conn.close()
 
 
-def test_a_store_that_refuses_the_write_is_a_500(monkeypatch, tmp_path):
+
+def test_a_later_disable_defeats_the_earlier_approval(monkeypatch, tmp_path):
     client, orch = _client(monkeypatch, tmp_path)
-    monkeypatch.setattr(switches, "apply", MagicMock(side_effect=RuntimeError("disk full")))
+    _ready_approval(monkeypatch, tmp_path, orch)
+    _store(disabled=["Weather Intel"])
+    pending = _post(client, {"skill": "weather", "enabled": True})
+    assert pending.status_code == 202
+    assert _post(client, {"skill": "weather", "enabled": False}).status_code == 200
+    assert _approve(orch, pending.json()["task_id"])["reason"] == "stale_switch_request"
+    assert switches.state()["disabled"] == ["Weather Intel"]
+
+
+
+def test_a_store_that_refuses_the_write_is_a_503(monkeypatch, tmp_path):
+    from agents.core.skills import switch_approval
+
+    client, orch = _client(monkeypatch, tmp_path)
+    monkeypatch.setattr(switch_approval, "_write_state", MagicMock(side_effect=RuntimeError("disk full")))
     resp = _post(client, {"skill": "weather", "enabled": False})
-    assert resp.status_code == 500 and resp.json()["reason"] == "write_failed" and orch.intent_log.rows == []
+    assert resp.status_code == 503 and resp.json()["reason"] == "write_failed"
+    assert orch.intent_log.rows == [] and switches.state()["disabled"] == []
+
 
 
 def test_the_skills_list_says_where_each_is_off(monkeypatch, tmp_path):
@@ -458,13 +511,17 @@ def _tree(path):
 
 def test_nothing_about_the_skill_is_touched_by_a_cycle(monkeypatch, tmp_path):
     client, orch = _client(monkeypatch, tmp_path)
+    _ready_approval(monkeypatch, tmp_path, orch)
     weather = orch.skills.skills["Weather Intel"]
     before = _tree(weather.path)
     manifest = dict(weather.manifest)
     assert _post(client, {"skill": "weather", "enabled": False}).status_code == 200
-    assert _post(client, {"skill": "weather", "enabled": True}).status_code == 200
+    pending = _post(client, {"skill": "weather", "enabled": True})
+    assert pending.status_code == 202 and _tree(weather.path) == before
+    assert _approve(orch, pending.json()["task_id"])["status"] == "ok"
+    assert _post(client, {"skill": "weather", "enabled": True}).json()["status"] == "unchanged"
     assert _tree(weather.path) == before and weather.manifest == manifest and weather.trusted is True
-    assert "Weather Intel" in orch.skills.skills
+
 
 
 # ── the CLI ──────────────────────────────────────────────────────────────────────
@@ -603,20 +660,18 @@ def test_only_the_shipped_security_monitor_is_essential(monkeypatch, tmp_path):
 
 
 def test_switching_on_one_channel_a_skill_off_everywhere_says_so(monkeypatch, tmp_path):
-    """review-H329 F3: it stays off there, so the answer never reads "already on"."""
     client, orch = _client(monkeypatch, tmp_path)
     spotify = orch.skills.skills["Spotify"]
     assert _post(client, {"skill": "spotify", "enabled": False}).status_code == 200
     resp = _post(client, {"skill": "spotify", "enabled": True, "channel": "telegram"})
     assert resp.status_code == 409 and resp.json()["reason"] == "off_everywhere"
-    assert "on everywhere" in resp.json()["error"]
     assert switches.off_reason(spotify, "telegram") == "everywhere"
-    assert [r["action"] for r in orch.intent_log.rows] == ["skill.disable"]
-    out = switches.apply([spotify], enabled=True, channel="telegram")
-    assert out["changed"] == [] and out["unchanged"] == [] and out["off_everywhere"] == ["Spotify"]
+    out = switches.plan([spotify], enabled=True, channel="telegram", now=switches.state())
+    assert out["changed"] == [] and out["off_everywhere"] == ["Spotify"]
     _store(disabled=["Spotify"], channel_disabled={"telegram": ["Spotify"]})
-    both = switches.apply([spotify], enabled=True, channel="telegram")       # its channel entry goes, it stays off
+    both = switches.plan([spotify], enabled=True, channel="telegram", now=switches.state())
     assert both["changed"] == ["Spotify"] and both["off_everywhere"] == ["Spotify"]
+
 
 
 def test_a_turn_with_no_principal_hides_a_skill_off_on_its_channel(tmp_path):
@@ -663,6 +718,7 @@ def test_a_cycle_keeps_the_usage_count_the_approval_and_the_signature(monkeypatc
     loader.attach_usage(usage)
     loader.discover()
     orch.skills = loader
+    _ready_approval(monkeypatch, tmp_path, orch)
 
     def standing():
         skill = loader.skills["Notes Pro"]
@@ -674,7 +730,8 @@ def test_a_cycle_keeps_the_usage_count_the_approval_and_the_signature(monkeypatc
     assert _post(client, {"skill": "notes_pro", "enabled": False}).json()["changed"] == ["Notes Pro"]
     assert "switched off" in asyncio.run(loader.skills["Notes Pro"].execute("x", "", {"channel": "web"}))
     assert standing() == before
-    assert _post(client, {"skill": "notes_pro", "enabled": True}).json()["changed"] == ["Notes Pro"]
+    pending = _post(client, {"skill": "notes_pro", "enabled": True})
+    assert pending.status_code == 202 and _approve(orch, pending.json()["task_id"])["status"] == "ok"
     loader.discover()
     assert standing() == before
 
@@ -702,58 +759,55 @@ def test_a_switch_off_the_store_cannot_hold_is_refused_and_not_recorded(monkeypa
 
 
 def test_a_switch_on_an_unreadable_store_writes_nothing(monkeypatch, tmp_path):
-    """review-H329 F7: the base of a write is read strictly, so a locked store never
-    becomes an empty base that erases every other switch."""
-    import sqlite3
-
     client, orch = _client(monkeypatch, tmp_path)
     _store(disabled=["Evil", "Other"], channel_disabled={"telegram": ["Spotify"]})
-    real, fails = settings_db.get_conn, [2]
-
-    def flaky():
-        if fails[0]:
-            fails[0] -= 1
-            raise sqlite3.OperationalError("database is locked")
-        return real()
-
-    monkeypatch.setattr(settings_db, "get_conn", flaky)
-    with pytest.raises(settings_db.SettingsUnreadable):
-        switches.apply([orch.skills.skills["News"]], enabled=False)
-    fails[0] = 2
+    conn = settings_db.get_conn()
+    try:
+        conn.execute("UPDATE settings SET value='{}' WHERE category='skills' AND key='disabled'")
+        conn.commit()
+    finally:
+        conn.close()
     resp = _post(client, {"skill": "news", "enabled": False})
-    assert resp.status_code == 500 and resp.json()["reason"] == "write_failed"
-    monkeypatch.setattr(settings_db, "get_conn", real)
-    assert switches.state() == {"disabled": ["Evil", "Other"], "channel_disabled": {"telegram": ["Spotify"]}}
+    assert resp.status_code == 503 and resp.json()["reason"] == "switches_unavailable"
+    assert client.get("/skills").status_code == 503
 
 
-def test_an_unrecorded_switch_on_is_followed_by_its_revert_in_the_log(monkeypatch, tmp_path):
-    """review-H329 F8: IntentLog keeps an entry whose save failed and writes it with the
-    next one; the route records the revert after it, so the file never shows a switch-on
-    that did not stay."""
-    import json
 
-    from agents.core.persistence import json_store
+def test_unreadable_switch_store_refuses_execution_and_hides_catalog(monkeypatch, tmp_path):
+    skill = _skill(tmp_path, "weather", "Weather Intel")
+    loader = _loader(skill)
+    _store(disabled=["Weather Intel"])
+    conn = settings_db.get_conn()
+    try:
+        conn.execute("UPDATE settings SET value='{}' WHERE category='skills' AND key='disabled'")
+        conn.commit()
+    finally:
+        conn.close()
+    assert switches.off_reason(skill, "web") == "switches unavailable"
+    assert loader.prompt_catalog() == []
+    assert "switches unavailable" in asyncio.run(skill.execute("weather", "", {"channel": "web"}))
+
+
+
+def test_intent_log_projection_failure_does_not_revert_canonical_enable(monkeypatch, tmp_path):
     from agents.core.security.anchor import IntentLog
+    from agents.core.skills import switch_approval
 
     log = IntentLog(tmp_path / "intent_log.json", secret_key="h329")
-    client, _orch = _client(monkeypatch, tmp_path, log=log)
+    client, orch = _client(monkeypatch, tmp_path, log=log)
+    _ready_approval(monkeypatch, tmp_path, orch)
     _store(disabled=["Weather Intel"])
-    real, calls = json_store.atomic_write_json, []
+    monkeypatch.setattr(log, "record", MagicMock(side_effect=OSError("disk full")))
+    response = _post(client, {"skill": "weather", "enabled": True})
+    assert response.status_code == 202
+    assert _approve(orch, response.json()["task_id"])["status"] == "ok"
+    assert switches.state()["disabled"] == []
+    conn = settings_db.get_conn()
+    try:
+        assert conn.execute("SELECT count(*) FROM skill_switch_receipts").fetchone()[0] == 1
+    finally:
+        conn.close()
 
-    def flaky(path, data, **kwargs):
-        calls.append(path)
-        if len(calls) == 1:
-            raise OSError("disk full")
-        return real(path, data, **kwargs)
-
-    monkeypatch.setattr(json_store, "atomic_write_json", flaky)
-    assert _post(client, {"skill": "weather", "enabled": True}).json()["restored"] is True
-    assert switches.state()["disabled"] == ["Weather Intel"]
-    assert _post(client, {"skill": "spotify", "enabled": False}).json()["audited"] is True
-    saved = json.loads((tmp_path / "intent_log.json").read_text(encoding="utf-8"))
-    assert [(e["action"], e["cause"]) for e in saved] == [
-        ("skill.enable", "skills.switch"), ("skill.disable", "skills.switch.revert"), ("skill.disable", "skills.switch")]
-    assert saved[1]["metadata"]["skills"] == ["Weather Intel"] and log.verify()["ok"] is True
 
 
 def test_the_curator_never_archives_a_skill_switched_off_everywhere(tmp_path):
@@ -795,28 +849,30 @@ def test_the_skill_list_is_not_open_to_the_network(monkeypatch, tmp_path):
 
 
 def test_a_skill_switched_back_on_is_not_archived_for_its_time_off(monkeypatch, tmp_path):
-    """Batch 6 verify: the switch-on restarts the idle clock, so the months a skill spent
-    switched off never count as neglect on the next curator pass."""
     from datetime import UTC, datetime, timedelta
 
     from agents.core.skills.curator import SkillCurator
     from agents.core.skills.usage import ORIGIN_AGENT, SkillUsageStore, latest_activity_at
 
     client, orch = _client(monkeypatch, tmp_path)
+    _ready_approval(monkeypatch, tmp_path, orch)
     usage = SkillUsageStore(path=tmp_path / "usage.json")
     orch.skill_usage = usage
     usage.note_created("Weather Intel", ORIGIN_AGENT)
     usage._items["Weather Intel"]["last_used_at"] = (datetime.now(UTC) - timedelta(days=120)).isoformat()
     _store(disabled=["Weather Intel"])
-    assert _post(client, {"skill": "weather", "enabled": True}).json()["changed"] == ["Weather Intel"]
+    pending = _post(client, {"skill": "weather", "enabled": True})
+    assert pending.status_code == 202 and latest_activity_at(usage.get("Weather Intel")) is not None
+    assert _approve(orch, pending.json()["task_id"])["status"] == "ok"
     anchor = latest_activity_at(usage.get("Weather Intel"))
     assert anchor is not None and datetime.now(UTC) - anchor < timedelta(minutes=1)
     rec = usage.get("Weather Intel")
-    assert rec.get("switch_on_count") == 1 and not rec.get("use_count")    # a switch-on is not a use
+    assert rec.get("switch_on_count") == 1 and not rec.get("use_count")
     curator = SkillCurator(SimpleNamespace(skills=orch.skills.skills), usage, archive_dir=tmp_path / "archive",
                            now=lambda: datetime.now(UTC) + timedelta(days=10))
     out = asyncio.run(curator.run())
     assert "Weather Intel" not in out["lifecycle"]["archived"]
+
 
 
 def test_a_switch_off_or_a_failed_switch_on_does_not_restart_the_clock(monkeypatch, tmp_path):

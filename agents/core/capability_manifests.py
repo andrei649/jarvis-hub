@@ -455,18 +455,19 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
     ),
     "permission.grant": _action(
         "permission.grant",
-        "Widen one consent-ledger grant (app/site/os_input/file_root/terminal_target) after owner approval.",
+        "Widen one consent-ledger grant or apply one exact skill-switch request after human approval.",
         required=("surface", "key", "scope", "requested_by"),
         risk="sensitive",
         supports=("once", "session", "always"),
         rollback=RollbackContract(
             mode="revoke",
-            description="Revoke the grant row; the surface returns to its default-denied posture.",
+            description="Revoke the grant row; an applied skill switch must be disabled separately.",
             automatic=False,
             handler_ref="agents.core.permission_ledger:PermissionLedger.revoke",
-            limitations="Revocation stops future use; it cannot undo an action already taken under the grant.",
+            limitations="Revocation stops future grant use but cannot undo an action already taken; "
+                        "an applied skill switch must be disabled separately.",
         ),
-        implementation="agents.core.permission_ledger:PermissionLedger.apply_grant",
+        implementation="agents.core.autonomy_coordinator:AutonomyCoordinator.build_executor",
         contract_ref="agents.core.permission_ledger:PERMISSION_GRANT_CONTRACT",
     ),
     "checkpoint.restore": _action(

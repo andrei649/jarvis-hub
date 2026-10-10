@@ -21,6 +21,7 @@ import logging
 import math
 # Telegram destinations use the shared channels.outbound resolver.
 import time
+from collections.abc import Mapping
 from datetime import datetime
 
 from .autonomy import TaskExecutor
@@ -2236,7 +2237,21 @@ class AutonomyCoordinator:
                            exc_info=True)
         ledger = getattr(self._orch, "permission_ledger", None)
         if ledger is not None:
-            executor.register("permission.grant", ledger.apply_grant)
+            async def _apply_permission_grant(task):
+                payload = getattr(task, "payload", None)
+                if isinstance(payload, Mapping) and payload.get("surface") == "skill_switch":
+                    from .skills.switch_approval import apply_approved
+
+                    return await apply_approved(
+                        task,
+                        ledger=ledger,
+                        loader=getattr(self._orch, "skills", None),
+                        usage=getattr(self._orch, "skill_usage", None),
+                        intent_log=getattr(self._orch, "intent_log", None),
+                    )
+                return await ledger.apply_grant(task)
+
+            executor.register("permission.grant", _apply_permission_grant)
 
         # The work-run ledger. Bound whatever the flag says, because reading past
         # runs is honest with company mode off — what it must never do is open one,

@@ -629,10 +629,20 @@ def init_db(force: bool = False):
     conn.executescript(SCHEMA)
     if force:
         conn.execute("DELETE FROM settings")
+    # Once H329 has observed a store, missing switch rows are damage. An
+    # unrelated settings read during boot must not silently re-enable skills
+    # before the strict switch reader can report that damage. Explicit resets
+    # and legacy stores still receive the declared defaults.
+    preserve_skill_switches = not force and conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='skill_switch_revision'"
+    ).fetchone() is not None
     
     # Run INSERT OR IGNORE for all default settings to guarantee new updates are seeded dynamically
     inserted = 0
     for row in DEFAULTS:
+        if (preserve_skill_switches and row["category"] == "skills"
+                and row["key"] in {"disabled", "channel_disabled"}):
+            continue
         cursor = conn.execute(
             "INSERT OR IGNORE INTO settings (category, key, value, label, kind, opts) VALUES (?,?,?,?,?,?)",
             (row["category"], row["key"], json.dumps(row["value"]), row["label"], row["kind"], json.dumps(row.get("opts", []))),

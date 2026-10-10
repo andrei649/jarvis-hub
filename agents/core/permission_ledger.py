@@ -68,7 +68,7 @@ logger = logging.getLogger("jarvis.permissions")
 KIND = "permission.grant"
 FLAG = "JARVIS_PERMISSION_LEDGER"
 
-SURFACES = ("app", "site", "os_input", "file_root", "terminal_target", "session_command")
+SURFACES = ("app", "site", "os_input", "file_root", "terminal_target", "session_command", "skill_switch")
 SCOPES = ("once", "session", "always", "never")
 REQUESTABLE_SCOPES = ("once", "session", "always")
 
@@ -222,7 +222,7 @@ def normalize_key(surface: str, key: Any) -> str:
     for sites, lowercase basename without ``.exe/.app`` for apps, ``~``/slash
     normalised path for file roots, exact lowercase SHA-256 hex for session
     commands, stripped lowercase text otherwise. Invalid keys return ``""``."""
-    if surface == "session_command":
+    if surface in ("session_command", "skill_switch"):
         return key if isinstance(key, str) and re.fullmatch(r"[0-9a-f]{64}", key) else ""
     text = str(key or "").strip()
     if not text or len(text) > _MAX_KEY:
@@ -314,7 +314,8 @@ def _permission_grant_contract() -> ContractTemplate:
             predicate(
                 "scope-requestable",
                 lambda view, _now: view.get("scope") in REQUESTABLE_SCOPES
-                and (view.get("surface") != "session_command" or view.get("scope") == "always"),
+                and (view.get("surface") != "session_command" or view.get("scope") == "always")
+                and (view.get("surface") != "skill_switch" or view.get("scope") == "once"),
                 reason="scope_not_requestable",
             ),
             predicate(
@@ -667,6 +668,24 @@ class PermissionLedger:
         with self._lock:
             row = self._conn.execute("SELECT * FROM grants WHERE id=?", (str(grant_id),)).fetchone()
         return self._row_to_grant(row) if row is not None else None
+
+    def consume_skill_switch_grant(self, grant_id: str, *, task_id: int, binding: str) -> bool:
+        """Retire exactly the once grant already used by a committed H329 receipt."""
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM grants WHERE id=?", (grant_id,)).fetchone()
+            if row is None:
+                return False
+            grant = self._row_to_grant(row)
+            if (grant.surface != "skill_switch" or grant.scope != "once"
+                    or grant.key != binding or grant.task_id != task_id):
+                return False
+            if grant.status == "consumed":
+                return True
+            if grant.status != "active":
+                return False
+            self._transition(grant, "consumed", actor="skill_switch", detail="approved switch applied")
+            self._conn.commit()
+            return True
 
     def list_grants(self, *, include_inactive: bool = False, limit: int = 200) -> list[Grant]:
         q = "SELECT * FROM grants"

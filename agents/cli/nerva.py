@@ -264,11 +264,12 @@ def build_parser() -> argparse.ArgumentParser:
                              help="a SKILL.md, a skill folder, or a folder of skill folders")
     skills_lint.add_argument("--strict", action="store_true", help="advice fails the run too")
     skills_lint.add_argument("--json", action="store_true")
-    # H329 — switched off, not uninstalled (admin; applies at once).
+    # H329 — switched off, not uninstalled; enabling waits for approval.
     skills_verbs.add_parser("list", help="installed skills and where each is switched off").add_argument(
         "--json", action="store_true")
+    skills_verbs.add_parser("config", help="interactively switch a skill or category on/off")
     for verb, text in (("off", "switch a skill off without uninstalling it (admin)"),
-                       ("on", "switch a skill back on (admin; recorded in the intent log)")):
+                       ("on", "request owner approval to switch a skill back on (admin)")):
         switch = skills_verbs.add_parser(verb, help=text)
         switch.add_argument("name", nargs="?", help="the skill's name or folder")
         switch.add_argument("--category", help="every skill of this category instead of one skill")
@@ -1510,8 +1511,8 @@ def _skill_files(raw: str) -> list[Path] | None:
 
 def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
     """H350 — ``nerva skills lint``: the hard check every write path runs, plus advice.
-    H329 — ``nerva skills list | off | on``: the skill switches on the running hub."""
-    if ns.action in ("list", "off", "on"):
+    H329 — ``nerva skills list | off | on | config``: running-hub skill switches."""
+    if ns.action in ("list", "off", "on", "config"):
         return _skill_switches(ns, ctx)
     from agents.core.skills.validate import (
         MAX_SKILL_MD_BYTES,
@@ -1596,6 +1597,8 @@ def cmd_logs(ns: argparse.Namespace, ctx: Context) -> int:
 
 def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
     client = ctx.client()
+    if ns.action == "config":
+        return _skill_switch_config(ctx, client)
     if ns.action == "list":
         reply = client.get("/skills")
         skills = reply.get("skills") if isinstance(reply, dict) else None
@@ -1622,6 +1625,12 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.json:
         ctx.dump(reply)
         return EXIT_OK
+    if isinstance(reply, dict) and reply.get("status") == "pending":
+        ctx.say(f"pending owner approval: task {reply.get('task_id')} · "
+                f"{', '.join(reply.get('pending') or [])}")
+        for name in reply.get("off_everywhere") or []:
+            ctx.say(f"{name}: still off everywhere after a channel-only approval")
+        return EXIT_OK
     changed = reply.get("changed") or [] if isinstance(reply, dict) else []
     where = f"on {ns.channel}" if ns.channel else "everywhere"
     if changed:
@@ -1636,6 +1645,83 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"{name}: essential, stays on")
     if changed and isinstance(reply, dict) and not reply.get("audited"):
         ctx.say("note: the intent log could not record this switch")
+    return EXIT_OK
+
+
+def _skill_switch_config(ctx: Context, client: HubClient) -> int:
+    """A literal terminal picker using the same owner route as the HUD."""
+    if not callable(getattr(ctx.inp, "isatty", None)) or not ctx.inp.isatty():
+        ctx.err.write("skills config requires an interactive terminal\n")
+        return EXIT_USAGE
+    reply = client.get("/skills")
+    skills = reply.get("skills") if isinstance(reply, dict) else None
+    if not isinstance(skills, dict):
+        ctx.err.write("skill list unavailable\n")
+        return EXIT_FAILED
+    choices = [("skill", name) for name in sorted(skills, key=str.casefold)]
+    categories = sorted({row.get("category") for row in skills.values()
+                         if isinstance(row, dict) and isinstance(row.get("category"), str)
+                         and row.get("category")}, key=str.casefold)
+    choices.extend(("category", name) for name in categories)
+    def where(row: dict) -> str:
+        if row.get("disabled"):
+            return "off everywhere"
+        channels = row.get("disabled_channels")
+        if isinstance(channels, list) and channels:
+            return "off on " + ", ".join(str(item) for item in channels)
+        return "on"
+
+    for number, (kind, name) in enumerate(choices, 1):
+        if kind == "skill":
+            state = where(skills[name] if isinstance(skills[name], dict) else {})
+        else:
+            members = [where(row) for row in skills.values()
+                       if isinstance(row, dict) and row.get("category") == name]
+            state = members[0] if len(set(members)) == 1 else "mixed"
+        ctx.say(f"{number}. {kind}: {name} ({state})")
+    try:
+        ctx.out.write("Choose number (Enter cancels): ")
+        line = ctx.inp.readline()
+        if not line:
+            return EXIT_OK
+        selected = line.strip()
+        if not selected:
+            return EXIT_OK
+        if not selected.isdigit() or not 1 <= int(selected) <= len(choices):
+            ctx.err.write("invalid choice\n")
+            return EXIT_USAGE
+        kind, name = choices[int(selected) - 1]
+        ctx.out.write("Switch on or off (Enter cancels): ")
+        line = ctx.inp.readline()
+        if not line:
+            return EXIT_OK
+        action = line.strip().casefold()
+        if not action:
+            return EXIT_OK
+        if action not in ("on", "off"):
+            ctx.err.write("choose on or off\n")
+            return EXIT_USAGE
+        if action == "off" and kind == "skill" and isinstance(skills[name], dict) and skills[name].get("essential"):
+            ctx.err.write("essential skill stays on\n")
+            return EXIT_FAILED
+        ctx.out.write("Channel (Enter means everywhere): ")
+        line = ctx.inp.readline()
+        if not line:
+            return EXIT_OK
+        channel = line.strip()
+    except (EOFError, KeyboardInterrupt):
+        return EXIT_OK
+    if channel and not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,31}", channel):
+        ctx.err.write("invalid channel\n")
+        return EXIT_USAGE
+    body = {kind: name, "enabled": action == "on"}
+    if channel:
+        body["channel"] = channel
+    result = client.post("/api/skills/switch", body)
+    if isinstance(result, dict) and result.get("status") == "pending":
+        ctx.say(f"pending owner approval: task {result.get('task_id')}")
+    else:
+        ctx.say(f"switched {action}: {', '.join(result.get('changed') or [])}")
     return EXIT_OK
 
 
